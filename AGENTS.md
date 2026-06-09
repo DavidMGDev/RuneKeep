@@ -1,11 +1,11 @@
 # RuneKeep — agent orientation
 
-RuneKeep is an animation-first **Daggerheart** TTRPG companion app. Expo (SDK 56) + React Native
-0.85 + Expo Router + React 19, New Architecture, TypeScript. Screens are dense, art-driven
+RuneKeep is an animation-first **Daggerheart** TTRPG companion app. Expo (SDK 55) + React Native
+0.83 + Expo Router + React 19, New Architecture, TypeScript. Screens are dense, art-driven
 compositions with tappable/spring icons, particle effects, and floating physics cards.
 
-> **Expo has changed** — read the versioned docs at https://docs.expo.dev/versions/v56.0.0/ before
-> writing native/config code. Don't assume older API shapes.
+> Pinned to **SDK 55** (not 56) so the store Expo Go runs it. Read the versioned docs at
+> https://docs.expo.dev/versions/v55.0.0/ before writing native/config code. Don't assume older API shapes.
 
 ## Where things live
 - `src/app/**` — Expo Router routes & layouts ONLY (file-based routing). `index.tsx` is home.

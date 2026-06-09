@@ -1,7 +1,10 @@
 # Animation & Graphics Stack
 
-> Researched & version-verified 2026-06-08 against npm + Expo SDK 56 docs. Baseline:
-> **Expo SDK 56, React Native 0.85, React 19.2, New Architecture (Fabric) only, Reanimated 4.**
+> Researched & version-verified 2026-06-08 against npm + Expo SDK 56 docs. Baseline surveyed at
+> **Expo SDK 56**; the project is pinned to **Expo SDK 55** (React Native 0.83, React 19, New
+> Architecture only, Reanimated 4.2) for store Expo Go compatibility. Every conclusion below holds on
+> SDK 55 — Reanimated 4, New Arch, Skia, and react-native-svg all support it; use `npx expo install`
+> so versions pin to SDK 55, not the latest.
 
 RuneKeep is animation-first: tappable icons that spring-grow, particle effects (embers,
 sparks, magical dust), and dynamic cards that float / drag / throw with physics. This is the
