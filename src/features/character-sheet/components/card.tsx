@@ -26,7 +26,14 @@ export function Card({ item, width, height }: CardProps) {
         shadowOffset: { width: 0, height: 6 },
         elevation: 8,
       }}>
-      <Image source={item.source} style={{ width: '100%', height: '100%' }} contentFit="fill" />
+      <Image
+        source={item.source}
+        style={{ width: '100%', height: '100%' }}
+        contentFit="fill"
+        cachePolicy="memory-disk"
+        recyclingKey={item.id}
+        transition={0}
+      />
     </View>
   );
 }

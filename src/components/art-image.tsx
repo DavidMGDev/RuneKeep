@@ -25,6 +25,8 @@ export function ArtImage({ source, fit = 'contain', style, recyclingKey, tint }:
       tintColor={tint}
       style={[{ width: '100%', height: '100%' }, style]}
       recyclingKey={recyclingKey}
+      // Cache decoded art (source PNGs are oversized) so re-renders don't re-decode.
+      cachePolicy="memory-disk"
       // Local bundled art; no fade keeps the composition snappy.
       transition={0}
     />
