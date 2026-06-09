@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AccentPicker } from '@/components/accent-picker';
 import { AccentProvider } from '@/components/accent';
 import { DesignStage } from '@/components/design-stage';
+import { VariantSwitcher } from '@/components/variant-switcher';
 import { Rune } from '@/constants/theme';
 import { SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { CarouselProvider } from './carousel-context';
@@ -44,6 +45,7 @@ export function CharacterSheetScreen({ character = SAMPLE_CHARACTER }: { charact
             </DesignStage>
           </SafeAreaView>
           <AccentPicker />
+          <VariantSwitcher />
         </View>
       </CarouselProvider>
     </AccentProvider>
