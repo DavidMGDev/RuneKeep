@@ -12,14 +12,17 @@ interface ArtImageProps {
   style?: StyleProp<ImageStyle>;
   /** Hint expo-image how to scale; defaults tuned for crisp downscaled art. */
   recyclingKey?: string;
+  /** Recolor the (non-transparent) art to a single color — used to retint solid red pips. */
+  tint?: string;
 }
 
 /** Thin expo-image wrapper that fills its parent box and defaults to a non-distorting fit. */
-export function ArtImage({ source, fit = 'contain', style, recyclingKey }: ArtImageProps) {
+export function ArtImage({ source, fit = 'contain', style, recyclingKey, tint }: ArtImageProps) {
   return (
     <Image
       source={source}
       contentFit={fit}
+      tintColor={tint}
       style={[{ width: '100%', height: '100%' }, style]}
       recyclingKey={recyclingKey}
       // Local bundled art; no fade keeps the composition snappy.

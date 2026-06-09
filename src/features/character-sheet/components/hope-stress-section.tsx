@@ -1,3 +1,4 @@
+import { useAccent } from '@/components/accent';
 import { Body, Rune } from '@/constants/theme';
 import type { PipState } from '@/lib/pips';
 import { resolvePips } from '@/lib/pips';
@@ -13,6 +14,8 @@ const stressArt = (s: PipState) =>
 const hopeArt = (s: PipState) => (s === 'active' ? Art.hope : Art.hopeDepleted);
 
 export function HopeStressSection({ character }: { character: Character }) {
+  const accent = useAccent();
+  const stressTint = (s: PipState) => (s === 'active' ? accent : undefined);
   const stress = resolvePips({
     total: character.stress.total,
     active: character.stress.active,
@@ -34,7 +37,7 @@ export function HopeStressSection({ character }: { character: Character }) {
       <SheetText left={60} top={485} width={58} height={15} color={INK} size={10} family={Body.bold} align="left" letterSpacing={1.2} uppercase>
         Stress
       </SheetText>
-      <PipRow left={125.3} top={484.4} width={249.1} height={18.6} states={stress} pipWidth={15.1} pipHeight={18.6} artFor={stressArt} />
+      <PipRow left={125.3} top={484.4} width={249.1} height={18.6} states={stress} pipWidth={15.1} pipHeight={18.6} artFor={stressArt} tintFor={stressTint} />
 
       {/* Hope (bottom row) */}
       <ArtBox left={34.3} top={540.6} width={24.1} height={24.7} source={Art.hopeTitleIcon} />

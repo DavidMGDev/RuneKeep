@@ -135,6 +135,8 @@ interface PipRowProps {
   pipWidth: number;
   pipHeight: number;
   artFor: (state: PipState) => number;
+  /** Optional per-state tint (e.g. retint the red 'active' pips to the accent color). */
+  tintFor?: (state: PipState) => string | undefined;
   onPressPip?: (index: number) => void;
 }
 
@@ -151,6 +153,7 @@ export function PipRow({
   pipWidth,
   pipHeight,
   artFor,
+  tintFor,
   onPressPip,
 }: PipRowProps) {
   return (
@@ -166,7 +169,7 @@ export function PipRow({
           style={{ width: pipWidth, height: pipHeight }}
           pressedScale={1.25}
           onPress={onPressPip ? () => onPressPip(i) : undefined}>
-          <ArtImage source={artFor(state)} fit="contain" />
+          <ArtImage source={artFor(state)} fit="contain" tint={tintFor?.(state)} />
         </PressableArt>
       ))}
     </View>
