@@ -23,10 +23,11 @@ interface TraitBannerProps {
   label: string;
   icon: number;
   value: number;
+  modifierSize: number;
   expandProgress: SharedValue<number>;
 }
 
-function TraitBanner({ index, x, label, icon, value, expandProgress }: TraitBannerProps) {
+function TraitBanner({ index, x, label, icon, value, modifierSize, expandProgress }: TraitBannerProps) {
   // First 3 banners exit left, last 3 exit right, staggered, as the cards expand.
   const dir = index < 3 ? -1 : 1;
   const order = index < 3 ? 2 - index : index - 3;
@@ -51,7 +52,7 @@ function TraitBanner({ index, x, label, icon, value, expandProgress }: TraitBann
         <SheetText left={4} top={60} width={GROUP_W - 8} height={11} color={Rune.goldText} size={7.5} family={Body.bold} letterSpacing={0.6} uppercase>
           {label}
         </SheetText>
-        <SheetText left={0} top={70} width={GROUP_W} height={21} color={Rune.ivory} size={18} family={Display.black} tabularNums>
+        <SheetText left={-4} top={68} width={GROUP_W + 8} height={24} color={Rune.ivory} size={modifierSize} family={Display.black} tabularNums>
           {formatModifier(value)}
         </SheetText>
       </PressableArt>
@@ -59,7 +60,7 @@ function TraitBanner({ index, x, label, icon, value, expandProgress }: TraitBann
   );
 }
 
-export function TraitBanners({ character }: { character: Character }) {
+export function TraitBanners({ character, modifierSize = 18 }: { character: Character; modifierSize?: number }) {
   const { expandProgress } = useCarousel();
   return (
     <>
@@ -71,6 +72,7 @@ export function TraitBanners({ character }: { character: Character }) {
           label={trait.label}
           icon={trait.icon}
           value={character.traits[trait.key]}
+          modifierSize={modifierSize}
           expandProgress={expandProgress}
         />
       ))}
