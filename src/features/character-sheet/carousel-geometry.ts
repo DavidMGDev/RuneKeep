@@ -11,7 +11,9 @@ export const OX = 206; // circle center X (screen center)
 // i.e. low on the screen (the compact cards' top edge), so expanding grows the cards in place rather
 // than flying them up. Compact then drops a little further toward the bottom edge.
 export const R = 900;
-export const OY = 1665;
+// Expanded center card sits at y = OY - R = 631 → the full card (center 3) is on-screen, with the
+// gear peeking below it. Compact then drops well below toward/under the bottom edge.
+export const OY = 1531;
 
 /** Resting rotation that centers the middle of a deck (a balanced fan, not a lopsided end).
  *  Plain JS (called in React render, not in a worklet) — do NOT mark 'worklet'. */
@@ -24,8 +26,8 @@ export const CARD_H = CARD_W / CARD_ASPECT; // 5:7
 
 export const ANGLE_STEP = 0.17; // radians between adjacent cards — centers close, neighbors peek behind
 export const COMPACT_STEP = 0.05; // a tight little hand of cards when compact
-export const COMPACT_SCALE = 0.3; // small hand touching the bottom edge (~87px), ~10% bigger than before
-export const COMPACT_DROP = 66; // compact center sits a little below the expanded center (toward the edge)
+export const COMPACT_SCALE = 0.32; // small hand near the bottom edge
+export const COMPACT_DROP = 230; // compact drops well below the expanded center (partly under the edge)
 
 export const SCALE_MAX = 1.0; // centermost card
 export const SCALE_MIN = 0.55; // far cards

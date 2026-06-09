@@ -1,4 +1,5 @@
 import { View } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccent, useAccentTint } from '@/components/accent';
@@ -144,6 +145,14 @@ function Defense({ left, width, label, value }: { left: number; width: number; l
   );
 }
 
+/** When the deck expands, dim the whole sheet (content + frame) so the cards become the focus.
+ *  Rendered ABOVE the sheet but BELOW the gear + cards, so those stay bright. */
+function ExpandVeil() {
+  const { expandProgress } = useCarousel();
+  const style = useAnimatedStyle(() => ({ opacity: expandProgress.value * 0.62 }));
+  return <Animated.View style={[box(0, 0, 412, 892), { backgroundColor: '#090B10', borderRadius: 26 }, style]} pointerEvents="none" />;
+}
+
 /**
  * The single redesigned sheet (style-derived from the AELIANA mockup): chamfered/flat, red + gold,
  * big resource icons, traits kept, compact bio, dark blue defense panel, cards at the bottom.
@@ -158,8 +167,10 @@ export function RedesignedSheet({ character = SAMPLE_CHARACTER }: { character?: 
             <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
               <RedesignedBody character={character} />
               <TraitBanners character={character} modifierSize={22} groupTop={664} />
-              <GearDecoration />
               <SheetFrame />
+              {/* veil dims everything above; gear + cards below stay bright */}
+              <ExpandVeil />
+              <GearDecoration />
               <CardCarousel />
             </DesignStage>
           </SafeAreaView>

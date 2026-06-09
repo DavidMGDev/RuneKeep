@@ -15,7 +15,7 @@ import { useCarousel } from '../carousel-context';
 import { CARD_H, CARD_W, FS_SPRING } from '../carousel-geometry';
 import { Card } from './card';
 
-const REST_Y = 765; // the expanded center card's resting Y
+const REST_Y = 631; // the expanded center card's resting Y
 const CENTER_Y = 410; // flown to roughly screen-centre
 const FS_SCALE = 1.35; // ~95% of the 412 design width
 
