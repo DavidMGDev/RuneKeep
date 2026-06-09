@@ -60,7 +60,7 @@ function LevelBanner({ level }: { level: number }) {
 export function BioSection({ character }: { character: Character }) {
   return (
     <>
-      <SheetText left={172.3} top={56} width={150} height={46} color={INK} size={18} family={Display.black} align="left" vAlign="top" lineHeight={19} numberOfLines={2}>
+      <SheetText left={172.3} top={55} width={152} height={47} color={INK} size={22} family={Display.black} align="left" vAlign="top" lineHeight={21} numberOfLines={2} uppercase letterSpacing={-0.4}>
         {character.name}
       </SheetText>
       <SheetText left={172.3} top={112} width={150} height={11} color={Rune.red} size={10} family={Body.bold} align="left" uppercase letterSpacing={0.3}>
