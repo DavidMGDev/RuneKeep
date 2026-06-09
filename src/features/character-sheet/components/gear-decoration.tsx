@@ -16,7 +16,7 @@ const GEAR_TOP = 776; // only the top ~30% peeks above the design bottom (892)
 export function GearDecoration() {
   const { rotation } = useCarousel();
   return (
-    <View style={[box(GEAR_LEFT, GEAR_TOP, GEAR_W, GEAR_W), { opacity: 0.38 }]} pointerEvents="none">
+    <View style={[box(GEAR_LEFT, GEAR_TOP, GEAR_W, GEAR_W), { opacity: 0.26 }]} pointerEvents="none">
       <GearStack rotation={rotation} size={GEAR_W} />
     </View>
   );
