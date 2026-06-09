@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -48,7 +48,7 @@ interface SlotProps {
   fullscreenProgress: SharedValue<number>;
 }
 
-function CardSlot({ index, item, rotation, expandProgress, fullscreenProgress }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, rotation, expandProgress, fullscreenProgress }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     const stepNow = COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p;
@@ -76,13 +76,18 @@ function CardSlot({ index, item, rotation, expandProgress, fullscreenProgress }:
   });
 
   return (
-    <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]} pointerEvents="none">
+    <Animated.View
+      style={[{ position: 'absolute', left: 0, top: 0 }, style]}
+      pointerEvents="none"
+      // The card art is static; cache it as a GPU texture so per-frame transforms are pure composites.
+      renderToHardwareTextureAndroid
+      shouldRasterizeIOS>
       <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
         <Card item={item} width={CARD_W} height={CARD_H} />
       </View>
     </Animated.View>
   );
-}
+});
 
 /**
  * The interactive card hand. See docs/card-carousel-architecture.md.
@@ -143,73 +148,77 @@ export function CardCarousel() {
     [timerGen, machineState, expandProgress],
   );
 
-  const hPan = Gesture.Pan()
-    .activeOffsetX([-10, 10])
-    .failOffsetY([-26, 26])
-    .onBegin(() => {
-      cancelAnimation(rotation); // stop any in-flight decay/spring so re-scroll is instant (no delay/jump)
-      startRot.value = rotation.value;
-      timerGen.value += 1; // invalidate any pending collapse
-      if (!locked.value) {
-        machineState.value = 'held';
-        expandProgress.value = withSpring(1, EXPAND_SPRING);
-      }
-    })
-    .onUpdate((e) => {
-      rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
-    })
-    .onEnd((e) => {
-      rotation.value = withDecay(
-        {
-          velocity: -e.velocityX / PAN_R,
-          deceleration: 0.997,
-          clamp: [0, maxRotation(count)],
-          rubberBandEffect: true,
-        },
-        (finished) => {
-          if (finished) rotation.value = withSpring(snapToDetent(rotation.value, count), SNAP_SPRING);
-        },
-      );
-      if (!locked.value) {
-        machineState.value = 'window';
-        runOnJS(armCollapse)(timerGen.value); // start the 1s window
-      }
-    });
+  // Build the gestures ONCE per deck (not on every virtualization re-render) so the GestureDetector
+  // never reconfigures mid-scroll. Closures capture stable shared values + the stable armCollapse.
+  const gesture = useMemo(() => {
+    const hPan = Gesture.Pan()
+      .activeOffsetX([-10, 10])
+      .failOffsetY([-26, 26])
+      .onBegin(() => {
+        cancelAnimation(rotation); // stop any in-flight decay/spring so re-scroll is instant (no delay/jump)
+        startRot.value = rotation.value;
+        timerGen.value += 1; // invalidate any pending collapse
+        if (!locked.value) {
+          machineState.value = 'held';
+          expandProgress.value = withSpring(1, EXPAND_SPRING);
+        }
+      })
+      .onUpdate((e) => {
+        rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
+      })
+      .onEnd((e) => {
+        rotation.value = withDecay(
+          {
+            velocity: -e.velocityX / PAN_R,
+            deceleration: 0.997,
+            clamp: [0, maxRotation(count)],
+            rubberBandEffect: true,
+          },
+          (finished) => {
+            if (finished) rotation.value = withSpring(snapToDetent(rotation.value, count), SNAP_SPRING);
+          },
+        );
+        if (!locked.value) {
+          machineState.value = 'window';
+          runOnJS(armCollapse)(timerGen.value); // start the 1s window
+        }
+      });
 
-  const tap = Gesture.Tap()
-    .maxDuration(260)
-    .onEnd(() => {
-      timerGen.value += 1;
-      if (machineState.value === 'locked') {
-        machineState.value = 'compact';
-        locked.value = false;
-        expandProgress.value = withSpring(0, EXPAND_SPRING);
-      } else {
-        machineState.value = 'locked';
-        locked.value = true;
-        expandProgress.value = withSpring(1, EXPAND_SPRING);
-      }
-    });
+    const tap = Gesture.Tap()
+      .maxDuration(260)
+      .onEnd(() => {
+        timerGen.value += 1;
+        if (machineState.value === 'locked') {
+          machineState.value = 'compact';
+          locked.value = false;
+          expandProgress.value = withSpring(0, EXPAND_SPRING);
+        } else {
+          machineState.value = 'locked';
+          locked.value = true;
+          expandProgress.value = withSpring(1, EXPAND_SPRING);
+        }
+      });
 
-  // Vertical = fly the center card full-screen. Axis-locked against the horizontal scroll, and made
-  // harder to trigger while actively scrolling (held) so it never fires by accident mid-scroll.
-  const vPan = Gesture.Pan()
-    .activeOffsetY([-16, 16])
-    .failOffsetX([-20, 20])
-    .onBegin(() => {
-      fsStart.value = fullscreenProgress.value;
-    })
-    .onUpdate((e) => {
-      const up = -e.translationY;
-      const dist = machineState.value === 'held' ? FS_OPEN_DIST * 1.8 : FS_OPEN_DIST;
-      fullscreenProgress.value = Math.min(1, Math.max(0, fsStart.value + up / dist));
-    })
-    .onEnd((e) => {
-      const open = fullscreenProgress.value > 0.5 || -e.velocityY > 1000;
-      fullscreenProgress.value = withSpring(open ? 1 : 0, FS_SPRING);
-    });
+    // Vertical = fly the center card full-screen. Axis-locked against the horizontal scroll, harder to
+    // trigger while actively scrolling (held) so it never fires by accident mid-scroll.
+    const vPan = Gesture.Pan()
+      .activeOffsetY([-16, 16])
+      .failOffsetX([-20, 20])
+      .onBegin(() => {
+        fsStart.value = fullscreenProgress.value;
+      })
+      .onUpdate((e) => {
+        const up = -e.translationY;
+        const dist = machineState.value === 'held' ? FS_OPEN_DIST * 1.8 : FS_OPEN_DIST;
+        fullscreenProgress.value = Math.min(1, Math.max(0, fsStart.value + up / dist));
+      })
+      .onEnd((e) => {
+        const open = fullscreenProgress.value > 0.5 || -e.velocityY > 1000;
+        fullscreenProgress.value = withSpring(open ? 1 : 0, FS_SPRING);
+      });
 
-  const gesture = Gesture.Exclusive(tap, Gesture.Race(vPan, hPan));
+    return Gesture.Exclusive(tap, Gesture.Race(vPan, hPan));
+  }, [count, armCollapse, rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, startRot, fsStart]);
 
   const slots = [];
   for (let i = win.start; i <= win.end; i++) {

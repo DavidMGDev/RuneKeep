@@ -55,8 +55,10 @@ function GearLayer({ src, origin, ratio, rotation, size, height }: GearLayerProp
   const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value * ratio}rad` }] }));
   return (
     <Animated.View
-      style={[{ position: 'absolute', left: 0, top: 0, width: size, height, transformOrigin: origin }, style]}>
-      <Image source={src} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+      style={[{ position: 'absolute', left: 0, top: 0, width: size, height, transformOrigin: origin }, style]}
+      renderToHardwareTextureAndroid
+      shouldRasterizeIOS>
+      <Image source={src} style={{ width: '100%', height: '100%' }} contentFit="contain" cachePolicy="memory-disk" transition={0} />
     </Animated.View>
   );
 }
