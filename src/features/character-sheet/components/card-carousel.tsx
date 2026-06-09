@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   runOnJS,
   runOnUI,
   type SharedValue,
@@ -51,21 +52,25 @@ function CardSlot({ index, item, rotation, expandProgress, fullscreenProgress }:
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     const stepNow = COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p;
-    const theta = index * stepNow - rotation.value;
+    // Angle RELATIVE to the current center index, so the centermost card stays at theta=0 in BOTH
+    // compact and expanded (mixing absolute rotation with the compact step is what flung cards off-screen).
+    const centerPos = rotation.value / ANGLE_STEP;
+    const theta = (index - centerPos) * stepNow;
 
     const x = OX + R * Math.sin(theta);
     const y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
     const scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
     const tilt = theta * 0.7;
 
-    let opacity = Math.max(0, 1 - Math.max(0, Math.abs(theta) - 3.2 * ANGLE_STEP) * 1.4);
+    // Show a small hand near center; fade toward the edge of the visible window (tighter when compact).
+    const edge = (2.6 + 1.3 * p) * stepNow;
+    let opacity = Math.min(1, Math.max(0, (1.2 * edge - Math.abs(theta)) / (0.5 * edge)));
     // Hide the centermost card while it is flown full-screen (the overlay shows it).
-    const isCenter = Math.round(rotation.value / ANGLE_STEP) === index;
-    if (isCenter) opacity *= 1 - fullscreenProgress.value;
+    if (Math.round(centerPos) === index) opacity *= 1 - fullscreenProgress.value;
 
     return {
       transform: [{ translateX: x }, { translateY: y }, { rotateZ: `${tilt}rad` }, { scale }],
-      zIndex: Math.round(1000 - (Math.abs(theta) / ANGLE_STEP) * 10),
+      zIndex: Math.round(1000 - (Math.abs(theta) / stepNow) * 10),
       opacity,
     };
   });
@@ -142,6 +147,7 @@ export function CardCarousel() {
     .activeOffsetX([-10, 10])
     .failOffsetY([-26, 26])
     .onBegin(() => {
+      cancelAnimation(rotation); // stop any in-flight decay/spring so re-scroll is instant (no delay/jump)
       startRot.value = rotation.value;
       timerGen.value += 1; // invalidate any pending collapse
       if (!locked.value) {
@@ -221,9 +227,9 @@ export function CardCarousel() {
 
   return (
     <>
-      {/* Transparent scroll/tap/swipe surface at the bottom band (below the trait banners). */}
+      {/* Transparent scroll/tap/swipe surface over the card zone (below the trait banners). */}
       <GestureDetector gesture={gesture}>
-        <View style={box(0, 700, 412, 192)} />
+        <View style={box(0, 714, 412, 178)} />
       </GestureDetector>
 
       {slots}
