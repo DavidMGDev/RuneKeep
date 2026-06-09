@@ -20,9 +20,9 @@ export const CARD_W = 128; // centermost card width (design px)
 export const CARD_H = CARD_W / CARD_ASPECT; // 5:7
 
 export const ANGLE_STEP = 0.25; // radians between adjacent cards when expanded
-export const COMPACT_STEP = 0.075; // tight bundle when compact
-export const COMPACT_SCALE = 0.42; // cards shrink to a small bundle when compact
-export const COMPACT_DROP = 80; // ...and drop toward the gear
+export const COMPACT_STEP = 0.1; // a tight little hand of cards when compact
+export const COMPACT_SCALE = 0.62; // still clearly readable (more visible than the gear)
+export const COMPACT_DROP = 100; // sits in the bottom zone, below the trait banners, bundled w/ the gear
 
 export const SCALE_MAX = 1.0; // centermost card
 export const SCALE_MIN = 0.5; // far cards
