@@ -1,16 +1,13 @@
 import {
-  AlegreyaSans_400Regular,
-  AlegreyaSans_400Regular_Italic,
-  AlegreyaSans_500Medium,
-  AlegreyaSans_700Bold,
-} from '@expo-google-fonts/alegreya-sans';
-import {
-  Cinzel_400Regular,
-  Cinzel_600SemiBold,
-  Cinzel_700Bold,
-  Cinzel_900Black,
+  Archivo_400Regular,
+  Archivo_400Regular_Italic,
+  Archivo_500Medium,
+  Archivo_600SemiBold,
+  Archivo_700Bold,
+  Archivo_800ExtraBold,
+  Archivo_900Black,
   useFonts,
-} from '@expo-google-fonts/cinzel';
+} from '@expo-google-fonts/archivo';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -28,14 +25,13 @@ import { Rune } from '@/constants/theme';
  */
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Cinzel_400Regular,
-    Cinzel_600SemiBold,
-    Cinzel_700Bold,
-    Cinzel_900Black,
-    AlegreyaSans_400Regular,
-    AlegreyaSans_400Regular_Italic,
-    AlegreyaSans_500Medium,
-    AlegreyaSans_700Bold,
+    Archivo_400Regular,
+    Archivo_400Regular_Italic,
+    Archivo_500Medium,
+    Archivo_600SemiBold,
+    Archivo_700Bold,
+    Archivo_800ExtraBold,
+    Archivo_900Black,
   });
 
   if (!fontsLoaded && !fontError) return null;
