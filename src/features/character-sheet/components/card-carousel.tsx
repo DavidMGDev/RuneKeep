@@ -221,7 +221,9 @@ export function CardCarousel() {
         }
       });
 
-    return Gesture.Exclusive(tap, pan);
+    // pan FIRST: it activates immediately on movement so scrolling tracks the finger from frame 1
+    // (no waiting for the tap to fail, which was stalling the scroll while the hand expanded).
+    return Gesture.Exclusive(pan, tap);
   }, [count, armCollapse, rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, startRot, anchorY, prevX, prevY, mode]);
 
   const slots = [];
@@ -235,7 +237,7 @@ export function CardCarousel() {
     <>
       {/* Scroll/tap surface — grows to cover the cards when they expand and rise. */}
       <GestureDetector gesture={gesture}>
-        <View style={box(0, expandedUI ? 470 : 736, 412, expandedUI ? 422 : 156)} />
+        <View style={box(0, expandedUI ? 414 : 760, 412, expandedUI ? 478 : 132)} />
       </GestureDetector>
 
       {slots}
