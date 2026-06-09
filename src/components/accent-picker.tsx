@@ -5,15 +5,15 @@ import { Body, Rune } from '@/constants/theme';
 import { ACCENT_OPTIONS, useAccentControls } from './accent';
 
 /**
- * TEMPORARY debug control: a bottom swatch bar to recolor the sheet's accent.
- * Lives outside the scaled DesignStage so it sits at the true screen bottom.
+ * TEMPORARY debug control: a swatch bar to recolor the sheet's accent. Pinned to the TOP (the bottom
+ * is the gear + card-carousel zone). Lives outside the scaled DesignStage, at the true screen edge.
  */
 export function AccentPicker() {
   const { accent, setAccent } = useAccentControls();
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View style={[styles.bar, { paddingTop: Math.max(insets.top, 8) + 4 }]}>
       <Text style={styles.label}>ACCENT</Text>
       <ScrollView
         horizontal
@@ -40,12 +40,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
-    paddingTop: 8,
+    top: 0,
+    paddingBottom: 8,
     paddingHorizontal: 12,
     backgroundColor: 'rgba(11,14,19,0.82)',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(200,146,58,0.4)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(200,146,58,0.4)',
     zIndex: 1000,
   },
   label: {
