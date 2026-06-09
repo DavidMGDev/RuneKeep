@@ -13,13 +13,14 @@ import { SheetText } from './primitives';
 // Geometry from the mockup: six evenly-spaced banners along the bottom row.
 const FIRST_X = 26.1;
 const STEP = 61.4;
-const GROUP_TOP = 598;
+const DEFAULT_GROUP_TOP = 598;
 const GROUP_W = 56.4;
 const GROUP_H = 119;
 
 interface TraitBannerProps {
   index: number;
   x: number;
+  groupTop: number;
   label: string;
   icon: number;
   value: number;
@@ -27,7 +28,7 @@ interface TraitBannerProps {
   expandProgress: SharedValue<number>;
 }
 
-function TraitBanner({ index, x, label, icon, value, modifierSize, expandProgress }: TraitBannerProps) {
+function TraitBanner({ index, x, groupTop, label, icon, value, modifierSize, expandProgress }: TraitBannerProps) {
   // First 3 banners exit left, last 3 exit right, staggered, as the cards expand.
   const dir = index < 3 ? -1 : 1;
   const order = index < 3 ? 2 - index : index - 3;
@@ -39,7 +40,7 @@ function TraitBanner({ index, x, label, icon, value, modifierSize, expandProgres
   });
 
   return (
-    <Animated.View style={[box(x, GROUP_TOP, GROUP_W, GROUP_H), fly]}>
+    <Animated.View style={[box(x, groupTop, GROUP_W, GROUP_H), fly]}>
       <PressableArt style={{ flex: 1 }} pressedScale={1.1}>
         {/* Hex shield background — a banner outline, so it fills its box */}
         <View style={box(0, 9.6, GROUP_W, 109.4)}>
@@ -60,7 +61,15 @@ function TraitBanner({ index, x, label, icon, value, modifierSize, expandProgres
   );
 }
 
-export function TraitBanners({ character, modifierSize = 18 }: { character: Character; modifierSize?: number }) {
+export function TraitBanners({
+  character,
+  modifierSize = 18,
+  groupTop = DEFAULT_GROUP_TOP,
+}: {
+  character: Character;
+  modifierSize?: number;
+  groupTop?: number;
+}) {
   const { expandProgress } = useCarousel();
   return (
     <>
@@ -69,6 +78,7 @@ export function TraitBanners({ character, modifierSize = 18 }: { character: Char
           key={trait.key}
           index={i}
           x={FIRST_X + STEP * i}
+          groupTop={groupTop}
           label={trait.label}
           icon={trait.icon}
           value={character.traits[trait.key]}
