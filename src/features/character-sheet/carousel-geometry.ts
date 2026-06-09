@@ -34,8 +34,8 @@ export const SIGMA = 1.5 * ANGLE_STEP; // falloff width
 /** Finger px -> rotation coupling (≈ R*stageScale so the center card tracks the finger ~1:1). */
 export const PAN_R = 540;
 
-/** How many cards each side of center stay mounted (virtualization window). */
-export const WINDOW_HALF = 5;
+/** How many cards each side of center stay mounted (virtualization window). Kept small for perf. */
+export const WINDOW_HALF = 3;
 
 /** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
 export const FS_OPEN_DIST = 150;

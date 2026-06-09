@@ -54,8 +54,12 @@ export function FullscreenCard({ item }: { item: CardItem }) {
   });
   const gesture = Gesture.Exclusive(swipeDown, tapClose);
 
+  // Only mount the (heavy) card image while the overlay is active — otherwise the centermost card
+  // would re-decode on every scrolled detent even though it's invisible.
+  if (!active) return <View style={box(0, 0, 0, 0)} pointerEvents="none" />;
+
   return (
-    <View style={[box(0, 0, 412, 892), { zIndex: 5000 }]} pointerEvents={active ? 'auto' : 'none'}>
+    <View style={[box(0, 0, 412, 892), { zIndex: 5000 }]} pointerEvents="auto">
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, backdrop]} />
       <GestureDetector gesture={gesture}>
         <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, cardStyle]}>
