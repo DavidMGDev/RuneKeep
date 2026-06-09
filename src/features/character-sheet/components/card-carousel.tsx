@@ -11,6 +11,7 @@ import Animated, {
   useSharedValue,
   withDecay,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
@@ -26,7 +27,6 @@ import {
   COMPACT_SCALE,
   COMPACT_STEP,
   EXPAND_SPRING,
-  FS_OPEN_DIST,
   FS_SPRING,
   maxRotation,
   OX,
@@ -40,6 +40,9 @@ import { Card } from './card';
 import { ExpandIndicator } from './expand-indicator';
 import { FullscreenCard } from './fullscreen-card';
 
+// Upward travel (px) within a scroll to fly the center card to full-screen — deliberate, not half-screen.
+const FS_TRIGGER = 78;
+
 interface SlotProps {
   index: number;
   item: CardItem;
@@ -52,17 +55,14 @@ const CardSlot = memo(function CardSlot({ index, item, rotation, expandProgress,
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     const stepNow = COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p;
-    // Angle RELATIVE to the current center index, so the centermost card stays at theta=0 in BOTH
-    // compact and expanded (mixing absolute rotation with the compact step is what flung cards off-screen).
     const centerPos = rotation.value / ANGLE_STEP;
     const theta = (index - centerPos) * stepNow;
 
     const x = OX + R * Math.sin(theta);
     const y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
     const scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
-    const tilt = theta * 0.7;
+    const tilt = theta * 0.5;
 
-    // Show a small hand near center; fade toward the edge of the visible window (tighter when compact).
     const edge = (2.6 + 1.3 * p) * stepNow;
     let opacity = Math.min(1, Math.max(0, (1.2 * edge - Math.abs(theta)) / (0.5 * edge)));
     // Hide the centermost card while it is flown full-screen (the overlay shows it).
@@ -76,12 +76,7 @@ const CardSlot = memo(function CardSlot({ index, item, rotation, expandProgress,
   });
 
   return (
-    <Animated.View
-      style={[{ position: 'absolute', left: 0, top: 0 }, style]}
-      pointerEvents="none"
-      // The card art is static; cache it as a GPU texture so per-frame transforms are pure composites.
-      renderToHardwareTextureAndroid
-      shouldRasterizeIOS>
+    <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]} pointerEvents="none" renderToHardwareTextureAndroid shouldRasterizeIOS>
       <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
         <Card item={item} width={CARD_W} height={CARD_H} />
       </View>
@@ -90,12 +85,12 @@ const CardSlot = memo(function CardSlot({ index, item, rotation, expandProgress,
 });
 
 /**
- * The interactive card hand. See docs/card-carousel-architecture.md.
- * - VIRTUALIZED: only a window of cards around center is mounted (keyed by absolute index).
- * - EXPAND STATE MACHINE: tap = lock expanded (toggle); hold+drag = expand while held, then a 1s
- *   cancelable window before collapsing. A generation counter invalidates a stale collapse timer.
- * - SWIPE-UP FULLSCREEN: a deliberate vertical drag (axis-locked vs the horizontal scroll) flies the
- *   center card to full-screen; harder while actively scrolling, easier when locked.
+ * The card hand. ONE pan drives the whole feel (see issue #15):
+ * - horizontal drag scrolls (rotation 1:1) and expands the hand in sync from the first frame;
+ * - while expanded, lifting the finger upward (without releasing) flies the center card to full-screen
+ *   IN FRONT and snaps the rest into place;
+ * - releasing without a tap-lock starts a 1s collapse-to-compact window.
+ * A separate tap toggles a lock (stays expanded). The fullscreen overlay owns swipe-down-to-return.
  */
 export function CardCarousel() {
   const { rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, category } =
@@ -105,16 +100,16 @@ export function CardCarousel() {
   const middle = Math.round((count - 1) / 2);
 
   const startRot = useSharedValue(0);
-  const fsStart = useSharedValue(0);
+  const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
+  const prevX = useSharedValue(0);
+  const prevY = useSharedValue(0);
+  const mode = useSharedValue<'scroll' | 'fs'>('scroll');
   const lastCenter = useSharedValue(-999);
 
   const [centerIndex, setCenterIndex] = useState(middle);
-  const [win, setWin] = useState({
-    start: Math.max(0, middle - WINDOW_HALF),
-    end: Math.min(count - 1, middle + WINDOW_HALF),
-  });
+  const [expandedUI, setExpandedUI] = useState(false);
+  const [win, setWin] = useState({ start: Math.max(0, middle - WINDOW_HALF), end: Math.min(count - 1, middle + WINDOW_HALF) });
 
-  // Window + center index update once per crossed detent (cheap JS, gated on the UI thread).
   const onCenter = useCallback(
     (c: number) => {
       setCenterIndex(c);
@@ -130,7 +125,16 @@ export function CardCarousel() {
     }
   });
 
-  // Cancelable 1s collapse timer (generation-guarded).
+  // Grow the scroll hitbox when expanded so the cards (which rise) stay grabbable.
+  const wasExpanded = useSharedValue(false);
+  useDerivedValue(() => {
+    const e = expandProgress.value > 0.4;
+    if (e !== wasExpanded.value) {
+      wasExpanded.value = e;
+      runOnJS(setExpandedUI)(e);
+    }
+  });
+
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const armCollapse = useCallback(
     (gen: number) => {
@@ -138,49 +142,63 @@ export function CardCarousel() {
       timerRef.current = setTimeout(() => {
         runOnUI(() => {
           'worklet';
-          if (timerGen.value === gen && machineState.value === 'window') {
+          if (timerGen.value === gen && machineState.value === 'window' && fullscreenProgress.value < 0.5) {
             machineState.value = 'compact';
             expandProgress.value = withSpring(0, EXPAND_SPRING);
           }
         })();
       }, 1000);
     },
-    [timerGen, machineState, expandProgress],
+    [timerGen, machineState, expandProgress, fullscreenProgress],
   );
 
-  // Build the gestures ONCE per deck (not on every virtualization re-render) so the GestureDetector
-  // never reconfigures mid-scroll. Closures capture stable shared values + the stable armCollapse.
   const gesture = useMemo(() => {
-    const hPan = Gesture.Pan()
-      .activeOffsetX([-10, 10])
-      .failOffsetY([-26, 26])
+    const pan = Gesture.Pan()
+      .minDistance(2)
       .onBegin(() => {
-        cancelAnimation(rotation); // stop any in-flight decay/spring so re-scroll is instant (no delay/jump)
+        cancelAnimation(rotation);
         startRot.value = rotation.value;
-        timerGen.value += 1; // invalidate any pending collapse
+        anchorY.value = 0;
+        prevX.value = 0;
+        prevY.value = 0;
+        mode.value = 'scroll';
+        timerGen.value += 1;
         if (!locked.value) {
           machineState.value = 'held';
-          expandProgress.value = withSpring(1, EXPAND_SPRING);
+          expandProgress.value = withTiming(1, { duration: 170 }); // expand fast so it follows the swipe
         }
       })
       .onUpdate((e) => {
-        rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
+        if (mode.value === 'fs') return;
+        const dx = e.translationX - prevX.value;
+        const dy = e.translationY - prevY.value;
+        prevX.value = e.translationX;
+        prevY.value = e.translationY;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          // horizontal-dominant: scroll 1:1 and reset the upward reference
+          anchorY.value = e.translationY;
+          rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
+        } else {
+          // vertical-dominant: a deliberate lift, while expanded, flies the center card full-screen
+          const upSince = anchorY.value - e.translationY;
+          if (expandProgress.value > 0.5 && fullscreenProgress.value < 0.5 && upSince > FS_TRIGGER) {
+            mode.value = 'fs';
+            rotation.value = withSpring(Math.min(maxRotation(count), Math.max(0, Math.round(rotation.value / ANGLE_STEP) * ANGLE_STEP)), SNAP_SPRING);
+            fullscreenProgress.value = withSpring(1, FS_SPRING);
+          }
+        }
       })
       .onEnd((e) => {
+        if (mode.value === 'fs') return;
         rotation.value = withDecay(
-          {
-            velocity: -e.velocityX / PAN_R,
-            deceleration: 0.997,
-            clamp: [0, maxRotation(count)],
-            rubberBandEffect: true,
-          },
+          { velocity: -e.velocityX / PAN_R, deceleration: 0.997, clamp: [0, maxRotation(count)], rubberBandEffect: true },
           (finished) => {
-            if (finished) rotation.value = withSpring(snapToDetent(rotation.value, count), SNAP_SPRING);
+            if (finished) rotation.value = withSpring(Math.min(maxRotation(count), Math.max(0, Math.round(rotation.value / ANGLE_STEP) * ANGLE_STEP)), SNAP_SPRING);
           },
         );
         if (!locked.value) {
           machineState.value = 'window';
-          runOnJS(armCollapse)(timerGen.value); // start the 1s window
+          runOnJS(armCollapse)(timerGen.value);
         }
       });
 
@@ -188,6 +206,10 @@ export function CardCarousel() {
       .maxDuration(260)
       .onEnd(() => {
         timerGen.value += 1;
+        if (fullscreenProgress.value > 0.5) {
+          fullscreenProgress.value = withSpring(0, FS_SPRING);
+          return;
+        }
         if (machineState.value === 'locked') {
           machineState.value = 'compact';
           locked.value = false;
@@ -199,46 +221,21 @@ export function CardCarousel() {
         }
       });
 
-    // Vertical = fly the center card full-screen. Axis-locked against the horizontal scroll, harder to
-    // trigger while actively scrolling (held) so it never fires by accident mid-scroll.
-    const vPan = Gesture.Pan()
-      .activeOffsetY([-16, 16])
-      .failOffsetX([-20, 20])
-      .onBegin(() => {
-        fsStart.value = fullscreenProgress.value;
-      })
-      .onUpdate((e) => {
-        const up = -e.translationY;
-        const dist = machineState.value === 'held' ? FS_OPEN_DIST * 1.8 : FS_OPEN_DIST;
-        fullscreenProgress.value = Math.min(1, Math.max(0, fsStart.value + up / dist));
-      })
-      .onEnd((e) => {
-        const open = fullscreenProgress.value > 0.5 || -e.velocityY > 1000;
-        fullscreenProgress.value = withSpring(open ? 1 : 0, FS_SPRING);
-      });
-
-    return Gesture.Exclusive(tap, Gesture.Race(vPan, hPan));
-  }, [count, armCollapse, rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, startRot, fsStart]);
+    return Gesture.Exclusive(tap, pan);
+  }, [count, armCollapse, rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, startRot, anchorY, prevX, prevY, mode]);
 
   const slots = [];
   for (let i = win.start; i <= win.end; i++) {
     slots.push(
-      <CardSlot
-        key={deck[i].id}
-        index={i}
-        item={deck[i]}
-        rotation={rotation}
-        expandProgress={expandProgress}
-        fullscreenProgress={fullscreenProgress}
-      />,
+      <CardSlot key={deck[i].id} index={i} item={deck[i]} rotation={rotation} expandProgress={expandProgress} fullscreenProgress={fullscreenProgress} />,
     );
   }
 
   return (
     <>
-      {/* Transparent scroll/tap/swipe surface over the card zone (below the trait banners). */}
+      {/* Scroll/tap surface — grows to cover the cards when they expand and rise. */}
       <GestureDetector gesture={gesture}>
-        <View style={box(0, 714, 412, 178)} />
+        <View style={box(0, expandedUI ? 470 : 736, 412, expandedUI ? 422 : 156)} />
       </GestureDetector>
 
       {slots}
@@ -246,11 +243,4 @@ export function CardCarousel() {
       <FullscreenCard item={deck[centerIndex]} />
     </>
   );
-}
-
-// (snap helper kept local so the worklet import list stays tidy)
-function snapToDetent(value: number, count: number): number {
-  'worklet';
-  const max = maxRotation(count);
-  return Math.min(max, Math.max(0, Math.round(value / ANGLE_STEP) * ANGLE_STEP));
 }
