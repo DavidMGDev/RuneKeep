@@ -1,4 +1,4 @@
-import { Display, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import type { PipState } from '@/lib/pips';
 import { resolvePips } from '@/lib/pips';
 import { Art } from '../art';
@@ -16,14 +16,14 @@ interface StatProps {
   labelSize?: number;
 }
 
-/** A gold label over a white numeral — the Evasion / Armor / Proficiency columns. */
-function Stat({ left, width, label, value, labelSize = 7 }: StatProps) {
+/** A gold label over a pale numeral — the Evasion / Armor / Proficiency columns (dark panel). */
+function Stat({ left, width, label, value, labelSize = 7.5 }: StatProps) {
   return (
     <>
-      <SheetText left={left} top={246} width={width} height={11} color={Rune.goldText} size={labelSize} family={Display.semibold} align="center" uppercase letterSpacing={0.3} numberOfLines={1}>
+      <SheetText left={left} top={245} width={width} height={11} color={Rune.goldText} size={labelSize} family={Body.bold} align="center" uppercase letterSpacing={0.8}>
         {label}
       </SheetText>
-      <SheetText left={left} top={256} width={width} height={32} color={Rune.ivory} size={26} family={Display.black} align="center">
+      <SheetText left={left} top={256} width={width} height={32} color={Rune.ivory} size={27} family={Display.black} align="center" tabularNums>
         {value}
       </SheetText>
     </>

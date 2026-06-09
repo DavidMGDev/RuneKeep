@@ -2,7 +2,7 @@ import { View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
 import { PressableArt } from '@/components/pressable-art';
-import { Display, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import { Art } from '../art';
 import { type Character, formatModifier, TRAIT_ORDER } from '../character';
@@ -26,35 +26,35 @@ interface TraitBannerProps {
 function TraitBanner({ x, label, icon, value, onPress }: TraitBannerProps) {
   return (
     <PressableArt style={box(x, GROUP_TOP, GROUP_W, GROUP_H)} pressedScale={1.1} onPress={onPress}>
-      {/* Hex shield background */}
+      {/* Hex shield background — a banner outline, so it fills its box */}
       <View style={box(0, 9.6, GROUP_W, 109.4)}>
-        <ArtImage source={Art.traitBanner} fit="contain" />
+        <ArtImage source={Art.traitBanner} fit="fill" />
       </View>
       {/* Trait glyph, poking above the banner top */}
       <View style={box((GROUP_W - 49) / 2, 0, 49, 52)}>
         <ArtImage source={icon} fit="contain" />
       </View>
       <SheetText
-        left={0}
+        left={4}
         top={60}
-        width={GROUP_W}
-        height={12}
-        color={Rune.ivory}
-        size={8.5}
-        family={Display.semibold}
-        letterSpacing={0.3}
-        uppercase
-        numberOfLines={1}>
+        width={GROUP_W - 8}
+        height={11}
+        color={Rune.goldText}
+        size={7.5}
+        family={Body.bold}
+        letterSpacing={0.6}
+        uppercase>
         {label}
       </SheetText>
       <SheetText
         left={0}
-        top={69}
+        top={70}
         width={GROUP_W}
-        height={22}
+        height={21}
         color={Rune.ivory}
-        size={17}
-        family={Display.bold}>
+        size={18}
+        family={Display.black}
+        tabularNums>
         {formatModifier(value)}
       </SheetText>
     </PressableArt>

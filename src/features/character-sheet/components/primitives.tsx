@@ -62,13 +62,22 @@ interface SheetTextProps {
   lineHeight?: number;
   numberOfLines?: number;
   uppercase?: boolean;
+  italic?: boolean;
+  /** Use lining tabular figures so numerals align — for stat numbers. */
+  tabularNums?: boolean;
+  /** Lower bound for auto-shrink, as a fraction of `size`. */
+  minScale?: number;
   children: ReactNode;
 }
 
 const justify = { top: 'flex-start', center: 'center', bottom: 'flex-end' } as const;
 const items = { left: 'flex-start', center: 'center', right: 'flex-end' } as const;
 
-/** A text run positioned in design px, vertically/horizontally aligned within its box. */
+/**
+ * A text run pinned to a design-px box. The box is the text's HARD limit: it clips
+ * (`overflow: hidden`) and the text auto-shrinks (`adjustsFontSizeToFit`) so it can never spill past
+ * the rectangle — the Ligma rects are max bounding boxes, not suggestions. `size` is the ceiling.
+ */
 export function SheetText({
   left,
   top,
@@ -81,17 +90,26 @@ export function SheetText({
   vAlign = 'center',
   letterSpacing,
   lineHeight,
-  numberOfLines,
+  numberOfLines = 1,
   uppercase,
+  italic,
+  tabularNums,
+  minScale = 0.5,
   children,
 }: SheetTextProps) {
   return (
     <View
-      style={[box(left, top, width, height), { justifyContent: justify[vAlign], alignItems: items[align] }]}
+      style={[
+        box(left, top, width, height),
+        { justifyContent: justify[vAlign], alignItems: items[align], overflow: 'hidden' },
+      ]}
       pointerEvents="none">
       <Text
         numberOfLines={numberOfLines}
+        adjustsFontSizeToFit
+        minimumFontScale={minScale}
         style={{
+          maxWidth: width,
           color,
           fontSize: size,
           fontFamily: family,
@@ -99,6 +117,8 @@ export function SheetText({
           letterSpacing,
           lineHeight,
           textTransform: uppercase ? 'uppercase' : 'none',
+          fontStyle: italic ? 'italic' : 'normal',
+          fontVariant: tabularNums ? ['tabular-nums'] : undefined,
         }}>
         {children}
       </Text>

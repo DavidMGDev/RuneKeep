@@ -15,7 +15,7 @@ particle effects (embers, sparks, magical dust), and dynamic cards that float, d
 with real physics — all at 60fps on the GPU.
 
 ## Stack
-- **Expo SDK 56** (managed) · React Native 0.85 · React 19 · New Architecture
+- **Expo SDK 55** (managed) · React Native 0.83 · React 19 · New Architecture — pinned to SDK 55 for Expo Go compatibility
 - **Expo Router** — file-based navigation
 - **Reanimated 4 + Worklets + Gesture Handler** — UI-thread animation & gestures (bundled)
 - **Skia** + **react-native-svg** — GPU particles, shaders, crisp vectors (added per-feature)

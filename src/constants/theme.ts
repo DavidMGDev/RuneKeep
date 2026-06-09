@@ -33,6 +33,8 @@ export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
  */
 export const Rune = {
   ink: '#0B0E13', // app background / darkest navy
+  sheet: '#F7F0E1', // warm parchment — the sheet surface (never pure white)
+  inkText: '#14110C', // near-black text, tinted warm (never pure black)
   panel: '#0E1116', // armor-panel dark fill
   gold: '#C8923A', // filigree / outlines
   goldBright: '#E0B563', // highlighted gold (crowns, accents)
@@ -46,12 +48,25 @@ export const Rune = {
   hopeAmber: '#CC8F0F',
 } as const;
 
-/** Cinzel display family (loaded in the root layout) — the fantasy serif used across the sheet. */
+/**
+ * Type system (loaded in the root layout):
+ * - `Display` = Cinzel, the Roman-capital serif. Character name + every hero numeral. Fantasy gravitas.
+ * - `Body` = Alegreya Sans, a humanist sans that stays crisp in the sheet's tiny label boxes where a
+ *   high-contrast serif turns to mush. Labels (uppercase + tracking), secondary text, badge values.
+ * Two families, designed to pair. Numerals use Display; small labels/body use Body.
+ */
 export const Display = {
   regular: 'Cinzel_400Regular',
   semibold: 'Cinzel_600SemiBold',
   bold: 'Cinzel_700Bold',
   black: 'Cinzel_900Black',
+} as const;
+
+export const Body = {
+  regular: 'AlegreyaSans_400Regular',
+  medium: 'AlegreyaSans_500Medium',
+  bold: 'AlegreyaSans_700Bold',
+  italic: 'AlegreyaSans_400Regular_Italic',
 } as const;
 
 export const Fonts = Platform.select({

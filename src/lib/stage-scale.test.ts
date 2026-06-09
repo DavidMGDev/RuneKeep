@@ -1,3 +1,5 @@
+import { describe, expect, it } from '@jest/globals';
+
 import { computeStageScale } from './stage-scale';
 
 const DESIGN = { designW: 412, designH: 892 };
