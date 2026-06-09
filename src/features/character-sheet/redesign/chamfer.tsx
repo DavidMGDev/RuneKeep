@@ -62,11 +62,24 @@ export function ChamferFrame({
 }
 
 /** A thin gold hairline divider. */
-export function GoldRule({ left, top, width, color = 'rgba(218,162,73,0.55)' }: { left: number; top: number; width: number; color?: string }) {
+export function GoldRule({ left, top, width, color = 'rgba(218,162,73,0.55)', thickness = 1.4 }: { left: number; top: number; width: number; color?: string; thickness?: number }) {
+  const h = Math.max(thickness, 1.5);
   return (
-    <View style={box(left, top, width, 1.4)} pointerEvents="none">
-      <Svg width={width} height={1.4}>
-        <Line x1={0} y1={0.7} x2={width} y2={0.7} stroke={color} strokeWidth={1.4} />
+    <View style={box(left, top, width, h)} pointerEvents="none">
+      <Svg width={width} height={h}>
+        <Line x1={0} y1={h / 2} x2={width} y2={h / 2} stroke={color} strokeWidth={thickness} />
+      </Svg>
+    </View>
+  );
+}
+
+/** A vertical gold hairline (separator). */
+export function GoldRuleV({ left, top, height, color = 'rgba(218,162,73,0.45)', thickness = 1.2 }: { left: number; top: number; height: number; color?: string; thickness?: number }) {
+  const w = Math.max(thickness, 1.5);
+  return (
+    <View style={box(left, top, w, height)} pointerEvents="none">
+      <Svg width={w} height={height}>
+        <Line x1={w / 2} y1={0} x2={w / 2} y2={height} stroke={color} strokeWidth={thickness} />
       </Svg>
     </View>
   );
