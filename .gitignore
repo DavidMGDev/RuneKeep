@@ -49,3 +49,6 @@ __pycache__/
 # Headless oracle renders / scratch
 design-reference/_*.png
 .rk-export/
+
+# Web export scratch / screenshots
+.rk-web*/

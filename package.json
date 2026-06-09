@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/alegreya-sans": "^0.4.1",
     "@expo-google-fonts/cinzel": "^0.4.2",
     "@expo/ui": "~56.0.16",
     "expo": "~56.0.9",

@@ -21,9 +21,9 @@ export function PortraitSection({ character }: { character: Character }) {
         </View>
       )}
 
-      {/* Ornate frame (transparent center) sits on top */}
+      {/* Ornate frame (transparent center) sits on top — fills its box like the other outlines */}
       <View style={box(0, 0, 140.3, 278.7)}>
-        <ArtImage source={Art.portraitFrame} fit="contain" />
+        <ArtImage source={Art.portraitFrame} fit="fill" />
       </View>
 
       {/* Add/change-photo affordance near the bottom */}

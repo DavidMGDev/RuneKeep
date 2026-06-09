@@ -1,4 +1,10 @@
 import {
+  AlegreyaSans_400Regular,
+  AlegreyaSans_400Regular_Italic,
+  AlegreyaSans_500Medium,
+  AlegreyaSans_700Bold,
+} from '@expo-google-fonts/alegreya-sans';
+import {
   Cinzel_400Regular,
   Cinzel_600SemiBold,
   Cinzel_700Bold,
@@ -26,6 +32,10 @@ export default function RootLayout() {
     Cinzel_600SemiBold,
     Cinzel_700Bold,
     Cinzel_900Black,
+    AlegreyaSans_400Regular,
+    AlegreyaSans_400Regular_Italic,
+    AlegreyaSans_500Medium,
+    AlegreyaSans_700Bold,
   });
 
   if (!fontsLoaded && !fontError) return null;
