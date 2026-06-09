@@ -31,6 +31,17 @@ export const SIGMA = 1.7 * ANGLE_STEP; // falloff width: ~3 cards large, ~5 medi
 /** Finger px -> rotation coupling (R scaled by an approx stage scale; tuned by feel). */
 export const PAN_R = 452;
 
+/** How many cards each side of center stay mounted (virtualization window). */
+export const WINDOW_HALF = 5;
+
+/** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
+export const FS_OPEN_DIST = 150;
+
+// Shared spring configs so the carousel and the fullscreen overlay move cohesively.
+export const EXPAND_SPRING = { damping: 16, stiffness: 130, mass: 0.8 };
+export const SNAP_SPRING = { damping: 18, stiffness: 140, mass: 0.7 };
+export const FS_SPRING = { damping: 18, stiffness: 120, mass: 0.9 };
+
 /** Smooth center-out scale: centermost largest, tapering to SCALE_MIN. */
 export function cardScaleAt(theta: number): number {
   'worklet';

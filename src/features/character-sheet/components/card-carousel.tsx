@@ -1,8 +1,12 @@
+import { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  runOnJS,
+  runOnUI,
   type SharedValue,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withDecay,
   withSpring,
@@ -20,26 +24,30 @@ import {
   COMPACT_DROP,
   COMPACT_SCALE,
   COMPACT_STEP,
+  EXPAND_SPRING,
+  FS_OPEN_DIST,
+  FS_SPRING,
   maxRotation,
   OX,
   OY,
   PAN_R,
   R,
-  snapRot,
+  SNAP_SPRING,
+  WINDOW_HALF,
 } from '../carousel-geometry';
 import { Card } from './card';
-
-const EXPAND_SPRING = { damping: 16, stiffness: 130, mass: 0.8 };
-const SNAP_SPRING = { damping: 18, stiffness: 140, mass: 0.7 };
+import { ExpandIndicator } from './expand-indicator';
+import { FullscreenCard } from './fullscreen-card';
 
 interface SlotProps {
   index: number;
   item: CardItem;
   rotation: SharedValue<number>;
   expandProgress: SharedValue<number>;
+  fullscreenProgress: SharedValue<number>;
 }
 
-function CardSlot({ index, item, rotation, expandProgress }: SlotProps) {
+function CardSlot({ index, item, rotation, expandProgress, fullscreenProgress }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     const stepNow = COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p;
@@ -50,8 +58,10 @@ function CardSlot({ index, item, rotation, expandProgress }: SlotProps) {
     const scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
     const tilt = theta * 0.7;
 
-    // Fade cards far off the arc so virtualization's absence (PR5) isn't visible at the edges.
-    const opacity = Math.max(0, 1 - Math.max(0, Math.abs(theta) - 3.2 * ANGLE_STEP) * 1.4);
+    let opacity = Math.max(0, 1 - Math.max(0, Math.abs(theta) - 3.2 * ANGLE_STEP) * 1.4);
+    // Hide the centermost card while it is flown full-screen (the overlay shows it).
+    const isCenter = Math.round(rotation.value / ANGLE_STEP) === index;
+    if (isCenter) opacity *= 1 - fullscreenProgress.value;
 
     return {
       transform: [{ translateX: x }, { translateY: y }, { rotateZ: `${tilt}rad` }, { scale }],
@@ -70,22 +80,74 @@ function CardSlot({ index, item, rotation, expandProgress }: SlotProps) {
 }
 
 /**
- * The card hand. Cards ride an arc coupled to the shared `rotation`; a horizontal drag on the bottom
- * band spins it (and the gear), snapping to a card on release. Tap toggles compact/expanded. Cards
- * are pointer-transparent so the band beneath them receives the scroll (per-card gestures arrive in PR6).
+ * The interactive card hand. See docs/card-carousel-architecture.md.
+ * - VIRTUALIZED: only a window of cards around center is mounted (keyed by absolute index).
+ * - EXPAND STATE MACHINE: tap = lock expanded (toggle); hold+drag = expand while held, then a 1s
+ *   cancelable window before collapsing. A generation counter invalidates a stale collapse timer.
+ * - SWIPE-UP FULLSCREEN: a deliberate vertical drag (axis-locked vs the horizontal scroll) flies the
+ *   center card to full-screen; harder while actively scrolling, easier when locked.
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, category } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, category } =
+    useCarousel();
   const deck = CARD_DECKS[category];
   const count = deck.length;
-  const startRot = useSharedValue(0);
+  const middle = Math.round((count - 1) / 2);
 
-  const pan = Gesture.Pan()
+  const startRot = useSharedValue(0);
+  const fsStart = useSharedValue(0);
+  const lastCenter = useSharedValue(-999);
+
+  const [centerIndex, setCenterIndex] = useState(middle);
+  const [win, setWin] = useState({
+    start: Math.max(0, middle - WINDOW_HALF),
+    end: Math.min(count - 1, middle + WINDOW_HALF),
+  });
+
+  // Window + center index update once per crossed detent (cheap JS, gated on the UI thread).
+  const onCenter = useCallback(
+    (c: number) => {
+      setCenterIndex(c);
+      setWin({ start: Math.max(0, c - WINDOW_HALF), end: Math.min(count - 1, c + WINDOW_HALF) });
+    },
+    [count],
+  );
+  useDerivedValue(() => {
+    const c = Math.min(count - 1, Math.max(0, Math.round(rotation.value / ANGLE_STEP)));
+    if (c !== lastCenter.value) {
+      lastCenter.value = c;
+      runOnJS(onCenter)(c);
+    }
+  });
+
+  // Cancelable 1s collapse timer (generation-guarded).
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armCollapse = useCallback(
+    (gen: number) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        runOnUI(() => {
+          'worklet';
+          if (timerGen.value === gen && machineState.value === 'window') {
+            machineState.value = 'compact';
+            expandProgress.value = withSpring(0, EXPAND_SPRING);
+          }
+        })();
+      }, 1000);
+    },
+    [timerGen, machineState, expandProgress],
+  );
+
+  const hPan = Gesture.Pan()
     .activeOffsetX([-10, 10])
-    .failOffsetY([-24, 24])
+    .failOffsetY([-26, 26])
     .onBegin(() => {
       startRot.value = rotation.value;
-      expandProgress.value = withSpring(1, EXPAND_SPRING);
+      timerGen.value += 1; // invalidate any pending collapse
+      if (!locked.value) {
+        machineState.value = 'held';
+        expandProgress.value = withSpring(1, EXPAND_SPRING);
+      }
     })
     .onUpdate((e) => {
       rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
@@ -99,27 +161,81 @@ export function CardCarousel() {
           rubberBandEffect: true,
         },
         (finished) => {
-          if (finished) rotation.value = withSpring(snapRot(rotation.value, count), SNAP_SPRING);
+          if (finished) rotation.value = withSpring(snapToDetent(rotation.value, count), SNAP_SPRING);
         },
       );
+      if (!locked.value) {
+        machineState.value = 'window';
+        runOnJS(armCollapse)(timerGen.value); // start the 1s window
+      }
     });
 
-  const tap = Gesture.Tap().onEnd(() => {
-    expandProgress.value = withSpring(expandProgress.value > 0.5 ? 0 : 1, EXPAND_SPRING);
-  });
+  const tap = Gesture.Tap()
+    .maxDuration(260)
+    .onEnd(() => {
+      timerGen.value += 1;
+      if (machineState.value === 'locked') {
+        machineState.value = 'compact';
+        locked.value = false;
+        expandProgress.value = withSpring(0, EXPAND_SPRING);
+      } else {
+        machineState.value = 'locked';
+        locked.value = true;
+        expandProgress.value = withSpring(1, EXPAND_SPRING);
+      }
+    });
 
-  const gesture = Gesture.Exclusive(pan, tap);
+  // Vertical = fly the center card full-screen. Axis-locked against the horizontal scroll, and made
+  // harder to trigger while actively scrolling (held) so it never fires by accident mid-scroll.
+  const vPan = Gesture.Pan()
+    .activeOffsetY([-16, 16])
+    .failOffsetX([-20, 20])
+    .onBegin(() => {
+      fsStart.value = fullscreenProgress.value;
+    })
+    .onUpdate((e) => {
+      const up = -e.translationY;
+      const dist = machineState.value === 'held' ? FS_OPEN_DIST * 1.8 : FS_OPEN_DIST;
+      fullscreenProgress.value = Math.min(1, Math.max(0, fsStart.value + up / dist));
+    })
+    .onEnd((e) => {
+      const open = fullscreenProgress.value > 0.5 || -e.velocityY > 1000;
+      fullscreenProgress.value = withSpring(open ? 1 : 0, FS_SPRING);
+    });
+
+  const gesture = Gesture.Exclusive(tap, Gesture.Race(vPan, hPan));
+
+  const slots = [];
+  for (let i = win.start; i <= win.end; i++) {
+    slots.push(
+      <CardSlot
+        key={deck[i].id}
+        index={i}
+        item={deck[i]}
+        rotation={rotation}
+        expandProgress={expandProgress}
+        fullscreenProgress={fullscreenProgress}
+      />,
+    );
+  }
 
   return (
     <>
-      {/* Transparent scroll/tap surface at the bottom band (below the trait banners). */}
+      {/* Transparent scroll/tap/swipe surface at the bottom band (below the trait banners). */}
       <GestureDetector gesture={gesture}>
-        <View style={box(0, 720, 412, 172)} />
+        <View style={box(0, 700, 412, 192)} />
       </GestureDetector>
 
-      {deck.map((item, i) => (
-        <CardSlot key={item.id} index={i} item={item} rotation={rotation} expandProgress={expandProgress} />
-      ))}
+      {slots}
+      <ExpandIndicator />
+      <FullscreenCard item={deck[centerIndex]} />
     </>
   );
+}
+
+// (snap helper kept local so the worklet import list stays tidy)
+function snapToDetent(value: number, count: number): number {
+  'worklet';
+  const max = maxRotation(count);
+  return Math.min(max, Math.max(0, Math.round(value / ANGLE_STEP) * ANGLE_STEP));
 }
