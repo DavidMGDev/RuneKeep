@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 
-import { useAccent } from '@/components/accent';
+import { useAccent, useAccentTint } from '@/components/accent';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import type { PipState } from '@/lib/pips';
@@ -15,7 +15,8 @@ const heartArt = (s: PipState) => (s === 'active' ? Art.heart : Art.heartDeplete
 
 export function HeartSection({ character }: { character: Character }) {
   const accent = useAccent();
-  const heartTint = (s: PipState) => (s === 'active' ? accent : undefined);
+  const tint = useAccentTint();
+  const heartTint = (s: PipState) => (s === 'active' ? tint : undefined);
   const hearts = resolvePips({
     total: character.hearts.total,
     active: character.hearts.active,
@@ -24,14 +25,14 @@ export function HeartSection({ character }: { character: Character }) {
 
   return (
     <>
-      <ArtBox left={20.8} top={340.9} width={374.5} height={108.6} source={Art.heartPanel} fit="fill" />
+      <ArtBox left={20.8} top={340.9} width={374.5} height={108.6} source={Art.heartPanel} fit="fill" tint={tint} />
 
       {/* Heartbreak marker (top-left of the panel) */}
       <View style={[box(26.3, 349.3, 10.9, 10.7), { borderRadius: 6, backgroundColor: '#ffffff' }]} />
-      <ArtBox left={27.7} top={350.6} width={8.1} height={8.1} source={Art.heartBreakIcon} />
+      <ArtBox left={27.7} top={350.6} width={8.1} height={8.1} source={Art.heartBreakIcon} tint={tint} />
 
       {/* Left: Hit Points label + numeric tracker */}
-      <ArtBox left={51.6} top={364.4} width={7.8} height={8.3} source={Art.heart} />
+      <ArtBox left={51.6} top={364.4} width={7.8} height={8.3} source={Art.heart} tint={tint} />
       <SheetText left={62} top={363} width={58} height={11} color={INK} size={8} family={Body.bold} align="left" uppercase letterSpacing={0.8}>
         Hit Points
       </SheetText>

@@ -1,4 +1,4 @@
-import { useAccent } from '@/components/accent';
+import { useAccentTint } from '@/components/accent';
 import { Body, Rune } from '@/constants/theme';
 import type { PipState } from '@/lib/pips';
 import { resolvePips } from '@/lib/pips';
@@ -14,8 +14,8 @@ const stressArt = (s: PipState) =>
 const hopeArt = (s: PipState) => (s === 'active' ? Art.hope : Art.hopeDepleted);
 
 export function HopeStressSection({ character }: { character: Character }) {
-  const accent = useAccent();
-  const stressTint = (s: PipState) => (s === 'active' ? accent : undefined);
+  const tint = useAccentTint();
+  const stressTint = (s: PipState) => (s === 'active' ? tint : undefined);
   const stress = resolvePips({
     total: character.stress.total,
     active: character.stress.active,
