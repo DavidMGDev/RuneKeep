@@ -9,6 +9,7 @@ import { SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type Character, SAMPLE_CHARACTER } from './character';
 import { ArmorSection } from './components/armor-section';
 import { BioSection } from './components/bio-section';
+import { GearDecoration } from './components/gear-decoration';
 import { HeartSection } from './components/heart-section';
 import { HopeStressSection } from './components/hope-stress-section';
 import { PortraitSection } from './components/portrait-section';
@@ -33,6 +34,7 @@ export function CharacterSheetScreen({ character = SAMPLE_CHARACTER }: { charact
             <ArmorSection character={character} />
             <BioSection character={character} />
             <PortraitSection character={character} />
+            <GearDecoration />
             <SheetFrame />
           </DesignStage>
         </SafeAreaView>
