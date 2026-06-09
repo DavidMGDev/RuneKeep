@@ -46,6 +46,14 @@ export const Rune = {
   hopeAmber: '#CC8F0F',
 } as const;
 
+/** Cinzel display family (loaded in the root layout) — the fantasy serif used across the sheet. */
+export const Display = {
+  regular: 'Cinzel_400Regular',
+  semibold: 'Cinzel_600SemiBold',
+  bold: 'Cinzel_700Bold',
+  black: 'Cinzel_900Black',
+} as const;
+
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */
