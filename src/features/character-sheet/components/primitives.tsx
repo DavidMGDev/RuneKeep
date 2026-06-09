@@ -20,6 +20,8 @@ interface ArtBoxProps {
   pressable?: boolean;
   onPress?: () => void;
   pressedScale?: number;
+  /** Recolor red art to the accent. */
+  tint?: string;
 }
 
 /** A single art asset positioned in design px — optionally tappable (springs on press). */
@@ -33,8 +35,9 @@ export function ArtBox({
   pressable,
   onPress,
   pressedScale,
+  tint,
 }: ArtBoxProps) {
-  const image = <ArtImage source={source} fit={fit} />;
+  const image = <ArtImage source={source} fit={fit} tint={tint} />;
   if (pressable) {
     return (
       <PressableArt style={box(left, top, width, height)} onPress={onPress} pressedScale={pressedScale}>

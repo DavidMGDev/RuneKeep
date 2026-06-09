@@ -41,6 +41,18 @@ export function useAccent() {
   return useContext(AccentContext).accent;
 }
 
+/** The default accent (the sheet's original red). */
+export const DEFAULT_ACCENT = ACCENT_OPTIONS[0].color;
+
+/**
+ * A tint for recoloring RED art (panels, icons) to the accent — but only when the user picked a
+ * non-default color, so the original shaded red art is preserved at the default.
+ */
+export function useAccentTint() {
+  const accent = useAccent();
+  return accent === DEFAULT_ACCENT ? undefined : accent;
+}
+
 /** Accent color + setter, for the picker. */
 export function useAccentControls() {
   return useContext(AccentContext);
