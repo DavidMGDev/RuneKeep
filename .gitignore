@@ -41,3 +41,11 @@ example
 # generated native folders
 /ios
 /android
+
+# Python distiller cache (design-reference/)
+__pycache__/
+*.pyc
+
+# Headless oracle renders / scratch
+design-reference/_*.png
+.rk-export/
