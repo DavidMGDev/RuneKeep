@@ -6,9 +6,11 @@ import { AccentProvider } from '@/components/accent';
 import { DesignStage } from '@/components/design-stage';
 import { Rune } from '@/constants/theme';
 import { SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
+import { CarouselProvider } from './carousel-context';
 import { type Character, SAMPLE_CHARACTER } from './character';
 import { ArmorSection } from './components/armor-section';
 import { BioSection } from './components/bio-section';
+import { CardCarousel } from './components/card-carousel';
 import { GearDecoration } from './components/gear-decoration';
 import { HeartSection } from './components/heart-section';
 import { HopeStressSection } from './components/hope-stress-section';
@@ -24,22 +26,26 @@ import { TraitBanners } from './components/trait-banners';
 export function CharacterSheetScreen({ character = SAMPLE_CHARACTER }: { character?: Character }) {
   return (
     <AccentProvider>
-      <View style={{ flex: 1, backgroundColor: Rune.ink }}>
-        <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-          <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
-            <SheetBackground />
-            <TraitBanners character={character} />
-            <HopeStressSection character={character} />
-            <HeartSection character={character} />
-            <ArmorSection character={character} />
-            <BioSection character={character} />
-            <PortraitSection character={character} />
-            <GearDecoration />
-            <SheetFrame />
-          </DesignStage>
-        </SafeAreaView>
-        <AccentPicker />
-      </View>
+      <CarouselProvider>
+        <View style={{ flex: 1, backgroundColor: Rune.ink }}>
+          <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+            <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
+              <SheetBackground />
+              <TraitBanners character={character} />
+              <HopeStressSection character={character} />
+              <HeartSection character={character} />
+              <ArmorSection character={character} />
+              <BioSection character={character} />
+              <PortraitSection character={character} />
+              {/* gear (behind border) -> border -> cards (above border) */}
+              <GearDecoration />
+              <SheetFrame />
+              <CardCarousel />
+            </DesignStage>
+          </SafeAreaView>
+          <AccentPicker />
+        </View>
+      </CarouselProvider>
     </AccentProvider>
   );
 }
