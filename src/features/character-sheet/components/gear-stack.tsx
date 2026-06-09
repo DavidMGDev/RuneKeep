@@ -16,17 +16,21 @@ const VB_H = 1830.1721;
 
 interface Layer {
   src: number;
-  /** transformOrigin = the part's own centroid (% of the box) → spins around its real axis. */
-  origin: string;
+  /**
+   * transformOrigin = the part's own centroid (% of the box) → spins around its real axis.
+   * ARRAY form [x%, y%, z(px)] — the string form ("52% 47%") crashes RN's native parser
+   * ("Transform origin z-position must be a number").
+   */
+  origin: (string | number)[];
   /** Speed multiplier off the shared rotation. All positive = same direction. */
   ratio: number;
 }
 
 const LAYERS: Layer[] = [
-  { src: U1, origin: '52.0% 47.1%', ratio: 1.0 },
-  { src: U2, origin: '50.0% 47.5%', ratio: 0.62 },
-  { src: U3, origin: '50.1% 48.7%', ratio: 1.45 },
-  { src: U4, origin: '52.4% 44.7%', ratio: 0.35 },
+  { src: U1, origin: ['52.0%', '47.1%', 0], ratio: 1.0 },
+  { src: U2, origin: ['50.0%', '47.5%', 0], ratio: 0.62 },
+  { src: U3, origin: ['50.1%', '48.7%', 0], ratio: 1.45 },
+  { src: U4, origin: ['52.4%', '44.7%', 0], ratio: 0.35 },
 ];
 
 interface GearStackProps {

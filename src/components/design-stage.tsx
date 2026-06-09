@@ -52,7 +52,7 @@ export function DesignStage({
             width: designWidth,
             height: designHeight,
             transform: [{ scale }],
-            transformOrigin: 'left top',
+            transformOrigin: [0, 0, 0],
           }}>
           {children}
         </View>
