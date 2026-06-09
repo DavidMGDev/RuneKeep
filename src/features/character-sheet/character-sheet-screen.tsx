@@ -1,6 +1,8 @@
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AccentPicker } from '@/components/accent-picker';
+import { AccentProvider } from '@/components/accent';
 import { DesignStage } from '@/components/design-stage';
 import { Rune } from '@/constants/theme';
 import { SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
@@ -20,19 +22,22 @@ import { TraitBanners } from './components/trait-banners';
  */
 export function CharacterSheetScreen({ character = SAMPLE_CHARACTER }: { character?: Character }) {
   return (
-    <View style={{ flex: 1, backgroundColor: Rune.ink }}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-        <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
-          <SheetBackground />
-          <TraitBanners character={character} />
-          <HopeStressSection character={character} />
-          <HeartSection character={character} />
-          <ArmorSection character={character} />
-          <BioSection character={character} />
-          <PortraitSection character={character} />
-          <SheetFrame />
-        </DesignStage>
-      </SafeAreaView>
-    </View>
+    <AccentProvider>
+      <View style={{ flex: 1, backgroundColor: Rune.ink }}>
+        <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+          <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
+            <SheetBackground />
+            <TraitBanners character={character} />
+            <HopeStressSection character={character} />
+            <HeartSection character={character} />
+            <ArmorSection character={character} />
+            <BioSection character={character} />
+            <PortraitSection character={character} />
+            <SheetFrame />
+          </DesignStage>
+        </SafeAreaView>
+        <AccentPicker />
+      </View>
+    </AccentProvider>
   );
 }

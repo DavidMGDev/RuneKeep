@@ -52,3 +52,6 @@ design-reference/_*.png
 
 # Web export scratch / screenshots
 .rk-web*/
+
+# all web-render scratch
+.rk-*

@@ -1,5 +1,6 @@
 import { View } from 'react-native';
 
+import { useAccent } from '@/components/accent';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import type { PipState } from '@/lib/pips';
@@ -13,6 +14,8 @@ const INK = Rune.inkText;
 const heartArt = (s: PipState) => (s === 'active' ? Art.heart : Art.heartDepleted);
 
 export function HeartSection({ character }: { character: Character }) {
+  const accent = useAccent();
+  const heartTint = (s: PipState) => (s === 'active' ? accent : undefined);
   const hearts = resolvePips({
     total: character.hearts.total,
     active: character.hearts.active,
@@ -32,7 +35,7 @@ export function HeartSection({ character }: { character: Character }) {
       <SheetText left={62} top={363} width={58} height={11} color={INK} size={8} family={Body.bold} align="left" uppercase letterSpacing={0.8}>
         Hit Points
       </SheetText>
-      <SheetText left={40} top={382} width={39} height={37} color={Rune.hpRed} size={26} family={Display.black} align="center" tabularNums>
+      <SheetText left={40} top={382} width={39} height={37} color={accent} size={26} family={Display.black} align="center" tabularNums>
         {character.hitPoints.current}
       </SheetText>
       <ArtBox left={81.2} top={387.3} width={13.9} height={32.3} source={Art.hpSlash} />
@@ -47,7 +50,7 @@ export function HeartSection({ character }: { character: Character }) {
       <SheetText left={252} top={362} width={115} height={11} color={Rune.muted} size={7.5} family={Body.medium} align="right" uppercase letterSpacing={0.3}>
         Golden Hearts Worth {character.heartsWorth}
       </SheetText>
-      <PipRow left={176.4} top={386.6} width={190.9} height={22.7} states={hearts} pipWidth={21.3} pipHeight={22.7} artFor={heartArt} />
+      <PipRow left={176.4} top={386.6} width={190.9} height={22.7} states={hearts} pipWidth={21.3} pipHeight={22.7} artFor={heartArt} tintFor={heartTint} />
     </>
   );
 }
