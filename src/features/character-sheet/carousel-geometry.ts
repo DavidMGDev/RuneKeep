@@ -7,8 +7,11 @@ import { CARD_ASPECT } from './card-data';
  * thread; they're plain enough to also unit-test on JS.
  */
 export const OX = 206; // circle center X (screen center)
-export const OY = 1180; // circle center Y, well below the design bottom (892)
-export const R = 500; // arc radius — large so the fan stays flat and the feel is "heavy"
+// Big radius + low center => a nearly-flat fan whose expanded center card sits at y = OY - R = 765,
+// i.e. low on the screen (the compact cards' top edge), so expanding grows the cards in place rather
+// than flying them up. Compact then drops a little further toward the bottom edge.
+export const R = 900;
+export const OY = 1665;
 
 /** Resting rotation that centers the middle of a deck (a balanced fan, not a lopsided end).
  *  Plain JS (called in React render, not in a worklet) — do NOT mark 'worklet'. */
@@ -16,20 +19,20 @@ export function middleRotation(count: number): number {
   return (Math.max(0, count - 1) / 2) * ANGLE_STEP;
 }
 
-export const CARD_W = 128; // centermost card width (design px)
+export const CARD_W = 290; // centermost expanded card width (~72% of the 412 design) — a hero card
 export const CARD_H = CARD_W / CARD_ASPECT; // 5:7
 
-export const ANGLE_STEP = 0.25; // radians between adjacent cards when expanded
-export const COMPACT_STEP = 0.1; // a tight little hand of cards when compact
-export const COMPACT_SCALE = 0.62; // still clearly readable (more visible than the gear)
-export const COMPACT_DROP = 100; // sits in the bottom zone, below the trait banners, bundled w/ the gear
+export const ANGLE_STEP = 0.17; // radians between adjacent cards — centers close, neighbors peek behind
+export const COMPACT_STEP = 0.05; // a tight little hand of cards when compact
+export const COMPACT_SCALE = 0.3; // small hand touching the bottom edge (~87px), ~10% bigger than before
+export const COMPACT_DROP = 66; // compact center sits a little below the expanded center (toward the edge)
 
 export const SCALE_MAX = 1.0; // centermost card
-export const SCALE_MIN = 0.5; // far cards
-export const SIGMA = 1.7 * ANGLE_STEP; // falloff width: ~3 cards large, ~5 medium
+export const SCALE_MIN = 0.55; // far cards
+export const SIGMA = 1.5 * ANGLE_STEP; // falloff width
 
-/** Finger px -> rotation coupling (R scaled by an approx stage scale; tuned by feel). */
-export const PAN_R = 452;
+/** Finger px -> rotation coupling (≈ R*stageScale so the center card tracks the finger ~1:1). */
+export const PAN_R = 540;
 
 /** How many cards each side of center stay mounted (virtualization window). */
 export const WINDOW_HALF = 5;
