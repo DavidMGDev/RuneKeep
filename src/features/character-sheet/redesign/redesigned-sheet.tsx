@@ -1,5 +1,6 @@
-import { View } from 'react-native';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { useState } from 'react';
+import { Pressable, View } from 'react-native';
+import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccent, useAccentTint } from '@/components/accent';
@@ -61,14 +62,16 @@ function HopeLine({ left, top, width, count, active, pip }: { left: number; top:
   );
 }
 
-/** A small octagon badge (image-6) with an icon + label. */
-function OctaBadge({ left, top, size, icon, label }: { left: number; top: number; size: number; icon: number; label: string }) {
+/** A small octagon badge (image-6): tappable → opens the associated card (D4). */
+function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; top: number; size: number; icon: number; label: string; onPress?: () => void }) {
   return (
     <>
-      <ProvidedFrame Svg={FrameSvg.Octagon} left={left} top={top} w={size} h={size * 1.04} />
-      <View style={box(left + size * 0.24, top + size * 0.2, size * 0.52, size * 0.52)} pointerEvents="none">
-        <ArtImage source={icon} fit="contain" />
-      </View>
+      <PressableArt style={box(left, top, size, size * 1.04)} pressedScale={1.12} onPress={onPress}>
+        <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={size} h={size * 1.04} />
+        <View style={box(size * 0.24, size * 0.2, size * 0.52, size * 0.52)} pointerEvents="none">
+          <ArtImage source={icon} fit="contain" />
+        </View>
+      </PressableArt>
       <SheetText left={left - 6} top={top + size * 0.82} width={size + 12} height={11} color={GOLD} size={6.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
         {label}
       </SheetText>
@@ -77,7 +80,7 @@ function OctaBadge({ left, top, size, icon, label }: { left: number; top: number
 }
 
 function RedesignedBody({ character }: { character: Character }) {
-  const { toggleCategory } = useCarousel();
+  const { toggleCategory, openRandomAbility, category } = useCarousel();
   useAccent();
   const tint = useAccentTint();
   const heartTint = (s: PipState) => (s === 'active' ? tint : undefined);
@@ -91,14 +94,23 @@ function RedesignedBody({ character }: { character: Character }) {
       <View style={[box(0, 0, 412, 892), { backgroundColor: SHEET, borderRadius: 26 }]} />
 
       {/* ---------- header: portrait (restored, interlocking) + bio + level banner ---------- */}
-      <View style={box(16, 12, 138, 270)}>
+      {/* Portrait is a tappable affordance — a photo picker fills it later (D2). */}
+      <PressableArt style={box(16, 12, 138, 270)} pressedScale={1.03} onPress={() => {}}>
         <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 38, top: 48, width: 62, height: 100 } as never} />
         <ArtImage source={Art.portraitFrame} fit="fill" />
-      </View>
-      {/* rhombus toggle aligned to the frame's bottom diamond */}
+      </PressableArt>
+      {!character.portraitUri ? (
+        <SheetText left={16} top={150} width={138} height={11} color={GOLD} size={8} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+          + Tap to add
+        </SheetText>
+      ) : null}
+      {/* rhombus toggle aligned to the frame's bottom diamond — swaps Abilities ↔ Inventory deck */}
       <PressableArt style={box(63, 244, 44, 46)} pressedScale={1.16} onPress={toggleCategory}>
         <ArtImage source={Art.portraitIcon} fit="contain" />
       </PressableArt>
+      <SheetText left={40} top={291} width={90} height={10} color={GOLD} size={7.5} family={Body.bold} align="center" uppercase letterSpacing={0.8} numberOfLines={1}>
+        {category === 'abilities' ? 'Abilities' : 'Inventory'}
+      </SheetText>
 
       <SheetText left={162} top={14} width={178} height={50} color={INK} size={24} family={Display.black} align="left" vAlign="top" lineHeight={24} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
       <SheetText left={162} top={66} width={178} height={14} color={RED} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>{character.ancestry} · {character.className}</SheetText>
@@ -114,10 +126,10 @@ function RedesignedBody({ character }: { character: Character }) {
       <SheetText left={348} top={92} width={52} height={9} color={GOLD} size={6.5} family={Body.bold} align="center" uppercase letterSpacing={0.6}>Prof</SheetText>
       <SheetText left={348} top={100} width={52} height={30} color={INK} size={24} family={Display.black} align="center" tabularNums>{character.proficiency}</SheetText>
 
-      {/* origin badges (octagon) above the defenses */}
-      <OctaBadge left={166} top={120} size={56} icon={Art.subclassIcon} label="Subclass" />
-      <OctaBadge left={228} top={120} size={56} icon={Art.ancestryIcon} label="Ancestry" />
-      <OctaBadge left={290} top={120} size={56} icon={Art.communityIcon} label="Community" />
+      {/* origin badges (octagon) above the defenses — tappable, open a card (D4) */}
+      <OctaBadge left={166} top={120} size={56} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
+      <OctaBadge left={228} top={120} size={56} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
+      <OctaBadge left={290} top={120} size={56} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
 
       {/* ---------- Evasion + Armor (dark panel, interlocks with the portrait) ---------- */}
       <View style={box(92, 198, 304, 96)}>
@@ -150,9 +162,24 @@ function RedesignedBody({ character }: { character: Character }) {
 }
 
 function ExpandVeil() {
-  const { expandProgress } = useCarousel();
+  const { expandProgress, collapse } = useCarousel();
+  const [blocking, setBlocking] = useState(false);
+  const wasBlocking = useSharedValue(false);
+  useDerivedValue(() => {
+    const b = expandProgress.value > 0.25;
+    if (b !== wasBlocking.value) {
+      wasBlocking.value = b;
+      runOnJS(setBlocking)(b);
+    }
+  });
   const style = useAnimatedStyle(() => ({ opacity: expandProgress.value * 0.62 }));
-  return <Animated.View style={[box(0, 0, 412, 892), { backgroundColor: '#090B10', borderRadius: 26 }, style]} pointerEvents="none" />;
+  // When expanded the veil swallows taps on the dimmed sheet (AC2.8) and a tap dismisses the hand;
+  // when compact it is inert so the controls underneath stay live.
+  return (
+    <Pressable style={box(0, 0, 412, 892)} pointerEvents={blocking ? 'auto' : 'none'} onPress={collapse}>
+      <Animated.View style={[box(0, 0, 412, 892), { backgroundColor: '#090B10', borderRadius: 26 }, style]} pointerEvents="none" />
+    </Pressable>
+  );
 }
 
 /**

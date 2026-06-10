@@ -1,10 +1,9 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
   runOnJS,
-  runOnUI,
   type SharedValue,
   useAnimatedStyle,
   useDerivedValue,
@@ -16,23 +15,28 @@ import Animated, {
 
 import { box } from '@/lib/design';
 import { CARD_DECKS, type CardItem } from '../card-data';
-import { useCarousel } from '../carousel-context';
+import { type ExpandState, useCarousel } from '../carousel-context';
 import {
   ANGLE_STEP,
   CARD_H,
   CARD_W,
   cardScaleAt,
   clampRot,
+  COLLAPSE_TRIGGER,
   COMPACT_DROP,
   COMPACT_SCALE,
   COMPACT_STEP,
   EXPAND_SPRING,
+  EXPAND_TRIGGER,
   FS_SPRING,
+  FS_UP_TRIGGER,
+  FS_UP_VELOCITY,
   maxRotation,
   OX,
   OY,
   PAN_R,
   R,
+  snapRot,
   SNAP_SPRING,
   WINDOW_HALF,
 } from '../carousel-geometry';
@@ -40,18 +44,18 @@ import { Card } from './card';
 import { ExpandIndicator } from './expand-indicator';
 import { FullscreenCard } from './fullscreen-card';
 
-// Upward travel (px) within a scroll to fly the center card to full-screen — deliberate, not half-screen.
-const FS_TRIGGER = 78;
-
 interface SlotProps {
   index: number;
   item: CardItem;
+  count: number;
   rotation: SharedValue<number>;
   expandProgress: SharedValue<number>;
   fullscreenProgress: SharedValue<number>;
+  machineState: SharedValue<ExpandState>;
+  focusIndex: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, rotation, expandProgress, fullscreenProgress }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     const stepNow = COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p;
@@ -75,26 +79,49 @@ const CardSlot = memo(function CardSlot({ index, item, rotation, expandProgress,
     };
   });
 
+  // Tap a card: when compact, expand the hand; when expanded, fly THIS card full-screen.
+  const tap = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDuration(260)
+        .onEnd(() => {
+          if (machineState.value === 'fullscreen') return;
+          if (machineState.value === 'compact') {
+            machineState.value = 'expanded';
+            expandProgress.value = withSpring(1, EXPAND_SPRING);
+          } else {
+            rotation.value = withSpring(snapRot(index * ANGLE_STEP, count), SNAP_SPRING);
+            focusIndex.value = index;
+            machineState.value = 'fullscreen';
+            fullscreenProgress.value = withSpring(1, FS_SPRING);
+          }
+        }),
+    [index, count, machineState, expandProgress, fullscreenProgress, rotation, focusIndex],
+  );
+
   return (
-    <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]} pointerEvents="none" renderToHardwareTextureAndroid shouldRasterizeIOS>
-      <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
-        <Card item={item} width={CARD_W} height={CARD_H} />
-      </View>
+    <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]} renderToHardwareTextureAndroid shouldRasterizeIOS>
+      <GestureDetector gesture={tap}>
+        <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
+          <Card item={item} width={CARD_W} height={CARD_H} />
+        </View>
+      </GestureDetector>
     </Animated.View>
   );
 });
 
 /**
- * The card hand. ONE pan drives the whole feel (see issue #15):
- * - horizontal drag scrolls (rotation 1:1) and expands the hand in sync from the first frame;
- * - while expanded, lifting the finger upward (without releasing) flies the center card to full-screen
- *   IN FRONT and snaps the rest into place;
- * - releasing without a tap-lock starts a 1s collapse-to-compact window.
- * A separate tap toggles a lock (stays expanded). The fullscreen overlay owns swipe-down-to-return.
+ * The card hand — three states only (compact → expanded → fullscreen), no timers, no lock (see
+ * docs/ui-fix-brief §2):
+ * - horizontal drag scrolls the hand 1:1 in any state;
+ * - from compact, an upward drag (or a tap on a card) fans the hand open;
+ * - from expanded, a light upward flick flies the center card full-screen, a downward drag bundles it
+ *   back, and tapping a specific card flies THAT card full-screen.
+ * The fullscreen overlay owns swipe-down / shake to return. A full-sheet pan container coordinates
+ * with each card's own tap via nested gesture detectors (the scroll-view-with-buttons pattern).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, category } =
-    useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, category } = useCarousel();
   const deck = CARD_DECKS[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
@@ -103,16 +130,15 @@ export function CardCarousel() {
   const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
   const prevX = useSharedValue(0);
   const prevY = useSharedValue(0);
-  const mode = useSharedValue<'scroll' | 'fs'>('scroll');
+  const scrolled = useSharedValue(false);
+  const transitioned = useSharedValue(false); // at most one state change per gesture
   const lastCenter = useSharedValue(-999);
 
-  const [centerIndex, setCenterIndex] = useState(middle);
-  const [expandedUI, setExpandedUI] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(middle);
   const [win, setWin] = useState({ start: Math.max(0, middle - WINDOW_HALF), end: Math.min(count - 1, middle + WINDOW_HALF) });
 
   const onCenter = useCallback(
     (c: number) => {
-      setCenterIndex(c);
       setWin({ start: Math.max(0, c - WINDOW_HALF), end: Math.min(count - 1, c + WINDOW_HALF) });
     },
     [count],
@@ -125,124 +151,104 @@ export function CardCarousel() {
     }
   });
 
-  // Grow the scroll hitbox when expanded so the cards (which rise) stay grabbable.
-  const wasExpanded = useSharedValue(false);
+  // Mirror the focused card index to JS so the fullscreen overlay renders the right card.
+  const lastFocus = useSharedValue(-999);
   useDerivedValue(() => {
-    const e = expandProgress.value > 0.4;
-    if (e !== wasExpanded.value) {
-      wasExpanded.value = e;
-      runOnJS(setExpandedUI)(e);
+    const f = Math.min(count - 1, Math.max(0, Math.round(focusIndex.value)));
+    if (f !== lastFocus.value) {
+      lastFocus.value = f;
+      runOnJS(setFocusedIndex)(f);
     }
   });
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const armCollapse = useCallback(
-    (gen: number) => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        runOnUI(() => {
-          'worklet';
-          if (timerGen.value === gen && machineState.value === 'window' && fullscreenProgress.value < 0.5) {
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(2)
+        .onBegin(() => {
+          cancelAnimation(rotation);
+          startRot.value = rotation.value;
+          anchorY.value = 0;
+          prevX.value = 0;
+          prevY.value = 0;
+          scrolled.value = false;
+          transitioned.value = false;
+        })
+        .onUpdate((e) => {
+          if (machineState.value === 'fullscreen') return;
+          const dx = e.translationX - prevX.value;
+          const dy = e.translationY - prevY.value;
+          prevX.value = e.translationX;
+          prevY.value = e.translationY;
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            // horizontal-dominant: scroll 1:1, reset the upward reference
+            anchorY.value = e.translationY;
+            scrolled.value = true;
+            rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
+            return;
+          }
+          if (transitioned.value) return; // one transition per gesture
+          const up = anchorY.value - e.translationY; // +ve when moving up
+          if (machineState.value === 'compact') {
+            if (up > EXPAND_TRIGGER) {
+              machineState.value = 'expanded';
+              expandProgress.value = withTiming(1, { duration: 200 });
+              transitioned.value = true;
+            }
+          } else if (up > FS_UP_TRIGGER || e.velocityY < -FS_UP_VELOCITY) {
+            const centerIdx = Math.min(count - 1, Math.max(0, Math.round(rotation.value / ANGLE_STEP)));
+            focusIndex.value = centerIdx;
+            machineState.value = 'fullscreen';
+            rotation.value = withSpring(snapRot(centerIdx * ANGLE_STEP, count), SNAP_SPRING);
+            fullscreenProgress.value = withSpring(1, FS_SPRING);
+            transitioned.value = true;
+          } else if (-up > COLLAPSE_TRIGGER) {
             machineState.value = 'compact';
             expandProgress.value = withSpring(0, EXPAND_SPRING);
+            transitioned.value = true;
           }
-        })();
-      }, 1000);
-    },
-    [timerGen, machineState, expandProgress, fullscreenProgress],
+        })
+        .onEnd((e) => {
+          if (machineState.value === 'fullscreen' || !scrolled.value) return;
+          rotation.value = withDecay(
+            { velocity: -e.velocityX / PAN_R, deceleration: 0.997, clamp: [0, maxRotation(count)], rubberBandEffect: true },
+            (finished) => {
+              if (finished) rotation.value = withSpring(snapRot(rotation.value, count), SNAP_SPRING);
+            },
+          );
+        }),
+    [count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, startRot, anchorY, prevX, prevY, scrolled, transitioned],
   );
-
-  const gesture = useMemo(() => {
-    const pan = Gesture.Pan()
-      .minDistance(2)
-      .onBegin(() => {
-        cancelAnimation(rotation);
-        startRot.value = rotation.value;
-        anchorY.value = 0;
-        prevX.value = 0;
-        prevY.value = 0;
-        mode.value = 'scroll';
-        timerGen.value += 1;
-        if (!locked.value) {
-          machineState.value = 'held';
-          expandProgress.value = withTiming(1, { duration: 170 }); // expand fast so it follows the swipe
-        }
-      })
-      .onUpdate((e) => {
-        if (mode.value === 'fs') return;
-        const dx = e.translationX - prevX.value;
-        const dy = e.translationY - prevY.value;
-        prevX.value = e.translationX;
-        prevY.value = e.translationY;
-        if (Math.abs(dx) >= Math.abs(dy)) {
-          // horizontal-dominant: scroll 1:1 and reset the upward reference
-          anchorY.value = e.translationY;
-          rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
-        } else {
-          // vertical-dominant: a deliberate lift, while expanded, flies the center card full-screen
-          const upSince = anchorY.value - e.translationY;
-          if (expandProgress.value > 0.5 && fullscreenProgress.value < 0.5 && upSince > FS_TRIGGER) {
-            mode.value = 'fs';
-            rotation.value = withSpring(Math.min(maxRotation(count), Math.max(0, Math.round(rotation.value / ANGLE_STEP) * ANGLE_STEP)), SNAP_SPRING);
-            fullscreenProgress.value = withSpring(1, FS_SPRING);
-          }
-        }
-      })
-      .onEnd((e) => {
-        if (mode.value === 'fs') return;
-        rotation.value = withDecay(
-          { velocity: -e.velocityX / PAN_R, deceleration: 0.997, clamp: [0, maxRotation(count)], rubberBandEffect: true },
-          (finished) => {
-            if (finished) rotation.value = withSpring(Math.min(maxRotation(count), Math.max(0, Math.round(rotation.value / ANGLE_STEP) * ANGLE_STEP)), SNAP_SPRING);
-          },
-        );
-        if (!locked.value) {
-          machineState.value = 'window';
-          runOnJS(armCollapse)(timerGen.value);
-        }
-      });
-
-    const tap = Gesture.Tap()
-      .maxDuration(260)
-      .onEnd(() => {
-        timerGen.value += 1;
-        if (fullscreenProgress.value > 0.5) {
-          fullscreenProgress.value = withSpring(0, FS_SPRING);
-          return;
-        }
-        if (machineState.value === 'locked') {
-          machineState.value = 'compact';
-          locked.value = false;
-          expandProgress.value = withSpring(0, EXPAND_SPRING);
-        } else {
-          machineState.value = 'locked';
-          locked.value = true;
-          expandProgress.value = withSpring(1, EXPAND_SPRING);
-        }
-      });
-
-    // pan FIRST: it activates immediately on movement so scrolling tracks the finger from frame 1
-    // (no waiting for the tap to fail, which was stalling the scroll while the hand expanded).
-    return Gesture.Exclusive(pan, tap);
-  }, [count, armCollapse, rotation, expandProgress, fullscreenProgress, machineState, locked, timerGen, startRot, anchorY, prevX, prevY, mode]);
 
   const slots = [];
   for (let i = win.start; i <= win.end; i++) {
     slots.push(
-      <CardSlot key={deck[i].id} index={i} item={deck[i]} rotation={rotation} expandProgress={expandProgress} fullscreenProgress={fullscreenProgress} />,
+      <CardSlot
+        key={deck[i].id}
+        index={i}
+        item={deck[i]}
+        count={count}
+        rotation={rotation}
+        expandProgress={expandProgress}
+        fullscreenProgress={fullscreenProgress}
+        machineState={machineState}
+        focusIndex={focusIndex}
+      />,
     );
   }
 
   return (
     <>
-      {/* Scroll/tap surface — grows to cover the cards when they expand and rise. */}
-      <GestureDetector gesture={gesture}>
-        <View style={box(0, expandedUI ? 414 : 760, 412, expandedUI ? 478 : 132)} />
+      {/* Full-sheet pan container. `box-none` lets compact-sheet controls above stay tappable and lets
+          each card's own tap through; the pan still recognizes drags that start on a card. */}
+      <GestureDetector gesture={pan}>
+        <View style={box(0, 0, 412, 892)} pointerEvents="box-none">
+          {slots}
+        </View>
       </GestureDetector>
 
-      {slots}
       <ExpandIndicator />
-      <FullscreenCard item={deck[centerIndex]} />
+      <FullscreenCard item={deck[focusedIndex]} />
     </>
   );
 }

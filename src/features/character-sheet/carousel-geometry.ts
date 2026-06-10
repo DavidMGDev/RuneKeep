@@ -42,6 +42,12 @@ export const WINDOW_HALF = 3;
 /** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
 export const FS_OPEN_DIST = 150;
 
+// Gesture thresholds (design px / velocity). Tuned LOW per the brief — a light flick should work.
+export const EXPAND_TRIGGER = 16; // up-drag from compact to fan the hand
+export const FS_UP_TRIGGER = 26; // up-drag from expanded to fly the center card full-screen
+export const FS_UP_VELOCITY = 700; // …or an upward flick faster than this (px/s)
+export const COLLAPSE_TRIGGER = 38; // down-drag from expanded to bundle the hand back
+
 // Shared spring configs so the carousel and the fullscreen overlay move cohesively.
 export const EXPAND_SPRING = { damping: 16, stiffness: 130, mass: 0.8 };
 export const SNAP_SPRING = { damping: 18, stiffness: 140, mass: 0.7 };
