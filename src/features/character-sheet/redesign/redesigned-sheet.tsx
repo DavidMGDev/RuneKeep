@@ -9,7 +9,7 @@ import { DesignStage } from '@/components/design-stage';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
-import { type PipState, resolvePips } from '@/lib/pips';
+import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
@@ -29,9 +29,12 @@ const GOLDD = '#DAA249';
 const MUTED = '#8A857E';
 const IVORY = '#FAF8F2';
 
-const heartArt = (s: PipState) => (s === 'active' ? Art.heart : Art.heartDepleted);
+// A golden heart reuses the heart shape, recolored gold (clearly distinct from red at small size, AC1A.5).
+const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
 const stressArt = (s: PipState) => (s === 'depleted' ? Art.stressDepleted : s === 'locked' ? Art.stressLocked : Art.stress);
 const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 'locked' ? Art.armorLocked : Art.armorIcon);
+// R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
+const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
 function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, tintFor, artFor }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined }) {
   const rows: PipState[][] = [];
@@ -84,9 +87,11 @@ function RedesignedBody({ character }: { character: Character }) {
   const { toggleCategory, openRandomAbility, category } = useCarousel();
   useAccent();
   const tint = useAccentTint();
-  const heartTint = (s: PipState) => (s === 'active' ? tint : undefined);
+  // Golden hearts render gold; red (active) hearts take the accent tint (red by default).
+  const heartTint = (s: PipState) => (s === 'golden' ? Rune.goldBright : s === 'active' ? tint : undefined);
+  const activeTint = (s: PipState) => (s === 'active' ? tint : undefined);
 
-  const hearts = resolvePips({ total: character.hearts.total, active: character.hearts.active, depletedRemainder: true });
+  const hp = resolveHearts(character.hp, character.heartSlots); // hearts + readout derived from HP (§1A)
   const stress = resolvePips({ total: character.stress.total, active: character.stress.active, locked: character.stress.locked, depletedRemainder: true });
   const armor = resolvePips({ total: character.armor.total, active: character.armor.active, locked: character.armor.locked, depletedRemainder: true });
 
@@ -144,22 +149,25 @@ function RedesignedBody({ character }: { character: Character }) {
       <SheetText left={160} top={210} width={72} height={11} color={Rune.goldText} size={8} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
       <SheetText left={160} top={222} width={72} height={40} color={IVORY} size={32} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       <GoldRuleV left={240} top={210} height={70} />
-      <SheetText left={254} top={206} width={132} height={11} color={Rune.goldText} size={8} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      <SheetText left={254} top={206} width={90} height={11} color={Rune.goldText} size={8} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      {/* R2: surface the armor score (damage reduction) — previously stored but never rendered. */}
+      <SheetText left={350} top={203} width={42} height={16} color={IVORY} size={13} family={Display.bold} align="right" tabularNums>{character.armorScore}</SheetText>
       {/* Inset off the panel edge + ornaments so the shields don't collide with the printed brackets (C4). */}
-      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} />
+      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
       <SheetText left={40} top={318} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1}>Hit Points</SheetText>
-      <SheetText left={38} top={338} width={50} height={42} color={tint ?? RED} size={32} family={Display.black} align="left" tabularNums>{character.hitPoints.current}</SheetText>
-      <SheetText left={86} top={346} width={54} height={28} color={INK} size={20} family={Display.bold} align="left">/ {character.hitPoints.max}</SheetText>
-      {/* Row widened + pip trimmed so 6 hearts sit with positive gaps instead of fused edge-to-edge (C3). */}
-      <PipRow left={150} top={338} width={235} height={35} states={hearts} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} />
+      <SheetText left={38} top={338} width={50} height={42} color={tint ?? RED} size={32} family={Display.black} align="left" tabularNums>{hp.current}</SheetText>
+      <SheetText left={86} top={346} width={54} height={28} color={INK} size={20} family={Display.bold} align="left">/ {hp.max}</SheetText>
+      {/* Row widened + pip trimmed so 6 hearts sit with positive gaps instead of fused edge-to-edge (C3).
+          States (golden / red / empty) and the readout above are both derived from HP (D1/§1A). */}
+      <PipRow left={150} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} />
 
       {/* ---------- Stress — inset frame, big icons, two rows, closer ---------- */}
       <ChamferFrame left={22} top={400} width={368} height={122} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       <SheetText left={42} top={410} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.5}>Stress</SheetText>
-      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={heartTint} />
+      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
