@@ -171,6 +171,7 @@ export function PipRow({
           key={i}
           style={{ width: pipWidth, height: pipHeight }}
           pressedScale={1.25}
+          hitSlop={Math.max(0, Math.round((44 - pipWidth) / 2))}
           onPress={onPressPip ? () => onPressPip(i) : undefined}>
           <ArtImage source={artFor(state)} fit="contain" tint={tintFor?.(state)} />
         </PressableArt>

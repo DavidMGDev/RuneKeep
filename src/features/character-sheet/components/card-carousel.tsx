@@ -14,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
+import { focusHaptic } from '@/lib/haptics';
 import { CARD_DECKS, type CardItem } from '../card-data';
 import { type ExpandState, useCarousel } from '../carousel-context';
 import {
@@ -94,6 +95,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
             focusIndex.value = index;
             machineState.value = 'fullscreen';
             fullscreenProgress.value = withSpring(1, FS_SPRING);
+            runOnJS(focusHaptic)();
           }
         }),
     [index, count, machineState, expandProgress, fullscreenProgress, rotation, focusIndex],
@@ -201,6 +203,7 @@ export function CardCarousel() {
             machineState.value = 'fullscreen';
             rotation.value = withSpring(snapRot(centerIdx * ANGLE_STEP, count), SNAP_SPRING);
             fullscreenProgress.value = withSpring(1, FS_SPRING);
+            runOnJS(focusHaptic)();
             transitioned.value = true;
           } else if (-up > COLLAPSE_TRIGGER) {
             machineState.value = 'compact';

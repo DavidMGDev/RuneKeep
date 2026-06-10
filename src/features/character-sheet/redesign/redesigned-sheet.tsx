@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { DesignStage } from '@/components/design-stage';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
+import { tapHaptic } from '@/lib/haptics';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
@@ -37,21 +38,21 @@ const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
-function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, tintFor, artFor }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined }) {
+function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, tintFor, artFor, onPressPip }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void }) {
   const rows: PipState[][] = [];
   for (let i = 0; i < states.length; i += perRow) rows.push(states.slice(i, i + perRow));
   const rowW = perRow * pip + (perRow - 1) * gap;
   return (
     <>
       {rows.map((row, r) => (
-        <PipRow key={r} left={left} top={top + r * (pip + rowGap)} width={rowW} height={pip} states={row} pipWidth={pip} pipHeight={pip} artFor={artFor} tintFor={tintFor} />
+        <PipRow key={r} left={left} top={top + r * (pip + rowGap)} width={rowW} height={pip} states={row} pipWidth={pip} pipHeight={pip} artFor={artFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} />
       ))}
     </>
   );
 }
 
 /** Hope: large diamonds joined by a THIN gold line that stops at the last filled one. */
-function HopeLine({ left, top, width, count, active, pip }: { left: number; top: number; width: number; count: number; active: number; pip: number }) {
+function HopeLine({ left, top, width, count, active, pip, onPressPip }: { left: number; top: number; width: number; count: number; active: number; pip: number; onPressPip?: (index: number) => void }) {
   const states = resolvePips({ total: count, active, depletedRemainder: true });
   const step = (width - pip) / (count - 1);
   const lastFilled = Math.max(0, Math.min(count, active) - 1);
@@ -60,7 +61,7 @@ function HopeLine({ left, top, width, count, active, pip }: { left: number; top:
     <>
       {lineW > 0 ? <GoldRule left={left + pip / 2} top={top + pip / 2 - 0.5} width={lineW} color="rgba(200,146,58,0.55)" thickness={1} /> : null}
       {states.map((s, i) => (
-        <ArtBox key={i} left={left + i * step} top={top} width={pip} height={pip} source={s === 'active' ? Art.hope : Art.hopeDepleted} pressable pressedScale={1.2} />
+        <ArtBox key={i} left={left + i * step} top={top} width={pip} height={pip} source={s === 'active' ? Art.hope : Art.hopeDepleted} pressable pressedScale={1.2} onPress={onPressPip ? () => onPressPip(i) : undefined} />
       ))}
     </>
   );
@@ -84,10 +85,24 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
   );
 }
 
-function RedesignedBody({ character }: { character: Character }) {
+type TrackKey = 'stress' | 'armor' | 'hope';
+
+function RedesignedBody({ character, onHp, onTrack }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void }) {
   const { toggleCategory, openRandomAbility, category } = useCarousel();
   useAccent();
   const tint = useAccentTint();
+
+  // Tap-to-spend/restore: tap a pip to fill up to it, or tap the current frontier to spend one (A1).
+  const onHeart = (i: number) => {
+    const target = i + 1;
+    onHp(target === character.hp ? i : target);
+    tapHaptic();
+  };
+  const onTrackPip = (key: TrackKey) => (i: number) => {
+    const target = i + 1;
+    onTrack(key, target === character[key].active ? i : target);
+    tapHaptic();
+  };
   // Golden hearts render gold; red (active) hearts take the accent tint (red by default).
   const heartTint = (s: PipState) => (s === 'golden' ? Rune.goldBright : s === 'active' ? tint : undefined);
   const activeTint = (s: PipState) => (s === 'active' ? tint : undefined);
@@ -155,7 +170,7 @@ function RedesignedBody({ character }: { character: Character }) {
       {/* R2: surface the armor score (damage reduction) — previously stored but never rendered. */}
       <SheetText left={350} top={203} width={42} height={16} color={IVORY} size={13} family={Display.bold} align="right" tabularNums>{character.armorScore}</SheetText>
       {/* Inset off the panel edge + ornaments so the shields don't collide with the printed brackets (C4). */}
-      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} />
+      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
@@ -164,17 +179,17 @@ function RedesignedBody({ character }: { character: Character }) {
       <SheetText left={86} top={346} width={54} height={28} color={INK} size={20} family={Display.bold} align="left">/ {hp.max}</SheetText>
       {/* Row widened + pip trimmed so 6 hearts sit with positive gaps instead of fused edge-to-edge (C3).
           States (golden / red / empty) and the readout above are both derived from HP (D1/§1A). */}
-      <PipRow left={150} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} />
+      <PipRow left={150} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} />
 
       {/* ---------- Stress — inset frame, big icons, two rows, closer ---------- */}
       <ChamferFrame left={22} top={400} width={368} height={122} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       <SheetText left={42} top={410} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} />
+      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       <SheetText left={42} top={542} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
-      <HopeLine left={44} top={562} width={324} count={character.hope.total} active={character.hope.active} pip={44} />
+      <HopeLine left={44} top={562} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
     </>
   );
 }
@@ -205,14 +220,29 @@ function ExpandVeil() {
  * interlocking portrait + dark defense panel; gold level/proficiency banner; octagon origin badges;
  * big resource icons; armor shown as its 12 icons. Accent locked to red (picker UI removed).
  */
-export function RedesignedSheet({ character = SAMPLE_CHARACTER }: { character?: Character }) {
+export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { character?: Character }) {
+  // The sheet now OWNS character state so the resource tracks can actually be spent/restored (A1).
+  const [character, setCharacter] = useState(initial);
+  const onHp = useCallback(
+    (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.heartSlots * 2, n)) })),
+    [],
+  );
+  const onTrack = useCallback(
+    (key: TrackKey, n: number) =>
+      setCharacter((c) => {
+        const t = c[key];
+        const unlocked = t.total - (t.locked ?? 0);
+        return { ...c, [key]: { ...t, active: Math.max(0, Math.min(unlocked, n)) } };
+      }),
+    [],
+  );
   return (
     <AccentProvider>
       <CarouselProvider>
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
             <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
-              <RedesignedBody character={character} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} />
               <TraitBanners character={character} modifierSize={22} groupTop={636} />
               <SheetFrame />
               <ExpandVeil />
