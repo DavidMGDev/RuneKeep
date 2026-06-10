@@ -52,3 +52,19 @@ the available area (`contain`), then centers it.
 ## Revisit if
 The owner prefers content to *fill* rather than letterbox on extreme aspect ratios, or a future
 screen is text/list-heavy rather than a fixed art composition.
+
+## Amendment — 2026-06-10 (reconciling the decision with the implementation, H1)
+The original Decision said the **gold `LongBorder` frame** renders *outside* the scaled stage and
+stretches to the device edges. In the shipped sheet it renders **inside** the stage
+(`SheetFrame`, a `DesignStage` child), and that is now the intended design:
+- The full-bleed **ink background still renders outside** the stage — the root layout
+  (`GestureHandlerRootView` + the Router stack `contentStyle`) paints `Rune.ink` across the whole
+  device, so the screen always fills regardless of aspect ratio. The ADR's "screen always fills"
+  goal holds via the ink background.
+- The **gold frame is kept in-stage on purpose**: it interlocks with content (the portrait notch,
+  the chamfered parchment edge, the z-ordered stacking that lets the frame sit above the card hand —
+  see C5). Scaling it *with* the content keeps those alignments exact; pulling it out to device edges
+  would desync it from the parchment it frames and re-introduce the corner seam.
+- Net: on non-412:892 aspect ratios the framed sheet **letterboxes inside the filled ink field** —
+  which is exactly the "framed character sheet" look the Consequences section calls intended, not a
+  bug. Only stretch the ink background; never stretch the frame.

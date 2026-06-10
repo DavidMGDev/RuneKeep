@@ -3,7 +3,7 @@ import { Pressable, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AccentProvider, useAccent, useAccentTint } from '@/components/accent';
+import { AccentProvider, useAccentTint } from '@/components/accent';
 import { ArtImage } from '@/components/art-image';
 import { DesignStage } from '@/components/design-stage';
 import { PressableArt } from '@/components/pressable-art';
@@ -22,14 +22,14 @@ import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 
-const SHEET = '#FAF8F2';
-const INK = '#14110C';
-const RED = '#C81B18';
-const GOLDD = '#DAA249';
-const IVORY = '#FAF8F2';
-// Contrast-safe labels on the parchment ground (the bright gold/muted greys failed AA at small sizes, L3):
-const BRONZE = '#8A5A12'; // deep gold for labels on parchment (≈ AA at 9px) — reserve bright gold for dark panels
-const INKMUT = '#5B554C'; // muted secondary ink (replaces the too-light #8A857E)
+// All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
+const SHEET = Rune.sheet;
+const INK = Rune.inkText;
+const RED = Rune.red;
+const GOLDD = Rune.goldEdge;
+const IVORY = Rune.sheet;
+const BRONZE = Rune.bronze; // deep gold labels on parchment (AA at small sizes, L3)
+const INKMUT = Rune.inkMuted; // muted secondary ink on parchment
 
 // A golden heart reuses the heart shape, recolored gold (clearly distinct from red at small size, AC1A.5).
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
@@ -38,14 +38,14 @@ const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
-function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, tintFor, artFor, onPressPip }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void }) {
+function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, tintFor, artFor, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
   const rows: PipState[][] = [];
   for (let i = 0; i < states.length; i += perRow) rows.push(states.slice(i, i + perRow));
   const rowW = perRow * pip + (perRow - 1) * gap;
   return (
     <>
       {rows.map((row, r) => (
-        <PipRow key={r} left={left} top={top + r * (pip + rowGap)} width={rowW} height={pip} states={row} pipWidth={pip} pipHeight={pip} artFor={artFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} />
+        <PipRow key={r} left={left} top={top + r * (pip + rowGap)} width={rowW} height={pip} states={row} pipWidth={pip} pipHeight={pip} artFor={artFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
       ))}
     </>
   );
@@ -61,7 +61,7 @@ function HopeLine({ left, top, width, count, active, pip, onPressPip }: { left: 
     <>
       {lineW > 0 ? <GoldRule left={left + pip / 2} top={top + pip / 2 - 0.5} width={lineW} color="rgba(200,146,58,0.55)" thickness={1} /> : null}
       {states.map((s, i) => (
-        <ArtBox key={i} left={left + i * step} top={top} width={pip} height={pip} source={s === 'active' ? Art.hope : Art.hopeDepleted} pressable pressedScale={1.2} onPress={onPressPip ? () => onPressPip(i) : undefined} />
+        <ArtBox key={i} left={left + i * step} top={top} width={pip} height={pip} source={s === 'active' ? Art.hope : Art.hopeDepleted} pressable pressedScale={1.2} onPress={onPressPip ? () => onPressPip(i) : undefined} accessibilityLabel={`Hope, ${s === 'active' ? 'filled' : 'empty'}`} accessibilityHint={onPressPip ? 'Double tap to set this level' : undefined} />
       ))}
     </>
   );
@@ -72,7 +72,7 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
   return (
     <>
       {/* Square box + `meet` so the octagon keeps its aspect (C6); label sits fully BELOW it (C1). */}
-      <PressableArt style={box(left, top, size, size)} pressedScale={1.12} onPress={onPress}>
+      <PressableArt style={box(left, top, size, size)} pressedScale={1.12} onPress={onPress} accessibilityLabel={`${label}, open card`}>
         <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={size} h={size} stretch={false} />
         <View style={box(size * 0.26, size * 0.24, size * 0.48, size * 0.48)} pointerEvents="none">
           <ArtImage source={icon} fit="contain" />
@@ -89,7 +89,6 @@ type TrackKey = 'stress' | 'armor' | 'hope';
 
 function RedesignedBody({ character, onHp, onTrack }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void }) {
   const { toggleCategory, openRandomAbility, category } = useCarousel();
-  useAccent();
   const tint = useAccentTint();
 
   // Tap-to-spend/restore: tap a pip to fill up to it, or tap the current frontier to spend one (A1).
@@ -119,7 +118,7 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
 
       {/* ---------- header: portrait (restored, interlocking) + bio + level banner ---------- */}
       {/* Portrait is a tappable affordance — a photo picker fills it later (D2). */}
-      <PressableArt style={box(16, 12, 138, 270)} pressedScale={1.03} onPress={() => {}}>
+      <PressableArt style={box(16, 12, 138, 270)} pressedScale={1.03} onPress={() => {}} accessibilityLabel="Character portrait. Add a photo">
         <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 38, top: 48, width: 62, height: 100 } as never} />
         <ArtImage source={Art.portraitFrame} fit="fill" />
       </PressableArt>
@@ -129,7 +128,7 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
         </SheetText>
       ) : null}
       {/* rhombus toggle aligned to the frame's bottom diamond — swaps Abilities ↔ Inventory deck */}
-      <PressableArt style={box(63, 244, 44, 46)} pressedScale={1.16} onPress={toggleCategory}>
+      <PressableArt style={box(63, 244, 44, 46)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
         <ArtImage source={Art.portraitIcon} fit="contain" />
       </PressableArt>
       <SheetText left={36} top={291} width={98} height={11} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8} numberOfLines={1}>
@@ -170,7 +169,7 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
       {/* R2: surface the armor score (damage reduction) — previously stored but never rendered. */}
       <SheetText left={350} top={203} width={42} height={16} color={IVORY} size={13} family={Display.bold} align="right" tabularNums>{character.armorScore}</SheetText>
       {/* Inset off the panel edge + ornaments so the shields don't collide with the printed brackets (C4). */}
-      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} />
+      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
@@ -179,12 +178,12 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
       <SheetText left={86} top={346} width={54} height={28} color={INK} size={20} family={Display.bold} align="left">/ {hp.max}</SheetText>
       {/* Row widened + pip trimmed so 6 hearts sit with positive gaps instead of fused edge-to-edge (C3).
           States (golden / red / empty) and the readout above are both derived from HP (D1/§1A). */}
-      <PipRow left={150} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} />
+      <PipRow left={150} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
 
       {/* ---------- Stress — inset frame, big icons, two rows, closer ---------- */}
       <ChamferFrame left={22} top={400} width={368} height={122} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       <SheetText left={42} top={410} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} />
+      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />

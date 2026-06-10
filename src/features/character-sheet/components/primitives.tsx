@@ -22,6 +22,8 @@ interface ArtBoxProps {
   pressedScale?: number;
   /** Recolor red art to the accent. */
   tint?: string;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }
 
 /** A single art asset positioned in design px — optionally tappable (springs on press). */
@@ -36,11 +38,13 @@ export function ArtBox({
   onPress,
   pressedScale,
   tint,
+  accessibilityLabel,
+  accessibilityHint,
 }: ArtBoxProps) {
   const image = <ArtImage source={source} fit={fit} tint={tint} />;
   if (pressable) {
     return (
-      <PressableArt style={box(left, top, width, height)} onPress={onPress} pressedScale={pressedScale}>
+      <PressableArt style={box(left, top, width, height)} onPress={onPress} pressedScale={pressedScale} accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint}>
         {image}
       </PressableArt>
     );
@@ -141,7 +145,17 @@ interface PipRowProps {
   /** Optional per-state tint (e.g. retint the red 'active' pips to the accent color). */
   tintFor?: (state: PipState) => string | undefined;
   onPressPip?: (index: number) => void;
+  /** Screen-reader track name, e.g. "Stress" → each pip announces "Stress, filled" (X1). */
+  trackLabel?: string;
 }
+
+const PIP_STATE_WORD: Record<PipState, string> = {
+  active: 'filled',
+  empty: 'empty',
+  depleted: 'spent',
+  locked: 'locked',
+  golden: 'golden, worth two',
+};
 
 /**
  * A resource track rendered as an evenly-spaced row of pips. Each pip is a PressableArt so it can
@@ -158,6 +172,7 @@ export function PipRow({
   artFor,
   tintFor,
   onPressPip,
+  trackLabel,
 }: PipRowProps) {
   return (
     <View
@@ -172,7 +187,9 @@ export function PipRow({
           style={{ width: pipWidth, height: pipHeight }}
           pressedScale={1.25}
           hitSlop={Math.max(0, Math.round((44 - pipWidth) / 2))}
-          onPress={onPressPip ? () => onPressPip(i) : undefined}>
+          onPress={onPressPip ? () => onPressPip(i) : undefined}
+          accessibilityLabel={trackLabel ? `${trackLabel}, ${PIP_STATE_WORD[state]}` : undefined}
+          accessibilityHint={trackLabel && onPressPip ? 'Double tap to set this level' : undefined}>
           <ArtImage source={artFor(state)} fit="contain" tint={tintFor?.(state)} />
         </PressableArt>
       ))}

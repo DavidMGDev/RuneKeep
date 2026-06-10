@@ -3,6 +3,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTim
 import Svg, { Polyline } from 'react-native-svg';
 
 import { box } from '@/lib/design';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { useCarousel } from '../carousel-context';
 
 /**
@@ -11,11 +12,13 @@ import { useCarousel } from '../carousel-context';
  */
 export function ExpandIndicator() {
   const { expandProgress } = useCarousel();
+  const reducedMotion = useReducedMotion();
   const bob = useSharedValue(0);
 
   useEffect(() => {
-    bob.value = withRepeat(withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.quad) }), -1, true);
-  }, [bob]);
+    // Respect "reduce motion": show the chevron statically instead of looping it (X3).
+    bob.value = reducedMotion ? 0.5 : withRepeat(withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [bob, reducedMotion]);
 
   const style = useAnimatedStyle(() => {
     const visible = 1 - expandProgress.value; // hide once expanded

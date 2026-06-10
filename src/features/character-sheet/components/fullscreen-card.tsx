@@ -95,7 +95,15 @@ export function FullscreenCard({ item }: { item: CardItem }) {
   if (!active) return <View style={box(0, 0, 0, 0)} pointerEvents="none" />;
 
   return (
-    <View style={[box(0, 0, 412, 892), { zIndex: 5000 }]} pointerEvents="auto">
+    <View
+      style={[box(0, 0, 412, 892), { zIndex: 5000 }]}
+      pointerEvents="auto"
+      accessibilityViewIsModal
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel="Focused card"
+      accessibilityHint="Double tap, swipe down, or shake to close"
+      onAccessibilityTap={closeFullscreen}>
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, backdrop]} />
       <GestureDetector gesture={gesture}>
         <View style={StyleSheet.absoluteFill}>
