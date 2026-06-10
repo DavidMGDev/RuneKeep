@@ -24,10 +24,11 @@ import { FrameSvg, ProvidedFrame } from './frame-svgs';
 const SHEET = '#FAF8F2';
 const INK = '#14110C';
 const RED = '#C81B18';
-const GOLD = '#C8923A';
 const GOLDD = '#DAA249';
-const MUTED = '#8A857E';
 const IVORY = '#FAF8F2';
+// Contrast-safe labels on the parchment ground (the bright gold/muted greys failed AA at small sizes, L3):
+const BRONZE = '#8A5A12'; // deep gold for labels on parchment (≈ AA at 9px) — reserve bright gold for dark panels
+const INKMUT = '#5B554C'; // muted secondary ink (replaces the too-light #8A857E)
 
 // A golden heart reuses the heart shape, recolored gold (clearly distinct from red at small size, AC1A.5).
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
@@ -76,7 +77,7 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      <SheetText left={left - 6} top={top + size + 4} width={size + 12} height={11} color={GOLD} size={7.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
+      <SheetText left={left - 6} top={top + size + 4} width={size + 12} height={12} color={BRONZE} size={8.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -108,7 +109,7 @@ function RedesignedBody({ character }: { character: Character }) {
         <ArtImage source={Art.portraitFrame} fit="fill" />
       </PressableArt>
       {!character.portraitUri ? (
-        <SheetText left={16} top={150} width={138} height={11} color={GOLD} size={8} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+        <SheetText left={16} top={150} width={138} height={12} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
           + Tap to add
         </SheetText>
       ) : null}
@@ -116,7 +117,7 @@ function RedesignedBody({ character }: { character: Character }) {
       <PressableArt style={box(63, 244, 44, 46)} pressedScale={1.16} onPress={toggleCategory}>
         <ArtImage source={Art.portraitIcon} fit="contain" />
       </PressableArt>
-      <SheetText left={40} top={291} width={90} height={10} color={GOLD} size={7.5} family={Body.bold} align="center" uppercase letterSpacing={0.8} numberOfLines={1}>
+      <SheetText left={36} top={291} width={98} height={11} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8} numberOfLines={1}>
         {category === 'abilities' ? 'Abilities' : 'Inventory'}
       </SheetText>
 
@@ -124,17 +125,18 @@ function RedesignedBody({ character }: { character: Character }) {
       <View style={{ zIndex: 2100 }}>
         <SheetText left={162} top={16} width={178} height={50} color={INK} size={24} family={Display.black} align="left" vAlign="top" lineHeight={24} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
       </View>
-      <SheetText left={162} top={66} width={178} height={14} color={RED} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>{character.ancestry} · {character.className}</SheetText>
-      <SheetText left={162} top={82} width={178} height={12} color={MUTED} size={9} family={Body.medium} align="left" numberOfLines={1}>{character.subclass}</SheetText>
-      <SheetText left={162} top={98} width={178} height={13} color={RED} size={9.5} family={Body.bold} align="left" uppercase letterSpacing={0.3} numberOfLines={1}>{character.domains[0]} × {character.domains[1]}</SheetText>
+      {/* Demote class/domain lines off red (I1) — red is now reserved for HP/health only. */}
+      <SheetText left={162} top={66} width={178} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>{character.ancestry} · {character.className}</SheetText>
+      <SheetText left={162} top={82} width={178} height={12} color={INKMUT} size={9} family={Body.medium} align="left" numberOfLines={1}>{character.subclass}</SheetText>
+      <SheetText left={162} top={98} width={178} height={13} color={BRONZE} size={9.5} family={Body.bold} align="left" uppercase letterSpacing={0.3} numberOfLines={1}>{character.domains[0]} × {character.domains[1]}</SheetText>
 
       {/* level + proficiency, in a gold thin frame (crown over LVL) — no red fill */}
       <ProvidedFrame Svg={FrameSvg.ChamferPanel} left={348} top={10} w={52} h={148} />
       <View style={box(366, 16, 16, 16)} pointerEvents="none"><ArtImage source={Art.levelCrown} fit="contain" /></View>
-      <SheetText left={348} top={34} width={52} height={9} color={GOLD} size={7} family={Body.bold} align="center" uppercase letterSpacing={1}>Lvl</SheetText>
-      <SheetText left={348} top={42} width={52} height={32} color={INK} size={26} family={Display.black} align="center" tabularNums>{character.level}</SheetText>
+      <SheetText left={348} top={32} width={52} height={11} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={1}>Lvl</SheetText>
+      <SheetText left={348} top={43} width={52} height={32} color={INK} size={26} family={Display.black} align="center" tabularNums>{character.level}</SheetText>
       <GoldRule left={356} top={84} width={36} color="rgba(200,146,58,0.5)" />
-      <SheetText left={348} top={92} width={52} height={9} color={GOLD} size={6.5} family={Body.bold} align="center" uppercase letterSpacing={0.6}>Prof</SheetText>
+      <SheetText left={348} top={91} width={52} height={11} color={BRONZE} size={8.5} family={Body.bold} align="center" uppercase letterSpacing={0.6}>Prof</SheetText>
       <SheetText left={348} top={100} width={52} height={30} color={INK} size={24} family={Display.black} align="center" tabularNums>{character.proficiency}</SheetText>
 
       {/* origin badges (octagon) above the defenses — tappable, open a card (D4) */}
@@ -146,10 +148,10 @@ function RedesignedBody({ character }: { character: Character }) {
       <View style={box(92, 198, 304, 96)}>
         <ArtImage source={Art.armorPanel} fit="fill" />
       </View>
-      <SheetText left={160} top={210} width={72} height={11} color={Rune.goldText} size={8} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
+      <SheetText left={160} top={208} width={72} height={12} color={Rune.goldText} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
       <SheetText left={160} top={222} width={72} height={40} color={IVORY} size={32} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       <GoldRuleV left={240} top={210} height={70} />
-      <SheetText left={254} top={206} width={90} height={11} color={Rune.goldText} size={8} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      <SheetText left={254} top={205} width={90} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
       {/* R2: surface the armor score (damage reduction) — previously stored but never rendered. */}
       <SheetText left={350} top={203} width={42} height={16} color={IVORY} size={13} family={Display.bold} align="right" tabularNums>{character.armorScore}</SheetText>
       {/* Inset off the panel edge + ornaments so the shields don't collide with the printed brackets (C4). */}
@@ -157,7 +159,7 @@ function RedesignedBody({ character }: { character: Character }) {
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
-      <SheetText left={40} top={318} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1}>Hit Points</SheetText>
+      <SheetText left={40} top={318} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
       <SheetText left={38} top={338} width={50} height={42} color={tint ?? RED} size={32} family={Display.black} align="left" tabularNums>{hp.current}</SheetText>
       <SheetText left={86} top={346} width={54} height={28} color={INK} size={20} family={Display.bold} align="left">/ {hp.max}</SheetText>
       {/* Row widened + pip trimmed so 6 hearts sit with positive gaps instead of fused edge-to-edge (C3).
@@ -166,12 +168,12 @@ function RedesignedBody({ character }: { character: Character }) {
 
       {/* ---------- Stress — inset frame, big icons, two rows, closer ---------- */}
       <ChamferFrame left={22} top={400} width={368} height={122} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={410} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.5}>Stress</SheetText>
+      <SheetText left={42} top={410} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
       <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={542} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.5}>Hope</SheetText>
+      <SheetText left={42} top={542} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
       <HopeLine left={44} top={562} width={324} count={character.hope.total} active={character.hope.active} pip={44} />
     </>
   );
