@@ -1,5 +1,6 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { type LayoutChangeEvent, type StyleProp, View, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { computeStageScale, type StageFit } from '@/lib/stage-scale';
 
@@ -41,21 +42,32 @@ export function DesignStage({
     fit,
   });
 
+  // Fade in once measured so the unavoidable first (unmeasured) frame doesn't flash bare (H5).
+  const ready = size.w > 0 && scale > 0;
+  const opacity = useSharedValue(0);
+  useEffect(() => {
+    if (ready) opacity.value = withTiming(1, { duration: 180 });
+  }, [ready, opacity]);
+  const fade = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
   return (
     <View style={[{ flex: 1, overflow: 'hidden' }, style]} onLayout={onLayout}>
-      {size.w > 0 && scale > 0 && (
-        <View
-          style={{
-            position: 'absolute',
-            left: offsetX,
-            top: offsetY,
-            width: designWidth,
-            height: designHeight,
-            transform: [{ scale }],
-            transformOrigin: [0, 0, 0],
-          }}>
+      {ready && (
+        <Animated.View
+          style={[
+            {
+              position: 'absolute',
+              left: offsetX,
+              top: offsetY,
+              width: designWidth,
+              height: designHeight,
+              transform: [{ scale }],
+              transformOrigin: [0, 0, 0],
+            },
+            fade,
+          ]}>
           {children}
-        </View>
+        </Animated.View>
       )}
     </View>
   );

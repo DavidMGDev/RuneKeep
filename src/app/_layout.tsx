@@ -21,7 +21,7 @@ import { Rune } from '@/constants/theme';
  * - SafeAreaProvider: gives screens the device insets (notch / home indicator).
  * - Stack: headerless native stack; each screen paints its own chrome.
  *
- * Also loads the Cinzel display family before first paint so text never flashes a fallback.
+ * Also loads the Archivo superfamily before first paint so text never flashes a fallback.
  */
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({

@@ -40,41 +40,48 @@ gesture-handler v2, react-native-svg, New Architecture, 60fps UI-thread worklets
   then in its completion callback snap: `withSpring(nearest multiple of angleStep, {damping:18,stiffness:140})`.
 
 ## 4. Virtualization (finite but unbounded card count)
-- Mount only a ±4-card window (+buffer) around center; key by **absolute card index** (stable identity,
+- Mount only a ±`WINDOW_HALF` (=3) card window around center; key by **absolute card index** (stable identity,
   no remount on scroll). Each card still self-lays-out via `useAnimatedStyle` reading `rotation` at 60fps.
 - Drive the window from a `useDerivedValue` that computes the integer center and `runOnJS(setWindow)`
   **only when the center index changes** (once per crossed detent) → minimal JS churn.
 
 ## 5. Compact ↔ expanded (one `expandProgress`)
-- Interpolate card `angleStep` (COMPACT_STEP→angleStep), radius, a downward `COMPACT_DROP` (bundled near
-  gear, almost hidden, above trait banners), and scale (COMPACT_SCALE→1) off `expandProgress`.
-- Trait banners exit: 3 left / 3 right via `translateX = interpolate(expandProgress,[0,1],[0, dir*(W·0.7+stagger)])`,
-  opacity fades by 0.6. Same `expandProgress` → banners + cards frame-locked.
+- Interpolate card `angleStep` (COMPACT_STEP→angleStep), a downward `COMPACT_DROP` (bundled low, partly
+  under the bottom edge), and scale (COMPACT_SCALE→1) off `expandProgress`. Expanded centers the middle 3
+  cards fully on-screen with the gear peeking below.
+- **No trait fly-off.** Expanding instead fades the whole sheet behind an **`ExpandVeil`** (dark overlay,
+  `opacity = expandProgress·0.62`); the gear + cards stay bright. The veil is a `Pressable`: inert when
+  compact, but when expanded it both blocks input on the dimmed sheet (so disabled controls aren't
+  tappable) and dismisses the hand on tap.
 
-## 6. Expand state machine (tap-lock vs hold+1s-window)
-States: `compact`, `expandedHeld` (finger down+scrolling), `expandedWindow` (released, 1s countdown),
-`expandedLocked` (tapped). Transitions: tap on compact → locked; pan activate → held; pan end → window
-(arm 1s timer); new pan within 1s → held (cancel timer); tap → locked; 1s elapse → compact; tap when
-locked → compact. **Cancelable timer:** `setTimeout` on JS but guarded by a UI-thread `timerGen`
-counter bumped on every new gesture (stale timer no-ops). Keep `machineState/locked/timerGen` as shared
-values (synchronous with gesture activation); only the wall-clock wait is on JS.
-- Indicator (subtle): inner gears keep a slow idle spin while expanded (separate `idleSpin` value, additive
-  into U3/U4), and/or a small dot whose opacity tracks `expandProgress`.
+## 6. State model (3 states, NO timers — see docs/ui-fix-brief §2)
+States: `compact` → `expanded` → `fullscreen`, held on `machineState` (a shared value). There is **no**
+`held`/`window`/`locked` state, **no** `timerGen`, and **no** 1-second auto-collapse — removing your
+finger leaves the hand where it is. JS actions on the carousel context drive the shared values directly:
+`expand` / `collapse` / `openCardAt(i)` / `closeFullscreen` / `openRandomAbility` (the last wired to the
+octagon origin badges, D4). `focusIndex` (shared) selects which card the fullscreen overlay renders.
+- Discoverability: a gold **swipe-up chevron** (`ExpandIndicator`) bobs above the compact hand and fades
+  out as it opens; its idle bob is gated off under OS "reduce motion".
 
-## 7. Swipe-up-fullscreen vs horizontal-scroll
-- Two axis-locked pans under `Gesture.Race`: horizontal carousel pan `.activeOffsetX([-12,12]).failOffsetY([-22,22])`;
-  vertical fullscreen pan (center card only) `.activeOffsetY([-14,14]).failOffsetX([-16,16])`. Initial
-  dominant axis wins; loser cancels. Compose with the tap via `Gesture.Exclusive(tap, Race(vPan,hPan))`.
-- Trigger: up-translation > ~18% screen height OR velocityY > 900 → `fullscreenProgress→1` (center card flies
-  to screen center, full-screen); swipe down → 0. Context-sensitive threshold: harder while `expandedHeld`
-  (~28%), easier when `expandedWindow`/`expandedLocked` (~14%, swipe-up becomes the primary action). Only the
-  center card mounts `vPan`.
+## 7. Gestures (one pan + per-card taps)
+- **One `Gesture.Pan`** on a full-sheet **`box-none`** container scrolls the hand 1:1 in any state
+  (`rotation = startRot − translationX/PAN_R`, decay + snap on release). Vertical drags transition state:
+  from compact an up-drag > `EXPAND_TRIGGER` fans the hand; from expanded an up-drag > `FS_UP_TRIGGER`
+  (~26px) **or** `velocityY < −FS_UP_VELOCITY` flies the center card full-screen, and a down-drag >
+  `COLLAPSE_TRIGGER` bundles it back. At most one transition per gesture (`transitioned` guard).
+- **Per-card tap**: each card slot owns its own `Gesture.Tap` (nested under the pan — the
+  scroll-view-with-buttons pattern). Tapping a compact card expands; tapping an expanded card flies
+  **that** card full-screen. The `box-none` container lets these child taps through while the pan still
+  recognizes drags that start on a card, and keeps the compact-state sheet controls above it tappable.
+- **Fullscreen overlay** (`fullscreenProgress`, zIndex 5000, image mounted only while open) returns to the
+  hand on swipe-down, tap, or **device shake** (`expo-sensors` accelerometer, magnitude > ~1.8g); it has a
+  visible gold close handle and an accessible close action. Thresholds live in `carousel-geometry.ts`.
 
-## 8. Layering (gear < border < cards)
-Five explicit `zIndex` sibling layers inside the scaled DesignStage (gear and cards are coupled by the shared
-value, NOT nested): gear `0` (opacity ~0.35, `overflow:visible` so its submerged 70% isn't clipped) <
-trait banners `10` < ornate border SVG `20` (`pointerEvents:none`) < cards `30` (wrapped in the
-`GestureDetector`) < fullscreen overlay `40`. Express screen-fraction thresholds in stage units (÷ stageScale).
+## 8. Layering (gear < cards < border < fullscreen)
+`zIndex` sibling layers inside the scaled DesignStage (gear and cards are coupled by the shared value, NOT
+nested): body/traits `0` < `ExpandVeil` `0` (after body, dims it) < gear `0` (after veil, stays bright) <
+card hand (CardSlot zIndex ~1000) < **`SheetFrame` gold border `2000`** (so compact cards tuck under the
+frame, C5; the name is raised to `2100` to clear the top finial, C2) < fullscreen overlay `5000`.
 
 ## Reanimated-4 / SDK-54 gotchas
 - Do NOT add the reanimated/worklets Babel plugin manually — `babel-preset-expo` injects it (double-add throws).
