@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import { type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
+import { focusHaptic, tapHaptic } from '@/lib/haptics';
 import { CARD_DECKS, type CardCategory } from './card-data';
 import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, middleRotation, snapRot } from './carousel-geometry';
 
@@ -73,6 +74,7 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
       machineState.value = 'fullscreen';
       expandProgress.value = withSpring(1, EXPAND_SPRING);
       fullscreenProgress.value = withSpring(1, FS_SPRING);
+      focusHaptic();
     },
     [category, rotation, focusIndex, machineState, expandProgress, fullscreenProgress],
   );
@@ -80,6 +82,7 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
   const closeFullscreen = useCallback(() => {
     machineState.value = 'expanded';
     fullscreenProgress.value = withSpring(0, FS_SPRING);
+    tapHaptic();
   }, [machineState, fullscreenProgress]);
 
   const openRandomAbility = useCallback(() => {
@@ -91,6 +94,7 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
     machineState.value = 'fullscreen';
     expandProgress.value = withSpring(1, EXPAND_SPRING);
     fullscreenProgress.value = withSpring(1, FS_SPRING);
+    focusHaptic();
   }, [rotation, focusIndex, machineState, expandProgress, fullscreenProgress]);
 
   const value = useMemo<CarouselContextValue>(
