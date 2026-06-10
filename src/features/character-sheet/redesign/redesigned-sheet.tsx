@@ -66,13 +66,14 @@ function HopeLine({ left, top, width, count, active, pip }: { left: number; top:
 function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; top: number; size: number; icon: number; label: string; onPress?: () => void }) {
   return (
     <>
-      <PressableArt style={box(left, top, size, size * 1.04)} pressedScale={1.12} onPress={onPress}>
-        <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={size} h={size * 1.04} />
-        <View style={box(size * 0.24, size * 0.2, size * 0.52, size * 0.52)} pointerEvents="none">
+      {/* Square box + `meet` so the octagon keeps its aspect (C6); label sits fully BELOW it (C1). */}
+      <PressableArt style={box(left, top, size, size)} pressedScale={1.12} onPress={onPress}>
+        <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={size} h={size} stretch={false} />
+        <View style={box(size * 0.26, size * 0.24, size * 0.48, size * 0.48)} pointerEvents="none">
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      <SheetText left={left - 6} top={top + size * 0.82} width={size + 12} height={11} color={GOLD} size={6.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
+      <SheetText left={left - 6} top={top + size + 4} width={size + 12} height={11} color={GOLD} size={7.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -91,7 +92,9 @@ function RedesignedBody({ character }: { character: Character }) {
 
   return (
     <>
-      <View style={[box(0, 0, 412, 892), { backgroundColor: SHEET, borderRadius: 26 }]} />
+      {/* Parchment ground — CHAMFERED (45° cut) corners, not rounded, matching the gold frame and
+          the project signature; this also kills the ivory corner seam (C7). */}
+      <ChamferFrame left={0} top={0} width={412} height={892} chamfer={18} fill={SHEET} stroke="transparent" strokeWidth={0} />
 
       {/* ---------- header: portrait (restored, interlocking) + bio + level banner ---------- */}
       {/* Portrait is a tappable affordance — a photo picker fills it later (D2). */}
@@ -112,7 +115,10 @@ function RedesignedBody({ character }: { character: Character }) {
         {category === 'abilities' ? 'Abilities' : 'Inventory'}
       </SheetText>
 
-      <SheetText left={162} top={14} width={178} height={50} color={INK} size={24} family={Display.black} align="left" vAlign="top" lineHeight={24} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
+      {/* Name sits ABOVE the frame layer so the top-center finial never paints over the letters (C2). */}
+      <View style={{ zIndex: 2100 }}>
+        <SheetText left={162} top={16} width={178} height={50} color={INK} size={24} family={Display.black} align="left" vAlign="top" lineHeight={24} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
+      </View>
       <SheetText left={162} top={66} width={178} height={14} color={RED} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>{character.ancestry} · {character.className}</SheetText>
       <SheetText left={162} top={82} width={178} height={12} color={MUTED} size={9} family={Body.medium} align="left" numberOfLines={1}>{character.subclass}</SheetText>
       <SheetText left={162} top={98} width={178} height={13} color={RED} size={9.5} family={Body.bold} align="left" uppercase letterSpacing={0.3} numberOfLines={1}>{character.domains[0]} × {character.domains[1]}</SheetText>
@@ -138,15 +144,17 @@ function RedesignedBody({ character }: { character: Character }) {
       <SheetText left={160} top={210} width={72} height={11} color={Rune.goldText} size={8} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
       <SheetText left={160} top={222} width={72} height={40} color={IVORY} size={32} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       <GoldRuleV left={240} top={210} height={70} />
-      <SheetText left={250} top={206} width={140} height={11} color={Rune.goldText} size={8} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
-      <PipGrid left={250} top={222} perRow={6} gap={5} rowGap={5} states={armor} pip={20} artFor={armorArt} />
+      <SheetText left={254} top={206} width={132} height={11} color={Rune.goldText} size={8} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      {/* Inset off the panel edge + ornaments so the shields don't collide with the printed brackets (C4). */}
+      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
       <SheetText left={40} top={318} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1}>Hit Points</SheetText>
       <SheetText left={38} top={338} width={50} height={42} color={tint ?? RED} size={32} family={Display.black} align="left" tabularNums>{character.hitPoints.current}</SheetText>
       <SheetText left={86} top={346} width={54} height={28} color={INK} size={20} family={Display.bold} align="left">/ {character.hitPoints.max}</SheetText>
-      <PipRow left={156} top={336} width={222} height={38} states={hearts} pipWidth={38} pipHeight={38} artFor={heartArt} tintFor={heartTint} />
+      {/* Row widened + pip trimmed so 6 hearts sit with positive gaps instead of fused edge-to-edge (C3). */}
+      <PipRow left={150} top={338} width={235} height={35} states={hearts} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} />
 
       {/* ---------- Stress — inset frame, big icons, two rows, closer ---------- */}
       <ChamferFrame left={22} top={400} width={368} height={122} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
