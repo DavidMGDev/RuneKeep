@@ -16,12 +16,14 @@ export function SheetBackground() {
  * `contain` would letterbox it (its native aspect differs) and pull it off the sheet edges.
  */
 export function SheetFrame({ onPressClass }: { onPressClass?: () => void }) {
+  // zIndex keeps the gold border ABOVE the card hand (C5): compact cards tuck under the bottom edge
+  // instead of painting over the frame, while the centered expanded cards stay clear of the filigree.
   return (
-    <>
+    <View style={[box(0, 0, 412, 892), { zIndex: 2000 }]} pointerEvents="box-none">
       <View style={box(0, 0, 412, 892)} pointerEvents="none">
         <ArtBox left={0} top={0} width={412} height={892} source={Art.longBorder} fit="fill" />
       </View>
       <ArtBox left={25.9} top={0} width={51.2} height={74.2} source={Art.classBanner} pressable pressedScale={1.08} onPress={onPressClass} />
-    </>
+    </View>
   );
 }

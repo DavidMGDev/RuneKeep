@@ -1,34 +1,36 @@
 import { useEffect } from 'react';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
+import Svg, { Polyline } from 'react-native-svg';
 
-import { Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import { useCarousel } from '../carousel-context';
 
 /**
- * The subtle "still expanded" hint: a small gold dot at the bottom-center that fades in with the
- * expanded state and gently pulses — intuitive, not informative (no labels), per the brief.
+ * Discoverability hint (AC2.6): a gold "swipe up" chevron that gently bobs above the compact hand and
+ * fades out as the hand fans open. Non-text, clearly perceptible (replaces the old sub-pixel dot).
  */
 export function ExpandIndicator() {
   const { expandProgress } = useCarousel();
-  const pulse = useSharedValue(0);
+  const bob = useSharedValue(0);
 
   useEffect(() => {
-    pulse.value = withRepeat(withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }), -1, true);
-  }, [pulse]);
+    bob.value = withRepeat(withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [bob]);
 
   const style = useAnimatedStyle(() => {
-    const p = expandProgress.value;
+    const visible = 1 - expandProgress.value; // hide once expanded
     return {
-      opacity: p * (0.4 + pulse.value * 0.45),
-      transform: [{ scale: 1 + pulse.value * 0.5 }],
+      opacity: visible * (0.45 + bob.value * 0.4),
+      transform: [{ translateY: -bob.value * 6 }],
     };
   });
 
   return (
-    <Animated.View
-      style={[box(203, 701, 6, 6), { borderRadius: 3, backgroundColor: Rune.goldBright }, style]}
-      pointerEvents="none"
-    />
+    <Animated.View style={[box(186, 712, 40, 26), style]} pointerEvents="none">
+      <Svg width={40} height={26}>
+        <Polyline points="6,16 20,5 34,16" fill="none" stroke="#E0B563" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+        <Polyline points="6,23 20,12 34,23" fill="none" stroke="#E0B563" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.55} />
+      </Svg>
+    </Animated.View>
   );
 }
