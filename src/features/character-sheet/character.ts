@@ -28,12 +28,14 @@ export interface Character {
   armorScore: number;
   proficiency: number;
 
-  /** Heart pips (visual HP boxes). */
-  hearts: Track;
-  /** How many HP each heart is worth (Daggerheart "golden hearts"). */
-  heartsWorth: number;
-  /** Numeric hit-point tracker shown beside the hearts. */
-  hitPoints: { current: number; max: number };
+  /**
+   * Current hit points — the SINGLE source of truth for HP. Hearts and the numeric `current / max`
+   * tracker are both derived from this via `resolveHearts` (see §1A); there is no separate stored
+   * tracker that could drift. Capacity = `heartSlots × 2`.
+   */
+  hp: number;
+  /** Number of heart boxes (each worth up to 2 HP when golden). Daggerheart default = 6. */
+  heartSlots: number;
 
   armor: Track;
   hope: Track;
@@ -71,9 +73,8 @@ export const SAMPLE_CHARACTER: Character = {
   evasion: 11,
   armorScore: 4,
   proficiency: 2,
-  hearts: { active: 5, total: 6 },
-  heartsWorth: 2,
-  hitPoints: { current: 10, max: 12 },
+  hp: 5, // 6 slots → 5 red + 1 empty, reads "5 / 12" (self-consistent with the hearts)
+  heartSlots: 6,
   armor: { active: 9, total: 12, locked: 1 },
   hope: { active: 5, total: 6 },
   stress: { active: 10, total: 12, locked: 1 },

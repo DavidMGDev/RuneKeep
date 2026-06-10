@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { resolvePips } from './pips';
+import { resolveHearts, resolvePips } from './pips';
 
 describe('resolvePips', () => {
   it('renders all-active when active equals total', () => {
@@ -42,5 +42,44 @@ describe('resolvePips', () => {
 
   it('never produces more slots than total, even with absurd inputs', () => {
     expect(resolvePips({ total: 4, active: -3, locked: 99 })).toHaveLength(4);
+  });
+});
+
+describe('resolveHearts (golden ×2 HP, slots = 6)', () => {
+  // The §1A state table — each row is HP → [golden, red, empty] and the derived readout.
+  const cases: [number, number, number, number, string][] = [
+    [0, 0, 0, 6, '0 / 12'],
+    [5, 0, 5, 1, '5 / 12'],
+    [6, 0, 6, 0, '6 / 12'],
+    [7, 1, 5, 0, '7 / 12'],
+    [8, 2, 4, 0, '8 / 12'],
+    [12, 6, 0, 0, '12 / 12'],
+  ];
+  it.each(cases)('hp %i → %i golden, %i red, %i empty (%s)', (hp, golden, red, empty, readout) => {
+    const h = resolveHearts(hp, 6);
+    expect([h.golden, h.red, h.empty]).toEqual([golden, red, empty]);
+    expect(`${h.current} / ${h.max}`).toBe(readout);
+    expect(h.states).toHaveLength(6);
+  });
+
+  it('orders golden first, then red, then empty', () => {
+    expect(resolveHearts(8, 6).states).toEqual(['golden', 'golden', 'active', 'active', 'active', 'active']);
+  });
+
+  it('never shows golden until all slots are red (HP ≥ 7)', () => {
+    expect(resolveHearts(6, 6).states.includes('golden')).toBe(false);
+    expect(resolveHearts(7, 6).states.includes('golden')).toBe(true);
+  });
+
+  it('the summed pip worth always equals current HP', () => {
+    for (let hp = 0; hp <= 12; hp++) {
+      const h = resolveHearts(hp, 6);
+      expect(h.golden * 2 + h.red).toBe(h.current);
+    }
+  });
+
+  it('clamps HP into 0..max', () => {
+    expect(resolveHearts(99, 6).current).toBe(12);
+    expect(resolveHearts(-5, 6).current).toBe(0);
   });
 });
