@@ -291,16 +291,20 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
       }),
     [],
   );
-  // The SafeAreaView top edge silently failed on the owner's A54 (Expo Go reported a 0 top inset
-  // and the border invaded the status bar, #48 A). Pad MANUALLY instead, with Android's
-  // StatusBar.currentHeight as the floor — that value comes straight from the system bar.
+  // Status bar clearance, third attempt (#54 D). On the owner's A54 + Expo Go BOTH inset APIs
+  // (safe-area context AND StatusBar.currentHeight) report 0 — the device "acts as if there is no
+  // status bar" while very much showing one. So: use whatever the APIs detect, but on Android
+  // never less than a 32dp floor. The shift is a MARGIN (not padding): absolutely-positioned
+  // children like the SheetFrame border anchor to the view's box, so a margin moves border and
+  // content together, while padding can leave absolute children at the physical top.
   const insets = useSafeAreaInsets();
-  const topInset = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
+  const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
+  const topInset = Platform.OS === 'android' && detected < 24 ? 32 : detected;
   return (
     <AccentProvider>
       <CarouselProvider>
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
-          <View style={{ flex: 1, paddingTop: topInset, paddingBottom: insets.bottom }}>
+          <View style={{ flex: 1, marginTop: topInset, marginBottom: insets.bottom }}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
                 frame frames parchment instead of a dark gap (#1). */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
@@ -323,8 +327,11 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />
           </View>
-          {/* Outside the padded area: the banner is the ONE element that invades the status-bar
-              strip, hanging from the physical top edge of the screen (#43 A). */}
+          {/* An EXPLICIT bar painted over the status-bar strip (#54 D): even if some layer below
+              misbehaves, the strip always reads as the border's ink navy. */}
+          <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topInset, backgroundColor: Rune.ink }} />
+          {/* Above the bar: the banner is the ONE element that invades the status-bar strip,
+              hanging from the physical top edge of the screen (#43 A). */}
           <ClassBanner />
         </View>
       </CarouselProvider>
