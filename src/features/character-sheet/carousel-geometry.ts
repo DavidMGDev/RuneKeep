@@ -21,10 +21,12 @@ export function middleRotation(count: number): number {
   return (Math.max(0, count - 1) / 2) * ANGLE_STEP;
 }
 
-export const CARD_W = 290; // centermost expanded card width (~72% of the 412 design) — a hero card
+export const CARD_W = 230; // centermost expanded card width (~56% of the 412 design); ~20% smaller
 export const CARD_H = CARD_W / CARD_ASPECT; // 5:7
 
-export const ANGLE_STEP = 0.17; // radians between adjacent cards — centers close, neighbors peek behind
+// Wider step so the expanded fan spreads out: the center card now overlaps each neighbor ~10% instead
+// of ~45%, which kills the abrupt z-restack "pop" when a neighbor becomes the new center (#8a).
+export const ANGLE_STEP = 0.22; // radians between adjacent cards
 export const COMPACT_STEP = 0.05; // a tight little hand of cards when compact
 export const COMPACT_SCALE = 0.32; // small hand near the bottom edge
 export const COMPACT_DROP = 230; // compact drops well below the expanded center (partly under the edge)
@@ -41,6 +43,16 @@ export const WINDOW_HALF = 3;
 
 /** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
 export const FS_OPEN_DIST = 150;
+
+// Focus (fullscreen) targets — the SAME card slot grows in place to these, no separate object (#8c).
+export const FS_CENTER_Y = 396; // y the focused card eases to (≈ screen centre, room for the handle)
+export const FS_FOCUS_SCALE = 1.55; // absolute scale of the focused card (230 * 1.55 ≈ 356px wide)
+
+// Fling safety (#8b): cap the release velocity fed to withDecay so a hard/over-swipe on an edge card
+// can't rocket the hand off-screen for a second and break the snap. Overshoot stays, but bounded.
+export const MAX_FLING_VEL = 6; // rad/s ceiling on the decay velocity
+export const DECAY_DECEL = 0.996; // a touch faster settle than before
+export const RUBBER_FACTOR = 0.55; // stiffer rubber-band at the deck ends (less, quicker overshoot)
 
 // Gesture thresholds (design px / velocity). Tuned LOW per the brief — a light flick should work.
 export const EXPAND_TRIGGER = 16; // up-drag from compact to fan the hand
