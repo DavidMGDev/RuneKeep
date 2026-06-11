@@ -4,14 +4,16 @@ import { box } from '@/lib/design';
 import { useCarousel } from '../carousel-context';
 import { GearStack } from './gear-stack';
 
-const GEAR_W = 384; // almost the full 412 design width
+const GEAR_W = 500; // larger than the 412 design width — a big submerged mechanism (#48 I)
 const GEAR_LEFT = (412 - GEAR_W) / 2;
-const GEAR_TOP = 776; // only the top ~30% peeks above the design bottom (892)
+// No more than ~40% of the stack's height shows above the design bottom (892) — the owner wants
+// the gears to read as machinery sunk under the edge, not a medallion floating on the sheet.
+const GEAR_TOP = 694;
 
 /**
- * The decorative cog at the sheet's bottom edge — mostly submerged, top ~30% peeking, low opacity,
- * behind the UI border. Spins off the shared carousel rotation, so the cards visibly ride it. The
- * card carousel owns the scroll gesture; the gear is purely visual (pointer-transparent).
+ * The decorative cog at the sheet's bottom edge — mostly submerged, low opacity, behind the UI
+ * border. Spins off the shared carousel rotation, so the cards visibly ride it. The card carousel
+ * owns the scroll gesture; the gear is purely visual (pointer-transparent).
  */
 export function GearDecoration() {
   const { rotation } = useCarousel();
