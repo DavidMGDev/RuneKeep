@@ -8,7 +8,6 @@ import Animated, {
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
-  withDecay,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -22,14 +21,13 @@ import {
   CARD_H,
   CARD_W,
   cardScaleAt,
-  clampRot,
   COLLAPSE_TRIGGER,
   COMPACT_DROP,
   COMPACT_SCALE,
   COMPACT_STEP,
-  DECAY_DECEL,
   EXPAND_SPRING,
   EXPAND_TRIGGER,
+  FLING_TIME,
   FS_CENTER_Y,
   FS_FOCUS_SCALE,
   FS_SPRING,
@@ -37,11 +35,11 @@ import {
   FS_UP_VELOCITY,
   MAX_FLING_VEL,
   maxRotation,
+  OVERSCROLL_RESIST,
   OX,
   OY,
   PAN_R,
   R,
-  RUBBER_FACTOR,
   snapRot,
   SNAP_SPRING,
   WINDOW_HALF,
@@ -187,10 +185,13 @@ export function CardCarousel() {
           prevX.value = e.translationX;
           prevY.value = e.translationY;
           if (Math.abs(dx) >= Math.abs(dy)) {
-            // horizontal-dominant: scroll 1:1, reset the upward reference
+            // horizontal-dominant: scroll 1:1, reset the upward reference. Past a deck end the drag
+            // keeps moving at OVERSCROLL_RESIST (soft rubber) instead of hard-pinning (#30 A).
             anchorY.value = e.translationY;
             scrolled.value = true;
-            rotation.value = clampRot(startRot.value - e.translationX / PAN_R, count);
+            const raw = startRot.value - e.translationX / PAN_R;
+            const max = maxRotation(count);
+            rotation.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
             return;
           }
           if (transitioned.value) return; // one transition per gesture
@@ -223,15 +224,13 @@ export function CardCarousel() {
             return;
           }
           if (!scrolled.value) return;
-          // Cap the fling so a hard over-swipe at a deck end can't rocket off-screen and break the
-          // snap; overshoot still happens (rubber band) but is bounded and settles quickly (#8b).
+          // Predict the landing detent from the capped velocity and spring there CARRYING the
+          // velocity (#30 A). The spring overshoots a little on a hard fling — intentional, bounded —
+          // and always converges onto a detent, even released past a deck end (drag overscroll snaps
+          // home the same way). No decay phase → no off-center float, no teleport at the extremes.
           const v = Math.max(-MAX_FLING_VEL, Math.min(MAX_FLING_VEL, -e.velocityX / PAN_R));
-          rotation.value = withDecay(
-            { velocity: v, deceleration: DECAY_DECEL, clamp: [0, maxRotation(count)], rubberBandEffect: true, rubberBandFactor: RUBBER_FACTOR },
-            (finished) => {
-              if (finished) rotation.value = withSpring(snapRot(rotation.value, count), SNAP_SPRING);
-            },
-          );
+          const target = snapRot(rotation.value + v * FLING_TIME, count);
+          rotation.value = withSpring(target, { ...SNAP_SPRING, velocity: v });
         }),
     [count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, startRot, anchorY, prevX, prevY, scrolled, transitioned],
   );
