@@ -69,9 +69,10 @@ function HopeLine({ left, top, width, count, active, pip, onPressPip }: { left: 
   );
 }
 
-/** Width of a domain chip for its label (fixed-ish glyph width + padding). */
+/** Width of a domain chip for its label — sized for the WIDER native glyph run plus real padding,
+ *  so the chips no longer hug the text edge-to-edge on the phone (#43 D). */
 function chipWidth(label: string): number {
-  return Math.round(label.length * 6.8) + 16;
+  return Math.round(label.length * 7.6) + 18;
 }
 
 /** A domain name in its own small chamfered red chip (#37) — the project's flat, 45°-cut signature. */
@@ -79,8 +80,8 @@ function DomainChip({ left, top, label }: { left: number; top: number; label: st
   const w = chipWidth(label);
   return (
     <>
-      <ChamferFrame left={left} top={top} width={w} height={18} chamfer={5} fill={RED} stroke="transparent" strokeWidth={0} />
-      <SheetText left={left} top={top} width={w} height={18} color={IVORY} size={10} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+      <ChamferFrame left={left} top={top} width={w} height={20} chamfer={5} fill={RED} stroke="transparent" strokeWidth={0} />
+      <SheetText left={left} top={top} width={w} height={20} color={IVORY} size={10} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -98,8 +99,9 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      {/* Wider box + no tracking: adjustsFontSizeToFit doesn't shrink on web, so COMMUNITY must fit
-          at its set size or it ellipsizes there. */}
+      {/* Wider box + no tracking: labels render at FIXED size on both platforms (#43 B), so
+          COMMUNITY must fit at its set size or it ellipsizes. (Bumped further with the badge
+          spread in #43 F — at the current 52px pitch bigger labels would collide.) */}
       <SheetText left={left - 8} top={top + size + 4} width={size + 16} height={12} color={BRONZE} size={8} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
       </SheetText>
@@ -150,7 +152,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         <ArtImage source={Art.portraitFrame} fit="fill" />
       </PressableArt>
       {!character.portraitUri ? (
-        <SheetText left={16} top={162} width={163} height={13} color={BRONZE} size={10} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+        <SheetText left={16} top={162} width={163} height={15} color={BRONZE} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
           + Tap to add
         </SheetText>
       ) : null}
@@ -163,14 +165,14 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       {/* ---------- top-right bio column: name → domain chips → lvl/prof → badges (#37) ---------- */}
       {/* Name stretches to the panel's right edge; sits ABOVE the frame layer (C2). */}
       <View style={{ zIndex: 2100 }}>
-        <SheetText left={190} top={14} width={206} height={54} color={INK} size={26} family={Display.black} align="left" vAlign="top" lineHeight={26} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
+        <SheetText left={190} top={14} width={206} height={54} color={INK} size={26} family={Display.black} align="left" vAlign="top" lineHeight={26} numberOfLines={2} uppercase letterSpacing={-0.6} fit>{character.name}</SheetText>
       </View>
       {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
       <DomainChip left={190} top={74} label={character.domains[0]} />
       <DomainChip left={190 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
       {/* Level/class + proficiency lines between the chips and the badges. */}
-      <SheetText left={190} top={100} width={206} height={15} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
-      <SheetText left={190} top={117} width={206} height={14} color={BRONZE} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
+      <SheetText left={190} top={100} width={206} height={17} color={INK} size={14} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
+      <SheetText left={190} top={119} width={206} height={15} color={BRONZE} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
 
       {/* origin badges (octagon) — lowered to sit just above the defense panel (#37); tappable (D4) */}
       <OctaBadge left={190} top={132} size={39} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
@@ -181,11 +183,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
           No armor-score number — shields only, per owner. */}
       {/* Evasion fills its zone — bigger label + numeral (#37); armor side untouched. */}
-      <SheetText left={162} top={206} width={84} height={14} color={Rune.goldText} size={10.5} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
+      <SheetText left={162} top={206} width={84} height={16} color={Rune.goldText} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
       <SheetText left={162} top={221} width={84} height={48} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
       <GoldRuleV left={252} top={214} height={62} />
-      <SheetText left={262} top={211} width={100} height={13} color={Rune.goldText} size={10} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      <SheetText left={262} top={211} width={100} height={15} color={Rune.goldText} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
       <PipGrid left={262} top={230} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ----------
@@ -198,7 +200,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           <Text style={{ color: IVORY, fontSize: 10, fontFamily: Display.bold, lineHeight: 12 }}>i</Text>
         </View>
       </PressableArt>
-      <SheetText left={54} top={318} width={130} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
+      <SheetText left={54} top={318} width={140} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
       {/* One tight baseline-aligned cluster — red current (20% smaller per owner), smaller ink
           "/ max" nudged forward; the current numeral steps down a size at double digits (#30 I/#37). */}
       <View style={[box(38, 329, 100, 44), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
@@ -212,12 +214,12 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           Pips trimmed to 44 wide with hope-equal 12px gaps (was a 48px stretch with ~7px gaps —
           owner: less stretch, more spacing, #37). */}
       <ChamferFrame left={22} top={396} width={368} height={128} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={406} width={120} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
+      <SheetText left={42} top={406} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
       <PipGrid left={44} top={426} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={34} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={542} width={120} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
+      <SheetText left={42} top={542} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
       <HopeLine left={44} top={562} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
     </>
   );
@@ -287,7 +289,7 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
-              <TraitBanners character={character} modifierSize={22} groupTop={636} />
+              <TraitBanners character={character} modifierSize={26} groupTop={636} />
               <ExpandVeil />
               <GearDecoration />
               <CardCarousel />
