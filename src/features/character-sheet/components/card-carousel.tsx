@@ -27,22 +27,27 @@ import {
   COMPACT_DROP,
   COMPACT_SCALE,
   COMPACT_STEP,
+  DECAY_DECEL,
   EXPAND_SPRING,
   EXPAND_TRIGGER,
+  FS_CENTER_Y,
+  FS_FOCUS_SCALE,
   FS_SPRING,
   FS_UP_TRIGGER,
   FS_UP_VELOCITY,
+  MAX_FLING_VEL,
   maxRotation,
   OX,
   OY,
   PAN_R,
   R,
+  RUBBER_FACTOR,
   snapRot,
   SNAP_SPRING,
   WINDOW_HALF,
 } from '../carousel-geometry';
 import { Card } from './card';
-import { FullscreenCard } from './fullscreen-card';
+import { FocusOverlay } from './focus-overlay';
 
 interface SlotProps {
   index: number;
@@ -53,39 +58,54 @@ interface SlotProps {
   fullscreenProgress: SharedValue<number>;
   machineState: SharedValue<ExpandState>;
   focusIndex: SharedValue<number>;
+  closeFullscreen: () => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     const stepNow = COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p;
     const centerPos = rotation.value / ANGLE_STEP;
     const theta = (index - centerPos) * stepNow;
 
-    const x = OX + R * Math.sin(theta);
-    const y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
-    const scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
-    const tilt = theta * 0.5;
+    let x = OX + R * Math.sin(theta);
+    let y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
+    let scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
+    let tilt = theta * 0.5;
 
     const edge = (2.6 + 1.3 * p) * stepNow;
     let opacity = Math.min(1, Math.max(0, (1.2 * edge - Math.abs(theta)) / (0.5 * edge)));
-    // Hide the centermost card while it is flown full-screen (the overlay shows it).
-    if (Math.round(centerPos) === index) opacity *= 1 - fullscreenProgress.value;
+    let z = Math.round(1000 - (Math.abs(theta) / stepNow) * 10);
+
+    // Focus: the SAME card grows in place toward screen centre over the dim veil (#8c) — no second
+    // object. It lifts above the veil (z 3000); the others stay below it and are dimmed.
+    const fs = fullscreenProgress.value;
+    if (fs > 0 && Math.round(focusIndex.value) === index) {
+      x = x + (OX - x) * fs;
+      y = y + (FS_CENTER_Y - y) * fs;
+      scale = scale + (FS_FOCUS_SCALE - scale) * fs;
+      tilt = tilt * (1 - fs);
+      opacity = 1;
+      z = 3000;
+    }
 
     return {
       transform: [{ translateX: x }, { translateY: y }, { rotateZ: `${tilt}rad` }, { scale }],
-      zIndex: Math.round(1000 - (Math.abs(theta) / stepNow) * 10),
+      zIndex: z,
       opacity,
     };
   });
 
-  // Tap a card: when compact, expand the hand; when expanded, fly THIS card full-screen.
+  // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close.
   const tap = useMemo(
     () =>
       Gesture.Tap()
         .maxDuration(260)
         .onEnd(() => {
-          if (machineState.value === 'fullscreen') return;
+          if (machineState.value === 'fullscreen') {
+            runOnJS(closeFullscreen)();
+            return;
+          }
           if (machineState.value === 'compact') {
             machineState.value = 'expanded';
             expandProgress.value = withSpring(1, EXPAND_SPRING);
@@ -97,7 +117,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
             runOnJS(focusHaptic)();
           }
         }),
-    [index, count, machineState, expandProgress, fullscreenProgress, rotation, focusIndex],
+    [index, count, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
   );
 
   return (
@@ -112,17 +132,13 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
 });
 
 /**
- * The card hand — three states only (compact → expanded → fullscreen), no timers, no lock (see
- * docs/ui-fix-brief §2):
- * - horizontal drag scrolls the hand 1:1 in any state;
- * - from compact, an upward drag (or a tap on a card) fans the hand open;
- * - from expanded, a light upward flick flies the center card full-screen, a downward drag bundles it
- *   back, and tapping a specific card flies THAT card full-screen.
- * The fullscreen overlay owns swipe-down / shake to return. A full-sheet pan container coordinates
- * with each card's own tap via nested gesture detectors (the scroll-view-with-buttons pattern).
+ * The card hand — three states (compact → expanded → fullscreen), no timers, no lock. A full-sheet
+ * pan scrolls the arc 1:1 and drives the state transitions; each card owns a nested tap. Focusing a
+ * card grows that same slot in place over a dim veil (see FocusOverlay) instead of flying a second
+ * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, category } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, category, closeFullscreen } = useCarousel();
   const deck = CARD_DECKS[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
@@ -135,7 +151,6 @@ export function CardCarousel() {
   const transitioned = useSharedValue(false); // at most one state change per gesture
   const lastCenter = useSharedValue(-999);
 
-  const [focusedIndex, setFocusedIndex] = useState(middle);
   const [win, setWin] = useState({ start: Math.max(0, middle - WINDOW_HALF), end: Math.min(count - 1, middle + WINDOW_HALF) });
 
   const onCenter = useCallback(
@@ -149,16 +164,6 @@ export function CardCarousel() {
     if (c !== lastCenter.value) {
       lastCenter.value = c;
       runOnJS(onCenter)(c);
-    }
-  });
-
-  // Mirror the focused card index to JS so the fullscreen overlay renders the right card.
-  const lastFocus = useSharedValue(-999);
-  useDerivedValue(() => {
-    const f = Math.min(count - 1, Math.max(0, Math.round(focusIndex.value)));
-    if (f !== lastFocus.value) {
-      lastFocus.value = f;
-      runOnJS(setFocusedIndex)(f);
     }
   });
 
@@ -211,15 +216,24 @@ export function CardCarousel() {
           }
         })
         .onEnd((e) => {
-          if (machineState.value === 'fullscreen' || !scrolled.value) return;
+          // Focused: a downward swipe (or flick) returns the card; otherwise settle it back open.
+          if (machineState.value === 'fullscreen') {
+            if (e.translationY > 60 || e.velocityY > 600) runOnJS(closeFullscreen)();
+            else fullscreenProgress.value = withSpring(1, FS_SPRING);
+            return;
+          }
+          if (!scrolled.value) return;
+          // Cap the fling so a hard over-swipe at a deck end can't rocket off-screen and break the
+          // snap; overshoot still happens (rubber band) but is bounded and settles quickly (#8b).
+          const v = Math.max(-MAX_FLING_VEL, Math.min(MAX_FLING_VEL, -e.velocityX / PAN_R));
           rotation.value = withDecay(
-            { velocity: -e.velocityX / PAN_R, deceleration: 0.997, clamp: [0, maxRotation(count)], rubberBandEffect: true },
+            { velocity: v, deceleration: DECAY_DECEL, clamp: [0, maxRotation(count)], rubberBandEffect: true, rubberBandFactor: RUBBER_FACTOR },
             (finished) => {
               if (finished) rotation.value = withSpring(snapRot(rotation.value, count), SNAP_SPRING);
             },
           );
         }),
-    [count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, startRot, anchorY, prevX, prevY, scrolled, transitioned],
+    [count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, startRot, anchorY, prevX, prevY, scrolled, transitioned],
   );
 
   const slots = [];
@@ -235,23 +249,21 @@ export function CardCarousel() {
         fullscreenProgress={fullscreenProgress}
         machineState={machineState}
         focusIndex={focusIndex}
+        closeFullscreen={closeFullscreen}
       />,
     );
   }
 
   return (
-    <>
-      {/* Full-sheet pan container. `box-none` lets compact-sheet controls above stay tappable and lets
-          each card's own tap through; the pan still recognizes drags that start on a card. `overflow:
-          hidden` clips the hand to the design box so cards never spill past the gold frame into the
-          margin (#1). */}
-      <GestureDetector gesture={pan}>
-        <View style={[box(0, 0, 412, 892), { overflow: 'hidden' }]} pointerEvents="box-none">
-          {slots}
-        </View>
-      </GestureDetector>
-
-      <FullscreenCard item={deck[focusedIndex]} />
-    </>
+    // Full-sheet pan container. `box-none` keeps the compact-sheet controls above tappable and lets
+    // each card's own tap through; the pan still grabs drags that start on a card. `overflow: hidden`
+    // clips the hand to the design box so cards never spill past the gold frame (#1). The focus veil
+    // lives INSIDE here so it can layer between the focused card and the rest of the hand (#8c).
+    <GestureDetector gesture={pan}>
+      <View style={[box(0, 0, 412, 892), { overflow: 'hidden' }]} pointerEvents="box-none">
+        {slots}
+        <FocusOverlay />
+      </View>
+    </GestureDetector>
   );
 }
