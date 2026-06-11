@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -127,13 +127,12 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
           + Tap to add
         </SheetText>
       ) : null}
-      {/* rhombus toggle aligned to the frame's bottom diamond — swaps Abilities ↔ Inventory deck */}
-      <PressableArt style={box(63, 244, 44, 46)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
+      {/* Deck toggle (swaps Abilities ↔ Inventory) sits INSIDE the frame's bottom diamond — measured
+          to the diamond centroid (design 77,240), nudged up + left from before (#3). The caption that
+          used to sit under it is gone (no room there, #7) — the icon itself is the affordance. */}
+      <PressableArt style={box(55, 218, 44, 44)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
         <ArtImage source={Art.portraitIcon} fit="contain" />
       </PressableArt>
-      <SheetText left={36} top={291} width={98} height={11} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8} numberOfLines={1}>
-        {category === 'abilities' ? 'Abilities' : 'Inventory'}
-      </SheetText>
 
       {/* Name sits ABOVE the frame layer so the top-center finial never paints over the letters (C2). */}
       <View style={{ zIndex: 2100 }}>
@@ -144,32 +143,35 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
       <SheetText left={162} top={82} width={178} height={12} color={INKMUT} size={9} family={Body.medium} align="left" numberOfLines={1}>{character.subclass}</SheetText>
       <SheetText left={162} top={98} width={178} height={13} color={BRONZE} size={9.5} family={Body.bold} align="left" uppercase letterSpacing={0.3} numberOfLines={1}>{character.domains[0]} × {character.domains[1]}</SheetText>
 
-      {/* level + proficiency, in a gold thin frame (crown over LVL) — no red fill */}
-      <ProvidedFrame Svg={FrameSvg.ChamferPanel} left={348} top={10} w={52} h={148} />
-      <View style={box(366, 16, 16, 16)} pointerEvents="none"><ArtImage source={Art.levelCrown} fit="contain" /></View>
-      <SheetText left={348} top={32} width={52} height={11} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={1}>Lvl</SheetText>
-      <SheetText left={348} top={43} width={52} height={32} color={INK} size={26} family={Display.black} align="center" tabularNums>{character.level}</SheetText>
-      <GoldRule left={356} top={84} width={36} color="rgba(200,146,58,0.5)" />
-      <SheetText left={348} top={91} width={52} height={11} color={BRONZE} size={8.5} family={Body.bold} align="center" uppercase letterSpacing={0.6}>Prof</SheetText>
-      <SheetText left={348} top={100} width={52} height={30} color={INK} size={24} family={Display.black} align="center" tabularNums>{character.proficiency}</SheetText>
+      {/* level + proficiency, in a clean vertical CHAMFER frame (crown over LVL). The old square SVG
+          was stretched into this tall box and mangled its corners (#5) — a vector chamfer stays crisp
+          at any aspect. */}
+      <ChamferFrame left={348} top={10} width={52} height={150} chamfer={9} stroke={GOLDD} strokeWidth={1.6} fill="none" />
+      <View style={box(366, 17, 16, 16)} pointerEvents="none"><ArtImage source={Art.levelCrown} fit="contain" /></View>
+      <SheetText left={348} top={34} width={52} height={11} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={1}>Lvl</SheetText>
+      <SheetText left={348} top={45} width={52} height={32} color={INK} size={26} family={Display.black} align="center" tabularNums>{character.level}</SheetText>
+      <GoldRule left={356} top={86} width={36} color="rgba(200,146,58,0.5)" />
+      <SheetText left={348} top={94} width={52} height={11} color={BRONZE} size={8.5} family={Body.bold} align="center" uppercase letterSpacing={0.6}>Prof</SheetText>
+      <SheetText left={348} top={103} width={52} height={30} color={INK} size={24} family={Display.black} align="center" tabularNums>{character.proficiency}</SheetText>
 
       {/* origin badges (octagon) above the defenses — tappable, open a card (D4) */}
       <OctaBadge left={166} top={120} size={56} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
       <OctaBadge left={228} top={120} size={56} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
       <OctaBadge left={290} top={120} size={56} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
 
-      {/* ---------- Evasion + Armor (dark panel, interlocks with the portrait) ---------- */}
-      <View style={box(92, 198, 304, 96)}>
-        <ArtImage source={Art.armorPanel} fit="fill" />
-      </View>
-      <SheetText left={160} top={208} width={72} height={12} color={Rune.goldText} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
-      <SheetText left={160} top={222} width={72} height={40} color={IVORY} size={32} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
-      <GoldRuleV left={240} top={210} height={70} />
-      <SheetText left={254} top={205} width={90} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
-      {/* R2: surface the armor score (damage reduction) — previously stored but never rendered. */}
-      <SheetText left={350} top={203} width={42} height={16} color={IVORY} size={13} family={Display.bold} align="right" tabularNums>{character.armorScore}</SheetText>
-      {/* Inset off the panel edge + ornaments so the shields don't collide with the printed brackets (C4). */}
-      <PipGrid left={254} top={224} perRow={6} gap={4} rowGap={5} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
+      {/* ---------- Evasion + Armor — CLEAN custom dark chamfer panel ----------
+          The old armor-panel PNG baked a vertical divider at ~68% width that sliced straight through
+          the shield grid (owner feedback #2). Drawing the panel ourselves gives one tidy divider
+          between Evasion and Armor and shields that never straddle it. */}
+      <ChamferFrame left={92} top={198} width={304} height={96} chamfer={14} fill={Rune.panel} stroke={GOLDD} strokeWidth={1.4} />
+      <SheetText left={100} top={210} width={88} height={12} color={Rune.goldText} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
+      <SheetText left={100} top={224} width={88} height={40} color={IVORY} size={30} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
+      {/* the ONE separator — between Evasion and Armor, clear of the shields */}
+      <GoldRuleV left={200} top={212} height={68} />
+      <SheetText left={214} top={210} width={100} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      {/* R2: surface the armor score (damage reduction). */}
+      <SheetText left={350} top={208} width={40} height={16} color={IVORY} size={13} family={Display.bold} align="right" tabularNums>{character.armorScore}</SheetText>
+      <PipGrid left={214} top={232} perRow={6} gap={5} rowGap={6} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
@@ -180,10 +182,11 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
           States (golden / red / empty) and the readout above are both derived from HP (D1/§1A). */}
       <PipRow left={150} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
 
-      {/* ---------- Stress — inset frame, big icons, two rows, closer ---------- */}
-      <ChamferFrame left={22} top={400} width={368} height={122} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={410} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={6} states={stress} pip={42} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+      {/* ---------- Stress — inset frame, big icons, two rows ----------
+          Frame grown up + pips trimmed so the second row no longer kisses the bottom edge (#6). */}
+      <ChamferFrame left={22} top={396} width={368} height={128} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
+      <SheetText left={42} top={406} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
+      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={8} states={stress} pip={40} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
@@ -240,14 +243,19 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
       <CarouselProvider>
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+            {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
+                frame frames parchment instead of a dark gap (#1). */}
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
             <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} />
               <TraitBanners character={character} modifierSize={22} groupTop={636} />
-              <SheetFrame />
               <ExpandVeil />
               <GearDecoration />
               <CardCarousel />
             </DesignStage>
+            {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
+                screen edges). The card hand is clipped to the design box, so it stays behind it. */}
+            <SheetFrame />
           </SafeAreaView>
         </View>
       </CarouselProvider>
