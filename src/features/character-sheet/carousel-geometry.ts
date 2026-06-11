@@ -28,8 +28,8 @@ export const CARD_H = CARD_W / CARD_ASPECT; // 5:7
 // of ~45%, which kills the abrupt z-restack "pop" when a neighbor becomes the new center (#8a).
 export const ANGLE_STEP = 0.22; // radians between adjacent cards
 export const COMPACT_STEP = 0.05; // a tight little hand of cards when compact
-export const COMPACT_SCALE = 0.32; // small hand near the bottom edge
-export const COMPACT_DROP = 230; // compact drops well below the expanded center (partly under the edge)
+export const COMPACT_SCALE = 0.37; // compact hand ~15% bigger (#62 B)
+export const COMPACT_DROP = 140; // compact center ~90px higher — the hand reads on-screen (#62 B)
 
 export const SCALE_MAX = 1.0; // centermost card
 export const SCALE_MIN = 0.55; // far cards

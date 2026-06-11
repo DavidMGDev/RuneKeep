@@ -208,6 +208,12 @@ export function CardCarousel() {
           if (Math.abs(dx) >= Math.abs(dy)) {
             // horizontal-dominant: scroll 1:1, reset the upward reference. Past a deck end the drag
             // keeps moving at OVERSCROLL_RESIST (soft rubber) instead of hard-pinning (#30 A).
+            // Scrolling a COMPACT hand fans it open immediately (#62 B) — no tap required; the
+            // same drag keeps scrolling as the hand expands.
+            if (machineState.value === 'compact') {
+              machineState.value = 'expanded';
+              expandProgress.value = withSpring(1, EXPAND_SPRING);
+            }
             anchorY.value = e.translationY;
             scrolled.value = true;
             const raw = startRot.value - e.translationX / PAN_R;
