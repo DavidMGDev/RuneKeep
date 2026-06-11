@@ -1,6 +1,6 @@
 import { type ImageContentFit } from 'expo-image';
 import { useCallback, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,7 +18,7 @@ import { type Character, SAMPLE_CHARACTER } from '../character';
 import { ArtBox, PipRow, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
 import { GearDecoration } from '../components/gear-decoration';
-import { SheetFrame } from '../components/sheet-frame';
+import { ClassBanner, SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
@@ -279,13 +279,13 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
                 frame frames parchment instead of a dark gap (#1). */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
             {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges.
-                Web has no status bar, so the design shifts down ~26px there — on device that strip
-                is the (hidden) status-bar zone the border band already owns (#30 C). */}
+                The safe-area inset pushes everything (border included) below the status bar; the
+                strip above reads as the root's ink navy. Web's inset is 0, so the layouts are the
+                SAME design, mobile-first (#43 A — replaces the old web-only 26px shift). */}
             <DesignStage
               designWidth={SHEET_DESIGN_WIDTH}
               designHeight={SHEET_DESIGN_HEIGHT}
-              clip={false}
-              style={Platform.OS === 'web' ? { marginTop: 26 } : null}>
+              clip={false}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
               <TraitBanners character={character} modifierSize={22} groupTop={636} />
               <ExpandVeil />
@@ -297,6 +297,9 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />
           </SafeAreaView>
+          {/* Outside the safe area: the banner is the ONE element that invades the status-bar
+              strip, hanging from the physical top edge of the screen (#43 A). */}
+          <ClassBanner />
         </View>
       </CarouselProvider>
     </AccentProvider>
