@@ -48,11 +48,13 @@ export const FS_OPEN_DIST = 150;
 export const FS_CENTER_Y = 396; // y the focused card eases to (≈ screen centre, room for the handle)
 export const FS_FOCUS_SCALE = 1.55; // absolute scale of the focused card (230 * 1.55 ≈ 356px wide)
 
-// Fling safety (#8b): cap the release velocity fed to withDecay so a hard/over-swipe on an edge card
-// can't rocket the hand off-screen for a second and break the snap. Overshoot stays, but bounded.
-export const MAX_FLING_VEL = 6; // rad/s ceiling on the decay velocity
-export const DECAY_DECEL = 0.996; // a touch faster settle than before
-export const RUBBER_FACTOR = 0.55; // stiffer rubber-band at the deck ends (less, quicker overshoot)
+// Fling model (issue #30 A): NO free decay. A release predicts its landing detent from the capped
+// velocity and springs there carrying that velocity — the spring overshoots a touch (intentional,
+// bounded) and ALWAYS converges onto a detent, so an over-swipe at a deck end can never leave the
+// hand floating off-center and then teleport-snap back.
+export const MAX_FLING_VEL = 6; // rad/s ceiling on the release velocity
+export const FLING_TIME = 0.18; // s — how far a fling "throws" (target = rot + v * FLING_TIME)
+export const OVERSCROLL_RESIST = 0.35; // drag past a deck end moves at 35% (soft rubber while dragging)
 
 // Gesture thresholds (design px / velocity). Tuned LOW per the brief — a light flick should work.
 export const EXPAND_TRIGGER = 16; // up-drag from compact to fan the hand
