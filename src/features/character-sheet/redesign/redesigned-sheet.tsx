@@ -215,12 +215,13 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           <Text style={{ color: IVORY, fontSize: 7, fontFamily: Display.bold, lineHeight: 9 }}>i</Text>
         </View>
       </PressableArt>
-      {/* Label and the readout share ONE left column (#43 I/K): the numbers sit directly under
-          HIT POINTS and never grow past its width. */}
-      <SheetText left={48} top={318} width={140} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
-      {/* One tight baseline-aligned cluster — red current, smaller ink "/ max"; the current numeral
-          steps down a size at double digits so 12/12 still fits under the label (#30 I/#43 I). */}
-      <View style={[box(48, 334, 92, 38), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
+      {/* Label raised a touch + one size smaller (#48 E); it and the readout share ONE left column
+          (#43 I/K): the numbers sit directly under HIT POINTS and never grow past its width. */}
+      <SheetText left={48} top={315} width={140} height={15} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
+      {/* One tight cluster, BOTTOM-aligned with the heart row's bottom edge (368) per owner (#48 E)
+          — red current, smaller ink "/ max"; the current numeral steps down a size at double digits
+          so 12/12 still fits under the label (#30 I/#43 I). */}
+      <View style={[box(48, 330, 92, 38), { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-start', overflow: 'hidden' }]} pointerEvents="none">
         <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 28 : 32, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
         <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {hp.max}</Text>
       </View>
@@ -231,13 +232,14 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           Panel 20px shorter with the pips trimmed to match (34->26 tall) — flatter, more
           rectangular marks per owner (#43 J); 44 wide with hope-equal 12px gaps (#37). */}
       <ChamferFrame left={22} top={396} width={368} height={108} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={48} top={406} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={428} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+      {/* Label shares the pips' left edge (44) and gets clear air above them (#48 F). */}
+      <SheetText left={44} top={404} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
+      <PipGrid left={44} top={432} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress (which is now shorter), thin connecting line ---------- */}
       <ChamferFrame left={22} top={512} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={48} top={522} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
-      <HopeLine left={44} top={542} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
+      <SheetText left={44} top={518} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
+      <HopeLine left={44} top={544} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
     </>
   );
 }
@@ -311,7 +313,7 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
-              <TraitBanners character={character} modifierSize={26} groupTop={636} />
+              <TraitBanners character={character} modifierSize={24} groupTop={614} />
               <ExpandVeil />
               <GearDecoration />
               <CardCarousel />
