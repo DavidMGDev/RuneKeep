@@ -255,11 +255,12 @@ export function CardCarousel() {
 
   return (
     // Full-sheet pan container. `box-none` keeps the compact-sheet controls above tappable and lets
-    // each card's own tap through; the pan still grabs drags that start on a card. `overflow: hidden`
-    // clips the hand to the design box so cards never spill past the gold frame (#1). The focus veil
-    // lives INSIDE here so it can layer between the focused card and the rest of the hand (#8c).
+    // each card's own tap through; the pan still grabs drags that start on a card. NOT clipped: the
+    // focus veil inside must overdraw to the physical screen edges (#30 B) — card spill into the
+    // letterbox margins is hidden under the full-bleed border bands. The focus veil lives INSIDE here
+    // so it can layer between the focused card and the rest of the hand (#8c).
     <GestureDetector gesture={pan}>
-      <View style={[box(0, 0, 412, 892), { overflow: 'hidden' }]} pointerEvents="box-none">
+      <View style={box(0, 0, 412, 892)} pointerEvents="box-none">
         {slots}
         <FocusOverlay />
       </View>

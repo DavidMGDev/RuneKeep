@@ -58,8 +58,10 @@ export function FocusOverlay() {
 
   return (
     <>
+      {/* Oversized past the (unclipped) stage so the dim reaches the physical screen edges — status
+          bar and letterbox margins included (#30 B). Square corners; color matches ExpandVeil. */}
       <GestureDetector gesture={tap}>
-        <Animated.View style={[box(0, 0, 412, 892), { backgroundColor: '#06080d', zIndex: 2000 }, dim]} />
+        <Animated.View style={[box(-120, -160, 652, 1212), { backgroundColor: '#06080d', zIndex: 2000 }, dim]} />
       </GestureDetector>
       {/* gold "swipe down to close" handle, above the focused card */}
       <Animated.View style={[box(176, 104, 60, 26), { zIndex: 3500, alignItems: 'center' }, handleStyle]} pointerEvents="none">
