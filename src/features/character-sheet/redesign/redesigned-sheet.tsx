@@ -188,28 +188,33 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
           No armor-score number — shields only, per owner. */}
-      {/* Evasion fills its zone — bigger label + numeral (#37); armor side untouched. */}
-      <SheetText left={162} top={206} width={84} height={16} color={Rune.goldText} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
-      <SheetText left={162} top={221} width={84} height={48} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
+      {/* Evasion + Armor titles sit LEVEL with each other (#43 H); numeral centered a touch lower
+          and further left in the ribbon's wedge. */}
+      <SheetText left={158} top={209} width={84} height={16} color={Rune.goldText} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
+      <SheetText left={158} top={227} width={84} height={46} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
       <GoldRuleV left={252} top={214} height={62} />
-      <SheetText left={262} top={211} width={100} height={15} color={Rune.goldText} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      <SheetText left={262} top={209} width={100} height={16} color={Rune.goldText} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
       <PipGrid left={262} top={230} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ----------
           Panel raised 5px: the gap to the portrait/armor band above shrinks ~30% (#37). */}
-      <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={301} w={376} h={84} />
-      {/* Info button centered on the frame's red corner, left of the label (#37) — opens the HP
-          explainer overlay (its own overlay, NOT the carousel's random-card path). */}
-      <PressableArt style={box(29, 306, 17, 17)} pressedScale={1.2} onPress={onInfo} accessibilityLabel="Hit points info" accessibilityHint="Shows an explainer">
-        <View style={{ flex: 1, borderRadius: 9, borderWidth: 1.4, borderColor: IVORY, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: IVORY, fontSize: 10, fontFamily: Display.bold, lineHeight: 12 }}>i</Text>
+      {/* Left edge pulled in 3px — the frame overshot the sheet's left rhythm (#43 I). */}
+      <ProvidedFrame Svg={FrameSvg.HpBar} left={21} top={301} w={373} h={84} />
+      {/* Info button: SMALL, fully inside the red corner (the old 17px ring bled onto the parchment
+          and half-vanished, #43 I); slightly thicker ring so it still reads. Generous hitSlop keeps
+          it easy to hit. Opens the HP explainer overlay (NOT the carousel's random-card path). */}
+      <PressableArt style={box(27, 305, 12, 12)} pressedScale={1.2} hitSlop={16} onPress={onInfo} accessibilityLabel="Hit points info" accessibilityHint="Shows an explainer">
+        <View style={{ flex: 1, borderRadius: 6, borderWidth: 1.6, borderColor: IVORY, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: IVORY, fontSize: 7, fontFamily: Display.bold, lineHeight: 9 }}>i</Text>
         </View>
       </PressableArt>
-      <SheetText left={54} top={318} width={140} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
-      {/* One tight baseline-aligned cluster — red current (20% smaller per owner), smaller ink
-          "/ max" nudged forward; the current numeral steps down a size at double digits (#30 I/#37). */}
-      <View style={[box(38, 329, 100, 44), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
+      {/* Label and the readout share ONE left column (#43 I/K): the numbers sit directly under
+          HIT POINTS and never grow past its width. */}
+      <SheetText left={48} top={318} width={140} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
+      {/* One tight baseline-aligned cluster — red current, smaller ink "/ max"; the current numeral
+          steps down a size at double digits so 12/12 still fits under the label (#30 I/#43 I). */}
+      <View style={[box(48, 334, 92, 38), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
         <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 28 : 32, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
         <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {hp.max}</Text>
       </View>
@@ -217,16 +222,16 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <PipRow left={140} top={333} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
 
       {/* ---------- Stress — inset frame, two rows spread across the panel ----------
-          Pips trimmed to 44 wide with hope-equal 12px gaps (was a 48px stretch with ~7px gaps —
-          owner: less stretch, more spacing, #37). */}
-      <ChamferFrame left={22} top={396} width={368} height={128} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={406} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={426} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={34} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+          Panel 20px shorter with the pips trimmed to match (34->26 tall) — flatter, more
+          rectangular marks per owner (#43 J); 44 wide with hope-equal 12px gaps (#37). */}
+      <ChamferFrame left={22} top={396} width={368} height={108} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
+      <SheetText left={48} top={406} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
+      <PipGrid left={44} top={428} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
-      {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
-      <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={542} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
-      <HopeLine left={44} top={562} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
+      {/* ---------- Hope — aligned with Stress (which is now shorter), thin connecting line ---------- */}
+      <ChamferFrame left={22} top={512} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
+      <SheetText left={48} top={522} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
+      <HopeLine left={44} top={542} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
     </>
   );
 }
