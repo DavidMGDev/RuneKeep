@@ -72,7 +72,13 @@ interface SheetTextProps {
   italic?: boolean;
   /** Use lining tabular figures so numerals align — for stat numbers. */
   tabularNums?: boolean;
-  /** Lower bound for auto-shrink, as a fraction of `size`. */
+  /**
+   * Opt-in auto-shrink for genuinely variable text (e.g. the character name). OFF by default:
+   * `adjustsFontSizeToFit` shrinks on native but is a NO-OP on react-native-web, which made every
+   * tight label render smaller on the phone than on web (#43 B). Fixed labels must be sized to fit.
+   */
+  fit?: boolean;
+  /** Lower bound for auto-shrink, as a fraction of `size` (only with `fit`). */
   minScale?: number;
   children: ReactNode;
 }
@@ -82,8 +88,8 @@ const items = { left: 'flex-start', center: 'center', right: 'flex-end' } as con
 
 /**
  * A text run pinned to a design-px box. The box is the text's HARD limit: it clips
- * (`overflow: hidden`) and the text auto-shrinks (`adjustsFontSizeToFit`) so it can never spill past
- * the rectangle — the Ligma rects are max bounding boxes, not suggestions. `size` is the ceiling.
+ * (`overflow: hidden`) — the Ligma rects are max bounding boxes, not suggestions. Text renders at
+ * `size` on BOTH platforms (mobile-first, #43 B); pass `fit` only for variable-length content.
  */
 export function SheetText({
   left,
@@ -101,6 +107,7 @@ export function SheetText({
   uppercase,
   italic,
   tabularNums,
+  fit,
   minScale = 0.5,
   children,
 }: SheetTextProps) {
@@ -113,8 +120,8 @@ export function SheetText({
       pointerEvents="none">
       <Text
         numberOfLines={numberOfLines}
-        adjustsFontSizeToFit
-        minimumFontScale={minScale}
+        adjustsFontSizeToFit={fit}
+        minimumFontScale={fit ? minScale : undefined}
         style={{
           maxWidth: width,
           color,

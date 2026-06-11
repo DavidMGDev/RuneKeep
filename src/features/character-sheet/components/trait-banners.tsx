@@ -37,11 +37,11 @@ function TraitBanner({ x, groupTop, label, icon, value, modifierSize }: TraitBan
           <ArtImage source={icon} fit="contain" />
         </View>
         {/* Abbreviate to 3 letters so the label fits natively at a legible size (no web ellipsis, L2). */}
-        <SheetText left={2} top={58} width={GROUP_W - 4} height={13} color={Rune.goldText} size={10} family={Body.bold} letterSpacing={0.6} uppercase>
+        <SheetText left={2} top={56} width={GROUP_W - 4} height={15} color={Rune.goldText} size={12} family={Body.bold} letterSpacing={0.6} uppercase>
           {label.slice(0, 3)}
         </SheetText>
         {/* Negatives read in a distinct terracotta so the lone "−1" doesn't blend with the "+" stats (I2). */}
-        <SheetText left={-4} top={68} width={GROUP_W + 8} height={24} color={value < 0 ? '#E2705A' : Rune.ivory} size={modifierSize} family={Display.black} tabularNums>
+        <SheetText left={-4} top={71} width={GROUP_W + 8} height={28} color={value < 0 ? '#E2705A' : Rune.ivory} size={modifierSize} family={Display.black} tabularNums>
           {formatModifier(value)}
         </SheetText>
       </PressableArt>
