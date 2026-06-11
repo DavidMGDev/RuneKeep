@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { ANGLE_STEP, cardScaleAt, clampRot, imageOpacityAt, maxRotation, SCALE_MAX, SCALE_MIN, snapRot } from './carousel-geometry';
+import { ANGLE_STEP, cardScaleAt, clampRot, imageOpacityAt, maxRotation, SCALE_MAX, SCALE_MIN, slotOpacityAt, snapRot, WINDOW_HALF } from './carousel-geometry';
 
 describe('cardScaleAt', () => {
   it('is largest at the center (theta 0)', () => {
@@ -38,6 +38,23 @@ describe('imageOpacityAt (#48 B: at most ~3 real card textures composite)', () =
     expect(imageOpacityAt(1.5)).toBeCloseTo(0.5, 6);
     expect(imageOpacityAt(2)).toBe(0);
     expect(imageOpacityAt(5)).toBe(0);
+  });
+});
+
+describe('slotOpacityAt (#54 A: integer alphas at rest, fade only pre-unmount)', () => {
+  it('keeps every resting slot fully solid — the white backs must be SEEN', () => {
+    for (let d = 0; d <= WINDOW_HALF; d++) expect(slotOpacityAt(d)).toBe(1);
+  });
+
+  it('is fully transparent before the slot can unmount (center re-rounds at ±3.5)', () => {
+    expect(slotOpacityAt(3.45)).toBe(0);
+    expect(slotOpacityAt(3.5)).toBe(0);
+  });
+
+  it('fades smoothly inside the pre-unmount band', () => {
+    const mid = slotOpacityAt(3.25);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
   });
 });
 

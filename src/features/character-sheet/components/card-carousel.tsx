@@ -34,6 +34,7 @@ import {
   FS_UP_TRIGGER,
   FS_UP_VELOCITY,
   imageOpacityAt,
+  IMG_MOUNT_HALF,
   MAX_FLING_VEL,
   maxRotation,
   OVERSCROLL_RESIST,
@@ -41,6 +42,7 @@ import {
   OY,
   PAN_R,
   R,
+  slotOpacityAt,
   snapRot,
   SNAP_SPRING,
   WINDOW_HALF,
@@ -52,6 +54,8 @@ interface SlotProps {
   index: number;
   item: CardItem;
   count: number;
+  /** Mount the real Image (within ±IMG_MOUNT_HALF of center). Far slots are back-only. */
+  withImage: boolean;
   rotation: SharedValue<number>;
   expandProgress: SharedValue<number>;
   fullscreenProgress: SharedValue<number>;
@@ -60,23 +64,23 @@ interface SlotProps {
   closeFullscreen: () => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     const stepNow = COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p;
     const centerPos = rotation.value / ANGLE_STEP;
     const theta = (index - centerPos) * stepNow;
+    const dist = Math.abs(index - centerPos); // in card steps, state-independent
 
     let x = OX + R * Math.sin(theta);
     let y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
     let scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
     let tilt = theta * 0.5;
 
-    // Falloff tightened to the ±2 mount window (issue #41): fully faded by ~2.6 steps out, so the
-    // unmounted third neighbor never pops in/out visibly.
-    const edge = (1.6 + 0.6 * p) * stepNow;
-    let opacity = Math.min(1, Math.max(0, (1.2 * edge - Math.abs(theta)) / (0.5 * edge)));
-    let z = Math.round(1000 - (Math.abs(theta) / stepNow) * 10);
+    // Slots stay SOLID (the white backs are meant to be seen, #54 B) and only fade in a narrow
+    // band right before unmounting; at rest detents every alpha is exactly 0 or 1 (#54 A).
+    let opacity = slotOpacityAt(dist);
+    let z = Math.round(1000 - dist * 10);
 
     // Focus: the SAME card grows in place toward screen centre over the dim veil (#8c) — no second
     // object. It lifts above the veil (z 3000); the others stay below it and are dimmed.
@@ -138,9 +142,13 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
       <GestureDetector gesture={tap}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
           <CardBack />
-          <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
-            <Card item={item} width={CARD_W} height={CARD_H} />
-          </Animated.View>
+          {/* Far slots carry NO Image at all; the ±IMG_MOUNT_HALF boundary slot holds its decoded
+              image at alpha 0, ready to fade in without a pop or a decode hitch (#54 B). */}
+          {withImage ? (
+            <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
+              <Card item={item} width={CARD_W} height={CARD_H} />
+            </Animated.View>
+          ) : null}
         </View>
       </GestureDetector>
     </Animated.View>
@@ -167,14 +175,9 @@ export function CardCarousel() {
   const transitioned = useSharedValue(false); // at most one state change per gesture
   const lastCenter = useSharedValue(-999);
 
-  const [win, setWin] = useState({ start: Math.max(0, middle - WINDOW_HALF), end: Math.min(count - 1, middle + WINDOW_HALF) });
+  const [center, setCenter] = useState(middle);
 
-  const onCenter = useCallback(
-    (c: number) => {
-      setWin({ start: Math.max(0, c - WINDOW_HALF), end: Math.min(count - 1, c + WINDOW_HALF) });
-    },
-    [count],
-  );
+  const onCenter = useCallback((c: number) => setCenter(c), []);
   useDerivedValue(() => {
     const c = Math.min(count - 1, Math.max(0, Math.round(rotation.value / ANGLE_STEP)));
     if (c !== lastCenter.value) {
@@ -253,14 +256,16 @@ export function CardCarousel() {
     [count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, startRot, anchorY, prevX, prevY, scrolled, transitioned],
   );
 
+  const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
   const slots = [];
-  for (let i = win.start; i <= win.end; i++) {
+  for (let i = Math.max(0, c - WINDOW_HALF); i <= Math.min(count - 1, c + WINDOW_HALF); i++) {
     slots.push(
       <CardSlot
         key={deck[i].id}
         index={i}
         item={deck[i]}
         count={count}
+        withImage={Math.abs(i - c) <= IMG_MOUNT_HALF}
         rotation={rotation}
         expandProgress={expandProgress}
         fullscreenProgress={fullscreenProgress}

@@ -38,9 +38,14 @@ export const SIGMA = 1.5 * ANGLE_STEP; // falloff width
 /** Finger px -> rotation coupling (≈ R*stageScale so the center card tracks the finger ~1:1). */
 export const PAN_R = 540;
 
-/** How many cards each side of center stay mounted (virtualization window). 2 → max 5 slots: each
- *  mounted slot costs real GPU work per frame, and 7 slots tanked the A54 mid-deck (issue #41). */
-export const WINDOW_HALF = 2;
+/** How many cards each side of center stay MOUNTED (virtualization window). Slots past
+ *  IMG_MOUNT_HALF carry no Image at all — just the flat CardBack — so the wider window costs
+ *  almost nothing and the hand reads as a fan of white cards (#54 B). */
+export const WINDOW_HALF = 3;
+
+/** How many cards each side of center mount their real Image. The boundary slot (±2) holds it at
+ *  alpha 0 — decoded and ready before it ever fades in, so there is no pop and no decode hitch. */
+export const IMG_MOUNT_HALF = 2;
 
 /** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
 export const FS_OPEN_DIST = 150;
@@ -79,6 +84,20 @@ export const FS_SPRING = { damping: 18, stiffness: 120, mass: 0.9 };
 export function imageOpacityAt(distSteps: number): number {
   'worklet';
   return Math.min(1, Math.max(0, 2 - distSteps));
+}
+
+/**
+ * WHOLE-slot opacity by distance in card steps: solid until just before the mount-window edge,
+ * gone right before the slot unmounts (center re-rounds at ±(WINDOW_HALF + 0.5)). Two perf rules
+ * live here (#54 A): the backs stay SOLID so the hand visibly fades into white cards instead of
+ * into nothing, and at rest every distance is an integer → every slot alpha is exactly 0 or 1.
+ * A *fractional* alpha on a card subtree (image + back overlap) forces Android into a
+ * saveLayerAlpha — an offscreen buffer re-composited per frame — and two such slots resting at
+ * 0.58 alpha mid-deck were the "third card" fps cliff (deck ends never mount them).
+ */
+export function slotOpacityAt(distSteps: number): number {
+  'worklet';
+  return Math.min(1, Math.max(0, (3.45 - distSteps) / 0.4));
 }
 
 /** Smooth center-out scale: centermost largest, tapering to SCALE_MIN. */
