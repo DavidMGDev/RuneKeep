@@ -185,7 +185,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <SheetText left={162} top={221} width={84} height={48} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
       <GoldRuleV left={252} top={214} height={62} />
-      <SheetText left={262} top={212} width={100} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      <SheetText left={262} top={211} width={100} height={13} color={Rune.goldText} size={10} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
       <PipGrid left={262} top={230} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ----------
@@ -198,7 +198,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           <Text style={{ color: IVORY, fontSize: 10, fontFamily: Display.bold, lineHeight: 12 }}>i</Text>
         </View>
       </PressableArt>
-      <SheetText left={54} top={318} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
+      <SheetText left={54} top={318} width={130} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
       {/* One tight baseline-aligned cluster — red current (20% smaller per owner), smaller ink
           "/ max" nudged forward; the current numeral steps down a size at double digits (#30 I/#37). */}
       <View style={[box(38, 329, 100, 44), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
@@ -209,15 +209,15 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <PipRow left={140} top={333} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
 
       {/* ---------- Stress — inset frame, two rows spread across the panel ----------
-          Pips are wider-than-tall (`fill` stretch, owner OK'd) and the rows spread edge-to-edge via
-          rowWidth, leaving real padding below the second row (#30 J). */}
+          Pips trimmed to 44 wide with hope-equal 12px gaps (was a 48px stretch with ~7px gaps —
+          owner: less stretch, more spacing, #37). */}
       <ChamferFrame left={22} top={396} width={368} height={128} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={406} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={426} perRow={6} gap={8} rowGap={8} rowWidth={324} pip={48} pipH={34} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+      <SheetText left={42} top={406} width={120} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
+      <PipGrid left={44} top={426} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={34} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={42} top={542} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
+      <SheetText left={42} top={542} width={120} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
       <HopeLine left={44} top={562} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
     </>
   );
