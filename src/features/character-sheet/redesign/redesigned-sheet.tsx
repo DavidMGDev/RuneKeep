@@ -1,8 +1,8 @@
 import { type ImageContentFit } from 'expo-image';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccentTint } from '@/components/accent';
 import { ArtImage } from '@/components/art-image';
@@ -283,11 +283,16 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
       }),
     [],
   );
+  // The SafeAreaView top edge silently failed on the owner's A54 (Expo Go reported a 0 top inset
+  // and the border invaded the status bar, #48 A). Pad MANUALLY instead, with Android's
+  // StatusBar.currentHeight as the floor — that value comes straight from the system bar.
+  const insets = useSafeAreaInsets();
+  const topInset = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
   return (
     <AccentProvider>
       <CarouselProvider>
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
-          <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+          <View style={{ flex: 1, paddingTop: topInset, paddingBottom: insets.bottom }}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
                 frame frames parchment instead of a dark gap (#1). */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
@@ -309,8 +314,8 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />
-          </SafeAreaView>
-          {/* Outside the safe area: the banner is the ONE element that invades the status-bar
+          </View>
+          {/* Outside the padded area: the banner is the ONE element that invades the status-bar
               strip, hanging from the physical top edge of the screen (#43 A). */}
           <ClassBanner />
         </View>
