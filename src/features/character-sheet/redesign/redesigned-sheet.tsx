@@ -100,9 +100,8 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
         </View>
       </PressableArt>
       {/* Wider box + no tracking: labels render at FIXED size on both platforms (#43 B), so
-          COMMUNITY must fit at its set size or it ellipsizes. (Bumped further with the badge
-          spread in #43 F — at the current 52px pitch bigger labels would collide.) */}
-      <SheetText left={left - 8} top={top + size + 4} width={size + 16} height={12} color={BRONZE} size={8} family={Body.bold} align="center" uppercase numberOfLines={1}>
+          COMMUNITY must fit at its set size or it ellipsizes. Size rides the 81px badge pitch. */}
+      <SheetText left={left - 12} top={top + size + 4} width={size + 24} height={13} color={BRONZE} size={9.5} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -145,22 +144,27 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           panel's texts/pips live in the defenses section below. */}
       <ProvidedFrame Svg={FrameSvg.ArmorBg} left={100} top={200} w={296} h={90} />
 
-      {/* ---------- header: portrait (restored, interlocking) + bio ---------- */}
-      {/* Portrait grew ~25px right + down so its frame meets the armor panel's left ridges (#37). */}
-      <PressableArt style={box(16, 12, 163, 295)} pressedScale={1.03} onPress={() => {}} accessibilityLabel="Character portrait. Add a photo">
-        <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 45, top: 52, width: 73, height: 109 } as never} />
-        <ArtImage source={Art.portraitFrame} fit="fill" />
-      </PressableArt>
-      {!character.portraitUri ? (
-        <SheetText left={16} top={162} width={163} height={15} color={BRONZE} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
-          + Tap to add
-        </SheetText>
-      ) : null}
-      {/* Deck toggle sits INSIDE the frame's bottom diamond — re-centered to the grown frame's
-          diamond centroid (#37). No caption — the icon itself is the affordance. */}
-      <PressableArt style={box(65, 238, 44, 44)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
-        <ArtImage source={Art.portraitIcon} fit="contain" />
-      </PressableArt>
+      {/* ---------- header: portrait + deck toggle, ONE locked group (#43 G) ----------
+          Sized to the midpoint of the last two iterations (163x295 grew over the defense panel;
+          138x270 was too small). The toggle's position scales WITH the frame so the pair never
+          drifts apart. No press bounce on either, per owner — plain Pressables. The toggle sits
+          ON TOP (bigger symbol + generous hitSlop); the portrait keeps its full-frame hitbox
+          underneath. */}
+      <View style={box(16, 12, 150, 282)}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => {}} accessibilityRole="button" accessibilityLabel="Character portrait. Add a photo">
+          <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
+          <ArtImage source={Art.portraitFrame} fit="fill" />
+          {!character.portraitUri ? (
+            <SheetText left={0} top={155} width={150} height={15} color={BRONZE} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+              + Tap to add
+            </SheetText>
+          ) : null}
+        </Pressable>
+        {/* Deck toggle inside the frame's bottom diamond — its centroid for THIS frame size. */}
+        <Pressable style={box(39, 211, 52, 52)} hitSlop={10} onPress={toggleCategory} accessibilityRole="button" accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
+          <ArtImage source={Art.portraitIcon} fit="contain" />
+        </Pressable>
+      </View>
 
       {/* ---------- top-right bio column: name → domain chips → lvl/prof → badges (#37) ---------- */}
       {/* Name stretches to the panel's right edge; sits ABOVE the frame layer (C2). */}
@@ -174,10 +178,12 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <SheetText left={190} top={100} width={206} height={17} color={INK} size={14} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
       <SheetText left={190} top={119} width={206} height={15} color={BRONZE} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
 
-      {/* origin badges (octagon) — lowered to sit just above the defense panel (#37); tappable (D4) */}
-      <OctaBadge left={190} top={132} size={39} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
-      <OctaBadge left={242} top={132} size={39} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
-      <OctaBadge left={294} top={132} size={39} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
+      {/* origin badges (octagon) — bigger, spread to span exactly to the defense panel's right
+          edge (396), and dropped closer to the panel with clear air under the proficiency line
+          (#43 E, F); tappable (D4) */}
+      <OctaBadge left={190} top={140} size={44} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
+      <OctaBadge left={271} top={140} size={44} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
+      <OctaBadge left={352} top={140} size={44} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
