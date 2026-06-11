@@ -6,34 +6,25 @@ import { GearStack } from './gear-stack';
 
 const GEAR_W = 500; // larger than the 412 design width — a big submerged mechanism (#48 I)
 const GEAR_LEFT = (412 - GEAR_W) / 2;
-// The EXPANDED pose: nudged lower again per owner (#54 C) — the stack's half-point stays well
-// below the design bottom (892) so it always reads as machinery sunk under the edge.
-const GEAR_TOP = 714;
-// Compact pose: 30% smaller and sunk this much further. Expanding the hand raises + scales the
-// gears up into the full pose, riding the same spring as the cards (expandProgress).
-const COMPACT_SCALE = 0.7;
-const COMPACT_SINK = 55;
+const GEAR_TOP = 714; // the half-point stays well below the design bottom (892)
 
 /**
- * The decorative cogs at the sheet's bottom edge — mostly submerged, behind the trait banners and
- * the UI border. They spin off the shared carousel rotation (the cards visibly ride them) and
- * breathe with the hand: small + low when compact, rising into the full pose on expand (#54 C).
- * The card carousel owns the scroll gesture; the gears are purely visual (pointer-transparent).
+ * The cogs at the sheet's bottom edge — STATIC pose (owner #62 D: no more scaling/moving; the old
+ * expanded pose is the permanent one). They spin off the shared carousel rotation, and the inner
+ * gear brightens to full opacity as the hand expands — it is the grind-scroll control (the
+ * touchable pad lives in the carousel, this layer is pointer-transparent art).
+ *
+ * Rendered INSIDE the carousel container so it can interleave with the card stack: under every
+ * card normally (zIndex 0 vs slots ~1000), but ABOVE the fullscreen dim (2000) and still under the
+ * focused card (3000) while a card is focused — the gears sit on top of every card-related dimming
+ * layer, never on top of a card.
  */
 export function GearDecoration() {
-  const { rotation, expandProgress } = useCarousel();
-  const pose = useAnimatedStyle(() => {
-    const p = expandProgress.value;
-    return {
-      transform: [
-        { translateY: COMPACT_SINK * (1 - p) },
-        { scale: COMPACT_SCALE + (1 - COMPACT_SCALE) * p },
-      ],
-    };
-  });
+  const { rotation, expandProgress, fullscreenProgress } = useCarousel();
+  const layer = useAnimatedStyle(() => ({ zIndex: fullscreenProgress.value > 0.02 ? 2500 : 0 }));
   return (
-    <Animated.View style={[box(GEAR_LEFT, GEAR_TOP, GEAR_W, GEAR_W), pose]} pointerEvents="none">
-      <GearStack rotation={rotation} size={GEAR_W} />
+    <Animated.View style={[box(GEAR_LEFT, GEAR_TOP, GEAR_W, GEAR_W), layer]} pointerEvents="none">
+      <GearStack rotation={rotation} expandProgress={expandProgress} size={GEAR_W} />
     </Animated.View>
   );
 }

@@ -17,7 +17,6 @@ import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { ArtBox, PipRow, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
-import { GearDecoration } from '../components/gear-decoration';
 import { ClassBanner, SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
@@ -330,11 +329,10 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
               clip={false}
               style={{ marginTop: 18 }}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
-              {/* Gears render UNDER the trait banners (#54 C) — machinery sunk behind the sheet,
-                  never on top of the traits. */}
-              <GearDecoration />
               <TraitBanners character={character} modifierSize={24} groupTop={614} />
               <ExpandVeil />
+              {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
+                  never above a card — and the inner gear is the grind-scroll control. */}
               <CardCarousel />
               <InfoOverlay open={infoOpen} onClose={onInfoClose} />
             </DesignStage>
