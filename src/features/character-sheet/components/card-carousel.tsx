@@ -42,7 +42,6 @@ import {
   WINDOW_HALF,
 } from '../carousel-geometry';
 import { Card } from './card';
-import { ExpandIndicator } from './expand-indicator';
 import { FullscreenCard } from './fullscreen-card';
 
 interface SlotProps {
@@ -243,14 +242,15 @@ export function CardCarousel() {
   return (
     <>
       {/* Full-sheet pan container. `box-none` lets compact-sheet controls above stay tappable and lets
-          each card's own tap through; the pan still recognizes drags that start on a card. */}
+          each card's own tap through; the pan still recognizes drags that start on a card. `overflow:
+          hidden` clips the hand to the design box so cards never spill past the gold frame into the
+          margin (#1). */}
       <GestureDetector gesture={pan}>
-        <View style={box(0, 0, 412, 892)} pointerEvents="box-none">
+        <View style={[box(0, 0, 412, 892), { overflow: 'hidden' }]} pointerEvents="box-none">
           {slots}
         </View>
       </GestureDetector>
 
-      <ExpandIndicator />
       <FullscreenCard item={deck[focusedIndex]} />
     </>
   );
