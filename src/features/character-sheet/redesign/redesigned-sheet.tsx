@@ -99,9 +99,10 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      {/* Wide box + no tracking: labels render at FIXED size on both platforms (#43 B). 9px is the
-          size at which COMMUNITY genuinely fits the NATIVE glyph run — 9.5 ellipsized on device. */}
-      <SheetText left={left - 14} top={top + h + 4} width={w + 28} height={13} color={BRONZE} size={9} family={Body.bold} align="center" uppercase numberOfLines={1}>
+      {/* Wide box + no tracking: labels render at FIXED size on both platforms (#43 B). 8px — one
+          size smaller per owner (#54 E, "too big for how often you use them") — and tucked 2px
+          closer to the octagon it names. */}
+      <SheetText left={left - 12} top={top + h + 2} width={w + 24} height={12} color={BRONZE} size={8} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -177,18 +178,20 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
       <DomainChip left={176} top={74} label={character.domains[0]} />
       <DomainChip left={176 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
-      {/* Level/class + proficiency lines between the chips and the badges. */}
-      <SheetText left={176} top={100} width={220} height={17} color={INK} size={14} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
-      <SheetText left={176} top={119} width={220} height={15} color={BRONZE} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
+      {/* Level/class + proficiency lines between the chips and the badges — nudged 3px up for
+          clear air above the origin strip (#54 E). */}
+      <SheetText left={176} top={97} width={220} height={17} color={INK} size={14} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
+      <SheetText left={176} top={116} width={220} height={15} color={BRONZE} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
 
-      {/* Origin strip (#48 D, per /impeccable): three octagons stretched 52x44 spanning 176..396,
-          fitted labels beneath, and thin gold rules in the gaps (a vertical echo of the Hope
-          connector) so the band reads as ONE structured element, not three floating icons. */}
-      <OctaBadge left={176} top={138} w={52} h={44} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
-      <OctaBadge left={260} top={138} w={52} h={44} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
-      <OctaBadge left={344} top={138} w={52} h={44} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
-      <GoldRuleV left={244} top={146} height={28} color="rgba(200,146,58,0.5)" thickness={1.6} />
-      <GoldRuleV left={328} top={146} height={28} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      {/* Origin strip (#48 D, per /impeccable): three stretched octagons, fitted labels beneath,
+          thin gold rules in the gaps. Shrunk down-and-left (48x40 at an 78px pitch, #54 E) so the
+          COMMUNITY octagon and its label stay inside the panel's right edge (396) on NATIVE glyph
+          widths, not just web. */}
+      <OctaBadge left={176} top={138} w={48} h={40} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
+      <OctaBadge left={254} top={138} w={48} h={40} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
+      <OctaBadge left={332} top={138} w={48} h={40} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
+      <GoldRuleV left={239} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <GoldRuleV left={317} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
