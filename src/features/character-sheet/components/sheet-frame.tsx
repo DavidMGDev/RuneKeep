@@ -26,12 +26,13 @@ export function SheetFrame() {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <ArtImage source={Art.longBorder} fit="fill" style={StyleSheet.absoluteFill} />
-      {/* Banner hangs from the top-left of the frame, sized relative so it tracks the stretch. */}
-      <ArtImage
-        source={Art.classBanner}
-        fit="contain"
-        style={{ position: 'absolute', left: BANNER_LEFT, top: 0, width: BANNER_W, aspectRatio: BANNER_ASPECT } as never}
-      />
+      {/* Banner hangs from the top-left of the frame, above the border. Sizing lives on a plain View
+          (Yoga resolves percent-width + aspectRatio reliably) — putting it on the expo-image style
+          broke on native: the image box got an auto height and `contain` floated the art to
+          mid-screen, over the Stress panel (#30 D). */}
+      <View style={{ position: 'absolute', left: BANNER_LEFT, top: 0, width: BANNER_W, aspectRatio: BANNER_ASPECT }}>
+        <ArtImage source={Art.classBanner} fit="contain" />
+      </View>
     </View>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -248,8 +248,14 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
                 frame frames parchment instead of a dark gap (#1). */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
-            {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges. */}
-            <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT} clip={false}>
+            {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges.
+                Web has no status bar, so the design shifts down ~26px there — on device that strip
+                is the (hidden) status-bar zone the border band already owns (#30 C). */}
+            <DesignStage
+              designWidth={SHEET_DESIGN_WIDTH}
+              designHeight={SHEET_DESIGN_HEIGHT}
+              clip={false}
+              style={Platform.OS === 'web' ? { marginTop: 26 } : null}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} />
               <TraitBanners character={character} modifierSize={22} groupTop={636} />
               <ExpandVeil />

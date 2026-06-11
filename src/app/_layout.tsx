@@ -39,7 +39,8 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Rune.ink }}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        {/* Hidden: the full-bleed gold border owns the very top of the screen (#30 C). */}
+        <StatusBar hidden />
         <Stack
           screenOptions={{
             headerShown: false,
