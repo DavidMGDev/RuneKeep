@@ -68,6 +68,24 @@ function HopeLine({ left, top, width, count, active, pip, onPressPip }: { left: 
   );
 }
 
+/** Width of a domain chip for its label (fixed-ish glyph width + padding). */
+function chipWidth(label: string): number {
+  return Math.round(label.length * 6.8) + 16;
+}
+
+/** A domain name in its own small chamfered red chip (#37) — the project's flat, 45°-cut signature. */
+function DomainChip({ left, top, label }: { left: number; top: number; label: string }) {
+  const w = chipWidth(label);
+  return (
+    <>
+      <ChamferFrame left={left} top={top} width={w} height={18} chamfer={5} fill={RED} stroke="transparent" strokeWidth={0} />
+      <SheetText left={left} top={top} width={w} height={18} color={IVORY} size={10} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+        {label}
+      </SheetText>
+    </>
+  );
+}
+
 /** A small octagon badge (image-6): tappable → opens the associated card (D4). */
 function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; top: number; size: number; icon: number; label: string; onPress?: () => void }) {
   return (
@@ -79,7 +97,9 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      <SheetText left={left - 6} top={top + size + 4} width={size + 12} height={11} color={BRONZE} size={7.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
+      {/* Wider box + no tracking: adjustsFontSizeToFit doesn't shrink on web, so COMMUNITY must fit
+          at its set size or it ellipsizes there. */}
+      <SheetText left={left - 8} top={top + size + 4} width={size + 16} height={12} color={BRONZE} size={8} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -123,44 +143,45 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
       <ProvidedFrame Svg={FrameSvg.ArmorBg} left={100} top={200} w={296} h={90} />
 
       {/* ---------- header: portrait (restored, interlocking) + bio ---------- */}
-      {/* Portrait is a tappable affordance — a photo picker fills it later (D2). */}
-      <PressableArt style={box(16, 12, 138, 270)} pressedScale={1.03} onPress={() => {}} accessibilityLabel="Character portrait. Add a photo">
-        <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 38, top: 48, width: 62, height: 100 } as never} />
+      {/* Portrait grew ~25px right + down so its frame meets the armor panel's left ridges (#37). */}
+      <PressableArt style={box(16, 12, 163, 295)} pressedScale={1.03} onPress={() => {}} accessibilityLabel="Character portrait. Add a photo">
+        <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 45, top: 52, width: 73, height: 109 } as never} />
         <ArtImage source={Art.portraitFrame} fit="fill" />
       </PressableArt>
       {!character.portraitUri ? (
-        <SheetText left={16} top={150} width={138} height={12} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+        <SheetText left={16} top={162} width={163} height={13} color={BRONZE} size={10} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
           + Tap to add
         </SheetText>
       ) : null}
-      {/* Deck toggle (swaps Abilities ↔ Inventory) sits INSIDE the frame's bottom diamond — owner
-          fine-tuned 2px up + 2px left from the measured spot (#30 K). No caption — the icon itself
-          is the affordance. */}
-      <PressableArt style={box(53, 216, 44, 44)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
+      {/* Deck toggle sits INSIDE the frame's bottom diamond — re-centered to the grown frame's
+          diamond centroid (#37). No caption — the icon itself is the affordance. */}
+      <PressableArt style={box(65, 238, 44, 44)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
         <ArtImage source={Art.portraitIcon} fit="contain" />
       </PressableArt>
 
-      {/* Name sits ABOVE the frame layer so the top-center finial never paints over the letters (C2). */}
+      {/* ---------- top-right bio column: name → domain chips → lvl/prof → badges (#37) ---------- */}
+      {/* Name stretches to the panel's right edge; sits ABOVE the frame layer (C2). */}
       <View style={{ zIndex: 2100 }}>
-        <SheetText left={162} top={16} width={178} height={50} color={INK} size={24} family={Display.black} align="left" vAlign="top" lineHeight={24} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
+        <SheetText left={190} top={14} width={206} height={54} color={INK} size={26} family={Display.black} align="left" vAlign="top" lineHeight={26} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
       </View>
-      {/* Bio is just the domains line now — ancestry/class/subclass text removed per owner (#30 E).
-          Domains wear the health red (owner call; overrides the earlier red-is-HP-only rule). */}
-      <SheetText left={162} top={98} width={178} height={13} color={RED} size={9.5} family={Body.bold} align="left" uppercase letterSpacing={0.3} numberOfLines={1}>{character.domains[0]} × {character.domains[1]}</SheetText>
+      {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
+      <DomainChip left={190} top={74} label={character.domains[0]} />
+      <DomainChip left={190 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
+      {/* Level/class + proficiency lines between the chips and the badges. */}
+      <SheetText left={190} top={100} width={206} height={15} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
+      <SheetText left={190} top={117} width={206} height={14} color={BRONZE} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
 
-      {/* Level/proficiency banner REMOVED (#30 F) — the right side stays empty for a future element. */}
-
-      {/* origin badges (octagon) above the defenses — ~30% smaller, left-aligned (#30 G); tappable,
-          open a card (D4) */}
-      <OctaBadge left={166} top={120} size={39} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
-      <OctaBadge left={218} top={120} size={39} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
-      <OctaBadge left={270} top={120} size={39} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
+      {/* origin badges (octagon) — lowered to sit just above the defense panel (#37); tappable (D4) */}
+      <OctaBadge left={190} top={132} size={39} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
+      <OctaBadge left={242} top={132} size={39} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
+      <OctaBadge left={294} top={132} size={39} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
           No armor-score number — shields only, per owner. */}
-      <SheetText left={162} top={212} width={84} height={12} color={Rune.goldText} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
-      <SheetText left={162} top={226} width={84} height={36} color={IVORY} size={28} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
+      {/* Evasion fills its zone — bigger label + numeral (#37); armor side untouched. */}
+      <SheetText left={162} top={206} width={84} height={14} color={Rune.goldText} size={10.5} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
+      <SheetText left={162} top={221} width={84} height={48} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
       <GoldRuleV left={252} top={214} height={62} />
       <SheetText left={262} top={212} width={100} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
