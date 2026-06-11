@@ -95,7 +95,8 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
     <>
       <PressableArt style={box(left, top, w, h)} pressedScale={1.12} onPress={onPress} accessibilityLabel={`${label}, open card`}>
         <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={w} h={h} />
-        <View style={box(w * 0.27, h * 0.24, w * 0.46, h * 0.48)} pointerEvents="none">
+        {/* Icon fills more of the frame (#62 A) — frame + label sizing unchanged. */}
+        <View style={box(w * 0.2, h * 0.16, w * 0.6, h * 0.64)} pointerEvents="none">
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
