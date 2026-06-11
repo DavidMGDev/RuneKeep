@@ -22,6 +22,7 @@ import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
+import { InfoOverlay } from './info-overlay';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
 const SHEET = Rune.sheet;
@@ -108,7 +109,7 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void }) {
+function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void }) {
   const { toggleCategory, openRandomAbility, category } = useCarousel();
   const tint = useAccentTint();
 
@@ -187,17 +188,25 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
       <SheetText left={262} top={212} width={100} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
       <PipGrid left={262} top={230} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
-      {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
-      <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
-      <SheetText left={40} top={323} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
-      {/* One tight baseline-aligned cluster — big red current, smaller ink "/ max"; the current
-          numeral steps down a size when it goes double-digit so the cluster never crowds (#30 I). */}
-      <View style={[box(38, 332, 100, 48), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
-        <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 34 : 40, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
-        <Text numberOfLines={1} style={{ fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}> / {hp.max}</Text>
+      {/* ---------- HP — hearts fit inside the frame, spaced ----------
+          Panel raised 5px: the gap to the portrait/armor band above shrinks ~30% (#37). */}
+      <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={301} w={376} h={84} />
+      {/* Info button centered on the frame's red corner, left of the label (#37) — opens the HP
+          explainer overlay (its own overlay, NOT the carousel's random-card path). */}
+      <PressableArt style={box(29, 306, 17, 17)} pressedScale={1.2} onPress={onInfo} accessibilityLabel="Hit points info" accessibilityHint="Shows an explainer">
+        <View style={{ flex: 1, borderRadius: 9, borderWidth: 1.4, borderColor: IVORY, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: IVORY, fontSize: 10, fontFamily: Display.bold, lineHeight: 12 }}>i</Text>
+        </View>
+      </PressableArt>
+      <SheetText left={54} top={318} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
+      {/* One tight baseline-aligned cluster — red current (20% smaller per owner), smaller ink
+          "/ max" nudged forward; the current numeral steps down a size at double digits (#30 I/#37). */}
+      <View style={[box(38, 329, 100, 44), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
+        <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 28 : 32, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
+        <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {hp.max}</Text>
       </View>
       {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/§1A). */}
-      <PipRow left={140} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
+      <PipRow left={140} top={333} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
 
       {/* ---------- Stress — inset frame, two rows spread across the panel ----------
           Pips are wider-than-tall (`fill` stretch, owner OK'd) and the rows spread edge-to-edge via
@@ -245,6 +254,9 @@ function ExpandVeil() {
 export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { character?: Character }) {
   // The sheet now OWNS character state so the resource tracks can actually be spent/restored (A1).
   const [character, setCharacter] = useState(initial);
+  const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
+  const onInfo = useCallback(() => setInfoOpen(true), []);
+  const onInfoClose = useCallback(() => setInfoOpen(false), []);
   const onHp = useCallback(
     (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.heartSlots * 2, n)) })),
     [],
@@ -274,11 +286,12 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={Platform.OS === 'web' ? { marginTop: 26 } : null}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
               <TraitBanners character={character} modifierSize={22} groupTop={636} />
               <ExpandVeil />
               <GearDecoration />
               <CardCarousel />
+              <InfoOverlay open={infoOpen} onClose={onInfoClose} />
             </DesignStage>
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
