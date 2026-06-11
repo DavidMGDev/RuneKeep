@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { ANGLE_STEP, cardScaleAt, clampRot, maxRotation, SCALE_MAX, SCALE_MIN, snapRot } from './carousel-geometry';
+import { ANGLE_STEP, cardScaleAt, clampRot, imageOpacityAt, maxRotation, SCALE_MAX, SCALE_MIN, snapRot } from './carousel-geometry';
 
 describe('cardScaleAt', () => {
   it('is largest at the center (theta 0)', () => {
@@ -25,6 +25,19 @@ describe('cardScaleAt', () => {
   it('is symmetric and never below the floor', () => {
     expect(cardScaleAt(-ANGLE_STEP)).toBeCloseTo(cardScaleAt(ANGLE_STEP), 6);
     expect(cardScaleAt(99)).toBeGreaterThanOrEqual(SCALE_MIN);
+  });
+});
+
+describe('imageOpacityAt (#48 B: at most ~3 real card textures composite)', () => {
+  it('keeps the center and immediate neighbors at full art', () => {
+    expect(imageOpacityAt(0)).toBe(1);
+    expect(imageOpacityAt(1)).toBe(1);
+  });
+
+  it('fades to the blank card-back by two steps out and stays there', () => {
+    expect(imageOpacityAt(1.5)).toBeCloseTo(0.5, 6);
+    expect(imageOpacityAt(2)).toBe(0);
+    expect(imageOpacityAt(5)).toBe(0);
   });
 });
 

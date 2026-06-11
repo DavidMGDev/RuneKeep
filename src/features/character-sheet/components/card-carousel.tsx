@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -33,6 +33,7 @@ import {
   FS_SPRING,
   FS_UP_TRIGGER,
   FS_UP_VELOCITY,
+  imageOpacityAt,
   MAX_FLING_VEL,
   maxRotation,
   OVERSCROLL_RESIST,
@@ -44,7 +45,7 @@ import {
   SNAP_SPRING,
   WINDOW_HALF,
 } from '../carousel-geometry';
-import { Card } from './card';
+import { Card, CardBack } from './card';
 import { FocusOverlay } from './focus-overlay';
 
 interface SlotProps {
@@ -96,6 +97,15 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
     };
   });
 
+  // Real-art alpha: full within ±1 step of center, 0 by ±2 (#48 B). At alpha 0 the platform skips
+  // the draw entirely, so at most ~3 full card textures composite per frame — the outer slots show
+  // the cheap CardBack underneath instead. A focused card always counts as center (rotation snaps
+  // to it), so its art is always full.
+  const imgFade = useAnimatedStyle(() => {
+    const d = Math.abs(index - rotation.value / ANGLE_STEP);
+    return { opacity: imageOpacityAt(d) };
+  });
+
   // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close.
   const tap = useMemo(
     () =>
@@ -127,7 +137,10 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
     <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
       <GestureDetector gesture={tap}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
-          <Card item={item} width={CARD_W} height={CARD_H} />
+          <CardBack />
+          <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
+            <Card item={item} width={CARD_W} height={CARD_H} />
+          </Animated.View>
         </View>
       </GestureDetector>
     </Animated.View>
