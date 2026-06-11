@@ -88,20 +88,20 @@ function DomainChip({ left, top, label }: { left: number; top: number; label: st
   );
 }
 
-/** A small octagon badge (image-6): tappable → opens the associated card (D4). */
-function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; top: number; size: number; icon: number; label: string; onPress?: () => void }) {
+/** An octagon badge (image-6), stretched a touch wider than tall so the origin strip reads as a
+ *  deliberate band next to the big bio text (#48 D): tappable → opens the associated card (D4). */
+function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; top: number; w: number; h: number; icon: number; label: string; onPress?: () => void }) {
   return (
     <>
-      {/* Square box + `meet` so the octagon keeps its aspect (C6); label sits fully BELOW it (C1). */}
-      <PressableArt style={box(left, top, size, size)} pressedScale={1.12} onPress={onPress} accessibilityLabel={`${label}, open card`}>
-        <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={size} h={size} stretch={false} />
-        <View style={box(size * 0.26, size * 0.24, size * 0.48, size * 0.48)} pointerEvents="none">
+      <PressableArt style={box(left, top, w, h)} pressedScale={1.12} onPress={onPress} accessibilityLabel={`${label}, open card`}>
+        <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={w} h={h} />
+        <View style={box(w * 0.27, h * 0.24, w * 0.46, h * 0.48)} pointerEvents="none">
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      {/* Wider box + no tracking: labels render at FIXED size on both platforms (#43 B), so
-          COMMUNITY must fit at its set size or it ellipsizes. Size rides the 81px badge pitch. */}
-      <SheetText left={left - 12} top={top + size + 4} width={size + 24} height={13} color={BRONZE} size={9.5} family={Body.bold} align="center" uppercase numberOfLines={1}>
+      {/* Wide box + no tracking: labels render at FIXED size on both platforms (#43 B). 9px is the
+          size at which COMMUNITY genuinely fits the NATIVE glyph run — 9.5 ellipsized on device. */}
+      <SheetText left={left - 14} top={top + h + 4} width={w + 28} height={13} color={BRONZE} size={9} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -142,7 +142,8 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       {/* Defense panel ART (image-11: pointy left ribbon, no baked dividers — #30 H). Drawn BEFORE
           the portrait so its tail tucks UNDER the portrait diamond instead of occluding it; the
           panel's texts/pips live in the defenses section below. */}
-      <ProvidedFrame Svg={FrameSvg.ArmorBg} left={100} top={200} w={296} h={90} />
+      {/* Stretched 5px DOWN only so it stands level with the portrait frame (#48 C). */}
+      <ProvidedFrame Svg={FrameSvg.ArmorBg} left={100} top={200} w={296} h={95} />
 
       {/* ---------- header: portrait + deck toggle, ONE locked group (#43 G) ----------
           Sized to the midpoint of the last two iterations (163x295 grew over the defense panel;
@@ -166,36 +167,41 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         </Pressable>
       </View>
 
-      {/* ---------- top-right bio column: name → domain chips → lvl/prof → badges (#37) ---------- */}
+      {/* ---------- top-right bio column: name → domain chips → lvl/prof → origin strip ----------
+          The whole column starts at x176, close to the portrait (the 190 gap read as dead space,
+          #48 D), and spans to the defense panel's right edge (396). */}
       {/* Name stretches to the panel's right edge; sits ABOVE the frame layer (C2). */}
       <View style={{ zIndex: 2100 }}>
-        <SheetText left={190} top={14} width={206} height={54} color={INK} size={26} family={Display.black} align="left" vAlign="top" lineHeight={26} numberOfLines={2} uppercase letterSpacing={-0.6} fit>{character.name}</SheetText>
+        <SheetText left={176} top={14} width={220} height={54} color={INK} size={26} family={Display.black} align="left" vAlign="top" lineHeight={26} numberOfLines={2} uppercase letterSpacing={-0.6} fit>{character.name}</SheetText>
       </View>
       {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
-      <DomainChip left={190} top={74} label={character.domains[0]} />
-      <DomainChip left={190 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
+      <DomainChip left={176} top={74} label={character.domains[0]} />
+      <DomainChip left={176 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
       {/* Level/class + proficiency lines between the chips and the badges. */}
-      <SheetText left={190} top={100} width={206} height={17} color={INK} size={14} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
-      <SheetText left={190} top={119} width={206} height={15} color={BRONZE} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
+      <SheetText left={176} top={100} width={220} height={17} color={INK} size={14} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
+      <SheetText left={176} top={119} width={220} height={15} color={BRONZE} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
 
-      {/* origin badges (octagon) — bigger, spread to span exactly to the defense panel's right
-          edge (396), and dropped closer to the panel with clear air under the proficiency line
-          (#43 E, F); tappable (D4) */}
-      <OctaBadge left={190} top={140} size={44} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
-      <OctaBadge left={271} top={140} size={44} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
-      <OctaBadge left={352} top={140} size={44} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
+      {/* Origin strip (#48 D, per /impeccable): three octagons stretched 52x44 spanning 176..396,
+          fitted labels beneath, and thin gold rules in the gaps (a vertical echo of the Hope
+          connector) so the band reads as ONE structured element, not three floating icons. */}
+      <OctaBadge left={176} top={138} w={52} h={44} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
+      <OctaBadge left={260} top={138} w={52} h={44} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
+      <OctaBadge left={344} top={138} w={52} h={44} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
+      <GoldRuleV left={244} top={146} height={28} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <GoldRuleV left={328} top={146} height={28} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
           No armor-score number — shields only, per owner. */}
-      {/* Evasion + Armor titles sit LEVEL with each other (#43 H); numeral centered a touch lower
-          and further left in the ribbon's wedge. */}
-      <SheetText left={158} top={209} width={84} height={16} color={Rune.goldText} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
-      <SheetText left={158} top={227} width={84} height={46} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
+      {/* Contents nudged 3px into the taller panel and CENTERED as a band (#48 C): titles level,
+          and the evasion numeral's vertical center matches the shield rows' center — the two
+          halves read as one piece. */}
+      <SheetText left={158} top={213} width={84} height={15} color={Rune.goldText} size={11} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
+      <SheetText left={158} top={231} width={84} height={44} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
-      <GoldRuleV left={252} top={214} height={62} />
-      <SheetText left={262} top={209} width={100} height={16} color={Rune.goldText} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
-      <PipGrid left={262} top={230} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
+      <GoldRuleV left={252} top={217} height={64} />
+      <SheetText left={262} top={213} width={100} height={15} color={Rune.goldText} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      <PipGrid left={262} top={234} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ----------
           Panel raised 5px: the gap to the portrait/armor band above shrinks ~30% (#37). */}
