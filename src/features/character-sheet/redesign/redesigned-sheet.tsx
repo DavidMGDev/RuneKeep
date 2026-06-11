@@ -1,5 +1,6 @@
+import { type ImageContentFit } from 'expo-image';
 import { useCallback, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -37,14 +38,15 @@ const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
-function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, tintFor, artFor, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
+function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWidth, pipFit, tintFor, artFor, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; /** Pip height when the slot is not square (defaults to `pip`). */ pipH?: number; /** Explicit row width — pips spread evenly across it (space-between). */ rowWidth?: number; pipFit?: ImageContentFit; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
   const rows: PipState[][] = [];
   for (let i = 0; i < states.length; i += perRow) rows.push(states.slice(i, i + perRow));
-  const rowW = perRow * pip + (perRow - 1) * gap;
+  const h = pipH ?? pip;
+  const rowW = rowWidth ?? perRow * pip + (perRow - 1) * gap;
   return (
     <>
       {rows.map((row, r) => (
-        <PipRow key={r} left={left} top={top + r * (pip + rowGap)} width={rowW} height={pip} states={row} pipWidth={pip} pipHeight={pip} artFor={artFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
+        <PipRow key={r} left={left} top={top + r * (h + rowGap)} width={rowW} height={h} states={row} pipWidth={pip} pipHeight={h} pipFit={pipFit} artFor={artFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
       ))}
     </>
   );
@@ -166,18 +168,22 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
-      <SheetText left={40} top={318} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
-      <SheetText left={38} top={338} width={50} height={42} color={tint ?? RED} size={32} family={Display.black} align="left" tabularNums>{hp.current}</SheetText>
-      <SheetText left={86} top={346} width={54} height={28} color={INK} size={20} family={Display.bold} align="left">/ {hp.max}</SheetText>
-      {/* Row widened + pip trimmed so 6 hearts sit with positive gaps instead of fused edge-to-edge (C3).
-          States (golden / red / empty) and the readout above are both derived from HP (D1/§1A). */}
-      <PipRow left={150} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
+      <SheetText left={40} top={323} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
+      {/* One tight baseline-aligned cluster — big red current, smaller ink "/ max"; the current
+          numeral steps down a size when it goes double-digit so the cluster never crowds (#30 I). */}
+      <View style={[box(38, 332, 100, 48), { flexDirection: 'row', alignItems: 'baseline', overflow: 'hidden' }]} pointerEvents="none">
+        <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 34 : 40, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
+        <Text numberOfLines={1} style={{ fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}> / {hp.max}</Text>
+      </View>
+      {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/§1A). */}
+      <PipRow left={140} top={338} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
 
-      {/* ---------- Stress — inset frame, big icons, two rows ----------
-          Frame grown up + pips trimmed so the second row no longer kisses the bottom edge (#6). */}
+      {/* ---------- Stress — inset frame, two rows spread across the panel ----------
+          Pips are wider-than-tall (`fill` stretch, owner OK'd) and the rows spread edge-to-edge via
+          rowWidth, leaving real padding below the second row (#30 J). */}
       <ChamferFrame left={22} top={396} width={368} height={128} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       <SheetText left={42} top={406} width={120} height={13} color={INK} size={10} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={430} perRow={6} gap={8} rowGap={8} states={stress} pip={40} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+      <PipGrid left={44} top={426} perRow={6} gap={8} rowGap={8} rowWidth={324} pip={48} pipH={34} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress, thin connecting line ---------- */}
       <ChamferFrame left={22} top={532} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />

@@ -141,6 +141,8 @@ interface PipRowProps {
   states: PipState[];
   pipWidth: number;
   pipHeight: number;
+  /** `fill` lets pip art stretch into a non-square slot (e.g. wide stress pips); default keeps aspect. */
+  pipFit?: ImageContentFit;
   artFor: (state: PipState) => number;
   /** Optional per-state tint (e.g. retint the red 'active' pips to the accent color). */
   tintFor?: (state: PipState) => string | undefined;
@@ -169,6 +171,7 @@ export function PipRow({
   states,
   pipWidth,
   pipHeight,
+  pipFit = 'contain',
   artFor,
   tintFor,
   onPressPip,
@@ -190,7 +193,7 @@ export function PipRow({
           onPress={onPressPip ? () => onPressPip(i) : undefined}
           accessibilityLabel={trackLabel ? `${trackLabel}, ${PIP_STATE_WORD[state]}` : undefined}
           accessibilityHint={trackLabel && onPressPip ? 'Double tap to set this level' : undefined}>
-          <ArtImage source={artFor(state)} fit="contain" tint={tintFor?.(state)} />
+          <ArtImage source={artFor(state)} fit={pipFit} tint={tintFor?.(state)} />
         </PressableArt>
       ))}
     </View>
