@@ -68,6 +68,19 @@ export const EXPAND_SPRING = { damping: 16, stiffness: 130, mass: 0.8 };
 export const SNAP_SPRING = { damping: 18, stiffness: 140, mass: 0.7 };
 export const FS_SPRING = { damping: 18, stiffness: 120, mass: 0.9 };
 
+/**
+ * Real-image opacity by distance from center, in CARD STEPS (state-independent): full within ±1,
+ * gone by ±2. Beyond that a slot shows only its cheap blank card-back — so at most ~3 full card
+ * textures are ever composited, whatever the deck position or expand state. This is the #48 B perf
+ * fix: 5 mounted full-alpha images overdrawing each other tanked the A54 to ~10fps the moment the
+ * 3rd card centered (5 slots mounted), and kept it there in compact where the falloff left ALL
+ * slots at full alpha stacked on top of each other.
+ */
+export function imageOpacityAt(distSteps: number): number {
+  'worklet';
+  return Math.min(1, Math.max(0, 2 - distSteps));
+}
+
 /** Smooth center-out scale: centermost largest, tapering to SCALE_MIN. */
 export function cardScaleAt(theta: number): number {
   'worklet';
