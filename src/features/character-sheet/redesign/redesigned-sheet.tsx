@@ -209,10 +209,12 @@ function ExpandVeil() {
   });
   const style = useAnimatedStyle(() => ({ opacity: expandProgress.value * 0.62 }));
   // When expanded the veil swallows taps on the dimmed sheet (AC2.8) and a tap dismisses the hand;
-  // when compact it is inert so the controls underneath stay live.
+  // when compact it is inert so the controls underneath stay live. The box is oversized far past the
+  // stage (which no longer clips) so the dim reaches the physical screen edges — status-bar area and
+  // letterbox margins included — with square corners (#30 B).
   return (
-    <Pressable style={box(0, 0, 412, 892)} pointerEvents={blocking ? 'auto' : 'none'} onPress={collapse}>
-      <Animated.View style={[box(0, 0, 412, 892), { backgroundColor: '#090B10', borderRadius: 26 }, style]} pointerEvents="none" />
+    <Pressable style={box(-120, -160, 652, 1212)} pointerEvents={blocking ? 'auto' : 'none'} onPress={collapse}>
+      <Animated.View style={[box(0, 0, 652, 1212), { backgroundColor: '#06080d' }, style]} pointerEvents="none" />
     </Pressable>
   );
 }
@@ -246,7 +248,8 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
                 frame frames parchment instead of a dark gap (#1). */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
-            <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT}>
+            {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges. */}
+            <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT} clip={false}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} />
               <TraitBanners character={character} modifierSize={22} groupTop={636} />
               <ExpandVeil />

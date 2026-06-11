@@ -11,6 +11,11 @@ interface DesignStageProps {
   designHeight: number;
   /** `contain` (default) letterboxes within the frame; `cover` fills and clips. */
   fit?: StageFit;
+  /**
+   * Clip children to the stage frame (default). Pass false when in-stage overlays must reach past
+   * the letterbox margins (e.g. a full-screen dim behind a focused card — issue #30 B).
+   */
+  clip?: boolean;
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
 }
@@ -24,6 +29,7 @@ export function DesignStage({
   designWidth,
   designHeight,
   fit = 'contain',
+  clip = true,
   style,
   children,
 }: DesignStageProps) {
@@ -51,7 +57,7 @@ export function DesignStage({
   const fade = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   return (
-    <View style={[{ flex: 1, overflow: 'hidden' }, style]} onLayout={onLayout}>
+    <View style={[{ flex: 1, overflow: clip ? 'hidden' : 'visible' }, style]} onLayout={onLayout}>
       {ready && (
         <Animated.View
           style={[
