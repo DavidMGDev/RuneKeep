@@ -29,7 +29,6 @@ const RED = Rune.red;
 const GOLDD = Rune.goldEdge;
 const IVORY = Rune.sheet;
 const BRONZE = Rune.bronze; // deep gold labels on parchment (AA at small sizes, L3)
-const INKMUT = Rune.inkMuted; // muted secondary ink on parchment
 
 // A golden heart reuses the heart shape, recolored gold (clearly distinct from red at small size, AC1A.5).
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
@@ -78,7 +77,7 @@ function OctaBadge({ left, top, size, icon, label, onPress }: { left: number; to
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      <SheetText left={left - 6} top={top + size + 4} width={size + 12} height={12} color={BRONZE} size={8.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
+      <SheetText left={left - 6} top={top + size + 4} width={size + 12} height={11} color={BRONZE} size={7.5} family={Body.bold} align="center" uppercase letterSpacing={0.2} numberOfLines={1}>
         {label}
       </SheetText>
     </>
@@ -127,10 +126,10 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
           + Tap to add
         </SheetText>
       ) : null}
-      {/* Deck toggle (swaps Abilities ↔ Inventory) sits INSIDE the frame's bottom diamond — measured
-          to the diamond centroid (design 77,240), nudged up + left from before (#3). The caption that
-          used to sit under it is gone (no room there, #7) — the icon itself is the affordance. */}
-      <PressableArt style={box(55, 218, 44, 44)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
+      {/* Deck toggle (swaps Abilities ↔ Inventory) sits INSIDE the frame's bottom diamond — owner
+          fine-tuned 2px up + 2px left from the measured spot (#30 K). No caption — the icon itself
+          is the affordance. */}
+      <PressableArt style={box(53, 216, 44, 44)} pressedScale={1.16} onPress={toggleCategory} accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
         <ArtImage source={Art.portraitIcon} fit="contain" />
       </PressableArt>
 
@@ -138,26 +137,17 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
       <View style={{ zIndex: 2100 }}>
         <SheetText left={162} top={16} width={178} height={50} color={INK} size={24} family={Display.black} align="left" vAlign="top" lineHeight={24} numberOfLines={2} uppercase letterSpacing={-0.6}>{character.name}</SheetText>
       </View>
-      {/* Demote class/domain lines off red (I1) — red is now reserved for HP/health only. */}
-      <SheetText left={162} top={66} width={178} height={14} color={INK} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>{character.ancestry} · {character.className}</SheetText>
-      <SheetText left={162} top={82} width={178} height={12} color={INKMUT} size={9} family={Body.medium} align="left" numberOfLines={1}>{character.subclass}</SheetText>
-      <SheetText left={162} top={98} width={178} height={13} color={BRONZE} size={9.5} family={Body.bold} align="left" uppercase letterSpacing={0.3} numberOfLines={1}>{character.domains[0]} × {character.domains[1]}</SheetText>
+      {/* Bio is just the domains line now — ancestry/class/subclass text removed per owner (#30 E).
+          Domains wear the health red (owner call; overrides the earlier red-is-HP-only rule). */}
+      <SheetText left={162} top={98} width={178} height={13} color={RED} size={9.5} family={Body.bold} align="left" uppercase letterSpacing={0.3} numberOfLines={1}>{character.domains[0]} × {character.domains[1]}</SheetText>
 
-      {/* level + proficiency, in a clean vertical CHAMFER frame (crown over LVL). The old square SVG
-          was stretched into this tall box and mangled its corners (#5) — a vector chamfer stays crisp
-          at any aspect. */}
-      <ChamferFrame left={348} top={10} width={52} height={150} chamfer={9} stroke={GOLDD} strokeWidth={1.6} fill="none" />
-      <View style={box(366, 17, 16, 16)} pointerEvents="none"><ArtImage source={Art.levelCrown} fit="contain" /></View>
-      <SheetText left={348} top={34} width={52} height={11} color={BRONZE} size={9} family={Body.bold} align="center" uppercase letterSpacing={1}>Lvl</SheetText>
-      <SheetText left={348} top={45} width={52} height={32} color={INK} size={26} family={Display.black} align="center" tabularNums>{character.level}</SheetText>
-      <GoldRule left={356} top={86} width={36} color="rgba(200,146,58,0.5)" />
-      <SheetText left={348} top={94} width={52} height={11} color={BRONZE} size={8.5} family={Body.bold} align="center" uppercase letterSpacing={0.6}>Prof</SheetText>
-      <SheetText left={348} top={103} width={52} height={30} color={INK} size={24} family={Display.black} align="center" tabularNums>{character.proficiency}</SheetText>
+      {/* Level/proficiency banner REMOVED (#30 F) — the right side stays empty for a future element. */}
 
-      {/* origin badges (octagon) above the defenses — tappable, open a card (D4) */}
-      <OctaBadge left={166} top={120} size={56} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
-      <OctaBadge left={228} top={120} size={56} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
-      <OctaBadge left={290} top={120} size={56} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
+      {/* origin badges (octagon) above the defenses — ~30% smaller, left-aligned (#30 G); tappable,
+          open a card (D4) */}
+      <OctaBadge left={166} top={120} size={39} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
+      <OctaBadge left={218} top={120} size={39} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
+      <OctaBadge left={270} top={120} size={39} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
 
       {/* ---------- Evasion + Armor — CLEAN custom dark chamfer panel ----------
           The old armor-panel PNG baked a vertical divider at ~68% width that sliced straight through
