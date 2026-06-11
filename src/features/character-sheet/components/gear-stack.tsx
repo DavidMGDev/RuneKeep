@@ -24,13 +24,16 @@ interface Layer {
   origin: (string | number)[];
   /** Speed multiplier off the shared rotation. All positive = same direction. */
   ratio: number;
+  /** Per-layer size, scaled around the layer's own centroid — DISTINCTLY different per ring so the
+   *  mechanism reads as stacked separate gears, not one conglomerate disc (#48 I). */
+  scale: number;
 }
 
 const LAYERS: Layer[] = [
-  { src: U1, origin: ['52.0%', '47.1%', 0], ratio: 1.0 },
-  { src: U2, origin: ['50.0%', '47.5%', 0], ratio: 0.62 },
-  { src: U3, origin: ['50.1%', '48.7%', 0], ratio: 1.45 },
-  { src: U4, origin: ['52.4%', '44.7%', 0], ratio: 0.35 },
+  { src: U1, origin: ['52.0%', '47.1%', 0], ratio: 1.0, scale: 1.0 },
+  { src: U2, origin: ['50.0%', '47.5%', 0], ratio: 0.62, scale: 0.74 },
+  { src: U3, origin: ['50.1%', '48.7%', 0], ratio: 1.45, scale: 0.52 },
+  { src: U4, origin: ['52.4%', '44.7%', 0], ratio: 0.35, scale: 1.22 },
 ];
 
 interface GearStackProps {
@@ -55,8 +58,10 @@ interface GearLayerProps extends Layer {
   height: number;
 }
 
-function GearLayer({ src, origin, ratio, rotation, size, height }: GearLayerProps) {
-  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value * ratio}rad` }] }));
+function GearLayer({ src, origin, ratio, scale, rotation, size, height }: GearLayerProps) {
+  const style = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value * ratio}rad` }, { scale }],
+  }));
   return (
     <Animated.View
       style={[{ position: 'absolute', left: 0, top: 0, width: size, height, transformOrigin: origin }, style]}
