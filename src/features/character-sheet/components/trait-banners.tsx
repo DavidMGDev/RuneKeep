@@ -13,7 +13,9 @@ const FIRST_X = 26.1;
 const STEP = 61.4;
 const DEFAULT_GROUP_TOP = 598;
 const GROUP_W = 56.4;
-const GROUP_H = 119;
+// 10px taller than the mockup's 119: the banner ART stretches down (the glyph on top does NOT) so
+// the modifier numeral gets real room instead of clipping against the bottom edge (#48 H).
+const GROUP_H = 129;
 
 interface TraitBannerProps {
   x: number;
@@ -28,8 +30,9 @@ function TraitBanner({ x, groupTop, label, icon, value, modifierSize }: TraitBan
   return (
     <View style={box(x, groupTop, GROUP_W, GROUP_H)}>
       <PressableArt style={{ flex: 1 }} pressedScale={1.1}>
-        {/* Hex shield background — a banner outline, so it fills its box */}
-        <View style={box(0, 9.6, GROUP_W, 109.4)}>
+        {/* Hex shield background — a banner outline, so it fills its box (stretched 10px down,
+            independent of the glyph above it, #48 H) */}
+        <View style={box(0, 9.6, GROUP_W, 119.4)}>
           <ArtImage source={Art.traitBanner} fit="fill" />
         </View>
         {/* Trait glyph, poking above the banner top */}
@@ -41,7 +44,7 @@ function TraitBanner({ x, groupTop, label, icon, value, modifierSize }: TraitBan
           {label.slice(0, 3)}
         </SheetText>
         {/* Negatives read in a distinct terracotta so the lone "−1" doesn't blend with the "+" stats (I2). */}
-        <SheetText left={-4} top={71} width={GROUP_W + 8} height={28} color={value < 0 ? '#E2705A' : Rune.ivory} size={modifierSize} family={Display.black} tabularNums>
+        <SheetText left={-4} top={74} width={GROUP_W + 8} height={32} color={value < 0 ? '#E2705A' : Rune.ivory} size={modifierSize} family={Display.black} tabularNums>
           {formatModifier(value)}
         </SheetText>
       </PressableArt>
