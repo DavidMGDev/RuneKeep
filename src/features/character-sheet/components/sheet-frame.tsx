@@ -18,21 +18,32 @@ const BANNER_ASPECT = 51.2 / 74.2;
 
 /**
  * The gold ornamental border. It is a FULL-BLEED overlay (not inside the design stage): the art is
- * stretched edge-to-edge so its gold line hugs the physical screen, leaving no dark margin for the
+ * stretched edge-to-edge so its gold line hugs the safe area, leaving no dark margin for the
  * card hand to float over (owner feedback #1). The card hand is clipped to the design box, so it
- * always sits BEHIND this frame. Only the class banner pokes above the top edge.
+ * always sits BEHIND this frame. It never invades the status bar (#43 A) — the inset strip above
+ * is painted by the root's ink background; only the ClassBanner reaches the physical top.
  */
 export function SheetFrame() {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <ArtImage source={Art.longBorder} fit="fill" style={StyleSheet.absoluteFill} />
-      {/* Banner hangs from the top-left of the frame, above the border. Sizing lives on a plain View
-          (Yoga resolves percent-width + aspectRatio reliably) — putting it on the expo-image style
-          broke on native: the image box got an auto height and `contain` floated the art to
-          mid-screen, over the Stress panel (#30 D). */}
-      <View style={{ position: 'absolute', left: BANNER_LEFT, top: 0, width: BANNER_W, aspectRatio: BANNER_ASPECT }}>
-        <ArtImage source={Art.classBanner} fit="contain" />
-      </View>
+    </View>
+  );
+}
+
+/**
+ * The class banner, rendered OUTSIDE the safe area so it hangs from the PHYSICAL top edge of the
+ * screen — the one element allowed to invade the status-bar strip (#43 A). Sizing lives on a plain
+ * View (Yoga resolves percent-width + aspectRatio reliably) — putting it on the expo-image style
+ * broke on native: the image box got an auto height and `contain` floated the art to mid-screen,
+ * over the Stress panel (#30 D).
+ */
+export function ClassBanner() {
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', left: BANNER_LEFT, top: 0, width: BANNER_W, aspectRatio: BANNER_ASPECT }}>
+      <ArtImage source={Art.classBanner} fit="contain" />
     </View>
   );
 }
