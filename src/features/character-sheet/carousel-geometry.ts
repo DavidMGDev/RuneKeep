@@ -62,6 +62,17 @@ export const MAX_FLING_VEL = 6; // rad/s ceiling on the release velocity
 export const FLING_TIME = 0.18; // s — how far a fling "throws" (target = rot + v * FLING_TIME)
 export const OVERSCROLL_RESIST = 0.35; // drag past a deck end moves at 35% (soft rubber while dragging)
 
+// --- Inner-gear grind scroll (#62 D) ---
+// Dragging the inner gear scrolls ~3x harder than the hand itself and tightens the fan so more
+// cards skim past at once; a haptic ticks at every detent crossed.
+export const GEAR_PAN_R = 170; // finger px per radian on the gear (PAN_R/3.2 → much stronger)
+export const GRIND_TIGHTEN = 0.55; // fan step shrinks to 45% while grinding (same card size)
+// The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
+export const PAD_X = 126;
+export const PAD_Y = 812;
+export const PAD_W = 160;
+export const PAD_H = 80;
+
 // Gesture thresholds (design px / velocity). Tuned LOW per the brief — a light flick should work.
 export const EXPAND_TRIGGER = 16; // up-drag from compact to fan the hand
 export const FS_UP_TRIGGER = 26; // up-drag from expanded to fly the center card full-screen
