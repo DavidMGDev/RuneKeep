@@ -71,7 +71,9 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
     let scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
     let tilt = theta * 0.5;
 
-    const edge = (2.6 + 1.3 * p) * stepNow;
+    // Falloff tightened to the ±2 mount window (issue #41): fully faded by ~2.6 steps out, so the
+    // unmounted third neighbor never pops in/out visibly.
+    const edge = (1.6 + 0.6 * p) * stepNow;
     let opacity = Math.min(1, Math.max(0, (1.2 * edge - Math.abs(theta)) / (0.5 * edge)));
     let z = Math.round(1000 - (Math.abs(theta) / stepNow) * 10);
 
@@ -119,7 +121,10 @@ const CardSlot = memo(function CardSlot({ index, item, count, rotation, expandPr
   );
 
   return (
-    <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]} renderToHardwareTextureAndroid shouldRasterizeIOS>
+    // NO renderToHardwareTexture/rasterize here (issue #41): the slot's opacity + scale change every
+    // scrolled frame, which invalidates a rasterized layer each frame — N re-uploaded textures per
+    // frame tanked the device globally. Plain composite of a static image is far cheaper.
+    <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
       <GestureDetector gesture={tap}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
           <Card item={item} width={CARD_W} height={CARD_H} />
