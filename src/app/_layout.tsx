@@ -40,8 +40,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Rune.ink }}>
       <SafeAreaProvider>
         {/* Shown over the app's ink navy (the root background) so it reads as part of the border
-            band; the sheet itself is pushed below it by the safe-area inset (#43 A). */}
-        <StatusBar style="light" />
+            band; the sheet itself is pushed below it (#43 A). `hidden` is set EXPLICITLY: the bar
+            was hidden by an earlier build, and Expo Go keeps the native flag across reloads unless
+            a component actively claims it (#48 A). */}
+        <StatusBar style="light" hidden={false} translucent />
         <Stack
           screenOptions={{
             headerShown: false,
