@@ -317,9 +317,11 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
+              {/* Gears render UNDER the trait banners (#54 C) — machinery sunk behind the sheet,
+                  never on top of the traits. */}
+              <GearDecoration />
               <TraitBanners character={character} modifierSize={24} groupTop={614} />
               <ExpandVeil />
-              <GearDecoration />
               <CardCarousel />
               <InfoOverlay open={infoOpen} onClose={onInfoClose} />
             </DesignStage>
