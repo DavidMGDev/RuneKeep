@@ -115,7 +115,12 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
           the project signature; this also kills the ivory corner seam (C7). */}
       <ChamferFrame left={0} top={0} width={412} height={892} chamfer={18} fill={SHEET} stroke="transparent" strokeWidth={0} />
 
-      {/* ---------- header: portrait (restored, interlocking) + bio + level banner ---------- */}
+      {/* Defense panel ART (image-11: pointy left ribbon, no baked dividers — #30 H). Drawn BEFORE
+          the portrait so its tail tucks UNDER the portrait diamond instead of occluding it; the
+          panel's texts/pips live in the defenses section below. */}
+      <ProvidedFrame Svg={FrameSvg.ArmorBg} left={100} top={200} w={296} h={90} />
+
+      {/* ---------- header: portrait (restored, interlocking) + bio ---------- */}
       {/* Portrait is a tappable affordance — a photo picker fills it later (D2). */}
       <PressableArt style={box(16, 12, 138, 270)} pressedScale={1.03} onPress={() => {}} accessibilityLabel="Character portrait. Add a photo">
         <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 38, top: 48, width: 62, height: 100 } as never} />
@@ -149,19 +154,15 @@ function RedesignedBody({ character, onHp, onTrack }: { character: Character; on
       <OctaBadge left={218} top={120} size={39} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
       <OctaBadge left={270} top={120} size={39} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
 
-      {/* ---------- Evasion + Armor — CLEAN custom dark chamfer panel ----------
-          The old armor-panel PNG baked a vertical divider at ~68% width that sliced straight through
-          the shield grid (owner feedback #2). Drawing the panel ourselves gives one tidy divider
-          between Evasion and Armor and shields that never straddle it. */}
-      <ChamferFrame left={92} top={198} width={304} height={96} chamfer={14} fill={Rune.panel} stroke={GOLDD} strokeWidth={1.4} />
-      <SheetText left={100} top={210} width={88} height={12} color={Rune.goldText} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
-      <SheetText left={100} top={224} width={88} height={40} color={IVORY} size={30} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
+      {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
+          Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
+          No armor-score number — shields only, per owner. */}
+      <SheetText left={162} top={212} width={84} height={12} color={Rune.goldText} size={9} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
+      <SheetText left={162} top={226} width={84} height={36} color={IVORY} size={28} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
-      <GoldRuleV left={200} top={212} height={68} />
-      <SheetText left={214} top={210} width={100} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
-      {/* R2: surface the armor score (damage reduction). */}
-      <SheetText left={350} top={208} width={40} height={16} color={IVORY} size={13} family={Display.bold} align="right" tabularNums>{character.armorScore}</SheetText>
-      <PipGrid left={214} top={232} perRow={6} gap={5} rowGap={6} states={armor} pip={18} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
+      <GoldRuleV left={252} top={214} height={62} />
+      <SheetText left={262} top={212} width={100} height={12} color={Rune.goldText} size={9} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
+      <PipGrid left={262} top={230} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ---------- */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={18} top={306} w={376} h={84} />
