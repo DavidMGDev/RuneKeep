@@ -318,11 +318,16 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
             {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges.
                 The safe-area inset pushes everything (border included) below the status bar; the
                 strip above reads as the root's ink navy. Web's inset is 0, so the layouts are the
-                SAME design, mobile-first (#43 A — replaces the old web-only 26px shift). */}
+                SAME design, mobile-first (#43 A — replaces the old web-only 26px shift).
+                marginTop pushes the DESIGN down INSIDE the border (#61): once the top+bottom bars
+                ate the container height, the stage's natural letterbox vanished and the border's
+                top band started covering the top of the name (authored at design y14). 18px keeps
+                the design clear of the band at any container height. */}
             <DesignStage
               designWidth={SHEET_DESIGN_WIDTH}
               designHeight={SHEET_DESIGN_HEIGHT}
-              clip={false}>
+              clip={false}
+              style={{ marginTop: 18 }}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
               {/* Gears render UNDER the trait banners (#54 C) — machinery sunk behind the sheet,
                   never on top of the traits. */}
