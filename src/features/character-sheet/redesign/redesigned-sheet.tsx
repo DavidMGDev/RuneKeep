@@ -303,11 +303,15 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
   const insets = useSafeAreaInsets();
   const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
   const topInset = Platform.OS === 'android' && detected < 24 ? 32 : detected;
+  // Bottom mirror (#59): the same device reports a 0 BOTTOM inset too, so the sheet (and the
+  // gears' spill) ran under the 3-button nav bar. Floor at the standard 48dp bar height whenever
+  // Android detection is implausibly small; gesture-nav devices report ~16-34 and keep it.
+  const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
       <CarouselProvider>
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
-          <View style={{ flex: 1, marginTop: topInset, marginBottom: insets.bottom }}>
+          <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
                 frame frames parchment instead of a dark gap (#1). */}
             <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
@@ -332,9 +336,12 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />
           </View>
-          {/* An EXPLICIT bar painted over the status-bar strip (#54 D): even if some layer below
-              misbehaves, the strip always reads as the border's ink navy. */}
+          {/* EXPLICIT bars painted over the status-bar and nav-control strips (#54 D, #59): even if
+              some layer below misbehaves, both strips always read as the border's ink navy. The
+              bottom one is load-bearing — the stage is unclipped (the dims must overdraw), so the
+              gears/card spill below the design box can only be COVERED, not clipped. */}
           <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topInset, backgroundColor: Rune.ink }} />
+          <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
           {/* Above the bar: the banner is the ONE element that invades the status-bar strip,
               hanging from the physical top edge of the screen (#43 A). */}
           <ClassBanner />
