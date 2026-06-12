@@ -43,7 +43,7 @@ export function RuneButton({ label, onPress, kind = 'secondary', disabled, heigh
       accessibilityRole="button"
       accessibilityState={{ disabled: !!disabled }}
       accessibilityLabel={accessibilityLabel ?? label}
-      style={[{ opacity: disabled ? 0.38 : 1, alignSelf: dense ? 'flex-end' : undefined }, style]}>
+      style={[{ opacity: disabled ? 0.38 : 1 }, style]}>
       <Animated.View style={anim}>
         <ChamferBox chamfer={dense ? 7 : 10} fill={fill} stroke={stroke} strokeWidth={kind === 'primary' ? 0 : 1.4} style={{ height, justifyContent: 'center' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: dense ? 9 : 16 }}>

@@ -1,4 +1,4 @@
-import * as ImagePicker from 'expo-image-picker';
+﻿import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, Text, TextInput, View } from 'react-native';
@@ -150,7 +150,7 @@ function DeckTab({ deck, label, active, done, locked, pulseToken, onPress }: { d
   );
 }
 
-/** A section seam: plain gold hairlines flanking the label — the app's own divider language.
+/** A section seam: plain gold hairlines flanking the label â€” the app's own divider language.
  *  (The ornamental CardDivider is for CARDS only, per owner.) */
 function SectionDivider({ label }: { label: string }) {
   return (
@@ -187,10 +187,10 @@ function DeckLoader() {
 // ---------- screen ----------
 
 /**
- * Character creation, forge edition (#102, impeccable craft): a centered column — Details under
+ * Character creation, forge edition (#102, impeccable craft): a centered column â€” Details under
  * its divider plaque (name, portrait, full-width add-image), then the Origin divider with five
  * deck tabs, then the STRAIGHT carousel where every choice is made by reading actual cards.
- * Class picks are FORGED cards; deck swaps fade out → load → fade all back in (no travel);
+ * Class picks are FORGED cards; deck swaps fade out â†’ load â†’ fade all back in (no travel);
  * selections per deck are remembered, FORGE arms when all five are set.
  */
 export function CreateScreen() {
@@ -213,7 +213,7 @@ export function CreateScreen() {
   }, [draft.className]);
 
   // Deck switch: fade ALL cards out in place -> swap ONLY once fully invisible (timing callback,
-  // not a racy timeout — a mid-fade swap let the old deck's cards flash among the new, owner) ->
+  // not a racy timeout â€” a mid-fade swap let the old deck's cards flash among the new, owner) ->
   // short paint grace while the loader pulses -> fade all back in at once. No vertical travel.
   const finishFade = useCallback(
     (next: DeckKey) => {
@@ -255,7 +255,7 @@ export function CreateScreen() {
           node: (
             <ForgedTextCard
               title={c.title}
-              kindLabel="Class features"
+              kindLabel="Features"
               pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
               sections={p.sections}
               accentDeep={classColor(c.key).deep}
@@ -417,7 +417,7 @@ export function CreateScreen() {
                 accessibilityLabel="Character name"
               />
             </ChamferBox>
-            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the sheet's frame for now.</Text>
+            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional â€” it sits in the sheet's frame for now.</Text>
             <RuneButton label={draft.portraitUri ? 'Change image' : 'Add image'} kind="ghost" height={32} onPress={pickPortrait} />
           </View>
         </View>
@@ -524,7 +524,7 @@ function FeatureViewer({
             <View style={{ transform: [{ scale }], width: 230, height: 322, marginLeft: (230 * (scale - 1)) / 2, marginTop: (322 * (scale - 1)) / 2 }}>
               <ForgedTextCard
                 title={def.title}
-                kindLabel="Class features"
+                kindLabel="Features"
                 pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
                 sections={p.sections}
                 accentDeep={classColor(def.key).deep}
