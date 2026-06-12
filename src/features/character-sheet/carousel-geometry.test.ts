@@ -28,22 +28,16 @@ describe('cardScaleAt', () => {
   });
 });
 
-describe('imageOpacityAt (#67 A: five drawn at rest, the boundary slot decodes hidden)', () => {
-  it('draws five cards full at rest — integer alphas at every rest detent', () => {
+describe('imageOpacityAt (#78 LOD: full-res sharp on the three center cards only)', () => {
+  it('draws the center and immediate neighbors at full resolution', () => {
     expect(imageOpacityAt(0)).toBe(1);
     expect(imageOpacityAt(1)).toBe(1);
-    expect(imageOpacityAt(2)).toBe(1);
   });
 
-  it('is fully hidden by three steps out (where the mounted image decodes)', () => {
-    expect(imageOpacityAt(2.5)).toBeCloseTo(0.5, 6);
-    expect(imageOpacityAt(3)).toBe(0);
+  it('hands over to the always-mounted thumb by two steps out — integer alphas at rest', () => {
+    expect(imageOpacityAt(1.5)).toBeCloseTo(0.5, 6);
+    expect(imageOpacityAt(2)).toBe(0);
     expect(imageOpacityAt(5)).toBe(0);
-  });
-
-  it('grinding the gear extends the fade so all seven mounted slots draw', () => {
-    expect(imageOpacityAt(3, 1)).toBe(1);
-    expect(imageOpacityAt(4, 1)).toBe(0);
   });
 });
 
