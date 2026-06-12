@@ -59,29 +59,29 @@ import { Card, CardThumb } from './card';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
 
+const flipPar = (t: number) => ((t % 2) + 2) % 2;
+
 /**
  * The 3D flip element (#110) — only mounted/visible when a multi-face card is FOCUSED (the parent
- * fades it in over the flat LOD on open). Accumulating-angle two-side model (same as the forge's
- * FlipCard): the soon-forward side gets the target face BEFORE each ±180° half-turn, rotation never
- * resets → no swap-frame flash. `renderFace` draws each face through the sheet's own Card so it
- * matches the LOD beneath exactly. Rotation direction matches the forge (forward turns -180°).
+ * fades it in over the flat LOD on open). Two-side model: each flip animates the angle to an
+ * ABSOLUTE clean target (`turns * 180`, always a flat multiple of 180), so even an interrupted flip
+ * re-targets flat and can NEVER rest at a weird angle (#121). The busy lock (parent) plus the clean
+ * target both guard re-entrancy; `renderFace` draws each face through the sheet's own Card.
  */
 const FlipCard = memo(function FlipCard({ faceCount, index, dir, renderFace, onSettle }: { faceCount: number; index: number; dir: number; renderFace: (i: number) => ReactNode; onSettle: () => void }) {
   const angle = useSharedValue(0);
   const [faceA, setFaceA] = useState(index);
   const [faceB, setFaceB] = useState(index);
-  const parity = useRef(0);
+  const turns = useRef(0);
   const prev = useRef(index);
   useEffect(() => {
     if (index === prev.current || faceCount <= 1) return;
     prev.current = index;
-    const np = parity.current + 1;
-    if (np % 2 === 0) setFaceA(index);
+    const next = turns.current + (dir >= 0 ? -1 : 1);
+    if (flipPar(next) === 0) setFaceA(index);
     else setFaceB(index);
-    parity.current = np;
-    // the turn OWNS the busy lock: it clears only on completion, so a new flip can't start
-    // mid-turn (re-entrancy left the card half-rotated + flickering, #110).
-    angle.value = withTiming(angle.value + (dir >= 0 ? -1 : 1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (f) => {
+    turns.current = next;
+    angle.value = withTiming(next * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (f) => {
       if (f) runOnJS(onSettle)();
     });
   }, [index, dir, faceCount, angle, onSettle]);
