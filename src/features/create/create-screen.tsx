@@ -218,6 +218,7 @@ export function CreateScreen() {
   const finishFade = useCallback(
     (next: DeckKey) => {
       setDeck(next);
+      setCenterIdx(deckIndexes.current[next] ?? 0);
       setDeckVisible(false);
       setTimeout(() => {
         setDeckVisible(true);
@@ -271,6 +272,7 @@ export function CreateScreen() {
   const [featuresOpen, setFeaturesOpen] = useState(false);
   const [featurePage, setFeaturePage] = useState(0);
   const [centerClassIdx, setCenterClassIdx] = useState(0);
+  const [centerIdx, setCenterIdx] = useState(0);
 
   const items: StraightItem[] = useMemo(() => {
     switch (deck) {
@@ -373,6 +375,8 @@ export function CreateScreen() {
   const locked = (k: DeckKey) => (k === 'subclass' || k === 'domains') && !draft.className;
   const maxSelect = deck === 'domains' ? 2 : 1;
   const noun = deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck;
+  const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
+  const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
 
   return (
     <AppScreen
@@ -448,29 +452,12 @@ export function CreateScreen() {
               key={deck + (deck === 'subclass' || deck === 'domains' ? draft.className ?? '' : '')}
               items={items}
               selectedIds={selectedIds}
-              maxSelect={maxSelect}
-              onToggle={onToggle}
               initialIndex={deckIndexes.current[deck] ?? 0}
               onIndexChange={(i) => {
                 deckIndexes.current[deck] = i;
+                setCenterIdx(i);
                 if (deck === 'class') setCenterClassIdx(i);
               }}
-              selectNoun={noun}
-              aboveSelect={
-                deck === 'class' ? (
-                  <RuneButton
-                    label="Class features"
-                    kind="ghost"
-                    dense
-                    height={26}
-                    onPress={() => {
-                      setFeaturePage(0);
-                      setFeaturesOpen(true);
-                    }}
-                    accessibilityLabel={`View ${CLASS_CARDS[centerClassIdx]?.title ?? 'class'} features`}
-                  />
-                ) : undefined
-              }
             />
           ) : null}
         </Animated.View>
@@ -485,6 +472,34 @@ export function CreateScreen() {
           onClose={() => setFeaturesOpen(false)}
         />
       ) : null}
+      {/* ---- THE select controls: the screen's TOP layer, last child (#106) — above the carousel
+          veil AND the features reader, never dimmed, always tappable, always in this one spot,
+          well clear of the gear at the bottom edge. */}
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 64, zIndex: 600, alignItems: 'center', gap: 5 }} pointerEvents="box-none">
+        {deck === 'class' ? (
+          <RuneButton
+            label="Class features"
+            kind="ghost"
+            dense
+            height={26}
+            onPress={() => {
+              setFeaturePage(0);
+              setFeaturesOpen(true);
+            }}
+            accessibilityLabel={`View ${CLASS_CARDS[centerClassIdx]?.title ?? 'class'} features`}
+          />
+        ) : null}
+        <RuneButton
+          label={centerSelected ? 'Deselect' : `Select ${noun}`}
+          kind={centerSelected ? 'ghost' : 'primary'}
+          height={38}
+          onPress={() => centerItem && onToggle(centerItem.id)}
+          accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+        />
+        <Text style={{ color: selectedIds.length >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
+          {selectedIds.length}/{maxSelect}
+        </Text>
+      </View>
       {stage}
     </AppScreen>
   );
@@ -511,7 +526,8 @@ function FeatureViewer({
   const pre = sources[`feat-${def.key}-${p.pageIndex}`];
   const scale = 1.5;
   return (
-    <View style={{ position: 'absolute', top: -60, bottom: -60, left: -60, right: -60, zIndex: 500, alignItems: 'center', justifyContent: 'center' }}>
+    // Card rides HIGH (toward the title) so the select controls stay clear + visible below (#106).
+    <View style={{ position: 'absolute', top: -60, bottom: -60, left: -60, right: -60, zIndex: 500, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 96 }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.88)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close features" />
       <Pressable
         onPress={() => (pages.length > 1 ? onPage((page + 1) % pages.length) : onClose())}
