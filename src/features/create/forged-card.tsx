@@ -1,6 +1,6 @@
 import { type FC } from 'react';
 import { Text, View } from 'react-native';
-import { type SvgProps } from 'react-native-svg';
+import Svg, { Path, type SvgProps } from 'react-native-svg';
 
 import { DividerPlaque } from '@/components/card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -42,19 +42,23 @@ export function ForgedCard({
           <Text style={{ color: Rune.red, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 1.6, textTransform: 'uppercase' }}>{kindLabel}</Text>
         </DividerPlaque>
       </View>
-      {/* printed-card lower body */}
-      <View style={{ flex: 1, alignItems: 'center', paddingTop: 22, paddingHorizontal: 14 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 19, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+      {/* printed-card lower body — typeset against the DH scans (#103 impeccable typeset):
+          extrabold caps title, regular near-black body, ~1.7 title:body ratio. */}
+      <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 15 }}>
+        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
           {title}
         </Text>
-        <Text style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 14, fontFamily: Body.medium, textAlign: 'justify', alignSelf: 'stretch', marginTop: 8 }}>{body}</Text>
+        <Text style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7 }}>{body}</Text>
       </View>
-      {/* footer watermark, like the print line on the scans */}
-      <View style={{ position: 'absolute', left: 14, right: 14, bottom: 9 }}>
-        <View style={{ height: 1, backgroundColor: 'rgba(138,90,18,0.45)', marginBottom: 4 }} />
-        <Text style={{ color: Rune.inkMuted, fontSize: 6.5, fontFamily: Body.medium, letterSpacing: 1.2, textAlign: 'center', textTransform: 'uppercase' }}>
-          Daggerheart · RuneKeep forge
-        </Text>
+      {/* footer, scan-faithful: pen + author left, pipe-separated copyright right, no rule */}
+      <View style={{ position: 'absolute', left: 12, right: 12, bottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <Svg width={7} height={7} viewBox="0 0 12 12">
+            <Path d="M 1 11 L 3 6 L 9 0 L 12 3 L 6 9 Z M 1 11 L 3.4 9.8" fill={Rune.inkText} />
+          </Svg>
+          <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep</Text>
+        </View>
+        <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep © Treehouse109 2026</Text>
       </View>
     </View>
   );

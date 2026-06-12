@@ -160,6 +160,7 @@ export function StraightCarousel({
 }) {
   const count = items.length;
   const [width, setWidth] = useState(0);
+  const [railH, setRailH] = useState(0);
   const heightSV = useSharedValue(0);
   const pos = useSharedValue(clampIdx(initialIndex, count));
   const grind = useSharedValue(0);
@@ -278,15 +279,22 @@ export function StraightCarousel({
       style={{ flex: 1 }}
       onLayout={(e) => {
         setWidth(e.nativeEvent.layout.width);
+        setRailH(e.nativeEvent.layout.height);
         heightSV.value = e.nativeEvent.layout.height;
       }}>
       <GestureDetector gesture={pan}>
         <View style={{ flex: 1 }}>
           {/* the rail */}
           <View style={{ flex: 1 }}>
-            {/* fullscreen veil sits between the focused card (z 300) and the rest */}
+            {/* fullscreen veil dims the WHOLE SCREEN (oversized far past the rail — details,
+                tabs, header, everything), sitting between the focused card (z 300) and the rest.
+                It also swallows every touch outside the card/controls; tapping it closes. */}
             {fsOpen ? (
-              <Pressable style={[StyleSheet.absoluteFill, { zIndex: 200 }]} onPress={closeFs} accessibilityRole="button" accessibilityLabel="Close card">
+              <Pressable
+                style={{ position: 'absolute', top: -480, bottom: -160, left: -60, right: -60, zIndex: 200 }}
+                onPress={closeFs}
+                accessibilityRole="button"
+                accessibilityLabel="Close card">
                 <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, veil]} />
               </Pressable>
             ) : null}
@@ -308,9 +316,20 @@ export function StraightCarousel({
                   />
                 ))
               : null}
-            {/* fullscreen controls — ABOVE the card, not over it */}
+            {/* fullscreen controls — in the empty VERTICAL space above the focused card (the
+                dimmed band), the one interactive thing besides the card itself */}
             {fsOpen ? (
-              <View style={{ position: 'absolute', top: 2, left: 0, right: 0, zIndex: 400, alignItems: 'center' }}>{selectControls(true)}</View>
+              <View
+                style={{
+                  position: 'absolute',
+                  top: railH * 0.42 - 34 - (FORGED_H * Math.min((width - 28) / FORGED_W, 1.55)) / 2 - 86,
+                  left: 0,
+                  right: 0,
+                  zIndex: 400,
+                  alignItems: 'center',
+                }}>
+                {selectControls(true)}
+              </View>
             ) : null}
             {/* select controls hug the CARDS (owner: not down by the gear): pinned right under
                 the center card's visual bottom edge. */}
