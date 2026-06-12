@@ -32,7 +32,10 @@ export function DividerPlaque({ width, maskFill = '#FAF8F2', maskScale = 0.66, c
           left): shift the whole box LEFT so the body centers on the divider, then shift the
           content back RIGHT inside it so the label centers on the body. */}
       <View style={{ width: maskW, height: maskH, marginTop: -maskH * 0.01, alignItems: 'center', justifyContent: 'center', transform: [{ translateX: -maskW * 0.076 }] }}>
-        <View style={{ position: 'absolute', left: 0, top: 0, width: maskW, height: maskH }} pointerEvents="none">
+        {/* The bbox over-extends LEFT of the divider's hollow (#108): the mask SVG renders inside
+            a RIGHT-anchored sub-box trimmed from the left, so only its left edge moves right while
+            the right edge (and the text below) stay exactly where they are. Calibrated to 0.16. */}
+        <View style={{ position: 'absolute', left: maskW * 0.16, top: 0, width: maskW * 0.84, height: maskH }} pointerEvents="none">
           <InnerMaskSvg width="100%" height="100%" preserveAspectRatio="none" color={maskFill} />
         </View>
         <View style={{ transform: [{ translateX: maskW * 0.076 }] }}>{children}</View>

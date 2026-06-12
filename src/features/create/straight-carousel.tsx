@@ -1,5 +1,5 @@
-import { memo, type ReactNode, useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { forwardRef, memo, type ReactNode, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -14,6 +14,7 @@ import Animated, {
 import Svg, { Polygon, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
+import { useScreenInsets } from '@/components/app-screen';
 import { Rune } from '@/constants/theme';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
 import { FORGED_H, FORGED_W } from './forged-card';
@@ -40,12 +41,17 @@ export interface StraightItem {
 }
 
 const SPACING = 148; // px between detents
-const CARD_SCALE = 0.74; // center card: 230x322 authored -> ~170x238 on screen
+const CARD_SCALE = 0.70; // resting center card (#108: a touch smaller so it clears the controls)
+const REST_FRAC = 0.36; // resting card centre, as a fraction of the rail height (#108: pushed up)
 const SIDE_FALLOFF = 0.085; // per-step shrink
 const GRIND_TIGHTEN_L = 0.52; // straight-line grind: tighter…
 const GRIND_SHRINK_L = 0.45; // …and smaller, never curved
 const GEAR_SWIPE_L = 200; // grind: this many px sweep the whole deck
 const IMG_HALF = 2;
+// Fullscreen layout (#108): the card sits CENTERED with a real gap below the screen border (never
+// off-screen) and a reserved band at the bottom for the fixed select controls.
+const FS_TOP_PAD = 58; // gap from the screen border (inset top) to the card top
+const FS_BOTTOM_RESERVE = 168; // reserved bottom band for the SELECT/FEATURES/counter stack
 
 function clampIdx(i: number, count: number): number {
   'worklet';
@@ -62,12 +68,15 @@ interface SlotProps {
   fs: SharedValue<number>;
   focusIdx: SharedValue<number>;
   railH: SharedValue<number>;
+  railTopWin: SharedValue<number>;
+  insetTop: number;
+  screenH: number;
   selected: boolean;
   withImage: boolean;
   onTap: (index: number) => void;
 }
 
-const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, selected, withImage, onTap }: SlotProps) {
+const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, onTap }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
@@ -81,13 +90,14 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
     let z = Math.round(100 - ad * 10);
     const f = fs.value;
     if (f > 0 && Math.round(focusIdx.value) === index) {
-      // Grow and LIFT HIGH (#106): the card rises toward the screen title — its BOTTOM edge lands
-      // around the rail's upper half, clearing the fixed select controls near the bottom. The top
-      // spills far up into the dimmed details/header area by design.
-      const fsScale = Math.min((width - 28) / FORGED_W, 1.62);
-      const targetCenter = railH.value * 0.34 - (FORGED_H * fsScale) / 2;
+      // Grow IN PLACE to a SCREEN-anchored target (#108): centred horizontally, top a fixed gap
+      // below the border, scale fit so the bottom clears the reserved control band. Never off-screen.
+      const fsScale = Math.min((width - 24) / FORGED_W, (screenH - insetTop - FS_TOP_PAD - FS_BOTTOM_RESERVE) / FORGED_H);
+      const cardCenterScreen = insetTop + FS_TOP_PAD + (FORGED_H * fsScale) / 2;
+      const targetCenterLocal = cardCenterScreen - railTopWin.value; // rail-local Y of that screen point
+      const restCenterLocal = railH.value * REST_FRAC;
       x = x * (1 - f);
-      y = (targetCenter - railH.value * 0.42) * f;
+      y = (targetCenterLocal - restCenterLocal) * f;
       scale = scale + (fsScale - scale) * f;
       opacity = 1;
       z = 300;
@@ -111,7 +121,7 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
   );
 
   return (
-    <Animated.View style={[{ position: 'absolute', left: width / 2 - FORGED_W / 2, top: '42%', marginTop: -FORGED_H / 2, width: FORGED_W, height: FORGED_H }, style]}>
+    <Animated.View style={[{ position: 'absolute', left: width / 2 - FORGED_W / 2, top: `${REST_FRAC * 100}%`, marginTop: -FORGED_H / 2, width: FORGED_W, height: FORGED_H }, style]}>
       <GestureDetector gesture={tap}>
         <View style={{ flex: 1 }}>
           {item.custom ? (
@@ -143,23 +153,30 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
   );
 });
 
-export function StraightCarousel({
-  items,
-  selectedIds,
-  initialIndex = 0,
-  onIndexChange,
-}: {
-  items: StraightItem[];
-  selectedIds: string[];
-  initialIndex?: number;
-  /** Fires per detent; the PARENT owns the select controls (they live on the screen's top layer,
-   *  above every veil — #106) and needs the center index to act on the right card. */
-  onIndexChange?: (i: number) => void;
-}) {
+export interface StraightCarouselHandle {
+  /** Close the focused card if one is open; returns whether it was (so a device-back can consume). */
+  closeIfFullscreen: () => boolean;
+}
+
+export const StraightCarousel = forwardRef<
+  StraightCarouselHandle,
+  {
+    items: StraightItem[];
+    selectedIds: string[];
+    initialIndex?: number;
+    /** Fires per detent; the PARENT owns the select controls (they live on the screen's top layer,
+     *  above every veil — #106) and needs the center index to act on the right card. */
+    onIndexChange?: (i: number) => void;
+  }
+>(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange }, ref) {
   const count = items.length;
+  const insets = useScreenInsets();
+  const screenH = Dimensions.get('window').height;
+  const railRef = useRef<View>(null);
   const [width, setWidth] = useState(0);
   const heightSV = useSharedValue(0);
   const railHSV = useSharedValue(0);
+  const railTopWin = useSharedValue(insets.top + 200); // sane default until measured
   const pos = useSharedValue(clampIdx(initialIndex, count));
   const grind = useSharedValue(0);
   const fs = useSharedValue(0);
@@ -192,6 +209,21 @@ export function StraightCarousel({
     fs.value = withSpring(0, FS_SPRING);
     setFsOpen(false);
   }, [fs]);
+
+  // Device-back / parent close hook (#108): consume the back press when a card is focused.
+  useImperativeHandle(
+    ref,
+    () => ({
+      closeIfFullscreen: () => {
+        if (fsOpen) {
+          closeFs();
+          return true;
+        }
+        return false;
+      },
+    }),
+    [fsOpen, closeFs],
+  );
 
   const onTapCard = useCallback(
     (index: number) => {
@@ -263,7 +295,17 @@ export function StraightCarousel({
       <GestureDetector gesture={pan}>
         <View style={{ flex: 1 }}>
           {/* the rail */}
-          <View style={{ flex: 1 }} onLayout={(e) => (railHSV.value = e.nativeEvent.layout.height)}>
+          <View
+            ref={railRef}
+            style={{ flex: 1 }}
+            onLayout={(e) => {
+              railHSV.value = e.nativeEvent.layout.height;
+              // measure the rail's absolute window Y so the fullscreen target lands at a
+              // screen-anchored spot (the rail itself starts below the header, #108)
+              railRef.current?.measureInWindow((_x, y) => {
+                if (y > 0) railTopWin.value = y;
+              });
+            }}>
             {/* fullscreen veil dims the WHOLE SCREEN (oversized far past the rail — details,
                 tabs, header, everything), sitting between the focused card (z 300) and the rest.
                 It also swallows every touch outside the card/controls; tapping it closes. */}
@@ -289,6 +331,9 @@ export function StraightCarousel({
                     fs={fs}
                     focusIdx={focusIdx}
                     railH={railHSV}
+                    railTopWin={railTopWin}
+                    insetTop={insets.top}
+                    screenH={screenH}
                     selected={selectedIds.includes(item.id)}
                     withImage={Math.abs(i - center) <= IMG_HALF}
                     onTap={onTapCard}
@@ -310,4 +355,4 @@ export function StraightCarousel({
       </GestureDetector>
     </View>
   );
-}
+});
