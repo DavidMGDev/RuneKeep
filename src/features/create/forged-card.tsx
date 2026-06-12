@@ -24,6 +24,7 @@ export function ForgedCard({
   accentDeep,
   Banner,
   imageUri,
+  pageMark,
 }: {
   title: string;
   kindLabel: string;
@@ -32,6 +33,8 @@ export function ForgedCard({
   Banner?: FC<SvgProps>;
   /** Player-supplied art (#107 experiences): fills the art zone instead of a banner. */
   imageUri?: string | null;
+  /** Deck position (#110): when this card is face 0 of a flip-deck, the gray "1/N" mark by the title. */
+  pageMark?: string;
 }) {
   return (
     // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
@@ -63,9 +66,12 @@ export function ForgedCard({
       {/* printed-card lower body — typeset against the DH scans (#103 impeccable typeset):
           extrabold caps title, regular near-black body, ~1.7 title:body ratio. */}
       <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 15 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-          {title}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5 }}>
+          <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+            {title}
+          </Text>
+          {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+        </View>
         <Text style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7 }}>{body}</Text>
       </View>
       <ForgedFooter />

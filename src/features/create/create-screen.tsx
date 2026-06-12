@@ -395,23 +395,25 @@ export function CreateScreen() {
     () => [
       ...CLASS_CARDS.map((c) => ({
         key: `class-${c.key}`,
-        node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} />,
+        // deck-wide mark (#110): the class card is page 1 of (1 class + feature pages)
+        node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${1 + featurePages(c.key).length}`} />,
       })),
-      ...CLASS_CARDS.flatMap((c) =>
-        featurePages(c.key).map((p) => ({
+      ...CLASS_CARDS.flatMap((c) => {
+        const total = 1 + featurePages(c.key).length;
+        return featurePages(c.key).map((p) => ({
           key: `feat-${c.key}-${p.pageIndex}`,
           node: (
             <ForgedTextCard
               title={c.title}
               kindLabel="Features"
-              pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
+              pageMark={`${p.pageIndex + 2}/${total}`}
               sections={p.sections}
               accentDeep={classColor(c.key).deep}
               Banner={c.Banner}
             />
           ),
-        })),
-      ),
+        }));
+      }),
     ],
     [],
   );
@@ -469,10 +471,11 @@ export function CreateScreen() {
         // Each class card is a FLIP-DECK (#110): face 0 = the class card, then one face per feature
         // page. Tapping the focused card flips through them in 3D — no separate features button.
         return CLASS_CARDS.map((c) => {
+          const total = 1 + featurePages(c.key).length;
           const classPre = sources[`class-${c.key}`];
           const classFace: StraightFace = classPre
             ? { thumb: classPre.thumb, source: classPre.full }
-            : { custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} /> };
+            : { custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${total}`} /> };
           const featureFaces: StraightFace[] = featurePages(c.key).map((p) => {
             const fpre = sources[`feat-${c.key}-${p.pageIndex}`];
             return fpre
@@ -482,7 +485,7 @@ export function CreateScreen() {
                     <ForgedTextCard
                       title={c.title}
                       kindLabel="Features"
-                      pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
+                      pageMark={`${p.pageIndex + 2}/${total}`}
                       sections={p.sections}
                       accentDeep={classColor(c.key).deep}
                       Banner={c.Banner}
