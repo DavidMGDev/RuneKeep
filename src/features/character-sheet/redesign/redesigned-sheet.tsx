@@ -16,8 +16,13 @@ import { cardById } from '@/features/cards/catalog';
 import { classColor } from '@/constants/identity';
 import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
 import { featurePages } from '@/features/create/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedGoldCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
+import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
+
+// Default art for an inventory item with no player image (#136) — same asset as creation.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ITEM_DEFAULT_ART = require('../../../../assets/temp/ItemCardImage.jpg') as number;
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
@@ -401,8 +406,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob } = useMemo(() => {
-    const empty = { featJobs: [] as { key: string; node: ReactNode }[], classJob: null as { key: string; node: ReactNode } | null, expJobs: [] as { key: string; node: ReactNode; raster?: boolean }[], weaponJobs: [] as { key: string; node: ReactNode }[], armorJob: null as { key: string; node: ReactNode } | null };
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, goldJob } = useMemo(() => {
+    type Job = { key: string; node: ReactNode; raster?: boolean };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], goldJob: null as Job | null };
     if (!characterFile) return empty;
     const cls = characterFile.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -439,11 +445,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> }));
     const armorDef = characterFile.armorId ? armorById(characterFile.armorId) : undefined;
     const armorJob = armorDef ? { key: armorDef.id, node: <ForgedArmorCard armor={armorDef} /> } : null;
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob };
+    // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
+    const cinv = CLASS_INVENTORY[cls];
+    const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
+    const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} multilineTitle /> }));
+    const chosenIds = characterFile.inventoryItemIds ?? [];
+    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} multilineTitle /> }));
+    const customJobs: Job[] = (characterFile.inventoryCustom ?? []).map((it) => ({
+      key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0)) % 99991}`,
+      node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+      raster: !!it.imageUri,
+    }));
+    const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
+    const goldJob: Job = { key: `gold-${cls}`, node: <ForgedGoldCard /> };
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, goldJob };
   }, [characterFile]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : [])],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...(goldJob ? [goldJob] : [])],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, goldJob],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -487,9 +506,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // abilities = ONLY the player's cards: domains, experiences, the feature card, weapons, then the
     // origin trio LAST (the badges target the last three).
     const abilities = [...domainItems, ...expItems, ...featItem, ...weaponItems, ...trio];
-    const inv = [...weaponItems, ...armorItems];
-    return { abilitiesCards: abilities, inventoryCards: inv.length ? inv : undefined };
-  }, [characterFile, expJobs, classJob, featJobs, weaponJobs, armorJob, featureSources]);
+    // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
+    // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
+    const invItems = forgedItems(invJobs);
+    const goldItems = goldJob ? forgedItems([goldJob]) : [];
+    const inv = [...invItems, ...goldItems, ...weaponItems, ...armorItems];
+    return { abilitiesCards: abilities, inventoryCards: inv };
+  }, [characterFile, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, goldJob, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
