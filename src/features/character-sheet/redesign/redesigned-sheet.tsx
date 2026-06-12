@@ -2,7 +2,6 @@ import { type ImageContentFit } from 'expo-image';
 import { useCallback, useState } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
-import Svg, { Polyline } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccentTint } from '@/components/accent';
@@ -53,29 +52,25 @@ function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWid
 }
 
 /**
- * A stress pip (#70 C): a 44x22 CHAMFERED shape (45° cuts like the domain chips — never rounded).
- * Marked = red fill + the thin echo line underneath tracing the chamfered contour, exactly like
- * the hearts' under-line; available = red chamfered outline (no line); locked = gray chamfered
- * fill (no line). The slot is 44x26 — the bottom 4px belong to the echo line.
+ * A stress pip (#70 C → #74): a CHAMFERED shape (45° cuts like the domain chips — never rounded).
+ * Every state fills the SAME 44x26 bounding box: available (red outline) and locked (gray fill)
+ * use the full height; the marked pip trades its bottom 5px for a FLAT thin under-line that ends
+ * on the same bottom edge — so lined and line-less pips read as one size.
  */
 function StressPip({ state, red }: { state: PipState; red: string }) {
   if (state === 'locked') {
-    return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={Rune.muted} stroke="transparent" strokeWidth={0} />;
+    return <ChamferFrame left={0} top={0} width={44} height={26} chamfer={5} fill={Rune.muted} stroke="transparent" strokeWidth={0} />;
   }
   if (state === 'active') {
     return (
       <>
-        <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={red} stroke="transparent" strokeWidth={0} />
-        {/* the echo line, 3px below, following the bottom chamfers */}
-        <View style={box(0, 0, 44, 26)} pointerEvents="none">
-          <Svg width={44} height={26}>
-            <Polyline points="0.8,20.2 5.4,25.2 38.6,25.2 43.2,20.2" fill="none" stroke={red} strokeWidth={1.6} strokeLinejoin="miter" />
-          </Svg>
-        </View>
+        <ChamferFrame left={0} top={0} width={44} height={21} chamfer={5} fill={red} stroke="transparent" strokeWidth={0} />
+        {/* flat thin under-line, flush with the slot's bottom edge */}
+        <View style={[box(0, 25, 44, 1), { backgroundColor: red }]} pointerEvents="none" />
       </>
     );
   }
-  return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill="none" stroke={red} strokeWidth={2} />;
+  return <ChamferFrame left={0} top={0} width={44} height={26} chamfer={5} fill="none" stroke={red} strokeWidth={2} />;
 }
 
 /** Hope: large diamonds joined by a THIN gold line that stops at the last filled one. */
