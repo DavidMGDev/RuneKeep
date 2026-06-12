@@ -42,13 +42,14 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, originCards }: { children: ReactNode; originCards?: CardItem[] }) {
+export function CarouselProvider({ children, originCards, inventoryCards }: { children: ReactNode; originCards?: CardItem[]; inventoryCards?: CardItem[] }) {
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
     () => ({
       abilities: originCards?.length ? [...CARD_DECKS.abilities, ...originCards] : CARD_DECKS.abilities,
-      inventory: CARD_DECKS.inventory,
+      // the character's weapons + armor ride the inventory deck too (#121)
+      inventory: inventoryCards?.length ? [...CARD_DECKS.inventory, ...inventoryCards] : CARD_DECKS.inventory,
     }),
-    [originCards],
+    [originCards, inventoryCards],
   );
   const startMiddle = middleRotation(decks.abilities.length);
   const rotation = useSharedValue(startMiddle);

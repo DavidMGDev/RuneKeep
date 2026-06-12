@@ -16,7 +16,8 @@ import { cardById } from '@/features/cards/catalog';
 import { classColor } from '@/constants/identity';
 import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
 import { featurePages } from '@/features/create/class-data';
-import { ForgedCard, ForgedTextCard } from '@/features/create/forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
+import { armorById, weaponById } from '@/features/create/equipment-data';
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
@@ -383,8 +384,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs } = useMemo(() => {
-    const empty = { featJobs: [] as { key: string; node: ReactNode }[], classJob: null as { key: string; node: ReactNode } | null, expJobs: [] as { key: string; node: ReactNode }[] };
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob } = useMemo(() => {
+    const empty = { featJobs: [] as { key: string; node: ReactNode }[], classJob: null as { key: string; node: ReactNode } | null, expJobs: [] as { key: string; node: ReactNode }[], weaponJobs: [] as { key: string; node: ReactNode }[], armorJob: null as { key: string; node: ReactNode } | null };
     if (!characterFile) return empty;
     const cls = characterFile.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -412,19 +413,29 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0)) % 99991}`,
       node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} />,
     }));
-    return { featJobs, classJob, expJobs };
+    // starting equipment (#121): the primary weapon, the optional secondary, and the armor card
+    const weaponJobs = [characterFile.weaponPrimaryId, characterFile.weaponSecondaryId]
+      .map((id) => (id ? weaponById(id) : undefined))
+      .filter((w): w is NonNullable<typeof w> => !!w)
+      .map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> }));
+    const armorDef = characterFile.armorId ? armorById(characterFile.armorId) : undefined;
+    const armorJob = armorDef ? { key: armorDef.id, node: <ForgedArmorCard armor={armorDef} /> } : null;
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob };
   }, [characterFile]);
-  const allJobs = useMemo(() => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs], [expJobs, classJob, featJobs]);
+  const allJobs = useMemo(
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : [])],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob],
+  );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
-  const originCards = useMemo(() => {
-    if (!characterFile) return undefined;
+  const { originCards, inventoryCards } = useMemo(() => {
+    if (!characterFile) return { originCards: undefined, inventoryCards: undefined };
     const ids = [characterFile.subclassCardId, characterFile.ancestryCardId, characterFile.communityCardId];
     const cards = ids.map(cardById);
-    if (cards.some((c) => !c)) return undefined;
+    if (cards.some((c) => !c)) return { originCards: undefined, inventoryCards: undefined };
     const expItems = expJobs
       .map((j) => ({ key: j.key, src: featureSources[j.key] }))
       .filter((x) => x.src)
@@ -441,8 +452,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       faces.length > 1 && firstForged
         ? [{ id: `features-${characterFile.className}`, source: firstForged.source, thumb: firstForged.thumb, faces }]
         : [];
-    return [...expItems, ...featItem, ...cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }))];
-  }, [characterFile, expJobs, classJob, featJobs, featureSources]);
+    // Equipment (#121): weapons + armor appear once forged. Weapons ride BOTH the abilities hand and
+    // inventory; armor is inventory only.
+    const forgedItems = (jobs: { key: string; node: ReactNode }[]) =>
+      jobs.map((j) => ({ j, src: featureSources[j.key] })).filter((x) => x.src).map((x) => ({ id: x.j.key, source: x.src!.full, thumb: x.src!.thumb }));
+    const weaponItems = forgedItems(weaponJobs);
+    const armorItems = armorJob ? forgedItems([armorJob]) : [];
+    const trio = cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
+    // weapons pinned BEFORE the origin trio so the badges (which target the LAST three) still hit it
+    const origin = [...expItems, ...featItem, ...weaponItems, ...trio];
+    const inv = [...weaponItems, ...armorItems];
+    return { originCards: origin, inventoryCards: inv.length ? inv : undefined };
+  }, [characterFile, expJobs, classJob, featJobs, weaponJobs, armorJob, featureSources]);
   const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
   const onInfo = useCallback(() => setInfoOpen(true), []);
   const onInfoClose = useCallback(() => setInfoOpen(false), []);
@@ -475,7 +496,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider originCards={originCards}>
+      <CarouselProvider originCards={originCards} inventoryCards={inventoryCards}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
