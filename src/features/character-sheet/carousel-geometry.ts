@@ -72,9 +72,14 @@ export const OVERSCROLL_RESIST = 0.35; // drag past a deck end moves at 35% (sof
 // 260: the grind starts at the SCREEN CENTER, so only about half a screen of travel exists — one
 // half-screen sweep must still reach (nearly) the far end of the deck (#70 A).
 export const GEAR_SWIPE_PX = 260; // finger px that cover first card -> last card on the gear
-// 0.44: with the cards 30% smaller they overlapped too much at 0.55 — ~25% more separation (#70 A).
+// 0.44: with the cards smaller they overlapped too much at 0.55 — ~25% more separation (#70 A).
 export const GRIND_TIGHTEN = 0.44; // fan step shrinks to 56% while grinding
-export const GRIND_SHRINK = 0.3; // cards 30% smaller while grinding (#67 C)
+// 0.45: at the grind spacing (~111px between centers) a 30% shrink still overlapped ~31% of the
+// card; 45% lands at ~12% overlap (#75).
+export const GRIND_SHRINK = 0.45;
+/** While grinding, this many EXTRA slots mount ahead in the scroll direction, images decoding at
+ *  alpha 0 — foresight so a fast grind never outruns the decoder into an empty slot (#75). */
+export const GRIND_LOOKAHEAD = 5;
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;
