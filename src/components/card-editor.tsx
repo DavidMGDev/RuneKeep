@@ -44,7 +44,7 @@ export function CardEditor({
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
       <ScrollView contentContainerStyle={{ alignItems: 'center', paddingTop: 110, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
         {/* live preview — the real card, the real size */}
-        <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} />
+        <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} multilineTitle />
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
           <RuneButton label={draft.imageUri ? 'Change image' : 'Add image'} kind="ghost" height={36} onPress={pickImage} />

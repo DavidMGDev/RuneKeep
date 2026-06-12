@@ -23,7 +23,7 @@ import { featurePages } from './class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard, FORGED_H, FORGED_W } from './forged-card';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from './equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from './class-inventory-data';
-import { GoldCard, type GoldAmount, GOLD_DEFAULT } from './gold-card';
+import { type GoldAmount, GOLD_DEFAULT } from './gold-card';
 
 // Default art for a custom inventory item with no player image (#128, owner-provided).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -102,7 +102,7 @@ function deckDone(deck: DeckKey, d: Draft): boolean {
     case 'armor':
       return !!d.armorId;
     case 'inventory':
-      return true; // OPTIONAL (#128): items are a bonus, never gate the FORGE
+      return d.inventoryItemIds.length === 2; // MANDATORY (#136): pick two optional items
   }
 }
 
@@ -572,29 +572,23 @@ export function CreateScreen() {
       return TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />));
     }
     if (deck === 'inventory') {
-      // Per-class inventory (#128): each starting item is its OWN auto-owned card (torch, rope,
-      // supplies + the Gold card) — shown but never selected/counted. Then the guide's "choose"
-      // options (selectable), the player's custom items, and the "add" card.
+      // Creation inventory is MANDATORY and shows ONLY the player's CHOICES (#136): the per-class
+      // optional items (pick two of the four) + custom items + the "add" card. The default kit
+      // (torch/rope/supplies) and gold are NOT shown here — they belong to the sheet.
       const cinv = draft.className ? CLASS_INVENTORY[draft.className] : null;
       const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
-      const startItems: StraightItem[] = (cinv?.take ?? ['a torch', '50 feet of rope', 'basic supplies']).map((name, i) => ({
-        id: `item-start-${i}`,
-        label: name,
-        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You already carry ${name}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
-      }));
-      const gold: StraightItem = { id: 'item-gold', label: 'Gold', interactive: true, custom: <GoldCard gold={draft.gold} onChange={(g) => set({ gold: g })} /> };
       const optionCards: StraightItem[] = (cinv?.choices.flat() ?? []).map((name) => ({
         id: itemOptionId(name),
         label: name,
-        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
+        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       }));
       const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
         id: it.id,
         label: it.title || 'Item',
-        custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} fallbackArt={ITEM_DEFAULT_ART} />,
+        custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       }));
       const add: StraightItem = { id: 'item-add', label: 'Add item', custom: <AddItemCard /> };
-      return [...startItems, gold, ...optionCards, ...customs, add];
+      return [...optionCards, ...customs, add];
     }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
@@ -639,7 +633,7 @@ export function CreateScreen() {
         return pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       }
     }
-  }, [deck, draft.className, draft.inventoryCustom, draft.gold, sources, weaponKind, weaponSlot, forgedItem]);
+  }, [deck, draft.className, draft.inventoryCustom, sources, weaponKind, weaponSlot, forgedItem]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
@@ -689,14 +683,16 @@ export function CreateScreen() {
           setEditingItem('new');
           return;
         }
-        if (id.startsWith('item-start-') || id === 'item-gold') return; // auto-owned, not toggleable
         const ci = draft.inventoryCustom.findIndex((i) => i.id === id);
         if (ci >= 0) {
           setEditingItem(ci); // tap a custom item to edit it
           return;
         }
+        // optional items: pick up to TWO (#136), replacing the oldest like domains
         const has = draft.inventoryItemIds.includes(id);
-        set({ inventoryItemIds: has ? draft.inventoryItemIds.filter((x) => x !== id) : [...draft.inventoryItemIds, id] });
+        if (has) set({ inventoryItemIds: draft.inventoryItemIds.filter((x) => x !== id) });
+        else if (draft.inventoryItemIds.length < 2) set({ inventoryItemIds: [...draft.inventoryItemIds, id] });
+        else set({ inventoryItemIds: [draft.inventoryItemIds[1], id] });
         return;
       }
       if (!isCardDeck(deck)) return;
@@ -764,13 +760,12 @@ export function CreateScreen() {
 
   const locked = (k: DeckKey) =>
     ((k === 'subclass' || k === 'domains') && !draft.className) || !!DECKS.find((d) => d.key === k)?.stub; // stubs land next issue
-  const maxSelect = deck === 'domains' ? 2 : 1;
+  const maxSelect = deck === 'domains' || deck === 'inventory' ? 2 : 1;
   const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
   const centerInvAdd = deck === 'inventory' && centerItem?.id === 'item-add';
   const centerInvCustom = deck === 'inventory' && draft.inventoryCustom.some((i) => i.id === centerItem?.id);
-  const centerInvOwned = deck === 'inventory' && (centerItem?.id.startsWith('item-start-') || centerItem?.id === 'item-gold');
 
   return (
     <AppScreen
@@ -923,12 +918,11 @@ export function CreateScreen() {
       {isCarouselDeck(deck) ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }} pointerEvents="box-none">
           <RuneButton
-            label={centerInvOwned ? 'Always carried' : centerInvAdd ? 'Create item' : centerInvCustom ? 'Edit item' : centerSelected ? 'Deselect' : `Select ${noun}`}
-            kind={centerInvOwned ? 'ghost' : centerSelected && !centerInvAdd && !centerInvCustom ? 'ghost' : 'primary'}
+            label={centerInvAdd ? 'Create item' : centerInvCustom ? 'Edit item' : centerSelected ? 'Deselect' : `Select ${noun}`}
+            kind={centerSelected && !centerInvAdd && !centerInvCustom ? 'ghost' : 'primary'}
             height={40}
-            disabled={centerInvOwned}
             onPress={() => centerItem && onToggle(centerItem.id)}
-            accessibilityLabel={centerInvOwned ? 'Always carried' : centerInvAdd ? 'Create a custom item' : centerInvCustom ? 'Edit item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+            accessibilityLabel={centerInvAdd ? 'Create a custom item' : centerInvCustom ? 'Edit item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
           {deck === 'class' ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4 }}>Tap the card to flip through its features</Text>
@@ -938,8 +932,8 @@ export function CreateScreen() {
               {primaryWeapon ? (secondaryAllowed ? 'One-handed primary — a secondary is optional' : 'Two-handed primary — no secondary') : 'Pick a primary weapon'}
             </Text>
           ) : null}
-          <Text style={{ color: selectedIds.length >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
-            {deck === 'inventory' ? `${selectedIds.length} item${selectedIds.length === 1 ? '' : 's'}` : `${selectedIds.length}/${maxSelect}`}
+          <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
+            {deck === 'inventory' ? `${draft.inventoryItemIds.length}/2` : `${selectedIds.length}/${maxSelect}`}
           </Text>
         </View>
       ) : null}
@@ -1068,7 +1062,7 @@ function ExperiencesTab({ experiences, onEdit }: { experiences: ExperienceDef[];
             {exp ? (
               <>
                 <View style={{ transform: [{ scale: CARD_SCALE_X }], width: 230, height: 322, marginLeft: (230 * (CARD_SCALE_X - 1)) / 2, marginTop: (322 * (CARD_SCALE_X - 1)) / 2 }}>
-                  <ForgedCard title={exp.title} kindLabel="Experience" body={exp.text} accentDeep={Rune.panel} imageUri={exp.imageUri} />
+                  <ForgedCard title={exp.title} kindLabel="Experience" body={exp.text} accentDeep={Rune.panel} imageUri={exp.imageUri} multilineTitle />
                 </View>
                 {/* the lower-left EDIT control */}
                 <Pressable
