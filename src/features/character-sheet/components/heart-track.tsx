@@ -9,6 +9,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { type HeartAction, heartBoundaries, type PipState, resolveHearts } from '@/lib/pips';
 import { Art } from '../art';
+import { ChargeMoteView, HEART_MOTES } from './charge-track';
 
 /**
  * The HP heart row (#81): Daggerheart never moves more than ONE point at a time, so only the two
@@ -28,8 +29,9 @@ import { Art } from '../art';
  * runs — no rasterized animating layers, no fractional-alpha containers at rest.
  */
 
-const HOLD_MS = 550; // 0.2s shorter (#93); the SCALE peaks at half this — grow fast, shake long
-const FX_MS = 950; // burst + settle after the trigger
+const HOLD_MS = 825; // 1.5x the #93 length (#94 follow-up) — double-tap exists for speed, the hold is ceremony
+const FX_MS = 1425; // burst + settle after the trigger
+const POP_MS = 260; // double-tap feedback: a quick particle-free jump
 const CANCEL_MS = 180;
 const DOUBLE_MS = 320; // max gap between touch-DOWNs for the instant path
 const GROW = 2.9; // +20% (#93) — ~135px at the peak
@@ -43,23 +45,25 @@ const POST: Record<HeartAction, PipState> = { fill: 'active', break: 'empty', go
 const GAINS: Record<HeartAction, boolean> = { fill: true, goldify: true, break: false, degold: false };
 
 // Deterministic shard field (no Math.random — keeps renders pure and replays identical).
+// Distances carry the #94 field expansion (~2.5x area, ~1.7x radius) — the burst owns a real
+// portion of the screen.
 interface Shard { ang: number; dist: number; size: number; spin: number; diamond: boolean; tone: number; delay: number }
 const SHARDS: Shard[] = Array.from({ length: 14 }, (_, i) => ({
   ang: (i / 14) * Math.PI * 2 + (i % 3) * 0.23,
-  dist: 74 + ((i * 37) % 82),
+  dist: 126 + ((i * 37) % 140),
   size: 5 + ((i * 13) % 5),
   spin: ((i % 5) - 2) * 2.6,
   diamond: i % 3 !== 0,
   tone: i % 7 === 0 ? 2 : i % 3 === 0 ? 1 : 0,
   delay: (i % 4) * 0.07,
 }));
-const INFLOW_DIST = 170; // extra distance for inbound shards — they start past the sheet edges
+const INFLOW_DIST = 290; // extra distance for inbound shards — they start past the sheet edges
 
 // Extra sparkle field for healing INTO a golden heart (#89 A) — small gold/ivory diamonds that
 // twinkle as they spiral in, on top of the regular shard inflow.
 const GOLD_SPARKS: Shard[] = Array.from({ length: 10 }, (_, i) => ({
   ang: (i / 10) * Math.PI * 2 + 0.45,
-  dist: 50 + ((i * 29) % 60),
+  dist: 85 + ((i * 29) % 102),
   size: 4 + ((i * 11) % 4),
   spin: ((i % 3) - 1) * 4.2,
   diamond: true,
@@ -124,7 +128,7 @@ function ShardView({ shard, action, accent, inward, fxP }: { shard: Shard; actio
   );
 }
 
-type AnimPhase = 'hold' | 'fx' | 'out';
+type AnimPhase = 'hold' | 'fx' | 'out' | 'pop';
 interface Anim { id: number; index: number; action: HeartAction; pre: PipState; phase: AnimPhase }
 
 /**
@@ -138,7 +142,11 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
   const done = useCallback(() => onDone(anim.id), [onDone, anim.id]);
 
   useEffect(() => {
-    if (anim.phase === 'hold') {
+    if (anim.phase === 'pop') {
+      fxP.value = withTiming(1, { duration: POP_MS, easing: Easing.out(Easing.quad) }, (finished) => {
+        if (finished) runOnJS(done)();
+      });
+    } else if (anim.phase === 'hold') {
       holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
     } else if (anim.phase === 'fx') {
       cancelAnimation(holdP);
@@ -157,29 +165,33 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
   const gains = GAINS[anim.action];
   const post = POST[anim.action];
   const gold = anim.action === 'goldify' || anim.action === 'degold';
+  // Double-tap feedback (#94 follow-up): a small particle-free JUMP, nothing else.
+  const isPop = anim.phase === 'pop';
 
-  // hold: pop + charging shake — scale peaks at HALF the hold (#93: grow twice as fast, shake at
-  // full size for the rest). fx: +0.55 kick at the climax, then a damped elastic settle to 1.
+  // hold: pop + charge — scale peaks at ~75% of the hold (#94: 1.5x slower growth). The SHAKE
+  // belongs only to LOSSES (#94: spending hit points stays violent); gains charge calmly while
+  // thick slow motes converge instead. fx: +0.55 kick at the climax, then a damped elastic settle.
   const heart = useAnimatedStyle(() => {
-    const chargeFast = Math.min(1, holdP.value * 2);
-    const shake = holdP.value;
     const p = fxP.value;
+    if (isPop) return { transform: [{ scale: 1 + 0.35 * Math.sin(Math.min(1, p) * Math.PI) }, { rotate: '0rad' }] };
+    const chargeFast = Math.min(1, holdP.value * 1.333);
+    const shake = holdP.value;
     const grow = reduced ? REDUCED_GROW : GROW;
     const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
     const elastic = !reduced && p >= 0.22 ? Math.cos((p - 0.22) * 16) * 0.16 * (1 - p) : 0;
-    const wobble = reduced ? 0 : Math.sin(shake * 46) * 0.07 * shake * Math.max(0, 1 - p * 5);
+    const wobble = reduced || gains ? 0 : Math.sin(shake * 46) * 0.07 * shake * Math.max(0, 1 - p * 5);
     return {
       transform: [{ scale: 1 + grow * chargeFast * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }],
     };
   });
   // A plain fill turns as the inflow lands (~55%); GOLDIFY turns AT the climax — golden before
   // any shrink begins (#89 A); losses shatter instantly.
-  const crossAt = anim.action === 'fill' ? 0.55 : anim.action === 'goldify' ? 0.15 : 0.1;
+  const crossAt = isPop ? 0 : anim.action === 'fill' ? 0.55 : anim.action === 'goldify' ? 0.15 : 0.1;
   const preFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 0 : 1 }));
   const postFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 1 : 0 }));
   // the arcane seal: a 45°-rotated square outline blooming out of the heart on trigger
   const ring = useAnimatedStyle(() => ({
-    transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 2.6 }],
+    transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 4.4 }],
     opacity: fxP.value <= 0 ? 0 : Math.max(0, 0.9 - fxP.value),
   }));
 
@@ -193,8 +205,14 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
           <ArtImage source={heartArt(post)} fit="contain" tint={heartTint(post, accent)} />
         </Animated.View>
       </Animated.View>
-      {!reduced ? (
+      {!reduced && !isPop ? (
         <>
+          {/* gains charge with thick, SLOW motes converging into the heart (#94) — no shake */}
+          {gains
+            ? HEART_MOTES.map((m, i) => (
+                <ChargeMoteView key={`c${i}`} m={m} inward cycles={1} slow diamond={false} colors={[gold ? Rune.goldBright : accent, Rune.goldEdge, gold ? Rune.gold : accent]} holdP={holdP} fxP={fxP} />
+              ))
+            : null}
           <Animated.View
             pointerEvents="none"
             style={[
@@ -262,6 +280,8 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
           setAnims((list) => list.filter((a) => a.id !== id)); // discard the first tap's charge
         }
         onHp(hp + (GAINS[action] ? 1 : -1));
+        // feedback, not ceremony: a quick particle-free jump on the heart (#94 follow-up)
+        setAnims((list) => [...list, { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'pop' }]);
         return;
       }
       if (charging.current) return; // one finger charges at a time; settling anims don't block

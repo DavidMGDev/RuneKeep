@@ -219,7 +219,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         accent={tint ?? RED}
         grow={4.2}
         crossUpAt={0.45}
-        zone={{ left: -10, top: -8, width: 142, height: 56, barrierX: character.armor.active <= 0 ? -10 : ((character.armor.active - 1) % 6 + 1) * 21 - 2 }}
+        zone={{ left: -10, top: -8, width: 142, height: 56 }}
         trackLabel="Armor"
       />
 
@@ -275,7 +275,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         accent={tint ?? RED}
         grow={2.65}
         crossUpAt={0.12}
-        zone={{ left: -10, top: -10, width: 344, height: 80, barrierX: character.stress.active <= 0 ? -10 : ((character.stress.active - 1) % 6 + 1) * 56 - 6 }}
+        zone={{ left: -10, top: -10, width: 344, height: 80 }}
         trackLabel="Stress"
       />
 
@@ -303,7 +303,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         grow={3.0}
         crossUpAt={0.15}
         crossDownAt={0.12}
-        zone={{ left: -10, top: -6, width: 344, height: 56, barrierX: character.hope.active <= 0 ? -10 : character.hope.active * 56 - 6 }}
+        zone={{ left: -10, top: -6, width: 344, height: 56 }}
         trackLabel="Hope"
       />
     </>
