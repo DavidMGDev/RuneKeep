@@ -13,7 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
-import { CARD_DECKS, type CardItem } from '../card-data';
+import { type CardItem } from '../card-data';
 import { type ExpandState, useCarousel } from '../carousel-context';
 import {
   ANGLE_STEP,
@@ -184,8 +184,8 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, category, closeFullscreen, collapse } = useCarousel();
-  const deck = CARD_DECKS[category];
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, decks, category, closeFullscreen, collapse } = useCarousel();
+  const deck = decks[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
 
