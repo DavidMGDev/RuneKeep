@@ -1,4 +1,3 @@
-import { type ImageContentFit } from 'expo-image';
 import { useCallback, useState } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
@@ -14,8 +13,9 @@ import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
-import { ArtBox, PipRow, SheetText } from '../components/primitives';
+import { SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
+import { ChargeTrack } from '../components/charge-track';
 import { HeartTrack } from '../components/heart-track';
 import { ClassBanner, SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
@@ -34,20 +34,6 @@ const BRONZE = Rune.bronze; // deep gold labels on parchment (AA at small sizes,
 const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 'locked' ? Art.armorLocked : Art.armorIcon);
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
-
-function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWidth, pipFit, tintFor, artFor, renderPip, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; /** Pip height when the slot is not square (defaults to `pip`). */ pipH?: number; /** Explicit row width — pips spread evenly across it (space-between). */ rowWidth?: number; pipFit?: ImageContentFit; artFor?: (s: PipState) => number; /** Custom pip renderer (#70 C: chamfered stress shapes). */ renderPip?: (s: PipState) => React.ReactNode; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
-  const rows: PipState[][] = [];
-  for (let i = 0; i < states.length; i += perRow) rows.push(states.slice(i, i + perRow));
-  const h = pipH ?? pip;
-  const rowW = rowWidth ?? perRow * pip + (perRow - 1) * gap;
-  return (
-    <>
-      {rows.map((row, r) => (
-        <PipRow key={r} left={left} top={top + r * (h + rowGap)} width={rowW} height={h} states={row} pipWidth={pip} pipHeight={h} pipFit={pipFit} artFor={artFor} renderPip={renderPip} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
-      ))}
-    </>
-  );
-}
 
 /**
  * A stress pip (#70 C → #77): a 44x22 CHAMFERED shape (45° cuts like the domain chips — never
@@ -70,20 +56,22 @@ function StressPip({ state, red }: { state: PipState; red: string }) {
   return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill="none" stroke={red} strokeWidth={2} />;
 }
 
-/** Hope: large diamonds joined by a THIN gold line that stops at the last filled one. */
-function HopeLine({ left, top, width, count, active, pip, onPressPip }: { left: number; top: number; width: number; count: number; active: number; pip: number; onPressPip?: (index: number) => void }) {
-  const states = resolvePips({ total: count, active, depletedRemainder: true });
+/** Hope's THIN gold line stopping at the last filled diamond — the diamonds themselves live in a
+ *  ChargeTrack now (#89 D). */
+function HopeRule({ left, top, width, count, active, pip }: { left: number; top: number; width: number; count: number; active: number; pip: number }) {
   const step = (width - pip) / (count - 1);
   const lastFilled = Math.max(0, Math.min(count, active) - 1);
   const lineW = lastFilled * step;
-  return (
-    <>
-      {lineW > 0 ? <GoldRule left={left + pip / 2} top={top + pip / 2 - 0.5} width={lineW} color="rgba(200,146,58,0.55)" thickness={1} /> : null}
-      {states.map((s, i) => (
-        <ArtBox key={i} left={left + i * step} top={top} width={pip} height={pip} source={s === 'active' ? Art.hope : Art.hopeDepleted} pressable pressedScale={1.2} onPress={onPressPip ? () => onPressPip(i) : undefined} accessibilityLabel={`Hope, ${s === 'active' ? 'filled' : 'empty'}`} accessibilityHint={onPressPip ? 'Double tap to set this level' : undefined} />
-      ))}
-    </>
-  );
+  if (lineW <= 0) return null;
+  return <GoldRule left={left + pip / 2} top={top + pip / 2 - 0.5} width={lineW} color="rgba(200,146,58,0.55)" thickness={1} />;
+}
+
+/** Boundary slots for a simple ±1 track (stress/hope/armor): first markable / last marked. */
+function trackBounds(t: { total: number; active: number; locked?: number }) {
+  return {
+    up: t.active < t.total - (t.locked ?? 0) ? t.active : -1,
+    down: t.active > 0 ? t.active - 1 : -1,
+  };
 }
 
 /** Width of a domain chip for its label — sized for the WIDER native glyph run plus real padding,
@@ -133,17 +121,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
   const { toggleCategory, openRandomAbility, category } = useCarousel();
   const tint = useAccentTint();
 
-  // Tap-to-spend/restore for the simple tracks (stress/armor). HEARTS are different now (#81):
-  // HeartTrack owns the boundary-only ±1 hold/double-tap interaction.
-  const onTrackPip = (key: TrackKey) => (i: number) => {
-    const target = i + 1;
-    onTrack(key, target === character[key].active ? i : target);
-  };
-  const activeTint = (s: PipState) => (s === 'active' ? tint : undefined);
-
+  // Every resource now uses the boundary-only ±1 hold/double-tap model (#81 hearts, #89 the rest).
   const hp = resolveHearts(character.hp, character.heartSlots); // hearts + readout derived from HP (§1A)
   const stress = resolvePips({ total: character.stress.total, active: character.stress.active, locked: character.stress.locked, depletedRemainder: true });
   const armor = resolvePips({ total: character.armor.total, active: character.armor.active, locked: character.armor.locked, depletedRemainder: true });
+  const hope = resolvePips({ total: character.hope.total, active: character.hope.active, depletedRemainder: true });
 
   return (
     <>
@@ -215,7 +197,29 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
       <GoldRuleV left={252} top={217} height={64} />
       <SheetText left={262} top={213} width={100} height={15} color={Rune.goldText} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
-      <PipGrid left={262} top={234} perRow={6} gap={4} rowGap={5} states={armor} pip={17} artFor={armorArt} tintFor={lockedGray} onPressPip={onTrackPip('armor')} trackLabel="Armor" />
+      {/* Armor (#89 E): zone mode — the shields are too small to hunt, so two big halves split at
+          the barrier after the LAST filled shield own the gestures: left of it clears, right of it
+          marks, verticality irrelevant. Each shield still charges/animates individually. */}
+      <ChargeTrack
+        left={262}
+        top={234}
+        slots={armor.map((_, i) => ({ x: (i % 6) * 21, y: Math.floor(i / 6) * 22 }))}
+        w={17}
+        h={17}
+        upIndex={trackBounds(character.armor).up}
+        downIndex={trackBounds(character.armor).down}
+        onUp={() => onTrack('armor', character.armor.active + 1)}
+        onDown={() => onTrack('armor', character.armor.active - 1)}
+        renderSlot={(i) => <ArtImage source={armorArt(armor[i])} fit="contain" tint={lockedGray(armor[i])} />}
+        renderFilled={() => <ArtImage source={armorArt('active')} fit="contain" />}
+        renderEmpty={() => <ArtImage source={armorArt('depleted')} fit="contain" />}
+        flavor="armor"
+        accent={tint ?? RED}
+        grow={3.2}
+        crossUpAt={0.45}
+        zone={{ left: -10, top: -8, width: 142, height: 56, barrierX: character.armor.active <= 0 ? -10 : ((character.armor.active - 1) % 6 + 1) * 21 - 2 }}
+        trackLabel="Armor"
+      />
 
       {/* ---------- HP — hearts fit inside the frame, spaced ----------
           Panel raised 5px: the gap to the portrait/armor band above shrinks ~30% (#37). */}
@@ -250,12 +254,54 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <SheetText left={44} top={404} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
       {/* Chamfered shapes, not SVG art (#67 D → #70 C): red fill + echo line = marked, red
           chamfered outline = available, gray chamfered fill = locked. Same boxes as before. */}
-      <PipGrid left={44} top={432} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} states={stress} renderPip={(s) => <StressPip state={s} red={tint ?? RED} />} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+      {/* Stress (#89 C): hold-to-charge boundaries with the lightning flavor — quantized jumps,
+          jitter, flicker. Boundary pips reach further on their outward side (sideSlop). */}
+      <ChargeTrack
+        left={44}
+        top={432}
+        slots={stress.map((_, i) => ({ x: (i % 6) * 56, y: Math.floor(i / 6) * 34 }))}
+        w={44}
+        h={26}
+        upIndex={trackBounds(character.stress).up}
+        downIndex={trackBounds(character.stress).down}
+        onUp={() => onTrack('stress', character.stress.active + 1)}
+        onDown={() => onTrack('stress', character.stress.active - 1)}
+        renderSlot={(i) => <StressPip state={stress[i]} red={tint ?? RED} />}
+        renderFilled={() => <StressPip state="active" red={tint ?? RED} />}
+        renderEmpty={() => <StressPip state="depleted" red={tint ?? RED} />}
+        flavor="stress"
+        accent={tint ?? RED}
+        crossUpAt={0.12}
+        sideSlop={14}
+        trackLabel="Stress"
+      />
 
       {/* ---------- Hope — aligned with Stress (which is now shorter), thin connecting line ---------- */}
       <ChamferFrame left={22} top={512} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       <SheetText left={44} top={518} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
-      <HopeLine left={44} top={544} width={324} count={character.hope.total} active={character.hope.active} pip={44} onPressPip={onTrackPip('hope')} />
+      <HopeRule left={44} top={544} width={324} count={character.hope.total} active={character.hope.active} pip={44} />
+      {/* Hope (#89 D): abrupt but grandiose — instant rays of light + rising twinkling sparks on a
+          gain; dimmer rays, falling sparks on a spend. */}
+      <ChargeTrack
+        left={44}
+        top={544}
+        slots={hope.map((_, i) => ({ x: i * 56, y: 0 }))}
+        w={44}
+        h={44}
+        upIndex={trackBounds(character.hope).up}
+        downIndex={trackBounds(character.hope).down}
+        onUp={() => onTrack('hope', character.hope.active + 1)}
+        onDown={() => onTrack('hope', character.hope.active - 1)}
+        renderSlot={(i) => <ArtImage source={hope[i] === 'active' ? Art.hope : Art.hopeDepleted} fit="contain" />}
+        renderFilled={() => <ArtImage source={Art.hope} fit="contain" />}
+        renderEmpty={() => <ArtImage source={Art.hopeDepleted} fit="contain" />}
+        flavor="hope"
+        accent={Rune.goldBright}
+        crossUpAt={0.15}
+        crossDownAt={0.12}
+        sideSlop={14}
+        trackLabel="Hope"
+      />
     </>
   );
 }
