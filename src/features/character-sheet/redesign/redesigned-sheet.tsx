@@ -53,7 +53,9 @@ function StressPip({ state, red }: { state: PipState; red: string }) {
       </>
     );
   }
-  return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill="none" stroke={red} strokeWidth={2} />;
+  // Sheet-colored fill, not transparent (#93): a grown/shaking available pip must read as a solid
+  // shape, not an empty frame with the background showing through.
+  return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={IVORY} stroke={red} strokeWidth={2} />;
 }
 
 /** Hope's THIN gold line stopping at the last filled diamond — the diamonds themselves live in a
@@ -215,7 +217,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         renderEmpty={() => <ArtImage source={armorArt('depleted')} fit="contain" />}
         flavor="armor"
         accent={tint ?? RED}
-        grow={3.2}
+        grow={4.2}
         crossUpAt={0.45}
         zone={{ left: -10, top: -8, width: 142, height: 56, barrierX: character.armor.active <= 0 ? -10 : ((character.armor.active - 1) % 6 + 1) * 21 - 2 }}
         trackLabel="Armor"
@@ -271,8 +273,9 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         renderEmpty={() => <StressPip state="depleted" red={tint ?? RED} />}
         flavor="stress"
         accent={tint ?? RED}
+        grow={2.65}
         crossUpAt={0.12}
-        sideSlop={14}
+        zone={{ left: -10, top: -10, width: 344, height: 80, barrierX: character.stress.active <= 0 ? -10 : ((character.stress.active - 1) % 6 + 1) * 56 - 6 }}
         trackLabel="Stress"
       />
 
@@ -297,9 +300,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         renderEmpty={() => <ArtImage source={Art.hopeDepleted} fit="contain" />}
         flavor="hope"
         accent={Rune.goldBright}
+        grow={3.0}
         crossUpAt={0.15}
         crossDownAt={0.12}
-        sideSlop={14}
+        zone={{ left: -10, top: -6, width: 344, height: 56, barrierX: character.hope.active <= 0 ? -10 : character.hope.active * 56 - 6 }}
         trackLabel="Hope"
       />
     </>
