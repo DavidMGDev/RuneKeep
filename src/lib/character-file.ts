@@ -35,6 +35,11 @@ export interface CharacterFile {
   traits?: Record<TraitKey, number>;
   /** The two creation experiences — player-authored cards (#107). */
   experiences?: ExperienceDef[];
+  /** Tier-1 starting equipment ids (#121): a required primary weapon, an optional 1H secondary, an
+   *  armor. Ids reference equipment-data (immutable forged cards), not the catalog. */
+  weaponPrimaryId?: string;
+  weaponSecondaryId?: string | null;
+  armorId?: string;
   level: number;
 }
 

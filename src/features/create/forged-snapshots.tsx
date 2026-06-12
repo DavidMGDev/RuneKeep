@@ -22,6 +22,9 @@ export interface ForgedSource {
 interface PendingJob {
   key: string;
   node: ReactNode;
+  /** Card has a RASTER art image (a player photo) that decodes async — needs a settle before
+   *  capture (#110). Vector cards (svg+text: class/feature/weapon/armor) don't and forge fast. */
+  raster?: boolean;
 }
 
 type FS = typeof import('expo-file-system');
@@ -81,7 +84,9 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
     requestAnimationFrame(() =>
       requestAnimationFrame(async () => {
         try {
-          await new Promise((r) => setTimeout(r, 320));
+          // raster art (player photo) decodes async after layout — settle so the full-res capture
+          // isn't black (#110); vector cards skip it and forge fast.
+          if (job.raster) await new Promise((r) => setTimeout(r, 320));
           const { File } = fs();
           const fullTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 750, height: 1050 });
           const thumbTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 188, height: 263 });
