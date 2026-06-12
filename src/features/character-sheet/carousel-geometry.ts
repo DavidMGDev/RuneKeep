@@ -29,7 +29,9 @@ export const CARD_H = CARD_W / CARD_ASPECT; // 5:7
 export const ANGLE_STEP = 0.22; // radians between adjacent cards
 export const COMPACT_STEP = 0.05; // a tight little hand of cards when compact
 export const COMPACT_SCALE = 0.37; // compact hand ~15% bigger (#62 B)
-export const COMPACT_DROP = 140; // compact center ~90px higher — the hand reads on-screen (#62 B)
+// The CENTER card's bottom edge sits EXACTLY on the design bottom (#67 B): center y = OY - R +
+// DROP, plus half the scaled card height = 892. (631 + 201 + 322*0.37/2 ≈ 892.)
+export const COMPACT_DROP = 201;
 
 export const SCALE_MAX = 1.0; // centermost card
 export const SCALE_MIN = 0.55; // far cards
@@ -43,9 +45,10 @@ export const PAN_R = 540;
  *  almost nothing and the hand reads as a fan of white cards (#54 B). */
 export const WINDOW_HALF = 3;
 
-/** How many cards each side of center mount their real Image. The boundary slot (±2) holds it at
- *  alpha 0 — decoded and ready before it ever fades in, so there is no pop and no decode hitch. */
-export const IMG_MOUNT_HALF = 2;
+/** How many cards each side of center mount their real Image. ALL mounted slots carry one now
+ *  (#67 A — WebP decodes are cheap): the ±3 boundary slot decodes at alpha 0, ready before it can
+ *  ever fade in, so a fast scroll shows cards loading in instead of a white-back pop. */
+export const IMG_MOUNT_HALF = 3;
 
 /** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
 export const FS_OPEN_DIST = 150;
@@ -62,11 +65,13 @@ export const MAX_FLING_VEL = 6; // rad/s ceiling on the release velocity
 export const FLING_TIME = 0.18; // s — how far a fling "throws" (target = rot + v * FLING_TIME)
 export const OVERSCROLL_RESIST = 0.35; // drag past a deck end moves at 35% (soft rubber while dragging)
 
-// --- Inner-gear grind scroll (#62 D) ---
-// Dragging the inner gear scrolls ~3x harder than the hand itself and tightens the fan so more
-// cards skim past at once; a haptic ticks at every detent crossed.
-export const GEAR_PAN_R = 170; // finger px per radian on the gear (PAN_R/3.2 → much stronger)
-export const GRIND_TIGHTEN = 0.55; // fan step shrinks to 45% while grinding (same card size)
+// --- Inner-gear grind scroll (#62 D, #67 C) ---
+// Dragging the inner gear is the power-scroll: ONE full swipe sweeps the whole deck (adaptive —
+// gearPanR = GEAR_SWIPE_PX / maxRotation(count)), a haptic ticks at every detent crossed, and the
+// fan keeps its tightened spacing while the cards shrink so more of the deck is visible at once.
+export const GEAR_SWIPE_PX = 330; // finger px that cover first card -> last card on the gear
+export const GRIND_TIGHTEN = 0.55; // fan step shrinks to 45% while grinding
+export const GRIND_SHRINK = 0.3; // cards 30% smaller while grinding (#67 C)
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;
@@ -92,9 +97,15 @@ export const FS_SPRING = { damping: 18, stiffness: 120, mass: 0.9 };
  * 3rd card centered (5 slots mounted), and kept it there in compact where the falloff left ALL
  * slots at full alpha stacked on top of each other.
  */
-export function imageOpacityAt(distSteps: number): number {
+/**
+ * Real-art alpha by distance in card steps (#67 A): five cards drawn at rest (full through ±2,
+ * gone by ±3 — integer alphas at every rest detent, see slotOpacityAt for why that matters), and
+ * `grind` (0..1, the inner-gear scroll) extends the fade so all SEVEN mounted slots draw while
+ * skimming. The mounted-but-invisible boundary slot is where decode happens.
+ */
+export function imageOpacityAt(distSteps: number, grind: number = 0): number {
   'worklet';
-  return Math.min(1, Math.max(0, 2 - distSteps));
+  return Math.min(1, Math.max(0, 3 + grind - distSteps));
 }
 
 /**

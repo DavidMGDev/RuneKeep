@@ -33,7 +33,8 @@ import {
   FS_SPRING,
   FS_UP_TRIGGER,
   FS_UP_VELOCITY,
-  GEAR_PAN_R,
+  GEAR_SWIPE_PX,
+  GRIND_SHRINK,
   GRIND_TIGHTEN,
   imageOpacityAt,
   IMG_MOUNT_HALF,
@@ -56,6 +57,11 @@ import {
 import { Card, CardBack } from './card';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
+
+/** White card-back placeholders DISABLED for now (#67 A): with all mounted slots pre-decoding
+ *  their WebP at alpha 0, fast scrolls show cards fading in instead of a back→image pop. Kept
+ *  behind this toggle for one more iteration before deleting. */
+const SHOW_CARD_BACKS = false;
 
 interface SlotProps {
   index: number;
@@ -83,7 +89,8 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
 
     let x = OX + R * Math.sin(theta);
     let y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
-    let scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p);
+    // Grinding shrinks the cards 30% (spacing already tightened above) so more of the deck shows.
+    let scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p) * (1 - GRIND_SHRINK * grindProgress.value);
     let tilt = theta * 0.5;
 
     // Slots stay SOLID (the white backs are meant to be seen, #54 B) and only fade in a narrow
@@ -116,7 +123,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   // to it), so its art is always full.
   const imgFade = useAnimatedStyle(() => {
     const d = Math.abs(index - rotation.value / ANGLE_STEP);
-    return { opacity: imageOpacityAt(d) };
+    return { opacity: imageOpacityAt(d, grindProgress.value) };
   });
 
   // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close.
@@ -150,9 +157,9 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
       <GestureDetector gesture={tap}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
-          <CardBack />
-          {/* Far slots carry NO Image at all; the ±IMG_MOUNT_HALF boundary slot holds its decoded
-              image at alpha 0, ready to fade in without a pop or a decode hitch (#54 B). */}
+          {SHOW_CARD_BACKS ? <CardBack /> : null}
+          {/* The ±IMG_MOUNT_HALF boundary slot holds its decoded image at alpha 0, ready to fade
+              in without a pop or a decode hitch (#54 B, #67 A). */}
           {withImage ? (
             <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
               <Card item={item} width={CARD_W} height={CARD_H} />
@@ -189,6 +196,8 @@ export function CardCarousel() {
   const padWasExpanded = useSharedValue(false);
   const grindProgress = useSharedValue(0);
   const lastDetent = useSharedValue(0);
+  // Adaptive gear sensitivity (#67 C): one ~GEAR_SWIPE_PX swipe sweeps the WHOLE deck.
+  const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
   const [center, setCenter] = useState(middle);
 
@@ -225,7 +234,7 @@ export function CardCarousel() {
           // Grinding the gear (#62 D): a much stronger scroll with a haptic tick per detent.
           if (padTouch.value && padWasExpanded.value) {
             scrolled.value = true;
-            const raw = startRot.value - e.translationX / GEAR_PAN_R;
+            const raw = startRot.value - e.translationX / gearPanR;
             const max = maxRotation(count);
             rotation.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
             const det = Math.round(rotation.value / ANGLE_STEP);
@@ -310,7 +319,7 @@ export function CardCarousel() {
           // and always converges onto a detent, even released past a deck end (drag overscroll snaps
           // home the same way). No decay phase → no off-center float, no teleport at the extremes.
           const grinding = padTouch.value && padWasExpanded.value;
-          const panR = grinding ? GEAR_PAN_R : PAN_R;
+          const panR = grinding ? gearPanR : PAN_R;
           const v = Math.max(-MAX_FLING_VEL, Math.min(MAX_FLING_VEL, -e.velocityX / panR));
           const target = snapRot(rotation.value + v * FLING_TIME, count);
           rotation.value = withSpring(target, { ...SNAP_SPRING, velocity: v });
@@ -334,7 +343,7 @@ export function CardCarousel() {
           if (grindProgress.value !== 0 && !scrolled.value) grindProgress.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, lastDetent],
+    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, lastDetent],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
