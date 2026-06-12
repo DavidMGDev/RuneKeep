@@ -68,14 +68,13 @@ export const OVERSCROLL_RESIST = 0.35; // drag past a deck end moves at 35% (sof
 // Dragging the inner gear is the power-scroll: ONE full swipe sweeps the whole deck (adaptive —
 // gearPanR = GEAR_SWIPE_PX / maxRotation(count)), a haptic ticks at every detent crossed, and the
 // fan keeps its tightened spacing while the cards shrink so more of the deck is visible at once.
-// 260: the grind starts at the SCREEN CENTER, so only about half a screen of travel exists — one
-// half-screen sweep must still reach (nearly) the far end of the deck (#70 A).
-export const GEAR_SWIPE_PX = 260; // finger px that cover first card -> last card on the gear
-// 0.44: with the cards smaller they overlapped too much at 0.55 — ~25% more separation (#70 A).
-export const GRIND_TIGHTEN = 0.44; // fan step shrinks to 56% while grinding
-// 0.45: at the grind spacing (~111px between centers) a 30% shrink still overlapped ~31% of the
-// card; 45% lands at ~12% overlap (#75).
-export const GRIND_SHRINK = 0.45;
+// 200: HALF A SCREEN of travel sweeps the whole deck, last card to first (#80 — the grind starts
+// at the screen center, so half a screen is all the room a thumb ever has).
+export const GEAR_SWIPE_PX = 200; // finger px that cover first card -> last card on the gear
+// Grind fan (#80, tuned on the LOD thumbs): much smaller cards packed much tighter — spacing
+// ~83px vs ~97px card width ≈ 14% overlap, ~7 cards visible at once while skimming.
+export const GRIND_TIGHTEN = 0.58; // fan step shrinks to 42% while grinding
+export const GRIND_SHRINK = 0.55; // cards at 45% size while grinding
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;
