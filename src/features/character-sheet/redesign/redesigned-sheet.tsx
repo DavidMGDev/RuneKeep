@@ -33,12 +33,11 @@ const BRONZE = Rune.bronze; // deep gold labels on parchment (AA at small sizes,
 
 // A golden heart reuses the heart shape, recolored gold (clearly distinct from red at small size, AC1A.5).
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
-const stressArt = (s: PipState) => (s === 'depleted' ? Art.stressDepleted : s === 'locked' ? Art.stressLocked : Art.stress);
 const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 'locked' ? Art.armorLocked : Art.armorIcon);
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
-function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWidth, pipFit, tintFor, artFor, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; /** Pip height when the slot is not square (defaults to `pip`). */ pipH?: number; /** Explicit row width — pips spread evenly across it (space-between). */ rowWidth?: number; pipFit?: ImageContentFit; artFor: (s: PipState) => number; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
+function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWidth, pipFit, tintFor, artFor, rectFor, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; /** Pip height when the slot is not square (defaults to `pip`). */ pipH?: number; /** Explicit row width — pips spread evenly across it (space-between). */ rowWidth?: number; pipFit?: ImageContentFit; artFor?: (s: PipState) => number; /** Flat rectangle pips instead of art (#67 D). */ rectFor?: (s: PipState) => { fill?: string; border?: string }; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
   const rows: PipState[][] = [];
   for (let i = 0; i < states.length; i += perRow) rows.push(states.slice(i, i + perRow));
   const h = pipH ?? pip;
@@ -46,7 +45,7 @@ function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWid
   return (
     <>
       {rows.map((row, r) => (
-        <PipRow key={r} left={left} top={top + r * (h + rowGap)} width={rowW} height={h} states={row} pipWidth={pip} pipHeight={h} pipFit={pipFit} artFor={artFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
+        <PipRow key={r} left={left} top={top + r * (h + rowGap)} width={rowW} height={h} states={row} pipWidth={pip} pipHeight={h} pipFit={pipFit} artFor={artFor} rectFor={rectFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
       ))}
     </>
   );
@@ -237,7 +236,9 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <ChamferFrame left={22} top={396} width={368} height={108} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       {/* Label shares the pips' left edge (44) and gets clear air above them (#48 F). */}
       <SheetText left={44} top={404} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      <PipGrid left={44} top={432} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} pipFit="fill" states={stress} artFor={stressArt} tintFor={(s) => lockedGray(s) ?? activeTint(s)} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+      {/* Flat rectangles, not SVG art (#67 D): red fill = marked, red outline = available,
+          gray fill = locked. Same boxes as before. */}
+      <PipGrid left={44} top={432} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} states={stress} rectFor={(s) => (s === 'active' ? { fill: tint ?? RED } : s === 'locked' ? { fill: Rune.muted } : { border: RED })} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress (which is now shorter), thin connecting line ---------- */}
       <ChamferFrame left={22} top={512} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
