@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
@@ -25,12 +25,12 @@ import { type Character, SAMPLE_CHARACTER } from '../character';
 import { SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
 import { ChargeTrack } from '../components/charge-track';
-import { HeartTrack } from '../components/heart-track';
+import { HeartTrack, type HeartTrackHandle } from '../components/heart-track';
 import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
-import { InfoOverlay } from './info-overlay';
+import { DamagePanel } from './damage-panel';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
 const SHEET = Rune.sheet;
@@ -128,7 +128,7 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void }) {
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle> }) {
   const { toggleCategory, openOriginCard, category } = useCarousel();
   const tint = useAccentTint();
 
@@ -266,7 +266,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {character.maxHp}</Text>
       </View>
       {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/§1A). */}
-      <HeartTrack left={140} top={333} width={235} pip={35} hp={character.hp} slots={heartSlotCount} accent={tint ?? RED} onHp={onHp} />
+      <HeartTrack ref={heartRef} left={140} top={333} width={235} pip={35} hp={character.hp} slots={heartSlotCount} accent={tint ?? RED} onHp={onHp} />
 
       {/* ---------- Stress — inset frame, two rows spread across the panel ----------
           Panel 20px shorter with the pips trimmed to match (34->26 tall) — flatter, more
@@ -477,9 +477,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const inv = [...weaponItems, ...armorItems];
     return { abilitiesCards: abilities, inventoryCards: inv.length ? inv : undefined };
   }, [characterFile, expJobs, classJob, featJobs, weaponJobs, armorJob, featureSources]);
-  const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
-  const onInfo = useCallback(() => setInfoOpen(true), []);
-  const onInfoClose = useCallback(() => setInfoOpen(false), []);
+  const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
+  const onInfo = useCallback(() => setDamageOpen(true), []);
+  const heartRef = useRef<HeartTrackHandle>(null);
+  const onApplyDamage = useCallback((hpLoss: number) => heartRef.current?.applyDamage(hpLoss), []);
   const onHp = useCallback(
     // No overhealing past the character's TRUE maximum (#107) — not the slot capacity.
     (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.maxHp, n)) })),
@@ -529,13 +530,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
               <CardCarousel />
-              <InfoOverlay open={infoOpen} onClose={onInfoClose} />
             </DesignStage>
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
@@ -547,6 +547,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               gears/card spill below the design box can only be COVERED, not clipped. */}
           <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topInset, backgroundColor: Rune.ink }} />
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
+          {/* damage-threshold keypad (#128): full-screen overlay above everything; on confirm it
+              animates out, then bursts the lost hearts via the HeartTrack handle */}
+          {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}
           {/* offscreen forge stage: captures the class-feature cards to bitmaps (#104) */}
           {forgeStage}
         </View>
