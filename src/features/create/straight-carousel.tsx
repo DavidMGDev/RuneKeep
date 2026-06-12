@@ -77,58 +77,47 @@ function FaceContent({ face, fullRes }: { face: StraightFace; fullRes: boolean }
 }
 
 /**
- * A 3D flip-deck (#110): renders the current face; when `animate` is on and `index` changes, the
- * card turns on its Y axis (perspective + rotateY, no native dep) to reveal the next face, swapping
- * the texture at the 90° edge so it reads as a real card flipping. When not focused it snaps — the
- * rail never animates. `dir` (+1/-1) picks turn direction so left/right taps feel right.
+ * A 3D flip-deck (#110): two persistent physical sides whose rotation ACCUMULATES (each flip is a
+ * fresh ±180° half-turn, never reset). The side that will face the viewer after the turn gets the
+ * target face loaded BEFORE the turn starts, so there is no mid-animation texture swap and — the
+ * #110 bug — no post-flip reset frame where the old face snaps back visible. backfaceVisibility
+ * hides whichever side points away. When not focused it snaps the forward side. `dir` (+1/-1) turns.
  */
 const FlipCard = memo(function FlipCard({ faces, index, dir, fullRes, animate }: { faces: StraightFace[]; index: number; dir: number; fullRes: boolean; animate: boolean }) {
-  const [front, setFront] = useState(index);
-  const [incoming, setIncoming] = useState<number | null>(null);
-  const rot = useSharedValue(0);
-  const dirSV = useSharedValue(1);
+  const angle = useSharedValue(0);
+  const [faceA, setFaceA] = useState(index); // forward when parity is even (angle ≡ 0°)
+  const [faceB, setFaceB] = useState(index); // forward when parity is odd  (angle ≡ 180°)
+  const parity = useRef(0);
   const prev = useRef(index);
-
-  const settle = useCallback((i: number) => {
-    setFront(i);
-    setIncoming(null);
-    rot.value = 0;
-  }, [rot]);
 
   useEffect(() => {
     if (index === prev.current) return;
     prev.current = index;
     if (!animate) {
-      settle(index);
+      // snap: just refresh whichever side currently faces the viewer (no turn)
+      if (parity.current % 2 === 0) setFaceA(index);
+      else setFaceB(index);
       return;
     }
-    dirSV.value = dir >= 0 ? 1 : -1;
-    setIncoming(index);
-    rot.value = 0;
-    rot.value = withTiming(1, { duration: 300, easing: Easing.inOut(Easing.cubic) }, (f) => {
-      if (f) runOnJS(settle)(index);
-    });
-  }, [index, animate, dir, rot, dirSV, settle]);
+    const nextParity = parity.current + 1;
+    // load the target on the side that becomes forward AFTER this half-turn
+    if (nextParity % 2 === 0) setFaceA(index);
+    else setFaceB(index);
+    parity.current = nextParity;
+    angle.value = withTiming(angle.value + (dir >= 0 ? 1 : -1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) });
+  }, [index, animate, dir, angle]);
 
-  const frontStyle = useAnimatedStyle(() => ({
-    transform: [{ perspective: 900 }, { rotateY: `${dirSV.value * rot.value * 180}deg` }],
-    backfaceVisibility: 'hidden',
-  }));
-  const backStyle = useAnimatedStyle(() => ({
-    transform: [{ perspective: 900 }, { rotateY: `${dirSV.value * (rot.value - 1) * 180}deg` }],
-    backfaceVisibility: 'hidden',
-  }));
+  const aStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value}deg` }], backfaceVisibility: 'hidden' }));
+  const bStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value + 180}deg` }], backfaceVisibility: 'hidden' }));
 
   return (
     <View style={{ flex: 1 }}>
-      <Animated.View style={[StyleSheet.absoluteFill, frontStyle]}>
-        <FaceContent face={faces[front] ?? faces[0]} fullRes={fullRes} />
+      <Animated.View style={[StyleSheet.absoluteFill, aStyle]}>
+        <FaceContent face={faces[faceA] ?? faces[0]} fullRes={fullRes} />
       </Animated.View>
-      {incoming != null ? (
-        <Animated.View style={[StyleSheet.absoluteFill, backStyle]}>
-          <FaceContent face={faces[incoming] ?? faces[0]} fullRes={fullRes} />
-        </Animated.View>
-      ) : null}
+      <Animated.View style={[StyleSheet.absoluteFill, bStyle]}>
+        <FaceContent face={faces[faceB] ?? faces[0]} fullRes={fullRes} />
+      </Animated.View>
     </View>
   );
 });
@@ -230,11 +219,12 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
               </View>
             </>
           ) : null}
-          {/* page indicator while a multi-face card is focused (#110): tap left/right to flip */}
+          {/* page indicator while a multi-face card is focused (#110): BELOW the card, off the
+              parchment (it's a sibling of FlipCard so it never rotates with the flip) */}
           {focused && (item.faces?.length ?? 0) > 1 ? (
-            <View style={{ position: 'absolute', bottom: 7, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 }} pointerEvents="none">
+            <View style={{ position: 'absolute', top: FORGED_H + 10, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }} pointerEvents="none">
               {item.faces!.map((_, i) => (
-                <View key={i} style={{ width: 6, height: 6, transform: [{ rotate: '45deg' }], backgroundColor: i === faceIndex ? Rune.red : 'rgba(40,30,18,0.45)' }} />
+                <View key={i} style={{ width: 7, height: 7, transform: [{ rotate: '45deg' }], backgroundColor: i === faceIndex ? Rune.red : 'rgba(147,142,136,0.55)' }} />
               ))}
             </View>
           ) : null}
@@ -382,6 +372,14 @@ export const StraightCarousel = forwardRef<
         })
         .onEnd((e) => {
           if (fs.value > 0.5) {
+            // Focused gestures (#110): a horizontal swipe pages a multi-face card (left = next,
+            // right = back); a downward swipe closes. flip() no-ops on single-face cards.
+            const ax = Math.abs(e.translationX);
+            const ay = Math.abs(e.translationY);
+            if (ax > 44 && ax > ay * 1.2) {
+              runOnJS(flip)(e.translationX < 0 ? 1 : -1);
+              return;
+            }
             if (e.translationY > 60 || e.velocityY > 600) runOnJS(closeFs)();
             return;
           }
@@ -395,7 +393,7 @@ export const StraightCarousel = forwardRef<
           if (grind.value !== 0 && !scrolled.value) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, closeFs, heightSV],
+    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, closeFs, heightSV, flip],
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
