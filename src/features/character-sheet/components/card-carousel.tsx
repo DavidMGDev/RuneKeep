@@ -34,6 +34,7 @@ import {
   FS_UP_TRIGGER,
   FS_UP_VELOCITY,
   GEAR_SWIPE_PX,
+  GRIND_LOOKAHEAD,
   GRIND_SHRINK,
   GRIND_TIGHTEN,
   imageOpacityAt,
@@ -196,10 +197,14 @@ export function CardCarousel() {
   const padWasExpanded = useSharedValue(false);
   const grindProgress = useSharedValue(0);
   const lastDetent = useSharedValue(0);
+  const grindDir = useSharedValue(0); // -1 | 0 | +1, mirrored into grindAhead on change
   // Adaptive gear sensitivity (#67 C): one ~GEAR_SWIPE_PX swipe sweeps the WHOLE deck.
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
   const [center, setCenter] = useState(middle);
+  // Grind foresight (#75): ±1 while the gear is being dragged in that direction, 0 otherwise.
+  // Drives the extended, image-carrying mount window ahead of the scroll.
+  const [grindAhead, setGrindAhead] = useState(0);
 
   const onCenter = useCallback((c: number) => setCenter(c), []);
   useDerivedValue(() => {
@@ -241,6 +246,13 @@ export function CardCarousel() {
             if (det !== lastDetent.value) {
               lastDetent.value = det;
               runOnJS(tapHaptic)();
+            }
+            // Foresight (#75): tell React which way the grind is heading so extra slots mount
+            // (and decode) ahead of the finger.
+            const dir = e.translationX < -4 ? 1 : e.translationX > 4 ? -1 : 0;
+            if (dir !== 0 && dir !== grindDir.value) {
+              grindDir.value = dir;
+              runOnJS(setGrindAhead)(dir);
             }
             return;
           }
@@ -341,21 +353,30 @@ export function CardCarousel() {
             }
           }
           if (grindProgress.value !== 0 && !scrolled.value) grindProgress.value = withTiming(0, { duration: 220 });
+          if (grindDir.value !== 0) {
+            grindDir.value = 0;
+            runOnJS(setGrindAhead)(0);
+          }
           padTouch.value = false;
         }),
     [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, lastDetent],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
+  // Grind foresight (#75): the mount window grows GRIND_LOOKAHEAD slots in the scroll direction,
+  // every one carrying its image (decoding at alpha 0, rolling with the center) — a fast grind
+  // meets already-decoded cards instead of empty slots. Collapses when the grind ends.
+  const aheadHi = grindAhead > 0 ? GRIND_LOOKAHEAD : 0;
+  const aheadLo = grindAhead < 0 ? GRIND_LOOKAHEAD : 0;
   const slots = [];
-  for (let i = Math.max(0, c - WINDOW_HALF); i <= Math.min(count - 1, c + WINDOW_HALF); i++) {
+  for (let i = Math.max(0, c - WINDOW_HALF - aheadLo); i <= Math.min(count - 1, c + WINDOW_HALF + aheadHi); i++) {
     slots.push(
       <CardSlot
         key={deck[i].id}
         index={i}
         item={deck[i]}
         count={count}
-        withImage={Math.abs(i - c) <= IMG_MOUNT_HALF}
+        withImage={grindAhead !== 0 || Math.abs(i - c) <= IMG_MOUNT_HALF}
         rotation={rotation}
         expandProgress={expandProgress}
         fullscreenProgress={fullscreenProgress}
