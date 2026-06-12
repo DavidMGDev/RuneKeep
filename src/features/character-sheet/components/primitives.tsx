@@ -150,10 +150,10 @@ interface PipRowProps {
   pipHeight: number;
   /** `fill` lets pip art stretch into a non-square slot (e.g. wide stress pips); default keeps aspect. */
   pipFit?: ImageContentFit;
-  /** Art per state — or use `rectFor` for flat rectangle pips instead. */
+  /** Art per state — or use `renderPip` for fully custom pips instead. */
   artFor?: (state: PipState) => number;
-  /** Flat-rectangle pips (#67 D): sharp-cornered, filled and/or outlined per state. Wins over art. */
-  rectFor?: (state: PipState) => { fill?: string; border?: string };
+  /** Custom pip renderer (#70 C: e.g. chamfered stress shapes). Wins over art. */
+  renderPip?: (state: PipState) => ReactNode;
   /** Optional per-state tint (e.g. retint the red 'active' pips to the accent color). */
   tintFor?: (state: PipState) => string | undefined;
   onPressPip?: (index: number) => void;
@@ -183,7 +183,7 @@ export function PipRow({
   pipHeight,
   pipFit = 'contain',
   artFor,
-  rectFor,
+  renderPip,
   tintFor,
   onPressPip,
   trackLabel,
@@ -204,16 +204,8 @@ export function PipRow({
           onPress={onPressPip ? () => onPressPip(i) : undefined}
           accessibilityLabel={trackLabel ? `${trackLabel}, ${PIP_STATE_WORD[state]}` : undefined}
           accessibilityHint={trackLabel && onPressPip ? 'Double tap to set this level' : undefined}>
-          {rectFor ? (
-            // Flat rectangle pip: sharp corners (the chamfer-flat signature — never rounded).
-            <View
-              style={{
-                flex: 1,
-                backgroundColor: rectFor(state).fill,
-                borderWidth: rectFor(state).border ? 2 : 0,
-                borderColor: rectFor(state).border,
-              }}
-            />
+          {renderPip ? (
+            renderPip(state)
           ) : artFor ? (
             <ArtImage source={artFor(state)} fit={pipFit} tint={tintFor?.(state)} />
           ) : null}

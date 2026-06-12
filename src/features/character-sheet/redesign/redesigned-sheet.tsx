@@ -2,6 +2,7 @@ import { type ImageContentFit } from 'expo-image';
 import { useCallback, useState } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
+import Svg, { Polyline } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccentTint } from '@/components/accent';
@@ -37,7 +38,7 @@ const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
-function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWidth, pipFit, tintFor, artFor, rectFor, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; /** Pip height when the slot is not square (defaults to `pip`). */ pipH?: number; /** Explicit row width — pips spread evenly across it (space-between). */ rowWidth?: number; pipFit?: ImageContentFit; artFor?: (s: PipState) => number; /** Flat rectangle pips instead of art (#67 D). */ rectFor?: (s: PipState) => { fill?: string; border?: string }; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
+function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWidth, pipFit, tintFor, artFor, renderPip, onPressPip, trackLabel }: { left: number; top: number; perRow: number; gap: number; rowGap?: number; states: PipState[]; pip: number; /** Pip height when the slot is not square (defaults to `pip`). */ pipH?: number; /** Explicit row width — pips spread evenly across it (space-between). */ rowWidth?: number; pipFit?: ImageContentFit; artFor?: (s: PipState) => number; /** Custom pip renderer (#70 C: chamfered stress shapes). */ renderPip?: (s: PipState) => React.ReactNode; tintFor?: (s: PipState) => string | undefined; onPressPip?: (index: number) => void; trackLabel?: string }) {
   const rows: PipState[][] = [];
   for (let i = 0; i < states.length; i += perRow) rows.push(states.slice(i, i + perRow));
   const h = pipH ?? pip;
@@ -45,10 +46,36 @@ function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWid
   return (
     <>
       {rows.map((row, r) => (
-        <PipRow key={r} left={left} top={top + r * (h + rowGap)} width={rowW} height={h} states={row} pipWidth={pip} pipHeight={h} pipFit={pipFit} artFor={artFor} rectFor={rectFor} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
+        <PipRow key={r} left={left} top={top + r * (h + rowGap)} width={rowW} height={h} states={row} pipWidth={pip} pipHeight={h} pipFit={pipFit} artFor={artFor} renderPip={renderPip} tintFor={tintFor} onPressPip={onPressPip ? (i) => onPressPip(r * perRow + i) : undefined} trackLabel={trackLabel} />
       ))}
     </>
   );
+}
+
+/**
+ * A stress pip (#70 C): a 44x22 CHAMFERED shape (45° cuts like the domain chips — never rounded).
+ * Marked = red fill + the thin echo line underneath tracing the chamfered contour, exactly like
+ * the hearts' under-line; available = red chamfered outline (no line); locked = gray chamfered
+ * fill (no line). The slot is 44x26 — the bottom 4px belong to the echo line.
+ */
+function StressPip({ state, red }: { state: PipState; red: string }) {
+  if (state === 'locked') {
+    return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={Rune.muted} stroke="transparent" strokeWidth={0} />;
+  }
+  if (state === 'active') {
+    return (
+      <>
+        <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={red} stroke="transparent" strokeWidth={0} />
+        {/* the echo line, 3px below, following the bottom chamfers */}
+        <View style={box(0, 0, 44, 26)} pointerEvents="none">
+          <Svg width={44} height={26}>
+            <Polyline points="0.8,20.2 5.4,25.2 38.6,25.2 43.2,20.2" fill="none" stroke={red} strokeWidth={1.6} strokeLinejoin="miter" />
+          </Svg>
+        </View>
+      </>
+    );
+  }
+  return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill="none" stroke={red} strokeWidth={2} />;
 }
 
 /** Hope: large diamonds joined by a THIN gold line that stops at the last filled one. */
@@ -238,9 +265,9 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <ChamferFrame left={22} top={396} width={368} height={108} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       {/* Label shares the pips' left edge (44) and gets clear air above them (#48 F). */}
       <SheetText left={44} top={404} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      {/* Flat rectangles, not SVG art (#67 D): red fill = marked, red outline = available,
-          gray fill = locked. Same boxes as before. */}
-      <PipGrid left={44} top={432} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} states={stress} rectFor={(s) => (s === 'active' ? { fill: tint ?? RED } : s === 'locked' ? { fill: Rune.muted } : { border: RED })} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
+      {/* Chamfered shapes, not SVG art (#67 D → #70 C): red fill + echo line = marked, red
+          chamfered outline = available, gray chamfered fill = locked. Same boxes as before. */}
+      <PipGrid left={44} top={432} perRow={6} gap={12} rowGap={8} rowWidth={324} pip={44} pipH={26} states={stress} renderPip={(s) => <StressPip state={s} red={tint ?? RED} />} onPressPip={onTrackPip('stress')} trackLabel="Stress" />
 
       {/* ---------- Hope — aligned with Stress (which is now shorter), thin connecting line ---------- */}
       <ChamferFrame left={22} top={512} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
