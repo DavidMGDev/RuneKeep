@@ -125,8 +125,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
     onTrack(key, target === character[key].active ? i : target);
     tapHaptic();
   };
-  // Golden hearts render gold; red (active) hearts take the accent tint (red by default).
-  const heartTint = (s: PipState) => (s === 'golden' ? Rune.goldBright : s === 'active' ? tint : undefined);
+  // Golden hearts render gold; red (active) hearts are FORCE-tinted to the one interface red —
+  // the default accent returns undefined, which let the heart PNG show its baked shade and drift
+  // from #C81B18 (#70 B).
+  const heartTint = (s: PipState) => (s === 'golden' ? Rune.goldBright : s === 'active' ? (tint ?? RED) : undefined);
   const activeTint = (s: PipState) => (s === 'active' ? tint : undefined);
 
   const hp = resolveHearts(character.hp, character.heartSlots); // hearts + readout derived from HP (§1A)

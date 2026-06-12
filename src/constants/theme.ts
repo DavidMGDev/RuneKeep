@@ -16,11 +16,11 @@ export const Rune = {
   goldEdge: '#DAA249', // chamfer-frame strokes / dividers
   goldText: '#F9D68D', // gold label text on DARK panels (Evasion / Armor / Proficiency)
   bronze: '#8A5A12', // deep gold for labels on the bright parchment (AA at small sizes)
-  red: '#C81B18', // heraldic red — reserved for HP / health
-  redDeep: '#B5231F',
+  red: '#C81B18', // THE red — one heraldic red across the whole interface (owner, #70 B)
+  redDeep: '#C81B18', // aligned to the single red (legacy name kept for compatibility)
   ivory: '#FDFCF7', // parchment / trait banner numerals
   parchment: '#F4ECDC',
-  hpRed: '#BD1B1B', // current-HP numerals
+  hpRed: '#C81B18', // current-HP numerals — aligned to the single red (#70 B)
   muted: '#938E88', // secondary text (legacy; prefer inkMuted on parchment)
   hopeAmber: '#CC8F0F',
 } as const;
