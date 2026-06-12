@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -128,7 +128,7 @@ function ShardView({ shard, action, accent, inward, fxP }: { shard: Shard; actio
   );
 }
 
-type AnimPhase = 'hold' | 'fx' | 'out' | 'pop';
+type AnimPhase = 'hold' | 'fx' | 'out' | 'pop' | 'burst';
 interface Anim { id: number; index: number; action: HeartAction; pre: PipState; phase: AnimPhase }
 
 /**
@@ -144,6 +144,12 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
   useEffect(() => {
     if (anim.phase === 'pop') {
       fxP.value = withTiming(1, { duration: POP_MS, easing: Easing.out(Easing.quad) }, (finished) => {
+        if (finished) runOnJS(done)();
+      });
+    } else if (anim.phase === 'burst') {
+      // damage explosion (#128): no hold pre-grow — the heart bursts straight into the shard fx
+      holdP.value = 0;
+      fxP.value = withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
         if (finished) runOnJS(done)();
       });
     } else if (anim.phase === 'hold') {
@@ -253,7 +259,12 @@ interface HeartTrackProps {
   onHp: (n: number) => void;
 }
 
-export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp }: HeartTrackProps) {
+export interface HeartTrackHandle {
+  /** Apply N HP of loss at once (#128): the destroyed hearts burst together; HP floors at 0. */
+  applyDamage: (hpLoss: number) => void;
+}
+
+export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp }, ref) {
   const reduced = useReducedMotion();
   const { states } = resolveHearts(hp, slots);
   const bounds = heartBoundaries(hp, slots);
@@ -265,6 +276,30 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
   const nextId = useRef(1);
 
   const onDone = useCallback((id: number) => setAnims((list) => list.filter((a) => a.id !== id)), []);
+
+  // Damage from the threshold keypad (#128): drop HP by hpLoss (floored at 0) and burst every heart
+  // that just emptied (and degold any golden that dropped to red) — all at once.
+  useImperativeHandle(
+    ref,
+    () => ({
+      applyDamage: (hpLoss: number) => {
+        if (hpLoss <= 0) return;
+        const target = Math.max(0, hp - hpLoss);
+        const before = resolveHearts(hp, slots).states;
+        const after = resolveHearts(target, slots).states;
+        const add: Anim[] = [];
+        for (let i = 0; i < slots; i++) {
+          if (before[i] === after[i]) continue;
+          const action: HeartAction | null = after[i] === 'empty' ? 'break' : before[i] === 'golden' && after[i] === 'active' ? 'degold' : null;
+          if (!action) continue;
+          add.push({ id: nextId.current++, index: i, action, pre: before[i], phase: 'burst' });
+        }
+        onHp(target);
+        if (add.length) setAnims((list) => [...list, ...add]);
+      },
+    }),
+    [hp, slots, onHp],
+  );
 
   const onBegin = useCallback(
     (index: number, action: HeartAction) => {
@@ -367,4 +402,4 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
       ))}
     </View>
   );
-}
+});
