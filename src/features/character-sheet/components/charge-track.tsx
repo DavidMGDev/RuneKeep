@@ -341,11 +341,16 @@ export function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, 
 
   const gestureFor = (index: number, dir: Dir) => {
     const step = dir === 'up' ? onUp : onDown;
+    // Bind the callbacks HERE, in plain JS closures: a function passed as a runOnJS ARGUMENT
+    // cannot cross the worklet boundary (it arrives as a bare object → "step is not a function"
+    // at the climax, #92). runOnJS may only carry primitives.
+    const beginJS = () => begin(index, dir, step);
+    const triggerJS = () => trigger(step);
     return Gesture.LongPress()
       .minDuration(HOLD_MS)
       .maxDistance(32)
-      .onBegin(() => runOnJS(begin)(index, dir, step))
-      .onStart(() => runOnJS(trigger)(step))
+      .onBegin(() => runOnJS(beginJS)())
+      .onStart(() => runOnJS(triggerJS)())
       .onFinalize((_e, ok) => {
         if (!ok) runOnJS(cancel)();
       });
