@@ -20,9 +20,10 @@ import { saveCharacter } from '@/lib/character-store';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { CLASS_CARDS } from './class-cards';
 import { featurePages } from './class-data';
-import { ForgedArmorCard, ForgedCard, ForgedGoldCard, ForgedTextCard, ForgedWeaponCard, FORGED_H, FORGED_W } from './forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard, FORGED_H, FORGED_W } from './forged-card';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from './equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from './class-inventory-data';
+import { GoldCard, type GoldAmount, GOLD_DEFAULT } from './gold-card';
 
 // Default art for a custom inventory item with no player image (#128, owner-provided).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -59,6 +60,7 @@ interface Draft {
    *  custom item cards. */
   inventoryItemIds: string[];
   inventoryCustom: ExperienceDef[];
+  gold: GoldAmount;
 }
 
 const EMPTY: Draft = {
@@ -76,6 +78,7 @@ const EMPTY: Draft = {
   armorId: null,
   inventoryItemIds: [],
   inventoryCustom: [],
+  gold: GOLD_DEFAULT,
 };
 
 function deckDone(deck: DeckKey, d: Draft): boolean {
@@ -583,7 +586,7 @@ export function CreateScreen() {
         label: name,
         custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${name.charAt(0).toUpperCase()}${name.slice(1)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
       }));
-      const gold: StraightItem = { id: 'item-gold', label: 'Gold', custom: <ForgedGoldCard /> };
+      const gold: StraightItem = { id: 'item-gold', label: 'Gold', interactive: true, custom: <GoldCard gold={draft.gold} onChange={(g) => set({ gold: g })} /> };
       const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
         id: it.id,
         label: it.title || 'Item',
@@ -635,7 +638,7 @@ export function CreateScreen() {
         return pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       }
     }
-  }, [deck, draft.className, draft.inventoryCustom, sources, weaponKind, weaponSlot, forgedItem]);
+  }, [deck, draft.className, draft.inventoryCustom, draft.gold, sources, weaponKind, weaponSlot, forgedItem]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
@@ -747,6 +750,7 @@ export function CreateScreen() {
       armorId: draft.armorId!,
       inventoryItemIds: draft.inventoryItemIds,
       inventoryCustom: draft.inventoryCustom,
+      gold: draft.gold,
       level: 1,
     });
     router.replace({ pathname: '/sheet', params: { id } });
