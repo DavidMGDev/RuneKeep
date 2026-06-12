@@ -424,7 +424,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     }));
     const expJobs = (characterFile.experiences ?? []).map((e) => ({
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0)) % 99991}`,
-      node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} />,
+      node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} multilineTitle />,
       // player photo (file://) decodes async — needs the forge settle so it isn't captured black (#121)
       raster: !!e.imageUri,
     }));
