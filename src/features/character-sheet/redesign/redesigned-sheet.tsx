@@ -277,7 +277,8 @@ function ExpandVeil() {
   // stage (which no longer clips) so the dim reaches the physical screen edges — status-bar area and
   // letterbox margins included — with square corners (#30 B).
   return (
-    <Pressable style={box(-120, -160, 652, 1212)} pointerEvents={blocking ? 'auto' : 'none'} onPress={collapse}>
+    // zIndex 20: above the hearts layer (10), below the carousel (30) — see #87 stacking.
+    <Pressable style={[box(-120, -160, 652, 1212), { zIndex: 20 }]} pointerEvents={blocking ? 'auto' : 'none'} onPress={collapse}>
       <Animated.View style={[box(0, 0, 652, 1212), { backgroundColor: '#06080d' }, style]} pointerEvents="none" />
     </Pressable>
   );

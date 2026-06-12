@@ -368,7 +368,9 @@ export function CardCarousel() {
     // letterbox margins is hidden under the full-bleed border bands. The focus veil lives INSIDE here
     // so it can layer between the focused card and the rest of the hand (#8c).
     <GestureDetector gesture={pan}>
-      <View style={box(0, 0, 412, 892)} pointerEvents="box-none">
+      {/* zIndex 30: the card UI (and its dims) stacks above the hearts layer (10) and the expand
+          veil (20) — nothing on the sheet may ever draw or hit-test over the cards (#87). */}
+      <View style={[box(0, 0, 412, 892), { zIndex: 30 }]} pointerEvents="box-none">
         {/* Gear art INSIDE the container so it interleaves with the stack: under the cards
             normally, above the fullscreen dim, under the focused card (#62 D). */}
         <GearDecoration />
