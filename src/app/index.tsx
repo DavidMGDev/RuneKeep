@@ -1,5 +1,5 @@
-import { RedesignedSheet } from '@/features/character-sheet/redesign/redesigned-sheet';
+import { MenuScreen } from '@/features/menu/menu-screen';
 
 export default function Index() {
-  return <RedesignedSheet />;
+  return <MenuScreen />;
 }

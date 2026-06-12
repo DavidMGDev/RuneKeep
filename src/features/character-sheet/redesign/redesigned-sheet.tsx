@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,8 @@ import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
+import { type CharacterFile, toSheetCharacter } from '@/lib/character-file';
+import { cardById } from '@/features/cards/catalog';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
@@ -120,7 +122,7 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
 type TrackKey = 'stress' | 'armor' | 'hope';
 
 function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void }) {
-  const { toggleCategory, openRandomAbility, category } = useCarousel();
+  const { toggleCategory, openOriginCard, category } = useCarousel();
   const tint = useAccentTint();
 
   // Every resource now uses the boundary-only ±1 hold/double-tap model (#81 hearts, #89 the rest).
@@ -184,9 +186,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           thin gold rules in the gaps. Shrunk down-and-left (48x40 at an 78px pitch, #54 E) so the
           COMMUNITY octagon and its label stay inside the panel's right edge (396) on NATIVE glyph
           widths, not just web. */}
-      <OctaBadge left={176} top={138} w={48} h={40} icon={Art.subclassIcon} label="Subclass" onPress={openRandomAbility} />
-      <OctaBadge left={254} top={138} w={48} h={40} icon={Art.ancestryIcon} label="Ancestry" onPress={openRandomAbility} />
-      <OctaBadge left={332} top={138} w={48} h={40} icon={Art.communityIcon} label="Community" onPress={openRandomAbility} />
+      {/* #100: each badge opens ITS pinned origin card (last three of the abilities hand); if the
+          Inventory deck is up, the switch animation plays first, then the card flies up. */}
+      <OctaBadge left={176} top={138} w={48} h={40} icon={Art.subclassIcon} label="Subclass" onPress={() => openOriginCard(0)} />
+      <OctaBadge left={254} top={138} w={48} h={40} icon={Art.ancestryIcon} label="Ancestry" onPress={() => openOriginCard(1)} />
+      <OctaBadge left={332} top={138} w={48} h={40} icon={Art.communityIcon} label="Community" onPress={() => openOriginCard(2)} />
       <GoldRuleV left={239} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
       <GoldRuleV left={317} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
@@ -341,9 +345,19 @@ function ExpandVeil() {
  * interlocking portrait + dark defense panel; gold level/proficiency banner; octagon origin badges;
  * big resource icons; armor shown as its 12 icons. Accent locked to red (picker UI removed).
  */
-export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { character?: Character }) {
+export function RedesignedSheet({ character: initial, characterFile }: { character?: Character; characterFile?: CharacterFile }) {
   // The sheet now OWNS character state so the resource tracks can actually be spent/restored (A1).
-  const [character, setCharacter] = useState(initial);
+  // With a CharacterFile it derives the runtime Character from it (#100); resources stay local.
+  const [character, setCharacter] = useState(() => initial ?? (characterFile ? toSheetCharacter(characterFile) : SAMPLE_CHARACTER));
+  // The three origin cards pinned at the RIGHT end of the abilities hand: subclass, ancestry,
+  // community, in that order (#100). Absent without a loaded character file.
+  const originCards = useMemo(() => {
+    if (!characterFile) return undefined;
+    const ids = [characterFile.subclassCardId, characterFile.ancestryCardId, characterFile.communityCardId];
+    const cards = ids.map(cardById);
+    if (cards.some((c) => !c)) return undefined;
+    return cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
+  }, [characterFile]);
   const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
   const onInfo = useCallback(() => setInfoOpen(true), []);
   const onInfoClose = useCallback(() => setInfoOpen(false), []);
@@ -375,7 +389,7 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider>
+      <CarouselProvider originCards={originCards}>
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold

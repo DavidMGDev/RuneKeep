@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { runOnJS, type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
-import { CARD_DECKS, type CardCategory } from './card-data';
+import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
 import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, middleRotation, snapRot } from './carousel-geometry';
 
 /** Three states only (see docs/ui-fix-brief §2): the hand is bundled, fanned, or one card is focused. */
@@ -20,6 +20,9 @@ interface CarouselContextValue {
   focusIndex: SharedValue<number>;
   /** Deck-switch sweep (#95 C): 0 = deck in place, 1 = swept down + faded out (mid category swap). */
   deckShift: SharedValue<number>;
+  /** The live decks. Abilities = base deck + the character's origin cards pinned at the RIGHT end
+   *  (subclass, ancestry, community — #100). Inventory never shows them. */
+  decks: Record<CardCategory, CardItem[]>;
   category: CardCategory;
   /** Switch deck; animates the fan re-center to the new deck's middle. */
   setCategory: (c: CardCategory) => void;
@@ -29,14 +32,25 @@ interface CarouselContextValue {
   collapse: () => void;
   openCardAt: (index: number) => void;
   closeFullscreen: () => void;
-  /** D4: origin badges open a random Arsenal/abilities card full-screen. */
-  openRandomAbility: () => void;
+  /**
+   * Open one of the three pinned origin cards (0 = subclass, 1 = ancestry, 2 = community). If the
+   * Inventory deck is up, the category-switch animation plays FIRST and the card opens only once
+   * the new hand has faded in (#100 owner spec). No-op when no origin cards are pinned.
+   */
+  openOriginCard: (slot: 0 | 1 | 2) => void;
 }
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children }: { children: ReactNode }) {
-  const startMiddle = middleRotation(CARD_DECKS.abilities.length);
+export function CarouselProvider({ children, originCards }: { children: ReactNode; originCards?: CardItem[] }) {
+  const decks = useMemo<Record<CardCategory, CardItem[]>>(
+    () => ({
+      abilities: originCards?.length ? [...CARD_DECKS.abilities, ...originCards] : CARD_DECKS.abilities,
+      inventory: CARD_DECKS.inventory,
+    }),
+    [originCards],
+  );
+  const startMiddle = middleRotation(decks.abilities.length);
   const rotation = useSharedValue(startMiddle);
   const expandProgress = useSharedValue(0);
   const fullscreenProgress = useSharedValue(0);
@@ -44,6 +58,22 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
   const focusIndex = useSharedValue(Math.round(startMiddle / ANGLE_STEP));
   const [category, setCategoryState] = useState<CardCategory>('abilities');
   const deckShift = useSharedValue(0);
+  const decksRef = useRef(decks);
+  decksRef.current = decks;
+  const categoryRef = useRef(category);
+  categoryRef.current = category;
+
+  const openCardAt = useCallback(
+    (index: number) => {
+      const count = decksRef.current[categoryRef.current].length;
+      rotation.value = snapRot(index * ANGLE_STEP, count); // center the focused card
+      focusIndex.value = Math.min(count - 1, Math.max(0, index));
+      machineState.value = 'fullscreen';
+      expandProgress.value = withSpring(1, EXPAND_SPRING);
+      fullscreenProgress.value = withSpring(1, FS_SPRING);
+    },
+    [rotation, focusIndex, machineState, expandProgress, fullscreenProgress],
+  );
 
   // #95 C: the swap itself happens while the hand is INVISIBLE, and the fade-IN waits for the new
   // deck to be committed AND painted. Sequence: fade the old deck out in place (deckShift → 1) →
@@ -51,24 +81,34 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
   // commit, hold a short grace so the freshly mounted thumbs get their paint frames (expo-image
   // takes 1-2 frames; the continuity rule, #88) → fade the whole new hand in at once. Without the
   // grace the hand fades back in still showing the OLD images and then flash-swaps mid-fade.
+  // #100: a pending origin-card open fires only after that fade-in lands — switch first, then show.
   const switching = useRef(false);
+  const pendingOpen = useRef<number | null>(null);
   const applyCategory = useCallback(
     (c: CardCategory) => {
       switching.current = true;
       setCategoryState(c);
-      rotation.value = middleRotation(CARD_DECKS[c].length);
+      rotation.value = middleRotation(decksRef.current[c].length);
     },
     [rotation],
   );
+
+  const finishSwitch = useCallback(() => {
+    const idx = pendingOpen.current;
+    pendingOpen.current = null;
+    if (idx != null) openCardAt(idx);
+  }, [openCardAt]);
 
   useEffect(() => {
     if (!switching.current) return;
     switching.current = false;
     const t = setTimeout(() => {
-      deckShift.value = withTiming(0, { duration: 200 });
+      deckShift.value = withTiming(0, { duration: 200 }, (finished) => {
+        if (finished) runOnJS(finishSwitch)();
+      });
     }, 200);
     return () => clearTimeout(t);
-  }, [category, deckShift]);
+  }, [category, deckShift, finishSwitch]);
 
   const setCategory = useCallback(
     (c: CardCategory) => {
@@ -94,33 +134,24 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
     expandProgress.value = withSpring(0, EXPAND_SPRING);
   }, [machineState, expandProgress]);
 
-  const openCardAt = useCallback(
-    (index: number) => {
-      const count = CARD_DECKS[category].length;
-      rotation.value = snapRot(index * ANGLE_STEP, count); // center the focused card
-      focusIndex.value = Math.min(count - 1, Math.max(0, index));
-      machineState.value = 'fullscreen';
-      expandProgress.value = withSpring(1, EXPAND_SPRING);
-      fullscreenProgress.value = withSpring(1, FS_SPRING);
-    },
-    [category, rotation, focusIndex, machineState, expandProgress, fullscreenProgress],
-  );
-
   const closeFullscreen = useCallback(() => {
     machineState.value = 'expanded';
     fullscreenProgress.value = withSpring(0, FS_SPRING);
   }, [machineState, fullscreenProgress]);
 
-  const openRandomAbility = useCallback(() => {
-    const deck = CARD_DECKS.abilities;
-    const idx = Math.floor(Math.random() * deck.length);
-    setCategoryState('abilities');
-    rotation.value = snapRot(idx * ANGLE_STEP, deck.length);
-    focusIndex.value = idx;
-    machineState.value = 'fullscreen';
-    expandProgress.value = withSpring(1, EXPAND_SPRING);
-    fullscreenProgress.value = withSpring(1, FS_SPRING);
-  }, [rotation, focusIndex, machineState, expandProgress, fullscreenProgress]);
+  const openOriginCard = useCallback(
+    (slot: 0 | 1 | 2) => {
+      if (!originCards?.length) return;
+      const idx = decksRef.current.abilities.length - originCards.length + slot;
+      if (categoryRef.current === 'abilities') {
+        openCardAt(idx);
+        return;
+      }
+      pendingOpen.current = idx;
+      setCategory('abilities');
+    },
+    [originCards, openCardAt, setCategory],
+  );
 
   const value = useMemo<CarouselContextValue>(
     () => ({
@@ -130,6 +161,7 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
       machineState,
       focusIndex,
       deckShift,
+      decks,
       category,
       setCategory,
       toggleCategory,
@@ -137,9 +169,9 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
       collapse,
       openCardAt,
       closeFullscreen,
-      openRandomAbility,
+      openOriginCard,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openRandomAbility],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
