@@ -74,3 +74,31 @@ export function resolveHearts(hp: number, slots = 6): HeartResolve {
   ];
   return { states, golden, red, empty, current, max };
 }
+
+/** A single ±1 HP step, expressed as which heart slot changes and how (#81 C). */
+export type HeartAction = 'fill' | 'break' | 'goldify' | 'degold';
+
+export interface HeartBoundaries {
+  /** Slot index that can GAIN one HP (fill an empty heart, or goldify the first red), or -1. */
+  up: number;
+  upAction: HeartAction;
+  /** Slot index that can LOSE one HP (break the last red, or degold the last golden), or -1. */
+  down: number;
+  downAction: HeartAction;
+}
+
+/**
+ * Daggerheart never moves a resource more than ONE step at a time (#81): only the two BOUNDARY
+ * hearts are ever interactive. With golden hearts front-loaded (see resolveHearts), the slot that
+ * gains is the first empty (hp < slots) or the first red to goldify (hp >= slots); the slot that
+ * loses is the last red (hp <= slots) or the last golden (hp > slots).
+ */
+export function heartBoundaries(hp: number, slots = 6): HeartBoundaries {
+  const max = slots * 2;
+  const current = Math.max(0, Math.min(max, Math.floor(hp)));
+  const up = current >= max ? -1 : current < slots ? current : current - slots;
+  const upAction: HeartAction = current < slots ? 'fill' : 'goldify';
+  const down = current <= 0 ? -1 : current <= slots ? current - 1 : current - slots - 1;
+  const downAction: HeartAction = current <= slots ? 'break' : 'degold';
+  return { up, upAction, down, downAction };
+}

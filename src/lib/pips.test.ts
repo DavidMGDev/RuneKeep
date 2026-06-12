@@ -83,3 +83,27 @@ describe('resolveHearts (golden ×2 HP, slots = 6)', () => {
     expect(resolveHearts(-5, 6).current).toBe(0);
   });
 });
+
+describe('heartBoundaries (#81: only the two boundary hearts are interactive)', () => {
+  const { heartBoundaries } = require('./pips');
+
+  it('hp 5/12: last red (#5 -> idx 4) breaks, first empty (#6 -> idx 5) fills', () => {
+    expect(heartBoundaries(5)).toEqual({ up: 5, upAction: 'fill', down: 4, downAction: 'break' });
+  });
+
+  it('hp 0: nothing to lose, first slot fills', () => {
+    expect(heartBoundaries(0)).toEqual({ up: 0, upAction: 'fill', down: -1, downAction: 'break' });
+  });
+
+  it('hp 6 (all red): the FIRST heart goldifies, the last red breaks', () => {
+    expect(heartBoundaries(6)).toEqual({ up: 0, upAction: 'goldify', down: 5, downAction: 'break' });
+  });
+
+  it('hp 7: the lone golden degolds, the next red goldifies', () => {
+    expect(heartBoundaries(7)).toEqual({ up: 1, upAction: 'goldify', down: 0, downAction: 'degold' });
+  });
+
+  it('hp 12: full golden — only the last golden can degold', () => {
+    expect(heartBoundaries(12)).toEqual({ up: -1, upAction: 'goldify', down: 5, downAction: 'degold' });
+  });
+});
