@@ -52,25 +52,24 @@ function PipGrid({ left, top, perRow, gap, rowGap = 8, states, pip, pipH, rowWid
 }
 
 /**
- * A stress pip (#70 C → #74): a CHAMFERED shape (45° cuts like the domain chips — never rounded).
- * Every state fills the SAME 44x26 bounding box: available (red outline) and locked (gray fill)
- * use the full height; the marked pip trades its bottom 5px for a FLAT thin under-line that ends
- * on the same bottom edge — so lined and line-less pips read as one size.
+ * A stress pip (#70 C → #77): a 44x22 CHAMFERED shape (45° cuts like the domain chips — never
+ * rounded), the SAME size for every state. The marked pip adds a FLAT thin under-line spanning
+ * only the straight middle of the bottom edge — the chamfered corner spans are excluded.
  */
 function StressPip({ state, red }: { state: PipState; red: string }) {
   if (state === 'locked') {
-    return <ChamferFrame left={0} top={0} width={44} height={26} chamfer={5} fill={Rune.muted} stroke="transparent" strokeWidth={0} />;
+    return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={Rune.muted} stroke="transparent" strokeWidth={0} />;
   }
   if (state === 'active') {
     return (
       <>
-        <ChamferFrame left={0} top={0} width={44} height={21} chamfer={5} fill={red} stroke="transparent" strokeWidth={0} />
-        {/* flat thin under-line, flush with the slot's bottom edge */}
-        <View style={[box(0, 25, 44, 1), { backgroundColor: red }]} pointerEvents="none" />
+        <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={red} stroke="transparent" strokeWidth={0} />
+        {/* flat thin under-line — center span only, corners excluded */}
+        <View style={[box(5, 25, 34, 1), { backgroundColor: red }]} pointerEvents="none" />
       </>
     );
   }
-  return <ChamferFrame left={0} top={0} width={44} height={26} chamfer={5} fill="none" stroke={red} strokeWidth={2} />;
+  return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill="none" stroke={red} strokeWidth={2} />;
 }
 
 /** Hope: large diamonds joined by a THIN gold line that stops at the last filled one. */
