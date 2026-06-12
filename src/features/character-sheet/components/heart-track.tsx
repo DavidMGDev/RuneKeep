@@ -76,10 +76,9 @@ interface SlotProps {
   onBegin: (index: number, action: HeartAction) => void;
   onTrigger: () => void;
   onCancel: () => void;
-  onInstant: (action: HeartAction) => void;
 }
 
-const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent, hidden, onBegin, onTrigger, onCancel, onInstant }: SlotProps) {
+const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent, hidden, onBegin, onTrigger, onCancel }: SlotProps) {
   const body = (
     <View style={[box(x, 0, pip, pip), { opacity: hidden ? 0 : 1 }]}
       accessible
@@ -89,6 +88,8 @@ const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent
     </View>
   );
   if (!action) return body;
+  // Double-tap is detected MANUALLY in onBegin (a second touch-DOWN within the window applies
+  // instantly) — a Tap recognizer racing the LongPress was flaky (#87).
   const hold = Gesture.LongPress()
     .minDuration(HOLD_MS)
     .maxDistance(28)
@@ -97,10 +98,7 @@ const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent
     .onFinalize((_e, success) => {
       if (!success) runOnJS(onCancel)();
     });
-  const doubleTap = Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => runOnJS(onInstant)(action));
-  return <GestureDetector gesture={Gesture.Exclusive(doubleTap, hold)}>{body}</GestureDetector>;
+  return <GestureDetector gesture={hold}>{body}</GestureDetector>;
 });
 
 /** One shard of the burst/inflow — a flat chamfer-era sliver, transform/opacity only. */
@@ -150,9 +148,15 @@ function HeartFxView({ inst, x, pip, accent, reduced, onDone }: { inst: FxInstan
   const post = POST[inst.action];
   const gold = inst.action === 'goldify' || inst.action === 'degold';
 
-  const settle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + (reduced ? REDUCED_GROW : GROW) * (1 - p.value) }],
-  }));
+  // The explosion is EMPHATIC (#87): an extra kick up right at the climax, then a damped elastic
+  // settle back into the row. Continuous with the hold's peak at p=0.
+  const settle = useAnimatedStyle(() => {
+    const p_ = p.value;
+    const grow = reduced ? REDUCED_GROW : GROW;
+    const kick = reduced || p_ >= 0.22 ? 0 : 0.55 * Math.sin((p_ / 0.22) * Math.PI);
+    const elastic = reduced || p_ < 0.22 ? 0 : Math.cos((p_ - 0.22) * 16) * 0.16 * (1 - p_);
+    return { transform: [{ scale: 1 + grow * (1 - p_) + kick + elastic }] };
+  });
   // a gain fills as the inflow lands (~55%); a loss shatters instantly.
   const preFade = useAnimatedStyle(() => ({ opacity: gains ? (p.value > 0.55 ? 0 : 1) : p.value > 0.1 ? 0 : 1 }));
   const postFade = useAnimatedStyle(() => ({ opacity: gains ? (p.value > 0.55 ? 1 : 0) : p.value > 0.1 ? 1 : 0 }));
@@ -214,6 +218,7 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
   const [effects, setEffects] = useState<FxInstance[]>([]);
   const triggered = useRef(false);
   const nextId = useRef(1);
+  const lastTap = useRef({ index: -1, t: 0 });
   const holdP = useSharedValue(0);
 
   const clearHold = useCallback(() => {
@@ -223,13 +228,23 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
 
   const onBegin = useCallback(
     (index: number, action: HeartAction) => {
+      // Manual double-tap (#87): a second touch-DOWN on the same heart within the window applies
+      // the step INSTANTLY — no recognizer race, no animation, deterministic.
+      const now = Date.now();
+      if (lastTap.current.index === index && now - lastTap.current.t < 300) {
+        lastTap.current = { index: -1, t: 0 };
+        holdP.value = 0;
+        setHold(null);
+        onHp(hp + (GAINS[action] ? 1 : -1));
+        return;
+      }
       if (hold) return; // one finger charges at a time; settling effects don't block (#86)
       triggered.current = false;
       setHold({ index, action, pre: resolveHearts(hp, slots).states[index] });
       holdP.value = 0;
       holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
     },
-    [hold, hp, slots, holdP],
+    [hold, hp, slots, holdP, onHp],
   );
 
   const onTrigger = useCallback(() => {
@@ -244,22 +259,12 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
 
   const onCancel = useCallback(() => {
     if (triggered.current) return; // already detached into an effect
+    // A quick release is the potential FIRST tap of a double-tap — remember it (#87).
+    if (hold) lastTap.current = { index: hold.index, t: Date.now() };
     holdP.value = withTiming(0, { duration: CANCEL_MS }, (finished) => {
       if (finished) runOnJS(clearHold)();
     });
-  }, [holdP, clearHold]);
-
-  const onInstant = useCallback(
-    (action: HeartAction) => {
-      // The FIRST tap of a double-tap starts a hold; a pending UNTRIGGERED hold is ours to
-      // discard (#85). Only a hold that already fired blocks the instant path.
-      if (triggered.current) return;
-      holdP.value = 0;
-      setHold(null);
-      onHp(hp + (GAINS[action] ? 1 : -1));
-    },
-    [hp, onHp, holdP],
-  );
+  }, [hold, holdP, clearHold]);
 
   const onDone = useCallback((id: number) => setEffects((list) => list.filter((e) => e.id !== id)), []);
 
@@ -273,7 +278,10 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
   });
 
   return (
-    <View style={[box(left, top, width, pip), { zIndex: 1500 }]}>
+    // zIndex 10: above the sheet's other body elements so shards fly over them, but BELOW the
+    // expand veil (20) and the card carousel (30) — hearts and their hitboxes must never sit on
+    // top of the card UI or its dims (#87).
+    <View style={[box(left, top, width, pip), { zIndex: 10 }]}>
       {states.map((s, i) => (
         <HeartSlot
           key={i}
@@ -283,11 +291,13 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
           state={s}
           action={i === bounds.up ? bounds.upAction : i === bounds.down ? bounds.downAction : null}
           accent={accent}
-          hidden={hold?.index === i || effects.some((e) => e.index === i)}
+          // Only the CHARGING heart hides (the overlay replaces it). During a settling effect the
+          // real (post-state) heart stays visible beneath — unmount/mount of the effect's images
+          // can take a frame, and a visible base means no two-frame disappear at the climax (#87).
+          hidden={hold?.index === i}
           onBegin={onBegin}
           onTrigger={onTrigger}
           onCancel={onCancel}
-          onInstant={onInstant}
         />
       ))}
       {hold ? (
