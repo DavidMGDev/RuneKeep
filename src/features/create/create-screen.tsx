@@ -572,28 +572,29 @@ export function CreateScreen() {
       return TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />));
     }
     if (deck === 'inventory') {
-      // Per-class inventory (#128): a starting-kit card (auto-owned), the guide's "choose" options
-      // (selectable), the Gold card (auto-owned), the player's custom items, then the "add" card.
+      // Per-class inventory (#128): each starting item is its OWN auto-owned card (torch, rope,
+      // supplies + the Gold card) — shown but never selected/counted. Then the guide's "choose"
+      // options (selectable), the player's custom items, and the "add" card.
       const cinv = draft.className ? CLASS_INVENTORY[draft.className] : null;
-      const takeBody = (cinv?.take ?? ['a torch', '50 feet of rope', 'basic supplies']).join(', ');
-      const startingCard: StraightItem = {
-        id: 'item-starting',
-        label: 'Starting kit',
-        custom: <ForgedCard title="Starting Kit" kindLabel="Item" body={`You already carry ${takeBody}, and a handful of gold.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
-      };
+      const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
+      const startItems: StraightItem[] = (cinv?.take ?? ['a torch', '50 feet of rope', 'basic supplies']).map((name, i) => ({
+        id: `item-start-${i}`,
+        label: name,
+        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You already carry ${name}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
+      }));
+      const gold: StraightItem = { id: 'item-gold', label: 'Gold', interactive: true, custom: <GoldCard gold={draft.gold} onChange={(g) => set({ gold: g })} /> };
       const optionCards: StraightItem[] = (cinv?.choices.flat() ?? []).map((name) => ({
         id: itemOptionId(name),
         label: name,
-        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${name.charAt(0).toUpperCase()}${name.slice(1)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
+        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
       }));
-      const gold: StraightItem = { id: 'item-gold', label: 'Gold', interactive: true, custom: <GoldCard gold={draft.gold} onChange={(g) => set({ gold: g })} /> };
       const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
         id: it.id,
         label: it.title || 'Item',
         custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} fallbackArt={ITEM_DEFAULT_ART} />,
       }));
       const add: StraightItem = { id: 'item-add', label: 'Add item', custom: <AddItemCard /> };
-      return [startingCard, ...optionCards, gold, ...customs, add];
+      return [...startItems, gold, ...optionCards, ...customs, add];
     }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
@@ -646,7 +647,7 @@ export function CreateScreen() {
       return id ? [id] : [];
     }
     if (deck === 'armor') return draft.armorId ? [draft.armorId] : [];
-    if (deck === 'inventory') return ['item-starting', 'item-gold', ...draft.inventoryItemIds, ...draft.inventoryCustom.map((i) => i.id)];
+    if (deck === 'inventory') return [...draft.inventoryItemIds, ...draft.inventoryCustom.map((i) => i.id)]; // auto-owned start items + gold are NOT counted/selected (#128)
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -688,7 +689,7 @@ export function CreateScreen() {
           setEditingItem('new');
           return;
         }
-        if (id === 'item-starting' || id === 'item-gold') return; // auto-owned, not toggleable
+        if (id.startsWith('item-start-') || id === 'item-gold') return; // auto-owned, not toggleable
         const ci = draft.inventoryCustom.findIndex((i) => i.id === id);
         if (ci >= 0) {
           setEditingItem(ci); // tap a custom item to edit it
@@ -769,7 +770,7 @@ export function CreateScreen() {
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
   const centerInvAdd = deck === 'inventory' && centerItem?.id === 'item-add';
   const centerInvCustom = deck === 'inventory' && draft.inventoryCustom.some((i) => i.id === centerItem?.id);
-  const centerInvOwned = deck === 'inventory' && (centerItem?.id === 'item-starting' || centerItem?.id === 'item-gold');
+  const centerInvOwned = deck === 'inventory' && (centerItem?.id.startsWith('item-start-') || centerItem?.id === 'item-gold');
 
   return (
     <AppScreen
