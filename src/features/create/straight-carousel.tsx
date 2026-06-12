@@ -1,8 +1,9 @@
-import { forwardRef, memo, type ReactNode, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, type ReactNode, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
+  Easing,
   runOnJS,
   type SharedValue,
   useAnimatedStyle,
@@ -30,6 +31,13 @@ const INNER_GEAR = require('../../../assets/art/gears/raster/U3.png') as number;
  * where the sheet keeps its gear, plus above the card in fullscreen.
  */
 
+/** One rendered face of a card — an LOD/full image pair, or a live forged element. */
+export interface StraightFace {
+  thumb?: number | { uri: string };
+  source?: number | { uri: string };
+  custom?: ReactNode;
+}
+
 export interface StraightItem {
   id: string;
   /** Printed/pre-rendered card pair (catalog requires or forged-render uris)... */
@@ -37,6 +45,9 @@ export interface StraightItem {
   source?: number | { uri: string };
   /** ...or a FORGED card rendered live (the pre-render loading state, #104). */
   custom?: ReactNode;
+  /** Multi-face deck (#110): when focused this card becomes a 3D flip-deck — face 0 is the card
+   *  itself (matches thumb/source/custom), the rest flip in on tap. Class cards: [class, ...features]. */
+  faces?: StraightFace[];
   label?: string;
 }
 
@@ -59,6 +70,69 @@ function clampIdx(i: number, count: number): number {
   return Math.min(count - 1, Math.max(0, i));
 }
 
+function FaceContent({ face, fullRes }: { face: StraightFace; fullRes: boolean }) {
+  if (face.custom) return <>{face.custom}</>;
+  const src = fullRes ? (face.source ?? face.thumb) : (face.thumb ?? face.source);
+  return src != null ? <ArtImage source={src} fit="contain" /> : null;
+}
+
+/**
+ * A 3D flip-deck (#110): renders the current face; when `animate` is on and `index` changes, the
+ * card turns on its Y axis (perspective + rotateY, no native dep) to reveal the next face, swapping
+ * the texture at the 90° edge so it reads as a real card flipping. When not focused it snaps — the
+ * rail never animates. `dir` (+1/-1) picks turn direction so left/right taps feel right.
+ */
+const FlipCard = memo(function FlipCard({ faces, index, dir, fullRes, animate }: { faces: StraightFace[]; index: number; dir: number; fullRes: boolean; animate: boolean }) {
+  const [front, setFront] = useState(index);
+  const [incoming, setIncoming] = useState<number | null>(null);
+  const rot = useSharedValue(0);
+  const dirSV = useSharedValue(1);
+  const prev = useRef(index);
+
+  const settle = useCallback((i: number) => {
+    setFront(i);
+    setIncoming(null);
+    rot.value = 0;
+  }, [rot]);
+
+  useEffect(() => {
+    if (index === prev.current) return;
+    prev.current = index;
+    if (!animate) {
+      settle(index);
+      return;
+    }
+    dirSV.value = dir >= 0 ? 1 : -1;
+    setIncoming(index);
+    rot.value = 0;
+    rot.value = withTiming(1, { duration: 300, easing: Easing.inOut(Easing.cubic) }, (f) => {
+      if (f) runOnJS(settle)(index);
+    });
+  }, [index, animate, dir, rot, dirSV, settle]);
+
+  const frontStyle = useAnimatedStyle(() => ({
+    transform: [{ perspective: 900 }, { rotateY: `${dirSV.value * rot.value * 180}deg` }],
+    backfaceVisibility: 'hidden',
+  }));
+  const backStyle = useAnimatedStyle(() => ({
+    transform: [{ perspective: 900 }, { rotateY: `${dirSV.value * (rot.value - 1) * 180}deg` }],
+    backfaceVisibility: 'hidden',
+  }));
+
+  return (
+    <View style={{ flex: 1 }}>
+      <Animated.View style={[StyleSheet.absoluteFill, frontStyle]}>
+        <FaceContent face={faces[front] ?? faces[0]} fullRes={fullRes} />
+      </Animated.View>
+      {incoming != null ? (
+        <Animated.View style={[StyleSheet.absoluteFill, backStyle]}>
+          <FaceContent face={faces[incoming] ?? faces[0]} fullRes={fullRes} />
+        </Animated.View>
+      ) : null}
+    </View>
+  );
+});
+
 interface SlotProps {
   index: number;
   item: StraightItem;
@@ -74,10 +148,14 @@ interface SlotProps {
   screenH: number;
   selected: boolean;
   withImage: boolean;
-  onTap: (index: number) => void;
+  /** Focus + flip state (#110): the focused card flips between faces; others render face 0. */
+  focused: boolean;
+  faceIndex: number;
+  flipDir: number;
+  onTap: (index: number, x: number) => void;
 }
 
-const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, onTap }: SlotProps) {
+const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, faceIndex, flipDir, onTap }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
@@ -115,17 +193,21 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
     () =>
       Gesture.Tap()
         .maxDuration(260)
-        .onEnd(() => {
-          runOnJS(onTap)(index);
+        .onEnd((e) => {
+          runOnJS(onTap)(index, e.x);
         }),
     [index, onTap],
   );
+
+  const hasFaces = (item.faces?.length ?? 0) > 0;
 
   return (
     <Animated.View style={[{ position: 'absolute', left: width / 2 - FORGED_W / 2, top: `${REST_FRAC * 100}%`, marginTop: -FORGED_H / 2, width: FORGED_W, height: FORGED_H }, style]}>
       <GestureDetector gesture={tap}>
         <View style={{ flex: 1 }}>
-          {item.custom ? (
+          {hasFaces ? (
+            <FlipCard faces={item.faces!} index={focused ? faceIndex : 0} dir={focused ? flipDir : 1} fullRes={focused || withImage} animate={focused} />
+          ) : item.custom ? (
             item.custom
           ) : (
             <>
@@ -147,6 +229,14 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
                 </Svg>
               </View>
             </>
+          ) : null}
+          {/* page indicator while a multi-face card is focused (#110): tap left/right to flip */}
+          {focused && (item.faces?.length ?? 0) > 1 ? (
+            <View style={{ position: 'absolute', bottom: 7, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 }} pointerEvents="none">
+              {item.faces!.map((_, i) => (
+                <View key={i} style={{ width: 6, height: 6, transform: [{ rotate: '45deg' }], backgroundColor: i === faceIndex ? Rune.red : 'rgba(40,30,18,0.45)' }} />
+              ))}
+            </View>
           ) : null}
         </View>
       </GestureDetector>
@@ -188,6 +278,10 @@ export const StraightCarousel = forwardRef<
   const lastCenter = useSharedValue(clampIdx(initialIndex, count));
   const [center, setCenter] = useState(() => Math.min(count - 1, Math.max(0, initialIndex)));
   const [fsOpen, setFsOpen] = useState(false);
+  // Flip-deck paging (#110): the focused card's current face, and the last turn direction so the
+  // flip spins the way the tap implied (left = back, right = forward).
+  const [faceIdx, setFaceIdx] = useState(0);
+  const flipDir = useRef(1);
 
   const onCenter = useCallback(
     (c: number) => {
@@ -209,7 +303,19 @@ export const StraightCarousel = forwardRef<
   const closeFs = useCallback(() => {
     fs.value = withSpring(0, FS_SPRING);
     setFsOpen(false);
+    setFaceIdx(0); // collapse back to face 0 (the class card / LOD) in place
   }, [fs]);
+
+  // Flip the focused card to the next/previous face (#110), wrapping. dir drives the turn direction.
+  const flip = useCallback(
+    (delta: number) => {
+      const n = items[center]?.faces?.length ?? 0;
+      if (n <= 1) return;
+      flipDir.current = delta;
+      setFaceIdx((i) => (i + delta + n) % n);
+    },
+    [items, center],
+  );
 
   // Device-back / parent close hook (#108): consume the back press when a card is focused.
   useImperativeHandle(
@@ -227,12 +333,21 @@ export const StraightCarousel = forwardRef<
   );
 
   const onTapCard = useCallback(
-    (index: number) => {
+    (index: number, x: number) => {
       if (fs.value > 0.5) {
+        // Focused: a multi-face card flips (left half = back, right half = forward); a single-face
+        // card closes on tap as before. Swipe-down / veil still close either way.
+        const n = items[index]?.faces?.length ?? 0;
+        if (n > 1) {
+          flip(x < FORGED_W / 2 ? -1 : 1);
+          return;
+        }
         closeFs();
         return;
       }
       if (Math.abs(index - pos.value) < 0.5) {
+        flipDir.current = 1;
+        setFaceIdx(0);
         focusIdx.value = index;
         fs.value = withSpring(1, FS_SPRING);
         setFsOpenJS(true);
@@ -240,7 +355,7 @@ export const StraightCarousel = forwardRef<
         pos.value = withSpring(clampIdx(index, count), SNAP_SPRING);
       }
     },
-    [fs, pos, focusIdx, count, closeFs, setFsOpenJS],
+    [fs, pos, focusIdx, count, closeFs, setFsOpenJS, items, flip],
   );
 
   // gear pad: bottom strip; grinding sweeps the whole deck across ~GEAR_SWIPE_L px, straight.
@@ -339,6 +454,9 @@ export const StraightCarousel = forwardRef<
                     screenH={screenH}
                     selected={selectedIds.includes(item.id)}
                     withImage={Math.abs(i - center) <= IMG_HALF}
+                    focused={fsOpen && i === center}
+                    faceIndex={faceIdx}
+                    flipDir={flipDir.current}
                     onTap={onTapCard}
                   />
                 ))

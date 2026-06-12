@@ -1,11 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Dimensions, Image, Platform, Pressable, Text, TextInput, View } from 'react-native';
-import Animated, { Easing, runOnJS, SlideInLeft, SlideInRight, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
+import { BackHandler, Image, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import Animated, { Easing, runOnJS, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
-import { AppScreen, useScreenInsets } from '@/components/app-screen';
+import { AppScreen } from '@/components/app-screen';
 import { ArtImage } from '@/components/art-image';
 import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -18,11 +18,11 @@ import { formatModifier, TRAIT_ORDER, type TraitKey } from '@/features/character
 import { type ExperienceDef, newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
-import { CLASS_CARDS, classBanner } from './class-cards';
+import { CLASS_CARDS } from './class-cards';
 import { featurePages } from './class-data';
 import { ForgedCard, ForgedTextCard } from './forged-card';
 import { useForgedSnapshots } from './forged-snapshots';
-import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from './straight-carousel';
+import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './straight-carousel';
 
 // ---------- draft ----------
 
@@ -441,9 +441,6 @@ export function CreateScreen() {
     return () => clearTimeout(t);
   }, [loaderDone]);
 
-  const [featuresOpen, setFeaturesOpen] = useState(false);
-  const [featurePage, setFeaturePage] = useState(0);
-  const [centerClassIdx, setCenterClassIdx] = useState(0);
   const [centerIdx, setCenterIdx] = useState(0);
   const [editingExperience, setEditingExperience] = useState<number | null>(null);
   const carouselRef = useRef<StraightCarouselHandle>(null);
@@ -458,30 +455,43 @@ export function CreateScreen() {
           setEditingExperience(null);
           return true;
         }
-        if (featuresOpen) {
-          setFeaturesOpen(false);
-          return true;
-        }
         if (carouselRef.current?.closeIfFullscreen()) return true;
         return false;
       });
       return () => sub.remove();
-    }, [editingExperience, featuresOpen]),
+    }, [editingExperience]),
   );
 
   const items: StraightItem[] = useMemo(() => {
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
+        // Each class card is a FLIP-DECK (#110): face 0 = the class card, then one face per feature
+        // page. Tapping the focused card flips through them in 3D — no separate features button.
         return CLASS_CARDS.map((c) => {
-          const pre = sources[`class-${c.key}`];
-          return pre
-            ? { id: `class-${c.key}`, label: c.title, thumb: pre.thumb, source: pre.full }
-            : {
-                id: `class-${c.key}`,
-                label: c.title,
-                custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} />,
-              };
+          const classPre = sources[`class-${c.key}`];
+          const classFace: StraightFace = classPre
+            ? { thumb: classPre.thumb, source: classPre.full }
+            : { custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} /> };
+          const featureFaces: StraightFace[] = featurePages(c.key).map((p) => {
+            const fpre = sources[`feat-${c.key}-${p.pageIndex}`];
+            return fpre
+              ? { thumb: fpre.thumb, source: fpre.full }
+              : {
+                  custom: (
+                    <ForgedTextCard
+                      title={c.title}
+                      kindLabel="Features"
+                      pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
+                      sections={p.sections}
+                      accentDeep={classColor(c.key).deep}
+                      Banner={c.Banner}
+                    />
+                  ),
+                };
+          });
+          const faces = [classFace, ...featureFaces];
+          return { id: `class-${c.key}`, label: c.title, thumb: classFace.thumb, source: classFace.source, custom: classFace.custom, faces };
         });
       case 'subclass':
         return CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
@@ -660,7 +670,6 @@ export function CreateScreen() {
               onIndexChange={(i) => {
                 deckIndexes.current[deck] = i;
                 setCenterIdx(i);
-                if (deck === 'class') setCenterClassIdx(i);
               }}
             />
           ) : null}
@@ -669,15 +678,6 @@ export function CreateScreen() {
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
       </View>
-      {featuresOpen ? (
-        <FeatureViewer
-          classIdx={Math.min(centerClassIdx, CLASS_CARDS.length - 1)}
-          page={featurePage}
-          onPage={setFeaturePage}
-          sources={sources}
-          onClose={() => setFeaturesOpen(false)}
-        />
-      ) : null}
       {editingExperience != null ? (
         <CardEditor
           kindLabel="Experience"
@@ -705,17 +705,7 @@ export function CreateScreen() {
             accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
           {deck === 'class' ? (
-            <RuneButton
-              label="Class features"
-              kind="secondary"
-              dense
-              height={28}
-              onPress={() => {
-                setFeaturePage(0);
-                setFeaturesOpen(true);
-              }}
-              accessibilityLabel={`View ${CLASS_CARDS[centerClassIdx]?.title ?? 'class'} features`}
-            />
+            <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4 }}>Tap the card to flip through its features</Text>
           ) : null}
           <Text style={{ color: selectedIds.length >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
             {selectedIds.length}/{maxSelect}
@@ -890,79 +880,3 @@ function ExperiencesTab({ experiences, onEdit }: { experiences: ExperienceDef[];
   );
 }
 
-/**
- * Fullscreen reader for a class's feature card(s) (#108): dim veil; the card centred near the top
- * with a real gap below the border (never off-screen); tap the LEFT half to page back, the RIGHT
- * half to page forward (wrapping); each page cross-fade-slides in. Tap the veil to close. Uses the
- * pre-rendered bitmap when forged, the live card meanwhile.
- */
-function FeatureViewer({
-  classIdx,
-  page,
-  onPage,
-  sources,
-  onClose,
-}: {
-  classIdx: number;
-  page: number;
-  onPage: (p: number) => void;
-  sources: Record<string, { full: { uri: string } }>;
-  onClose: () => void;
-}) {
-  const def = CLASS_CARDS[classIdx];
-  const pages = featurePages(def.key);
-  const pageCount = pages.length;
-  const idx = Math.min(page, pageCount - 1);
-  const p = pages[idx];
-  const pre = sources[`feat-${def.key}-${p.pageIndex}`];
-  const dir = useRef(1);
-  const insets = useScreenInsets();
-  const { width: screenW, height: screenH } = Dimensions.get('window');
-  // Same fit as the carousel fullscreen: top gap from the border, bottom band reserved (#108).
-  const FS_TOP = 58;
-  const fsScale = Math.min((screenW - 36 - 24) / 230, (screenH - insets.top - FS_TOP - 168) / 322);
-  const cardW = 230 * fsScale;
-  const cardH = 322 * fsScale;
-  const go = (delta: number) => {
-    if (pageCount <= 1) {
-      onClose();
-      return;
-    }
-    dir.current = delta;
-    onPage((idx + delta + pageCount) % pageCount);
-  };
-  return (
-    <View style={{ position: 'absolute', top: -80, bottom: -120, left: -60, right: -60, zIndex: 500 }}>
-      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close features" />
-      {/* card, content-anchored: top:80 cancels the container's -80 so it lands FS_TOP below the border */}
-      <View style={{ position: 'absolute', top: 80 + FS_TOP, alignSelf: 'center', width: cardW, height: cardH }}>
-        <Animated.View key={idx} entering={(dir.current >= 0 ? SlideInRight : SlideInLeft).duration(190)} style={{ width: cardW, height: cardH }}>
-          {pre ? (
-            <Image source={{ uri: pre.full.uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
-          ) : (
-            <View style={{ transform: [{ scale: fsScale }], width: 230, height: 322, marginLeft: (230 * (fsScale - 1)) / 2, marginTop: (322 * (fsScale - 1)) / 2 }}>
-              <ForgedTextCard
-                title={def.title}
-                kindLabel="Features"
-                pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
-                sections={p.sections}
-                accentDeep={classColor(def.key).deep}
-                Banner={classBanner(def.key)}
-              />
-            </View>
-          )}
-        </Animated.View>
-        {/* left half = back, right half = forward (single-page = tap closes) */}
-        <Pressable style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%' }} onPress={() => go(-1)} accessibilityRole="button" accessibilityLabel={pageCount > 1 ? 'Previous features page' : 'Close'} />
-        <Pressable style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '50%' }} onPress={() => go(1)} accessibilityRole="button" accessibilityLabel={pageCount > 1 ? 'Next features page' : 'Close'} />
-        {pageCount > 1 ? (
-          <View style={{ position: 'absolute', bottom: -26, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-            {pages.map((_, i) => (
-              <View key={i} style={{ width: 8, height: 8, transform: [{ rotate: '45deg' }], backgroundColor: i === idx ? Rune.goldBright : 'rgba(147,142,136,0.5)' }} />
-            ))}
-          </View>
-        ) : null}
-      </View>
-    </View>
-  );
-}
