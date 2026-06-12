@@ -167,8 +167,8 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef }: { charac
           {character.portraitUri ? (
             // shrunk by the bottom toggle-diamond's height (~52) so the photo fills only the upper
             // portrait, not the deck-toggle button below it (#136).
-            <View style={box(0, 3, 150, 222)} pointerEvents="none">
-              <PortraitImage uri={character.portraitUri} width={150} height={222} />
+            <View style={box(0, 3, 148, 222)} pointerEvents="none">
+              <PortraitImage uri={character.portraitUri} width={148} height={222} />
             </View>
           ) : (
             <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
