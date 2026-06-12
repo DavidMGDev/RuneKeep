@@ -1,0 +1,427 @@
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+
+import { Rune } from '@/constants/theme';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { box } from '@/lib/design';
+
+/**
+ * The generic hold-to-charge ±1 track (#89) — the proven heart interaction (see heart-track.tsx,
+ * #88) generalized for stress / hope / armor: only the two BOUNDARY slots ever act; hold ~0.75s
+ * (pop + charging shake) to trigger, two touch-DOWNs within ~320ms for the instant path, release
+ * early to cancel; every interaction is a detached, self-cleaning animation instance, and nothing
+ * unmounts mid-animation (both pre/post visuals mount at touch-down).
+ *
+ * Flavors: 'stress' = lightning — thin slivers on QUANTIZED jumps with perpendicular jitter and
+ * flickering alpha (sharp, abrupt); 'hope' = instant light RAYS + rising twinkling sparks (abrupt
+ * but grandiose; losses dim the rays and let the sparks fall); 'armor' = flat metal plates,
+ * bursting out on a loss, flying in on a gain.
+ *
+ * Gestures attach per-boundary-slot (with outward hitSlop), or — `zone` mode, for armor's tiny
+ * icons — to two BIG halves split at the barrier after the last filled slot: left of the barrier
+ * removes, right of it adds, verticality irrelevant (#89 E).
+ */
+
+const HOLD_MS = 750;
+const FX_MS = 950;
+const CANCEL_MS = 180;
+const DOUBLE_MS = 320;
+const REDUCED_GROW = 0.4;
+
+export type ChargeFlavor = 'stress' | 'hope' | 'armor';
+type Dir = 'up' | 'down';
+type Phase = 'hold' | 'fx' | 'out';
+interface Anim { id: number; index: number; dir: Dir; phase: Phase }
+
+// ---------- particle fields (deterministic — no Math.random) ----------
+interface Bolt { ang: number; dist: number; len: number; tone: number; delay: number }
+const BOLTS: Bolt[] = Array.from({ length: 10 }, (_, i) => ({
+  ang: (i / 10) * Math.PI * 2 + (i % 2) * 0.4,
+  dist: 58 + ((i * 31) % 54),
+  len: 12 + ((i * 7) % 10),
+  tone: i % 4 === 0 ? 1 : 0,
+  delay: (i % 3) * 0.05,
+}));
+
+interface Ray { ang: number; len: number; w: number; tone: number }
+const RAYS: Ray[] = Array.from({ length: 8 }, (_, i) => ({
+  ang: (i / 8) * Math.PI * 2 + 0.2,
+  len: 30 + ((i * 17) % 34),
+  w: i % 2 ? 2 : 3,
+  tone: i % 2,
+}));
+
+interface Spark { ang: number; dist: number; size: number; tone: number; delay: number }
+const SPARKS: Spark[] = Array.from({ length: 9 }, (_, i) => ({
+  ang: (i / 9) * Math.PI * 2,
+  dist: 26 + ((i * 23) % 40),
+  size: 4 + ((i * 11) % 4),
+  tone: i % 2,
+  delay: (i % 4) * 0.06,
+}));
+
+interface Plate { ang: number; dist: number; size: number; spin: number; tone: number; delay: number }
+const PLATES: Plate[] = Array.from({ length: 12 }, (_, i) => ({
+  ang: (i / 12) * Math.PI * 2 + (i % 3) * 0.25,
+  dist: 46 + ((i * 37) % 52),
+  size: 4 + ((i * 13) % 4),
+  spin: ((i % 5) - 2) * 2.4,
+  tone: i % 5 === 0 ? 2 : i % 3 === 0 ? 1 : 0,
+  delay: (i % 4) * 0.06,
+}));
+const INFLOW_DIST = 150;
+
+/** Lightning sliver: quantized jumps outward, perpendicular jitter, flickering alpha (#89 C). */
+function BoltView({ b, accent, fxP }: { b: Bolt; accent: string; fxP: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const p = Math.min(1, Math.max(0, (fxP.value - b.delay) / (1 - b.delay)));
+    const q = Math.floor(p * 4) / 4; // ABRUPT: travel in 4 hard steps
+    const travel = b.dist * (q + (p - q) * 0.2);
+    const jit = (Math.floor(p * 7) % 2 === 0 ? 1 : -1) * 7 * (1 - p);
+    const perp = b.ang + Math.PI / 2;
+    return {
+      transform: [
+        { translateX: Math.cos(b.ang) * travel + Math.cos(perp) * jit },
+        { translateY: (Math.sin(b.ang) * travel + Math.sin(perp) * jit) * 0.92 },
+        { rotate: `${b.ang + Math.PI / 2 + (Math.floor(p * 5) % 2) * 0.35}rad` },
+      ],
+      opacity: p <= 0 || p >= 1 ? 0 : (Math.floor(p * 9) % 2 === 0 ? 1 : 0.5) * Math.min(1, (1 - p) * 1.6),
+    };
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        { position: 'absolute', left: -1.5, top: -b.len / 2, width: 3, height: b.len },
+        { backgroundColor: b.tone === 1 ? Rune.inkText : accent },
+        style,
+      ]}
+    />
+  );
+}
+
+/** Hope ray: snaps to full length almost instantly, then burns out — grandiose, abrupt (#89 D). */
+function RayView({ r, gains, fxP }: { r: Ray; gains: boolean; fxP: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const p = fxP.value;
+    const extend = Math.min(1, p / 0.1); // full rays by 10%
+    return {
+      transform: [{ rotate: `${r.ang + Math.PI / 2}rad` }, { translateY: -(r.len / 2 + 12) }, { scaleY: extend }],
+      opacity: p <= 0.02 ? 0 : Math.max(0, 0.95 - p * 1.25) * (gains ? 1 : 0.55),
+    };
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        { position: 'absolute', left: -r.w / 2, top: -r.len / 2, width: r.w, height: r.len },
+        { backgroundColor: r.tone ? Rune.goldBright : Rune.gold },
+        style,
+      ]}
+    />
+  );
+}
+
+/** Hope spark: a twinkling diamond that rises on a gain and falls on a loss (#89 D). */
+function SparkView({ s, gains, fxP, idx }: { s: Spark; gains: boolean; fxP: SharedValue<number>; idx: number }) {
+  const style = useAnimatedStyle(() => {
+    const p = Math.min(1, Math.max(0, (fxP.value - s.delay) / (1 - s.delay)));
+    const ease = 1 - (1 - p) * (1 - p);
+    return {
+      transform: [
+        { translateX: Math.cos(s.ang) * 16 * ease },
+        { translateY: (gains ? -1 : 1) * (14 + s.dist) * ease },
+        { rotate: '45deg' },
+      ],
+      opacity: p <= 0 || p >= 1 ? 0 : (Math.floor(p * 8 + idx) % 2 === 0 ? 1 : 0.35) * Math.min(1, (1 - p) * 2),
+    };
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        { position: 'absolute', left: -s.size / 2, top: -s.size / 2, width: s.size, height: s.size },
+        { backgroundColor: s.tone ? Rune.ivory : Rune.goldBright },
+        style,
+      ]}
+    />
+  );
+}
+
+/** Armor plate: the heart-shard motion with a metal palette (#89 E). */
+function PlateView({ pl, inward, fxP }: { pl: Plate; inward: boolean; fxP: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const p = Math.min(1, Math.max(0, (fxP.value - pl.delay) / (1 - pl.delay)));
+    const travel = inward ? (1 - p) * (pl.dist + INFLOW_DIST) : Math.pow(p, 0.62) * pl.dist;
+    const fade = inward ? Math.min(1, p * 3) * Math.min(1, (1 - p) * 6 + 0.35) : Math.min(1, (1 - p) * 1.9);
+    return {
+      transform: [
+        { translateX: Math.cos(pl.ang) * travel },
+        { translateY: Math.sin(pl.ang) * travel * 0.92 },
+        { rotate: `${pl.spin * p}rad` },
+        { scale: inward ? 0.7 + 0.3 * p : 1 - 0.4 * p },
+      ],
+      opacity: p <= 0 || p >= 1 ? 0 : fade,
+    };
+  });
+  const tone = pl.tone === 2 ? Rune.inkText : pl.tone === 1 ? Rune.muted : Rune.goldEdge;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[{ position: 'absolute', left: -pl.size / 2, top: -pl.size / 2, width: pl.size, height: pl.size * 1.6 }, { backgroundColor: tone }, style]}
+    />
+  );
+}
+
+// ---------- the per-interaction animation instance ----------
+interface FxViewProps {
+  anim: Anim;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  grow: number;
+  crossAt: number;
+  flavor: ChargeFlavor;
+  accent: string;
+  reduced: boolean;
+  renderPre: ReactNode;
+  renderPost: ReactNode;
+  onDone: (id: number) => void;
+}
+
+function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduced, renderPre, renderPost, onDone }: FxViewProps) {
+  const holdP = useSharedValue(0);
+  const fxP = useSharedValue(0);
+  const done = useCallback(() => onDone(anim.id), [onDone, anim.id]);
+
+  useEffect(() => {
+    if (anim.phase === 'hold') {
+      holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+    } else if (anim.phase === 'fx') {
+      cancelAnimation(holdP);
+      holdP.value = 1;
+      fxP.value = withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(done)();
+      });
+    } else {
+      cancelAnimation(holdP);
+      holdP.value = withTiming(0, { duration: CANCEL_MS }, (finished) => {
+        if (finished) runOnJS(done)();
+      });
+    }
+  }, [anim.phase, holdP, fxP, done]);
+
+  const gains = anim.dir === 'up';
+  const g = reduced ? REDUCED_GROW : grow;
+
+  const body = useAnimatedStyle(() => {
+    const charge = holdP.value;
+    const p = fxP.value;
+    const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
+    const elastic = !reduced && p >= 0.22 ? Math.cos((p - 0.22) * 16) * 0.16 * (1 - p) : 0;
+    const wobble = reduced ? 0 : Math.sin(charge * 46) * 0.07 * charge * Math.max(0, 1 - p * 5);
+    return { transform: [{ scale: 1 + g * charge * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }] };
+  });
+  const preFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 0 : 1 }));
+  const postFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 1 : 0 }));
+  const ring = useAnimatedStyle(() => ({
+    transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 2.6 }],
+    opacity: fxP.value <= 0 ? 0 : Math.max(0, 0.9 - fxP.value),
+  }));
+  const ringColor = flavor === 'hope' ? Rune.goldBright : flavor === 'armor' ? Rune.goldEdge : accent;
+
+  return (
+    <View style={[box(cx, cy, 0, 0), { overflow: 'visible' }]} pointerEvents="none">
+      <Animated.View style={[{ position: 'absolute', left: -w / 2, top: -h / 2, width: w, height: h }, body]}>
+        <Animated.View style={[box(0, 0, w, h), preFade]}>{renderPre}</Animated.View>
+        <Animated.View style={[box(0, 0, w, h), postFade]}>{renderPost}</Animated.View>
+      </Animated.View>
+      {!reduced ? (
+        <>
+          <Animated.View
+            pointerEvents="none"
+            style={[{ position: 'absolute', left: -22, top: -22, width: 44, height: 44, borderWidth: 1.5, borderColor: ringColor }, ring]}
+          />
+          {flavor === 'stress' && BOLTS.map((b, i) => <BoltView key={i} b={b} accent={accent} fxP={fxP} />)}
+          {flavor === 'hope' && (
+            <>
+              {RAYS.map((r, i) => (
+                <RayView key={i} r={r} gains={gains} fxP={fxP} />
+              ))}
+              {SPARKS.map((s, i) => (
+                <SparkView key={`s${i}`} s={s} gains={gains} fxP={fxP} idx={i} />
+              ))}
+            </>
+          )}
+          {flavor === 'armor' && PLATES.map((pl, i) => <PlateView key={i} pl={pl} inward={gains} fxP={fxP} />)}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+// ---------- the track ----------
+export interface ChargeTrackProps {
+  left: number;
+  top: number;
+  /** Slot origins, track-local. */
+  slots: { x: number; y: number }[];
+  w: number;
+  h: number;
+  upIndex: number;
+  downIndex: number;
+  onUp: () => void;
+  onDown: () => void;
+  /** Base visual for slot i (current state — locked, filled, empty…). */
+  renderSlot: (index: number) => ReactNode;
+  /** Visuals for the animating slot's two phases. */
+  renderFilled: () => ReactNode;
+  renderEmpty: () => ReactNode;
+  flavor: ChargeFlavor;
+  accent: string;
+  grow?: number;
+  crossUpAt?: number;
+  crossDownAt?: number;
+  /** Extra outward hitSlop on the boundary slots (their "respective sides"). */
+  sideSlop?: number;
+  /** Zone mode (#89 E): two big halves split at barrierX (track-local) own the gestures. */
+  zone?: { left: number; top: number; width: number; height: number; barrierX: number };
+  trackLabel: string;
+}
+
+export function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, onDown, renderSlot, renderFilled, renderEmpty, flavor, accent, grow = 2.2, crossUpAt = 0.15, crossDownAt = 0.1, sideSlop = 12, zone, trackLabel }: ChargeTrackProps) {
+  const reduced = useReducedMotion();
+  const [anims, setAnims] = useState<Anim[]>([]);
+  const charging = useRef<Anim | null>(null);
+  const lastDown = useRef({ key: '', t: 0 });
+  const nextId = useRef(1);
+
+  const onDone = useCallback((id: number) => setAnims((list) => list.filter((a) => a.id !== id)), []);
+
+  const begin = useCallback(
+    (index: number, dir: Dir, step: () => void) => {
+      const now = Date.now();
+      const key = `${index}:${dir}`;
+      const isDouble = lastDown.current.key === key && now - lastDown.current.t < DOUBLE_MS;
+      lastDown.current = { key, t: now };
+      if (isDouble) {
+        if (charging.current) {
+          const id = charging.current.id;
+          charging.current = null;
+          setAnims((list) => list.filter((a) => a.id !== id));
+        }
+        step();
+        return;
+      }
+      if (charging.current) return;
+      const anim: Anim = { id: nextId.current++, index, dir, phase: 'hold' };
+      charging.current = anim;
+      setAnims((list) => [...list, anim]);
+    },
+    [],
+  );
+
+  const trigger = useCallback((step: () => void) => {
+    const c = charging.current;
+    if (!c) return;
+    charging.current = null;
+    step();
+    setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as Phase } : a)));
+  }, []);
+
+  const cancel = useCallback(() => {
+    const c = charging.current;
+    if (!c) return;
+    charging.current = null;
+    setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'out' as Phase } : a)));
+  }, []);
+
+  const gestureFor = (index: number, dir: Dir) => {
+    const step = dir === 'up' ? onUp : onDown;
+    return Gesture.LongPress()
+      .minDuration(HOLD_MS)
+      .maxDistance(32)
+      .onBegin(() => runOnJS(begin)(index, dir, step))
+      .onStart(() => runOnJS(trigger)(step))
+      .onFinalize((_e, ok) => {
+        if (!ok) runOnJS(cancel)();
+      });
+  };
+
+  return (
+    // zIndex 10 — under the expand veil (20) and the carousel (30), per the #87 stacking contract.
+    <View style={[box(left, top, Math.max(...slots.map((s) => s.x)) + w, Math.max(...slots.map((s) => s.y)) + h), { zIndex: 10, overflow: 'visible' }]}>
+      {slots.map((s, i) => {
+        const dir: Dir | null = i === upIndex ? 'up' : i === downIndex ? 'down' : null;
+        const hidden = anims.some((a) => a.index === i);
+        const bodyEl = (
+          <View
+            style={[box(s.x, s.y, w, h), { opacity: hidden ? 0 : 1 }]}
+            accessible
+            accessibilityLabel={`${trackLabel} ${i + 1}`}
+            accessibilityHint={dir && !zone ? `Hold to ${dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.` : undefined}>
+            {renderSlot(i)}
+          </View>
+        );
+        if (!dir || zone) return <View key={i}>{bodyEl}</View>;
+        return (
+          <GestureDetector key={i} gesture={gestureFor(i, dir)}>
+            <View
+              style={[box(s.x, s.y, w, h), { opacity: hidden ? 0 : 1 }]}
+              hitSlop={{ top: 10, bottom: 10, left: dir === 'down' ? sideSlop : 4, right: dir === 'up' ? sideSlop : 4 }}
+              accessible
+              accessibilityLabel={`${trackLabel} ${i + 1}`}
+              accessibilityHint={`Hold to ${dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.`}>
+              {renderSlot(i)}
+            </View>
+          </GestureDetector>
+        );
+      })}
+      {zone ? (
+        <>
+          {downIndex >= 0 && zone.barrierX > zone.left ? (
+            <GestureDetector gesture={gestureFor(downIndex, 'down')}>
+              <View
+                style={box(zone.left, zone.top, zone.barrierX - zone.left, zone.height)}
+                accessible
+                accessibilityLabel={`Remove ${trackLabel}`}
+                accessibilityHint="Hold to clear one. Double tap for no animation."
+              />
+            </GestureDetector>
+          ) : null}
+          {upIndex >= 0 && zone.left + zone.width > zone.barrierX ? (
+            <GestureDetector gesture={gestureFor(upIndex, 'up')}>
+              <View
+                style={box(zone.barrierX, zone.top, zone.left + zone.width - zone.barrierX, zone.height)}
+                accessible
+                accessibilityLabel={`Add ${trackLabel}`}
+                accessibilityHint="Hold to mark one. Double tap for no animation."
+              />
+            </GestureDetector>
+          ) : null}
+        </>
+      ) : null}
+      {anims.map((a) => (
+        <ChargeFxView
+          key={a.id}
+          anim={a}
+          cx={slots[a.index].x + w / 2}
+          cy={slots[a.index].y + h / 2}
+          w={w}
+          h={h}
+          grow={grow}
+          crossAt={a.dir === 'up' ? crossUpAt : crossDownAt}
+          flavor={flavor}
+          accent={accent}
+          reduced={reduced}
+          renderPre={a.dir === 'up' ? renderEmpty() : renderFilled()}
+          renderPost={a.dir === 'up' ? renderFilled() : renderEmpty()}
+          onDone={onDone}
+        />
+      ))}
+    </View>
+  );
+}
