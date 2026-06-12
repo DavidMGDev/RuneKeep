@@ -65,3 +65,6 @@ assets/temp/_classes_28_52.pdf
 scripts/_class_pages.txt
 scripts/_class_data.json
 scripts/_features_full.txt
+
+# stray editor/calibration backups
+*.bak
