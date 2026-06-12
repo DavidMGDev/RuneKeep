@@ -26,7 +26,10 @@ import { Art } from '../art';
 const HOLD_MS = 750; // build-up; the gesture triggers here
 const FX_MS = 950; // burst + settle after the trigger
 const CANCEL_MS = 180;
-const GROW = 1.35; // overlay grows to 1 + GROW ≈ 2.35x (35px heart → ~82px, past a fingertip)
+// The hold runs on an ease-OUT curve, so most of this lands in the first ~150ms: the heart POPS
+// to ~1.8x the instant the finger lands (you feel that you have it), then climbs to ~3x (105px)
+// by the trigger (#85 — ease-in felt like nothing was happening under the finger).
+const GROW = 2.0;
 
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
 const heartTint = (s: PipState, accent: string) => (s === 'golden' ? Rune.goldBright : s === 'active' ? accent : undefined);
@@ -160,7 +163,7 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
       setFx({ index, action, pre: resolveHearts(hp, slots).states[index] });
       holdP.value = 0;
       fxP.value = 0;
-      holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.in(Easing.cubic) });
+      holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
     },
     [fx, hp, slots, holdP, fxP],
   );
@@ -183,10 +186,16 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
 
   const onInstant = useCallback(
     (action: HeartAction) => {
-      if (fx) return;
+      // The FIRST tap of a double-tap starts a hold whose cancel keeps `fx` alive for ~180ms —
+      // bailing on `fx` here ate every double-tap (#85). A pending, untriggered hold is ours to
+      // discard; only a hold that already FIRED blocks the instant path.
+      if (triggered.current) return;
+      holdP.value = 0;
+      fxP.value = 0;
+      setFx(null);
       onHp(hp + (GAINS[action] ? 1 : -1));
     },
-    [fx, hp, onHp],
+    [hp, onHp, holdP, fxP],
   );
 
   // ---- overlay (the held heart, grown past the finger, shaking as it charges) ----
@@ -194,7 +203,7 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
     const charge = holdP.value * (1 - fxP.value);
     const wobble = reduced ? 0 : Math.sin(holdP.value * 46) * 0.07 * charge;
     return {
-      transform: [{ scale: 1 + (reduced ? 0.25 : GROW) * charge }, { rotate: `${wobble}rad` }],
+      transform: [{ scale: 1 + (reduced ? 0.4 : GROW) * charge }, { rotate: `${wobble}rad` }],
     };
   });
   // pre → post art crossfade: a gain fills as the inflow lands (~55%); a loss shatters instantly.
