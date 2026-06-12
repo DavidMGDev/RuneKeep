@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -12,24 +12,29 @@ import { Art } from '../art';
 
 /**
  * The HP heart row (#81): Daggerheart never moves more than ONE point at a time, so only the two
- * BOUNDARY hearts are interactive (see heartBoundaries). Hold one ~0.75s — it grows past your
- * finger, shaking harder as it charges — and at the threshold the step applies with an arcane
- * shard burst (outward for a loss, flying in from off-screen for a gain; gold variants for the
- * golden hearts). Release early to cancel. Double-tap = the same step instantly, no ceremony.
+ * BOUNDARY hearts are interactive (see heartBoundaries). Hold one ~0.75s — it pops under your
+ * finger and keeps growing, shaking harder as it charges — and at the threshold the step applies
+ * with an arcane shard effect (outward for a loss, flying in from off-screen for a gain; gold
+ * variants for the golden hearts). Release early to cancel. Double-tap = the same step instantly.
  * Single taps and every non-boundary heart are inert.
  *
- * Pure Reanimated (no Skia): ~14 transform/opacity-only leaf views mounted ONLY while an effect
- * runs — obeys every device perf rule (no rasterized animating layers, no fractional-alpha
- * containers at rest, nothing mounted when idle).
+ * Effects are INDEPENDENT instances (#86): the moment a hold triggers, its effect detaches and
+ * settles on its own ~0.95s clock while the row is immediately interactive again — three hearts
+ * can be healed or broken in rapid succession, each trailing its own shards.
+ *
+ * Pure Reanimated (no Skia): transform/opacity-only leaf views mounted ONLY while effects run —
+ * obeys every device perf rule (no rasterized animating layers, no fractional-alpha containers
+ * at rest, nothing mounted when idle).
  */
 
 const HOLD_MS = 750; // build-up; the gesture triggers here
 const FX_MS = 950; // burst + settle after the trigger
 const CANCEL_MS = 180;
 // The hold runs on an ease-OUT curve, so most of this lands in the first ~150ms: the heart POPS
-// to ~1.8x the instant the finger lands (you feel that you have it), then climbs to ~3x (105px)
-// by the trigger (#85 — ease-in felt like nothing was happening under the finger).
-const GROW = 2.0;
+// to ~2x the instant the finger lands (you feel that you have it), then climbs to ~3.4x (~120px)
+// by the trigger (#85/#86 — 20% bigger per owner).
+const GROW = 2.4;
+const REDUCED_GROW = 0.4;
 
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
 const heartTint = (s: PipState, accent: string) => (s === 'golden' ? Rune.goldBright : s === 'active' ? accent : undefined);
@@ -39,18 +44,19 @@ const POST: Record<HeartAction, PipState> = { fill: 'active', break: 'empty', go
 const GAINS: Record<HeartAction, boolean> = { fill: true, goldify: true, break: false, degold: false };
 
 // Deterministic shard field (no Math.random — keeps renders pure and replays identical). Angles
-// jittered off a uniform fan; distances/sizes/spins off small prime cycles.
+// jittered off a uniform fan; distances/sizes/spins off small prime cycles. Distances carry the
+// +20% of #86.
 interface Shard { ang: number; dist: number; size: number; spin: number; diamond: boolean; tone: number; delay: number }
 const SHARDS: Shard[] = Array.from({ length: 14 }, (_, i) => ({
   ang: (i / 14) * Math.PI * 2 + (i % 3) * 0.23,
-  dist: 62 + ((i * 37) % 68),
+  dist: 74 + ((i * 37) % 82),
   size: 5 + ((i * 13) % 5),
   spin: ((i % 5) - 2) * 2.6,
   diamond: i % 3 !== 0,
   tone: i % 7 === 0 ? 2 : i % 3 === 0 ? 1 : 0,
   delay: (i % 4) * 0.07,
 }));
-const INFLOW_DIST = 150; // extra distance for inbound shards — they start past the sheet edges
+const INFLOW_DIST = 170; // extra distance for inbound shards — they start past the sheet edges
 
 function shardColor(action: HeartAction, tone: number, accent: string): string {
   const gold = action === 'goldify' || action === 'degold';
@@ -58,8 +64,6 @@ function shardColor(action: HeartAction, tone: number, accent: string): string {
   if (tone === 1) return gold ? Rune.gold : Rune.goldEdge; // arcane gold accents tie to the frame
   return gold ? Rune.goldBright : accent;
 }
-
-interface FxState { index: number; action: HeartAction; pre: PipState }
 
 interface SlotProps {
   index: number;
@@ -129,6 +133,66 @@ function ShardView({ shard, action, accent, inward, fxP }: { shard: Shard; actio
   );
 }
 
+interface FxInstance { id: number; index: number; action: HeartAction; pre: PipState }
+
+/** One detached, self-cleaning effect (#86): owns its progress, settles the grown heart from the
+ *  hold's peak back into the row, crossfades pre→post art, and fires its shards. */
+function HeartFxView({ inst, x, pip, accent, reduced, onDone }: { inst: FxInstance; x: number; pip: number; accent: string; reduced: boolean; onDone: (id: number) => void }) {
+  const p = useSharedValue(0);
+  const done = useCallback(() => onDone(inst.id), [onDone, inst.id]);
+  useEffect(() => {
+    p.value = withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(done)();
+    });
+  }, [p, done]);
+
+  const gains = GAINS[inst.action];
+  const post = POST[inst.action];
+  const gold = inst.action === 'goldify' || inst.action === 'degold';
+
+  const settle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + (reduced ? REDUCED_GROW : GROW) * (1 - p.value) }],
+  }));
+  // a gain fills as the inflow lands (~55%); a loss shatters instantly.
+  const preFade = useAnimatedStyle(() => ({ opacity: gains ? (p.value > 0.55 ? 0 : 1) : p.value > 0.1 ? 0 : 1 }));
+  const postFade = useAnimatedStyle(() => ({ opacity: gains ? (p.value > 0.55 ? 1 : 0) : p.value > 0.1 ? 1 : 0 }));
+  // the arcane seal: a 45°-rotated square outline blooming out of the heart on trigger
+  const ring = useAnimatedStyle(() => ({
+    transform: [{ rotate: '45deg' }, { scale: 0.2 + p.value * 2.6 }],
+    opacity: p.value <= 0 ? 0 : Math.max(0, 0.9 - p.value),
+  }));
+
+  return (
+    <View style={[box(x, pip / 2, 0, 0), { overflow: 'visible' }]} pointerEvents="none">
+      <Animated.View style={[{ position: 'absolute', left: -pip / 2, top: -pip / 2, width: pip, height: pip }, settle]}>
+        <Animated.View style={[box(0, 0, pip, pip), preFade]}>
+          <ArtImage source={heartArt(inst.pre)} fit="contain" tint={heartTint(inst.pre, accent)} />
+        </Animated.View>
+        <Animated.View style={[box(0, 0, pip, pip), postFade]}>
+          <ArtImage source={heartArt(post)} fit="contain" tint={heartTint(post, accent)} />
+        </Animated.View>
+      </Animated.View>
+      {!reduced ? (
+        <>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              { position: 'absolute', left: -22, top: -22, width: 44, height: 44, borderWidth: 1.5 },
+              { borderColor: gold ? Rune.goldBright : accent },
+              ring,
+            ]}
+          />
+          {SHARDS.map((shard, i) => (
+            <ShardView key={i} shard={shard} action={inst.action} accent={accent} inward={gains} fxP={p} />
+          ))}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+interface HoldState { index: number; action: HeartAction; pre: PipState }
+
 interface HeartTrackProps {
   left: number;
   top: number;
@@ -146,85 +210,67 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
   const bounds = heartBoundaries(hp, slots);
   const step = (width - pip) / (slots - 1);
 
-  const [fx, setFx] = useState<FxState | null>(null);
+  const [hold, setHold] = useState<HoldState | null>(null);
+  const [effects, setEffects] = useState<FxInstance[]>([]);
   const triggered = useRef(false);
+  const nextId = useRef(1);
   const holdP = useSharedValue(0);
-  const fxP = useSharedValue(0);
 
-  const clearFx = useCallback(() => {
+  const clearHold = useCallback(() => {
     triggered.current = false;
-    setFx(null);
+    setHold(null);
   }, []);
 
   const onBegin = useCallback(
     (index: number, action: HeartAction) => {
-      if (fx) return;
+      if (hold) return; // one finger charges at a time; settling effects don't block (#86)
       triggered.current = false;
-      setFx({ index, action, pre: resolveHearts(hp, slots).states[index] });
+      setHold({ index, action, pre: resolveHearts(hp, slots).states[index] });
       holdP.value = 0;
-      fxP.value = 0;
       holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
     },
-    [fx, hp, slots, holdP, fxP],
+    [hold, hp, slots, holdP],
   );
 
   const onTrigger = useCallback(() => {
-    if (!fx || triggered.current) return;
+    if (!hold || triggered.current) return;
     triggered.current = true;
-    onHp(hp + (GAINS[fx.action] ? 1 : -1));
-    fxP.value = withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
-      if (finished) runOnJS(clearFx)();
-    });
-  }, [fx, hp, onHp, fxP, clearFx]);
+    onHp(hp + (GAINS[hold.action] ? 1 : -1));
+    // Detach: the effect lives its own life; the row is interactive again right away (#86).
+    setEffects((list) => [...list, { id: nextId.current++, index: hold.index, action: hold.action, pre: hold.pre }]);
+    holdP.value = 0;
+    clearHold();
+  }, [hold, hp, onHp, holdP, clearHold]);
 
   const onCancel = useCallback(() => {
-    if (triggered.current) return; // the effect is running its course
+    if (triggered.current) return; // already detached into an effect
     holdP.value = withTiming(0, { duration: CANCEL_MS }, (finished) => {
-      if (finished) runOnJS(clearFx)();
+      if (finished) runOnJS(clearHold)();
     });
-  }, [holdP, clearFx]);
+  }, [holdP, clearHold]);
 
   const onInstant = useCallback(
     (action: HeartAction) => {
-      // The FIRST tap of a double-tap starts a hold whose cancel keeps `fx` alive for ~180ms —
-      // bailing on `fx` here ate every double-tap (#85). A pending, untriggered hold is ours to
-      // discard; only a hold that already FIRED blocks the instant path.
+      // The FIRST tap of a double-tap starts a hold; a pending UNTRIGGERED hold is ours to
+      // discard (#85). Only a hold that already fired blocks the instant path.
       if (triggered.current) return;
       holdP.value = 0;
-      fxP.value = 0;
-      setFx(null);
+      setHold(null);
       onHp(hp + (GAINS[action] ? 1 : -1));
     },
-    [hp, onHp, holdP, fxP],
+    [hp, onHp, holdP],
   );
 
-  // ---- overlay (the held heart, grown past the finger, shaking as it charges) ----
+  const onDone = useCallback((id: number) => setEffects((list) => list.filter((e) => e.id !== id)), []);
+
+  // ---- the held heart, grown past the finger, shaking as it charges ----
   const grow = useAnimatedStyle(() => {
-    const charge = holdP.value * (1 - fxP.value);
+    const charge = holdP.value;
     const wobble = reduced ? 0 : Math.sin(holdP.value * 46) * 0.07 * charge;
     return {
-      transform: [{ scale: 1 + (reduced ? 0.4 : GROW) * charge }, { rotate: `${wobble}rad` }],
+      transform: [{ scale: 1 + (reduced ? REDUCED_GROW : GROW) * charge }, { rotate: `${wobble}rad` }],
     };
   });
-  // pre → post art crossfade: a gain fills as the inflow lands (~55%); a loss shatters instantly.
-  const preFade = useAnimatedStyle(() => ({
-    opacity: fx && GAINS[fx.action] ? (fxP.value > 0.55 ? 0 : 1) : fxP.value > 0.1 ? 0 : 1,
-  }));
-  const postFade = useAnimatedStyle(() => ({
-    opacity: fx && GAINS[fx.action] ? (fxP.value > 0.55 ? 1 : 0) : fxP.value > 0.1 ? 1 : 0,
-  }));
-  // the arcane seal: a 45°-rotated square outline blooming out of the heart on trigger
-  const ring = useAnimatedStyle(() => {
-    const p = fxP.value;
-    return {
-      transform: [{ rotate: '45deg' }, { scale: 0.2 + p * 2.2 }],
-      opacity: p <= 0 ? 0 : Math.max(0, 0.9 - p),
-    };
-  });
-
-  const fxX = fx ? fx.index * step + pip / 2 : 0;
-  const post = fx ? POST[fx.action] : 'empty';
-  const inward = fx ? GAINS[fx.action] : false;
 
   return (
     <View style={[box(left, top, width, pip), { zIndex: 1500 }]}>
@@ -237,41 +283,23 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
           state={s}
           action={i === bounds.up ? bounds.upAction : i === bounds.down ? bounds.downAction : null}
           accent={accent}
-          hidden={fx?.index === i}
+          hidden={hold?.index === i || effects.some((e) => e.index === i)}
           onBegin={onBegin}
           onTrigger={onTrigger}
           onCancel={onCancel}
           onInstant={onInstant}
         />
       ))}
-      {fx ? (
-        <View style={[box(fxX, pip / 2, 0, 0), { overflow: 'visible' }]} pointerEvents="none">
-          {/* the held heart, above everything, pre/post crossfade inside the grown frame */}
+      {hold ? (
+        <View style={[box(hold.index * step + pip / 2, pip / 2, 0, 0), { overflow: 'visible' }]} pointerEvents="none">
           <Animated.View style={[{ position: 'absolute', left: -pip / 2, top: -pip / 2, width: pip, height: pip }, grow]}>
-            <Animated.View style={[box(0, 0, pip, pip), preFade]}>
-              <ArtImage source={heartArt(fx.pre)} fit="contain" tint={heartTint(fx.pre, accent)} />
-            </Animated.View>
-            <Animated.View style={[box(0, 0, pip, pip), postFade]}>
-              <ArtImage source={heartArt(post)} fit="contain" tint={heartTint(post, accent)} />
-            </Animated.View>
+            <ArtImage source={heartArt(hold.pre)} fit="contain" tint={heartTint(hold.pre, accent)} />
           </Animated.View>
-          {!reduced ? (
-            <>
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  { position: 'absolute', left: -22, top: -22, width: 44, height: 44, borderWidth: 1.5 },
-                  { borderColor: fx.action === 'goldify' || fx.action === 'degold' ? Rune.goldBright : accent },
-                  ring,
-                ]}
-              />
-              {SHARDS.map((shard, i) => (
-                <ShardView key={i} shard={shard} action={fx.action} accent={accent} inward={inward} fxP={fxP} />
-              ))}
-            </>
-          ) : null}
         </View>
       ) : null}
+      {effects.map((inst) => (
+        <HeartFxView key={inst.id} inst={inst} x={inst.index * step + pip / 2} pip={pip} accent={accent} reduced={reduced} onDone={onDone} />
+      ))}
     </View>
   );
 }
