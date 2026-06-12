@@ -284,7 +284,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef }: { charac
         <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {character.maxHp}</Text>
       </View>
       {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/§1A). */}
-      <HeartTrack ref={heartRef} left={140} top={333} width={235} pip={35} hp={character.hp} slots={heartSlotCount} accent={tint ?? RED} onHp={onHp} />
+      <HeartTrack ref={heartRef} left={140} top={333} width={235} pip={35} hp={character.hp} slots={heartSlotCount} maxHp={character.maxHp} accent={tint ?? RED} onHp={onHp} />
 
       {/* ---------- Stress — inset frame, two rows spread across the panel ----------
           Panel 20px shorter with the pips trimmed to match (34->26 tall) — flatter, more
