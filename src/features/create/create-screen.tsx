@@ -20,16 +20,19 @@ import { saveCharacter } from '@/lib/character-store';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { CLASS_CARDS } from './class-cards';
 import { featurePages } from './class-data';
-import { ForgedCard, ForgedTextCard } from './forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from './forged-card';
+import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from './equipment-data';
 import { useForgedSnapshots } from './forged-snapshots';
 import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './straight-carousel';
 
 // ---------- draft ----------
 
 type CardDeckKey = 'class' | 'subclass' | 'ancestry' | 'community' | 'domains';
-type DeckKey = CardDeckKey | 'traits' | 'experiences' | 'inventory' | 'armor';
+type DeckKey = CardDeckKey | 'traits' | 'experiences' | 'weapons' | 'armor' | 'inventory';
 
 const isCardDeck = (k: DeckKey): k is CardDeckKey => k === 'class' || k === 'subclass' || k === 'ancestry' || k === 'community' || k === 'domains';
+/** Decks that drive the STRAIGHT carousel (card scans + forged cards), incl. weapons/armor (#121). */
+const isCarouselDeck = (k: DeckKey): boolean => isCardDeck(k) || k === 'weapons' || k === 'armor';
 
 /** The rulebook's starting spread (#107): one +2, two +1, two 0, one −1, any order. */
 export const TRAIT_POOL = [2, 1, 1, 0, 0, -1];
@@ -44,6 +47,9 @@ interface Draft {
   domainCardIds: string[];
   traits: Partial<Record<TraitKey, number>>;
   experiences: ExperienceDef[];
+  weaponPrimaryId: string | null;
+  weaponSecondaryId: string | null;
+  armorId: string | null;
 }
 
 const EMPTY: Draft = {
@@ -56,6 +62,9 @@ const EMPTY: Draft = {
   domainCardIds: [],
   traits: {},
   experiences: [],
+  weaponPrimaryId: null,
+  weaponSecondaryId: null,
+  armorId: null,
 };
 
 function deckDone(deck: DeckKey, d: Draft): boolean {
@@ -74,9 +83,12 @@ function deckDone(deck: DeckKey, d: Draft): boolean {
       return TRAIT_ORDER.every((t) => d.traits[t.key] !== undefined);
     case 'experiences':
       return d.experiences.length === 2;
-    case 'inventory':
+    case 'weapons':
+      return !!d.weaponPrimaryId; // a primary is required; a secondary is optional (1H primary only)
     case 'armor':
-      return true; // stubs (#107) — filled out next issue, never gate the FORGE
+      return !!d.armorId;
+    case 'inventory':
+      return true; // stub (#121) — locked, filled out next issue, never gates the FORGE
   }
 }
 
@@ -136,17 +148,26 @@ function DeckGlyph({ deck, color }: { deck: DeckKey; color: string }) {
           <Line x1={4} y1={18} x2={9} y2={13} {...s} />
         </Svg>
       );
-    case 'inventory':
+    case 'weapons':
       return (
         <Svg width={20} height={20} viewBox="0 0 22 22">
-          <Path d="M 4 8 H 18 L 17 19 H 5 Z" {...s} />
-          <Path d="M 8 8 V 5 a 3 3 0 0 1 6 0 v 3" {...s} />
+          {/* sword */}
+          <Line x1={11} y1={2} x2={11} y2={14} {...s} />
+          <Line x1={7.5} y1={14} x2={14.5} y2={14} {...s} />
+          <Line x1={11} y1={14} x2={11} y2={20} {...s} />
         </Svg>
       );
     case 'armor':
       return (
         <Svg width={20} height={20} viewBox="0 0 22 22">
           <Path d="M 11 2 L 19 5 V 11 Q 19 17 11 20 Q 3 17 3 11 V 5 Z" {...s} />
+        </Svg>
+      );
+    case 'inventory':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Path d="M 4 8 H 18 L 17 19 H 5 Z" {...s} />
+          <Path d="M 8 8 V 5 a 3 3 0 0 1 6 0 v 3" {...s} />
         </Svg>
       );
   }
@@ -160,8 +181,9 @@ const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
   { key: 'domains', label: 'Domains' },
   { key: 'traits', label: 'Traits' },
   { key: 'experiences', label: 'Experiences' },
+  { key: 'weapons', label: 'Weapons' },
+  { key: 'armor', label: 'Armor' },
   { key: 'inventory', label: 'Inventory', stub: true },
-  { key: 'armor', label: 'Armor', stub: true },
 ];
 
 function DeckTab({ deck, label, active, done, locked, pulseToken, onPress }: { deck: DeckKey; label: string; active: boolean; done: boolean; locked: boolean; pulseToken: number; onPress: () => void }) {
@@ -220,6 +242,28 @@ function SectionDivider({ label }: { label: string }) {
       <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.5)' }} />
       <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{label}</Text>
       <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.5)' }} />
+    </View>
+  );
+}
+
+/** A small square-cornered segmented toggle (#121) — the app language is chamfered/flat, no radius. */
+function Segmented<T extends string>({ options, value, onChange }: { options: { key: T; label: string; disabled?: boolean }[]; value: T; onChange: (k: T) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+      {options.map((o, i) => {
+        const active = o.key === value;
+        return (
+          <Pressable
+            key={o.key}
+            disabled={o.disabled}
+            onPress={() => onChange(o.key)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active, disabled: o.disabled }}
+            style={{ paddingHorizontal: 14, paddingVertical: 6, backgroundColor: active ? 'rgba(224,181,99,0.16)' : 'transparent', borderLeftWidth: i ? 1 : 0, borderLeftColor: 'rgba(218,162,73,0.3)', opacity: o.disabled ? 0.4 : 1 }}>
+            <Text style={{ color: active ? Rune.goldBright : Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -414,6 +458,10 @@ export function CreateScreen() {
           ),
         }));
       }),
+      // weapon + armor cards (#121) — vector (no raster settle), forged for LOD perf in the carousel
+      ...PRIMARY_WEAPONS.map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> })),
+      ...SECONDARY_WEAPONS.map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> })),
+      ...TIER1_ARMOR.map((a) => ({ key: a.id, node: <ForgedArmorCard armor={a} /> })),
     ],
     [],
   );
@@ -445,6 +493,16 @@ export function CreateScreen() {
 
   const [centerIdx, setCenterIdx] = useState(0);
   const [editingExperience, setEditingExperience] = useState<number | null>(null);
+  // Weapons deck UI (#121): which kind of primary to browse, and whether we're picking the primary
+  // or the (optional, 1H-only) secondary.
+  const [weaponKind, setWeaponKind] = useState<WeaponKind>('physical');
+  const [weaponSlot, setWeaponSlot] = useState<'primary' | 'secondary'>('primary');
+  const primaryWeapon = draft.weaponPrimaryId ? weaponById(draft.weaponPrimaryId) : null;
+  const secondaryAllowed = primaryWeapon?.burden === 'One-Handed';
+  // a 2H primary (or no primary) can't have a secondary — snap the toggle back to primary
+  useEffect(() => {
+    if (weaponSlot === 'secondary' && !secondaryAllowed) setWeaponSlot('primary');
+  }, [weaponSlot, secondaryAllowed]);
   const carouselRef = useRef<StraightCarouselHandle>(null);
 
   // Device back must CLOSE an open overlay before it navigates (#108: backing out of a fullscreen
@@ -464,7 +522,23 @@ export function CreateScreen() {
     }, [editingExperience]),
   );
 
+  // A forged equipment card item: the bitmap pair once captured, the live card meanwhile (#121).
+  const forgedItem = useCallback(
+    (key: string, label: string, live: ReactNode): StraightItem => {
+      const pre = sources[key];
+      return pre ? { id: key, label, thumb: pre.thumb, source: pre.full } : { id: key, label, custom: live };
+    },
+    [sources],
+  );
+
   const items: StraightItem[] = useMemo(() => {
+    if (deck === 'weapons') {
+      const list = weaponSlot === 'secondary' ? SECONDARY_WEAPONS : PRIMARY_WEAPONS.filter((w) => w.kind === weaponKind);
+      return list.map((w) => forgedItem(w.id, w.name, <ForgedWeaponCard weapon={w} />));
+    }
+    if (deck === 'armor') {
+      return TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />));
+    }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -508,9 +582,14 @@ export function CreateScreen() {
         return pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       }
     }
-  }, [deck, draft.className, sources]);
+  }, [deck, draft.className, sources, weaponKind, weaponSlot, forgedItem]);
 
   const selectedIds = useMemo(() => {
+    if (deck === 'weapons') {
+      const id = weaponSlot === 'secondary' ? draft.weaponSecondaryId : draft.weaponPrimaryId;
+      return id ? [id] : [];
+    }
+    if (deck === 'armor') return draft.armorId ? [draft.armorId] : [];
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -524,10 +603,29 @@ export function CreateScreen() {
       case 'domains':
         return draft.domainCardIds;
     }
-  }, [deck, draft]);
+  }, [deck, draft, weaponSlot]);
 
   const onToggle = useCallback(
     (id: string) => {
+      if (deck === 'weapons') {
+        if (weaponSlot === 'secondary') {
+          if (!secondaryAllowed) return; // only a 1H primary may carry a secondary
+          set({ weaponSecondaryId: draft.weaponSecondaryId === id ? null : id });
+        } else {
+          if (draft.weaponPrimaryId === id) {
+            set({ weaponPrimaryId: null, weaponSecondaryId: null });
+          } else {
+            const w = weaponById(id);
+            // a Two-Handed primary leaves no hand for a secondary → clear it
+            set({ weaponPrimaryId: id, ...(w?.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) });
+          }
+        }
+        return;
+      }
+      if (deck === 'armor') {
+        set({ armorId: draft.armorId === id ? null : id });
+        return;
+      }
       if (!isCardDeck(deck)) return;
       switch (deck) {
         case 'class': {
@@ -554,7 +652,7 @@ export function CreateScreen() {
         }
       }
     },
-    [deck, draft, set],
+    [deck, draft, set, weaponSlot, secondaryAllowed],
   );
 
   const complete = DECKS.every((d) => deckDone(d.key, draft)) && draft.name.trim().length > 0;
@@ -575,6 +673,9 @@ export function CreateScreen() {
       domainCardIds: draft.domainCardIds,
       traits: draft.traits as Record<TraitKey, number>, // complete ⇒ all six assigned
       experiences: draft.experiences,
+      weaponPrimaryId: draft.weaponPrimaryId!,
+      weaponSecondaryId: draft.weaponSecondaryId,
+      armorId: draft.armorId!,
       level: 1,
     });
     router.replace({ pathname: '/sheet', params: { id } });
@@ -588,7 +689,7 @@ export function CreateScreen() {
   const locked = (k: DeckKey) =>
     ((k === 'subclass' || k === 'domains') && !draft.className) || !!DECKS.find((d) => d.key === k)?.stub; // stubs land next issue
   const maxSelect = deck === 'domains' ? 2 : 1;
-  const noun = deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck;
+  const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
 
@@ -663,10 +764,33 @@ export function CreateScreen() {
 
         {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
         <Animated.View style={[{ flex: 1, marginTop: 2 }, fadeStyle]}>
-          {isCardDeck(deck) && items.length > 0 ? (
+          {/* weapons filter toggles (#121): physical/magic primaries, plus primary/secondary slot */}
+          {deck === 'weapons' ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 4 }}>
+              {weaponSlot === 'primary' ? (
+                <Segmented
+                  options={[
+                    { key: 'physical', label: 'Physical' },
+                    { key: 'magic', label: 'Magic' },
+                  ]}
+                  value={weaponKind}
+                  onChange={setWeaponKind}
+                />
+              ) : null}
+              <Segmented
+                options={[
+                  { key: 'primary', label: 'Primary' },
+                  { key: 'secondary', label: 'Secondary', disabled: !secondaryAllowed },
+                ]}
+                value={weaponSlot}
+                onChange={setWeaponSlot}
+              />
+            </View>
+          ) : null}
+          {isCarouselDeck(deck) && items.length > 0 ? (
             <StraightCarousel
               ref={carouselRef}
-              key={deck + (deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
+              key={deck + (deck === 'weapons' ? `${weaponKind}-${weaponSlot}` : deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
               items={items}
               selectedIds={selectedIds}
               initialIndex={deckIndexes.current[deck] ?? 0}
@@ -698,7 +822,7 @@ export function CreateScreen() {
       {/* ---- THE select controls: the screen's TOP layer (#106) — above the carousel veil AND
           the features reader, never dimmed, always tappable, one spot. Card decks only. Hierarchy
           top-to-bottom (#108): SELECT (primary, biggest) → CLASS FEATURES → the n/n counter. */}
-      {isCardDeck(deck) ? (
+      {isCarouselDeck(deck) ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }} pointerEvents="box-none">
           <RuneButton
             label={centerSelected ? 'Deselect' : `Select ${noun}`}
@@ -709,6 +833,11 @@ export function CreateScreen() {
           />
           {deck === 'class' ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4 }}>Tap the card to flip through its features</Text>
+          ) : null}
+          {deck === 'weapons' ? (
+            <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center' }}>
+              {primaryWeapon ? (secondaryAllowed ? 'One-handed primary — a secondary is optional' : 'Two-handed primary — no secondary') : 'Pick a primary weapon'}
+            </Text>
           ) : null}
           <Text style={{ color: selectedIds.length >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
             {selectedIds.length}/{maxSelect}
