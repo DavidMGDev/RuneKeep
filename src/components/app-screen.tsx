@@ -21,6 +21,8 @@ interface AppScreenProps {
   onBack?: () => void;
   /** Right-side header slot (e.g. the gallery's filter toggle, create's CTA). */
   headerRight?: ReactNode;
+  /** Lift the content ABOVE the border frame (create: the gear must ride in front of it). */
+  contentAboveFrame?: boolean;
   children: ReactNode;
 }
 
@@ -29,7 +31,7 @@ interface AppScreenProps {
  * within it. Plain flex (dp), NOT DesignStage — these screens scroll and adapt (DESIGN.md).
  * The sheet keeps its own ornamental border; everything else lives in this frame.
  */
-export function AppScreen({ title, onBack, headerRight, children }: AppScreenProps) {
+export function AppScreen({ title, onBack, headerRight, contentAboveFrame, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
   return (
     // height/width 100% + overflow hidden belt-and-braces: on web the router wrapper sizes to
@@ -39,27 +41,32 @@ export function AppScreen({ title, onBack, headerRight, children }: AppScreenPro
     <View style={{ flex: 1, height: '100%' as never, width: '100%' as never, maxWidth: '100%' as never, overflow: 'hidden', backgroundColor: Rune.ink }}>
       <View style={{ flex: 1, marginTop: top, marginBottom: bottom }}>
         {/* content inset inside the frame's gold line (frame edge ≈ 10dp + breathing room) */}
-        <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: title ? 10 : 0, paddingBottom: 14 }}>
+        <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
           {title ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', height: 48, marginBottom: 6 }}>
+            // The header FOLLOWS the border's top band (owner #102): back pinned in the left
+            // corner, the right control in the right corner, and a smaller CENTERED title between
+            // them — nothing tall enough to clash with the frame's notches.
+            <View style={{ height: 36, marginTop: 12, marginBottom: 8, justifyContent: 'center' }}>
+              <Text
+                numberOfLines={1}
+                style={{ alignSelf: 'center', maxWidth: '55%', color: Rune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>
+                {title}
+              </Text>
               {onBack ? (
                 <Pressable
                   onPress={onBack}
                   hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Back"
-                  style={({ pressed }) => ({ width: 34, height: 34, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-                  <Svg width={18} height={18} viewBox="0 0 18 18">
+                  style={({ pressed }) => ({ position: 'absolute', left: 0, top: 0, bottom: 0, width: 34, alignItems: 'flex-start', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+                  <Svg width={16} height={16} viewBox="0 0 18 18">
                     <Polyline points="12,2 5,9 12,16" fill="none" stroke={Rune.goldEdge} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </Pressable>
               ) : null}
-              <Text
-                numberOfLines={1}
-                style={{ flex: 1, color: Rune.ivory, fontSize: 22, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase', marginLeft: onBack ? 6 : 2 }}>
-                {title}
-              </Text>
-              {headerRight}
+              {headerRight ? (
+                <View style={{ position: 'absolute', right: 0, top: 0, bottom: 0, justifyContent: 'center' }}>{headerRight}</View>
+              ) : null}
             </View>
           ) : null}
           {children}

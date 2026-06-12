@@ -128,15 +128,16 @@ export function MenuScreen() {
   return (
     <AppScreen>
       <View style={{ flex: 1 }}>
-        {/* ambient deck, dim, behind everything */}
+        {/* ambient deck, dim, behind everything — rows fill the gap BETWEEN the title and the
+            actions (owner #102: never behind the title; the bottom row's spot is approved). */}
         <View style={StyleSheet.absoluteFill}>
-          <DriftRow y={64} cards={rows[0]} duration={90000} opacity={0.2} />
-          <DriftRow y={300} cards={rows[1]} duration={120000} reverse opacity={0.14} />
+          <DriftRow y={228} cards={rows[0]} duration={90000} opacity={0.2} />
+          <DriftRow y={396} cards={rows[1]} duration={120000} reverse opacity={0.15} />
           <DriftRow y={560} cards={rows[2]} duration={105000} opacity={0.1} />
         </View>
 
         {/* title block */}
-        <View style={{ alignItems: 'center', marginTop: 96 }}>
+        <View style={{ alignItems: 'center', marginTop: 76 }}>
           <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 6, textTransform: 'uppercase' }}>Daggerheart companion</Text>
           <Text style={{ color: Rune.ivory, fontSize: 40, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase', marginTop: 8 }}>RuneKeep</Text>
           <Svg width={220} height={14} viewBox="0 0 220 14">
