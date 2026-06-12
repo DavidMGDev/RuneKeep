@@ -47,6 +47,7 @@ const SIDE_FALLOFF = 0.085; // per-step shrink
 const GRIND_TIGHTEN_L = 0.52; // straight-line grind: tighter…
 const GRIND_SHRINK_L = 0.45; // …and smaller, never curved
 const GEAR_SWIPE_L = 200; // grind: this many px sweep the whole deck
+const GEAR_DEG_PER_STEP = 52; // gear rotation per detent (#110: spins as the deck moves)
 const IMG_HALF = 2;
 // Fullscreen layout (#108): the card sits CENTERED with a real gap below the screen border (never
 // off-screen) and a reserved band at the bottom for the fixed select controls.
@@ -283,7 +284,9 @@ export const StraightCarousel = forwardRef<
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
-  const gearStyle = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * grind.value }));
+  // The gear grinds with the deck (#110): rotation tracks pos linearly, so every detent turns it;
+  // the fast-grind drag moves pos far more px-per-step, so it naturally spins faster while used.
+  const gearStyle = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * grind.value, transform: [{ rotate: `${pos.value * GEAR_DEG_PER_STEP}deg` }] }));
 
   return (
     <View
