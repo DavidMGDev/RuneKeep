@@ -1,11 +1,11 @@
-﻿import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
+import { BackHandler, Dimensions, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Animated, { Easing, runOnJS, SlideInLeft, SlideInRight, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
-import { AppScreen } from '@/components/app-screen';
+import { AppScreen, useScreenInsets } from '@/components/app-screen';
 import { ArtImage } from '@/components/art-image';
 import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -22,7 +22,7 @@ import { CLASS_CARDS, classBanner } from './class-cards';
 import { featurePages } from './class-data';
 import { ForgedCard, ForgedTextCard } from './forged-card';
 import { useForgedSnapshots } from './forged-snapshots';
-import { StraightCarousel, type StraightItem } from './straight-carousel';
+import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from './straight-carousel';
 
 // ---------- draft ----------
 
@@ -212,7 +212,7 @@ function DeckTab({ deck, label, active, done, locked, pulseToken, onPress }: { d
   );
 }
 
-/** A section seam: plain gold hairlines flanking the label â€” the app's own divider language.
+/** A section seam: plain gold hairlines flanking the label — the app's own divider language.
  *  (The ornamental CardDivider is for CARDS only, per owner.) */
 function SectionDivider({ label }: { label: string }) {
   return (
@@ -249,17 +249,16 @@ function DeckLoader() {
 // ---------- screen ----------
 
 /**
- * Character creation, forge edition (#102, impeccable craft): a centered column â€” Details under
+ * Character creation, forge edition (#102, impeccable craft): a centered column — Details under
  * its divider plaque (name, portrait, full-width add-image), then the Origin divider with five
  * deck tabs, then the STRAIGHT carousel where every choice is made by reading actual cards.
- * Class picks are FORGED cards; deck swaps fade out â†’ load â†’ fade all back in (no travel);
+ * Class picks are FORGED cards; deck swaps fade out → load → fade all back in (no travel);
  * selections per deck are remembered, FORGE arms when all five are set.
  */
 export function CreateScreen() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [deck, setDeck] = useState<DeckKey>('class');
-  const [deckVisible, setDeckVisible] = useState(true);
   const [pendingDeck, setPendingDeck] = useState<DeckKey | null>(null);
   const [unlockPulse, setUnlockPulse] = useState(0);
   const hadClass = useRef(false);
@@ -274,19 +273,20 @@ export function CreateScreen() {
     }
   }, [draft.className]);
 
-  // Deck switch: fade ALL cards out in place -> swap ONLY once fully invisible (timing callback,
-  // not a racy timeout â€” a mid-fade swap let the old deck's cards flash among the new, owner) ->
-  // short paint grace while the loader pulses -> fade all back in at once. No vertical travel.
+  // Deck switch (#108: cards must LOAD then fade in, never pop): fade the old deck out → mount the
+  // new deck while still INVISIBLE (the loader keeps pulsing) → hold a real paint grace so the new
+  // thumbs actually decode at opacity 0 → only THEN hide the loader and fade the ready cards in
+  // slowly. The carousel stays mounted (deckVisible true) so the key-change remount is hidden under
+  // the fade, not flashed.
   const finishFade = useCallback(
     (next: DeckKey) => {
       setDeck(next);
       setCenterIdx(deckIndexes.current[next] ?? 0);
-      setDeckVisible(false);
+      // grace: let the freshly mounted thumbs paint at opacity 0 before revealing them
       setTimeout(() => {
-        setDeckVisible(true);
-        setPendingDeck(null);
-        fade.value = withTiming(1, { duration: 200 });
-      }, 240);
+        setPendingDeck(null); // cards are painted → drop the loader
+        fade.value = withTiming(1, { duration: 340, easing: Easing.out(Easing.quad) });
+      }, 360);
     },
     [fade],
   );
@@ -336,6 +336,28 @@ export function CreateScreen() {
   const [centerClassIdx, setCenterClassIdx] = useState(0);
   const [centerIdx, setCenterIdx] = useState(0);
   const [editingExperience, setEditingExperience] = useState<number | null>(null);
+  const carouselRef = useRef<StraightCarouselHandle>(null);
+
+  // Device back must CLOSE an open overlay before it navigates (#108: backing out of a fullscreen
+  // card used to leave a leaked veil that froze the next screen). Priority: editor → features →
+  // focused card → default back.
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (editingExperience != null) {
+          setEditingExperience(null);
+          return true;
+        }
+        if (featuresOpen) {
+          setFeaturesOpen(false);
+          return true;
+        }
+        if (carouselRef.current?.closeIfFullscreen()) return true;
+        return false;
+      });
+      return () => sub.remove();
+    }, [editingExperience, featuresOpen]),
+  );
 
   const items: StraightItem[] = useMemo(() => {
     if (!isCardDeck(deck)) return [];
@@ -490,14 +512,14 @@ export function CreateScreen() {
                 accessibilityLabel="Character name"
               />
             </ChamferBox>
-            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional â€” it sits in the sheet's frame for now.</Text>
+            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the sheet's frame for now.</Text>
             <RuneButton label={draft.portraitUri ? 'Change image' : 'Add image'} kind="ghost" height={32} onPress={pickPortrait} />
           </View>
         </View>
 
-        {/* ---- origin ---- */}
+        {/* ---- cards ---- */}
         <View style={{ marginTop: 12 }}>
-          <SectionDivider label="Origin" />
+          <SectionDivider label="Cards" />
         </View>
         {/* The deck rail is SCROLLABLE now (#107, nine steps): fixed-width tabs, free scroll, a
             gold chevron fades at the right edge so the overflow is obvious. */}
@@ -525,8 +547,9 @@ export function CreateScreen() {
 
         {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
         <Animated.View style={[{ flex: 1, marginTop: 2 }, fadeStyle]}>
-          {deckVisible && isCardDeck(deck) && items.length > 0 ? (
+          {isCardDeck(deck) && items.length > 0 ? (
             <StraightCarousel
+              ref={carouselRef}
               key={deck + (deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
               items={items}
               selectedIds={selectedIds}
@@ -538,10 +561,8 @@ export function CreateScreen() {
               }}
             />
           ) : null}
-          {deckVisible && deck === 'traits' ? <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} /> : null}
-          {deckVisible && deck === 'experiences' ? (
-            <ExperiencesTab experiences={draft.experiences} onEdit={(slot) => setEditingExperience(slot)} />
-          ) : null}
+          {deck === 'traits' ? <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} /> : null}
+          {deck === 'experiences' ? <ExperiencesTab experiences={draft.experiences} onEdit={(slot) => setEditingExperience(slot)} /> : null}
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
       </View>
@@ -569,32 +590,33 @@ export function CreateScreen() {
         />
       ) : null}
       {/* ---- THE select controls: the screen's TOP layer (#106) — above the carousel veil AND
-          the features reader, never dimmed, always tappable, one spot. Card decks only. */}
+          the features reader, never dimmed, always tappable, one spot. Card decks only. Hierarchy
+          top-to-bottom (#108): SELECT (primary, biggest) → CLASS FEATURES → the n/n counter. */}
       {isCardDeck(deck) ? (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 64, zIndex: 600, alignItems: 'center', gap: 5 }} pointerEvents="box-none">
-        {deck === 'class' ? (
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }} pointerEvents="box-none">
           <RuneButton
-            label="Class features"
-            kind="ghost"
-            dense
-            height={26}
-            onPress={() => {
-              setFeaturePage(0);
-              setFeaturesOpen(true);
-            }}
-            accessibilityLabel={`View ${CLASS_CARDS[centerClassIdx]?.title ?? 'class'} features`}
+            label={centerSelected ? 'Deselect' : `Select ${noun}`}
+            kind={centerSelected ? 'ghost' : 'primary'}
+            height={40}
+            onPress={() => centerItem && onToggle(centerItem.id)}
+            accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
-        ) : null}
-        <RuneButton
-          label={centerSelected ? 'Deselect' : `Select ${noun}`}
-          kind={centerSelected ? 'ghost' : 'primary'}
-          height={38}
-          onPress={() => centerItem && onToggle(centerItem.id)}
-          accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
-        />
-        <Text style={{ color: selectedIds.length >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
-          {selectedIds.length}/{maxSelect}
-        </Text>
+          {deck === 'class' ? (
+            <RuneButton
+              label="Class features"
+              kind="secondary"
+              dense
+              height={28}
+              onPress={() => {
+                setFeaturePage(0);
+                setFeaturesOpen(true);
+              }}
+              accessibilityLabel={`View ${CLASS_CARDS[centerClassIdx]?.title ?? 'class'} features`}
+            />
+          ) : null}
+          <Text style={{ color: selectedIds.length >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
+            {selectedIds.length}/{maxSelect}
+          </Text>
         </View>
       ) : null}
       {stage}
@@ -764,8 +786,12 @@ function ExperiencesTab({ experiences, onEdit }: { experiences: ExperienceDef[];
   );
 }
 
-/** Fullscreen reader for a class's feature card(s): dim veil, card centered, tap card = next
- *  page (when there are several), tap veil = close. Uses the pre-rendered bitmap when forged. */
+/**
+ * Fullscreen reader for a class's feature card(s) (#108): dim veil; the card centred near the top
+ * with a real gap below the border (never off-screen); tap the LEFT half to page back, the RIGHT
+ * half to page forward (wrapping); each page cross-fade-slides in. Tap the veil to close. Uses the
+ * pre-rendered bitmap when forged, the live card meanwhile.
+ */
 function FeatureViewer({
   classIdx,
   page,
@@ -781,22 +807,36 @@ function FeatureViewer({
 }) {
   const def = CLASS_CARDS[classIdx];
   const pages = featurePages(def.key);
-  const p = pages[Math.min(page, pages.length - 1)];
+  const pageCount = pages.length;
+  const idx = Math.min(page, pageCount - 1);
+  const p = pages[idx];
   const pre = sources[`feat-${def.key}-${p.pageIndex}`];
-  const scale = 1.5;
+  const dir = useRef(1);
+  const insets = useScreenInsets();
+  const { width: screenW, height: screenH } = Dimensions.get('window');
+  // Same fit as the carousel fullscreen: top gap from the border, bottom band reserved (#108).
+  const FS_TOP = 58;
+  const fsScale = Math.min((screenW - 36 - 24) / 230, (screenH - insets.top - FS_TOP - 168) / 322);
+  const cardW = 230 * fsScale;
+  const cardH = 322 * fsScale;
+  const go = (delta: number) => {
+    if (pageCount <= 1) {
+      onClose();
+      return;
+    }
+    dir.current = delta;
+    onPage((idx + delta + pageCount) % pageCount);
+  };
   return (
-    // Card rides HIGH (toward the title) so the select controls stay clear + visible below (#106).
-    <View style={{ position: 'absolute', top: -60, bottom: -60, left: -60, right: -60, zIndex: 500, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 96 }}>
-      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.88)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close features" />
-      <Pressable
-        onPress={() => (pages.length > 1 ? onPage((page + 1) % pages.length) : onClose())}
-        accessibilityRole="button"
-        accessibilityLabel={pages.length > 1 ? 'Next features card' : 'Close'}>
-        <View style={{ width: 230 * scale, height: 322 * scale }}>
+    <View style={{ position: 'absolute', top: -80, bottom: -120, left: -60, right: -60, zIndex: 500 }}>
+      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close features" />
+      {/* card, content-anchored: top:80 cancels the container's -80 so it lands FS_TOP below the border */}
+      <View style={{ position: 'absolute', top: 80 + FS_TOP, alignSelf: 'center', width: cardW, height: cardH }}>
+        <Animated.View key={idx} entering={(dir.current >= 0 ? SlideInRight : SlideInLeft).duration(190)} style={{ width: cardW, height: cardH }}>
           {pre ? (
             <Image source={{ uri: pre.full.uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
           ) : (
-            <View style={{ transform: [{ scale }], width: 230, height: 322, marginLeft: (230 * (scale - 1)) / 2, marginTop: (322 * (scale - 1)) / 2 }}>
+            <View style={{ transform: [{ scale: fsScale }], width: 230, height: 322, marginLeft: (230 * (fsScale - 1)) / 2, marginTop: (322 * (fsScale - 1)) / 2 }}>
               <ForgedTextCard
                 title={def.title}
                 kindLabel="Features"
@@ -807,15 +847,18 @@ function FeatureViewer({
               />
             </View>
           )}
-        </View>
-      </Pressable>
-      {pages.length > 1 ? (
-        <View style={{ flexDirection: 'row', gap: 6, marginTop: 14 }}>
-          {pages.map((_, i) => (
-            <View key={i} style={{ width: 8, height: 8, transform: [{ rotate: '45deg' }], backgroundColor: i === page ? Rune.goldBright : 'rgba(147,142,136,0.5)' }} />
-          ))}
-        </View>
-      ) : null}
+        </Animated.View>
+        {/* left half = back, right half = forward (single-page = tap closes) */}
+        <Pressable style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%' }} onPress={() => go(-1)} accessibilityRole="button" accessibilityLabel={pageCount > 1 ? 'Previous features page' : 'Close'} />
+        <Pressable style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '50%' }} onPress={() => go(1)} accessibilityRole="button" accessibilityLabel={pageCount > 1 ? 'Next features page' : 'Close'} />
+        {pageCount > 1 ? (
+          <View style={{ position: 'absolute', bottom: -26, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+            {pages.map((_, i) => (
+              <View key={i} style={{ width: 8, height: 8, transform: [{ rotate: '45deg' }], backgroundColor: i === idx ? Rune.goldBright : 'rgba(147,142,136,0.5)' }} />
+            ))}
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

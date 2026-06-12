@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+// (useState/useCallback/useMemo used by the multi-page slot, #108)
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -132,14 +133,30 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     return { opacity: imageOpacityAt(d) * (1 - grindProgress.value) };
   });
 
-  // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close.
+  // Multi-page cards (#108: the class-feature card): the slot tracks the page; the shown LOD pair
+  // mirrors it (id stays stable so expo-image cross-fades on the source swap). The compact hand and
+  // the fullscreen card both render this current page, so the page persists wherever the card sits.
+  const [pageIdx, setPageIdx] = useState(0);
+  const pageCount = item.pages?.length ?? 0;
+  const hasPages = pageCount > 1;
+  const shown = useMemo(() => {
+    if (!item.pages || pageCount === 0) return item;
+    const pg = item.pages[Math.min(pageIdx, pageCount - 1)];
+    return { id: item.id, source: pg.source, thumb: pg.thumb };
+  }, [item, pageIdx, pageCount]);
+  const pageBy = useCallback((delta: number) => setPageIdx((p) => Math.min(pageCount - 1, Math.max(0, p + delta))), [pageCount]);
+
+  // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close, OR (a
+  // multi-page card) page back/forward by which half you tapped (#108) — close it by swipe-down
+  // or the gear, like any card.
   const tap = useMemo(
     () =>
       Gesture.Tap()
         .maxDuration(260)
-        .onEnd(() => {
+        .onEnd((e) => {
           if (machineState.value === 'fullscreen') {
-            runOnJS(closeFullscreen)();
+            if (hasPages) runOnJS(pageBy)(e.x < CARD_W / 2 ? -1 : 1);
+            else runOnJS(closeFullscreen)();
             return;
           }
           if (machineState.value === 'compact') {
@@ -152,7 +169,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             fullscreenProgress.value = withSpring(1, FS_SPRING);
           }
         }),
-    [index, count, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
+    [index, count, hasPages, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
   );
 
   return (
@@ -163,12 +180,12 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
       <GestureDetector gesture={tap}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
           {/* LOD base: the tiny thumb, always present (#78). */}
-          <CardThumb item={item} />
+          <CardThumb item={shown} />
           {/* Full-res layer: only near the center; the ±IMG_MOUNT_HALF boundary holds it at
               alpha 0, decoded and ready to fade in without a pop (#54 B, #78). */}
           {withImage ? (
             <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
-              <Card item={item} width={CARD_W} height={CARD_H} />
+              <Card item={shown} width={CARD_W} height={CARD_H} />
             </Animated.View>
           ) : null}
         </View>

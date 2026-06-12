@@ -201,23 +201,45 @@ export interface FeaturePage {
   sections: ClassFeature[];
 }
 
-// What ONE card's body holds comfortably with the uniform 40% art band, the title row and the
-// footer reserved: ~10 lines of 9/13 text (#105 — the old 760 overflowed straight through the
-// footer). The book's wording is never altered, only divided.
-const PAGE_BUDGET = 420;
+// The feature card's body is sized in LINES, not chars (#108): char budgets let the Sorcerer's
+// page 2 overrun the footer because justified short-word text wraps to more lines than length
+// predicts. Conservative numbers, measured against the 9px/13px body in the ~202px text column:
+const CHARS_PER_LINE = 34; // justified, generous wrapping
+const MAX_LINES = 8; // lines of body text one card holds clear of title + footer
+const GAP_LINES = 0.6; // the gap + bold header between stacked sections costs ~⅔ of a line
 
-/** Split one overlong feature into sentence-boundary parts: "Name", "Name (cont.)", ... */
+/** Estimated wrapped-line count of a section (name is inline-bold, so just total length). */
+function sectionLines(f: ClassFeature): number {
+  return Math.ceil((f.name.length + 2 + f.text.length) / CHARS_PER_LINE);
+}
+
+/** Break text into atoms at sentence -> clause -> word boundaries, finest needed so no atom
+ *  exceeds `limit`. Keeps delimiters attached so the prose reads naturally when re-joined. */
+function atomize(text: string, limit: number): string[] {
+  // sentence pieces first
+  let atoms: string[] = [...(text.match(/[^.]+\.(?:\s|$)|[^.]+$/g) ?? [text])];
+  const refine = (re: RegExp): string[] =>
+    atoms.flatMap((a) => (a.length <= limit ? [a] : [...(a.match(re) ?? [a])]));
+  if (atoms.some((a) => a.length > limit)) atoms = refine(/[^:;]+[:;](?:\s|$)|[^:;]+$/g); // clauses
+  if (atoms.some((a) => a.length > limit)) atoms = refine(/[^,]+,(?:\s|$)|[^,]+$/g); // commas
+  if (atoms.some((a) => a.length > limit)) atoms = atoms.flatMap((a) => (a.length <= limit ? [a] : [...(a.match(/\S+\s*/g) ?? [a])])); // words
+  return atoms;
+}
+
+/** Split one overlong feature so each chunk fits MAX_LINES: "Name", "Name (cont.)", ... The
+ *  book's wording is never altered, only divided at the coarsest boundary that fits. */
 function splitFeature(f: ClassFeature): ClassFeature[] {
-  if (f.name.length + f.text.length <= PAGE_BUDGET) return [f];
-  const sentences = f.text.match(/[^.]+\.(?:\s|$)/g) ?? [f.text];
+  if (sectionLines(f) <= MAX_LINES) return [f];
+  const budgetChars = (MAX_LINES - 1) * CHARS_PER_LINE - f.name.length; // -1 line headroom for the header
+  const atoms = atomize(f.text, budgetChars);
   const parts: string[] = [];
   let current = '';
-  for (const s of sentences) {
-    if (current && current.length + s.length > PAGE_BUDGET - f.name.length - 12) {
+  for (const a of atoms) {
+    if (current && current.length + a.length > budgetChars) {
       parts.push(current.trim());
       current = '';
     }
-    current += s;
+    current += a;
   }
   if (current.trim()) parts.push(current.trim());
   return parts.map((text, i) => ({ name: i === 0 ? f.name : `${f.name} (cont.)`, text }));
@@ -232,14 +254,14 @@ export function featurePages(cls: ClassName): FeaturePage[] {
   let current: ClassFeature[] = [];
   let used = 0;
   for (const u of units) {
-    const cost = u.name.length + u.text.length;
-    if (current.length && used + cost > PAGE_BUDGET) {
+    const cost = sectionLines(u) + (current.length ? GAP_LINES : 0);
+    if (current.length && used + cost > MAX_LINES) {
       pages.push(current);
       current = [];
       used = 0;
     }
     current.push(u);
-    used += cost;
+    used += sectionLines(u) + (current.length > 1 ? GAP_LINES : 0);
   }
   if (current.length) pages.push(current);
   return pages.map((p, i) => ({ pageIndex: i, pageCount: pages.length, sections: p }));

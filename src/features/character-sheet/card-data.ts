@@ -13,12 +13,21 @@ export const CARD_ASPECT = 750 / 1050; // 5:7
 
 export type CardCategory = 'abilities' | 'inventory';
 
-export interface CardItem {
-  id: string;
-  /** Full-resolution card (750x1050 webp require, or a forged-card render uri, #104). */
+/** One LOD pair (full-res + thumb), the unit both `CardItem` and a multi-page page hold. */
+export interface CardImage {
   source: number | { uri: string };
-  /** Low LOD (188x263) — cheap enough that every slot keeps it mounted forever (#78). */
   thumb: number | { uri: string };
+}
+
+export interface CardItem extends CardImage {
+  id: string;
+  /**
+   * A MULTI-PAGE card (#108): the class-feature card is a single element in the hand whose pages
+   * the reader flips through (tap left/right in fullscreen). When set, `source`/`thumb` mirror the
+   * current page (page 0 initially); the carousel tracks the page per slot and the compact hand
+   * shows the last page viewed. Absent for ordinary single cards.
+   */
+  pages?: CardImage[];
 }
 
 export const CARD_CATEGORIES: { key: CardCategory; label: string }[] = [

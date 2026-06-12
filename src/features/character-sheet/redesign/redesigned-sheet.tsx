@@ -1,5 +1,6 @@
-﻿import { useCallback, useMemo, useState } from 'react';
-import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -43,9 +44,9 @@ const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
 /**
- * A stress pip (#70 C â†’ #77): a 44x22 CHAMFERED shape (45Â° cuts like the domain chips â€” never
+ * A stress pip (#70 C → #77): a 44x22 CHAMFERED shape (45° cuts like the domain chips — never
  * rounded), the SAME size for every state. The marked pip adds a FLAT thin under-line spanning
- * only the straight middle of the bottom edge â€” the chamfered corner spans are excluded.
+ * only the straight middle of the bottom edge — the chamfered corner spans are excluded.
  */
 function StressPip({ state, red }: { state: PipState; red: string }) {
   if (state === 'locked') {
@@ -55,7 +56,7 @@ function StressPip({ state, red }: { state: PipState; red: string }) {
     return (
       <>
         <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={red} stroke="transparent" strokeWidth={0} />
-        {/* flat thin under-line â€” center span only, corners excluded */}
+        {/* flat thin under-line — center span only, corners excluded */}
         <View style={[box(5, 25, 34, 1), { backgroundColor: red }]} pointerEvents="none" />
       </>
     );
@@ -65,7 +66,7 @@ function StressPip({ state, red }: { state: PipState; red: string }) {
   return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={IVORY} stroke={red} strokeWidth={2} />;
 }
 
-/** Hope's THIN gold line stopping at the last filled diamond â€” the diamonds themselves live in a
+/** Hope's THIN gold line stopping at the last filled diamond — the diamonds themselves live in a
  *  ChargeTrack now (#89 D). */
 function HopeRule({ left, top, width, count, active, pip }: { left: number; top: number; width: number; count: number; active: number; pip: number }) {
   const step = (width - pip) / (count - 1);
@@ -75,7 +76,7 @@ function HopeRule({ left, top, width, count, active, pip }: { left: number; top:
   return <GoldRule left={left + pip / 2} top={top + pip / 2 - 0.5} width={lineW} color="rgba(200,146,58,0.55)" thickness={1} />;
 }
 
-/** Boundary slots for a simple Â±1 track (stress/hope/armor): first markable / last marked. */
+/** Boundary slots for a simple ±1 track (stress/hope/armor): first markable / last marked. */
 function trackBounds(t: { total: number; active: number; locked?: number }) {
   return {
     up: t.active < t.total - (t.locked ?? 0) ? t.active : -1,
@@ -83,13 +84,13 @@ function trackBounds(t: { total: number; active: number; locked?: number }) {
   };
 }
 
-/** Width of a domain chip for its label â€” sized for the WIDER native glyph run plus real padding,
+/** Width of a domain chip for its label — sized for the WIDER native glyph run plus real padding,
  *  so the chips no longer hug the text edge-to-edge on the phone (#43 D). */
 function chipWidth(label: string): number {
   return Math.round(label.length * 7.6) + 18;
 }
 
-/** A domain name in its own small chamfered red chip (#37) â€” the project's flat, 45Â°-cut signature. */
+/** A domain name in its own small chamfered red chip (#37) — the project's flat, 45°-cut signature. */
 function DomainChip({ left, top, label }: { left: number; top: number; label: string }) {
   const w = chipWidth(label);
   return (
@@ -103,19 +104,19 @@ function DomainChip({ left, top, label }: { left: number; top: number; label: st
 }
 
 /** An octagon badge (image-6), stretched a touch wider than tall so the origin strip reads as a
- *  deliberate band next to the big bio text (#48 D): tappable â†’ opens the associated card (D4). */
+ *  deliberate band next to the big bio text (#48 D): tappable → opens the associated card (D4). */
 function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; top: number; w: number; h: number; icon: number; label: string; onPress?: () => void }) {
   return (
     <>
       <PressableArt style={box(left, top, w, h)} pressedScale={1.12} onPress={onPress} accessibilityLabel={`${label}, open card`}>
         <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={w} h={h} />
-        {/* Icon fills more of the frame (#62 A) â€” frame + label sizing unchanged. */}
+        {/* Icon fills more of the frame (#62 A) — frame + label sizing unchanged. */}
         <View style={box(w * 0.2, h * 0.16, w * 0.6, h * 0.64)} pointerEvents="none">
           <ArtImage source={icon} fit="contain" />
         </View>
       </PressableArt>
-      {/* Wide box + no tracking: labels render at FIXED size on both platforms (#43 B). 8px â€” one
-          size smaller per owner (#54 E, "too big for how often you use them") â€” and tucked 2px
+      {/* Wide box + no tracking: labels render at FIXED size on both platforms (#43 B). 8px — one
+          size smaller per owner (#54 E, "too big for how often you use them") — and tucked 2px
           closer to the octagon it names. */}
       <SheetText left={left - 12} top={top + h + 2} width={w + 24} height={12} color={BRONZE} size={8} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
@@ -130,7 +131,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
   const { toggleCategory, openOriginCard, category } = useCarousel();
   const tint = useAccentTint();
 
-  // Every resource now uses the boundary-only Â±1 hold/double-tap model (#81 hearts, #89 the rest).
+  // Every resource now uses the boundary-only ±1 hold/double-tap model (#81 hearts, #89 the rest).
   // Only the hearts the character can ever fill are drawn (#107): maxHp 4 → four hearts, no
   // ghost fifth/sixth; above 6 the fixed six slots carry golden overflow as before.
   const heartSlotCount = Math.min(character.heartSlots, Math.max(1, character.maxHp));
@@ -141,11 +142,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
 
   return (
     <>
-      {/* Parchment ground â€” CHAMFERED (45Â° cut) corners, not rounded, matching the gold frame and
+      {/* Parchment ground — CHAMFERED (45° cut) corners, not rounded, matching the gold frame and
           the project signature; this also kills the ivory corner seam (C7). */}
       <ChamferFrame left={0} top={0} width={412} height={892} chamfer={18} fill={SHEET} stroke="transparent" strokeWidth={0} />
 
-      {/* Defense panel ART (image-11: pointy left ribbon, no baked dividers â€” #30 H). Drawn BEFORE
+      {/* Defense panel ART (image-11: pointy left ribbon, no baked dividers — #30 H). Drawn BEFORE
           the portrait so its tail tucks UNDER the portrait diamond instead of occluding it; the
           panel's texts/pips live in the defenses section below. */}
       {/* Stretched 5px DOWN only so it stands level with the portrait frame (#48 C). */}
@@ -154,7 +155,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       {/* ---------- header: portrait + deck toggle, ONE locked group (#43 G) ----------
           Sized to the midpoint of the last two iterations (163x295 grew over the defense panel;
           138x270 was too small). The toggle's position scales WITH the frame so the pair never
-          drifts apart. No press bounce on either, per owner â€” plain Pressables. The toggle sits
+          drifts apart. No press bounce on either, per owner — plain Pressables. The toggle sits
           ON TOP (bigger symbol + generous hitSlop); the portrait keeps its full-frame hitbox
           underneath. */}
       <View style={box(16, 12, 150, 282)}>
@@ -167,28 +168,28 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
             </SheetText>
           ) : null}
         </Pressable>
-        {/* Deck toggle inside the frame's bottom diamond â€” its centroid for THIS frame size. */}
+        {/* Deck toggle inside the frame's bottom diamond — its centroid for THIS frame size. */}
         <Pressable style={box(39, 211, 52, 52)} hitSlop={10} onPress={toggleCategory} accessibilityRole="button" accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
           <ArtImage source={Art.portraitIcon} fit="contain" />
         </Pressable>
       </View>
 
-      {/* ---------- top-right bio column: name â†’ domain chips â†’ lvl/prof â†’ origin strip ----------
+      {/* ---------- top-right bio column: name → domain chips → lvl/prof → origin strip ----------
           The whole column starts at x176, close to the portrait (the 190 gap read as dead space,
           #48 D), and spans to the defense panel's right edge (396). */}
       {/* Name stretches to the panel's right edge; sits ABOVE the frame layer (C2). */}
       <View style={{ zIndex: 2100 }}>
         <SheetText left={176} top={14} width={220} height={54} color={INK} size={26} family={Display.black} align="left" vAlign="top" lineHeight={26} numberOfLines={2} uppercase letterSpacing={-0.6} fit>{character.name}</SheetText>
       </View>
-      {/* Domains as two separate chamfered chips (no Ã—) under the name (#37). */}
+      {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
       <DomainChip left={176} top={74} label={character.domains[0]} />
       <DomainChip left={176 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
-      {/* Level/class + proficiency lines between the chips and the badges â€” nudged 3px up for
+      {/* Level/class + proficiency lines between the chips and the badges — nudged 3px up for
           clear air above the origin strip (#54 E). */}
       {/* One size smaller + a taller box than the glyphs need (#95 B): native line metrics ran
           taller than web's and the 17px box clipped the descender band off "LVL 4 SORCERER". */}
       <SheetText left={176} top={97} width={220} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
-      <SheetText left={176} top={116} width={220} height={16} color={BRONZE} size={10} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency â†’ {character.proficiency}</SheetText>
+      <SheetText left={176} top={116} width={220} height={16} color={BRONZE} size={10} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
 
       {/* Origin strip (#48 D, per /impeccable): three stretched octagons, fitted labels beneath,
           thin gold rules in the gaps. Shrunk down-and-left (48x40 at an 78px pitch, #54 E) so the
@@ -202,18 +203,18 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <GoldRuleV left={239} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
       <GoldRuleV left={317} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
-      {/* ---------- Evasion + Armor â€” image-11 ribbon panel (#30 H) ----------
+      {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
-          No armor-score number â€” shields only, per owner. */}
+          No armor-score number — shields only, per owner. */}
       {/* Contents nudged 3px into the taller panel and CENTERED as a band (#48 C): titles level,
-          and the evasion numeral's vertical center matches the shield rows' center â€” the two
+          and the evasion numeral's vertical center matches the shield rows' center — the two
           halves read as one piece. */}
       <SheetText left={158} top={213} width={84} height={15} color={Rune.goldText} size={11} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
       <SheetText left={158} top={231} width={84} height={44} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
-      {/* the ONE separator â€” between Evasion and Armor, clear of the shields */}
+      {/* the ONE separator — between Evasion and Armor, clear of the shields */}
       <GoldRuleV left={252} top={217} height={64} />
       <SheetText left={262} top={213} width={100} height={15} color={Rune.goldText} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
-      {/* Armor (#89 E): zone mode â€” the shields are too small to hunt, so two big halves split at
+      {/* Armor (#89 E): zone mode — the shields are too small to hunt, so two big halves split at
           the barrier after the LAST filled shield own the gestures: left of it clears, right of it
           marks, verticality irrelevant. Each shield still charges/animates individually. */}
       <ChargeTrack
@@ -237,9 +238,9 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         trackLabel="Armor"
       />
 
-      {/* ---------- HP â€” hearts fit inside the frame, spaced ----------
+      {/* ---------- HP — hearts fit inside the frame, spaced ----------
           Panel raised 5px: the gap to the portrait/armor band above shrinks ~30% (#37). */}
-      {/* Left edge pulled in 3px â€” the frame overshot the sheet's left rhythm (#43 I). */}
+      {/* Left edge pulled in 3px — the frame overshot the sheet's left rhythm (#43 I). */}
       <ProvidedFrame Svg={FrameSvg.HpBar} left={21} top={301} w={373} h={84} />
       {/* Info button: SMALL, fully inside the red corner (the old 17px ring bled onto the parchment
           and half-vanished, #43 I); slightly thicker ring so it still reads. Generous hitSlop keeps
@@ -253,24 +254,24 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           (#43 I/K): the numbers sit directly under HIT POINTS and never grow past its width. */}
       <SheetText left={48} top={315} width={140} height={15} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hit Points</SheetText>
       {/* One tight cluster, BOTTOM-aligned with the heart row's bottom edge (368) per owner (#48 E)
-          â€” red current, smaller ink "/ max"; the current numeral steps down a size at double digits
+          — red current, smaller ink "/ max"; the current numeral steps down a size at double digits
           so 12/12 still fits under the label (#30 I/#43 I). */}
       <View style={[box(48, 330, 92, 38), { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-start', overflow: 'hidden' }]} pointerEvents="none">
         <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 28 : 32, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
         <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {character.maxHp}</Text>
       </View>
-      {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/Â§1A). */}
+      {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/§1A). */}
       <HeartTrack left={140} top={333} width={235} pip={35} hp={character.hp} slots={heartSlotCount} accent={tint ?? RED} onHp={onHp} />
 
-      {/* ---------- Stress â€” inset frame, two rows spread across the panel ----------
-          Panel 20px shorter with the pips trimmed to match (34->26 tall) â€” flatter, more
+      {/* ---------- Stress — inset frame, two rows spread across the panel ----------
+          Panel 20px shorter with the pips trimmed to match (34->26 tall) — flatter, more
           rectangular marks per owner (#43 J); 44 wide with hope-equal 12px gaps (#37). */}
       <ChamferFrame left={22} top={396} width={368} height={108} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       {/* Label shares the pips' left edge (44) and gets clear air above them (#48 F). */}
       <SheetText left={44} top={404} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Stress</SheetText>
-      {/* Chamfered shapes, not SVG art (#67 D â†’ #70 C): red fill + echo line = marked, red
+      {/* Chamfered shapes, not SVG art (#67 D → #70 C): red fill + echo line = marked, red
           chamfered outline = available, gray chamfered fill = locked. Same boxes as before. */}
-      {/* Stress (#89 C): hold-to-charge boundaries with the lightning flavor â€” quantized jumps,
+      {/* Stress (#89 C): hold-to-charge boundaries with the lightning flavor — quantized jumps,
           jitter, flicker. Boundary pips reach further on their outward side (sideSlop). */}
       <ChargeTrack
         left={44}
@@ -293,11 +294,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         trackLabel="Stress"
       />
 
-      {/* ---------- Hope â€” aligned with Stress (which is now shorter), thin connecting line ---------- */}
+      {/* ---------- Hope — aligned with Stress (which is now shorter), thin connecting line ---------- */}
       <ChamferFrame left={22} top={512} width={368} height={84} chamfer={12} stroke={GOLDD} strokeWidth={1.4} />
       <SheetText left={44} top={518} width={120} height={16} color={INK} size={13} family={Body.bold} align="left" uppercase letterSpacing={1.2}>Hope</SheetText>
       <HopeRule left={44} top={544} width={324} count={character.hope.total} active={character.hope.active} pip={44} />
-      {/* Hope (#89 D): abrupt but grandiose â€” instant rays of light + rising twinkling sparks on a
+      {/* Hope (#89 D): abrupt but grandiose — instant rays of light + rising twinkling sparks on a
           gain; dimmer rays, falling sparks on a spend. */}
       <ChargeTrack
         left={44}
@@ -324,6 +325,28 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
   );
 }
 
+/**
+ * Device-back guard (#108): when a card is full-screen, the hardware back button CLOSES it instead
+ * of navigating away — backing out mid-fullscreen used to leave a leaked veil that froze the next
+ * screen. Lives inside CarouselProvider so it can reach the machine state.
+ */
+function CarouselBackGuard() {
+  const { machineState, closeFullscreen } = useCarousel();
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (machineState.value === 'fullscreen') {
+          closeFullscreen();
+          return true;
+        }
+        return false;
+      });
+      return () => sub.remove();
+    }, [machineState, closeFullscreen]),
+  );
+  return null;
+}
+
 function ExpandVeil() {
   const { expandProgress, collapse } = useCarousel();
   const [blocking, setBlocking] = useState(false);
@@ -338,10 +361,10 @@ function ExpandVeil() {
   const style = useAnimatedStyle(() => ({ opacity: expandProgress.value * 0.62 }));
   // When expanded the veil swallows taps on the dimmed sheet (AC2.8) and a tap dismisses the hand;
   // when compact it is inert so the controls underneath stay live. The box is oversized far past the
-  // stage (which no longer clips) so the dim reaches the physical screen edges â€” status-bar area and
-  // letterbox margins included â€” with square corners (#30 B).
+  // stage (which no longer clips) so the dim reaches the physical screen edges — status-bar area and
+  // letterbox margins included — with square corners (#30 B).
   return (
-    // zIndex 20: above the hearts layer (10), below the carousel (30) â€” see #87 stacking.
+    // zIndex 20: above the hearts layer (10), below the carousel (30) — see #87 stacking.
     <Pressable style={[box(-120, -160, 652, 1212), { zIndex: 20 }]} pointerEvents={blocking ? 'auto' : 'none'} onPress={collapse}>
       <Animated.View style={[box(0, 0, 652, 1212), { backgroundColor: '#06080d' }, style]} pointerEvents="none" />
     </Pressable>
@@ -357,13 +380,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // The sheet now OWNS character state so the resource tracks can actually be spent/restored (A1).
   // With a CharacterFile it derives the runtime Character from it (#100); resources stay local.
   const [character, setCharacter] = useState(() => initial ?? (characterFile ? toSheetCharacter(characterFile) : SAMPLE_CHARACTER));
-  // Pre-render this character's class-feature card(s) on device (#104) so the carousel treats
-  // them like any scanned card (uri-based two-LOD pair). Until forged, the hand simply doesn't
-  // include them yet; they appear once captured (cached after the first run).
-  const featureJobs = useMemo(() => {
-    if (!characterFile) return [];
+  // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
+  // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
+  // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
+  const { featJobs, expJobs } = useMemo(() => {
+    if (!characterFile) return { featJobs: [] as { key: string; node: ReactNode }[], expJobs: [] as { key: string; node: ReactNode }[] };
     const cls = characterFile.className;
-    const featureCards = featurePages(cls).map((p) => ({
+    const featJobs = featurePages(cls).map((p) => ({
       key: `feat-${cls}-${p.pageIndex}`,
       node: (
         <ForgedTextCard
@@ -376,29 +399,34 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         />
       ),
     }));
-    // Experience cards ride the abilities hand too (#107): keyed by content, so an edit (new
-    // title/text/image) re-forges its bitmap instead of serving the stale one.
-    const expCards = (characterFile.experiences ?? []).map((e) => ({
+    const expJobs = (characterFile.experiences ?? []).map((e) => ({
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0)) % 99991}`,
       node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} />,
     }));
-    return [...expCards, ...featureCards];
+    return { featJobs, expJobs };
   }, [characterFile]);
-  const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(featureJobs);
+  const allJobs = useMemo(() => [...expJobs, ...featJobs], [expJobs, featJobs]);
+  const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
-  // Pinned at the RIGHT end of the abilities hand: the class feature card(s) (#104), then
-  // subclass, ancestry, community in that order (#100). Absent without a loaded character file.
+  // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
+  // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
+  // stays LAST so the badges (which target the last three) keep pointing at them.
   const originCards = useMemo(() => {
     if (!characterFile) return undefined;
     const ids = [characterFile.subclassCardId, characterFile.ancestryCardId, characterFile.communityCardId];
     const cards = ids.map(cardById);
     if (cards.some((c) => !c)) return undefined;
-    const feature = featureJobs
+    const expItems = expJobs
       .map((j) => ({ key: j.key, src: featureSources[j.key] }))
-      .filter((f) => f.src)
-      .map((f) => ({ id: f.key, source: f.src!.full, thumb: f.src!.thumb }));
-    return [...feature, ...cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }))];
-  }, [characterFile, featureJobs, featureSources]);
+      .filter((x) => x.src)
+      .map((x) => ({ id: x.key, source: x.src!.full, thumb: x.src!.thumb }));
+    const featSrcs = featJobs.map((j) => featureSources[j.key]).filter(Boolean) as { full: { uri: string }; thumb: { uri: string } }[];
+    const featItem =
+      featSrcs.length > 0
+        ? [{ id: `features-${characterFile.className}`, source: featSrcs[0].full, thumb: featSrcs[0].thumb, pages: featSrcs.map((s) => ({ source: s.full, thumb: s.thumb })) }]
+        : [];
+    return [...expItems, ...featItem, ...cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }))];
+  }, [characterFile, expJobs, featJobs, featureSources]);
   const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
   const onInfo = useCallback(() => setInfoOpen(true), []);
   const onInfoClose = useCallback(() => setInfoOpen(false), []);
@@ -417,7 +445,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     [],
   );
   // Status bar clearance, third attempt (#54 D). On the owner's A54 + Expo Go BOTH inset APIs
-  // (safe-area context AND StatusBar.currentHeight) report 0 â€” the device "acts as if there is no
+  // (safe-area context AND StatusBar.currentHeight) report 0 — the device "acts as if there is no
   // status bar" while very much showing one. So: use whatever the APIs detect, but on Android
   // never less than a 32dp floor. The shift is a MARGIN (not padding): absolutely-positioned
   // children like the SheetFrame border anchor to the view's box, so a margin moves border and
@@ -432,6 +460,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   return (
     <AccentProvider>
       <CarouselProvider originCards={originCards}>
+        <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
@@ -440,7 +469,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges.
                 The safe-area inset pushes everything (border included) below the status bar; the
                 strip above reads as the root's ink navy. Web's inset is 0, so the layouts are the
-                SAME design, mobile-first (#43 A â€” replaces the old web-only 26px shift).
+                SAME design, mobile-first (#43 A — replaces the old web-only 26px shift).
                 marginTop pushes the DESIGN down INSIDE the border (#61): once the top+bottom bars
                 ate the container height, the stage's natural letterbox vanished and the border's
                 top band started covering the top of the name (authored at design y14). 18px keeps
@@ -454,7 +483,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
-                  never above a card â€” and the inner gear is the grind-scroll control. */}
+                  never above a card — and the inner gear is the grind-scroll control. */}
               <CardCarousel />
               <InfoOverlay open={infoOpen} onClose={onInfoClose} />
             </DesignStage>
@@ -464,7 +493,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           </View>
           {/* EXPLICIT bars painted over the status-bar and nav-control strips (#54 D, #59): even if
               some layer below misbehaves, both strips always read as the border's ink navy. The
-              bottom one is load-bearing â€” the stage is unclipped (the dims must overdraw), so the
+              bottom one is load-bearing — the stage is unclipped (the dims must overdraw), so the
               gears/card spill below the design box can only be COVERED, not clipped. */}
           <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topInset, backgroundColor: Rune.ink }} />
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
