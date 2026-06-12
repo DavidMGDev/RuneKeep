@@ -31,6 +31,7 @@ import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import { DamagePanel } from './damage-panel';
+import { PortraitImage } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
 const SHEET = Rune.sheet;
@@ -161,7 +162,15 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef }: { charac
           underneath. */}
       <View style={box(16, 12, 150, 282)}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => {}} accessibilityRole="button" accessibilityLabel="Character portrait. Add a photo">
-          <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
+          {/* the player's photo, clipped to the portrait mask, UNDER the gold frame (#135). It sits
+              in the body layer so the carousel/expand dims darken it like the rest of the sheet. */}
+          {character.portraitUri ? (
+            <View style={StyleSheet.absoluteFill} pointerEvents="none">
+              <PortraitImage uri={character.portraitUri} width={150} height={282} />
+            </View>
+          ) : (
+            <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
+          )}
           <ArtImage source={Art.portraitFrame} fit="fill" />
           {!character.portraitUri ? (
             <SheetText left={0} top={155} width={150} height={15} color={BRONZE} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
