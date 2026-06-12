@@ -66,7 +66,7 @@ import { GearDecoration } from './gear-decoration';
  * resets → no swap-frame flash. `renderFace` draws each face through the sheet's own Card so it
  * matches the LOD beneath exactly. Rotation direction matches the forge (forward turns -180°).
  */
-const FlipCard = memo(function FlipCard({ faceCount, index, dir, renderFace }: { faceCount: number; index: number; dir: number; renderFace: (i: number) => ReactNode }) {
+const FlipCard = memo(function FlipCard({ faceCount, index, dir, renderFace, onSettle }: { faceCount: number; index: number; dir: number; renderFace: (i: number) => ReactNode; onSettle: () => void }) {
   const angle = useSharedValue(0);
   const [faceA, setFaceA] = useState(index);
   const [faceB, setFaceB] = useState(index);
@@ -79,8 +79,12 @@ const FlipCard = memo(function FlipCard({ faceCount, index, dir, renderFace }: {
     if (np % 2 === 0) setFaceA(index);
     else setFaceB(index);
     parity.current = np;
-    angle.value = withTiming(angle.value + (dir >= 0 ? -1 : 1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) });
-  }, [index, dir, faceCount, angle]);
+    // the turn OWNS the busy lock: it clears only on completion, so a new flip can't start
+    // mid-turn (re-entrancy left the card half-rotated + flickering, #110).
+    angle.value = withTiming(angle.value + (dir >= 0 ? -1 : 1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (f) => {
+      if (f) runOnJS(onSettle)();
+    });
+  }, [index, dir, faceCount, angle, onSettle]);
   const aStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value}deg` }], backfaceVisibility: 'hidden' }));
   const bStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value + 180}deg` }], backfaceVisibility: 'hidden' }));
   return (
@@ -105,9 +109,11 @@ interface SlotProps {
   machineState: SharedValue<ExpandState>;
   focusIndex: SharedValue<number>;
   closeFullscreen: () => void;
+  /** Multi-face slots register their pager so the parent pan can flip them on a horizontal swipe. */
+  registerPager: (index: number, pager: ((delta: number) => void) | null) => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, machineState, focusIndex, closeFullscreen }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, machineState, focusIndex, closeFullscreen, registerPager }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -175,14 +181,28 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   const faceCount = faces?.length ?? 0;
   const hasFaces = faceCount > 1;
   const flipDir = useRef(1);
+  const flipBusy = useRef(false);
   const curFace = hasFaces ? faces![Math.min(pageIdx, faceCount - 1)] : null;
+  // A flip can't start until the previous one settles (#110: re-entrant flips broke the card).
   const pageBy = useCallback(
     (delta: number) => {
+      if (flipBusy.current || faceCount <= 1) return;
+      flipBusy.current = true;
       flipDir.current = delta;
-      setPageIdx((p) => (faceCount > 0 ? (p + delta + faceCount) % faceCount : 0));
+      setPageIdx((p) => (p + delta + faceCount) % faceCount);
     },
     [faceCount],
   );
+  const onFlipSettle = useCallback(() => {
+    flipBusy.current = false;
+  }, []);
+
+  // register/unregister this slot's pager so the parent pan can flip it on a horizontal swipe (#110)
+  useEffect(() => {
+    if (!hasFaces) return;
+    registerPager(index, pageBy);
+    return () => registerPager(index, null);
+  }, [hasFaces, index, pageBy, registerPager]);
 
   // One face → the sheet's own Card (matches the flat LOD beneath, no pop), or its live node until
   // its bitmap is forged (so an un-forged page still renders — #110 missing-page fix).
@@ -198,6 +218,9 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
 
   // the 3D flip element fades in/out with focus (#110): flat LOD when compact, 3D only when focused
   const fsFade = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value }));
+  // the flat LOD fades OUT under the flip element (so the old card never shows behind a turning
+  // card) and fades back IN before the card slides home (#110, owner). Crossfade of the same face.
+  const lodFade = useAnimatedStyle(() => ({ opacity: 1 - fullscreenProgress.value }));
 
   // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close, OR (a
   // multi-face card) flip back/forward by which half you tapped (#110) — close by swipe-down/gear.
@@ -233,23 +256,26 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
           {hasFaces ? (
             <>
-              {/* flat LOD of the current face — shown compact + during the open transition */}
-              {curFace?.custom ? (
-                curFace.custom
-              ) : (
-                <>
-                  <CardThumb item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} />
-                  {withImage ? (
-                    <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
-                      <Card item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} width={CARD_W} height={CARD_H} />
-                    </Animated.View>
-                  ) : null}
-                </>
-              )}
-              {/* the 3D flip element — only near center, fades in with focus (the LOD shows beneath) */}
+              {/* flat LOD of the current face — shown compact + during the open transition, faded
+                  OUT under the flip element while focused so it never shows behind a turning card */}
+              <Animated.View style={[StyleSheet.absoluteFill, lodFade]}>
+                {curFace?.custom ? (
+                  curFace.custom
+                ) : (
+                  <>
+                    <CardThumb item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} />
+                    {withImage ? (
+                      <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
+                        <Card item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} width={CARD_W} height={CARD_H} />
+                      </Animated.View>
+                    ) : null}
+                  </>
+                )}
+              </Animated.View>
+              {/* the 3D flip element — only near center, fades in with focus (the LOD beneath fades out) */}
               {withImage ? (
                 <Animated.View style={[StyleSheet.absoluteFill, fsFade]} pointerEvents="none">
-                  <FlipCard faceCount={faceCount} index={pageIdx} dir={flipDir.current} renderFace={renderFace} />
+                  <FlipCard faceCount={faceCount} index={pageIdx} dir={flipDir.current} renderFace={renderFace} onSettle={onFlipSettle} />
                 </Animated.View>
               ) : null}
               {/* page dots BELOW the card, fading with focus (matches the forge) */}
@@ -306,6 +332,17 @@ export function CardCarousel() {
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
   const [center, setCenter] = useState(middle);
+
+  // Multi-face slots register their pager here so a horizontal swipe in fullscreen flips the
+  // FOCUSED card (#110: the page state is per-slot, the pan is here — this is the small lift).
+  const pagersRef = useRef<Record<number, (delta: number) => void>>({});
+  const registerPager = useCallback((idx: number, pager: ((delta: number) => void) | null) => {
+    if (pager) pagersRef.current[idx] = pager;
+    else delete pagersRef.current[idx];
+  }, []);
+  const flipFocused = useCallback((idx: number, delta: number) => {
+    pagersRef.current[idx]?.(delta);
+  }, []);
 
   const onCenter = useCallback((c: number) => setCenter(c), []);
   useDerivedValue(() => {
@@ -394,9 +431,15 @@ export function CardCarousel() {
           // Focused: a tap on the gear closes the card AND collapses the whole hand (#62 D);
           // a downward swipe (or flick) returns the card; otherwise settle it back open.
           if (machineState.value === 'fullscreen') {
+            // Focused gestures (#110): gear-tap closes+collapses; a horizontal swipe FLIPS the
+            // focused card (left = next, right = back); a downward swipe closes; else settle open.
+            const ax = Math.abs(e.translationX);
+            const ay = Math.abs(e.translationY);
             if (padTouch.value && stillTap) {
               runOnJS(closeFullscreen)();
               runOnJS(collapse)();
+            } else if (ax > 44 && ax > ay * 1.2) {
+              runOnJS(flipFocused)(Math.round(focusIndex.value), e.translationX < 0 ? 1 : -1);
             } else if (e.translationY > 60 || e.velocityY > 600) runOnJS(closeFullscreen)();
             else fullscreenProgress.value = withSpring(1, FS_SPRING);
             padTouch.value = false;
@@ -446,7 +489,7 @@ export function CardCarousel() {
           if (grindProgress.value !== 0 && !scrolled.value) grindProgress.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress],
+    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -470,6 +513,7 @@ export function CardCarousel() {
         machineState={machineState}
         focusIndex={focusIndex}
         closeFullscreen={closeFullscreen}
+        registerPager={registerPager}
       />,
     );
   }
