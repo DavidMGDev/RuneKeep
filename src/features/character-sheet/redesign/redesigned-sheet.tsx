@@ -385,7 +385,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
   const { featJobs, classJob, expJobs, weaponJobs, armorJob } = useMemo(() => {
-    const empty = { featJobs: [] as { key: string; node: ReactNode }[], classJob: null as { key: string; node: ReactNode } | null, expJobs: [] as { key: string; node: ReactNode }[], weaponJobs: [] as { key: string; node: ReactNode }[], armorJob: null as { key: string; node: ReactNode } | null };
+    const empty = { featJobs: [] as { key: string; node: ReactNode }[], classJob: null as { key: string; node: ReactNode } | null, expJobs: [] as { key: string; node: ReactNode; raster?: boolean }[], weaponJobs: [] as { key: string; node: ReactNode }[], armorJob: null as { key: string; node: ReactNode } | null };
     if (!characterFile) return empty;
     const cls = characterFile.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -412,6 +412,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const expJobs = (characterFile.experiences ?? []).map((e) => ({
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0)) % 99991}`,
       node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} />,
+      // player photo (file://) decodes async — needs the forge settle so it isn't captured black (#121)
+      raster: !!e.imageUri,
     }));
     // starting equipment (#121): the primary weapon, the optional secondary, and the armor card
     const weaponJobs = [characterFile.weaponPrimaryId, characterFile.weaponSecondaryId]
@@ -431,11 +433,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
-  const { originCards, inventoryCards } = useMemo(() => {
-    if (!characterFile) return { originCards: undefined, inventoryCards: undefined };
+  const { abilitiesCards, inventoryCards } = useMemo(() => {
+    if (!characterFile) return { abilitiesCards: undefined, inventoryCards: undefined };
     const ids = [characterFile.subclassCardId, characterFile.ancestryCardId, characterFile.communityCardId];
     const cards = ids.map(cardById);
-    if (cards.some((c) => !c)) return { originCards: undefined, inventoryCards: undefined };
+    if (cards.some((c) => !c)) return { abilitiesCards: undefined, inventoryCards: undefined };
+    // the actual cards the player PICKED at creation (#121: no more sample/placeholder cards) — the
+    // two domain cards lead the abilities hand.
+    const domainItems = characterFile.domainCardIds
+      .map(cardById)
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .map((c) => ({ id: c.id, source: c.source, thumb: c.thumb }));
     const expItems = expJobs
       .map((j) => ({ key: j.key, src: featureSources[j.key] }))
       .filter((x) => x.src)
@@ -459,10 +467,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const weaponItems = forgedItems(weaponJobs);
     const armorItems = armorJob ? forgedItems([armorJob]) : [];
     const trio = cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
-    // weapons pinned BEFORE the origin trio so the badges (which target the LAST three) still hit it
-    const origin = [...expItems, ...featItem, ...weaponItems, ...trio];
+    // abilities = ONLY the player's cards: domains, experiences, the feature card, weapons, then the
+    // origin trio LAST (the badges target the last three).
+    const abilities = [...domainItems, ...expItems, ...featItem, ...weaponItems, ...trio];
     const inv = [...weaponItems, ...armorItems];
-    return { originCards: origin, inventoryCards: inv.length ? inv : undefined };
+    return { abilitiesCards: abilities, inventoryCards: inv.length ? inv : undefined };
   }, [characterFile, expJobs, classJob, featJobs, weaponJobs, armorJob, featureSources]);
   const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
   const onInfo = useCallback(() => setInfoOpen(true), []);
@@ -496,7 +505,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider originCards={originCards} inventoryCards={inventoryCards}>
+      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
