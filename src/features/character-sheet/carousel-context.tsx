@@ -1,5 +1,5 @@
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
-import { type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { runOnJS, type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import { CARD_DECKS, type CardCategory } from './card-data';
 import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, middleRotation, snapRot } from './carousel-geometry';
@@ -18,6 +18,8 @@ interface CarouselContextValue {
   machineState: SharedValue<ExpandState>;
   /** Which card index is currently flown full-screen (so badges/taps can open a specific card). */
   focusIndex: SharedValue<number>;
+  /** Deck-switch sweep (#95 C): 0 = deck in place, 1 = swept down + faded out (mid category swap). */
+  deckShift: SharedValue<number>;
   category: CardCategory;
   /** Switch deck; animates the fan re-center to the new deck's middle. */
   setCategory: (c: CardCategory) => void;
@@ -41,14 +43,41 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
   const machineState = useSharedValue<ExpandState>('compact');
   const focusIndex = useSharedValue(Math.round(startMiddle / ANGLE_STEP));
   const [category, setCategoryState] = useState<CardCategory>('abilities');
+  const deckShift = useSharedValue(0);
+
+  // #95 C: the swap itself happens while the hand is INVISIBLE, and the fade-IN waits for the new
+  // deck to be committed AND painted. Sequence: fade the old deck out in place (deckShift → 1) →
+  // swap the deck + teleport the rotation on the JS thread (nobody can see the jump) → after the
+  // commit, hold a short grace so the freshly mounted thumbs get their paint frames (expo-image
+  // takes 1-2 frames; the continuity rule, #88) → fade the whole new hand in at once. Without the
+  // grace the hand fades back in still showing the OLD images and then flash-swaps mid-fade.
+  const switching = useRef(false);
+  const applyCategory = useCallback(
+    (c: CardCategory) => {
+      switching.current = true;
+      setCategoryState(c);
+      rotation.value = middleRotation(CARD_DECKS[c].length);
+    },
+    [rotation],
+  );
+
+  useEffect(() => {
+    if (!switching.current) return;
+    switching.current = false;
+    const t = setTimeout(() => {
+      deckShift.value = withTiming(0, { duration: 200 });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [category, deckShift]);
 
   const setCategory = useCallback(
     (c: CardCategory) => {
-      // Animate the fan re-centering instead of teleporting (brief carousel-feel note).
-      rotation.value = withTiming(middleRotation(CARD_DECKS[c].length), { duration: 260 });
-      setCategoryState(c);
+      if (c === category) return;
+      deckShift.value = withTiming(1, { duration: 130 }, (finished) => {
+        if (finished) runOnJS(applyCategory)(c);
+      });
     },
-    [rotation],
+    [category, deckShift, applyCategory],
   );
 
   const toggleCategory = useCallback(() => {
@@ -100,6 +129,7 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
       fullscreenProgress,
       machineState,
       focusIndex,
+      deckShift,
       category,
       setCategory,
       toggleCategory,
@@ -109,7 +139,7 @@ export function CarouselProvider({ children }: { children: ReactNode }) {
       closeFullscreen,
       openRandomAbility,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openRandomAbility],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openRandomAbility],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

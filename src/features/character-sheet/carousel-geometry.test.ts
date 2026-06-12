@@ -56,6 +56,13 @@ describe('slotOpacityAt (#54 A: integer alphas at rest, fade only pre-unmount)',
     expect(mid).toBeGreaterThan(0);
     expect(mid).toBeLessThan(1);
   });
+
+  it('compact hand (#95 D) draws a wider window — up to ±6 thumbs, still integer at rest', () => {
+    for (let d = 0; d <= 6; d++) expect(slotOpacityAt(d, 0)).toBe(1);
+    expect(slotOpacityAt(7, 0)).toBe(0);
+    // expanded keeps the original ±3 window
+    expect(slotOpacityAt(4, 1)).toBe(0);
+  });
 });
 
 describe('rotation clamping + snapping (finite deck)', () => {
