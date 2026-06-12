@@ -135,16 +135,16 @@ export function GalleryScreen() {
           accessibilityRole="button"
           accessibilityState={{ expanded: drawerOpen }}
           accessibilityLabel={`Filters, ${activeCount} active`}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4 }}>
-          <Svg width={18} height={16} viewBox="0 0 18 16">
-            <Line x1={1} y1={3} x2={17} y2={3} stroke={Rune.goldEdge} strokeWidth={1.8} />
-            <Line x1={4} y1={8} x2={14} y2={8} stroke={Rune.goldEdge} strokeWidth={1.8} />
-            <Line x1={7} y1={13} x2={11} y2={13} stroke={Rune.goldEdge} strokeWidth={1.8} />
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Svg width={14} height={13} viewBox="0 0 18 16">
+            <Line x1={1} y1={3} x2={17} y2={3} stroke={Rune.goldEdge} strokeWidth={2} />
+            <Line x1={4} y1={8} x2={14} y2={8} stroke={Rune.goldEdge} strokeWidth={2} />
+            <Line x1={7} y1={13} x2={11} y2={13} stroke={Rune.goldEdge} strokeWidth={2} />
           </Svg>
-          <Text style={{ color: activeCount ? Rune.red : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1 }}>
+          <Text style={{ color: activeCount ? Rune.red : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>
             {activeCount ? `FILTERS · ${activeCount}` : 'FILTERS'}
           </Text>
-          <Svg width={10} height={7} viewBox="0 0 10 7" style={{ transform: [{ rotate: drawerOpen ? '180deg' : '0deg' }] }}>
+          <Svg width={9} height={6} viewBox="0 0 10 7" style={{ transform: [{ rotate: drawerOpen ? '180deg' : '0deg' }] }}>
             <Polyline points="1,1 5,6 9,1" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} />
           </Svg>
         </Pressable>
