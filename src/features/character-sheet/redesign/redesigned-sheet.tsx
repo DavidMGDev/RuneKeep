@@ -36,6 +36,7 @@ import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import { DamagePanel } from './damage-panel';
+import { DeckToggleIcon } from './deck-toggle-icon';
 import { PortraitImage } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -187,7 +188,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef }: { charac
         </Pressable>
         {/* Deck toggle inside the frame's bottom diamond — its centroid for THIS frame size. */}
         <Pressable style={box(39, 211, 52, 52)} hitSlop={10} onPress={toggleCategory} accessibilityRole="button" accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
-          <ArtImage source={Art.portraitIcon} fit="contain" />
+          <DeckToggleIcon category={category} />
         </Pressable>
       </View>
 
