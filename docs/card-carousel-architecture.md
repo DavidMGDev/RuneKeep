@@ -90,3 +90,46 @@ frame, C5; the name is raised to `2100` to clear the top finial, C2) < fullscree
 
 _Sources: react-native-reanimated, react-native-gesture-handler, react-native-svg official docs; expo-fyi
 SDK54+Reanimated4; community issues on SVG `<G>` rotation (reanimated #2295/#1398, rn-svg #1823)._
+
+---
+
+## 9. CURRENT STATE (2026-06, supersedes stale details above — issues #41→#80)
+
+The sections above describe the original design; the following is the implemented truth after the
+perf + interaction passes. Where they disagree, **this section wins**.
+
+### Rendering: the LOD system (#78)
+- Every card ships at two LODs (`card-data.ts`): `source` = 750×1050 **WebP q86** (~90KB) and
+  `thumb` = 188×263 **WebP q70** (~9KB, 16× fewer pixels; regenerate with PIL `resize(LANCZOS)`).
+- **Every deck slot is mounted forever** on its `CardThumb` — no virtualization, no unmount pops.
+  A full 18-card deck of thumbs composites for less than two full cards.
+- The full-res `Card` layer mounts within ±`IMG_MOUNT_HALF`(2) of center and **draws on the three
+  center cards** (`imageOpacityAt = clamp(2−d)`, integer alphas at rest), cross-fading over the
+  thumb (`transition={150}`). It is damped by `(1 − grindProgress)` — a gear grind composites
+  ONLY thumbs. Center tracking (derived value → `setCenter`) freezes while grinding.
+- Release model: NO decay — `withSpring(snapRot(rot + cappedV·FLING_TIME), {velocity})` (#30 A).
+
+### Perf rules learned on-device (A54)
+1. Never put `renderToHardwareTextureAndroid` / `shouldRasterizeIOS` / Android `elevation` on a
+   view whose opacity/scale animates per frame (texture invalidation, #41).
+2. Never put a **fractional opacity on a multi-child container** (Android `saveLayerAlpha` per
+   frame — the gear container and resting card slots both hit this, #54). Translucency goes on
+   single-image leaves; rest-state alphas must be integers (`slotOpacityAt`).
+3. Count **textures drawn per frame**, not views mounted (#48): big sources decode cheap as WebP
+   and tiny as thumbs; what kills the GPU is compositing many full-res layers.
+
+### The gear control (#62→#80)
+- Two rings only (U2 + U3), static pose, per-image alpha 0.26; the INNER ring brightens to full
+  opacity as the hand expands — it is the control. Rendered INSIDE the carousel container:
+  zIndex 0 under the cards normally, 2500 in fullscreen (above the dim, under the focused card).
+- A transparent pad (`PAD_X/Y/W/H`) feeds the container pan. Drag = grind: adaptive sensitivity
+  `gearPanR = GEAR_SWIPE_PX(200)/maxRotation(count)` → HALF A SCREEN sweeps the whole deck;
+  the fan tightens (`GRIND_TIGHTEN` 0.58) and shrinks (`GRIND_SHRINK` 0.55) → ~7 thumbs visible.
+  Tap = fullscreen → close card + collapse; expanded → collapse; compact → expand. Tap logic
+  lives in BOTH `onEnd` (jittery activated taps) and `onFinalize(!success)` (clean taps never
+  activate a `minDistance` pan).
+- Compact hand: `COMPACT_DROP` 201 → the center card's bottom edge sits exactly on the design
+  bottom (892). Any horizontal scroll while compact expands the hand mid-gesture.
+- **Shake-to-close and ExpandIndicator are REMOVED**; fullscreen focus = the SAME CardSlot
+  growing in place over the FocusOverlay dim (no separate overlay object).
+- **Haptics: removed app-wide** per owner (#81) — `src/lib/haptics.ts` kept for the future.
