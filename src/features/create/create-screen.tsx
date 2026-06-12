@@ -22,6 +22,7 @@ import { CLASS_CARDS } from './class-cards';
 import { featurePages } from './class-data';
 import { ForgedArmorCard, ForgedCard, ForgedGoldCard, ForgedTextCard, ForgedWeaponCard, FORGED_H, FORGED_W } from './forged-card';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from './equipment-data';
+import { CLASS_INVENTORY, itemOptionId, itemTitle } from './class-inventory-data';
 
 // Default art for a custom inventory item with no player image (#128, owner-provided).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -568,9 +569,20 @@ export function CreateScreen() {
       return TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />));
     }
     if (deck === 'inventory') {
-      // PLACEHOLDER suggestions (#128) — a few domain scans stand in until the per-class item images
-      // are read; the Gold card + the player's custom items + the "add" card complete the deck.
-      const placeholders = CATALOG.filter((c) => c.kind === 'domain').slice(0, 4).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }) as StraightItem);
+      // Per-class inventory (#128): a starting-kit card (auto-owned), the guide's "choose" options
+      // (selectable), the Gold card (auto-owned), the player's custom items, then the "add" card.
+      const cinv = draft.className ? CLASS_INVENTORY[draft.className] : null;
+      const takeBody = (cinv?.take ?? ['a torch', '50 feet of rope', 'basic supplies']).join(', ');
+      const startingCard: StraightItem = {
+        id: 'item-starting',
+        label: 'Starting kit',
+        custom: <ForgedCard title="Starting Kit" kindLabel="Item" body={`You already carry ${takeBody}, and a handful of gold.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
+      };
+      const optionCards: StraightItem[] = (cinv?.choices.flat() ?? []).map((name) => ({
+        id: itemOptionId(name),
+        label: name,
+        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${name.charAt(0).toUpperCase()}${name.slice(1)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} />,
+      }));
       const gold: StraightItem = { id: 'item-gold', label: 'Gold', custom: <ForgedGoldCard /> };
       const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
         id: it.id,
@@ -578,7 +590,7 @@ export function CreateScreen() {
         custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} fallbackArt={ITEM_DEFAULT_ART} />,
       }));
       const add: StraightItem = { id: 'item-add', label: 'Add item', custom: <AddItemCard /> };
-      return [...placeholders, gold, ...customs, add];
+      return [startingCard, ...optionCards, gold, ...customs, add];
     }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
@@ -631,7 +643,7 @@ export function CreateScreen() {
       return id ? [id] : [];
     }
     if (deck === 'armor') return draft.armorId ? [draft.armorId] : [];
-    if (deck === 'inventory') return [...draft.inventoryItemIds, ...draft.inventoryCustom.map((i) => i.id)];
+    if (deck === 'inventory') return ['item-starting', 'item-gold', ...draft.inventoryItemIds, ...draft.inventoryCustom.map((i) => i.id)];
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -673,6 +685,7 @@ export function CreateScreen() {
           setEditingItem('new');
           return;
         }
+        if (id === 'item-starting' || id === 'item-gold') return; // auto-owned, not toggleable
         const ci = draft.inventoryCustom.findIndex((i) => i.id === id);
         if (ci >= 0) {
           setEditingItem(ci); // tap a custom item to edit it
@@ -752,6 +765,7 @@ export function CreateScreen() {
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
   const centerInvAdd = deck === 'inventory' && centerItem?.id === 'item-add';
   const centerInvCustom = deck === 'inventory' && draft.inventoryCustom.some((i) => i.id === centerItem?.id);
+  const centerInvOwned = deck === 'inventory' && (centerItem?.id === 'item-starting' || centerItem?.id === 'item-gold');
 
   return (
     <AppScreen
@@ -901,11 +915,12 @@ export function CreateScreen() {
       {isCarouselDeck(deck) ? (
         <View style={{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }} pointerEvents="box-none">
           <RuneButton
-            label={centerInvAdd ? 'Create item' : centerInvCustom ? 'Edit item' : centerSelected ? 'Deselect' : `Select ${noun}`}
-            kind={centerSelected && !centerInvAdd && !centerInvCustom ? 'ghost' : 'primary'}
+            label={centerInvOwned ? 'Always carried' : centerInvAdd ? 'Create item' : centerInvCustom ? 'Edit item' : centerSelected ? 'Deselect' : `Select ${noun}`}
+            kind={centerInvOwned ? 'ghost' : centerSelected && !centerInvAdd && !centerInvCustom ? 'ghost' : 'primary'}
             height={40}
+            disabled={centerInvOwned}
             onPress={() => centerItem && onToggle(centerItem.id)}
-            accessibilityLabel={centerInvAdd ? 'Create a custom item' : centerInvCustom ? 'Edit item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+            accessibilityLabel={centerInvOwned ? 'Always carried' : centerInvAdd ? 'Create a custom item' : centerInvCustom ? 'Edit item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
           {deck === 'class' ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4 }}>Tap the card to flip through its features</Text>
