@@ -139,14 +139,16 @@ interface SlotProps {
   screenH: number;
   selected: boolean;
   withImage: boolean;
-  /** Focus + flip state (#110): the focused card flips between faces; others render face 0. */
+  /** Focus + flip state (#110): the focused card flips between faces; the centered card keeps its
+   *  current face even when collapsed (page persists); others render face 0. */
   focused: boolean;
+  isCenter: boolean;
   faceIndex: number;
   flipDir: number;
   onTap: (index: number, x: number) => void;
 }
 
-const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, faceIndex, flipDir, onTap }: SlotProps) {
+const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onTap }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
@@ -180,6 +182,9 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
     return { opacity: Math.min(1, Math.max(0, 2 - ad)) * (1 - grind.value) };
   });
 
+  // page dots fade IN/OUT with the focus progress (#110) — no pop when the dialogue closes
+  const dotsStyle = useAnimatedStyle(() => ({ opacity: fs.value }));
+
   const tap = useMemo(
     () =>
       Gesture.Tap()
@@ -197,7 +202,7 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
       <GestureDetector gesture={tap}>
         <View style={{ flex: 1 }}>
           {hasFaces ? (
-            <FlipCard faces={item.faces!} index={focused ? faceIndex : 0} dir={focused ? flipDir : 1} fullRes={focused || withImage} animate={focused} />
+            <FlipCard faces={item.faces!} index={isCenter ? faceIndex : 0} dir={focused ? flipDir : 1} fullRes={focused || withImage} animate={focused} />
           ) : item.custom ? (
             item.custom
           ) : (
@@ -221,14 +226,14 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
               </View>
             </>
           ) : null}
-          {/* page indicator while a multi-face card is focused (#110): BELOW the card, off the
-              parchment (it's a sibling of FlipCard so it never rotates with the flip) */}
-          {focused && (item.faces?.length ?? 0) > 1 ? (
-            <View style={{ position: 'absolute', top: FORGED_H + 10, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }} pointerEvents="none">
+          {/* page indicator (#110): BELOW the card, off the parchment (sibling of FlipCard so it
+              never rotates). Fades in/out with focus progress — no pop on close. */}
+          {isCenter && (item.faces?.length ?? 0) > 1 ? (
+            <Animated.View style={[{ position: 'absolute', top: FORGED_H + 10, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }, dotsStyle]} pointerEvents="none">
               {item.faces!.map((_, i) => (
                 <View key={i} style={{ width: 7, height: 7, transform: [{ rotate: '45deg' }], backgroundColor: i === faceIndex ? Rune.red : 'rgba(147,142,136,0.55)' }} />
               ))}
-            </View>
+            </Animated.View>
           ) : null}
         </View>
       </GestureDetector>
@@ -278,6 +283,7 @@ export const StraightCarousel = forwardRef<
   const onCenter = useCallback(
     (c: number) => {
       setCenter(c);
+      setFaceIdx(0); // a NEW card centered → start at its face 0 (page persists through focus/close)
       onIndexChange?.(c);
     },
     [onIndexChange],
@@ -295,7 +301,7 @@ export const StraightCarousel = forwardRef<
   const closeFs = useCallback(() => {
     fs.value = withSpring(0, FS_SPRING);
     setFsOpen(false);
-    setFaceIdx(0); // collapse back to face 0 (the class card / LOD) in place
+    // page is NOT reset (#110, owner): the card collapses showing whatever face you left it on
   }, [fs]);
 
   // Flip the focused card to the next/previous face (#110), wrapping. dir drives the turn direction.
@@ -338,8 +344,7 @@ export const StraightCarousel = forwardRef<
         return;
       }
       if (Math.abs(index - pos.value) < 0.5) {
-        flipDir.current = 1;
-        setFaceIdx(0);
+        // open on whatever face this card was left on (no reset)
         focusIdx.value = index;
         fs.value = withSpring(1, FS_SPRING);
         setFsOpenJS(true);
@@ -424,17 +429,22 @@ export const StraightCarousel = forwardRef<
                 if (y > 0) railTopWin.value = y;
               });
             }}>
-            {/* fullscreen veil dims the WHOLE SCREEN (oversized far past the rail — details,
-                tabs, header, everything), sitting between the focused card (z 300) and the rest.
-                It also swallows every touch outside the card/controls; tapping it closes. */}
+            {/* the gear rides the bottom edge BEHIND the dim now (#110, owner): NOT hidden in
+                fullscreen — the rising dim fades it down and the focused card sits above it.
+                zIndex 199 keeps it above the rail cards (~100, peeks as before) but UNDER the dim
+                (200) so fullscreen fades it down. */}
+            <View style={{ position: 'absolute', left: -18, right: -18, bottom: 0, height: 36, overflow: 'hidden', alignItems: 'center', zIndex: 199 }} pointerEvents="none">
+              <Animated.View style={[{ width: 150, height: 150 }, gearStyle]}>
+                <ArtImage source={INNER_GEAR} fit="contain" />
+              </Animated.View>
+            </View>
+            {/* fullscreen dim — ALWAYS mounted; opacity rides fs so it FADES in/out (no pop when the
+                dialogue closes and the rail cards return). Oversized past the rail to cover
+                header/tabs/everything; sits between the focused card (z300) and the rest (z<200). */}
+            <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: -480, bottom: -160, left: -60, right: -60, zIndex: 200, backgroundColor: '#06080d' }, veil]} />
+            {/* tap-to-close catcher, only while open (above the dim, below the focused card) */}
             {fsOpen ? (
-              <Pressable
-                style={{ position: 'absolute', top: -480, bottom: -160, left: -60, right: -60, zIndex: 200 }}
-                onPress={closeFs}
-                accessibilityRole="button"
-                accessibilityLabel="Close card">
-                <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, veil]} />
-              </Pressable>
+              <Pressable style={{ position: 'absolute', top: -480, bottom: -160, left: -60, right: -60, zIndex: 201 }} onPress={closeFs} accessibilityRole="button" accessibilityLabel="Close card" />
             ) : null}
             {width > 0
               ? items.map((item, i) => (
@@ -455,6 +465,7 @@ export const StraightCarousel = forwardRef<
                     selected={selectedIds.includes(item.id)}
                     withImage={Math.abs(i - center) <= IMG_HALF}
                     focused={fsOpen && i === center}
+                    isCenter={i === center}
                     faceIndex={faceIdx}
                     flipDir={flipDir.current}
                     onTap={onTapCard}
@@ -462,16 +473,6 @@ export const StraightCarousel = forwardRef<
                 ))
               : null}
           </View>
-          {/* only the gear's crown peeks over the bottom edge (under the screen border with the
-              rest of the carousel, #104). Centered on the SCREEN (left/right cancel the scaffold
-              padding); hidden + inert while a card is focused. Drag it for the fast grind. */}
-          {!fsOpen ? (
-            <View style={{ position: 'absolute', left: -18, right: -18, bottom: 0, height: 36, overflow: 'hidden', alignItems: 'center' }} pointerEvents="none">
-              <Animated.View style={[{ width: 150, height: 150 }, gearStyle]}>
-                <ArtImage source={INNER_GEAR} fit="contain" />
-              </Animated.View>
-            </View>
-          ) : null}
         </View>
       </GestureDetector>
     </View>
