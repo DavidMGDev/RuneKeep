@@ -19,15 +19,23 @@ export interface CardImage {
   thumb: number | { uri: string };
 }
 
+/** One face of a multi-face card (#110): a forged LOD pair, OR a live element rendered until its
+ *  bitmap is forged (so an un-forged page is never dropped — the #110 missing-first-page bug). */
+export interface CardFace {
+  source?: number | { uri: string };
+  thumb?: number | { uri: string };
+  custom?: import('react').ReactNode;
+}
+
 export interface CardItem extends CardImage {
   id: string;
   /**
-   * A MULTI-PAGE card (#108): the class-feature card is a single element in the hand whose pages
-   * the reader flips through (tap left/right in fullscreen). When set, `source`/`thumb` mirror the
-   * current page (page 0 initially); the carousel tracks the page per slot and the compact hand
-   * shows the last page viewed. Absent for ordinary single cards.
+   * A MULTI-FACE card (#110, ex-#108 pages): the class-feature card is a single element in the hand
+   * that, when focused, becomes a 3D flip-deck — face 0 = the class card, then each feature page.
+   * `source`/`thumb` mirror face 0 for the compact LOD; the carousel tracks the page per slot and
+   * persists it. Absent for ordinary single cards.
    */
-  pages?: CardImage[];
+  faces?: CardFace[];
 }
 
 export const CARD_CATEGORIES: { key: CardCategory; label: string }[] = [
