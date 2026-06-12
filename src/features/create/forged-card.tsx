@@ -91,27 +91,28 @@ export function ForgedTextCard({
   accentDeep: string;
   Banner: FC<SvgProps>;
 }) {
-  const TEXT_ART_H = 56; // shallow art band — these cards are for READING
+  // UNIFORM layout (#105): same 40% art band, same seam position, same banner size as the class
+  // pick card — the divider never moves between forged cards. Less text per card; more cards.
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
-      <View style={{ height: TEXT_ART_H, backgroundColor: accentDeep, alignItems: 'center', overflow: 'hidden' }}>
-        <Banner width={40} height={TEXT_ART_H + 10} preserveAspectRatio="xMidYMin meet" />
+      <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
+        <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
       </View>
-      <View style={{ position: 'absolute', top: TEXT_ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
+      <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
         <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          <Text style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{kindLabel}</Text>
+          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{kindLabel}</Text>
         </DividerPlaque>
       </View>
-      <View style={{ flex: 1, paddingTop: 18, paddingHorizontal: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 6 }}>
+      <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 14, paddingBottom: 24 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5 }}>
           <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 14, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
             {title}
           </Text>
-          {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 8, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+          {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
         </View>
-        <View style={{ marginTop: 6, gap: 6 }}>
+        <View style={{ marginTop: 5, gap: 5, overflow: 'hidden', flex: 1 }}>
           {sections.map((s) => (
-            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 8.5, lineHeight: 12.5, fontFamily: Body.regular, textAlign: 'justify' }}>
+            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13, fontFamily: Body.regular, textAlign: 'justify' }}>
               <Text style={{ fontFamily: Body.bold }}>{s.name}: </Text>
               {s.text}
             </Text>

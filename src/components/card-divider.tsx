@@ -30,7 +30,9 @@ export function DividerPlaque({ width, maskFill = '#FAF8F2', maskScale = 0.525, 
         <View style={{ position: 'absolute', left: 0, top: 0, width: maskW, height: maskH }} pointerEvents="none">
           <InnerMaskSvg width="100%" height="100%" preserveAspectRatio="none" color={maskFill} />
         </View>
-        {children}
+        {/* The mask's plaque BODY sits ~7.6% right of its own bounding box (a thin tail sweeps
+            left); content centers on the body, not the box, or the label reads off-plaque. */}
+        <View style={{ transform: [{ translateX: maskW * 0.076 }] }}>{children}</View>
       </View>
     </View>
   );

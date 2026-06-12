@@ -201,25 +201,44 @@ export interface FeaturePage {
   sections: ClassFeature[];
 }
 
-const PAGE_BUDGET = 760; // chars of body text a 230x322 card holds comfortably at 8.5/12.5
+// What ONE card's body holds comfortably with the uniform 40% art band, the title row and the
+// footer reserved: ~10 lines of 9/13 text (#105 — the old 760 overflowed straight through the
+// footer). The book's wording is never altered, only divided.
+const PAGE_BUDGET = 420;
 
-/** Split a class's features + hope feature across as many cards as the text needs (owner: 2–3
- *  cards are fine when one can't hold it). Sections are never split mid-text; the hope feature
- *  always rides the last page. */
+/** Split one overlong feature into sentence-boundary parts: "Name", "Name (cont.)", ... */
+function splitFeature(f: ClassFeature): ClassFeature[] {
+  if (f.name.length + f.text.length <= PAGE_BUDGET) return [f];
+  const sentences = f.text.match(/[^.]+\.(?:\s|$)/g) ?? [f.text];
+  const parts: string[] = [];
+  let current = '';
+  for (const s of sentences) {
+    if (current && current.length + s.length > PAGE_BUDGET - f.name.length - 12) {
+      parts.push(current.trim());
+      current = '';
+    }
+    current += s;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts.map((text, i) => ({ name: i === 0 ? f.name : `${f.name} (cont.)`, text }));
+}
+
+/** Split a class's features + hope feature across as many cards as the wording needs. Long
+ *  features themselves split at sentence boundaries (owner: never edit the text, divide it). */
 export function featurePages(cls: ClassName): FeaturePage[] {
   const data = CLASS_DATA[cls];
-  const sections = [...data.features, { name: `${data.hopeFeature.name} — Hope Feature`, text: data.hopeFeature.text }];
+  const units = [...data.features, { name: `${data.hopeFeature.name} — Hope Feature`, text: data.hopeFeature.text }].flatMap(splitFeature);
   const pages: ClassFeature[][] = [];
   let current: ClassFeature[] = [];
   let used = 0;
-  for (const s of sections) {
-    const cost = s.name.length + s.text.length;
+  for (const u of units) {
+    const cost = u.name.length + u.text.length;
     if (current.length && used + cost > PAGE_BUDGET) {
       pages.push(current);
       current = [];
       used = 0;
     }
-    current.push(s);
+    current.push(u);
     used += cost;
   }
   if (current.length) pages.push(current);

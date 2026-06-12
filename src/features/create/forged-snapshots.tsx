@@ -12,7 +12,7 @@ import { FORGED_H, FORGED_W } from './forged-card';
  * the same.) Cache keyed by FORGE_RENDER_V — bump it whenever card layout/copy changes. Web (the
  * verify pipeline) skips capture and keeps the live components.
  */
-export const FORGE_RENDER_V = 2;
+export const FORGE_RENDER_V = 3;
 
 export interface ForgedSource {
   full: { uri: string };

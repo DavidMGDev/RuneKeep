@@ -62,12 +62,13 @@ interface SlotProps {
   grind: SharedValue<number>;
   fs: SharedValue<number>;
   focusIdx: SharedValue<number>;
+  railH: SharedValue<number>;
   selected: boolean;
   withImage: boolean;
   onTap: (index: number) => void;
 }
 
-const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, selected, withImage, onTap }: SlotProps) {
+const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, selected, withImage, onTap }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
@@ -81,10 +82,12 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
     let z = Math.round(100 - ad * 10);
     const f = fs.value;
     if (f > 0 && Math.round(focusIdx.value) === index) {
-      // grow in place toward the stage center (the overlay owns the veil + controls)
-      const fsScale = Math.min((width - 28) / FORGED_W, 1.55);
+      // Grow in place and LIFT (#105): the card's bottom edge lands just above the rail's bottom,
+      // leaving the fixed select controls clear beneath it. Tall spill goes UP into the dim.
+      const fsScale = Math.min((width - 28) / FORGED_W, 1.62);
+      const targetCenter = railH.value - 14 - (FORGED_H * fsScale) / 2;
       x = x * (1 - f);
-      y = -34 * f;
+      y = (targetCenter - railH.value * 0.42) * f;
       scale = scale + (fsScale - scale) * f;
       opacity = 1;
       z = 300;
@@ -163,8 +166,8 @@ export function StraightCarousel({
 }) {
   const count = items.length;
   const [width, setWidth] = useState(0);
-  const [railH, setRailH] = useState(0);
   const heightSV = useSharedValue(0);
+  const railHSV = useSharedValue(0);
   const pos = useSharedValue(clampIdx(initialIndex, count));
   const grind = useSharedValue(0);
   const fs = useSharedValue(0);
@@ -284,13 +287,12 @@ export function StraightCarousel({
       style={{ flex: 1 }}
       onLayout={(e) => {
         setWidth(e.nativeEvent.layout.width);
-        setRailH(e.nativeEvent.layout.height);
         heightSV.value = e.nativeEvent.layout.height;
       }}>
       <GestureDetector gesture={pan}>
         <View style={{ flex: 1 }}>
           {/* the rail */}
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1 }} onLayout={(e) => (railHSV.value = e.nativeEvent.layout.height)}>
             {/* fullscreen veil dims the WHOLE SCREEN (oversized far past the rail — details,
                 tabs, header, everything), sitting between the focused card (z 300) and the rest.
                 It also swallows every touch outside the card/controls; tapping it closes. */}
@@ -315,36 +317,18 @@ export function StraightCarousel({
                     grind={grind}
                     fs={fs}
                     focusIdx={focusIdx}
+                    railH={railHSV}
                     selected={selectedIds.includes(item.id)}
                     withImage={Math.abs(i - center) <= IMG_HALF}
                     onTap={onTapCard}
                   />
                 ))
               : null}
-            {/* fullscreen controls — in the empty VERTICAL space above the focused card (the
-                dimmed band), the one interactive thing besides the card itself */}
-            {fsOpen ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: railH * 0.42 - 34 - (FORGED_H * Math.min((width - 28) / FORGED_W, 1.55)) / 2 - 86,
-                  left: 0,
-                  right: 0,
-                  zIndex: 400,
-                  alignItems: 'center',
-                }}>
-                {selectControls(true)}
-              </View>
-            ) : null}
-            {/* select controls hug the CARDS (owner: not down by the gear): pinned right under
-                the center card's visual bottom edge. */}
-            {!fsOpen ? (
-              <View
-                style={{ position: 'absolute', left: 0, right: 0, top: '42%', marginTop: (FORGED_H * CARD_SCALE) / 2 + 16, zIndex: 150, alignItems: 'center' }}>
-                {selectControls(false)}
-              </View>
-            ) : null}
           </View>
+          {/* FIXED select controls (#105): one place, always — below the rail, ABOVE the dim
+              (later sibling outranks the veil for paint and touch), live during fullscreen so
+              selecting the focused card never requires closing it. */}
+          <View style={{ alignItems: 'center', paddingTop: 4, paddingBottom: 2 }}>{selectControls(false)}</View>
           {/* only the gear's crown peeks over the bottom edge (under the screen border with the
               rest of the carousel, #104). Centered on the SCREEN (left/right cancel the scaffold
               padding); hidden + inert while a card is focused. Drag it for the fast grind. */}
