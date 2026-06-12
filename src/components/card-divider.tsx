@@ -16,9 +16,11 @@ const MASK_AR = 1321.3586 / 192.1075;
  * strip, the inner-mask silhouette laid over its center, children centered inside the mask's
  * bounding box. Used as the forged cards' 40/60 seam and as the app's section dividers.
  */
-export function DividerPlaque({ width, maskFill = '#FAF8F2', maskScale = 0.525, children }: { width: number; maskFill?: string; maskScale?: number; children?: ReactNode }) {
+export function DividerPlaque({ width, maskFill = '#FAF8F2', maskScale = 0.66, children }: { width: number; maskFill?: string; maskScale?: number; children?: ReactNode }) {
   const h = width / DIV_AR;
-  // maskScale 0.5 (owner-tuned): at full fraction the plaque overwhelmed the divider's center.
+  // 0.66 (calibrated against the divider art): the mask's full-height BODY spans the divider's
+  // native center hollow exactly — smaller leaks the hollow's corner ornaments around the taper,
+  // larger paints over the wing filigree.
   const maskW = width * MASK_W_FRAC * maskScale;
   const maskH = maskW / MASK_AR;
   return (
@@ -26,12 +28,13 @@ export function DividerPlaque({ width, maskFill = '#FAF8F2', maskScale = 0.525, 
       <View style={{ position: 'absolute', left: 0, top: 0, width, height: h }} pointerEvents="none">
         <CardDividerSvg width="100%" height="100%" preserveAspectRatio="none" />
       </View>
-      <View style={{ width: maskW, height: maskH, marginTop: -maskH * 0.01, alignItems: 'center', justifyContent: 'center' }}>
+      {/* The mask's plaque BODY sits ~7.6% right of its own bounding box (a thin tail sweeps
+          left): shift the whole box LEFT so the body centers on the divider, then shift the
+          content back RIGHT inside it so the label centers on the body. */}
+      <View style={{ width: maskW, height: maskH, marginTop: -maskH * 0.01, alignItems: 'center', justifyContent: 'center', transform: [{ translateX: -maskW * 0.076 }] }}>
         <View style={{ position: 'absolute', left: 0, top: 0, width: maskW, height: maskH }} pointerEvents="none">
           <InnerMaskSvg width="100%" height="100%" preserveAspectRatio="none" color={maskFill} />
         </View>
-        {/* The mask's plaque BODY sits ~7.6% right of its own bounding box (a thin tail sweeps
-            left); content centers on the body, not the box, or the label reads off-plaque. */}
         <View style={{ transform: [{ translateX: maskW * 0.076 }] }}>{children}</View>
       </View>
     </View>

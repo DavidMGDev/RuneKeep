@@ -1,5 +1,5 @@
 import { memo, type ReactNode, useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -14,8 +14,7 @@ import Animated, {
 import Svg, { Polygon, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
-import { RuneButton } from '@/components/rune-button';
-import { Body, Rune } from '@/constants/theme';
+import { Rune } from '@/constants/theme';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
 import { FORGED_H, FORGED_W } from './forged-card';
 
@@ -82,10 +81,11 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
     let z = Math.round(100 - ad * 10);
     const f = fs.value;
     if (f > 0 && Math.round(focusIdx.value) === index) {
-      // Grow in place and LIFT (#105): the card's bottom edge lands just above the rail's bottom,
-      // leaving the fixed select controls clear beneath it. Tall spill goes UP into the dim.
+      // Grow and LIFT HIGH (#106): the card rises toward the screen title — its BOTTOM edge lands
+      // around the rail's upper half, clearing the fixed select controls near the bottom. The top
+      // spills far up into the dimmed details/header area by design.
       const fsScale = Math.min((width - 28) / FORGED_W, 1.62);
-      const targetCenter = railH.value - 14 - (FORGED_H * fsScale) / 2;
+      const targetCenter = railH.value * 0.34 - (FORGED_H * fsScale) / 2;
       x = x * (1 - f);
       y = (targetCenter - railH.value * 0.42) * f;
       scale = scale + (fsScale - scale) * f;
@@ -146,23 +146,15 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
 export function StraightCarousel({
   items,
   selectedIds,
-  maxSelect,
-  onToggle,
   initialIndex = 0,
   onIndexChange,
-  selectNoun,
-  aboveSelect,
 }: {
   items: StraightItem[];
   selectedIds: string[];
-  maxSelect: number;
-  onToggle: (id: string) => void;
   initialIndex?: number;
+  /** Fires per detent; the PARENT owns the select controls (they live on the screen's top layer,
+   *  above every veil — #106) and needs the center index to act on the right card. */
   onIndexChange?: (i: number) => void;
-  /** e.g. "class" — used in the control labels + a11y. */
-  selectNoun: string;
-  /** Extra control rendered ABOVE the select button (e.g. "Class features", #104). */
-  aboveSelect?: ReactNode;
 }) {
   const count = items.length;
   const [width, setWidth] = useState(0);
@@ -261,27 +253,6 @@ export function StraightCarousel({
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
   const gearStyle = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * grind.value }));
 
-  const centerItem = items[center];
-  const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
-  const full = selectedIds.length >= maxSelect;
-
-  // Centered column: the button first, the counter BENEATH it (a side counter read off-center).
-  const selectControls = (compact: boolean) => (
-    <View style={{ alignItems: 'center', gap: 5 }}>
-      {aboveSelect}
-      <RuneButton
-        label={centerSelected ? 'Deselect' : `Select ${selectNoun}`}
-        kind={centerSelected ? 'ghost' : 'primary'}
-        height={compact ? 34 : 38}
-        onPress={() => centerItem && onToggle(centerItem.id)}
-        accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? selectNoun}` : `Select ${centerItem?.label ?? selectNoun}`}
-      />
-      <Text style={{ color: full ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
-        {selectedIds.length}/{maxSelect}
-      </Text>
-    </View>
-  );
-
   return (
     <View
       style={{ flex: 1 }}
@@ -325,10 +296,6 @@ export function StraightCarousel({
                 ))
               : null}
           </View>
-          {/* FIXED select controls (#105): one place, always — below the rail, ABOVE the dim
-              (later sibling outranks the veil for paint and touch), live during fullscreen so
-              selecting the focused card never requires closing it. */}
-          <View style={{ alignItems: 'center', paddingTop: 4, paddingBottom: 2 }}>{selectControls(false)}</View>
           {/* only the gear's crown peeks over the bottom edge (under the screen border with the
               rest of the carousel, #104). Centered on the SCREEN (left/right cancel the scaffold
               padding); hidden + inert while a card is focused. Drag it for the fast grind. */}
