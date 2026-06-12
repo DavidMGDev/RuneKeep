@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ArtImage } from '@/components/art-image';
 import { Rune } from '@/constants/theme';
@@ -15,24 +15,25 @@ import { Art } from '../art';
  * BOUNDARY hearts are interactive (see heartBoundaries). Hold one ~0.75s — it pops under your
  * finger and keeps growing, shaking harder as it charges — and at the threshold the step applies
  * with an arcane shard effect (outward for a loss, flying in from off-screen for a gain; gold
- * variants for the golden hearts). Release early to cancel. Double-tap = the same step instantly.
- * Single taps and every non-boundary heart are inert.
+ * variants for the golden hearts). Release early to cancel. Two touch-downs on the same heart
+ * within ~320ms = the step instantly, no ceremony (#88 — detected manually on DOWN events, never
+ * via a Tap recognizer racing the LongPress). Single taps and non-boundary hearts are inert.
  *
- * Effects are INDEPENDENT instances (#86): the moment a hold triggers, its effect detaches and
- * settles on its own ~0.95s clock while the row is immediately interactive again — three hearts
- * can be healed or broken in rapid succession, each trailing its own shards.
+ * ONE persistent HeartAnim instance carries hold → explosion → settle (#88): both art states are
+ * mounted from touch-down, so nothing ever unmounts/remounts mid-animation — that remount was the
+ * old two-frame blank at the climax. Instances are independent and self-cleaning (#86): the row
+ * is interactive again the instant a hold fires, so hearts chain in rapid succession.
  *
- * Pure Reanimated (no Skia): transform/opacity-only leaf views mounted ONLY while effects run —
- * obeys every device perf rule (no rasterized animating layers, no fractional-alpha containers
- * at rest, nothing mounted when idle).
+ * Pure Reanimated (no Skia): transform/opacity-only leaf views mounted ONLY while an animation
+ * runs — no rasterized animating layers, no fractional-alpha containers at rest.
  */
 
 const HOLD_MS = 750; // build-up; the gesture triggers here
 const FX_MS = 950; // burst + settle after the trigger
 const CANCEL_MS = 180;
-// The hold runs on an ease-OUT curve, so most of this lands in the first ~150ms: the heart POPS
-// to ~2x the instant the finger lands (you feel that you have it), then climbs to ~3.4x (~120px)
-// by the trigger (#85/#86 — 20% bigger per owner).
+const DOUBLE_MS = 320; // max gap between touch-DOWNs for the instant path
+// Ease-OUT hold: ~2x within the first ~150ms (you instantly feel you have it), ~3.4x (~120px) at
+// the trigger.
 const GROW = 2.4;
 const REDUCED_GROW = 0.4;
 
@@ -43,9 +44,7 @@ const heartTint = (s: PipState, accent: string) => (s === 'golden' ? Rune.goldBr
 const POST: Record<HeartAction, PipState> = { fill: 'active', break: 'empty', goldify: 'golden', degold: 'active' };
 const GAINS: Record<HeartAction, boolean> = { fill: true, goldify: true, break: false, degold: false };
 
-// Deterministic shard field (no Math.random — keeps renders pure and replays identical). Angles
-// jittered off a uniform fan; distances/sizes/spins off small prime cycles. Distances carry the
-// +20% of #86.
+// Deterministic shard field (no Math.random — keeps renders pure and replays identical).
 interface Shard { ang: number; dist: number; size: number; spin: number; diamond: boolean; tone: number; delay: number }
 const SHARDS: Shard[] = Array.from({ length: 14 }, (_, i) => ({
   ang: (i / 14) * Math.PI * 2 + (i % 3) * 0.23,
@@ -79,6 +78,8 @@ interface SlotProps {
 }
 
 const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent, hidden, onBegin, onTrigger, onCancel }: SlotProps) {
+  // Hidden = opacity 0, NEVER unmounted: the image stays painted, so when an animation ends and
+  // the slot reappears in the same commit there is no decode gap (#88).
   const body = (
     <View style={[box(x, 0, pip, pip), { opacity: hidden ? 0 : 1 }]}
       accessible
@@ -88,8 +89,6 @@ const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent
     </View>
   );
   if (!action) return body;
-  // Double-tap is detected MANUALLY in onBegin (a second touch-DOWN within the window applies
-  // instantly) — a Tap recognizer racing the LongPress was flaky (#87).
   const hold = Gesture.LongPress()
     .minDuration(HOLD_MS)
     .maxDistance(28)
@@ -105,7 +104,6 @@ const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent
 function ShardView({ shard, action, accent, inward, fxP }: { shard: Shard; action: HeartAction; accent: string; inward: boolean; fxP: SharedValue<number> }) {
   const style = useAnimatedStyle(() => {
     const p = Math.min(1, Math.max(0, (fxP.value - shard.delay) / (1 - shard.delay)));
-    // outward: fly from the heart; inward: arrive INTO it from past the screen edge.
     const travel = inward ? (1 - p) * (shard.dist + INFLOW_DIST) : Math.pow(p, 0.62) * shard.dist;
     const fade = inward ? Math.min(1, p * 3) * Math.min(1, (1 - p) * 6 + 0.35) : Math.min(1, (1 - p) * 1.9);
     return {
@@ -131,46 +129,66 @@ function ShardView({ shard, action, accent, inward, fxP }: { shard: Shard; actio
   );
 }
 
-interface FxInstance { id: number; index: number; action: HeartAction; pre: PipState }
+type AnimPhase = 'hold' | 'fx' | 'out';
+interface Anim { id: number; index: number; action: HeartAction; pre: PipState; phase: AnimPhase }
 
-/** One detached, self-cleaning effect (#86): owns its progress, settles the grown heart from the
- *  hold's peak back into the row, crossfades pre→post art, and fires its shards. */
-function HeartFxView({ inst, x, pip, accent, reduced, onDone }: { inst: FxInstance; x: number; pip: number; accent: string; reduced: boolean; onDone: (id: number) => void }) {
-  const p = useSharedValue(0);
-  const done = useCallback(() => onDone(inst.id), [onDone, inst.id]);
+/**
+ * ONE component instance per interaction, alive from touch-down to settle (#88). Both art states
+ * mount immediately (post at alpha 0) so the climax never waits on an image; phase changes only
+ * retarget shared values — nothing remounts.
+ */
+function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: number; pip: number; accent: string; reduced: boolean; onDone: (id: number) => void }) {
+  const holdP = useSharedValue(0);
+  const fxP = useSharedValue(0);
+  const done = useCallback(() => onDone(anim.id), [onDone, anim.id]);
+
   useEffect(() => {
-    p.value = withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
-      if (finished) runOnJS(done)();
-    });
-  }, [p, done]);
+    if (anim.phase === 'hold') {
+      holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+    } else if (anim.phase === 'fx') {
+      cancelAnimation(holdP);
+      holdP.value = 1; // pin the charge peak; the settle owns the curve from here
+      fxP.value = withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(done)();
+      });
+    } else {
+      cancelAnimation(holdP);
+      holdP.value = withTiming(0, { duration: CANCEL_MS }, (finished) => {
+        if (finished) runOnJS(done)();
+      });
+    }
+  }, [anim.phase, holdP, fxP, done]);
 
-  const gains = GAINS[inst.action];
-  const post = POST[inst.action];
-  const gold = inst.action === 'goldify' || inst.action === 'degold';
+  const gains = GAINS[anim.action];
+  const post = POST[anim.action];
+  const gold = anim.action === 'goldify' || anim.action === 'degold';
 
-  // The explosion is EMPHATIC (#87): an extra kick up right at the climax, then a damped elastic
-  // settle back into the row. Continuous with the hold's peak at p=0.
-  const settle = useAnimatedStyle(() => {
-    const p_ = p.value;
+  // hold: pop + charging shake. fx: +0.55 kick at the climax, then a damped elastic settle to 1.
+  const heart = useAnimatedStyle(() => {
+    const charge = holdP.value;
+    const p = fxP.value;
     const grow = reduced ? REDUCED_GROW : GROW;
-    const kick = reduced || p_ >= 0.22 ? 0 : 0.55 * Math.sin((p_ / 0.22) * Math.PI);
-    const elastic = reduced || p_ < 0.22 ? 0 : Math.cos((p_ - 0.22) * 16) * 0.16 * (1 - p_);
-    return { transform: [{ scale: 1 + grow * (1 - p_) + kick + elastic }] };
+    const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
+    const elastic = !reduced && p >= 0.22 ? Math.cos((p - 0.22) * 16) * 0.16 * (1 - p) : 0;
+    const wobble = reduced ? 0 : Math.sin(charge * 46) * 0.07 * charge * Math.max(0, 1 - p * 5);
+    return {
+      transform: [{ scale: 1 + grow * charge * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }],
+    };
   });
   // a gain fills as the inflow lands (~55%); a loss shatters instantly.
-  const preFade = useAnimatedStyle(() => ({ opacity: gains ? (p.value > 0.55 ? 0 : 1) : p.value > 0.1 ? 0 : 1 }));
-  const postFade = useAnimatedStyle(() => ({ opacity: gains ? (p.value > 0.55 ? 1 : 0) : p.value > 0.1 ? 1 : 0 }));
+  const preFade = useAnimatedStyle(() => ({ opacity: gains ? (fxP.value > 0.55 ? 0 : 1) : fxP.value > 0.1 ? 0 : 1 }));
+  const postFade = useAnimatedStyle(() => ({ opacity: gains ? (fxP.value > 0.55 ? 1 : 0) : fxP.value > 0.1 ? 1 : 0 }));
   // the arcane seal: a 45°-rotated square outline blooming out of the heart on trigger
   const ring = useAnimatedStyle(() => ({
-    transform: [{ rotate: '45deg' }, { scale: 0.2 + p.value * 2.6 }],
-    opacity: p.value <= 0 ? 0 : Math.max(0, 0.9 - p.value),
+    transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 2.6 }],
+    opacity: fxP.value <= 0 ? 0 : Math.max(0, 0.9 - fxP.value),
   }));
 
   return (
     <View style={[box(x, pip / 2, 0, 0), { overflow: 'visible' }]} pointerEvents="none">
-      <Animated.View style={[{ position: 'absolute', left: -pip / 2, top: -pip / 2, width: pip, height: pip }, settle]}>
+      <Animated.View style={[{ position: 'absolute', left: -pip / 2, top: -pip / 2, width: pip, height: pip }, heart]}>
         <Animated.View style={[box(0, 0, pip, pip), preFade]}>
-          <ArtImage source={heartArt(inst.pre)} fit="contain" tint={heartTint(inst.pre, accent)} />
+          <ArtImage source={heartArt(anim.pre)} fit="contain" tint={heartTint(anim.pre, accent)} />
         </Animated.View>
         <Animated.View style={[box(0, 0, pip, pip), postFade]}>
           <ArtImage source={heartArt(post)} fit="contain" tint={heartTint(post, accent)} />
@@ -187,15 +205,13 @@ function HeartFxView({ inst, x, pip, accent, reduced, onDone }: { inst: FxInstan
             ]}
           />
           {SHARDS.map((shard, i) => (
-            <ShardView key={i} shard={shard} action={inst.action} accent={accent} inward={gains} fxP={p} />
+            <ShardView key={i} shard={shard} action={anim.action} accent={accent} inward={gains} fxP={fxP} />
           ))}
         </>
       ) : null}
     </View>
   );
 }
-
-interface HoldState { index: number; action: HeartAction; pre: PipState }
 
 interface HeartTrackProps {
   left: number;
@@ -214,73 +230,55 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
   const bounds = heartBoundaries(hp, slots);
   const step = (width - pip) / (slots - 1);
 
-  const [hold, setHold] = useState<HoldState | null>(null);
-  const [effects, setEffects] = useState<FxInstance[]>([]);
-  const triggered = useRef(false);
+  const [anims, setAnims] = useState<Anim[]>([]);
+  const charging = useRef<Anim | null>(null);
+  const lastDown = useRef({ index: -1, t: 0 });
   const nextId = useRef(1);
-  const lastTap = useRef({ index: -1, t: 0 });
-  const holdP = useSharedValue(0);
 
-  const clearHold = useCallback(() => {
-    triggered.current = false;
-    setHold(null);
-  }, []);
+  const onDone = useCallback((id: number) => setAnims((list) => list.filter((a) => a.id !== id)), []);
 
   const onBegin = useCallback(
     (index: number, action: HeartAction) => {
-      // Manual double-tap (#87): a second touch-DOWN on the same heart within the window applies
-      // the step INSTANTLY — no recognizer race, no animation, deterministic.
+      // Double-tap = two touch-DOWNs on the same heart inside the window (#88). Checked before
+      // anything else, so it works no matter what holds/cancels are mid-flight.
       const now = Date.now();
-      if (lastTap.current.index === index && now - lastTap.current.t < 300) {
-        lastTap.current = { index: -1, t: 0 };
-        holdP.value = 0;
-        setHold(null);
+      const isDouble = lastDown.current.index === index && now - lastDown.current.t < DOUBLE_MS;
+      lastDown.current = { index, t: now };
+      if (isDouble) {
+        if (charging.current) {
+          const id = charging.current.id;
+          charging.current = null;
+          setAnims((list) => list.filter((a) => a.id !== id)); // discard the first tap's charge
+        }
         onHp(hp + (GAINS[action] ? 1 : -1));
         return;
       }
-      if (hold) return; // one finger charges at a time; settling effects don't block (#86)
-      triggered.current = false;
-      setHold({ index, action, pre: resolveHearts(hp, slots).states[index] });
-      holdP.value = 0;
-      holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+      if (charging.current) return; // one finger charges at a time; settling anims don't block
+      const anim: Anim = { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'hold' };
+      charging.current = anim;
+      setAnims((list) => [...list, anim]);
     },
-    [hold, hp, slots, holdP, onHp],
+    [hp, slots, onHp],
   );
 
   const onTrigger = useCallback(() => {
-    if (!hold || triggered.current) return;
-    triggered.current = true;
-    onHp(hp + (GAINS[hold.action] ? 1 : -1));
-    // Detach: the effect lives its own life; the row is interactive again right away (#86).
-    setEffects((list) => [...list, { id: nextId.current++, index: hold.index, action: hold.action, pre: hold.pre }]);
-    holdP.value = 0;
-    clearHold();
-  }, [hold, hp, onHp, holdP, clearHold]);
+    const c = charging.current;
+    if (!c) return;
+    charging.current = null;
+    onHp(hp + (GAINS[c.action] ? 1 : -1));
+    setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as AnimPhase } : a)));
+  }, [hp, onHp]);
 
   const onCancel = useCallback(() => {
-    if (triggered.current) return; // already detached into an effect
-    // A quick release is the potential FIRST tap of a double-tap — remember it (#87).
-    if (hold) lastTap.current = { index: hold.index, t: Date.now() };
-    holdP.value = withTiming(0, { duration: CANCEL_MS }, (finished) => {
-      if (finished) runOnJS(clearHold)();
-    });
-  }, [hold, holdP, clearHold]);
-
-  const onDone = useCallback((id: number) => setEffects((list) => list.filter((e) => e.id !== id)), []);
-
-  // ---- the held heart, grown past the finger, shaking as it charges ----
-  const grow = useAnimatedStyle(() => {
-    const charge = holdP.value;
-    const wobble = reduced ? 0 : Math.sin(holdP.value * 46) * 0.07 * charge;
-    return {
-      transform: [{ scale: 1 + (reduced ? REDUCED_GROW : GROW) * charge }, { rotate: `${wobble}rad` }],
-    };
-  });
+    const c = charging.current;
+    if (!c) return;
+    charging.current = null;
+    setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'out' as AnimPhase } : a)));
+  }, []);
 
   return (
     // zIndex 10: above the sheet's other body elements so shards fly over them, but BELOW the
-    // expand veil (20) and the card carousel (30) — hearts and their hitboxes must never sit on
-    // top of the card UI or its dims (#87).
+    // expand veil (20) and the card carousel (30) — see the #87 stacking contract.
     <View style={[box(left, top, width, pip), { zIndex: 10 }]}>
       {states.map((s, i) => (
         <HeartSlot
@@ -291,24 +289,15 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
           state={s}
           action={i === bounds.up ? bounds.upAction : i === bounds.down ? bounds.downAction : null}
           accent={accent}
-          // Only the CHARGING heart hides (the overlay replaces it). During a settling effect the
-          // real (post-state) heart stays visible beneath — unmount/mount of the effect's images
-          // can take a frame, and a visible base means no two-frame disappear at the climax (#87).
-          hidden={hold?.index === i}
+          // ONE visible heart per slot: the animating copy owns the slot for its whole life (#88).
+          hidden={anims.some((a) => a.index === i)}
           onBegin={onBegin}
           onTrigger={onTrigger}
           onCancel={onCancel}
         />
       ))}
-      {hold ? (
-        <View style={[box(hold.index * step + pip / 2, pip / 2, 0, 0), { overflow: 'visible' }]} pointerEvents="none">
-          <Animated.View style={[{ position: 'absolute', left: -pip / 2, top: -pip / 2, width: pip, height: pip }, grow]}>
-            <ArtImage source={heartArt(hold.pre)} fit="contain" tint={heartTint(hold.pre, accent)} />
-          </Animated.View>
-        </View>
-      ) : null}
-      {effects.map((inst) => (
-        <HeartFxView key={inst.id} inst={inst} x={inst.index * step + pip / 2} pip={pip} accent={accent} reduced={reduced} onDone={onDone} />
+      {anims.map((a) => (
+        <HeartAnim key={a.id} anim={a} x={a.index * step + pip / 2} pip={pip} accent={accent} reduced={reduced} onDone={onDone} />
       ))}
     </View>
   );
