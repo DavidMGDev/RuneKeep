@@ -40,15 +40,14 @@ export const SIGMA = 1.5 * ANGLE_STEP; // falloff width
 /** Finger px -> rotation coupling (≈ R*stageScale so the center card tracks the finger ~1:1). */
 export const PAN_R = 540;
 
-/** How many cards each side of center stay MOUNTED (virtualization window). Slots past
- *  IMG_MOUNT_HALF carry no Image at all — just the flat CardBack — so the wider window costs
- *  almost nothing and the hand reads as a fan of white cards (#54 B). */
+/** Visibility radius in card steps (see slotOpacityAt). Slots are NEVER unmounted anymore (#78 —
+ *  every slot always renders its tiny LOD thumb); this only bounds what is drawn. */
 export const WINDOW_HALF = 3;
 
-/** How many cards each side of center mount their real Image. ALL mounted slots carry one now
- *  (#67 A — WebP decodes are cheap): the ±3 boundary slot decodes at alpha 0, ready before it can
- *  ever fade in, so a fast scroll shows cards loading in instead of a white-back pop. */
-export const IMG_MOUNT_HALF = 3;
+/** How many cards each side of center mount their FULL-RES layer (#78). It draws on the three
+ *  center cards (see imageOpacityAt); the ±2 boundary mounts it at alpha 0 so it decodes before
+ *  it can ever fade in. Everything further lives on its always-mounted thumb. */
+export const IMG_MOUNT_HALF = 2;
 
 /** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
 export const FS_OPEN_DIST = 150;
@@ -77,9 +76,6 @@ export const GRIND_TIGHTEN = 0.44; // fan step shrinks to 56% while grinding
 // 0.45: at the grind spacing (~111px between centers) a 30% shrink still overlapped ~31% of the
 // card; 45% lands at ~12% overlap (#75).
 export const GRIND_SHRINK = 0.45;
-/** While grinding, this many EXTRA slots mount ahead in the scroll direction, images decoding at
- *  alpha 0 — foresight so a fast grind never outruns the decoder into an empty slot (#75). */
-export const GRIND_LOOKAHEAD = 5;
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;
@@ -106,14 +102,14 @@ export const FS_SPRING = { damping: 18, stiffness: 120, mass: 0.9 };
  * slots at full alpha stacked on top of each other.
  */
 /**
- * Real-art alpha by distance in card steps (#67 A): five cards drawn at rest (full through ±2,
- * gone by ±3 — integer alphas at every rest detent, see slotOpacityAt for why that matters), and
- * `grind` (0..1, the inner-gear scroll) extends the fade so all SEVEN mounted slots draw while
- * skimming. The mounted-but-invisible boundary slot is where decode happens.
+ * FULL-RES alpha by distance in card steps (#78 LOD): the three center cards draw sharp (full
+ * within ±1), fading to the always-present thumb by ±2 — integer alphas at every rest detent (see
+ * slotOpacityAt for why that matters). The caller damps this by (1 - grind): while the gear
+ * grinds, the whole fan rides the tiny thumbs and no full-res texture composites at all.
  */
-export function imageOpacityAt(distSteps: number, grind: number = 0): number {
+export function imageOpacityAt(distSteps: number): number {
   'worklet';
-  return Math.min(1, Math.max(0, 3 + grind - distSteps));
+  return Math.min(1, Math.max(0, 2 - distSteps));
 }
 
 /**

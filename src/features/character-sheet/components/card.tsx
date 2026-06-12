@@ -1,7 +1,6 @@
 import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
-import { Rune } from '@/constants/theme';
 import type { CardItem } from '../card-data';
 
 interface CardProps {
@@ -11,27 +10,31 @@ interface CardProps {
 }
 
 /**
- * A single card. Renders the PNG AS IS (no rounded corners, no crop). Kept deliberately thin and
- * fixed-size so a future custom-card renderer (HTML/CSS-style content) can drop in at the same size.
- * Soft shadow via the iOS/web shadow props only — NO Android `elevation`: a native elevation shadow
- * re-renders per frame under animated transforms, and 5-7 of them tanked the carousel (issue #41).
+ * The LOW-LOD card layer (#78): the 188x263 thumb, mounted on EVERY slot forever. 16x fewer
+ * pixels than the full art — a whole 18-card deck of these composites for less than two full
+ * cards, which is what makes the gear grind cheap. The full-res Card fades in on top near the
+ * fan's center; the upscale blur underneath reads as depth-of-field, not as a placeholder.
  */
-/**
- * The blank back a far-from-center slot shows instead of its real art (#48 B): same size and aspect
- * as the card, a flat parchment rectangle with a gold hairline. Solid fills are nearly free to
- * composite, unlike a 750x1050 texture — the hand "fades into blank cards" as it leaves the center.
- */
-export function CardBack() {
+export function CardThumb({ item }: { item: CardItem }) {
   return (
-    <View
-      style={[
-        StyleSheet.absoluteFillObject,
-        { backgroundColor: Rune.ivory, borderRadius: 6, borderWidth: 1.5, borderColor: Rune.gold },
-      ]}
+    <Image
+      source={item.thumb}
+      style={StyleSheet.absoluteFillObject}
+      contentFit="fill"
+      cachePolicy="memory-disk"
+      recyclingKey={`${item.id}-lod`}
+      transition={0}
     />
   );
 }
 
+/**
+ * A single FULL-RES card. Renders the image AS IS (no rounded corners, no crop). Kept deliberately
+ * thin and fixed-size so a future custom-card renderer (HTML/CSS-style content) can drop in at the
+ * same size. `transition` cross-fades the decode over the thumb beneath (#78). Soft shadow via the
+ * iOS/web shadow props only — NO Android `elevation`: a native elevation shadow re-renders per
+ * frame under animated transforms, and 5-7 of them tanked the carousel (issue #41).
+ */
 export function Card({ item, width, height }: CardProps) {
   return (
     <View
@@ -49,7 +52,7 @@ export function Card({ item, width, height }: CardProps) {
         contentFit="fill"
         cachePolicy="memory-disk"
         recyclingKey={item.id}
-        transition={0}
+        transition={150}
       />
     </View>
   );
