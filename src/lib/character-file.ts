@@ -46,6 +46,9 @@ export interface CharacterFile {
   weaponPrimaryId?: string;
   weaponSecondaryId?: string | null;
   armorId?: string;
+  /** Inventory (#128): selected suggested-item ids (incl. 'item-gold') + user-authored item cards. */
+  inventoryItemIds?: string[];
+  inventoryCustom?: ExperienceDef[];
   level: number;
 }
 

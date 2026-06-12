@@ -1,7 +1,7 @@
 import { type FC } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import { Text, View } from 'react-native';
-import Svg, { Path, type SvgProps } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
 
 import { DividerPlaque } from '@/components/card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -26,6 +26,7 @@ export function ForgedCard({
   accentDeep,
   Banner,
   imageUri,
+  fallbackArt,
   pageMark,
 }: {
   title: string;
@@ -35,6 +36,8 @@ export function ForgedCard({
   Banner?: FC<SvgProps>;
   /** Player-supplied art (#107 experiences): fills the art zone instead of a banner. */
   imageUri?: string | null;
+  /** Default art (#128 inventory items) shown when there's no player image and no banner. */
+  fallbackArt?: number;
   /** Deck position (#110): when this card is face 0 of a flip-deck, the gray "1/N" mark by the title. */
   pageMark?: string;
 }) {
@@ -45,6 +48,8 @@ export function ForgedCard({
       <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
         {imageUri ? (
           <ExpoImage source={{ uri: imageUri }} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />
+        ) : fallbackArt != null ? (
+          <ExpoImage source={fallbackArt} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />
         ) : Banner ? (
           <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
         ) : null}
@@ -215,6 +220,48 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
             {weapon.feature.text}
           </Text>
         ) : null}
+      </View>
+      <ForgedFooter />
+    </View>
+  );
+}
+
+/**
+ * The GOLD card (#128, immutable): the character's coin. A flat-but-rich golden gradient art zone
+ * with a coin emblem — simple/modern, not a detailed illustration, per owner.
+ */
+export function ForgedGoldCard({ amount }: { amount?: number }) {
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
+      <View style={{ height: ART_H, overflow: 'hidden' }}>
+        <Svg width="100%" height="100%">
+          <Defs>
+            <LinearGradient id="rk_gold_card" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0" stopColor="#7a5e22" />
+              <Stop offset="0.42" stopColor="#e7c668" />
+              <Stop offset="0.62" stopColor="#fff2c4" />
+              <Stop offset="0.8" stopColor="#caa247" />
+              <Stop offset="1" stopColor="#6f5320" />
+            </LinearGradient>
+          </Defs>
+          <Rect x="0" y="0" width="100%" height="100%" fill="url(#rk_gold_card)" />
+        </Svg>
+        <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+          <Svg width={Math.round(ART_H * 0.52)} height={Math.round(ART_H * 0.52)} viewBox="0 0 40 40">
+            <Circle cx={20} cy={20} r={14} fill="rgba(255,246,212,0.18)" stroke="#fff6df" strokeWidth={2} />
+            <Path d="M 20 11 V 29 M 16 15.5 h 7 a 3 3 0 0 1 0 6 h -6 a 3 3 0 0 0 0 6 h 7" fill="none" stroke="#5a4416" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </View>
+      </View>
+      <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
+        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
+          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Currency</Text>
+        </DividerPlaque>
+      </View>
+      <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 16, paddingBottom: 24 }}>
+        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>Gold</Text>
+        {amount != null ? <Text style={{ color: Rune.inkText, fontSize: 22, fontFamily: Display.black, marginTop: 4 }}>{amount}</Text> : null}
+        <Text style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'center', marginTop: 7 }}>Coin for trade, bribes, and the finer things. Track it here as you spend and earn.</Text>
       </View>
       <ForgedFooter />
     </View>
