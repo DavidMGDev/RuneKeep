@@ -15,7 +15,7 @@ import { cardById } from '@/features/cards/catalog';
 import { classColor } from '@/constants/identity';
 import { classBanner } from '@/features/create/class-cards';
 import { featurePages } from '@/features/create/class-data';
-import { ForgedTextCard } from '@/features/create/forged-card';
+import { ForgedCard, ForgedTextCard } from '@/features/create/forged-card';
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
@@ -131,7 +131,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
   const tint = useAccentTint();
 
   // Every resource now uses the boundary-only Â±1 hold/double-tap model (#81 hearts, #89 the rest).
-  const hp = resolveHearts(character.hp, character.heartSlots); // hearts + readout derived from HP (Â§1A)
+  // Only the hearts the character can ever fill are drawn (#107): maxHp 4 → four hearts, no
+  // ghost fifth/sixth; above 6 the fixed six slots carry golden overflow as before.
+  const heartSlotCount = Math.min(character.heartSlots, Math.max(1, character.maxHp));
+  const hp = resolveHearts(character.hp, heartSlotCount); // hearts + readout derived from HP (§1A)
   const stress = resolvePips({ total: character.stress.total, active: character.stress.active, locked: character.stress.locked, depletedRemainder: true });
   const armor = resolvePips({ total: character.armor.total, active: character.armor.active, locked: character.armor.locked, depletedRemainder: true });
   const hope = resolvePips({ total: character.hope.total, active: character.hope.active, depletedRemainder: true });
@@ -254,10 +257,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           so 12/12 still fits under the label (#30 I/#43 I). */}
       <View style={[box(48, 330, 92, 38), { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-start', overflow: 'hidden' }]} pointerEvents="none">
         <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 28 : 32, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
-        <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {hp.max}</Text>
+        <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {character.maxHp}</Text>
       </View>
       {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/Â§1A). */}
-      <HeartTrack left={140} top={333} width={235} pip={35} hp={character.hp} accent={tint ?? RED} onHp={onHp} />
+      <HeartTrack left={140} top={333} width={235} pip={35} hp={character.hp} slots={heartSlotCount} accent={tint ?? RED} onHp={onHp} />
 
       {/* ---------- Stress â€” inset frame, two rows spread across the panel ----------
           Panel 20px shorter with the pips trimmed to match (34->26 tall) â€” flatter, more
@@ -360,7 +363,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const featureJobs = useMemo(() => {
     if (!characterFile) return [];
     const cls = characterFile.className;
-    return featurePages(cls).map((p) => ({
+    const featureCards = featurePages(cls).map((p) => ({
       key: `feat-${cls}-${p.pageIndex}`,
       node: (
         <ForgedTextCard
@@ -373,6 +376,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         />
       ),
     }));
+    // Experience cards ride the abilities hand too (#107): keyed by content, so an edit (new
+    // title/text/image) re-forges its bitmap instead of serving the stale one.
+    const expCards = (characterFile.experiences ?? []).map((e) => ({
+      key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0)) % 99991}`,
+      node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} />,
+    }));
+    return [...expCards, ...featureCards];
   }, [characterFile]);
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(featureJobs);
 
@@ -393,7 +403,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onInfo = useCallback(() => setInfoOpen(true), []);
   const onInfoClose = useCallback(() => setInfoOpen(false), []);
   const onHp = useCallback(
-    (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.heartSlots * 2, n)) })),
+    // No overhealing past the character's TRUE maximum (#107) — not the slot capacity.
+    (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.maxHp, n)) })),
     [],
   );
   const onTrack = useCallback(

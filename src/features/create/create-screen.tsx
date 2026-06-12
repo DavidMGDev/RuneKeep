@@ -1,17 +1,21 @@
 ﻿import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
+import { ArtImage } from '@/components/art-image';
+import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { type ClassName, classColor, classInfo } from '@/constants/identity';
-import { Body, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import { CATALOG } from '@/features/cards/catalog';
-import { newCharacterId } from '@/lib/character-file';
+import { Art } from '@/features/character-sheet/art';
+import { formatModifier, TRAIT_ORDER, type TraitKey } from '@/features/character-sheet/character';
+import { type ExperienceDef, newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { CLASS_CARDS, classBanner } from './class-cards';
@@ -22,7 +26,13 @@ import { StraightCarousel, type StraightItem } from './straight-carousel';
 
 // ---------- draft ----------
 
-type DeckKey = 'class' | 'subclass' | 'ancestry' | 'community' | 'domains';
+type CardDeckKey = 'class' | 'subclass' | 'ancestry' | 'community' | 'domains';
+type DeckKey = CardDeckKey | 'traits' | 'experiences' | 'inventory' | 'armor';
+
+const isCardDeck = (k: DeckKey): k is CardDeckKey => k === 'class' || k === 'subclass' || k === 'ancestry' || k === 'community' || k === 'domains';
+
+/** The rulebook's starting spread (#107): one +2, two +1, two 0, one −1, any order. */
+export const TRAIT_POOL = [2, 1, 1, 0, 0, -1];
 
 interface Draft {
   name: string;
@@ -32,9 +42,21 @@ interface Draft {
   ancestryCardId: string | null;
   communityCardId: string | null;
   domainCardIds: string[];
+  traits: Partial<Record<TraitKey, number>>;
+  experiences: ExperienceDef[];
 }
 
-const EMPTY: Draft = { name: '', portraitUri: null, className: null, subclassCardId: null, ancestryCardId: null, communityCardId: null, domainCardIds: [] };
+const EMPTY: Draft = {
+  name: '',
+  portraitUri: null,
+  className: null,
+  subclassCardId: null,
+  ancestryCardId: null,
+  communityCardId: null,
+  domainCardIds: [],
+  traits: {},
+  experiences: [],
+};
 
 function deckDone(deck: DeckKey, d: Draft): boolean {
   switch (deck) {
@@ -48,6 +70,13 @@ function deckDone(deck: DeckKey, d: Draft): boolean {
       return !!d.communityCardId;
     case 'domains':
       return d.domainCardIds.length === 2;
+    case 'traits':
+      return TRAIT_ORDER.every((t) => d.traits[t.key] !== undefined);
+    case 'experiences':
+      return d.experiences.length === 2;
+    case 'inventory':
+    case 'armor':
+      return true; // stubs (#107) — filled out next issue, never gate the FORGE
   }
 }
 
@@ -91,15 +120,48 @@ function DeckGlyph({ deck, color }: { deck: DeckKey; color: string }) {
           <Rect x={9} y={2} width={10} height={14} transform="rotate(8 14 9)" {...s} />
         </Svg>
       );
+    case 'traits':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Polygon points="11,2 16,7 16,12 11,20 6,12 6,7" {...s} />
+          <Line x1={8.5} y1={10} x2={13.5} y2={10} {...s} />
+          <Line x1={11} y1={7.5} x2={11} y2={12.5} {...s} />
+        </Svg>
+      );
+    case 'experiences':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          {/* quill */}
+          <Path d="M 4 18 Q 6 10 18 3 Q 14 12 8 16 Z" {...s} />
+          <Line x1={4} y1={18} x2={9} y2={13} {...s} />
+        </Svg>
+      );
+    case 'inventory':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Path d="M 4 8 H 18 L 17 19 H 5 Z" {...s} />
+          <Path d="M 8 8 V 5 a 3 3 0 0 1 6 0 v 3" {...s} />
+        </Svg>
+      );
+    case 'armor':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Path d="M 11 2 L 19 5 V 11 Q 19 17 11 20 Q 3 17 3 11 V 5 Z" {...s} />
+        </Svg>
+      );
   }
 }
 
-const DECKS: { key: DeckKey; label: string }[] = [
+const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
   { key: 'class', label: 'Class' },
   { key: 'subclass', label: 'Subclass' },
   { key: 'ancestry', label: 'Ancestry' },
   { key: 'community', label: 'Community' },
   { key: 'domains', label: 'Domains' },
+  { key: 'traits', label: 'Traits' },
+  { key: 'experiences', label: 'Experiences' },
+  { key: 'inventory', label: 'Inventory', stub: true },
+  { key: 'armor', label: 'Armor', stub: true },
 ];
 
 function DeckTab({ deck, label, active, done, locked, pulseToken, onPress }: { deck: DeckKey; label: string; active: boolean; done: boolean; locked: boolean; pulseToken: number; onPress: () => void }) {
@@ -116,10 +178,10 @@ function DeckTab({ deck, label, active, done, locked, pulseToken, onPress }: { d
     <Pressable
       onPress={onPress}
       disabled={locked}
-      style={{ flex: 1, minWidth: 0 }}
+      style={{ width: 74 }}
       accessibilityRole="tab"
       accessibilityState={{ selected: active, disabled: locked }}
-      accessibilityLabel={`${label} cards${locked ? ', locked. Pick a class first' : done ? ', chosen' : ''}`}>
+      accessibilityLabel={`${label}${locked ? ', locked' : done ? ', done' : ''}`}>
       <Animated.View style={anim}>
         <ChamferBox
           chamfer={7}
@@ -273,8 +335,10 @@ export function CreateScreen() {
   const [featurePage, setFeaturePage] = useState(0);
   const [centerClassIdx, setCenterClassIdx] = useState(0);
   const [centerIdx, setCenterIdx] = useState(0);
+  const [editingExperience, setEditingExperience] = useState<number | null>(null);
 
   const items: StraightItem[] = useMemo(() => {
+    if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
         return CLASS_CARDS.map((c) => {
@@ -302,6 +366,7 @@ export function CreateScreen() {
   }, [deck, draft.className, sources]);
 
   const selectedIds = useMemo(() => {
+    if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
         return draft.className ? [`class-${draft.className}`] : [];
@@ -318,6 +383,7 @@ export function CreateScreen() {
 
   const onToggle = useCallback(
     (id: string) => {
+      if (!isCardDeck(deck)) return;
       switch (deck) {
         case 'class': {
           const key = id.replace('class-', '') as ClassName;
@@ -362,6 +428,8 @@ export function CreateScreen() {
       ancestryCardId: draft.ancestryCardId!,
       communityCardId: draft.communityCardId!,
       domainCardIds: draft.domainCardIds,
+      traits: draft.traits as Record<TraitKey, number>, // complete ⇒ all six assigned
+      experiences: draft.experiences,
       level: 1,
     });
     router.replace({ pathname: '/sheet', params: { id } });
@@ -372,7 +440,8 @@ export function CreateScreen() {
     if (!res.canceled && res.assets[0]) set({ portraitUri: res.assets[0].uri });
   }, [set]);
 
-  const locked = (k: DeckKey) => (k === 'subclass' || k === 'domains') && !draft.className;
+  const locked = (k: DeckKey) =>
+    ((k === 'subclass' || k === 'domains') && !draft.className) || !!DECKS.find((d) => d.key === k)?.stub; // stubs land next issue
   const maxSelect = deck === 'domains' ? 2 : 1;
   const noun = deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
@@ -430,26 +499,35 @@ export function CreateScreen() {
         <View style={{ marginTop: 12 }}>
           <SectionDivider label="Origin" />
         </View>
-        <View style={{ flexDirection: 'row', gap: 4, marginTop: 6 }}>
-          {DECKS.map((d) => (
-            <DeckTab
-              key={d.key}
-              deck={d.key}
-              label={d.label}
-              active={deck === d.key}
-              done={deckDone(d.key, draft)}
-              locked={locked(d.key)}
-              pulseToken={d.key === 'domains' || d.key === 'subclass' ? unlockPulse : 0}
-              onPress={() => switchDeck(d.key)}
-            />
-          ))}
+        {/* The deck rail is SCROLLABLE now (#107, nine steps): fixed-width tabs, free scroll, a
+            gold chevron fades at the right edge so the overflow is obvious. */}
+        <View style={{ marginTop: 6 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingRight: 26 }}>
+            {DECKS.map((d) => (
+              <DeckTab
+                key={d.key}
+                deck={d.key}
+                label={d.label}
+                active={deck === d.key}
+                done={!d.stub && deckDone(d.key, draft)}
+                locked={locked(d.key)}
+                pulseToken={d.key === 'domains' || d.key === 'subclass' ? unlockPulse : 0}
+                onPress={() => switchDeck(d.key)}
+              />
+            ))}
+          </ScrollView>
+          <View pointerEvents="none" style={{ position: 'absolute', right: -2, top: 0, bottom: 0, justifyContent: 'center' }}>
+            <Svg width={14} height={22} viewBox="0 0 14 22">
+              <Polyline points="3,3 11,11 3,19" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinejoin="miter" />
+            </Svg>
+          </View>
         </View>
 
-        {/* ---- the forge carousel ---- */}
+        {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
         <Animated.View style={[{ flex: 1, marginTop: 2 }, fadeStyle]}>
-          {deckVisible && items.length > 0 ? (
+          {deckVisible && isCardDeck(deck) && items.length > 0 ? (
             <StraightCarousel
-              key={deck + (deck === 'subclass' || deck === 'domains' ? draft.className ?? '' : '')}
+              key={deck + (deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
               items={items}
               selectedIds={selectedIds}
               initialIndex={deckIndexes.current[deck] ?? 0}
@@ -459,6 +537,10 @@ export function CreateScreen() {
                 if (deck === 'class') setCenterClassIdx(i);
               }}
             />
+          ) : null}
+          {deckVisible && deck === 'traits' ? <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} /> : null}
+          {deckVisible && deck === 'experiences' ? (
+            <ExperiencesTab experiences={draft.experiences} onEdit={(slot) => setEditingExperience(slot)} />
           ) : null}
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
@@ -472,10 +554,24 @@ export function CreateScreen() {
           onClose={() => setFeaturesOpen(false)}
         />
       ) : null}
-      {/* ---- THE select controls: the screen's TOP layer, last child (#106) — above the carousel
-          veil AND the features reader, never dimmed, always tappable, always in this one spot,
-          well clear of the gear at the bottom edge. */}
-      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 64, zIndex: 600, alignItems: 'center', gap: 5 }} pointerEvents="box-none">
+      {editingExperience != null ? (
+        <CardEditor
+          kindLabel="Experience"
+          initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri } : undefined}
+          onCancel={() => setEditingExperience(null)}
+          onSave={(d) => {
+            const next = [...draft.experiences];
+            const existing = next[editingExperience];
+            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri };
+            set({ experiences: next.filter(Boolean) });
+            setEditingExperience(null);
+          }}
+        />
+      ) : null}
+      {/* ---- THE select controls: the screen's TOP layer (#106) — above the carousel veil AND
+          the features reader, never dimmed, always tappable, one spot. Card decks only. */}
+      {isCardDeck(deck) ? (
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 64, zIndex: 600, alignItems: 'center', gap: 5 }} pointerEvents="box-none">
         {deck === 'class' ? (
           <RuneButton
             label="Class features"
@@ -499,9 +595,172 @@ export function CreateScreen() {
         <Text style={{ color: selectedIds.length >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
           {selectedIds.length}/{maxSelect}
         </Text>
-      </View>
+        </View>
+      ) : null}
       {stage}
     </AppScreen>
+  );
+}
+
+// ---------- traits ----------
+
+/**
+ * Trait distribution (#107, rulebook step 3): the pool chips (+2, +1, +1, 0, 0, −1) arm on tap;
+ * tapping a trait banner places the armed value (swapping any previous value back to the pool);
+ * tapping an assigned banner with nothing armed clears it. The banners are the sheet's own.
+ */
+function TraitsTab({ traits, onTraits }: { traits: Partial<Record<TraitKey, number>>; onTraits: (t: Partial<Record<TraitKey, number>>) => void }) {
+  const [armed, setArmed] = useState<number | null>(null);
+
+  const assignedValues = TRAIT_ORDER.map((t) => traits[t.key]).filter((v): v is number => v !== undefined);
+  const pool: number[] = [...TRAIT_POOL];
+  for (const v of assignedValues) {
+    const i = pool.indexOf(v);
+    if (i >= 0) pool.splice(i, 1);
+  }
+  const assignedCount = assignedValues.length;
+
+  const placeOn = (key: TraitKey) => {
+    const next = { ...traits };
+    if (armed !== null) {
+      next[key] = armed;
+      setArmed(null);
+    } else if (next[key] !== undefined) {
+      delete next[key];
+    } else {
+      return;
+    }
+    onTraits(next);
+  };
+
+  return (
+    <View style={{ flex: 1, paddingTop: 8 }}>
+      {/* the pool */}
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, minHeight: 40, alignItems: 'center' }}>
+        {pool.length ? (
+          pool.map((v, i) => {
+            const isArmed = armed === v && pool.indexOf(v) === i; // arm ONE instance of a duplicate
+            return (
+              <Pressable
+                key={`${v}-${i}`}
+                onPress={() => setArmed(isArmed ? null : v)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isArmed }}
+                accessibilityLabel={`Modifier ${formatModifier(v)}${isArmed ? ', armed. Tap a trait to place it' : ''}`}>
+                <ChamferBox
+                  chamfer={8}
+                  fill={isArmed ? Rune.red : 'rgba(14,17,22,0.95)'}
+                  stroke={isArmed ? 'transparent' : 'rgba(218,162,73,0.55)'}
+                  strokeWidth={1.3}
+                  style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: isArmed ? Rune.ivory : Rune.goldText, fontSize: 16, fontFamily: Display.black }}>{formatModifier(v)}</Text>
+                </ChamferBox>
+              </Pressable>
+            );
+          })
+        ) : (
+          <Text style={{ color: Rune.goldBright, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>All modifiers placed</Text>
+        )}
+      </View>
+      <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center', marginTop: 2 }}>
+        {armed !== null ? `Tap a trait to place ${formatModifier(armed)}` : pool.length ? 'Tap a modifier, then a trait — tap a trait to clear it' : `${assignedCount}/6 set`}
+      </Text>
+      {/* the banners — the sheet's own art */}
+      <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'center', columnGap: 14, rowGap: 6 }}>
+        {TRAIT_ORDER.map((t) => {
+          const v = traits[t.key];
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => placeOn(t.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`${t.label}, ${v !== undefined ? formatModifier(v) : 'unassigned'}`}
+              style={{ width: 92, height: 150 }}>
+              <View style={{ position: 'absolute', left: 6, top: 16, width: 80, height: 128, opacity: v !== undefined ? 1 : 0.55 }}>
+                <ArtImage source={Art.traitBanner} fit="fill" />
+              </View>
+              <View style={{ position: 'absolute', left: 22, top: 0, width: 48, height: 50 }}>
+                <ArtImage source={t.icon} fit="contain" />
+              </View>
+              <Text style={{ position: 'absolute', top: 56, left: 0, right: 0, textAlign: 'center', color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                {t.label.slice(0, 3)}
+              </Text>
+              <Text
+                style={{
+                  position: 'absolute',
+                  top: 76,
+                  left: 0,
+                  right: 0,
+                  textAlign: 'center',
+                  color: v !== undefined ? (v < 0 ? '#E2705A' : Rune.ivory) : 'rgba(147,142,136,0.7)',
+                  fontSize: v !== undefined ? 24 : 18,
+                  fontFamily: Display.black,
+                }}>
+                {v !== undefined ? formatModifier(v) : '·'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+// ---------- experiences ----------
+
+/** Two experience slots (#107): player-authored cards. Empty = forge prompt; filled = the card
+ *  at reading size with the EDIT control in its lower-left corner (owner spec). */
+function ExperiencesTab({ experiences, onEdit }: { experiences: ExperienceDef[]; onEdit: (slot: number) => void }) {
+  const CARD_SCALE_X = 0.62;
+  return (
+    <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16 }}>
+      {[0, 1].map((slot) => {
+        const exp = experiences[slot];
+        return (
+          <View key={slot} style={{ width: 230 * CARD_SCALE_X, height: 322 * CARD_SCALE_X }}>
+            {exp ? (
+              <>
+                <View style={{ transform: [{ scale: CARD_SCALE_X }], width: 230, height: 322, marginLeft: (230 * (CARD_SCALE_X - 1)) / 2, marginTop: (322 * (CARD_SCALE_X - 1)) / 2 }}>
+                  <ForgedCard title={exp.title} kindLabel="Experience" body={exp.text} accentDeep={Rune.panel} imageUri={exp.imageUri} />
+                </View>
+                {/* the lower-left EDIT control */}
+                <Pressable
+                  onPress={() => onEdit(slot)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${exp.title}`}
+                  style={{ position: 'absolute', left: -6, bottom: -6 }}>
+                  <ChamferBox chamfer={6} fill={Rune.red} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+                    <Svg width={14} height={14} viewBox="0 0 12 12">
+                      <Path d="M 1 11 L 3 6 L 9 0 L 12 3 L 6 9 Z" fill={Rune.ivory} />
+                    </Svg>
+                  </ChamferBox>
+                </Pressable>
+              </>
+            ) : (
+              <Pressable onPress={() => onEdit(slot)} accessibilityRole="button" accessibilityLabel={`Add experience ${slot + 1}`} style={{ flex: 1 }}>
+                {({ pressed }) => (
+                  <ChamferBox
+                    chamfer={12}
+                    fill={pressed ? 'rgba(200,27,24,0.12)' : 'rgba(14,17,22,0.9)'}
+                    stroke="rgba(218,162,73,0.5)"
+                    strokeWidth={1.3}
+                    style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                    <Svg width={30} height={30} viewBox="0 0 30 30">
+                      <Line x1={15} y1={5} x2={15} y2={25} stroke={Rune.goldEdge} strokeWidth={2.4} />
+                      <Line x1={5} y1={15} x2={25} y2={15} stroke={Rune.goldEdge} strokeWidth={2.4} />
+                    </Svg>
+                    <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>
+                      Experience {slot + 1}
+                    </Text>
+                  </ChamferBox>
+                )}
+              </Pressable>
+            )}
+          </View>
+        );
+      })}
+    </View>
   );
 }
 

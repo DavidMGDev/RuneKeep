@@ -31,11 +31,17 @@ export interface Character {
   /**
    * Current hit points — the SINGLE source of truth for HP. Hearts and the numeric `current / max`
    * tracker are both derived from this via `resolveHearts` (see §1A); there is no separate stored
-   * tracker that could drift. Capacity = `heartSlots × 2`.
+   * tracker that could drift.
    */
   hp: number;
   /** Number of heart boxes (each worth up to 2 HP when golden). Daggerheart default = 6. */
   heartSlots: number;
+  /**
+   * The character's HP CEILING (#107): healing can never exceed it, and only `min(6, maxHp)`
+   * hearts are drawn at all — a 4-max character has four hearts, not four of six. Class data
+   * sets it at creation (5–7); the sample keeps the homebrew 12 (6 slots, golden overflow).
+   */
+  maxHp: number;
 
   armor: Track;
   hope: Track;
@@ -75,6 +81,7 @@ export const SAMPLE_CHARACTER: Character = {
   proficiency: 2,
   hp: 5, // 6 slots → 5 red + 1 empty, reads "5 / 12" (self-consistent with the hearts)
   heartSlots: 6,
+  maxHp: 12,
   armor: { active: 9, total: 12, locked: 1 },
   hope: { active: 5, total: 6 },
   stress: { active: 10, total: 12, locked: 1 },

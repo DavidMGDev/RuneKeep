@@ -7,10 +7,17 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { cardById } from '@/features/cards/catalog';
-import { type Character, SAMPLE_CHARACTER } from '@/features/character-sheet/character';
+import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/features/create/class-data';
 
 export const CHARACTER_SCHEMA_VERSION = 1;
+
+export interface ExperienceDef {
+  id: string;
+  title: string;
+  text: string;
+  imageUri: string | null;
+}
 
 export interface CharacterFile {
   schemaVersion: number;
@@ -24,6 +31,10 @@ export interface CharacterFile {
   ancestryCardId: string;
   communityCardId: string;
   domainCardIds: string[];
+  /** Trait modifiers, distributed at creation (+2, +1, +1, 0, 0, −1 in any order, #107). */
+  traits?: Record<TraitKey, number>;
+  /** The two creation experiences — player-authored cards (#107). */
+  experiences?: ExperienceDef[];
   level: number;
 }
 
@@ -80,8 +91,12 @@ export function toSheetCharacter(file: CharacterFile): Character {
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
     portraitUri: file.portraitUri,
     evasion: data.startingEvasion,
-    // Hearts stay on the sheet's fixed 6-slot row (the track's zones assume it); starting HP maps
-    // onto it directly — 5/6 hp = red hearts, guardian/seraph's 7 shows as one golden + five red.
+    // Rulebook starting resources (#107): hearts full at the class's max (only that many hearts
+    // are drawn; 7 hp = one golden + five red), 6 of 12 stress unlocked, hope starts at 2 of 6.
     hp: data.startingHp,
+    maxHp: data.startingHp,
+    stress: { active: 0, total: 12, locked: 6 },
+    hope: { active: 2, total: 6 },
+    ...(file.traits ? { traits: file.traits } : null),
   };
 }

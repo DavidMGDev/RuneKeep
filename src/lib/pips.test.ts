@@ -2,6 +2,24 @@ import { describe, expect, it } from '@jest/globals';
 
 import { resolveHearts, resolvePips } from './pips';
 
+describe('resolveHearts with class-sized slots (#107: maxHp caps the drawn hearts)', () => {
+  it('maxHp 4 -> four slots, full at hp 4, no golden', () => {
+    const r = resolveHearts(4, 4);
+    expect(r.states).toEqual(['active', 'active', 'active', 'active']);
+    expect(r.golden).toBe(0);
+  });
+
+  it('maxHp 7 on six slots -> one golden + five red at hp 7', () => {
+    const r = resolveHearts(7, 6);
+    expect(r.states).toEqual(['golden', 'active', 'active', 'active', 'active', 'active']);
+    expect(r.current).toBe(7);
+  });
+
+  it('maxHp 5 -> five slots, hp 3 reads three red two empty', () => {
+    expect(resolveHearts(3, 5).states).toEqual(['active', 'active', 'active', 'empty', 'empty']);
+  });
+});
+
 describe('resolvePips', () => {
   it('renders all-active when active equals total', () => {
     expect(resolvePips({ total: 6, active: 6 })).toEqual(Array(6).fill('active'));
