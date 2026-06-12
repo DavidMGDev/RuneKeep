@@ -14,7 +14,7 @@ import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, toSheetCharacter } from '@/lib/character-file';
 import { cardById } from '@/features/cards/catalog';
 import { classColor } from '@/constants/identity';
-import { classBanner } from '@/features/create/class-cards';
+import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
 import { featurePages } from '@/features/create/class-data';
 import { ForgedCard, ForgedTextCard } from '@/features/create/forged-card';
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
@@ -383,16 +383,25 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, expJobs } = useMemo(() => {
-    if (!characterFile) return { featJobs: [] as { key: string; node: ReactNode }[], expJobs: [] as { key: string; node: ReactNode }[] };
+  const { featJobs, classJob, expJobs } = useMemo(() => {
+    const empty = { featJobs: [] as { key: string; node: ReactNode }[], classJob: null as { key: string; node: ReactNode } | null, expJobs: [] as { key: string; node: ReactNode }[] };
+    if (!characterFile) return empty;
     const cls = characterFile.className;
-    const featJobs = featurePages(cls).map((p) => ({
+    const classDef = CLASS_CARDS.find((c) => c.key === cls);
+    const title = classDef?.title ?? cls.charAt(0).toUpperCase() + cls.slice(1);
+    const fpages = featurePages(cls);
+    const total = 1 + fpages.length;
+    // face 0 = the class card (#110: the missing first page); same deck-wide marks as the forge
+    const classJob = classDef
+      ? { key: `class-${cls}`, node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} /> }
+      : null;
+    const featJobs = fpages.map((p) => ({
       key: `feat-${cls}-${p.pageIndex}`,
       node: (
         <ForgedTextCard
-          title={cls.charAt(0).toUpperCase() + cls.slice(1)}
+          title={title}
           kindLabel="Features"
-          pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
+          pageMark={`${p.pageIndex + 2}/${total}`}
           sections={p.sections}
           accentDeep={classColor(cls).deep}
           Banner={classBanner(cls)}
@@ -403,9 +412,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0)) % 99991}`,
       node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} />,
     }));
-    return { featJobs, expJobs };
+    return { featJobs, classJob, expJobs };
   }, [characterFile]);
-  const allJobs = useMemo(() => [...expJobs, ...featJobs], [expJobs, featJobs]);
+  const allJobs = useMemo(() => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs], [expJobs, classJob, featJobs]);
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
@@ -420,13 +429,20 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .map((j) => ({ key: j.key, src: featureSources[j.key] }))
       .filter((x) => x.src)
       .map((x) => ({ id: x.key, source: x.src!.full, thumb: x.src!.thumb }));
-    const featSrcs = featJobs.map((j) => featureSources[j.key]).filter(Boolean) as { full: { uri: string }; thumb: { uri: string } }[];
+    // Faces in STABLE order [class, ...features] — an un-forged face keeps its slot and renders its
+    // live node (no .filter that dropped pages and shifted indices, the #110 missing-page bug).
+    const faceJobs = classJob ? [classJob, ...featJobs] : featJobs;
+    const faces = faceJobs.map((j) => {
+      const src = featureSources[j.key];
+      return src ? { source: src.full, thumb: src.thumb } : { custom: j.node };
+    });
+    const firstForged = faces.find((f) => f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
     const featItem =
-      featSrcs.length > 0
-        ? [{ id: `features-${characterFile.className}`, source: featSrcs[0].full, thumb: featSrcs[0].thumb, pages: featSrcs.map((s) => ({ source: s.full, thumb: s.thumb })) }]
+      faces.length > 1 && firstForged
+        ? [{ id: `features-${characterFile.className}`, source: firstForged.source, thumb: firstForged.thumb, faces }]
         : [];
     return [...expItems, ...featItem, ...cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }))];
-  }, [characterFile, expJobs, featJobs, featureSources]);
+  }, [characterFile, expJobs, classJob, featJobs, featureSources]);
   const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
   const onInfo = useCallback(() => setInfoOpen(true), []);
   const onInfoClose = useCallback(() => setInfoOpen(false), []);

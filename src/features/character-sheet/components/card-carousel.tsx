@@ -1,9 +1,10 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-// (useState/useCallback/useMemo used by the multi-page slot, #108)
+// (useState/useCallback/useMemo/useEffect/useRef used by the multi-face flip slot, #108/#110)
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
+  Easing,
   runOnJS,
   type SharedValue,
   useAnimatedStyle,
@@ -14,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
+import { Rune } from '@/constants/theme';
 import { type CardItem } from '../card-data';
 import { type ExpandState, useCarousel } from '../carousel-context';
 import {
@@ -56,6 +58,38 @@ import {
 import { Card, CardThumb } from './card';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
+
+/**
+ * The 3D flip element (#110) — only mounted/visible when a multi-face card is FOCUSED (the parent
+ * fades it in over the flat LOD on open). Accumulating-angle two-side model (same as the forge's
+ * FlipCard): the soon-forward side gets the target face BEFORE each ±180° half-turn, rotation never
+ * resets → no swap-frame flash. `renderFace` draws each face through the sheet's own Card so it
+ * matches the LOD beneath exactly. Rotation direction matches the forge (forward turns -180°).
+ */
+const FlipCard = memo(function FlipCard({ faceCount, index, dir, renderFace }: { faceCount: number; index: number; dir: number; renderFace: (i: number) => ReactNode }) {
+  const angle = useSharedValue(0);
+  const [faceA, setFaceA] = useState(index);
+  const [faceB, setFaceB] = useState(index);
+  const parity = useRef(0);
+  const prev = useRef(index);
+  useEffect(() => {
+    if (index === prev.current || faceCount <= 1) return;
+    prev.current = index;
+    const np = parity.current + 1;
+    if (np % 2 === 0) setFaceA(index);
+    else setFaceB(index);
+    parity.current = np;
+    angle.value = withTiming(angle.value + (dir >= 0 ? -1 : 1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) });
+  }, [index, dir, faceCount, angle]);
+  const aStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value}deg` }], backfaceVisibility: 'hidden' }));
+  const bStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value + 180}deg` }], backfaceVisibility: 'hidden' }));
+  return (
+    <View style={{ flex: 1 }}>
+      <Animated.View style={[StyleSheet.absoluteFill, aStyle]}>{renderFace(faceA)}</Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, bStyle]}>{renderFace(faceB)}</Animated.View>
+    </View>
+  );
+});
 
 interface SlotProps {
   index: number;
@@ -133,29 +167,47 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     return { opacity: imageOpacityAt(d) * (1 - grindProgress.value) };
   });
 
-  // Multi-page cards (#108: the class-feature card): the slot tracks the page; the shown LOD pair
-  // mirrors it (id stays stable so expo-image cross-fades on the source swap). The compact hand and
-  // the fullscreen card both render this current page, so the page persists wherever the card sits.
+  // Multi-FACE cards (#110: the class-feature card): the slot tracks the page and persists it. The
+  // FLAT LOD (thumb + full) of the current face is shown in compact and during the open transition;
+  // the 3D flip element is a separate layer the parent fades in only when FOCUSED.
   const [pageIdx, setPageIdx] = useState(0);
-  const pageCount = item.pages?.length ?? 0;
-  const hasPages = pageCount > 1;
-  const shown = useMemo(() => {
-    if (!item.pages || pageCount === 0) return item;
-    const pg = item.pages[Math.min(pageIdx, pageCount - 1)];
-    return { id: item.id, source: pg.source, thumb: pg.thumb };
-  }, [item, pageIdx, pageCount]);
-  const pageBy = useCallback((delta: number) => setPageIdx((p) => Math.min(pageCount - 1, Math.max(0, p + delta))), [pageCount]);
+  const faces = item.faces;
+  const faceCount = faces?.length ?? 0;
+  const hasFaces = faceCount > 1;
+  const flipDir = useRef(1);
+  const curFace = hasFaces ? faces![Math.min(pageIdx, faceCount - 1)] : null;
+  const pageBy = useCallback(
+    (delta: number) => {
+      flipDir.current = delta;
+      setPageIdx((p) => (faceCount > 0 ? (p + delta + faceCount) % faceCount : 0));
+    },
+    [faceCount],
+  );
+
+  // One face → the sheet's own Card (matches the flat LOD beneath, no pop), or its live node until
+  // its bitmap is forged (so an un-forged page still renders — #110 missing-page fix).
+  const renderFace = useCallback(
+    (i: number): ReactNode => {
+      const f = faces?.[i];
+      if (!f) return null;
+      if (f.custom) return f.custom;
+      return <Card item={{ id: `${item.id}#${i}`, source: f.source!, thumb: f.thumb! }} width={CARD_W} height={CARD_H} />;
+    },
+    [faces, item.id],
+  );
+
+  // the 3D flip element fades in/out with focus (#110): flat LOD when compact, 3D only when focused
+  const fsFade = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value }));
 
   // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close, OR (a
-  // multi-page card) page back/forward by which half you tapped (#108) — close it by swipe-down
-  // or the gear, like any card.
+  // multi-face card) flip back/forward by which half you tapped (#110) — close by swipe-down/gear.
   const tap = useMemo(
     () =>
       Gesture.Tap()
         .maxDuration(260)
         .onEnd((e) => {
           if (machineState.value === 'fullscreen') {
-            if (hasPages) runOnJS(pageBy)(e.x < CARD_W / 2 ? -1 : 1);
+            if (hasFaces) runOnJS(pageBy)(e.x < CARD_W / 2 ? -1 : 1);
             else runOnJS(closeFullscreen)();
             return;
           }
@@ -169,7 +221,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             fullscreenProgress.value = withSpring(1, FS_SPRING);
           }
         }),
-    [index, count, hasPages, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
+    [index, count, hasFaces, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
   );
 
   return (
@@ -179,15 +231,47 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
       <GestureDetector gesture={tap}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
-          {/* LOD base: the tiny thumb, always present (#78). */}
-          <CardThumb item={shown} />
-          {/* Full-res layer: only near the center; the ±IMG_MOUNT_HALF boundary holds it at
-              alpha 0, decoded and ready to fade in without a pop (#54 B, #78). */}
-          {withImage ? (
-            <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
-              <Card item={shown} width={CARD_W} height={CARD_H} />
-            </Animated.View>
-          ) : null}
+          {hasFaces ? (
+            <>
+              {/* flat LOD of the current face — shown compact + during the open transition */}
+              {curFace?.custom ? (
+                curFace.custom
+              ) : (
+                <>
+                  <CardThumb item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} />
+                  {withImage ? (
+                    <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
+                      <Card item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} width={CARD_W} height={CARD_H} />
+                    </Animated.View>
+                  ) : null}
+                </>
+              )}
+              {/* the 3D flip element — only near center, fades in with focus (the LOD shows beneath) */}
+              {withImage ? (
+                <Animated.View style={[StyleSheet.absoluteFill, fsFade]} pointerEvents="none">
+                  <FlipCard faceCount={faceCount} index={pageIdx} dir={flipDir.current} renderFace={renderFace} />
+                </Animated.View>
+              ) : null}
+              {/* page dots BELOW the card, fading with focus (matches the forge) */}
+              <Animated.View style={[{ position: 'absolute', top: CARD_H + 8, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 }, fsFade]} pointerEvents="none">
+                {faces!.map((_, i) => (
+                  <View key={i} style={{ width: 7, height: 7, transform: [{ rotate: '45deg' }], backgroundColor: i === pageIdx ? Rune.red : 'rgba(147,142,136,0.55)' }} />
+                ))}
+              </Animated.View>
+            </>
+          ) : (
+            <>
+              {/* LOD base: the tiny thumb, always present (#78). */}
+              <CardThumb item={item} />
+              {/* Full-res layer: only near the center; the ±IMG_MOUNT_HALF boundary holds it at
+                  alpha 0, decoded and ready to fade in without a pop (#54 B, #78). */}
+              {withImage ? (
+                <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
+                  <Card item={item} width={CARD_W} height={CARD_H} />
+                </Animated.View>
+              ) : null}
+            </>
+          )}
         </View>
       </GestureDetector>
     </Animated.View>
