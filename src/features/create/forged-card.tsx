@@ -5,6 +5,7 @@ import Svg, { Path, type SvgProps } from 'react-native-svg';
 
 import { DividerPlaque } from '@/components/card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
+import { type ArmorDef, type WeaponDef } from './equipment-data';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
@@ -142,6 +143,108 @@ export function ForgedTextCard({
             </Text>
           ))}
         </View>
+      </View>
+      <ForgedFooter />
+    </View>
+  );
+}
+
+/** Art-zone emblem for the equipment cards (#121): sword / sparkle / shield, stroked gold. */
+function EquipGlyph({ kind }: { kind: 'physical' | 'magic' | 'armor' }) {
+  const stroke = Rune.goldEdge;
+  const size = Math.round(ART_H * 0.6);
+  if (kind === 'armor') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 40 44">
+        <Path d="M20 3 L35 8 V20 Q35 33 20 41 Q5 33 5 20 V8 Z" fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round" />
+        <Path d="M20 12 V32 M12 20 H28" fill="none" stroke={stroke} strokeWidth={1.6} strokeLinecap="round" />
+      </Svg>
+    );
+  }
+  if (kind === 'magic') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 40 44">
+        <Path d="M20 4 L23.5 17 L36 20.5 L23.5 24 L20 37 L16.5 24 L4 20.5 L16.5 17 Z" fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round" />
+      </Svg>
+    );
+  }
+  return (
+    <Svg width={size} height={size} viewBox="0 0 40 44">
+      <Path d="M20 4 L20 30 M12 30 H28 M20 30 V40 M16 40 H24" fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** One label/value row of an equipment card's stat block. */
+function StatRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+      <Text style={{ color: Rune.inkText, fontSize: 10, fontFamily: Body.semibold }}>{value}</Text>
+    </View>
+  );
+}
+
+/**
+ * A forged WEAPON card (#121, immutable): the printed-card layout with the weapon's stat block
+ * (trait / range / damage / burden) and its feature. Physical = steel ground, magic = arcane.
+ */
+export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
+  const accentDeep = weapon.kind === 'magic' ? '#2E1F3A' : '#23262C';
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
+      <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <EquipGlyph kind={weapon.kind} />
+      </View>
+      <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
+        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
+          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{weapon.slot === 'secondary' ? 'Secondary' : 'Weapon'}</Text>
+        </DividerPlaque>
+      </View>
+      <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
+        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
+        <View style={{ marginTop: 8, gap: 3 }}>
+          <StatRow label="Trait" value={weapon.trait} />
+          <StatRow label="Range" value={weapon.range} />
+          <StatRow label="Damage" value={`${weapon.damage} ${weapon.damageType}`} />
+          <StatRow label="Burden" value={weapon.burden} />
+        </View>
+        {weapon.feature ? (
+          <Text style={{ color: Rune.inkText, fontSize: 8.5, lineHeight: 12.5, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
+            <Text style={{ fontFamily: Body.bold }}>{weapon.feature.name}: </Text>
+            {weapon.feature.text}
+          </Text>
+        ) : null}
+      </View>
+      <ForgedFooter />
+    </View>
+  );
+}
+
+/** A forged ARMOR card (#121, immutable): base thresholds, base score, feature. */
+export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
+      <View style={{ height: ART_H, backgroundColor: '#23262C', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <EquipGlyph kind="armor" />
+      </View>
+      <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
+        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
+          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Armor</Text>
+        </DividerPlaque>
+      </View>
+      <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
+        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
+        <View style={{ marginTop: 8, gap: 3 }}>
+          <StatRow label="Thresholds" value={armor.thresholds} />
+          <StatRow label="Base Score" value={String(armor.baseScore)} />
+        </View>
+        {armor.feature ? (
+          <Text style={{ color: Rune.inkText, fontSize: 8.5, lineHeight: 12.5, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
+            <Text style={{ fontFamily: Body.bold }}>{armor.feature.name}: </Text>
+            {armor.feature.text}
+          </Text>
+        ) : null}
       </View>
       <ForgedFooter />
     </View>
