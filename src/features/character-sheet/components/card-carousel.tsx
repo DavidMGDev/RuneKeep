@@ -66,12 +66,13 @@ interface SlotProps {
   expandProgress: SharedValue<number>;
   fullscreenProgress: SharedValue<number>;
   grindProgress: SharedValue<number>;
+  deckShift: SharedValue<number>;
   machineState: SharedValue<ExpandState>;
   focusIndex: SharedValue<number>;
   closeFullscreen: () => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, machineState, focusIndex, closeFullscreen }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, machineState, focusIndex, closeFullscreen }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -87,9 +88,19 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     let tilt = theta * 0.5;
 
     // Slots stay SOLID (the white backs are meant to be seen, #54 B) and only fade in a narrow
-    // band right before unmounting; at rest detents every alpha is exactly 0 or 1 (#54 A).
-    let opacity = slotOpacityAt(dist);
+    // band right before unmounting; at rest detents every alpha is exactly 0 or 1 (#54 A). The
+    // COMPACT hand draws a wider window — up to ~13 thumbs (#95 D).
+    let opacity = slotOpacityAt(dist, p);
     let z = Math.round(1000 - dist * 10);
+
+    // Deck switch (#95 C): the whole hand FADES in place (a light 30px settle, no big travel —
+    // a real sweep read as the old hand "coming back", owner) while the decks swap underneath,
+    // then fades back in once the new thumbs have painted. Rests at 0 → integer alphas at rest.
+    const sweep = deckShift.value;
+    if (sweep > 0) {
+      y += sweep * 30;
+      opacity *= 1 - sweep;
+    }
 
     // Focus: the SAME card grows in place toward screen centre over the dim veil (#8c) — no second
     // object. It lifts above the veil (z 3000); the others stay below it and are dimmed.
@@ -173,7 +184,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, category, closeFullscreen, collapse } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, category, closeFullscreen, collapse } = useCarousel();
   const deck = CARD_DECKS[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
@@ -354,6 +365,7 @@ export function CardCarousel() {
         expandProgress={expandProgress}
         fullscreenProgress={fullscreenProgress}
         grindProgress={grindProgress}
+        deckShift={deckShift}
         machineState={machineState}
         focusIndex={focusIndex}
         closeFullscreen={closeFullscreen}

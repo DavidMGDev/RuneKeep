@@ -17,7 +17,7 @@ import { SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
 import { ChargeTrack } from '../components/charge-track';
 import { HeartTrack } from '../components/heart-track';
-import { ClassBanner, SheetFrame } from '../components/sheet-frame';
+import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
@@ -175,8 +175,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
       <DomainChip left={176 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
       {/* Level/class + proficiency lines between the chips and the badges — nudged 3px up for
           clear air above the origin strip (#54 E). */}
-      <SheetText left={176} top={97} width={220} height={17} color={INK} size={14} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
-      <SheetText left={176} top={116} width={220} height={15} color={BRONZE} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
+      {/* One size smaller + a taller box than the glyphs need (#95 B): native line metrics ran
+          taller than web's and the 17px box clipped the descender band off "LVL 4 SORCERER". */}
+      <SheetText left={176} top={97} width={220} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
+      <SheetText left={176} top={116} width={220} height={16} color={BRONZE} size={10} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
 
       {/* Origin strip (#48 D, per /impeccable): three stretched octagons, fitted labels beneath,
           thin gold rules in the gaps. Shrunk down-and-left (48x40 at an 78px pitch, #54 E) so the
@@ -393,7 +395,7 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
               clip={false}
               style={{ marginTop: 18 }}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} />
-              <TraitBanners character={character} modifierSize={24} groupTop={614} />
+              <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
@@ -410,9 +412,6 @@ export function RedesignedSheet({ character: initial = SAMPLE_CHARACTER }: { cha
               gears/card spill below the design box can only be COVERED, not clipped. */}
           <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topInset, backgroundColor: Rune.ink }} />
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
-          {/* Above the bar: the banner is the ONE element that invades the status-bar strip,
-              hanging from the physical top edge of the screen (#43 A). */}
-          <ClassBanner />
         </View>
       </CarouselProvider>
     </AccentProvider>

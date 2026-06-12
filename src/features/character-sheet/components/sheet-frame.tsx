@@ -1,49 +1,35 @@
 import { StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
 import { Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import { ArtImage } from '@/components/art-image';
 import { Art } from '../art';
+import { useCarousel } from '../carousel-context';
 
 /** The parchment sheet behind everything (rounded so the gold frame's corners read). */
 export function SheetBackground() {
   return <View style={[box(0, 0, 412, 892), { backgroundColor: Rune.sheet, borderRadius: 30 }]} />;
 }
 
-// Class-banner geometry as a fraction of the frame (was design px 25.9 / 51.2×74.2 in the 412 box),
-// so it stays pinned to the top-left of the FULL-BLEED border however the screen is proportioned.
-const BANNER_LEFT = `${(25.9 / 412) * 100}%` as const;
-const BANNER_W = `${(51.2 / 412) * 100}%` as const;
-const BANNER_ASPECT = 51.2 / 74.2;
-
 /**
  * The gold ornamental border. It is a FULL-BLEED overlay (not inside the design stage): the art is
  * stretched edge-to-edge so its gold line hugs the safe area, leaving no dark margin for the
  * card hand to float over (owner feedback #1). The card hand is clipped to the design box, so it
  * always sits BEHIND this frame. It never invades the status bar (#43 A) — the inset strip above
- * is painted by the root's ink background; only the ClassBanner reaches the physical top.
+ * is painted by the root's ink background.
+ *
+ * While a card is focused the border dims WITH the veil (#95 A): the frame draws above the dim (it
+ * is outside the stage), so without this it stayed full-bright and boxed the focused card in. The
+ * alpha mirrors the veil's 0.82 dim and lands back at exactly 1 at rest (integer-alpha rule); the
+ * frame is a single image leaf, so the transient fractional alpha never forces a saveLayer.
  */
 export function SheetFrame() {
+  const { fullscreenProgress } = useCarousel();
+  const dim = useAnimatedStyle(() => ({ opacity: 1 - fullscreenProgress.value * 0.82 }));
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <Animated.View style={[StyleSheet.absoluteFill, dim]} pointerEvents="none">
       <ArtImage source={Art.longBorder} fit="fill" style={StyleSheet.absoluteFill} />
-    </View>
-  );
-}
-
-/**
- * The class banner, rendered OUTSIDE the safe area so it hangs from the PHYSICAL top edge of the
- * screen — the one element allowed to invade the status-bar strip (#43 A). Sizing lives on a plain
- * View (Yoga resolves percent-width + aspectRatio reliably) — putting it on the expo-image style
- * broke on native: the image box got an auto height and `contain` floated the art to mid-screen,
- * over the Stress panel (#30 D).
- */
-export function ClassBanner() {
-  return (
-    <View
-      pointerEvents="none"
-      style={{ position: 'absolute', left: BANNER_LEFT, top: 0, width: BANNER_W, aspectRatio: BANNER_ASPECT }}>
-      <ArtImage source={Art.classBanner} fit="contain" />
-    </View>
+    </Animated.View>
   );
 }

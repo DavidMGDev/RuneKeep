@@ -43,8 +43,9 @@ function TraitBanner({ x, groupTop, label, icon, value, modifierSize }: TraitBan
         <SheetText left={2} top={56} width={GROUP_W - 4} height={15} color={Rune.goldText} size={12} family={Body.bold} letterSpacing={0.6} uppercase>
           {label.slice(0, 3)}
         </SheetText>
-        {/* Negatives read in a distinct terracotta so the lone "−1" doesn't blend with the "+" stats (I2). */}
-        <SheetText left={-4} top={74} width={GROUP_W + 8} height={32} color={value < 0 ? '#E2705A' : Rune.ivory} size={modifierSize} family={Display.black} tabularNums>
+        {/* Negatives read in a distinct terracotta so the lone "−1" doesn't blend with the "+" stats (I2).
+            Tucked up under the trait label, clear of the banner's bottom gold dots (#95 E). */}
+        <SheetText left={-4} top={70} width={GROUP_W + 8} height={32} color={value < 0 ? '#E2705A' : Rune.ivory} size={modifierSize} family={Display.black} tabularNums>
           {formatModifier(value)}
         </SheetText>
       </PressableArt>

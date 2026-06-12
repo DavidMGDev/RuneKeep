@@ -53,8 +53,10 @@ export const IMG_MOUNT_HALF = 2;
 export const FS_OPEN_DIST = 150;
 
 // Focus (fullscreen) targets — the SAME card slot grows in place to these, no separate object (#8c).
-export const FS_CENTER_Y = 396; // y the focused card eases to (≈ screen centre, room for the handle)
-export const FS_FOCUS_SCALE = 1.55; // absolute scale of the focused card (230 * 1.55 ≈ 356px wide)
+// #95 A: the handle chip is gone and the border dims with the veil, so the card can take nearly the
+// whole design width and sit closer to true screen centre, clear of the gear arc at the bottom.
+export const FS_CENTER_Y = 420; // y the focused card eases to
+export const FS_FOCUS_SCALE = 1.79; // focused card spans the FULL design width (230 * 1.79 ≈ 412px)
 
 // Fling model (issue #30 A): NO free decay. A release predicts its landing detent from the capped
 // velocity and springs there carrying that velocity — the spring overshoots a touch (intentional,
@@ -120,9 +122,14 @@ export function imageOpacityAt(distSteps: number): number {
  * saveLayerAlpha — an offscreen buffer re-composited per frame — and two such slots resting at
  * 0.58 alpha mid-deck were the "third card" fps cliff (deck ends never mount them).
  */
-export function slotOpacityAt(distSteps: number): number {
+export function slotOpacityAt(distSteps: number, expandP: number = 1): number {
   'worklet';
-  return Math.min(1, Math.max(0, (3.45 - distSteps) / 0.4));
+  // #95 D: the COMPACT hand draws a much wider window (±6 → up to ~13 thumbs at 37% scale — all
+  // tiny LOD textures, cheaper than two full cards) and narrows back to ±3 as the fan expands.
+  // The cut stays at x.45 with the same 0.4 fade band so every integer distance is still exactly
+  // 0 or 1 at rest (the saveLayerAlpha rule) at BOTH endpoints of the expand progress.
+  const cut = 6.45 + (3.45 - 6.45) * expandP;
+  return Math.min(1, Math.max(0, (cut - distSteps) / 0.4));
 }
 
 /** Smooth center-out scale: centermost largest, tapering to SCALE_MIN. */
