@@ -48,7 +48,9 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards }: {
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
     () => ({
       abilities: abilitiesCards?.length ? abilitiesCards : CARD_DECKS.abilities,
-      inventory: inventoryCards?.length ? inventoryCards : CARD_DECKS.inventory,
+      // a real character supplies its inventory array (even while items forge — may be briefly
+      // empty); only the demo sheet (undefined) falls back to the sample deck (#136).
+      inventory: inventoryCards ?? CARD_DECKS.inventory,
     }),
     [abilitiesCards, inventoryCards],
   );
