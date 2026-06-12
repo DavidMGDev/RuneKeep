@@ -48,6 +48,9 @@ export interface StraightItem {
   /** Multi-face deck (#110): when focused this card becomes a 3D flip-deck — face 0 is the card
    *  itself (matches thumb/source/custom), the rest flip in on tap. Class cards: [class, ...features]. */
   faces?: StraightFace[];
+  /** Interactive card (#128 gold): when focused, taps go to the card's OWN controls (the carousel
+   *  won't close it on tap) — close it by swipe-down or the veil. */
+  interactive?: boolean;
   label?: string;
 }
 
@@ -344,8 +347,9 @@ export const StraightCarousel = forwardRef<
   const onTapCard = useCallback(
     (index: number, x: number) => {
       if (fs.value > 0.5) {
-        // Focused: a multi-face card flips (left half = back, right half = forward); a single-face
-        // card closes on tap as before. Swipe-down / veil still close either way.
+        // Focused: an interactive card (#128 gold) keeps its own taps — close it by swipe/veil only.
+        // A multi-face card flips (left half = back, right half = forward). Else tap closes.
+        if (items[index]?.interactive) return;
         const n = items[index]?.faces?.length ?? 0;
         if (n > 1) {
           flip(x < FORGED_W / 2 ? -1 : 1);

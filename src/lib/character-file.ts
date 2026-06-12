@@ -49,6 +49,8 @@ export interface CharacterFile {
   /** Inventory (#128): selected suggested-item ids (incl. 'item-gold') + user-authored item cards. */
   inventoryItemIds?: string[];
   inventoryCustom?: ExperienceDef[];
+  /** Gold (#128): handfuls/bags/chest counts (max 10/10/1). */
+  gold?: { handfuls: number; bags: number; chest: number };
   level: number;
 }
 
