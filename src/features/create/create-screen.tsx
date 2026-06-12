@@ -259,8 +259,8 @@ function Segmented<T extends string>({ options, value, onChange }: { options: { 
             onPress={() => onChange(o.key)}
             accessibilityRole="button"
             accessibilityState={{ selected: active, disabled: o.disabled }}
-            style={{ paddingHorizontal: 14, paddingVertical: 6, backgroundColor: active ? 'rgba(224,181,99,0.16)' : 'transparent', borderLeftWidth: i ? 1 : 0, borderLeftColor: 'rgba(218,162,73,0.3)', opacity: o.disabled ? 0.4 : 1 }}>
-            <Text style={{ color: active ? Rune.goldBright : Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{o.label}</Text>
+            style={{ paddingHorizontal: 10, paddingVertical: 6, backgroundColor: active ? 'rgba(224,181,99,0.16)' : 'transparent', borderLeftWidth: i ? 1 : 0, borderLeftColor: 'rgba(218,162,73,0.3)', opacity: o.disabled ? 0.4 : 1 }}>
+            <Text style={{ color: active ? Rune.goldBright : Rune.muted, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase' }}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -764,9 +764,11 @@ export function CreateScreen() {
 
         {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
         <Animated.View style={[{ flex: 1, marginTop: 2 }, fadeStyle]}>
-          {/* weapons filter toggles (#121): physical/magic primaries, plus primary/secondary slot */}
+          {/* weapons filter toggles (#121): physical/magic primaries, plus primary/secondary slot.
+              flexWrap so the two controls can NEVER overflow the screen margins onto the SVG border
+              (#121, owner) — they wrap to a second centered row on a narrow width instead. */}
           {deck === 'weapons' ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 4 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 4, paddingHorizontal: 4 }}>
               {weaponSlot === 'primary' ? (
                 <Segmented
                   options={[
