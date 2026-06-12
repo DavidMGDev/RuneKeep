@@ -16,6 +16,7 @@ import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { ArtBox, PipRow, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
+import { HeartTrack } from '../components/heart-track';
 import { ClassBanner, SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
@@ -30,8 +31,6 @@ const GOLDD = Rune.goldEdge;
 const IVORY = Rune.sheet;
 const BRONZE = Rune.bronze; // deep gold labels on parchment (AA at small sizes, L3)
 
-// A golden heart reuses the heart shape, recolored gold (clearly distinct from red at small size, AC1A.5).
-const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
 const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 'locked' ? Art.armorLocked : Art.armorIcon);
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
@@ -134,19 +133,12 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
   const { toggleCategory, openRandomAbility, category } = useCarousel();
   const tint = useAccentTint();
 
-  // Tap-to-spend/restore: tap a pip to fill up to it, or tap the current frontier to spend one (A1).
-  const onHeart = (i: number) => {
-    const target = i + 1;
-    onHp(target === character.hp ? i : target);
-  };
+  // Tap-to-spend/restore for the simple tracks (stress/armor). HEARTS are different now (#81):
+  // HeartTrack owns the boundary-only ±1 hold/double-tap interaction.
   const onTrackPip = (key: TrackKey) => (i: number) => {
     const target = i + 1;
     onTrack(key, target === character[key].active ? i : target);
   };
-  // Golden hearts render gold; red (active) hearts are FORCE-tinted to the one interface red —
-  // the default accent returns undefined, which let the heart PNG show its baked shade and drift
-  // from #C81B18 (#70 B).
-  const heartTint = (s: PipState) => (s === 'golden' ? Rune.goldBright : s === 'active' ? (tint ?? RED) : undefined);
   const activeTint = (s: PipState) => (s === 'active' ? tint : undefined);
 
   const hp = resolveHearts(character.hp, character.heartSlots); // hearts + readout derived from HP (§1A)
@@ -248,7 +240,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
         <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {hp.max}</Text>
       </View>
       {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/§1A). */}
-      <PipRow left={140} top={333} width={235} height={35} states={hp.states} pipWidth={35} pipHeight={35} artFor={heartArt} tintFor={heartTint} onPressPip={onHeart} trackLabel="Hit point" />
+      <HeartTrack left={140} top={333} width={235} pip={35} hp={character.hp} accent={tint ?? RED} onHp={onHp} />
 
       {/* ---------- Stress — inset frame, two rows spread across the panel ----------
           Panel 20px shorter with the pips trimmed to match (34->26 tall) — flatter, more
