@@ -28,14 +28,23 @@ export function ChamferBox({
     <View style={style} onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
       {size && size.w > 2 * c && size.h > 2 * c ? (
         <View style={{ position: 'absolute', left: 0, top: 0, width: size.w, height: size.h }} pointerEvents="none">
+          {/* The polygon is INSET by half the stroke: drawn on the exact edge, the outer stroke
+              half lands outside the svg and the right/bottom lines vanish on device (#104). */}
           <Svg width={size.w} height={size.h}>
-            <Polygon
-              points={`${c},0 ${size.w - c},0 ${size.w},${c} ${size.w},${size.h - c} ${size.w - c},${size.h} ${c},${size.h} 0,${size.h - c} 0,${c}`}
-              fill={fill}
-              stroke={stroke}
-              strokeWidth={strokeWidth}
-              strokeLinejoin="miter"
-            />
+            {(() => {
+              const i = strokeWidth / 2 + 0.25;
+              const w = size.w - i;
+              const h = size.h - i;
+              return (
+                <Polygon
+                  points={`${c + i},${i} ${w - c},${i} ${w},${c + i} ${w},${h - c} ${w - c},${h} ${c + i},${h} ${i},${h - c} ${i},${c + i}`}
+                  fill={fill}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeLinejoin="miter"
+                />
+              );
+            })()}
           </Svg>
         </View>
       ) : null}

@@ -12,6 +12,11 @@ import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, toSheetCharacter } from '@/lib/character-file';
 import { cardById } from '@/features/cards/catalog';
+import { classColor } from '@/constants/identity';
+import { classBanner } from '@/features/create/class-cards';
+import { featurePages } from '@/features/create/class-data';
+import { ForgedTextCard } from '@/features/create/forged-card';
+import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
@@ -349,15 +354,41 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // The sheet now OWNS character state so the resource tracks can actually be spent/restored (A1).
   // With a CharacterFile it derives the runtime Character from it (#100); resources stay local.
   const [character, setCharacter] = useState(() => initial ?? (characterFile ? toSheetCharacter(characterFile) : SAMPLE_CHARACTER));
-  // The three origin cards pinned at the RIGHT end of the abilities hand: subclass, ancestry,
-  // community, in that order (#100). Absent without a loaded character file.
+  // Pre-render this character's class-feature card(s) on device (#104) so the carousel treats
+  // them like any scanned card (uri-based two-LOD pair). Until forged, the hand simply doesn't
+  // include them yet; they appear once captured (cached after the first run).
+  const featureJobs = useMemo(() => {
+    if (!characterFile) return [];
+    const cls = characterFile.className;
+    return featurePages(cls).map((p) => ({
+      key: `feat-${cls}-${p.pageIndex}`,
+      node: (
+        <ForgedTextCard
+          title={cls.charAt(0).toUpperCase() + cls.slice(1)}
+          kindLabel="Class features"
+          pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
+          sections={p.sections}
+          accentDeep={classColor(cls).deep}
+          Banner={classBanner(cls)}
+        />
+      ),
+    }));
+  }, [characterFile]);
+  const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(featureJobs);
+
+  // Pinned at the RIGHT end of the abilities hand: the class feature card(s) (#104), then
+  // subclass, ancestry, community in that order (#100). Absent without a loaded character file.
   const originCards = useMemo(() => {
     if (!characterFile) return undefined;
     const ids = [characterFile.subclassCardId, characterFile.ancestryCardId, characterFile.communityCardId];
     const cards = ids.map(cardById);
     if (cards.some((c) => !c)) return undefined;
-    return cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
-  }, [characterFile]);
+    const feature = featureJobs
+      .map((j) => ({ key: j.key, src: featureSources[j.key] }))
+      .filter((f) => f.src)
+      .map((f) => ({ id: f.key, source: f.src!.full, thumb: f.src!.thumb }));
+    return [...feature, ...cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }))];
+  }, [characterFile, featureJobs, featureSources]);
   const [infoOpen, setInfoOpen] = useState(false); // HP explainer overlay (#37)
   const onInfo = useCallback(() => setInfoOpen(true), []);
   const onInfoClose = useCallback(() => setInfoOpen(false), []);
@@ -426,6 +457,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               gears/card spill below the design box can only be COVERED, not clipped. */}
           <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topInset, backgroundColor: Rune.ink }} />
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
+          {/* offscreen forge stage: captures the class-feature cards to bitmaps (#104) */}
+          {forgeStage}
         </View>
       </CarouselProvider>
     </AccentProvider>

@@ -5,6 +5,7 @@ import Svg, { Line, Polygon } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
+import { FitLine } from '@/components/fit-line';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
@@ -46,9 +47,7 @@ function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOp
           style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
           <PortraitWell uri={file.portraitUri} tint={tint.bright} />
           <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-              {file.name}
-            </Text>
+            <FitLine style={{ color: Rune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{file.name}</FitLine>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <View style={{ width: 8, height: 8, backgroundColor: tint.bright, transform: [{ rotate: '45deg' }] }} />
               <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>

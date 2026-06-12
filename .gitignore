@@ -58,3 +58,10 @@ design-reference/_*.png
 
 # Card LOD thumbs are build artifacts - regenerate with python scripts/generate_lods.py
 assets/extracted_cards/**/*_lod.webp
+
+# Licensed book PDFs must NEVER reach GitHub (character sheets were pushed before this rule)
+assets/temp/Daggerheart Core Rulebook.pdf
+assets/temp/_classes_28_52.pdf
+scripts/_class_pages.txt
+scripts/_class_data.json
+scripts/_features_full.txt

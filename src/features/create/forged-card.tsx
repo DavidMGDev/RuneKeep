@@ -31,7 +31,8 @@ export function ForgedCard({
   Banner: FC<SvgProps>;
 }) {
   return (
-    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, borderWidth: 1.2, borderColor: 'rgba(20,17,12,0.55)', overflow: 'hidden' }}>
+    // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
+    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       {/* art zone — class-deep ground, the banner (its two domain sigils) standing proud */}
       <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
         <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
@@ -50,16 +51,74 @@ export function ForgedCard({
         </Text>
         <Text style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7 }}>{body}</Text>
       </View>
-      {/* footer, scan-faithful: pen + author left, pipe-separated copyright right, no rule */}
-      <View style={{ position: 'absolute', left: 12, right: 12, bottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-          <Svg width={7} height={7} viewBox="0 0 12 12">
-            <Path d="M 1 11 L 3 6 L 9 0 L 12 3 L 6 9 Z M 1 11 L 3.4 9.8" fill={Rune.inkText} />
-          </Svg>
-          <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep</Text>
-        </View>
-        <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep © Treehouse109 2026</Text>
+      <ForgedFooter />
+    </View>
+  );
+}
+
+/** Scan-faithful print line: pen + author left, copyright right, no rule. Shared by all forged cards. */
+function ForgedFooter() {
+  return (
+    <View style={{ position: 'absolute', left: 12, right: 12, bottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+        <Svg width={7} height={7} viewBox="0 0 12 12">
+          <Path d="M 1 11 L 3 6 L 9 0 L 12 3 L 6 9 Z M 1 11 L 3.4 9.8" fill={Rune.inkText} />
+        </Svg>
+        <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep</Text>
       </View>
+      <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep © Treehouse109 2026</Text>
+    </View>
+  );
+}
+
+/**
+ * A forged RULES card: the class feature + hope feature text in the printed-card layout. One
+ * class may need 2–3 of these (see featurePages); the header carries the page mark. Same plaque
+ * seam, same footer — it lives among the scans as an equal.
+ */
+export function ForgedTextCard({
+  title,
+  kindLabel,
+  pageMark,
+  sections,
+  accentDeep,
+  Banner,
+}: {
+  title: string;
+  kindLabel: string;
+  pageMark?: string;
+  sections: { name: string; text: string }[];
+  accentDeep: string;
+  Banner: FC<SvgProps>;
+}) {
+  const TEXT_ART_H = 56; // shallow art band — these cards are for READING
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
+      <View style={{ height: TEXT_ART_H, backgroundColor: accentDeep, alignItems: 'center', overflow: 'hidden' }}>
+        <Banner width={40} height={TEXT_ART_H + 10} preserveAspectRatio="xMidYMin meet" />
+      </View>
+      <View style={{ position: 'absolute', top: TEXT_ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
+        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
+          <Text style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{kindLabel}</Text>
+        </DividerPlaque>
+      </View>
+      <View style={{ flex: 1, paddingTop: 18, paddingHorizontal: 14 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 6 }}>
+          <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 14, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+            {title}
+          </Text>
+          {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 8, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+        </View>
+        <View style={{ marginTop: 6, gap: 6 }}>
+          {sections.map((s) => (
+            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 8.5, lineHeight: 12.5, fontFamily: Body.regular, textAlign: 'justify' }}>
+              <Text style={{ fontFamily: Body.bold }}>{s.name}: </Text>
+              {s.text}
+            </Text>
+          ))}
+        </View>
+      </View>
+      <ForgedFooter />
     </View>
   );
 }

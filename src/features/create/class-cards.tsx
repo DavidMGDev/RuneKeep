@@ -11,11 +11,12 @@ import SorcererBanner from '../../../assets/art/classBanners/image-4.svg';
 import WarriorBanner from '../../../assets/art/classBanners/image.svg';
 import WizardBanner from '../../../assets/art/classBanners/image-2.svg';
 import { type ClassName } from '@/constants/identity';
+import { CLASS_DATA } from './class-data';
 
 /**
  * The nine class picks as FORGED (custom, code-rendered) cards. Banner art mapped by reading the
- * two domain glyphs each banner carries (a class banner = its domain pair stacked). Flavor lines
- * are RuneKeep's own copy, card-voiced — title-and-body like a printed card, not UI strings.
+ * two domain glyphs each banner carries (a class banner = its domain pair stacked). Card copy =
+ * the rulebook-grounded summaries in class-data.ts (PDF chapter 1 extraction).
  */
 export interface ClassCardDef {
   key: ClassName;
@@ -24,14 +25,23 @@ export interface ClassCardDef {
   body: string;
 }
 
-export const CLASS_CARDS: ClassCardDef[] = [
-  { key: 'bard', title: 'Bard', Banner: BardBanner, body: 'Voice and verse as weaponry. Bards walk into rooms the way storms walk into harbors, and leave them rearranged.' },
-  { key: 'druid', title: 'Druid', Banner: DruidBanner, body: 'The wild does not obey them; it recognizes them. Druids trade skin for storm, fang, and root when the land calls.' },
-  { key: 'guardian', title: 'Guardian', Banner: GuardianBanner, body: 'A wall that chose its bricks. Guardians plant themselves between harm and the people who matter, and do not move.' },
-  { key: 'ranger', title: 'Ranger', Banner: RangerBanner, body: 'Every trail tells. Rangers read the wilds like scripture and answer threats with arrow, blade, and beast.' },
-  { key: 'rogue', title: 'Rogue', Banner: RogueBanner, body: 'Where light forgets to look, rogues are already there. Quick hands, quicker exits, debts settled in shadow.' },
-  { key: 'seraph', title: 'Seraph', Banner: SeraphBanner, body: 'Faith with a sharpened edge. Seraphs carry their god into battle and bring its judgment down in gold and fire.' },
-  { key: 'sorcerer', title: 'Sorcerer', Banner: SorcererBanner, body: 'Magic is not studied here; it is survived. Sorcerers channel the raw current that runs beneath the realms.' },
-  { key: 'warrior', title: 'Warrior', Banner: WarriorBanner, body: 'Mastery measured in scars. Warriors end fights the way punctuation ends sentences: cleanly, and on their terms.' },
-  { key: 'wizard', title: 'Wizard', Banner: WizardBanner, body: 'Knowledge hoarded, then unleashed. Wizards bend equations of power written long before the first kingdom.' },
-];
+const BANNERS: Record<ClassName, FC<SvgProps>> = {
+  bard: BardBanner,
+  druid: DruidBanner,
+  guardian: GuardianBanner,
+  ranger: RangerBanner,
+  rogue: RogueBanner,
+  seraph: SeraphBanner,
+  sorcerer: SorcererBanner,
+  warrior: WarriorBanner,
+  wizard: WizardBanner,
+};
+
+export const classBanner = (key: ClassName): FC<SvgProps> => BANNERS[key];
+
+export const CLASS_CARDS: ClassCardDef[] = (Object.keys(BANNERS) as ClassName[]).map((key) => ({
+  key,
+  title: key.charAt(0).toUpperCase() + key.slice(1),
+  Banner: BANNERS[key],
+  body: CLASS_DATA[key].summary,
+}));

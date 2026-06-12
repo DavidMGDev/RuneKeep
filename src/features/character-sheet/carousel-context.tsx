@@ -142,7 +142,9 @@ export function CarouselProvider({ children, originCards }: { children: ReactNod
   const openOriginCard = useCallback(
     (slot: 0 | 1 | 2) => {
       if (!originCards?.length) return;
-      const idx = decksRef.current.abilities.length - originCards.length + slot;
+      // The badges target the LAST THREE cards (subclass/ancestry/community); any class-feature
+      // cards pinned ahead of them (#104) shift the window, not the mapping.
+      const idx = decksRef.current.abilities.length - 3 + slot;
       if (categoryRef.current === 'abilities') {
         openCardAt(idx);
         return;

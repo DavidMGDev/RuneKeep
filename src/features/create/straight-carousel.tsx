@@ -32,10 +32,10 @@ const INNER_GEAR = require('../../../assets/art/gears/raster/U3.png') as number;
 
 export interface StraightItem {
   id: string;
-  /** Printed card pair (catalog cards)... */
-  thumb?: number;
-  source?: number;
-  /** ...or a FORGED card rendered live (cheaper than a thumb; no LOD pair needed). */
+  /** Printed/pre-rendered card pair (catalog requires or forged-render uris)... */
+  thumb?: number | { uri: string };
+  source?: number | { uri: string };
+  /** ...or a FORGED card rendered live (the pre-render loading state, #104). */
   custom?: ReactNode;
   label?: string;
 }
@@ -148,6 +148,7 @@ export function StraightCarousel({
   initialIndex = 0,
   onIndexChange,
   selectNoun,
+  aboveSelect,
 }: {
   items: StraightItem[];
   selectedIds: string[];
@@ -157,6 +158,8 @@ export function StraightCarousel({
   onIndexChange?: (i: number) => void;
   /** e.g. "class" — used in the control labels + a11y. */
   selectNoun: string;
+  /** Extra control rendered ABOVE the select button (e.g. "Class features", #104). */
+  aboveSelect?: ReactNode;
 }) {
   const count = items.length;
   const [width, setWidth] = useState(0);
@@ -222,7 +225,8 @@ export function StraightCarousel({
           cancelAnimation(pos);
           startPos.value = pos.value;
           scrolled.value = false;
-          padTouch.value = heightSV.value > 0 && e.y > heightSV.value - 72; // bottom strip = the gear
+          // The gear is INERT while a card is focused (#104: fullscreen taps were grinding it).
+          padTouch.value = fs.value < 0.5 && heightSV.value > 0 && e.y > heightSV.value - 72;
           if (padTouch.value) grind.value = withTiming(1, { duration: 160 });
         })
         .onUpdate((e) => {
@@ -261,6 +265,7 @@ export function StraightCarousel({
   // Centered column: the button first, the counter BENEATH it (a side counter read off-center).
   const selectControls = (compact: boolean) => (
     <View style={{ alignItems: 'center', gap: 5 }}>
+      {aboveSelect}
       <RuneButton
         label={centerSelected ? 'Deselect' : `Select ${selectNoun}`}
         kind={centerSelected ? 'ghost' : 'primary'}
@@ -340,14 +345,16 @@ export function StraightCarousel({
               </View>
             ) : null}
           </View>
-          {/* only the gear's crown peeks over the bottom edge — IN FRONT of the screen border
-              (the create screen lifts its content above the frame). Centered on the SCREEN
-              (left/right cancel the scaffold's 18dp padding). Drag it for the fast grind. */}
-          <View style={{ position: 'absolute', left: -18, right: -18, bottom: 0, height: 36, overflow: 'hidden', alignItems: 'center' }} pointerEvents="none">
-            <Animated.View style={[{ width: 150, height: 150 }, gearStyle]}>
-              <ArtImage source={INNER_GEAR} fit="contain" />
-            </Animated.View>
-          </View>
+          {/* only the gear's crown peeks over the bottom edge (under the screen border with the
+              rest of the carousel, #104). Centered on the SCREEN (left/right cancel the scaffold
+              padding); hidden + inert while a card is focused. Drag it for the fast grind. */}
+          {!fsOpen ? (
+            <View style={{ position: 'absolute', left: -18, right: -18, bottom: 0, height: 36, overflow: 'hidden', alignItems: 'center' }} pointerEvents="none">
+              <Animated.View style={[{ width: 150, height: 150 }, gearStyle]}>
+                <ArtImage source={INNER_GEAR} fit="contain" />
+              </Animated.View>
+            </View>
+          ) : null}
         </View>
       </GestureDetector>
     </View>
