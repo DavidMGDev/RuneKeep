@@ -10,7 +10,6 @@ import { DesignStage } from '@/components/design-stage';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
-import { tapHaptic } from '@/lib/haptics';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
@@ -139,12 +138,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
   const onHeart = (i: number) => {
     const target = i + 1;
     onHp(target === character.hp ? i : target);
-    tapHaptic();
   };
   const onTrackPip = (key: TrackKey) => (i: number) => {
     const target = i + 1;
     onTrack(key, target === character[key].active ? i : target);
-    tapHaptic();
   };
   // Golden hearts render gold; red (active) hearts are FORCE-tinted to the one interface red —
   // the default accent returns undefined, which let the heart PNG show its baked shade and drift

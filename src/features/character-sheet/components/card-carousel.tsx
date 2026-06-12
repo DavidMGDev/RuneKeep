@@ -13,7 +13,6 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
-import { focusHaptic, tapHaptic } from '@/lib/haptics';
 import { CARD_DECKS, type CardItem } from '../card-data';
 import { type ExpandState, useCarousel } from '../carousel-context';
 import {
@@ -140,7 +139,6 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             focusIndex.value = index;
             machineState.value = 'fullscreen';
             fullscreenProgress.value = withSpring(1, FS_SPRING);
-            runOnJS(focusHaptic)();
           }
         }),
     [index, count, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
@@ -188,11 +186,10 @@ export function CardCarousel() {
   const transitioned = useSharedValue(false); // at most one state change per gesture
   const lastCenter = useSharedValue(-999);
   // Inner-gear grind state (#62 D): touch began on the gear pad / from which hand state / fan
-  // tightening progress / last detent ticked (haptics).
+  // tightening progress.
   const padTouch = useSharedValue(false);
   const padWasExpanded = useSharedValue(false);
   const grindProgress = useSharedValue(0);
-  const lastDetent = useSharedValue(0);
   // Adaptive gear sensitivity (#67 C): one ~GEAR_SWIPE_PX swipe sweeps the WHOLE deck.
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
@@ -227,22 +224,16 @@ export function CardCarousel() {
           // 412x892 design box.) Grinding tightens the fan only from the expanded hand.
           padTouch.value = e.x >= PAD_X && e.x <= PAD_X + PAD_W && e.y >= PAD_Y && e.y <= PAD_Y + PAD_H;
           padWasExpanded.value = machineState.value === 'expanded';
-          lastDetent.value = Math.round(rotation.value / ANGLE_STEP);
           if (padTouch.value && padWasExpanded.value) grindProgress.value = withTiming(1, { duration: 160 });
         })
         .onUpdate((e) => {
           if (machineState.value === 'fullscreen') return;
-          // Grinding the gear (#62 D): a much stronger scroll with a haptic tick per detent.
+          // Grinding the gear (#62 D): a much stronger scroll.
           if (padTouch.value && padWasExpanded.value) {
             scrolled.value = true;
             const raw = startRot.value - e.translationX / gearPanR;
             const max = maxRotation(count);
             rotation.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
-            const det = Math.round(rotation.value / ANGLE_STEP);
-            if (det !== lastDetent.value) {
-              lastDetent.value = det;
-              runOnJS(tapHaptic)();
-            }
             return;
           }
           const dx = e.translationX - prevX.value;
@@ -279,7 +270,6 @@ export function CardCarousel() {
             machineState.value = 'fullscreen';
             rotation.value = withSpring(snapRot(centerIdx * ANGLE_STEP, count), SNAP_SPRING);
             fullscreenProgress.value = withSpring(1, FS_SPRING);
-            runOnJS(focusHaptic)();
             transitioned.value = true;
           } else if (-up > COLLAPSE_TRIGGER) {
             machineState.value = 'compact';
@@ -344,7 +334,7 @@ export function CardCarousel() {
           if (grindProgress.value !== 0 && !scrolled.value) grindProgress.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, lastDetent],
+    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
