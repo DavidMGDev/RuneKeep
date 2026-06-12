@@ -57,8 +57,21 @@ const SHARDS: Shard[] = Array.from({ length: 14 }, (_, i) => ({
 }));
 const INFLOW_DIST = 170; // extra distance for inbound shards — they start past the sheet edges
 
+// Extra sparkle field for healing INTO a golden heart (#89 A) — small gold/ivory diamonds that
+// twinkle as they spiral in, on top of the regular shard inflow.
+const GOLD_SPARKS: Shard[] = Array.from({ length: 10 }, (_, i) => ({
+  ang: (i / 10) * Math.PI * 2 + 0.45,
+  dist: 50 + ((i * 29) % 60),
+  size: 4 + ((i * 11) % 4),
+  spin: ((i % 3) - 1) * 4.2,
+  diamond: true,
+  tone: i % 3 === 0 ? 3 : 0, // 3 = ivory twinkle
+  delay: (i % 5) * 0.06,
+}));
+
 function shardColor(action: HeartAction, tone: number, accent: string): string {
   const gold = action === 'goldify' || action === 'degold';
+  if (tone === 3) return Rune.ivory; // golden-heal twinkles
   if (tone === 2) return Rune.inkText; // a few sharp dark slivers — modern contrast
   if (tone === 1) return gold ? Rune.gold : Rune.goldEdge; // arcane gold accents tie to the frame
   return gold ? Rune.goldBright : accent;
@@ -175,9 +188,11 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
       transform: [{ scale: 1 + grow * charge * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }],
     };
   });
-  // a gain fills as the inflow lands (~55%); a loss shatters instantly.
-  const preFade = useAnimatedStyle(() => ({ opacity: gains ? (fxP.value > 0.55 ? 0 : 1) : fxP.value > 0.1 ? 0 : 1 }));
-  const postFade = useAnimatedStyle(() => ({ opacity: gains ? (fxP.value > 0.55 ? 1 : 0) : fxP.value > 0.1 ? 1 : 0 }));
+  // A plain fill turns as the inflow lands (~55%); GOLDIFY turns AT the climax — golden before
+  // any shrink begins (#89 A); losses shatter instantly.
+  const crossAt = anim.action === 'fill' ? 0.55 : anim.action === 'goldify' ? 0.15 : 0.1;
+  const preFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 0 : 1 }));
+  const postFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 1 : 0 }));
   // the arcane seal: a 45°-rotated square outline blooming out of the heart on trigger
   const ring = useAnimatedStyle(() => ({
     transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 2.6 }],
@@ -207,6 +222,18 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
           {SHARDS.map((shard, i) => (
             <ShardView key={i} shard={shard} action={anim.action} accent={accent} inward={gains} fxP={fxP} />
           ))}
+          {/* healing into GOLD is richer (#89 A): a second, later seal ring + twinkling sparks */}
+          {anim.action === 'goldify' ? (
+            <>
+              <Animated.View
+                pointerEvents="none"
+                style={[{ position: 'absolute', left: -16, top: -16, width: 32, height: 32, borderWidth: 1.5, borderColor: Rune.gold }, ring]}
+              />
+              {GOLD_SPARKS.map((shard, i) => (
+                <ShardView key={`g${i}`} shard={shard} action={anim.action} accent={accent} inward fxP={fxP} />
+              ))}
+            </>
+          ) : null}
         </>
       ) : null}
     </View>
