@@ -76,38 +76,41 @@ function FaceContent({ face, fullRes }: { face: StraightFace; fullRes: boolean }
   return src != null ? <ArtImage source={src} fit="contain" /> : null;
 }
 
+const flipPar = (t: number) => ((t % 2) + 2) % 2;
+
 /**
- * A 3D flip-deck (#110): two persistent physical sides whose rotation ACCUMULATES (each flip is a
- * fresh ±180° half-turn, never reset). The side that will face the viewer after the turn gets the
- * target face loaded BEFORE the turn starts, so there is no mid-animation texture swap and — the
- * #110 bug — no post-flip reset frame where the old face snaps back visible. backfaceVisibility
- * hides whichever side points away. When not focused it snaps the forward side. `dir` (+1/-1) turns.
+ * A 3D flip-deck (#110): two persistent physical sides. Each flip animates the angle to an ABSOLUTE
+ * clean target (`turns * 180`, always a flat multiple of 180) rather than relative to the live
+ * value — so even an INTERRUPTED flip (fast double-tap) re-targets to a flat angle and can NEVER
+ * rest at a weird angle (#121, owner). The soon-forward side gets the target face before the turn,
+ * so there's no swap-frame flash. `onSettle` clears the parent's busy lock on completion.
  */
-const FlipCard = memo(function FlipCard({ faces, index, dir, fullRes, animate }: { faces: StraightFace[]; index: number; dir: number; fullRes: boolean; animate: boolean }) {
+const FlipCard = memo(function FlipCard({ faces, index, dir, fullRes, animate, onSettle }: { faces: StraightFace[]; index: number; dir: number; fullRes: boolean; animate: boolean; onSettle?: () => void }) {
   const angle = useSharedValue(0);
-  const [faceA, setFaceA] = useState(index); // forward when parity is even (angle ≡ 0°)
-  const [faceB, setFaceB] = useState(index); // forward when parity is odd  (angle ≡ 180°)
-  const parity = useRef(0);
+  const [faceA, setFaceA] = useState(index); // forward when turns is even (angle ≡ 0°)
+  const [faceB, setFaceB] = useState(index); // forward when turns is odd  (angle ≡ 180°)
+  const turns = useRef(0);
   const prev = useRef(index);
 
   useEffect(() => {
     if (index === prev.current) return;
     prev.current = index;
-    if (!animate) {
-      // snap: just refresh whichever side currently faces the viewer (no turn)
-      if (parity.current % 2 === 0) setFaceA(index);
+    if (!animate || faces.length <= 1) {
+      // snap: refresh whichever side currently faces the viewer (no turn)
+      if (flipPar(turns.current) === 0) setFaceA(index);
       else setFaceB(index);
+      onSettle?.();
       return;
     }
-    const nextParity = parity.current + 1;
-    // load the target on the side that becomes forward AFTER this half-turn
-    if (nextParity % 2 === 0) setFaceA(index);
+    // forward advance turns the reversed way (#110); ABSOLUTE target keeps every rest flat
+    const next = turns.current + (dir >= 0 ? -1 : 1);
+    if (flipPar(next) === 0) setFaceA(index);
     else setFaceB(index);
-    parity.current = nextParity;
-    // rotation direction reversed (#110, owner): forward advance turns the opposite way; only the
-    // visual spin flips — page order / gesture stay the same.
-    angle.value = withTiming(angle.value + (dir >= 0 ? -1 : 1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) });
-  }, [index, animate, dir, angle]);
+    turns.current = next;
+    angle.value = withTiming(next * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) }, (f) => {
+      if (f && onSettle) runOnJS(onSettle)();
+    });
+  }, [index, animate, dir, angle, faces.length, onSettle]);
 
   const aStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value}deg` }], backfaceVisibility: 'hidden' }));
   const bStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value + 180}deg` }], backfaceVisibility: 'hidden' }));
@@ -145,10 +148,11 @@ interface SlotProps {
   isCenter: boolean;
   faceIndex: number;
   flipDir: number;
+  onFlipSettle: () => void;
   onTap: (index: number, x: number) => void;
 }
 
-const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onTap }: SlotProps) {
+const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
@@ -202,7 +206,7 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
       <GestureDetector gesture={tap}>
         <View style={{ flex: 1 }}>
           {hasFaces ? (
-            <FlipCard faces={item.faces!} index={isCenter ? faceIndex : 0} dir={focused ? flipDir : 1} fullRes={focused || withImage} animate={focused} />
+            <FlipCard faces={item.faces!} index={isCenter ? faceIndex : 0} dir={focused ? flipDir : 1} fullRes={focused || withImage} animate={focused} onSettle={onFlipSettle} />
           ) : item.custom ? (
             item.custom
           ) : (
@@ -279,6 +283,7 @@ export const StraightCarousel = forwardRef<
   // flip spins the way the tap implied (left = back, right = forward).
   const [faceIdx, setFaceIdx] = useState(0);
   const flipDir = useRef(1);
+  const flipBusy = useRef(false); // a flip can't start until the previous one settles (#121)
 
   const onCenter = useCallback(
     (c: number) => {
@@ -305,15 +310,21 @@ export const StraightCarousel = forwardRef<
   }, [fs]);
 
   // Flip the focused card to the next/previous face (#110), wrapping. dir drives the turn direction.
+  // Locked: ignored until the running flip settles, so a fast double-tap can't interrupt it (#121).
   const flip = useCallback(
     (delta: number) => {
+      if (flipBusy.current) return;
       const n = items[center]?.faces?.length ?? 0;
       if (n <= 1) return;
+      flipBusy.current = true;
       flipDir.current = delta;
       setFaceIdx((i) => (i + delta + n) % n);
     },
     [items, center],
   );
+  const onFlipSettle = useCallback(() => {
+    flipBusy.current = false;
+  }, []);
 
   // Device-back / parent close hook (#108): consume the back press when a card is focused.
   useImperativeHandle(
@@ -468,6 +479,7 @@ export const StraightCarousel = forwardRef<
                     isCenter={i === center}
                     faceIndex={faceIdx}
                     flipDir={flipDir.current}
+                    onFlipSettle={onFlipSettle}
                     onTap={onTapCard}
                   />
                 ))
