@@ -189,8 +189,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           clear air above the origin strip (#54 E). */}
       {/* One size smaller + a taller box than the glyphs need (#95 B): native line metrics ran
           taller than web's and the 17px box clipped the descender band off "LVL 4 SORCERER". */}
-      <SheetText left={176} top={97} width={220} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.5} numberOfLines={1}>Lvl {character.level} {character.className}</SheetText>
-      <SheetText left={176} top={116} width={220} height={16} color={BRONZE} size={10} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>Proficiency → {character.proficiency}</SheetText>
+      {/* level/class + proficiency on ONE line now (#128): "Prof" abbreviation, no arrow, middot
+          separator — the freed vertical space goes to the (taller, squarer) origin badges below. */}
+      <SheetText left={176} top={100} width={224} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>
+        Lvl {character.level} {character.className} · Prof {character.proficiency}
+      </SheetText>
 
       {/* Origin strip (#48 D, per /impeccable): three stretched octagons, fitted labels beneath,
           thin gold rules in the gaps. Shrunk down-and-left (48x40 at an 78px pitch, #54 E) so the
@@ -198,11 +201,12 @@ function RedesignedBody({ character, onHp, onTrack, onInfo }: { character: Chara
           widths, not just web. */}
       {/* #100: each badge opens ITS pinned origin card (last three of the abilities hand); if the
           Inventory deck is up, the switch animation plays first, then the card flies up. */}
-      <OctaBadge left={176} top={138} w={48} h={40} icon={Art.subclassIcon} label="Subclass" onPress={() => openOriginCard(0)} />
-      <OctaBadge left={254} top={138} w={48} h={40} icon={Art.ancestryIcon} label="Ancestry" onPress={() => openOriginCard(1)} />
-      <OctaBadge left={332} top={138} w={48} h={40} icon={Art.communityIcon} label="Community" onPress={() => openOriginCard(2)} />
-      <GoldRuleV left={239} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
-      <GoldRuleV left={317} top={146} height={24} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      {/* taller, squarer badges (#128): they rise into the space the proficiency line used to take */}
+      <OctaBadge left={176} top={120} w={48} h={52} icon={Art.subclassIcon} label="Subclass" onPress={() => openOriginCard(0)} />
+      <OctaBadge left={254} top={120} w={48} h={52} icon={Art.ancestryIcon} label="Ancestry" onPress={() => openOriginCard(1)} />
+      <OctaBadge left={332} top={120} w={48} h={52} icon={Art.communityIcon} label="Community" onPress={() => openOriginCard(2)} />
+      <GoldRuleV left={239} top={130} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <GoldRuleV left={317} top={130} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.

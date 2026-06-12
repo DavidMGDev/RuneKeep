@@ -27,6 +27,9 @@ export interface Character {
   evasion: number;
   armorScore: number;
   proficiency: number;
+  /** Damage thresholds (#128): take `major`+ damage → 2 HP, `severe`+ → 3 HP, 2×severe+ → 4 HP,
+   *  below major → 1 HP. Set from the chosen armor card at creation; read-only on the sheet. */
+  damageThresholds: { major: number; severe: number };
 
   /**
    * Current hit points — the SINGLE source of truth for HP. Hearts and the numeric `current / max`
@@ -79,6 +82,7 @@ export const SAMPLE_CHARACTER: Character = {
   evasion: 11,
   armorScore: 4,
   proficiency: 2,
+  damageThresholds: { major: 8, severe: 16 },
   hp: 5, // 6 slots → 5 red + 1 empty, reads "5 / 12" (self-consistent with the hearts)
   heartSlots: 6,
   maxHp: 12,
