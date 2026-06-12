@@ -12,7 +12,7 @@ import { FORGED_H, FORGED_W } from './forged-card';
  * the same.) Cache keyed by FORGE_RENDER_V — bump it whenever card layout/copy changes. Web (the
  * verify pipeline) skips capture and keeps the live components.
  */
-export const FORGE_RENDER_V = 6;
+export const FORGE_RENDER_V = 7;
 
 export interface ForgedSource {
   full: { uri: string };
@@ -74,10 +74,14 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
   const onStageReady = useCallback(() => {
     const job = active;
     if (!job || !shotRef.current) return;
-    // Double rAF: let svg/text actually paint before rasterizing (the #88 continuity lesson).
+    // Double rAF lets svg/text paint (#88), but a RASTER art image (an experience's player photo,
+    // file://) decodes asynchronously AFTER layout — capturing too early forged a black/dark art
+    // zone into the full-res bitmap while the thumb (a beat later) caught the loaded image (#110:
+    // "image black when centered"). Hold a real settle so raster art is decoded before BOTH captures.
     requestAnimationFrame(() =>
       requestAnimationFrame(async () => {
         try {
+          await new Promise((r) => setTimeout(r, 320));
           const { File } = fs();
           const fullTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 750, height: 1050 });
           const thumbTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 188, height: 263 });

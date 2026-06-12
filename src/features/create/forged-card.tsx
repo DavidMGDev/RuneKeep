@@ -1,5 +1,6 @@
 import { type FC } from 'react';
-import { Image, Text, View } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
+import { Text, View } from 'react-native';
 import Svg, { Path, type SvgProps } from 'react-native-svg';
 
 import { DividerPlaque } from '@/components/card-divider';
@@ -42,7 +43,7 @@ export function ForgedCard({
       {/* art zone — class-deep ground; a banner standing proud, or the player's own image */}
       <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
         {imageUri ? (
-          <Image source={{ uri: imageUri }} style={{ width: FORGED_W, height: ART_H }} resizeMode="cover" />
+          <ExpoImage source={{ uri: imageUri }} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />
         ) : Banner ? (
           <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
         ) : null}
