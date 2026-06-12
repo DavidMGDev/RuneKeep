@@ -104,7 +104,9 @@ const FlipCard = memo(function FlipCard({ faces, index, dir, fullRes, animate }:
     if (nextParity % 2 === 0) setFaceA(index);
     else setFaceB(index);
     parity.current = nextParity;
-    angle.value = withTiming(angle.value + (dir >= 0 ? 1 : -1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) });
+    // rotation direction reversed (#110, owner): forward advance turns the opposite way; only the
+    // visual spin flips — page order / gesture stay the same.
+    angle.value = withTiming(angle.value + (dir >= 0 ? -1 : 1) * 180, { duration: 320, easing: Easing.inOut(Easing.cubic) });
   }, [index, animate, dir, angle]);
 
   const aStyle = useAnimatedStyle(() => ({ transform: [{ perspective: 900 }, { rotateY: `${angle.value}deg` }], backfaceVisibility: 'hidden' }));
