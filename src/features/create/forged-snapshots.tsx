@@ -12,7 +12,7 @@ import { FORGED_H, FORGED_W } from './forged-card';
  * the same.) Cache keyed by FORGE_RENDER_V — bump it whenever card layout/copy changes. Web (the
  * verify pipeline) skips capture and keeps the live components.
  */
-export const FORGE_RENDER_V = 7;
+export const FORGE_RENDER_V = 8;
 
 export interface ForgedSource {
   full: { uri: string };
@@ -85,8 +85,8 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
       requestAnimationFrame(async () => {
         try {
           // raster art (player photo) decodes async after layout — settle so the full-res capture
-          // isn't black (#110); vector cards skip it and forge fast.
-          if (job.raster) await new Promise((r) => setTimeout(r, 320));
+          // isn't black (#110/#121); vector cards skip it and forge fast.
+          if (job.raster) await new Promise((r) => setTimeout(r, 450));
           const { File } = fs();
           const fullTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 750, height: 1050 });
           const thumbTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 188, height: 263 });

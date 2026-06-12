@@ -42,14 +42,15 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, originCards, inventoryCards }: { children: ReactNode; originCards?: CardItem[]; inventoryCards?: CardItem[] }) {
+export function CarouselProvider({ children, abilitiesCards, inventoryCards }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[] }) {
+  // A real character supplies its OWN full decks (only the cards it picked, #121) — no sample/
+  // placeholder cards mixed in. The hardcoded CARD_DECKS are only the fallback for the demo sheet.
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
     () => ({
-      abilities: originCards?.length ? [...CARD_DECKS.abilities, ...originCards] : CARD_DECKS.abilities,
-      // the character's weapons + armor ride the inventory deck too (#121)
-      inventory: inventoryCards?.length ? [...CARD_DECKS.inventory, ...inventoryCards] : CARD_DECKS.inventory,
+      abilities: abilitiesCards?.length ? abilitiesCards : CARD_DECKS.abilities,
+      inventory: inventoryCards?.length ? inventoryCards : CARD_DECKS.inventory,
     }),
-    [originCards, inventoryCards],
+    [abilitiesCards, inventoryCards],
   );
   const startMiddle = middleRotation(decks.abilities.length);
   const rotation = useSharedValue(startMiddle);
@@ -142,7 +143,7 @@ export function CarouselProvider({ children, originCards, inventoryCards }: { ch
 
   const openOriginCard = useCallback(
     (slot: 0 | 1 | 2) => {
-      if (!originCards?.length) return;
+      if (!abilitiesCards?.length) return;
       // The badges target the LAST THREE cards (subclass/ancestry/community); any class-feature
       // cards pinned ahead of them (#104) shift the window, not the mapping.
       const idx = decksRef.current.abilities.length - 3 + slot;
@@ -153,7 +154,7 @@ export function CarouselProvider({ children, originCards, inventoryCards }: { ch
       pendingOpen.current = idx;
       setCategory('abilities');
     },
-    [originCards, openCardAt, setCategory],
+    [abilitiesCards, openCardAt, setCategory],
   );
 
   const value = useMemo<CarouselContextValue>(
