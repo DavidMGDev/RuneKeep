@@ -789,9 +789,9 @@ export function CreateScreen() {
                 fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.9)'}
                 stroke="rgba(218,162,73,0.5)"
                 strokeWidth={1.2}
-                style={{ width: 96, height: 96, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                style={{ width: 100, height: 128, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {draft.portraitUri ? (
-                  <Image source={{ uri: draft.portraitUri }} style={{ width: 96, height: 96 }} resizeMode="cover" />
+                  <Image source={{ uri: draft.portraitUri }} style={{ width: 100, height: 128 }} resizeMode="cover" />
                 ) : (
                   <Svg width={30} height={30} viewBox="0 0 26 26">
                     <Circle cx={13} cy={9} r={4.4} fill="none" stroke={Rune.goldEdge} strokeWidth={1.8} />
@@ -801,21 +801,24 @@ export function CreateScreen() {
               </ChamferBox>
             )}
           </Pressable>
-          {/* name + caption (right) */}
-          <View style={{ flex: 1, gap: 6 }}>
-            <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 48, justifyContent: 'center', paddingHorizontal: 13 }}>
-              <TextInput
-                value={draft.name}
-                onChangeText={(name) => set({ name })}
-                placeholder="Name"
-                placeholderTextColor={Rune.muted}
-                selectionColor={Rune.goldBright}
-                maxLength={40}
-                style={{ color: Rune.sheet, fontSize: 16, fontFamily: Body.semibold, letterSpacing: 0.4, padding: 0 }}
-                accessibilityLabel="Character name"
-              />
-            </ChamferBox>
-            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the sheet's frame for now.</Text>
+          {/* name + caption (top) and the add-image button pinned to the BOTTOM so its lower edge
+              lines up with the bottom of the (now portrait-oriented) frame (#135). */}
+          <View style={{ flex: 1, justifyContent: 'space-between' }}>
+            <View style={{ gap: 6 }}>
+              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 48, justifyContent: 'center', paddingHorizontal: 13 }}>
+                <TextInput
+                  value={draft.name}
+                  onChangeText={(name) => set({ name })}
+                  placeholder="Name"
+                  placeholderTextColor={Rune.muted}
+                  selectionColor={Rune.goldBright}
+                  maxLength={40}
+                  style={{ color: Rune.sheet, fontSize: 16, fontFamily: Body.semibold, letterSpacing: 0.4, padding: 0 }}
+                  accessibilityLabel="Character name"
+                />
+              </ChamferBox>
+              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the sheet's portrait frame.</Text>
+            </View>
             <RuneButton label={draft.portraitUri ? 'Change image' : 'Add image'} kind="ghost" height={32} onPress={pickPortrait} />
           </View>
         </View>
