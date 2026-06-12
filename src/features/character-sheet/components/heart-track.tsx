@@ -28,13 +28,11 @@ import { Art } from '../art';
  * runs — no rasterized animating layers, no fractional-alpha containers at rest.
  */
 
-const HOLD_MS = 750; // build-up; the gesture triggers here
+const HOLD_MS = 550; // 0.2s shorter (#93); the SCALE peaks at half this — grow fast, shake long
 const FX_MS = 950; // burst + settle after the trigger
 const CANCEL_MS = 180;
 const DOUBLE_MS = 320; // max gap between touch-DOWNs for the instant path
-// Ease-OUT hold: ~2x within the first ~150ms (you instantly feel you have it), ~3.4x (~120px) at
-// the trigger.
-const GROW = 2.4;
+const GROW = 2.9; // +20% (#93) — ~135px at the peak
 const REDUCED_GROW = 0.4;
 
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
@@ -82,35 +80,19 @@ interface SlotProps {
   x: number;
   pip: number;
   state: PipState;
-  action: HeartAction | null;
   accent: string;
   hidden: boolean;
-  onBegin: (index: number, action: HeartAction) => void;
-  onTrigger: () => void;
-  onCancel: () => void;
 }
 
-const HeartSlot = memo(function HeartSlot({ index, x, pip, state, action, accent, hidden, onBegin, onTrigger, onCancel }: SlotProps) {
+const HeartSlot = memo(function HeartSlot({ index, x, pip, state, accent, hidden }: SlotProps) {
   // Hidden = opacity 0, NEVER unmounted: the image stays painted, so when an animation ends and
-  // the slot reappears in the same commit there is no decode gap (#88).
-  const body = (
-    <View style={[box(x, 0, pip, pip), { opacity: hidden ? 0 : 1 }]}
-      accessible
-      accessibilityLabel={`Hit point heart ${index + 1}, ${state}`}
-      accessibilityHint={action ? `Hold to ${GAINS[action] ? 'restore' : 'spend'} one hit point. Double tap for no animation.` : undefined}>
+  // the slot reappears in the same commit there is no decode gap (#88). Gestures live on the
+  // ZONES now (#93), not the slots.
+  return (
+    <View style={[box(x, 0, pip, pip), { opacity: hidden ? 0 : 1 }]} accessible accessibilityLabel={`Hit point heart ${index + 1}, ${state}`}>
       <ArtImage source={heartArt(state)} fit="contain" tint={heartTint(state, accent)} />
     </View>
   );
-  if (!action) return body;
-  const hold = Gesture.LongPress()
-    .minDuration(HOLD_MS)
-    .maxDistance(28)
-    .onBegin(() => runOnJS(onBegin)(index, action))
-    .onStart(() => runOnJS(onTrigger)())
-    .onFinalize((_e, success) => {
-      if (!success) runOnJS(onCancel)();
-    });
-  return <GestureDetector gesture={hold}>{body}</GestureDetector>;
 });
 
 /** One shard of the burst/inflow — a flat chamfer-era sliver, transform/opacity only. */
@@ -176,16 +158,18 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
   const post = POST[anim.action];
   const gold = anim.action === 'goldify' || anim.action === 'degold';
 
-  // hold: pop + charging shake. fx: +0.55 kick at the climax, then a damped elastic settle to 1.
+  // hold: pop + charging shake — scale peaks at HALF the hold (#93: grow twice as fast, shake at
+  // full size for the rest). fx: +0.55 kick at the climax, then a damped elastic settle to 1.
   const heart = useAnimatedStyle(() => {
-    const charge = holdP.value;
+    const chargeFast = Math.min(1, holdP.value * 2);
+    const shake = holdP.value;
     const p = fxP.value;
     const grow = reduced ? REDUCED_GROW : GROW;
     const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
     const elastic = !reduced && p >= 0.22 ? Math.cos((p - 0.22) * 16) * 0.16 * (1 - p) : 0;
-    const wobble = reduced ? 0 : Math.sin(charge * 46) * 0.07 * charge * Math.max(0, 1 - p * 5);
+    const wobble = reduced ? 0 : Math.sin(shake * 46) * 0.07 * shake * Math.max(0, 1 - p * 5);
     return {
-      transform: [{ scale: 1 + grow * charge * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }],
+      transform: [{ scale: 1 + grow * chargeFast * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }],
     };
   });
   // A plain fill turns as the inflow lands (~55%); GOLDIFY turns AT the climax — golden before
@@ -303,10 +287,39 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'out' as AnimPhase } : a)));
   }, []);
 
+  // ZONES (#93, the armor system the owner loves): two halves split at a barrier own the
+  // gestures. The barrier sits midway between the down-slot and the up-slot, and each zone acts
+  // on whichever boundary slot lives on ITS side — so at hp 6 (up = heart #1 goldifies, down =
+  // heart #6 breaks) the LEFT half goldifies and the RIGHT half breaks, per owner.
+  const zoneGesture = (index: number, action: HeartAction) =>
+    Gesture.LongPress()
+      .minDuration(HOLD_MS)
+      .maxDistance(32)
+      .onBegin(() => runOnJS(onBegin)(index, action))
+      .onStart(() => runOnJS(onTrigger)())
+      .onFinalize((_e, success) => {
+        if (!success) runOnJS(onCancel)();
+      });
+  const Z_L = -10;
+  const Z_R = width + 10;
+  const zones: { from: number; to: number; index: number; action: HeartAction }[] = [];
+  if (bounds.up >= 0 && bounds.down >= 0) {
+    const upX = bounds.up * step;
+    const downX = bounds.down * step;
+    const barrier = (Math.min(upX, downX) + pip + Math.max(upX, downX)) / 2;
+    const first = upX < downX ? { index: bounds.up, action: bounds.upAction } : { index: bounds.down, action: bounds.downAction };
+    const second = upX < downX ? { index: bounds.down, action: bounds.downAction } : { index: bounds.up, action: bounds.upAction };
+    zones.push({ from: Z_L, to: barrier, ...first }, { from: barrier, to: Z_R, ...second });
+  } else if (bounds.up >= 0) {
+    zones.push({ from: Z_L, to: Z_R, index: bounds.up, action: bounds.upAction });
+  } else if (bounds.down >= 0) {
+    zones.push({ from: Z_L, to: Z_R, index: bounds.down, action: bounds.downAction });
+  }
+
   return (
     // zIndex 10: above the sheet's other body elements so shards fly over them, but BELOW the
     // expand veil (20) and the card carousel (30) — see the #87 stacking contract.
-    <View style={[box(left, top, width, pip), { zIndex: 10 }]}>
+    <View style={[box(left, top, width, pip), { zIndex: 10, overflow: 'visible' }]}>
       {states.map((s, i) => (
         <HeartSlot
           key={i}
@@ -314,14 +327,20 @@ export function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp 
           x={i * step}
           pip={pip}
           state={s}
-          action={i === bounds.up ? bounds.upAction : i === bounds.down ? bounds.downAction : null}
           accent={accent}
           // ONE visible heart per slot: the animating copy owns the slot for its whole life (#88).
           hidden={anims.some((a) => a.index === i)}
-          onBegin={onBegin}
-          onTrigger={onTrigger}
-          onCancel={onCancel}
         />
+      ))}
+      {zones.map((z, i) => (
+        <GestureDetector key={`${i}-${z.index}-${z.action}`} gesture={zoneGesture(z.index, z.action)}>
+          <View
+            style={box(z.from, -10, z.to - z.from, pip + 20)}
+            accessible
+            accessibilityLabel={`${GAINS[z.action] ? 'Restore' : 'Spend'} hit point`}
+            accessibilityHint="Hold to confirm. Double tap for no animation."
+          />
+        </GestureDetector>
       ))}
       {anims.map((a) => (
         <HeartAnim key={a.id} anim={a} x={a.index * step + pip / 2} pip={pip} accent={accent} reduced={reduced} onDone={onDone} />

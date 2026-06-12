@@ -24,7 +24,7 @@ import { box } from '@/lib/design';
  * removes, right of it adds, verticality irrelevant (#89 E).
  */
 
-const HOLD_MS = 750;
+const HOLD_MS = 550; // 0.2s shorter per owner (#93); the SCALE peaks in half this (see chargeFast)
 const FX_MS = 950;
 const CANCEL_MS = 180;
 const DOUBLE_MS = 320;
@@ -150,8 +150,9 @@ function SparkView({ s, gains, fxP, idx }: { s: Spark; gains: boolean; fxP: Shar
   );
 }
 
-/** Armor plate: the heart-shard motion with a metal palette (#89 E). */
-function PlateView({ pl, inward, fxP }: { pl: Plate; inward: boolean; fxP: SharedValue<number> }) {
+/** Smooth shard: the heart-shard motion with a configurable palette — armor metal by default,
+ *  warm gold for the soothing stress-clear (#93). */
+function PlateView({ pl, inward, fxP, tones }: { pl: Plate; inward: boolean; fxP: SharedValue<number>; tones?: [string, string, string] }) {
   const style = useAnimatedStyle(() => {
     const p = Math.min(1, Math.max(0, (fxP.value - pl.delay) / (1 - pl.delay)));
     const travel = inward ? (1 - p) * (pl.dist + INFLOW_DIST) : Math.pow(p, 0.62) * pl.dist;
@@ -166,7 +167,8 @@ function PlateView({ pl, inward, fxP }: { pl: Plate; inward: boolean; fxP: Share
       opacity: p <= 0 || p >= 1 ? 0 : fade,
     };
   });
-  const tone = pl.tone === 2 ? Rune.inkText : pl.tone === 1 ? Rune.muted : Rune.goldEdge;
+  const palette = tones ?? [Rune.goldEdge, Rune.muted, Rune.inkText];
+  const tone = palette[pl.tone] ?? palette[0];
   return (
     <Animated.View
       pointerEvents="none"
@@ -217,16 +219,30 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
   const gains = anim.dir === 'up';
   const g = reduced ? REDUCED_GROW : grow;
 
+  // Hope-spend dissipates instead of vanishing (#93): the expended diamond detaches, keeps
+  // growing outward and fades like it's dispersing into the air, while the body settles as empty.
+  const dissipatePre = flavor === 'hope' && !gains;
+
   const body = useAnimatedStyle(() => {
-    const charge = holdP.value;
+    // Scale peaks at HALF the hold (#93): grows twice as fast, then shakes at full size.
+    const chargeFast = Math.min(1, holdP.value * 2);
+    const shake = holdP.value;
     const p = fxP.value;
     const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
     const elastic = !reduced && p >= 0.22 ? Math.cos((p - 0.22) * 16) * 0.16 * (1 - p) : 0;
-    const wobble = reduced ? 0 : Math.sin(charge * 46) * 0.07 * charge * Math.max(0, 1 - p * 5);
-    return { transform: [{ scale: 1 + g * charge * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }] };
+    const wobble = reduced ? 0 : Math.sin(shake * 46) * 0.07 * shake * Math.max(0, 1 - p * 5);
+    return { transform: [{ scale: 1 + g * chargeFast * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }] };
   });
-  const preFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 0 : 1 }));
-  const postFade = useAnimatedStyle(() => ({ opacity: fxP.value > crossAt ? 1 : 0 }));
+  const bodyCrossAt = dissipatePre ? 0.05 : crossAt;
+  const preFade = useAnimatedStyle(() => ({ opacity: fxP.value > bodyCrossAt ? 0 : 1 }));
+  const postFade = useAnimatedStyle(() => ({ opacity: fxP.value > bodyCrossAt ? 1 : 0 }));
+  const dissipate = useAnimatedStyle(() => {
+    const p = fxP.value;
+    return {
+      transform: [{ scale: 1 + g + p * 1.4 }],
+      opacity: p <= 0 ? 0 : Math.max(0, 1 - p * 1.2),
+    };
+  });
   const ring = useAnimatedStyle(() => ({
     transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 2.6 }],
     opacity: fxP.value <= 0 ? 0 : Math.max(0, 0.9 - fxP.value),
@@ -239,13 +255,23 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
         <Animated.View style={[box(0, 0, w, h), preFade]}>{renderPre}</Animated.View>
         <Animated.View style={[box(0, 0, w, h), postFade]}>{renderPost}</Animated.View>
       </Animated.View>
+      {dissipatePre ? (
+        <Animated.View style={[{ position: 'absolute', left: -w / 2, top: -h / 2, width: w, height: h }, dissipate]} pointerEvents="none">
+          {renderPre}
+        </Animated.View>
+      ) : null}
       {!reduced ? (
         <>
           <Animated.View
             pointerEvents="none"
             style={[{ position: 'absolute', left: -22, top: -22, width: 44, height: 44, borderWidth: 1.5, borderColor: ringColor }, ring]}
           />
-          {flavor === 'stress' && BOLTS.map((b, i) => <BoltView key={i} b={b} accent={accent} fxP={fxP} />)}
+          {flavor === 'stress' &&
+            (gains
+              ? BOLTS.map((b, i) => <BoltView key={i} b={b} accent={accent} fxP={fxP} />)
+              : // clearing stress is SOOTHING (#93): smooth drifting motes, gold-warm, no jitter
+                PLATES.map((pl, i) => <PlateView key={i} pl={pl} inward={false} fxP={fxP} tones={[Rune.goldEdge, accent, Rune.goldBright]} />)
+              )}
           {flavor === 'hope' && (
             <>
               {RAYS.map((r, i) => (
