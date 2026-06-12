@@ -255,6 +255,8 @@ interface HeartTrackProps {
   pip: number;
   hp: number;
   slots?: number;
+  /** HP ceiling (#136): no GAIN zone when hp is already at max (no phantom goldify animation). */
+  maxHp?: number;
   accent: string;
   onHp: (n: number) => void;
 }
@@ -264,10 +266,13 @@ export interface HeartTrackHandle {
   applyDamage: (hpLoss: number) => void;
 }
 
-export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function HeartTrack({ left, top, width, pip, hp, slots = 6, accent, onHp }, ref) {
+export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function HeartTrack({ left, top, width, pip, hp, slots = 6, maxHp = Infinity, accent, onHp }, ref) {
   const reduced = useReducedMotion();
   const { states } = resolveHearts(hp, slots);
-  const bounds = heartBoundaries(hp, slots);
+  const rawBounds = heartBoundaries(hp, slots);
+  // Suppress the boundary you CAN'T act on (#136): no gain zone at the HP ceiling (the phantom
+  // golden-heart animation), no lose zone at 0. -1 = inactive (no zone built for it).
+  const bounds = { ...rawBounds, up: hp < maxHp ? rawBounds.up : -1, down: hp > 0 ? rawBounds.down : -1 };
   const step = (width - pip) / (slots - 1);
 
   const [anims, setAnims] = useState<Anim[]>([]);
