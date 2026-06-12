@@ -47,7 +47,17 @@ export function ForgedCard({
       {/* the 40/60 seam: the divider with its plaque carrying the kind label */}
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
         <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          <Text style={{ color: Rune.red, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 1.6, textTransform: 'uppercase' }}>{kindLabel}</Text>
+          {/* auto-fit: long labels (e.g. "Experience") shrink to stay inside the plaque slot
+              instead of bleeding past the mask edges (#110). */}
+          <View style={{ maxWidth: 104, alignItems: 'center' }}>
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+              style={{ color: Rune.red, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: kindLabel.length > 8 ? 0.8 : 1.6, textTransform: 'uppercase' }}>
+              {kindLabel}
+            </Text>
+          </View>
         </DividerPlaque>
       </View>
       {/* printed-card lower body — typeset against the DH scans (#103 impeccable typeset):

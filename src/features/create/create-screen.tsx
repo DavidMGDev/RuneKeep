@@ -1,8 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Dimensions, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import Animated, { Easing, runOnJS, SlideInLeft, SlideInRight, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, Dimensions, Image, Pressable, Text, TextInput, View } from 'react-native';
+import Animated, { Easing, runOnJS, SlideInLeft, SlideInRight, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
 import { AppScreen, useScreenInsets } from '@/components/app-screen';
@@ -220,6 +220,44 @@ function SectionDivider({ label }: { label: string }) {
       <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.5)' }} />
       <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{label}</Text>
       <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.5)' }} />
+    </View>
+  );
+}
+
+/** The horizontal deck rail with a thin custom scroll indicator (#110): a faint track with a gold
+ *  thumb sized to the visible fraction, tracking scroll position — replaces the old static chevron. */
+function DeckRail({ children }: { children: ReactNode }) {
+  const scrollX = useSharedValue(0);
+  const [viewW, setViewW] = useState(0);
+  const [contentW, setContentW] = useState(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollX.value = e.contentOffset.x;
+  });
+  const overflow = contentW > viewW + 2;
+  const trackW = Math.max(0, viewW - 4); // track sits inside 2px side margins
+  const thumbW = overflow ? Math.max(28, trackW * (viewW / contentW)) : 0;
+  const thumbStyle = useAnimatedStyle(() => {
+    const maxScroll = Math.max(1, contentW - viewW);
+    const x = Math.min(1, Math.max(0, scrollX.value / maxScroll)) * (trackW - thumbW);
+    return { transform: [{ translateX: x }] };
+  });
+  return (
+    <View style={{ marginTop: 6 }}>
+      <Animated.ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={onScroll}
+        onLayout={(e) => setViewW(e.nativeEvent.layout.width)}
+        onContentSizeChange={(w) => setContentW(w)}
+        contentContainerStyle={{ gap: 4, paddingRight: 8 }}>
+        {children}
+      </Animated.ScrollView>
+      {overflow ? (
+        <View style={{ height: 2.5, marginTop: 5, marginHorizontal: 2, borderRadius: 2, backgroundColor: 'rgba(147,142,136,0.18)', overflow: 'hidden' }}>
+          <Animated.View style={[{ height: '100%', width: thumbW, borderRadius: 2, backgroundColor: Rune.goldEdge }, thumbStyle]} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -521,29 +559,22 @@ export function CreateScreen() {
         <View style={{ marginTop: 12 }}>
           <SectionDivider label="Cards" />
         </View>
-        {/* The deck rail is SCROLLABLE now (#107, nine steps): fixed-width tabs, free scroll, a
-            gold chevron fades at the right edge so the overflow is obvious. */}
-        <View style={{ marginTop: 6 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 4, paddingRight: 26 }}>
-            {DECKS.map((d) => (
-              <DeckTab
-                key={d.key}
-                deck={d.key}
-                label={d.label}
-                active={deck === d.key}
-                done={!d.stub && deckDone(d.key, draft)}
-                locked={locked(d.key)}
-                pulseToken={d.key === 'domains' || d.key === 'subclass' ? unlockPulse : 0}
-                onPress={() => switchDeck(d.key)}
-              />
-            ))}
-          </ScrollView>
-          <View pointerEvents="none" style={{ position: 'absolute', right: -2, top: 0, bottom: 0, justifyContent: 'center' }}>
-            <Svg width={14} height={22} viewBox="0 0 14 22">
-              <Polyline points="3,3 11,11 3,19" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinejoin="miter" />
-            </Svg>
-          </View>
-        </View>
+        {/* The deck rail (#107, nine steps): fixed-width tabs, free scroll. A thin custom scroll
+            indicator (#110) tracks position instead of the old static chevron. */}
+        <DeckRail>
+          {DECKS.map((d) => (
+            <DeckTab
+              key={d.key}
+              deck={d.key}
+              label={d.label}
+              active={deck === d.key}
+              done={!d.stub && deckDone(d.key, draft)}
+              locked={locked(d.key)}
+              pulseToken={d.key === 'domains' || d.key === 'subclass' ? unlockPulse : 0}
+              onPress={() => switchDeck(d.key)}
+            />
+          ))}
+        </DeckRail>
 
         {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
         <Animated.View style={[{ flex: 1, marginTop: 2 }, fadeStyle]}>
