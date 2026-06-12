@@ -9,6 +9,12 @@ import { type ClassName, classInfo } from '@/constants/identity';
 import { cardById } from '@/features/cards/catalog';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/features/create/class-data';
+import { armorById } from '@/features/create/equipment-data';
+
+/** Daggerheart proficiency by level (#128): tier 1 = 1, tier 2 (L2-4) = 2, tier 3 (L5-7) = 3, tier 4 = 4. */
+export function proficiencyForLevel(level: number): number {
+  return level <= 1 ? 1 : level <= 4 ? 2 : level <= 7 ? 3 : 4;
+}
 
 export const CHARACTER_SCHEMA_VERSION = 1;
 
@@ -85,6 +91,12 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const ancestry = cardById(file.ancestryCardId);
   const community = cardById(file.communityCardId);
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  // Armor (#128): the chosen card sets the damage thresholds (used VERBATIM, no level bonus per
+  // owner) and the base score = how many armor slots are enabled (the rest stay locked/disabled).
+  const armor = file.armorId ? armorById(file.armorId) : undefined;
+  const [tMajor, tSevere] = (armor?.thresholds ?? '0 / 0').split('/').map((n) => parseInt(n.trim(), 10) || 0);
+  const baseScore = armor?.baseScore ?? 0;
+  const ARMOR_SLOTS = 12;
   return {
     ...SAMPLE_CHARACTER,
     name: file.name,
@@ -96,10 +108,15 @@ export function toSheetCharacter(file: CharacterFile): Character {
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
     portraitUri: file.portraitUri,
     evasion: data.startingEvasion,
+    proficiency: proficiencyForLevel(file.level), // level 1 → 1 (#128, was stuck at the sample's 2)
+    armorScore: baseScore,
+    damageThresholds: { major: tMajor, severe: tSevere },
     // Rulebook starting resources (#107): hearts full at the class's max (only that many hearts
     // are drawn; 7 hp = one golden + five red), 6 of 12 stress unlocked, hope starts at 2 of 6.
     hp: data.startingHp,
     maxHp: data.startingHp,
+    // armor: the base-score slots are enabled (filled), the rest disabled (#128)
+    armor: { active: baseScore, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - baseScore) },
     stress: { active: 0, total: 12, locked: 6 },
     hope: { active: 2, total: 6 },
     ...(file.traits ? { traits: file.traits } : null),
