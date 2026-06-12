@@ -16,7 +16,7 @@ const MASK_AR = 1321.3586 / 192.1075;
  * strip, the inner-mask silhouette laid over its center, children centered inside the mask's
  * bounding box. Used as the forged cards' 40/60 seam and as the app's section dividers.
  */
-export function DividerPlaque({ width, maskFill = '#FAF8F2', maskScale = 0.5, children }: { width: number; maskFill?: string; maskScale?: number; children?: ReactNode }) {
+export function DividerPlaque({ width, maskFill = '#FAF8F2', maskScale = 0.525, children }: { width: number; maskFill?: string; maskScale?: number; children?: ReactNode }) {
   const h = width / DIV_AR;
   // maskScale 0.5 (owner-tuned): at full fraction the plaque overwhelmed the divider's center.
   const maskW = width * MASK_W_FRAC * maskScale;

@@ -257,18 +257,19 @@ export function StraightCarousel({
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
   const full = selectedIds.length >= maxSelect;
 
+  // Centered column: the button first, the counter BENEATH it (a side counter read off-center).
   const selectControls = (compact: boolean) => (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-      <Text style={{ color: full ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
-        {selectedIds.length}/{maxSelect}
-      </Text>
+    <View style={{ alignItems: 'center', gap: 5 }}>
       <RuneButton
         label={centerSelected ? 'Deselect' : `Select ${selectNoun}`}
         kind={centerSelected ? 'ghost' : 'primary'}
-        height={compact ? 36 : 40}
+        height={compact ? 34 : 38}
         onPress={() => centerItem && onToggle(centerItem.id)}
         accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? selectNoun}` : `Select ${centerItem?.label ?? selectNoun}`}
       />
+      <Text style={{ color: full ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
+        {selectedIds.length}/{maxSelect}
+      </Text>
     </View>
   );
 
@@ -311,12 +312,19 @@ export function StraightCarousel({
             {fsOpen ? (
               <View style={{ position: 'absolute', top: 2, left: 0, right: 0, zIndex: 400, alignItems: 'center' }}>{selectControls(true)}</View>
             ) : null}
+            {/* select controls hug the CARDS (owner: not down by the gear): pinned right under
+                the center card's visual bottom edge. */}
+            {!fsOpen ? (
+              <View
+                style={{ position: 'absolute', left: 0, right: 0, top: '42%', marginTop: (FORGED_H * CARD_SCALE) / 2 + 16, zIndex: 150, alignItems: 'center' }}>
+                {selectControls(false)}
+              </View>
+            ) : null}
           </View>
-          {/* below the rail: count + select; the gear rides the bottom edge for the fast grind */}
-          <View style={{ paddingTop: 6, paddingBottom: 2 }}>{selectControls(false)}</View>
           {/* only the gear's crown peeks over the bottom edge — IN FRONT of the screen border
-              (the create screen lifts its content above the frame). Drag it for the fast grind. */}
-          <View style={{ alignItems: 'center', height: 36, overflow: 'hidden' }} pointerEvents="none">
+              (the create screen lifts its content above the frame). Centered on the SCREEN
+              (left/right cancel the scaffold's 18dp padding). Drag it for the fast grind. */}
+          <View style={{ position: 'absolute', left: -18, right: -18, bottom: 0, height: 36, overflow: 'hidden', alignItems: 'center' }} pointerEvents="none">
             <Animated.View style={[{ width: 150, height: 150 }, gearStyle]}>
               <ArtImage source={INNER_GEAR} fit="contain" />
             </Animated.View>
