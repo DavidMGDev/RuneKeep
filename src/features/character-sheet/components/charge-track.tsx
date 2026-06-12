@@ -24,31 +24,34 @@ import { box } from '@/lib/design';
  * removes, right of it adds, verticality irrelevant (#89 E).
  */
 
-const HOLD_MS = 550; // 0.2s shorter per owner (#93); the SCALE peaks in half this (see chargeFast)
-const FX_MS = 950;
+const HOLD_MS = 825; // 1.5x the #93 length (#94 follow-up) — double-tap exists for speed, the hold is ceremony
+const FX_MS = 1425;
+const POP_MS = 260; // double-tap feedback: a quick particle-free jump
 const CANCEL_MS = 180;
 const DOUBLE_MS = 320;
 const REDUCED_GROW = 0.4;
 
 export type ChargeFlavor = 'stress' | 'hope' | 'armor';
 type Dir = 'up' | 'down';
-type Phase = 'hold' | 'fx' | 'out';
+type Phase = 'hold' | 'fx' | 'out' | 'pop';
 interface Anim { id: number; index: number; dir: Dir; phase: Phase }
 
 // ---------- particle fields (deterministic — no Math.random) ----------
+// All distances carry the #94 field expansion: the particle AREA is ~2.5x (radius ~1.7x) so the
+// effects own a real portion of the screen instead of a small square around the icon.
 interface Bolt { ang: number; dist: number; len: number; tone: number; delay: number }
 const BOLTS: Bolt[] = Array.from({ length: 10 }, (_, i) => ({
   ang: (i / 10) * Math.PI * 2 + (i % 2) * 0.4,
-  dist: 58 + ((i * 31) % 54),
-  len: 12 + ((i * 7) % 10),
+  dist: 98 + ((i * 31) % 92),
+  len: 14 + ((i * 7) % 12),
   tone: i % 4 === 0 ? 1 : 0,
   delay: (i % 3) * 0.05,
 }));
 
 interface Ray { ang: number; len: number; w: number; tone: number }
-const RAYS: Ray[] = Array.from({ length: 8 }, (_, i) => ({
-  ang: (i / 8) * Math.PI * 2 + 0.2,
-  len: 30 + ((i * 17) % 34),
+const RAYS: Ray[] = Array.from({ length: 12 }, (_, i) => ({
+  ang: (i / 12) * Math.PI * 2 + 0.2,
+  len: 51 + ((i * 17) % 58),
   w: i % 2 ? 2 : 3,
   tone: i % 2,
 }));
@@ -56,7 +59,7 @@ const RAYS: Ray[] = Array.from({ length: 8 }, (_, i) => ({
 interface Spark { ang: number; dist: number; size: number; tone: number; delay: number }
 const SPARKS: Spark[] = Array.from({ length: 9 }, (_, i) => ({
   ang: (i / 9) * Math.PI * 2,
-  dist: 26 + ((i * 23) % 40),
+  dist: 44 + ((i * 23) % 68),
   size: 4 + ((i * 11) % 4),
   tone: i % 2,
   delay: (i % 4) * 0.06,
@@ -65,13 +68,61 @@ const SPARKS: Spark[] = Array.from({ length: 9 }, (_, i) => ({
 interface Plate { ang: number; dist: number; size: number; spin: number; tone: number; delay: number }
 const PLATES: Plate[] = Array.from({ length: 12 }, (_, i) => ({
   ang: (i / 12) * Math.PI * 2 + (i % 3) * 0.25,
-  dist: 46 + ((i * 37) % 52),
+  dist: 78 + ((i * 37) % 88),
   size: 4 + ((i * 13) % 4),
   spin: ((i % 5) - 2) * 2.4,
   tone: i % 5 === 0 ? 2 : i % 3 === 0 ? 1 : 0,
   delay: (i % 4) * 0.06,
 }));
-const INFLOW_DIST = 150;
+const INFLOW_DIST = 255;
+
+// ---------- charge-phase motes (#94): the build-up FEEDBACK for non-shaky animations ----------
+// Gains: energy converges INTO the icon while it charges. Losses: it seeps out from underneath.
+export interface Mote { ang: number; dist: number; w: number; h: number; tone: number; delay: number }
+const motesField = (n: number, dist0: number, distMod: number, w: number, h: number): Mote[] =>
+  Array.from({ length: n }, (_, i) => ({
+    ang: (i / n) * Math.PI * 2 + (i % 3) * 0.3,
+    dist: dist0 + ((i * 29) % distMod),
+    w,
+    h,
+    tone: i % 3,
+    delay: i / n,
+  }));
+/** Hearts: thick, slow. Armor: sharp fast slivers. Soft: gentle motes (stress-clear, hope-spend). Hope: lively sparks. */
+export const HEART_MOTES = motesField(8, 95, 70, 10, 10);
+export const ARMOR_MOTES = motesField(10, 115, 75, 3, 16);
+export const SOFT_MOTES = motesField(7, 85, 55, 7, 7);
+export const HOPE_MOTES = motesField(9, 105, 65, 6, 6);
+
+/** One charge mote — sweeps once (or `cycles` times) across the hold, gated out at the climax. */
+export function ChargeMoteView({ m, inward, cycles, slow, diamond, colors, holdP, fxP }: { m: Mote; inward: boolean; cycles: number; slow: boolean; diamond: boolean; colors: [string, string, string]; holdP: SharedValue<number>; fxP: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const p = (holdP.value * cycles + m.delay) % 1;
+    const pe = slow ? 1 - (1 - p) * (1 - p) : p;
+    const travel = (inward ? 1 - pe : pe) * m.dist;
+    const gone = Math.max(0, 1 - fxP.value * 3);
+    return {
+      transform: [
+        { translateX: Math.cos(m.ang) * travel },
+        { translateY: Math.sin(m.ang) * travel * 0.92 },
+        { rotate: diamond ? '45deg' : `${m.ang + Math.PI / 2}rad` },
+      ],
+      // silent through the double-tap window (~first 30% of the hold) — particles only once the
+      // user is clearly COMMITTING to the hold (#94 follow-up)
+      opacity: Math.sin(p * Math.PI) * 0.9 * gone * Math.min(1, Math.max(0, (holdP.value - 0.28) * 4)),
+    };
+  });
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        { position: 'absolute', left: -m.w / 2, top: -m.h / 2, width: m.w, height: m.h },
+        { backgroundColor: colors[m.tone] ?? colors[0] },
+        style,
+      ]}
+    />
+  );
+}
 
 /** Lightning sliver: quantized jumps outward, perpendicular jitter, flickering alpha (#89 C). */
 function BoltView({ b, accent, fxP }: { b: Bolt; accent: string; fxP: SharedValue<number> }) {
@@ -200,7 +251,11 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
   const done = useCallback(() => onDone(anim.id), [onDone, anim.id]);
 
   useEffect(() => {
-    if (anim.phase === 'hold') {
+    if (anim.phase === 'pop') {
+      fxP.value = withTiming(1, { duration: POP_MS, easing: Easing.out(Easing.quad) }, (finished) => {
+        if (finished) runOnJS(done)();
+      });
+    } else if (anim.phase === 'hold') {
       holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
     } else if (anim.phase === 'fx') {
       cancelAnimation(holdP);
@@ -218,33 +273,40 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
 
   const gains = anim.dir === 'up';
   const g = reduced ? REDUCED_GROW : grow;
+  // Double-tap feedback (#94 follow-up): a small particle-free JUMP — the user must see it landed.
+  const isPop = anim.phase === 'pop';
 
   // Hope-spend dissipates instead of vanishing (#93): the expended diamond detaches, keeps
   // growing outward and fades like it's dispersing into the air, while the body settles as empty.
   const dissipatePre = flavor === 'hope' && !gains;
 
+  // Shake belongs ONLY to the violent steps (#94): adding stress, removing armor (and removing
+  // hit points, over in heart-track). Everything else charges calmly — the motes carry the energy.
+  const shaky = (flavor === 'stress' && gains) || (flavor === 'armor' && !gains);
+
   const body = useAnimatedStyle(() => {
-    // Scale peaks at HALF the hold (#93): grows twice as fast, then shakes at full size.
-    const chargeFast = Math.min(1, holdP.value * 2);
-    const shake = holdP.value;
     const p = fxP.value;
+    if (isPop) return { transform: [{ scale: 1 + 0.35 * Math.sin(Math.min(1, p) * Math.PI) }, { rotate: '0rad' }] };
+    // Scale peaks at ~75% of the hold (#94: 1.5x slower growth than the #93 double-speed).
+    const chargeFast = Math.min(1, holdP.value * 1.333);
+    const shake = holdP.value;
     const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
     const elastic = !reduced && p >= 0.22 ? Math.cos((p - 0.22) * 16) * 0.16 * (1 - p) : 0;
-    const wobble = reduced ? 0 : Math.sin(shake * 46) * 0.07 * shake * Math.max(0, 1 - p * 5);
+    const wobble = reduced || !shaky ? 0 : Math.sin(shake * 46) * 0.07 * shake * Math.max(0, 1 - p * 5);
     return { transform: [{ scale: 1 + g * chargeFast * (1 - p) + kick + elastic }, { rotate: `${wobble}rad` }] };
   });
-  const bodyCrossAt = dissipatePre ? 0.05 : crossAt;
+  const bodyCrossAt = isPop ? 0 : dissipatePre ? 0.05 : crossAt;
   const preFade = useAnimatedStyle(() => ({ opacity: fxP.value > bodyCrossAt ? 0 : 1 }));
   const postFade = useAnimatedStyle(() => ({ opacity: fxP.value > bodyCrossAt ? 1 : 0 }));
   const dissipate = useAnimatedStyle(() => {
     const p = fxP.value;
     return {
-      transform: [{ scale: 1 + g + p * 1.4 }],
+      transform: [{ scale: 1 + g * 0.85 + p * 1.1 }],
       opacity: p <= 0 ? 0 : Math.max(0, 1 - p * 1.2),
     };
   });
   const ring = useAnimatedStyle(() => ({
-    transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 2.6 }],
+    transform: [{ rotate: '45deg' }, { scale: 0.2 + fxP.value * 4.4 }],
     opacity: fxP.value <= 0 ? 0 : Math.max(0, 0.9 - fxP.value),
   }));
   const ringColor = flavor === 'hope' ? Rune.goldBright : flavor === 'armor' ? Rune.goldEdge : accent;
@@ -255,17 +317,31 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
         <Animated.View style={[box(0, 0, w, h), preFade]}>{renderPre}</Animated.View>
         <Animated.View style={[box(0, 0, w, h), postFade]}>{renderPost}</Animated.View>
       </Animated.View>
-      {dissipatePre ? (
+      {dissipatePre && !isPop ? (
         <Animated.View style={[{ position: 'absolute', left: -w / 2, top: -h / 2, width: w, height: h }, dissipate]} pointerEvents="none">
           {renderPre}
         </Animated.View>
       ) : null}
-      {!reduced ? (
+      {!reduced && !isPop ? (
         <>
           <Animated.View
             pointerEvents="none"
             style={[{ position: 'absolute', left: -22, top: -22, width: 44, height: 44, borderWidth: 1.5, borderColor: ringColor }, ring]}
           />
+          {/* charge-phase motes (#94): the calm animations announce themselves with energy
+              converging (gains) or seeping out (losses) instead of shaking */}
+          {flavor === 'armor' && gains &&
+            ARMOR_MOTES.map((m, i) => (
+              <ChargeMoteView key={`c${i}`} m={m} inward cycles={2} slow={false} diamond={false} colors={[Rune.goldEdge, Rune.ivory, accent]} holdP={holdP} fxP={fxP} />
+            ))}
+          {flavor === 'stress' && !gains &&
+            SOFT_MOTES.map((m, i) => (
+              <ChargeMoteView key={`c${i}`} m={m} inward={false} cycles={1} slow diamond colors={[Rune.goldEdge, Rune.goldBright, accent]} holdP={holdP} fxP={fxP} />
+            ))}
+          {flavor === 'hope' &&
+            (gains ? HOPE_MOTES : SOFT_MOTES).map((m, i) => (
+              <ChargeMoteView key={`c${i}`} m={m} inward={gains} cycles={gains ? 1.5 : 1} slow={!gains} diamond colors={[Rune.goldBright, Rune.ivory, Rune.gold]} holdP={holdP} fxP={fxP} />
+            ))}
           {flavor === 'stress' &&
             (gains
               ? BOLTS.map((b, i) => <BoltView key={i} b={b} accent={accent} fxP={fxP} />)
@@ -274,7 +350,7 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
               )}
           {flavor === 'hope' && (
             <>
-              {RAYS.map((r, i) => (
+              {(gains ? RAYS : RAYS.slice(0, 8)).map((r, i) => (
                 <RayView key={i} r={r} gains={gains} fxP={fxP} />
               ))}
               {SPARKS.map((s, i) => (
@@ -313,8 +389,11 @@ export interface ChargeTrackProps {
   crossDownAt?: number;
   /** Extra outward hitSlop on the boundary slots (their "respective sides"). */
   sideSlop?: number;
-  /** Zone mode (#89 E): two big halves split at barrierX (track-local) own the gestures. */
-  zone?: { left: number; top: number; width: number; height: number; barrierX: number };
+  /** Zone mode (#89 E): two big halves own the gestures. The barrier sits midway between the
+   *  down-slot and the up-slot, and each half acts on whichever boundary slot lives on ITS side —
+   *  so a full top row (stress/armor at 6) splits left = add, right = remove, exactly like the
+   *  hp-6 hearts rule (#94). */
+  zone?: { left: number; top: number; width: number; height: number };
   trackLabel: string;
 }
 
@@ -340,6 +419,8 @@ export function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, 
           setAnims((list) => list.filter((a) => a.id !== id));
         }
         step();
+        // feedback, not ceremony: a quick particle-free jump on the slot (#94 follow-up)
+        setAnims((list) => [...list, { id: nextId.current++, index, dir, phase: 'pop' }]);
         return;
       }
       if (charging.current) return;
@@ -411,30 +492,35 @@ export function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, 
           </GestureDetector>
         );
       })}
-      {zone ? (
-        <>
-          {downIndex >= 0 && zone.barrierX > zone.left ? (
-            <GestureDetector gesture={gestureFor(downIndex, 'down')}>
-              <View
-                style={box(zone.left, zone.top, zone.barrierX - zone.left, zone.height)}
-                accessible
-                accessibilityLabel={`Remove ${trackLabel}`}
-                accessibilityHint="Hold to clear one. Double tap for no animation."
-              />
-            </GestureDetector>
-          ) : null}
-          {upIndex >= 0 && zone.left + zone.width > zone.barrierX ? (
-            <GestureDetector gesture={gestureFor(upIndex, 'up')}>
-              <View
-                style={box(zone.barrierX, zone.top, zone.left + zone.width - zone.barrierX, zone.height)}
-                accessible
-                accessibilityLabel={`Add ${trackLabel}`}
-                accessibilityHint="Hold to mark one. Double tap for no animation."
-              />
-            </GestureDetector>
-          ) : null}
-        </>
-      ) : null}
+      {zone
+        ? (() => {
+            const zl = zone.left;
+            const zr = zone.left + zone.width;
+            const zones: { from: number; to: number; index: number; dir: Dir }[] = [];
+            if (upIndex >= 0 && downIndex >= 0) {
+              const ux = slots[upIndex].x;
+              const dx = slots[downIndex].x;
+              const barrier = (Math.min(ux, dx) + w + Math.max(ux, dx)) / 2;
+              const first = ux < dx ? { index: upIndex, dir: 'up' as Dir } : { index: downIndex, dir: 'down' as Dir };
+              const second = ux < dx ? { index: downIndex, dir: 'down' as Dir } : { index: upIndex, dir: 'up' as Dir };
+              zones.push({ from: zl, to: barrier, ...first }, { from: barrier, to: zr, ...second });
+            } else if (upIndex >= 0) {
+              zones.push({ from: zl, to: zr, index: upIndex, dir: 'up' });
+            } else if (downIndex >= 0) {
+              zones.push({ from: zl, to: zr, index: downIndex, dir: 'down' });
+            }
+            return zones.map((z) => (
+              <GestureDetector key={`${z.index}-${z.dir}`} gesture={gestureFor(z.index, z.dir)}>
+                <View
+                  style={box(z.from, zone.top, z.to - z.from, zone.height)}
+                  accessible
+                  accessibilityLabel={`${z.dir === 'up' ? 'Add' : 'Remove'} ${trackLabel}`}
+                  accessibilityHint={`Hold to ${z.dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.`}
+                />
+              </GestureDetector>
+            ));
+          })()
+        : null}
       {anims.map((a) => (
         <ChargeFxView
           key={a.id}
