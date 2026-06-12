@@ -8,6 +8,7 @@
 import { type ClassName, classInfo } from '@/constants/identity';
 import { cardById } from '@/features/cards/catalog';
 import { type Character, SAMPLE_CHARACTER } from '@/features/character-sheet/character';
+import { CLASS_DATA } from '@/features/create/class-data';
 
 export const CHARACTER_SCHEMA_VERSION = 1;
 
@@ -57,11 +58,13 @@ export function serializeCharacterFile(file: CharacterFile): string {
 }
 
 /**
- * Derive the sheet's runtime Character. Until leveling ships, resources/traits use the current
- * sheet baseline (owner: "start them as the character sheet is", level 1).
+ * Derive the sheet's runtime Character. Class starting stats come from the rulebook data
+ * (#104: starting Evasion + starting Hit Points per class; hearts = HP slots, full at creation).
+ * Traits and the other tracks stay at the sheet baseline until leveling/traits ship.
  */
 export function toSheetCharacter(file: CharacterFile): Character {
   const cls = classInfo(file.className);
+  const data = CLASS_DATA[file.className];
   const subclass = cardById(file.subclassCardId);
   const ancestry = cardById(file.ancestryCardId);
   const community = cardById(file.communityCardId);
@@ -76,5 +79,9 @@ export function toSheetCharacter(file: CharacterFile): Character {
     community: community?.label ?? '',
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
     portraitUri: file.portraitUri,
+    evasion: data.startingEvasion,
+    // Hearts stay on the sheet's fixed 6-slot row (the track's zones assume it); starting HP maps
+    // onto it directly — 5/6 hp = red hearts, guardian/seraph's 7 shows as one golden + five red.
+    hp: data.startingHp,
   };
 }

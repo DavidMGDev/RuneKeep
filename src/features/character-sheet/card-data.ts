@@ -15,10 +15,10 @@ export type CardCategory = 'abilities' | 'inventory';
 
 export interface CardItem {
   id: string;
-  /** Full-resolution card (750x1050 webp); a future custom-card renderer can swap this for content. */
-  source: number;
-  /** Low LOD (188x263 webp) — cheap enough that every slot keeps it mounted forever (#78). */
-  thumb: number;
+  /** Full-resolution card (750x1050 webp require, or a forged-card render uri, #104). */
+  source: number | { uri: string };
+  /** Low LOD (188x263) — cheap enough that every slot keeps it mounted forever (#78). */
+  thumb: number | { uri: string };
 }
 
 export const CARD_CATEGORIES: { key: CardCategory; label: string }[] = [

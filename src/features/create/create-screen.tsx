@@ -14,8 +14,10 @@ import { CATALOG } from '@/features/cards/catalog';
 import { newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
-import { CLASS_CARDS } from './class-cards';
-import { ForgedCard } from './forged-card';
+import { CLASS_CARDS, classBanner } from './class-cards';
+import { featurePages } from './class-data';
+import { ForgedCard, ForgedTextCard } from './forged-card';
+import { useForgedSnapshots } from './forged-snapshots';
 import { StraightCarousel, type StraightItem } from './straight-carousel';
 
 // ---------- draft ----------
@@ -239,14 +241,50 @@ export function CreateScreen() {
 
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
 
+  // Pre-render every forged card to a bitmap pair on device (#104 perf): the live components
+  // double as the loading state and swap to image cards as each capture lands.
+  const snapshotJobs = useMemo(
+    () => [
+      ...CLASS_CARDS.map((c) => ({
+        key: `class-${c.key}`,
+        node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} />,
+      })),
+      ...CLASS_CARDS.flatMap((c) =>
+        featurePages(c.key).map((p) => ({
+          key: `feat-${c.key}-${p.pageIndex}`,
+          node: (
+            <ForgedTextCard
+              title={c.title}
+              kindLabel="Class features"
+              pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
+              sections={p.sections}
+              accentDeep={classColor(c.key).deep}
+              Banner={c.Banner}
+            />
+          ),
+        })),
+      ),
+    ],
+    [],
+  );
+  const { sources, stage } = useForgedSnapshots(snapshotJobs);
+  const [featuresOpen, setFeaturesOpen] = useState(false);
+  const [featurePage, setFeaturePage] = useState(0);
+  const [centerClassIdx, setCenterClassIdx] = useState(0);
+
   const items: StraightItem[] = useMemo(() => {
     switch (deck) {
       case 'class':
-        return CLASS_CARDS.map((c) => ({
-          id: `class-${c.key}`,
-          label: c.title,
-          custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} />,
-        }));
+        return CLASS_CARDS.map((c) => {
+          const pre = sources[`class-${c.key}`];
+          return pre
+            ? { id: `class-${c.key}`, label: c.title, thumb: pre.thumb, source: pre.full }
+            : {
+                id: `class-${c.key}`,
+                label: c.title,
+                custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} />,
+              };
+        });
       case 'subclass':
         return CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       case 'ancestry':
@@ -259,7 +297,7 @@ export function CreateScreen() {
         return pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       }
     }
-  }, [deck, draft.className]);
+  }, [deck, draft.className, sources]);
 
   const selectedIds = useMemo(() => {
     switch (deck) {
@@ -340,7 +378,6 @@ export function CreateScreen() {
     <AppScreen
       title="New hero"
       onBack={() => router.back()}
-      contentAboveFrame
       headerRight={<RuneButton label="Forge" kind="primary" height={26} dense disabled={!complete} onPress={forge} accessibilityLabel="Create character" />}>
       <View style={{ flex: 1 }}>
         {/* ---- details ---- */}
@@ -372,7 +409,7 @@ export function CreateScreen() {
               <TextInput
                 value={draft.name}
                 onChangeText={(name) => set({ name })}
-                placeholder="Name — who steps forward?"
+                placeholder="Name"
                 placeholderTextColor={Rune.muted}
                 selectionColor={Rune.goldBright}
                 maxLength={40}
@@ -416,13 +453,94 @@ export function CreateScreen() {
               initialIndex={deckIndexes.current[deck] ?? 0}
               onIndexChange={(i) => {
                 deckIndexes.current[deck] = i;
+                if (deck === 'class') setCenterClassIdx(i);
               }}
               selectNoun={noun}
+              aboveSelect={
+                deck === 'class' ? (
+                  <RuneButton
+                    label="Class features"
+                    kind="ghost"
+                    dense
+                    height={26}
+                    onPress={() => {
+                      setFeaturePage(0);
+                      setFeaturesOpen(true);
+                    }}
+                    accessibilityLabel={`View ${CLASS_CARDS[centerClassIdx]?.title ?? 'class'} features`}
+                  />
+                ) : undefined
+              }
             />
           ) : null}
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
       </View>
+      {featuresOpen ? (
+        <FeatureViewer
+          classIdx={Math.min(centerClassIdx, CLASS_CARDS.length - 1)}
+          page={featurePage}
+          onPage={setFeaturePage}
+          sources={sources}
+          onClose={() => setFeaturesOpen(false)}
+        />
+      ) : null}
+      {stage}
     </AppScreen>
+  );
+}
+
+/** Fullscreen reader for a class's feature card(s): dim veil, card centered, tap card = next
+ *  page (when there are several), tap veil = close. Uses the pre-rendered bitmap when forged. */
+function FeatureViewer({
+  classIdx,
+  page,
+  onPage,
+  sources,
+  onClose,
+}: {
+  classIdx: number;
+  page: number;
+  onPage: (p: number) => void;
+  sources: Record<string, { full: { uri: string } }>;
+  onClose: () => void;
+}) {
+  const def = CLASS_CARDS[classIdx];
+  const pages = featurePages(def.key);
+  const p = pages[Math.min(page, pages.length - 1)];
+  const pre = sources[`feat-${def.key}-${p.pageIndex}`];
+  const scale = 1.5;
+  return (
+    <View style={{ position: 'absolute', top: -60, bottom: -60, left: -60, right: -60, zIndex: 500, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.88)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close features" />
+      <Pressable
+        onPress={() => (pages.length > 1 ? onPage((page + 1) % pages.length) : onClose())}
+        accessibilityRole="button"
+        accessibilityLabel={pages.length > 1 ? 'Next features card' : 'Close'}>
+        <View style={{ width: 230 * scale, height: 322 * scale }}>
+          {pre ? (
+            <Image source={{ uri: pre.full.uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+          ) : (
+            <View style={{ transform: [{ scale }], width: 230, height: 322, marginLeft: (230 * (scale - 1)) / 2, marginTop: (322 * (scale - 1)) / 2 }}>
+              <ForgedTextCard
+                title={def.title}
+                kindLabel="Class features"
+                pageMark={p.pageCount > 1 ? `${p.pageIndex + 1}/${p.pageCount}` : undefined}
+                sections={p.sections}
+                accentDeep={classColor(def.key).deep}
+                Banner={classBanner(def.key)}
+              />
+            </View>
+          )}
+        </View>
+      </Pressable>
+      {pages.length > 1 ? (
+        <View style={{ flexDirection: 'row', gap: 6, marginTop: 14 }}>
+          {pages.map((_, i) => (
+            <View key={i} style={{ width: 8, height: 8, transform: [{ rotate: '45deg' }], backgroundColor: i === page ? Rune.goldBright : 'rgba(147,142,136,0.5)' }} />
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }

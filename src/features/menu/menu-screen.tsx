@@ -6,6 +6,7 @@ import Svg, { Polygon, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
 import { AppScreen } from '@/components/app-screen';
+import { FitLine } from '@/components/fit-line';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -88,9 +89,9 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex }: { label: string;
                 </>
               )}
             </Svg>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: Rune.ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>{label}</Text>
-              <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, letterSpacing: 0.4, marginTop: 3 }}>{sub}</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <FitLine style={{ color: Rune.ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>{label}</FitLine>
+              <FitLine minScale={0.7} style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, letterSpacing: 0.4, marginTop: 3 }}>{sub}</FitLine>
             </View>
             <Svg width={16} height={16} viewBox="0 0 16 16">
               <Polyline points="5,2 12,8 5,14" fill="none" stroke={Rune.goldEdge} strokeWidth={2.2} strokeLinejoin="miter" />

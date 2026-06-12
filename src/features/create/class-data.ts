@@ -1,0 +1,227 @@
+import { type ClassName } from '@/constants/identity';
+
+/**
+ * Class data extracted from the Daggerheart Core Rulebook, Chapter 1 (PDF pages 28–52) via
+ * scripts text extraction — NOT image-guessed. Stats cross-checked against the SRD:
+ * bard 10/5, druid 10/6, guardian 9/7, ranger 12/6, rogue 12/6, seraph 9/7, sorcerer 10/6,
+ * warrior 11/6, wizard 11/5. Feature/hope texts are the book's wording (lightly reflowed);
+ * summaries are RuneKeep copy grounded in each class intro.
+ */
+
+export interface ClassFeature {
+  name: string;
+  text: string;
+}
+
+export interface ClassData {
+  startingEvasion: number;
+  startingHp: number;
+  classItems: string;
+  hopeFeature: ClassFeature;
+  features: ClassFeature[];
+  /** Card-voiced summary for the class pick card (from the book intro). */
+  summary: string;
+}
+
+export const CLASS_DATA: Record<ClassName, ClassData> = {
+  bard: {
+    startingEvasion: 10,
+    startingHp: 5,
+    classItems: 'A romance novel or a letter never opened',
+    hopeFeature: {
+      name: 'Make a Scene',
+      text: 'Spend 3 Hope to temporarily Distract a target within Close range, giving them a −2 penalty to their Difficulty.',
+    },
+    features: [
+      {
+        name: 'Rally',
+        text: 'Once per session, describe how you rally the party and give yourself and each of your allies a Rally Die. At level 1, your Rally Die is a d6. A PC can spend their Rally Die to roll it, adding the result to their action roll, reaction roll, damage roll, or to clear a number of Stress equal to the result. At the end of each session, clear all unspent Rally Dice. At level 5, your Rally Die increases to a d8.',
+      },
+    ],
+    summary: 'The most charismatic people in all the realms, masters of captivation who thrive in any social situation. A bard can bring a party together — or, in ill temper, tear one apart just as easily.',
+  },
+  druid: {
+    startingEvasion: 10,
+    startingHp: 6,
+    classItems: 'A small bag of rocks and bones or a strange pendant found in the dirt',
+    hopeFeature: {
+      name: 'Evolution',
+      text: 'Spend 3 Hope to transform into a Beastform without marking a Stress. When you do, choose one trait to raise by +1 until you drop out of that Beastform.',
+    },
+    features: [
+      {
+        name: 'Beastform',
+        text: 'Mark a Stress to magically transform into a creature of your tier or lower from the Beastform list. You can drop out of this form at any time. While transformed, you can’t use weapons or cast spells from domain cards, but you can still use other features or abilities you have access to. Spells you cast before you transform stay active and last for their normal duration, and you can talk and communicate as normal. Additionally, you gain the Beastform’s features, add their Evasion bonus to your Evasion, and use the trait specified in their statistics for your attack. While you’re in a Beastform, your armor becomes part of your body and you mark Armor Slots as usual; when you drop out of a Beastform, those marked Armor Slots remain marked. If you mark your last Hit Point, you automatically drop out of this form.',
+      },
+      {
+        name: 'Wildtouch',
+        text: 'You can perform harmless, subtle effects that involve nature — such as causing a flower to rapidly grow, summoning a slight gust of wind, or starting a campfire — at will.',
+      },
+    ],
+    summary: 'A calling, not an occupation: protectors who learn from the magic of the wilderness itself. Gentle cultivators at rest — and terrifying to behold when they channel the untamed forces of nature.',
+  },
+  guardian: {
+    startingEvasion: 9,
+    startingHp: 7,
+    classItems: 'A totem from your mentor or a secret key',
+    hopeFeature: {
+      name: 'Frontline Tank',
+      text: 'Spend 3 Hope to clear 2 Armor Slots.',
+    },
+    features: [
+      {
+        name: 'Unstoppable',
+        text: 'Once per long rest, you can become Unstoppable. You gain an Unstoppable Die. At level 1, your Unstoppable Die is a d4. Place it on your character sheet, starting with the 1 value facing up. After you make a damage roll that deals 1 or more Hit Points to a target, increase the Unstoppable Die value by one. When the die’s value would exceed its maximum value or when the scene ends, remove the die and drop out of Unstoppable. At level 5, your Unstoppable Die increases to a d6. While Unstoppable: you reduce the severity of physical damage by one threshold; you add the current value of the Unstoppable Die to your damage roll; and you can’t be Restrained or Vulnerable.',
+      },
+    ],
+    summary: 'Fortitude with a moral compass. Guardians fight with remarkable ferocity against overwhelming odds, defending the few they truly care for above all else — and answering every injury in kind.',
+  },
+  ranger: {
+    startingEvasion: 12,
+    startingHp: 6,
+    classItems: 'A trophy from your first kill or a seemingly broken compass',
+    hopeFeature: {
+      name: 'Hold Them Off',
+      text: 'Spend 3 Hope when you succeed on an attack with a weapon to use that same roll against two additional adversaries within range of the attack.',
+    },
+    features: [
+      {
+        name: 'Ranger’s Focus',
+        text: 'Spend a Hope and make an attack against a target. On a success, deal your attack’s normal damage and temporarily make the attack’s target your Focus. Until this feature ends or you make a different creature your Focus, you gain the following benefits against your Focus: you know precisely what direction they are in; when you deal damage to them, they must mark a Stress; and when you fail an attack against them, you can end your Ranger’s Focus feature to reroll your Duality Dice.',
+      },
+    ],
+    summary: 'Sly tacticians of the wilds, hunting with cunning and patience rather than armies. Expert trackers, as likely to ensnare their quarry in a trap as to assail it head-on — often beside a bonded companion.',
+  },
+  rogue: {
+    startingEvasion: 12,
+    startingHp: 6,
+    classItems: 'A set of forgery tools or a grappling hook',
+    hopeFeature: {
+      name: 'Rogue’s Dodge',
+      text: 'Spend 3 Hope to gain a +2 bonus to your Evasion until the next time an attack succeeds against you. Otherwise, this bonus lasts until your next rest.',
+    },
+    features: [
+      {
+        name: 'Cloaked',
+        text: 'Any time you would be Hidden, you are instead Cloaked. In addition to the benefits of the Hidden condition, while Cloaked you remain unseen if you are stationary when an adversary moves to where they would normally see you. After you make an attack or end a move within line of sight of an adversary, you are no longer Cloaked.',
+      },
+      {
+        name: 'Sneak Attack',
+        text: 'When you succeed on an attack while Cloaked or while an ally is within Melee range of your target, add a number of d6s equal to your tier to your damage roll. Level 1 → Tier 1; levels 2–4 → Tier 2; levels 5–7 → Tier 3; levels 8–10 → Tier 4.',
+      },
+    ],
+    summary: 'Scoundrels in attitude and practice, moving through the world anonymously. Sharp wits and sharper blades: social manipulation, broken locks, shadows bent into useful and deadly tools.',
+  },
+  seraph: {
+    startingEvasion: 9,
+    startingHp: 7,
+    classItems: 'A bundle of offerings or a sigil of your god',
+    hopeFeature: {
+      name: 'Life Support',
+      text: 'Spend 3 Hope to clear a Hit Point on an ally within Close range.',
+    },
+    features: [
+      {
+        name: 'Prayer Dice',
+        text: 'At the beginning of each session, roll a number of d4s equal to your subclass’s Spellcast trait and place them on your character sheet. These are your Prayer Dice. You can spend any number of Prayer Dice to aid yourself or an ally within Far range. You can use a spent die’s value to reduce incoming damage, add to a roll’s result after the roll is made, or gain Hope equal to the result. At the end of each session, clear all unspent Prayer Dice.',
+      },
+    ],
+    summary: 'Divine fighters and healers imbued with sacred purpose, appointed by the realms’ many gods. Better to stand beside a seraph than against one — they are terrifying foes to those who defy their purpose.',
+  },
+  sorcerer: {
+    startingEvasion: 10,
+    startingHp: 6,
+    classItems: 'A whispering orb or a family heirloom',
+    hopeFeature: {
+      name: 'Volatile Magic',
+      text: 'Spend 3 Hope to reroll any number of your damage dice on an attack that deals magic damage.',
+    },
+    features: [
+      {
+        name: 'Arcane Sense',
+        text: 'You can sense the presence of magical people and objects within Close range.',
+      },
+      {
+        name: 'Minor Illusion',
+        text: 'Make a Spellcast Roll (10). On a success, you create a minor visual illusion no larger than yourself within Close range. This illusion is convincing to anyone at Close range or farther.',
+      },
+      {
+        name: 'Channel Raw Power',
+        text: 'Once per long rest, you can place a domain card from your loadout into your vault and choose to either: gain Hope equal to the level of the card, or enhance a spell that deals damage, gaining a bonus to your damage roll equal to twice the level of the card.',
+      },
+    ],
+    summary: 'Innate magic, inherited and honed. Becoming formidable is not acquiring power but learning to control the power already in your blood — undisciplined, that same gift is a dangerous force indeed.',
+  },
+  warrior: {
+    startingEvasion: 11,
+    startingHp: 6,
+    classItems: 'The drawing of a lover or a sharpening stone',
+    hopeFeature: {
+      name: 'No Mercy',
+      text: 'Spend 3 Hope to gain a +1 bonus to your attack rolls until your next rest.',
+    },
+    features: [
+      {
+        name: 'Attack of Opportunity',
+        text: 'If an adversary within Melee range attempts to leave that range, make a reaction roll using a trait of your choice against their Difficulty. Choose one effect on a success, or two if you critically succeed: they can’t move from where they are; you deal damage to them equal to your primary weapon’s damage; or you move with them.',
+      },
+      {
+        name: 'Combat Training',
+        text: 'You ignore burden when equipping weapons. When you deal physical damage, you gain a bonus to your damage roll equal to your level.',
+      },
+    ],
+    summary: 'A lifetime devoted to the mastery of weapons and violence — agile in body and mind, the most sought-after fighters across the realms. To come between a warrior and their blade is a grievous mistake.',
+  },
+  wizard: {
+    startingEvasion: 11,
+    startingHp: 5,
+    classItems: 'A book you’re trying to translate or a tiny, harmless elemental pet',
+    hopeFeature: {
+      name: 'Not This Time',
+      text: 'Spend 3 Hope to force an adversary within Far range to reroll an attack or damage roll.',
+    },
+    features: [
+      {
+        name: 'Prestidigitation',
+        text: 'You can perform harmless, subtle magical effects at will. For example, you can change an object’s color, create a smell, light a candle, cause a tiny object to float, illuminate a room, or repair a small object.',
+      },
+      {
+        name: 'Strange Patterns',
+        text: 'Choose a number between 1 and 12. When you roll that number on a Duality Die, gain a Hope or clear a Stress. You can change this number when you take a long rest.',
+      },
+    ],
+    summary: 'Immense magical power acquired over years of learning — books, stones, potions, herbs. Advisors, healers, war-council minds; and no ranks quarrel harder over powerful secrets than their own.',
+  },
+};
+
+/** A feature card "page": which sections of a class's rules land on one printed card. */
+export interface FeaturePage {
+  pageIndex: number;
+  pageCount: number;
+  sections: ClassFeature[];
+}
+
+const PAGE_BUDGET = 760; // chars of body text a 230x322 card holds comfortably at 8.5/12.5
+
+/** Split a class's features + hope feature across as many cards as the text needs (owner: 2–3
+ *  cards are fine when one can't hold it). Sections are never split mid-text; the hope feature
+ *  always rides the last page. */
+export function featurePages(cls: ClassName): FeaturePage[] {
+  const data = CLASS_DATA[cls];
+  const sections = [...data.features, { name: `${data.hopeFeature.name} — Hope Feature`, text: data.hopeFeature.text }];
+  const pages: ClassFeature[][] = [];
+  let current: ClassFeature[] = [];
+  let used = 0;
+  for (const s of sections) {
+    const cost = s.name.length + s.text.length;
+    if (current.length && used + cost > PAGE_BUDGET) {
+      pages.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(s);
+    used += cost;
+  }
+  if (current.length) pages.push(current);
+  return pages.map((p, i) => ({ pageIndex: i, pageCount: pages.length, sections: p }));
+}

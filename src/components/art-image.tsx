@@ -2,8 +2,8 @@ import { Image, type ImageContentFit, type ImageStyle } from 'expo-image';
 import { type StyleProp } from 'react-native';
 
 interface ArtImageProps {
-  /** A `require(...)`d PNG/asset. */
-  source: number;
+  /** A `require(...)`d asset, or a runtime file uri (forged-card renders, #104). */
+  source: number | { uri: string };
   /**
    * `contain` (default) preserves aspect ratio — use for icons, emblems, banners so they never
    * distort. `fill` allows stretch — only for panel backgrounds / outlines (see ADR 0001).
