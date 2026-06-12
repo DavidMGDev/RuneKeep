@@ -1,5 +1,5 @@
 import { type FC } from 'react';
-import { Text, View } from 'react-native';
+import { Image, Text, View } from 'react-native';
 import Svg, { Path, type SvgProps } from 'react-native-svg';
 
 import { DividerPlaque } from '@/components/card-divider';
@@ -23,19 +23,26 @@ export function ForgedCard({
   body,
   accentDeep,
   Banner,
+  imageUri,
 }: {
   title: string;
   kindLabel: string;
   body: string;
   accentDeep: string;
-  Banner: FC<SvgProps>;
+  Banner?: FC<SvgProps>;
+  /** Player-supplied art (#107 experiences): fills the art zone instead of a banner. */
+  imageUri?: string | null;
 }) {
   return (
     // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
-      {/* art zone — class-deep ground, the banner (its two domain sigils) standing proud */}
+      {/* art zone — class-deep ground; a banner standing proud, or the player's own image */}
       <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
-        <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
+        {imageUri ? (
+          <Image source={{ uri: imageUri }} style={{ width: FORGED_W, height: ART_H }} resizeMode="cover" />
+        ) : Banner ? (
+          <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
+        ) : null}
       </View>
       {/* the 40/60 seam: the divider with its plaque carrying the kind label */}
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
