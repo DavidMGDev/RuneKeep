@@ -124,6 +124,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     armor: { active: baseScore, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - baseScore) },
     stress: { active: 0, total: 12, locked: 6 },
     hope: { active: 2, total: 6 },
+    gold: file.gold ?? { handfuls: 1, bags: 0, chest: 0 }, // the kit's handful of gold (#136)
     ...(file.traits ? { traits: file.traits } : null),
   };
 }

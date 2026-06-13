@@ -16,9 +16,10 @@ import { cardById } from '@/features/cards/catalog';
 import { classColor } from '@/constants/identity';
 import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
 import { featurePages } from '@/features/create/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedGoldCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
+import { GoldCard } from '@/features/create/gold-card';
 
 // Default art for an inventory item with no player image (#136) — same asset as creation.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -407,9 +408,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, goldJob } = useMemo(() => {
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs } = useMemo(() => {
     type Job = { key: string; node: ReactNode; raster?: boolean };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], goldJob: null as Job | null };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[] };
     if (!characterFile) return empty;
     const cls = characterFile.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -459,12 +460,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       raster: !!it.imageUri,
     }));
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
-    const goldJob: Job = { key: `gold-${cls}`, node: <ForgedGoldCard /> };
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, goldJob };
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs };
   }, [characterFile]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...(goldJob ? [goldJob] : [])],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, goldJob],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -514,10 +514,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
-    const goldItems = goldJob ? forgedItems([goldJob]) : [];
-    const inv = [...invItems, ...goldItems, ...weaponItems, ...armorItems];
+    // the GOLD card is LIVE + interactive (#136): its +/- adjusts character.gold in place. dummy
+    // source/thumb are never drawn (the live node renders instead).
+    const goldItem = { id: 'gold', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, live: <GoldCard gold={character.gold} onChange={(g) => setCharacter((c) => ({ ...c, gold: g }))} />, interactive: true };
+    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems];
     return { abilitiesCards: abilities, inventoryCards: inv, originIndices };
-  }, [characterFile, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, goldJob, featureSources]);
+  }, [characterFile, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
