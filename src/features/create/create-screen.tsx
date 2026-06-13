@@ -351,7 +351,9 @@ function DeckLoader() {
   const glow = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * pulse.value, transform: [{ scale: 0.9 + 0.14 * pulse.value }] }));
   const ring = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
   return (
-    <View style={{ position: 'absolute', left: 0, right: 0, top: '38%', alignItems: 'center' }} pointerEvents="none">
+    // top 36% = the carousel's card REST_FRAC, with -45 to center the 90px ring ON that line, so the
+    // loader sits exactly where the cards appear (#150 follow-up, owner).
+    <View style={{ position: 'absolute', left: 0, right: 0, top: '36%', marginTop: -45, alignItems: 'center' }} pointerEvents="none">
       <View style={{ width: 90, height: 90, alignItems: 'center', justifyContent: 'center' }}>
         <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }, ring]}>
           <Svg width={90} height={90} viewBox="0 0 92 92">
@@ -858,7 +860,10 @@ export function CreateScreen() {
         </DeckRail>
 
         {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
-        <Animated.View style={[{ flex: 1, marginTop: 2 }, fadeStyle]}>
+        {/* a relative container so the deck-swap loader can sit AT the card rest position, not the
+            top of the content (#150 follow-up) */}
+        <View style={{ flex: 1, marginTop: 2 }}>
+        <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, fadeStyle]}>
           {/* weapons filter toggles (#121): physical/magic primaries, plus primary/secondary slot.
               flexWrap so the two controls can NEVER overflow the screen margins onto the SVG border
               (#121, owner) — they wrap to a second centered row on a narrow width instead. */}
@@ -901,6 +906,7 @@ export function CreateScreen() {
           {deck === 'experiences' ? <ExperiencesTab experiences={draft.experiences} onEdit={(slot) => setEditingExperience(slot)} /> : null}
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
+        </View>
       </View>
       {editingExperience != null ? (
         <CardEditor
