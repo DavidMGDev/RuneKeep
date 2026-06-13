@@ -17,6 +17,7 @@ export function OverlayShell({
   footer,
   width = 348,
   scroll = true,
+  dismissOnScrim = true,
 }: {
   title: string;
   subtitle?: string;
@@ -25,10 +26,12 @@ export function OverlayShell({
   footer?: ReactNode;
   width?: number;
   scroll?: boolean;
+  /** When false, tapping the dim does NOT close — the user must press the ✕ (#168, owner). */
+  dismissOnScrim?: boolean;
 }) {
   return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 9000 }}>
-      <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.86)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+      <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.86)' }} onPress={dismissOnScrim ? onClose : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width, maxHeight: '86%', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
           <View style={{ flex: 1, paddingRight: 8 }}>

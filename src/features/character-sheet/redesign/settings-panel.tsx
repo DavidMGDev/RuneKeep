@@ -104,8 +104,6 @@ export function SettingsPanel({
   const armorMax = file.armorScoreMax ?? defaults.armorMax;
   const maxHp = file.maxHp ?? defaults.maxHp;
   const evasionBase = file.evasionBase ?? defaults.evasion;
-  const availArmor = character.armor.active;
-  const unlockedArmor = character.armor.total - (character.armor.locked ?? 0);
   const activeDomains = file.activeDomainCardIds ?? domainPool.slice(0, 5).map((d) => d.id);
 
   const netTraits = (nextMods: StatModifier[]): Record<TraitKey, number> =>
@@ -128,7 +126,6 @@ export function SettingsPanel({
     onPatchFile({ armorScoreMax: v });
     setCharacter((c) => ({ ...c, armorScore: v, armor: { ...c.armor, locked: Math.max(0, 12 - v), active: Math.min(c.armor.active, v) } }));
   };
-  const editAvailArmor = (v: number) => setCharacter((c) => ({ ...c, armor: { ...c.armor, active: Math.max(0, Math.min(c.armor.total - (c.armor.locked ?? 0), v)) } }));
   const editEvasionBase = (v: number) => {
     onPatchFile({ evasionBase: v });
     setCharacter((c) => ({ ...c, evasion: v + modSum(mods, 'evasion') }));
@@ -180,7 +177,7 @@ export function SettingsPanel({
 
   return (
     <>
-      <OverlayShell title="Settings" subtitle="Edit your character — all but subclass & ancestry" onClose={onClose} footer={catBar}>
+      <OverlayShell title="Settings" subtitle="Edit your character — all but subclass & ancestry" onClose={onClose} footer={catBar} dismissOnScrim={false}>
         {cat === 'identity' && (
           <>
             <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Name</Text>
@@ -193,17 +190,16 @@ export function SettingsPanel({
 
         {cat === 'vitals' && (
           <>
-            <FieldRow label="Max Hit Points" value={String(maxHp)} onEdit={() => open({ title: 'Max HP', initial: maxHp, min: 1, max: 20, onConfirm: editMaxHp })} />
+            <FieldRow label="Max Hit Points" value={String(maxHp)} onEdit={() => open({ title: 'Max HP', initial: maxHp, min: 1, max: 12, onConfirm: editMaxHp })} />
             <FieldRow label="Max Stress" value={String(stressMax)} onEdit={() => open({ title: 'Max Stress', initial: stressMax, min: 1, max: 12, onConfirm: editStressMax })} />
             <FieldRow label="Max Armor" value={String(armorMax)} hint="Total armor slots" onEdit={() => open({ title: 'Max Armor', initial: armorMax, min: 0, max: 12, onConfirm: editArmorMax })} />
-            <FieldRow label="Available Armor" value={String(availArmor)} hint={`Currently usable of ${unlockedArmor}`} onEdit={() => open({ title: 'Available Armor', initial: availArmor, min: 0, max: unlockedArmor, onConfirm: editAvailArmor })} />
-            <FieldRow label="Hope" value="6" hint="Hope is always 6" locked />
+            <FieldRow label="Hope" value="6" hint="Hope is always 6 — adjust it by holding the track on the sheet" locked />
           </>
         )}
 
         {cat === 'traits' && (
           <>
-            <FieldRow label="Evasion (base)" value={String(evasionBase)} hint={`Net ${character.evasion}`} onEdit={() => open({ title: 'Evasion', initial: evasionBase, min: 0, max: 30, onConfirm: editEvasionBase })} />
+            <FieldRow label="Evasion" value={String(character.evasion)} hint={`Base ${evasionBase}${character.evasion !== evasionBase ? ' + modifiers' : ''}`} onEdit={() => open({ title: 'Evasion (base)', initial: evasionBase, min: 0, max: 30, onConfirm: editEvasionBase })} />
             {TRAIT_ORDER.map((t) => {
               const base = baseTraits[t.key] ?? 0;
               const net = base + (file.traitBonuses?.[t.key] ?? 0) + modSum(mods, t.key);
