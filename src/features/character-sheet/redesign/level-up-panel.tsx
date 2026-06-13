@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Image } from 'expo-image';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -9,6 +8,7 @@ import { advOption, advRemaining, applyLevelUp, availableAdvancements, type Chos
 import type { CharacterFile } from '@/lib/character-file';
 
 import { TRAIT_ORDER } from '../character';
+import { DomainCarousel } from './domain-carousel';
 import type { DomainCardInfo } from './settings-panel';
 import { OverlayShell } from './overlay-shell';
 
@@ -18,20 +18,6 @@ function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; di
     <Pressable onPress={disabled ? undefined : onPress} disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: on, disabled }}>
       <ChamferBox chamfer={6} fill={on ? Rune.red : 'rgba(20,24,31,0.7)'} stroke={on ? 'transparent' : 'rgba(218,162,73,0.4)'} strokeWidth={1} style={{ paddingHorizontal: 10, paddingVertical: 6, opacity: disabled ? 0.4 : 1 }}>
         <Text style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
-      </ChamferBox>
-    </Pressable>
-  );
-}
-
-function DomainCardChip({ d, on, onPress }: { d: DomainCardInfo; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={d.title}>
-      <ChamferBox chamfer={7} fill={on ? 'rgba(200,27,24,0.18)' : 'rgba(20,24,31,0.6)'} stroke={on ? Rune.red : 'rgba(218,162,73,0.4)'} strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 9, width: 150 }}>
-        <Image source={d.thumb} style={{ width: 24, height: 34, borderRadius: 2, backgroundColor: '#000' }} contentFit="cover" />
-        <View style={{ flex: 1, marginLeft: 7 }}>
-          <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.bold }}>{d.title}</Text>
-          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>{[d.domain, d.level != null ? `Lvl ${d.level}` : null].filter(Boolean).join(' · ')}</Text>
-        </View>
       </ChamferBox>
     </Pressable>
   );
@@ -128,14 +114,9 @@ export function LevelUpPanel({
         ))}
       </ChamferBox>
 
-      {/* auto domain card */}
+      {/* auto domain card — a swipeable carousel of the available cards */}
       <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>New domain card (≤ level {newLevel})</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {domainOptions.length === 0 ? <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular }}>No new domain cards available.</Text> : null}
-        {domainOptions.filter((d) => !takes.some((t) => t.domainCardId === d.id)).map((d) => (
-          <DomainCardChip key={d.id} d={d} on={autoDomain === d.id} onPress={() => setAutoDomain((cur) => (cur === d.id ? null : d.id))} />
-        ))}
-      </View>
+      <DomainCarousel cards={domainOptions.filter((d) => !takes.some((t) => t.domainCardId === d.id))} selectedId={autoDomain ?? undefined} onSelect={(id) => setAutoDomain((cur) => (cur === id ? null : id))} />
 
       {/* tier experience */}
       {tierStart ? (
@@ -177,11 +158,7 @@ export function LevelUpPanel({
               </View>
             ) : null}
             {opt.needs === 'domain' ? (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {domainPoolFor(i).map((d) => (
-                  <DomainCardChip key={d.id} d={d} on={t.domainCardId === d.id} onPress={() => setField(i, { domainCardId: t.domainCardId === d.id ? undefined : d.id })} />
-                ))}
-              </View>
+              <DomainCarousel cards={domainPoolFor(i)} selectedId={t.domainCardId} onSelect={(id) => setField(i, { domainCardId: t.domainCardId === id ? undefined : id })} />
             ) : null}
             {opt.needs === 'multiclass' ? (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
