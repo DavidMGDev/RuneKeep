@@ -42,7 +42,7 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, abilitiesCards, inventoryCards }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[] }) {
+export function CarouselProvider({ children, abilitiesCards, inventoryCards, originIndices }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; originIndices?: [number, number, number] }) {
   // A real character supplies its OWN full decks (only the cards it picked, #121) — no sample/
   // placeholder cards mixed in. The hardcoded CARD_DECKS are only the fallback for the demo sheet.
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
@@ -145,10 +145,11 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards }: {
 
   const openOriginCard = useCallback(
     (slot: 0 | 1 | 2) => {
-      if (!abilitiesCards?.length) return;
-      // The badges target the LAST THREE cards (subclass/ancestry/community); any class-feature
-      // cards pinned ahead of them (#104) shift the window, not the mapping.
-      const idx = decksRef.current.abilities.length - 3 + slot;
+      // The badges target subclass/ancestry/community by their ACTUAL index now (#136: the arsenal
+      // reorder means they're no longer the contiguous last three). Fall back to the old last-three
+      // mapping if indices weren't supplied (demo sheet).
+      const idx = originIndices ? originIndices[slot] : decksRef.current.abilities.length - 3 + slot;
+      if (idx == null || idx < 0) return;
       if (categoryRef.current === 'abilities') {
         openCardAt(idx);
         return;
@@ -156,7 +157,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards }: {
       pendingOpen.current = idx;
       setCategory('abilities');
     },
-    [abilitiesCards, openCardAt, setCategory],
+    [originIndices, openCardAt, setCategory],
   );
 
   const value = useMemo<CarouselContextValue>(
