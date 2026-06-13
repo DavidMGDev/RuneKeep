@@ -54,6 +54,8 @@ export interface Character {
   gold: { handfuls: number; bags: number; chest: number };
 
   portraitUri?: string | null;
+  /** How the portrait photo is positioned in its mask (#155): zoom + offset (viewBox px). */
+  portraitTransform?: { scale: number; x: number; y: number };
 }
 
 /** Trait display order + icon, matching the mockup's bottom banner row (left→right). */

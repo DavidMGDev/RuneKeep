@@ -53,6 +53,8 @@ export interface CharacterFile {
   inventoryCustom?: ExperienceDef[];
   /** Gold (#128): handfuls/bags/chest counts (max 10/10/1). */
   gold?: { handfuls: number; bags: number; chest: number };
+  /** Portrait position in its mask (#155): zoom + offset. */
+  portraitTransform?: { scale: number; x: number; y: number };
   level: number;
 }
 
@@ -114,6 +116,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     community: community?.label ?? '',
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
     portraitUri: file.portraitUri,
+    portraitTransform: file.portraitTransform ?? { scale: 1, x: 0, y: 0 },
     evasion: data.startingEvasion,
     proficiency: proficiencyForLevel(file.level), // level 1 → 1 (#128, was stuck at the sample's 2)
     armorScore: baseScore,
