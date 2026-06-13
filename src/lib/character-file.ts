@@ -23,6 +23,8 @@ export interface ExperienceDef {
   title: string;
   text: string;
   imageUri: string | null;
+  /** Flat random art color (#153) — used when there's no image. */
+  color?: string | null;
 }
 
 export interface CharacterFile {

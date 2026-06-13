@@ -604,7 +604,7 @@ export function CreateScreen() {
       const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
         id: it.id,
         label: it.title || 'Item',
-        custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+        custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       }));
       const add: StraightItem = { id: 'item-add', label: 'Add item', custom: <AddItemCard /> };
       return [...optionCards, ...customs, add];
@@ -911,12 +911,12 @@ export function CreateScreen() {
       {editingExperience != null ? (
         <CardEditor
           kindLabel="Experience"
-          initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri } : undefined}
+          initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null } : undefined}
           onCancel={() => setEditingExperience(null)}
           onSave={(d) => {
             const next = [...draft.experiences];
             const existing = next[editingExperience];
-            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri };
+            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color };
             set({ experiences: next.filter(Boolean) });
             setEditingExperience(null);
           }}
@@ -925,12 +925,12 @@ export function CreateScreen() {
       {editingItem != null ? (
         <CardEditor
           kindLabel="Item"
-          initial={typeof editingItem === 'number' && draft.inventoryCustom[editingItem] ? { title: draft.inventoryCustom[editingItem].title, text: draft.inventoryCustom[editingItem].text, imageUri: draft.inventoryCustom[editingItem].imageUri } : undefined}
+          initial={typeof editingItem === 'number' && draft.inventoryCustom[editingItem] ? { title: draft.inventoryCustom[editingItem].title, text: draft.inventoryCustom[editingItem].text, imageUri: draft.inventoryCustom[editingItem].imageUri, color: draft.inventoryCustom[editingItem].color ?? null } : undefined}
           onCancel={() => setEditingItem(null)}
           onSave={(d) => {
             const next = [...draft.inventoryCustom];
-            if (editingItem === 'new') next.push({ id: `itm-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri });
-            else next[editingItem] = { ...next[editingItem], title: d.title, text: d.text, imageUri: d.imageUri };
+            if (editingItem === 'new') next.push({ id: `itm-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color });
+            else next[editingItem] = { ...next[editingItem], title: d.title, text: d.text, imageUri: d.imageUri, color: d.color };
             set({ inventoryCustom: next });
             setEditingItem(null);
           }}
@@ -1086,7 +1086,7 @@ function ExperiencesTab({ experiences, onEdit }: { experiences: ExperienceDef[];
             {exp ? (
               <>
                 <View style={{ transform: [{ scale: CARD_SCALE_X }], width: 230, height: 322, marginLeft: (230 * (CARD_SCALE_X - 1)) / 2, marginTop: (322 * (CARD_SCALE_X - 1)) / 2 }}>
-                  <ForgedCard title={exp.title} kindLabel="Experience" body={exp.text} accentDeep={Rune.panel} imageUri={exp.imageUri} multilineTitle />
+                  <ForgedCard title={exp.title} kindLabel="Experience" body={exp.text} accentDeep={Rune.panel} imageUri={exp.imageUri} colorArt={exp.color} multilineTitle />
                 </View>
                 {/* the lower-left EDIT control */}
                 <Pressable

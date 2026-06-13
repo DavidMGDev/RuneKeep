@@ -49,6 +49,7 @@ export function ForgedCard({
   accentDeep,
   Banner,
   imageUri,
+  colorArt,
   fallbackArt,
   pageMark,
   multilineTitle,
@@ -61,6 +62,8 @@ export function ForgedCard({
   Banner?: FC<SvgProps>;
   /** Player-supplied art (#107 experiences): fills the art zone instead of a banner. */
   imageUri?: string | null;
+  /** A flat random fill color for the art zone (#153) — used when there's no uploaded image. */
+  colorArt?: string | null;
   /** Default art (#128 inventory items) shown when there's no player image and no banner. */
   fallbackArt?: number;
   /** Deck position (#110): when this card is face 0 of a flip-deck, the gray "1/N" mark by the title. */
@@ -74,11 +77,11 @@ export function ForgedCard({
   return (
     // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
-      {/* art zone — class-deep ground; a banner standing proud, or the player's own image */}
-      <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
+      {/* art zone — class-deep ground (or a flat random color, #153); a banner, or the player's image */}
+      <View style={{ height: ART_H, backgroundColor: !imageUri && colorArt ? colorArt : accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
         {imageUri ? (
           <ExpoImage source={{ uri: imageUri }} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />
-        ) : fallbackArt != null ? (
+        ) : colorArt ? null : fallbackArt != null ? (
           <ExpoImage source={fallbackArt} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />
         ) : Banner ? (
           <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />

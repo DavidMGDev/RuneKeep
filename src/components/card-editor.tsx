@@ -11,6 +11,16 @@ export interface CardDraft {
   title: string;
   text: string;
   imageUri: string | null;
+  /** A flat random fill color for the art (#153) — used when there's no uploaded image. */
+  color: string | null;
+}
+
+/** A pleasant-but-random flat color (controlled S/L so it never looks garish). */
+export function randomCardColor(): string {
+  const h = Math.floor(Math.random() * 360);
+  const s = 42 + Math.floor(Math.random() * 28); // 42-70%
+  const l = 30 + Math.floor(Math.random() * 22); // 30-52%
+  return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
 /**
@@ -30,12 +40,15 @@ export function CardEditor({
   onSave: (draft: CardDraft) => void;
   onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState<CardDraft>(initial ?? { title: '', text: '', imageUri: null });
+  // New cards open with a random color already set, as if Random Color was pressed (#153).
+  const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor() });
 
+  // Adding an image clears the random color; Random Color clears any uploaded image.
   const pickImage = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.85 });
-    if (!res.canceled && res.assets[0]) setDraft((d) => ({ ...d, imageUri: res.assets[0].uri }));
+    if (!res.canceled && res.assets[0]) setDraft((d) => ({ ...d, imageUri: res.assets[0].uri, color: null }));
   }, []);
+  const rollColor = useCallback(() => setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null })), []);
 
   const canSave = draft.title.trim().length > 0;
 
@@ -44,10 +57,14 @@ export function CardEditor({
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
       <ScrollView contentContainerStyle={{ alignItems: 'center', paddingTop: 110, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
         {/* live preview — the real card, the real size */}
-        <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} multilineTitle />
+        <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
-          <RuneButton label={draft.imageUri ? 'Change image' : 'Add image'} kind="ghost" height={36} onPress={pickImage} />
+          {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <RuneButton label="Add Image" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={pickImage} />
+            <RuneButton label="Random Color" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={rollColor} />
+          </View>
           <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 46, justifyContent: 'center', paddingHorizontal: 13 }}>
             <TextInput
               value={draft.title}
