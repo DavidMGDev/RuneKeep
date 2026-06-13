@@ -44,6 +44,7 @@ import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, type PlaceholderKind } from './float-menu';
 import { type CardDraft } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
+import { RestPanel } from './rest-panel';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -688,6 +689,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
           {floatKind === 'custom' ? (
             <NewCardFlow onSave={onAddCustomCard} onCancel={() => setFloatKind(null)} />
+          ) : floatKind === 'rest' ? (
+            <RestPanel character={character} onApply={(next) => setCharacter(next)} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
           ) : null}
