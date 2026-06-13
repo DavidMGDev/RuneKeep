@@ -3,7 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import { applyRestMoves, movesFor, restMoveById, type RestKind, type RestLogEntry, type RestMove, type RestSelection, tierForLevel } from '@/lib/rest';
 
 import type { Character } from '../character';
@@ -11,17 +11,28 @@ import { OverlayShell } from './overlay-shell';
 
 const d4 = () => 1 + Math.floor(Math.random() * 4);
 
-function MoveCard({ move, count, onAdd }: { move: RestMove; count: number; onAdd: () => void }) {
+function Stepper({ minus, disabled, onPress }: { minus?: boolean; disabled?: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onAdd} accessibilityRole="button" accessibilityLabel={`${move.title}. ${move.blurb}`}>
-      <ChamferBox chamfer={9} fill={count > 0 ? 'rgba(200,27,24,0.16)' : 'rgba(20,24,31,0.6)'} stroke={count > 0 ? Rune.red : 'rgba(218,162,73,0.45)'} strokeWidth={1.3} style={{ paddingVertical: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: Rune.sheet, fontSize: 14, fontFamily: Body.bold }}>{move.title}</Text>
-          <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 2 }}>{move.blurb}</Text>
-        </View>
-        {count > 0 ? <Text style={{ color: Rune.goldBright, fontSize: 15, fontFamily: Body.bold, marginLeft: 8 }}>×{count}</Text> : null}
+    <Pressable onPress={disabled ? undefined : onPress} disabled={disabled} hitSlop={6} accessibilityRole="button" accessibilityLabel={minus ? 'Remove one' : 'Add one'}>
+      <ChamferBox chamfer={6} fill="rgba(20,24,31,0.85)" stroke={disabled ? 'rgba(147,142,136,0.3)' : 'rgba(218,162,73,0.5)'} strokeWidth={1.1} style={{ width: 34, height: 34, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1 }}>
+        <Text style={{ color: Rune.sheet, fontSize: 20, fontFamily: Display.bold }}>{minus ? '−' : '+'}</Text>
       </ChamferBox>
     </Pressable>
+  );
+}
+
+/** A rest move with a ± stepper so the count can be raised AND lowered (#168: you couldn't deselect). */
+function MoveCard({ move, count, atMax, onAdd, onRemove }: { move: RestMove; count: number; atMax: boolean; onAdd: () => void; onRemove: () => void }) {
+  return (
+    <ChamferBox chamfer={9} fill={count > 0 ? 'rgba(200,27,24,0.16)' : 'rgba(20,24,31,0.6)'} stroke={count > 0 ? Rune.red : 'rgba(218,162,73,0.45)'} strokeWidth={1.3} style={{ paddingVertical: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: Rune.sheet, fontSize: 14, fontFamily: Body.bold }}>{move.title}</Text>
+        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 2 }}>{move.blurb}</Text>
+      </View>
+      <Stepper minus disabled={count === 0} onPress={onRemove} />
+      <Text style={{ color: count > 0 ? Rune.goldBright : Rune.muted, fontSize: 18, fontFamily: Display.black, width: 22, textAlign: 'center' }}>{count}</Text>
+      <Stepper disabled={atMax} onPress={onAdd} />
+    </ChamferBox>
   );
 }
 
@@ -43,6 +54,11 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
     setResult(null);
   };
   const addPick = (id: string) => setPicks((p) => (p.length < 2 ? [...p, id] : p));
+  const removePick = (id: string) =>
+    setPicks((p) => {
+      const i = p.lastIndexOf(id);
+      return i < 0 ? p : [...p.slice(0, i), ...p.slice(i + 1)];
+    });
   const countOf = (id: string) => picks.filter((p) => p === id).length;
 
   const confirm = () => {
@@ -117,7 +133,7 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
         </View>
       }>
       {moves.map((m) => (
-        <MoveCard key={m.id} move={m} count={countOf(m.id)} onAdd={() => addPick(m.id)} />
+        <MoveCard key={m.id} move={m} count={countOf(m.id)} atMax={picks.length >= 2} onAdd={() => addPick(m.id)} onRemove={() => removePick(m.id)} />
       ))}
       {hasPrepare ? (
         <Pressable onPress={() => setWithParty((v) => !v)} accessibilityRole="checkbox" accessibilityState={{ checked: withParty }} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 2 }}>
@@ -127,9 +143,7 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
           <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.medium }}>Prepare with party (gain 2 Hope)</Text>
         </Pressable>
       ) : null}
-      {picks.length > 0 ? (
-        <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, marginTop: 2 }}>Tap a move again to add it twice. Tap Rest with one move to rest light.</Text>
-      ) : null}
+      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, marginTop: 2 }}>Use + / − to pick up to two (the same move twice is fine). One move is enough — rest light, then Rest again.</Text>
     </OverlayShell>
   );
 }
