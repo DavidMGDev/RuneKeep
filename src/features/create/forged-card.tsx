@@ -3,14 +3,37 @@ import { Image as ExpoImage } from 'expo-image';
 import { Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
 
-import { DividerPlaque } from '@/components/card-divider';
+import { DividerPlaque, getPlaqueTheme } from '@/components/card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
+import { type ClassName } from '@/constants/identity';
 import { type ArmorDef, type WeaponDef } from './equipment-data';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
 export const FORGED_H = 322;
 const ART_H = Math.round(FORGED_H * 0.4); // top 40% = art; the divider plaque rides the seam
+
+/** Auto-fit plaque text helper: tightly squeezes long labels (like "Experience") so they don't bleed out of the plaque */
+export function PlaqueLabel({ text, textColor }: { text: string; textColor: string }) {
+  return (
+    <View style={{ maxWidth: 104, alignItems: 'center' }}>
+      <Text
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+        style={{
+          color: textColor,
+          fontSize: text.length >= 8 ? 7.6 : 8.5,
+          fontFamily: Body.bold,
+          letterSpacing: text.length >= 8 ? 0.4 : 1.5,
+          textTransform: 'uppercase',
+        }}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
 
 /**
  * A FORGED card: a code-rendered element that lives among the scanned cards as an equal — same
@@ -29,6 +52,7 @@ export function ForgedCard({
   fallbackArt,
   pageMark,
   multilineTitle,
+  classKey,
 }: {
   title: string;
   kindLabel: string;
@@ -44,7 +68,9 @@ export function ForgedCard({
   /** Custom cards (#136): let a long title wrap to up to 3 shrinking rows instead of ellipsizing,
    *  and shrink the body to fit. One short line stays at full size. */
   multilineTitle?: boolean;
+  classKey?: ClassName;
 }) {
+  const theme = getPlaqueTheme(kindLabel, classKey);
   return (
     // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
@@ -60,18 +86,8 @@ export function ForgedCard({
       </View>
       {/* the 40/60 seam: the divider with its plaque carrying the kind label */}
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
-        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          {/* auto-fit: long labels (e.g. "Experience") shrink to stay inside the plaque slot
-              instead of bleeding past the mask edges (#110). */}
-          <View style={{ maxWidth: 104, alignItems: 'center' }}>
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.6}
-              style={{ color: Rune.red, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: kindLabel.length > 8 ? 0.8 : 1.6, textTransform: 'uppercase' }}>
-              {kindLabel}
-            </Text>
-          </View>
+        <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+          <PlaqueLabel text={kindLabel} textColor={theme.textColor} />
         </DividerPlaque>
       </View>
       {/* printed-card lower body — typeset against the DH scans (#103 impeccable typeset):
@@ -127,6 +143,7 @@ export function ForgedTextCard({
   sections,
   accentDeep,
   Banner,
+  classKey,
 }: {
   title: string;
   kindLabel: string;
@@ -134,7 +151,9 @@ export function ForgedTextCard({
   sections: { name: string; text: string }[];
   accentDeep: string;
   Banner: FC<SvgProps>;
+  classKey?: ClassName;
 }) {
+  const theme = getPlaqueTheme(kindLabel, classKey);
   // UNIFORM layout (#105): same 40% art band, same seam position, same banner size as the class
   // pick card — the divider never moves between forged cards. Less text per card; more cards.
   return (
@@ -143,8 +162,8 @@ export function ForgedTextCard({
         <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
       </View>
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
-        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{kindLabel}</Text>
+        <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+          <PlaqueLabel text={kindLabel} textColor={theme.textColor} />
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 14, paddingBottom: 24 }}>
@@ -210,14 +229,16 @@ function StatRow({ label, value }: { label: string; value: string }) {
  */
 export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
   const accentDeep = weapon.kind === 'magic' ? '#2E1F3A' : '#23262C';
+  const kindLabel = weapon.slot === 'secondary' ? 'Secondary' : 'Weapon';
+  const theme = getPlaqueTheme(kindLabel);
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         <EquipGlyph kind={weapon.kind} />
       </View>
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
-        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{weapon.slot === 'secondary' ? 'Secondary' : 'Weapon'}</Text>
+        <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+          <PlaqueLabel text={kindLabel} textColor={theme.textColor} />
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
@@ -245,6 +266,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
  * with a coin emblem — simple/modern, not a detailed illustration, per owner.
  */
 export function ForgedGoldCard({ amount }: { amount?: number }) {
+  const theme = getPlaqueTheme('Currency');
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       <View style={{ height: ART_H, overflow: 'hidden' }}>
@@ -268,8 +290,8 @@ export function ForgedGoldCard({ amount }: { amount?: number }) {
         </View>
       </View>
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
-        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Currency</Text>
+        <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+          <PlaqueLabel text="Currency" textColor={theme.textColor} />
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 16, paddingBottom: 24 }}>
@@ -284,14 +306,15 @@ export function ForgedGoldCard({ amount }: { amount?: number }) {
 
 /** A forged ARMOR card (#121, immutable): base thresholds, base score, feature. */
 export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
+  const theme = getPlaqueTheme('Armor');
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       <View style={{ height: ART_H, backgroundColor: '#23262C', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         <EquipGlyph kind="armor" />
       </View>
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
-        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Armor</Text>
+        <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+          <PlaqueLabel text="Armor" textColor={theme.textColor} />
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
