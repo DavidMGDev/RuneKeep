@@ -34,7 +34,7 @@ export function RuneLoader({ done, onHidden, caption }: { done: boolean; onHidde
   return (
     <Animated.View
       pointerEvents={done ? 'none' : 'auto'}
-      style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9000, backgroundColor: '#06080d', alignItems: 'center', justifyContent: 'center', gap: 26 }, veil]}>
+      style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 12000, backgroundColor: '#06080d', alignItems: 'center', justifyContent: 'center', gap: 26 }, veil]}>
       <View style={{ width: 104, height: 104, alignItems: 'center', justifyContent: 'center' }}>
         <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }, ring]}>
           <Svg width={104} height={104} viewBox="0 0 92 92">

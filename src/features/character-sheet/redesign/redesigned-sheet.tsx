@@ -505,15 +505,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const allForged = expectedKeys.length === 0 || expectedKeys.every((k) => featureSources[k]);
   const [sheetReady, setSheetReady] = useState(false);
   const [loaderUp, setLoaderUp] = useState(true);
+  // The loader was lifting before the body + cards had actually painted (#168): allForged goes true
+  // instantly when there's little to forge, so the veil dropped while pieces were still popping in.
+  // Hold it for a MIN display, then add a generous paint grace AFTER everything forges so the whole
+  // sheet (carousel cards included) is on screen before the fade. Hard fallback so it can't hang.
+  const [minDone, setMinDone] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMinDone(true), 1500);
+    return () => clearTimeout(t);
+  }, []);
   useEffect(() => {
     if (sheetReady) return;
-    if (allForged) {
-      const t = setTimeout(() => setSheetReady(true), 500); // a paint grace once the bitmaps exist
+    if (allForged && minDone) {
+      const t = setTimeout(() => setSheetReady(true), 1800); // ~1.5s+ of overhead so nothing pops in after the veil lifts
       return () => clearTimeout(t);
     }
-  }, [allForged, sheetReady]);
+  }, [allForged, minDone, sheetReady]);
   useEffect(() => {
-    const t = setTimeout(() => setSheetReady(true), 6000);
+    const t = setTimeout(() => setSheetReady(true), 7500);
     return () => clearTimeout(t);
   }, []);
 
