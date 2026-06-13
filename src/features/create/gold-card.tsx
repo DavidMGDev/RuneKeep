@@ -1,9 +1,9 @@
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { DividerPlaque } from '@/components/card-divider';
+import { DividerPlaque, getPlaqueTheme } from '@/components/card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
-import { FORGED_H, FORGED_W } from './forged-card';
+import { FORGED_H, FORGED_W, PlaqueLabel } from './forged-card';
 
 /**
  * Gold (#128, owner): handfuls roll into bags, bags into a chest. 10 handfuls make a bag, 10 bags
@@ -83,6 +83,7 @@ function Step({ label, onPress, disabled }: { label: string; onPress: () => void
 }
 
 export function GoldCard({ gold, onChange }: { gold: GoldAmount; onChange: (g: GoldAmount) => void }) {
+  const theme = getPlaqueTheme('Currency');
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       {/* flat gold art band + coin emblem */}
@@ -94,8 +95,8 @@ export function GoldCard({ gold, onChange }: { gold: GoldAmount; onChange: (g: G
       </View>
       {/* the regular divider plaque */}
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
-        <DividerPlaque width={FORGED_W + 14} maskFill={Rune.sheet}>
-          <Text numberOfLines={1} style={{ color: Rune.red, fontSize: 8, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Currency</Text>
+        <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+          <PlaqueLabel text="Currency" textColor={theme.textColor} />
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 14 }}>

@@ -418,7 +418,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const total = 1 + fpages.length;
     // face 0 = the class card (#110: the missing first page); same deck-wide marks as the forge
     const classJob = classDef
-      ? { key: `class-${cls}`, node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} /> }
+      ? { key: `class-${cls}`, node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} classKey={cls} /> }
       : null;
     const featJobs = fpages.map((p) => ({
       key: `feat-${cls}-${p.pageIndex}`,
@@ -430,6 +430,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           sections={p.sections}
           accentDeep={classColor(cls).deep}
           Banner={classBanner(cls)}
+          classKey={cls}
         />
       ),
     }));

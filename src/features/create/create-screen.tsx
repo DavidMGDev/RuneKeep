@@ -467,7 +467,7 @@ export function CreateScreen() {
       ...CLASS_CARDS.map((c) => ({
         key: `class-${c.key}`,
         // deck-wide mark (#110): the class card is page 1 of (1 class + feature pages)
-        node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${1 + featurePages(c.key).length}`} />,
+        node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${1 + featurePages(c.key).length}`} classKey={c.key} />,
       })),
       ...CLASS_CARDS.flatMap((c) => {
         const total = 1 + featurePages(c.key).length;
@@ -481,6 +481,7 @@ export function CreateScreen() {
               sections={p.sections}
               accentDeep={classColor(c.key).deep}
               Banner={c.Banner}
+              classKey={c.key}
             />
           ),
         }));
@@ -600,7 +601,7 @@ export function CreateScreen() {
           const classPre = sources[`class-${c.key}`];
           const classFace: StraightFace = classPre
             ? { thumb: classPre.thumb, source: classPre.full }
-            : { custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${total}`} /> };
+            : { custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${total}`} classKey={c.key} /> };
           const featureFaces: StraightFace[] = featurePages(c.key).map((p) => {
             const fpre = sources[`feat-${c.key}-${p.pageIndex}`];
             return fpre
@@ -614,6 +615,7 @@ export function CreateScreen() {
                       sections={p.sections}
                       accentDeep={classColor(c.key).deep}
                       Banner={c.Banner}
+                      classKey={c.key}
                     />
                   ),
                 };
@@ -812,7 +814,7 @@ export function CreateScreen() {
                   accessibilityLabel="Character name"
                 />
               </ChamferBox>
-              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the sheet's portrait frame.</Text>
+              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the {"sheet's"} portrait frame.</Text>
             </View>
             <RuneButton label={draft.portraitUri ? 'Change image' : 'Add image'} kind="ghost" height={32} onPress={pickPortrait} />
           </View>
