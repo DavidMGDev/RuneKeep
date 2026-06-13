@@ -50,6 +50,9 @@ export interface Character {
   hope: Track;
   stress: Track;
 
+  /** Coin (#136): handfuls/bags/chest, capped 9/9/1 (the gold card carries the +/- controls). */
+  gold: { handfuls: number; bags: number; chest: number };
+
   portraitUri?: string | null;
 }
 
@@ -89,5 +92,6 @@ export const SAMPLE_CHARACTER: Character = {
   armor: { active: 9, total: 12, locked: 1 },
   hope: { active: 5, total: 6 },
   stress: { active: 10, total: 12, locked: 1 },
+  gold: { handfuls: 3, bags: 1, chest: 0 },
   portraitUri: null,
 };

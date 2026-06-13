@@ -36,6 +36,10 @@ export interface CardItem extends CardImage {
    * persists it. Absent for ordinary single cards.
    */
   faces?: CardFace[];
+  /** A LIVE card (#136 gold): rendered as-is instead of the forged image. With `interactive`, taps
+   *  go to the card's own controls (the carousel won't close it on tap — swipe-down/gear closes). */
+  live?: import('react').ReactNode;
+  interactive?: boolean;
 }
 
 export const CARD_CATEGORIES: { key: CardCategory; label: string }[] = [

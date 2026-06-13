@@ -230,6 +230,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         .maxDuration(260)
         .onEnd((e) => {
           if (machineState.value === 'fullscreen') {
+            if (item.interactive) return; // live card (#136 gold) keeps its taps; close via swipe/gear
             if (hasFaces) runOnJS(pageBy)(e.x < CARD_W / 2 ? -1 : 1);
             else runOnJS(closeFullscreen)();
             return;
@@ -244,8 +245,20 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             fullscreenProgress.value = withSpring(1, FS_SPRING);
           }
         }),
-    [index, count, hasFaces, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
+    [index, count, hasFaces, item.interactive, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
   );
+
+  // A live interactive card (#136 gold) only accepts touches when FOCUSED; otherwise its controls
+  // would swallow the compact-hand expand tap. Gate pointerEvents on a JS focused flag.
+  const [liveActive, setLiveActive] = useState(false);
+  const liveActiveSV = useSharedValue(false);
+  useDerivedValue(() => {
+    const active = !!item.interactive && fullscreenProgress.value > 0.5 && Math.round(focusIndex.value) === index;
+    if (active !== liveActiveSV.value) {
+      liveActiveSV.value = active;
+      runOnJS(setLiveActive)(active);
+    }
+  });
 
   return (
     // NO renderToHardwareTexture/rasterize here (issue #41): the slot's opacity + scale change every
@@ -254,7 +267,13 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
       <GestureDetector gesture={tap}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
-          {hasFaces ? (
+          {item.live ? (
+            // a LIVE interactive card (#136 gold): rendered as-is; its controls only take touches
+            // once focused (else they'd eat the compact expand tap).
+            <View style={StyleSheet.absoluteFill} pointerEvents={liveActive ? 'auto' : 'none'}>
+              {item.live}
+            </View>
+          ) : hasFaces ? (
             <>
               {/* flat LOD of the current face — shown compact + during the open transition, faded
                   OUT under the flip element while focused so it never shows behind a turning card */}
