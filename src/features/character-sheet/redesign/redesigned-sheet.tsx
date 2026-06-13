@@ -605,7 +605,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const cls = classInfo(file.className);
     const owned = new Set(file.domainCardIds);
     const targetLevel = file.level + 1;
-    const domainOptions: DomainCardInfo[] = CATALOG.filter((c) => c.kind === 'domain' && !!c.domain && cls.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel && !owned.has(c.id)).map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], domain: c.domain, level: c.level }));
+    const domainOptions: DomainCardInfo[] = CATALOG.filter((c) => c.kind === 'domain' && !!c.domain && cls.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel && !owned.has(c.id)).map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], source: c.source as DomainCardInfo['source'], domain: c.domain, level: c.level }));
     const data = CLASS_DATA[file.className];
     const classOptions = CLASSES.filter((c) => c.key !== file.className).map((c) => ({ key: c.key, label: c.label }));
     return { domainOptions, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
