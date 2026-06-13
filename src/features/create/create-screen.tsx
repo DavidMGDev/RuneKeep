@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Image, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
@@ -9,6 +9,7 @@ import { AppScreen } from '@/components/app-screen';
 import { ArtImage } from '@/components/art-image';
 import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
+import { ChamferedImage } from '@/components/chamfered-image';
 import { RuneButton } from '@/components/rune-button';
 import { type ClassName, classColor, classInfo } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -788,7 +789,7 @@ export function CreateScreen() {
                 strokeWidth={1.2}
                 style={{ width: 100, height: 128, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {draft.portraitUri ? (
-                  <Image source={{ uri: draft.portraitUri }} style={{ width: 100, height: 128 }} resizeMode="cover" />
+                  <ChamferedImage uri={draft.portraitUri} width={100} height={128} chamfer={10} />
                 ) : (
                   <Svg width={30} height={30} viewBox="0 0 26 26">
                     <Circle cx={13} cy={9} r={4.4} fill="none" stroke={Rune.goldEdge} strokeWidth={1.8} />
