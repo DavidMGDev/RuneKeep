@@ -58,9 +58,9 @@ export function CardEditor({
   const canSave = draft.title.trim().length > 0;
 
   return (
-    <View style={{ position: 'absolute', top: -80, bottom: -80, left: -60, right: -60, zIndex: 800 }}>
+    <View style={{ position: 'absolute', top: -80, bottom: -80, left: -60, right: -60, zIndex: 10000 }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
-      <ScrollView contentContainerStyle={{ alignItems: 'center', paddingTop: 110, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ alignItems: 'center', paddingTop: 180, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
         {/* live preview — the real card, the real size */}
         <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
         {/* fields */}
