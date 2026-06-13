@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
@@ -20,6 +20,7 @@ import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { GoldCard } from '@/features/create/gold-card';
+import { RuneLoader } from '@/components/rune-loader';
 
 // Default art for an inventory item with no player image (#136) — same asset as creation.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -468,6 +469,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
+  // Entry loader (#150): cover the WHOLE sheet until every forged card is captured (so nothing is
+  // seen popping in one-by-one), then fade in. A hard fallback guarantees it can't hang.
+  const expectedKeys = useMemo(() => allJobs.map((j) => j.key), [allJobs]);
+  const allForged = expectedKeys.length === 0 || expectedKeys.every((k) => featureSources[k]);
+  const [sheetReady, setSheetReady] = useState(false);
+  const [loaderUp, setLoaderUp] = useState(true);
+  useEffect(() => {
+    if (sheetReady) return;
+    if (allForged) {
+      const t = setTimeout(() => setSheetReady(true), 500); // a paint grace once the bitmaps exist
+      return () => clearTimeout(t);
+    }
+  }, [allForged, sheetReady]);
+  useEffect(() => {
+    const t = setTimeout(() => setSheetReady(true), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
@@ -595,6 +614,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}
           {/* offscreen forge stage: captures the class-feature cards to bitmaps (#104) */}
           {forgeStage}
+          {/* entry loader (#150): covers the whole sheet while the cards forge, then fades to reveal */}
+          {loaderUp ? <RuneLoader done={sheetReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /> : null}
         </View>
       </CarouselProvider>
     </AccentProvider>
