@@ -775,7 +775,7 @@ export function CreateScreen() {
   }, [complete, draft, router]);
 
   const pickPortrait = useCallback(async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead
     if (!res.canceled && res.assets[0]) set({ portraitUri: res.assets[0].uri });
   }, [set]);
 

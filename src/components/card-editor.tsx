@@ -45,7 +45,7 @@ export function CardEditor({
 
   // Adding an image clears the random color; Random Color clears any uploaded image.
   const pickImage = useCallback(async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.85 });
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
     if (!res.canceled && res.assets[0]) setDraft((d) => ({ ...d, imageUri: res.assets[0].uri, color: null }));
   }, []);
   const rollColor = useCallback(() => setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null })), []);
