@@ -41,7 +41,7 @@ import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
-import { DeckToggleIcon } from './deck-toggle-icon';
+import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, type PlaceholderKind } from './float-menu';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -141,7 +141,7 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
 type TrackKey = 'stress' | 'armor' | 'hope';
 
 function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortraitTransform, onPortraitReplace }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void }) {
-  const { toggleCategory, openOriginCard, category } = useCarousel();
+  const { openOriginCard } = useCarousel();
   const tint = useAccentTint();
 
   // Every resource now uses the boundary-only ±1 hold/double-tap model (#81 hearts, #89 the rest).
@@ -192,10 +192,6 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortrait
             + Tap to add
           </SheetText>
         ) : null}
-        {/* Deck toggle inside the frame's bottom diamond — its centroid for THIS frame size. */}
-        <Pressable style={box(39, 211, 52, 52)} hitSlop={10} onPress={toggleCategory} accessibilityRole="button" accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
-          <DeckToggleIcon category={category} />
-        </Pressable>
       </View>
 
       {/* ---------- top-right bio column: name → domain chips → lvl/prof → origin strip ----------
@@ -351,6 +347,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortrait
         zone={{ left: -10, top: -6, width: 344, height: 56 }}
         trackLabel="Hope"
       />
+
+      {/* The deck-toggle trigger (now opens the radial float menu, #161). Lives at the same screen
+          spot the old toggle did (header group 16,12 + child 39,211 → absolute 55,223); kept here in
+          the body so it paints below the carousel, with its overlay mounted above the carousel. */}
+      <FloatMenuTrigger />
     </>
   );
 }
@@ -545,6 +546,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     return { abilitiesCards: abilities, inventoryCards: inv, originIndices };
   }, [characterFile, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
+  const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu stub interface (#161)
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
   const onApplyDamage = useCallback((hpLoss: number) => heartRef.current?.applyDamage(hpLoss), []);
@@ -595,6 +597,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   return (
     <AccentProvider>
       <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} originIndices={originIndices}>
+       <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
@@ -620,6 +623,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
               <CardCarousel />
+              {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
+              <FloatMenuOverlay />
             </DesignStage>
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
@@ -638,7 +643,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {forgeStage}
           {/* entry loader (#150): covers the whole sheet while the cards forge, then fades to reveal */}
           {loaderUp ? <RuneLoader done={sheetReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /> : null}
+          {/* radial-menu stub interfaces (#161): Rest / Level Up / New Card / Settings open here until
+              each gets its real interface in a later PR. Above everything, like the damage keypad. */}
+          {floatKind ? <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} /> : null}
         </View>
+       </FloatMenuProvider>
       </CarouselProvider>
     </AccentProvider>
   );

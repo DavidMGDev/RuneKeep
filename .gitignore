@@ -62,6 +62,9 @@ assets/extracted_cards/**/*_lod.webp
 # Licensed book PDFs must NEVER reach GitHub (character sheets were pushed before this rule)
 assets/temp/Daggerheart Core Rulebook.pdf
 assets/temp/_classes_28_52.pdf
+# Licensed rulebook page excerpts (local reference for rest/level features — transcribe to data, never bundle/push)
+assets/temp/Level/
+assets/temp/Rest/
 scripts/_class_pages.txt
 scripts/_class_data.json
 scripts/_features_full.txt
