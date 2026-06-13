@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -34,11 +34,16 @@ export function CardEditor({
   initial,
   onSave,
   onCancel,
+  saveLabel = 'Save card',
+  extraField,
 }: {
   kindLabel: string;
   initial?: CardDraft;
   onSave: (draft: CardDraft) => void;
   onCancel: () => void;
+  saveLabel?: string;
+  /** Optional extra control rendered in the fields column (#164: the inventory/arsenal target picker). */
+  extraField?: ReactNode;
 }) {
   // New cards open with a random color already set, as if Random Color was pressed (#153).
   const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor() });
@@ -90,9 +95,10 @@ export function CardEditor({
               accessibilityLabel="Card text"
             />
           </ChamferBox>
+          {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
-            <RuneButton label="Save card" kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={() => onSave({ ...draft, title: draft.title.trim() })} />
+            <RuneButton label={saveLabel} kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={() => onSave({ ...draft, title: draft.title.trim() })} />
           </View>
           <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>Same format as every RuneKeep card.</Text>
         </View>
