@@ -437,8 +437,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       ),
     }));
     const expJobs = (characterFile.experiences ?? []).map((e) => ({
-      key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0)) % 99991}`,
-      node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} multilineTitle />,
+      key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0) + (e.color?.length ?? 0) * 13) % 99991}`,
+      node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} colorArt={e.color} multilineTitle />,
       // player photo (file://) decodes async — needs the forge settle so it isn't captured black (#121)
       raster: !!e.imageUri,
     }));
@@ -456,8 +456,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const chosenIds = characterFile.inventoryItemIds ?? [];
     const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} multilineTitle /> }));
     const customJobs: Job[] = (characterFile.inventoryCustom ?? []).map((it) => ({
-      key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0)) % 99991}`,
-      node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+      key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
+      node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       raster: !!it.imageUri,
     }));
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
