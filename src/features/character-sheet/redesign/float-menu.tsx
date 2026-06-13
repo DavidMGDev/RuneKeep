@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
 
 import { Body, Display, Rune } from '@/constants/theme';
@@ -32,10 +32,15 @@ interface Slot {
 
 // Trigger centre in DESIGN px (header group box(16,12) + child centre (65,237)).
 const T = { x: 81, y: 249 };
-const ARC0 = -90; // wheel arc start (deg, screen coords: 0 = +x right, +90 = down) — straight up
-const ARC1 = 135; // arc end — down-left. Top-left (135°..270°) is the open gap.
 const N = 6; // wedge count
-const WEDGE = (ARC1 - ARC0) / N; // 37.5° each
+// Slot centre angles (deg, screen coords: 0 = +x right, -90 = straight up, +90 = straight down).
+// Settings sits due-NORTH, the class-feature slot due-SOUTH (owner #168); the rest fan down the
+// right side in between (the left half is the open cancel gap — the trigger hugs the left edge).
+const CENTERS = [-90, -54, -18, 18, 54, 90];
+const STEP = 36; // angle between adjacent centres
+const HALF = 18; // wedge half-width
+const ARC_MIN = -108; // covered arc = CENTERS[0]-HALF .. CENTERS[last]+HALF
+const ARC_MAX = 108;
 const DEAD = 38; // center dead-zone radius (design px): inside = no selection
 const RIN = 40; // wedge inner radius
 const ROUT = 205; // wedge outer radius
@@ -46,32 +51,30 @@ const SVG_R = 230; // half the wedge SVG canvas (covers C ± SVG_R)
 const TAP_SLOP = 12;
 
 const SLOTS: Slot[] = [
-  { kind: 'settings', label: 'Settings' },
+  { kind: 'settings', label: 'Settings' }, // due-NORTH
   { kind: 'custom', label: 'New Card' },
-  { kind: 'switch', label: 'Switch' }, // due-right: a quick flick-right + release = the old toggle
+  { kind: 'switch', label: 'Switch' },
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
-  { kind: 'classfeat', label: '—', disabled: true }, // class feature (druid wild shape etc.) — empty on purpose
+  { kind: 'classfeat', label: '—', disabled: true }, // due-SOUTH — class feature (druid wild shape etc.), empty on purpose
 ];
-const MID = (i: number) => ARC0 + WEDGE * (i + 0.5); // wedge mid-angle (deg)
-// Label centres, clamped on-screen (the down-left disabled slot would otherwise hang off the left edge).
 const POS = SLOTS.map((_, i) => {
-  const a = (MID(i) * Math.PI) / 180;
+  const a = (CENTERS[i] * Math.PI) / 180;
   const x = Math.min(412 - PW / 2 - 6, Math.max(PW / 2 + 6, T.x + RLABEL * Math.cos(a)));
   const y = T.y + RLABEL * Math.sin(a);
   return { x, y };
 });
 
-/** Which wedge the finger is in (-1 = none/cancel). Pure angular hit-test — no per-button hitboxes,
- *  so there are no dead gaps between options (the spray-wheel feel). */
+/** Which wedge the finger is in (-1 = none/cancel). Pure angular hit-test (nearest centre) — no
+ *  per-button hitboxes, so there are no dead gaps between options (the spray-wheel feel). */
 function pickWedge(fx: number, fy: number): number {
   'worklet';
   const dx = fx - T.x;
   const dy = fy - T.y;
   if (Math.hypot(dx, dy) < DEAD) return -1;
-  let a = (Math.atan2(dy, dx) * 180) / Math.PI;
-  if (a < ARC0 || a > ARC1) return -1; // in the open top-left gap
-  let i = Math.floor((a - ARC0) / WEDGE);
+  const a = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (a < ARC_MIN || a > ARC_MAX) return -1; // the open left half
+  let i = Math.round((a + 90) / STEP);
   if (i < 0) i = 0;
   if (i >= N) i = N - 1;
   if (SLOTS[i].disabled) return -1;
@@ -129,21 +132,18 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
     else progress.value = withSpring(1, { damping: 16, stiffness: 210, mass: 0.7 });
   }, [openSV, progress, reduced]);
 
+  // Close IMMEDIATELY (no animated fade-out): a lingering full-screen scrim at zIndex 9999 was
+  // covering the interface panels for the fade duration and could strand if the timing callback was
+  // dropped — that was the "tap an option, then the app freezes" bug (#168). Unmount at once instead.
   const closeMenu = useCallback(() => {
     setPinned(false);
+    setOpen(false);
     openSV.value = 0;
     openingSV.value = 0;
     dragging.value = 0;
     highlight.value = -1;
-    if (reduced) {
-      progress.value = 0;
-      setOpen(false);
-    } else {
-      progress.value = withTiming(0, { duration: 160 }, (finished) => {
-        if (finished) runOnJS(setOpen)(false);
-      });
-    }
-  }, [openSV, openingSV, dragging, highlight, progress, reduced]);
+    progress.value = 0;
+  }, [openSV, openingSV, dragging, highlight, progress]);
 
   const pinMenu = useCallback(() => setPinned(true), []);
 
@@ -374,8 +374,8 @@ export function FloatMenuOverlay() {
       <Animated.View style={[box(T.x - SVG_R, T.y - SVG_R, SVG_R * 2, SVG_R * 2), ring]} pointerEvents="none">
         <Svg width={SVG_R * 2} height={SVG_R * 2}>
           {SLOTS.map((slot, i) => {
-            const a0 = ARC0 + WEDGE * i;
-            const a1 = a0 + WEDGE;
+            const a0 = CENTERS[i] - HALF;
+            const a1 = CENTERS[i] + HALF;
             const sel = hl === i;
             return (
               <Path
