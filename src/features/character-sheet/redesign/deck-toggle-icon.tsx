@@ -1,36 +1,47 @@
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import Svg, { Line, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Polygon, Rect } from 'react-native-svg';
 
 import { Rune } from '@/constants/theme';
 import type { CardCategory } from '../card-data';
 
 /**
  * The deck-mode toggle below the portrait (#136): two distinct gold icons — a fanned hand of cards
- * for ARSENAL (abilities), a chest for INVENTORY — that cross-fade and spin into each other when the
- * category switches, so the current mode reads at a glance. Sized to sit inside the old icon's box.
+ * for ARSENAL (abilities), a banded treasure chest for INVENTORY — that cross-fade and spin into
+ * each other on switch. Bigger + more detailed than the first pass; fills the old icon's box.
  */
 const GOLD = Rune.goldBright;
+const FILL = '#15191F';
 
 function ArsenalIcon() {
-  const s = { fill: 'none' as const, stroke: GOLD, strokeWidth: 2.2, strokeLinejoin: 'round' as const };
   return (
-    <Svg width={34} height={34} viewBox="0 0 40 40">
-      <Rect x={15} y={11} width={11} height={18} rx={1.5} {...s} transform="rotate(-16 20 27)" />
-      <Rect x={15} y={11} width={11} height={18} rx={1.5} {...s} transform="rotate(16 20 27)" />
-      <Rect x={14.5} y={9} width={11} height={18} rx={1.5} fill={Rune.ink} stroke={GOLD} strokeWidth={2.2} strokeLinejoin="round" />
+    <Svg width={46} height={46} viewBox="0 0 48 48">
+      {/* two fanned back cards */}
+      <Rect x={16} y={13} width={17} height={25} rx={2.5} fill={FILL} stroke={GOLD} strokeWidth={2} strokeLinejoin="round" transform="rotate(-20 24 36)" />
+      <Rect x={16} y={13} width={17} height={25} rx={2.5} fill={FILL} stroke={GOLD} strokeWidth={2} strokeLinejoin="round" transform="rotate(20 24 36)" />
+      {/* front card + a diamond pip and a corner mark */}
+      <Rect x={14.5} y={9} width={19} height={28} rx={2.5} fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      <Polygon points="24,15 28.5,23 24,31 19.5,23" fill={GOLD} />
+      <Polygon points="18,12.5 20,16 16,16" fill={GOLD} />
     </Svg>
   );
 }
 
 function InventoryIcon() {
-  const s = { fill: 'none' as const, stroke: GOLD, strokeWidth: 2.2, strokeLinejoin: 'round' as const };
   return (
-    <Svg width={32} height={32} viewBox="0 0 40 40">
-      <Path d="M 8 18 Q 8 10 20 10 Q 32 10 32 18 L 32 32 L 8 32 Z" {...s} />
-      <Line x1={8} y1={22} x2={32} y2={22} {...s} />
-      <Rect x={17.5} y={20} width={5} height={6} fill={GOLD} />
+    <Svg width={44} height={44} viewBox="0 0 48 48">
+      {/* lid */}
+      <Path d="M 8 21 Q 8 10 24 10 Q 40 10 40 21 L 40 23 L 8 23 Z" fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      {/* body */}
+      <Rect x={8} y={23} width={32} height={17} fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      {/* two iron bands */}
+      <Line x1={16} y1={10.5} x2={16} y2={40} stroke={GOLD} strokeWidth={2} />
+      <Line x1={32} y1={10.5} x2={32} y2={40} stroke={GOLD} strokeWidth={2} />
+      {/* lid rail + lock plate */}
+      <Line x1={8} y1={23} x2={40} y2={23} stroke={GOLD} strokeWidth={2.2} />
+      <Rect x={20.5} y={25} width={7} height={9} rx={1} fill={GOLD} />
+      <Circle cx={24} cy={28.5} r={1.4} fill={FILL} />
     </Svg>
   );
 }
