@@ -875,7 +875,7 @@ export function CreateScreen() {
               key={deck + (deck === 'weapons' ? `${weaponKind}-${weaponSlot}` : deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
               items={items}
               selectedIds={selectedIds}
-              initialIndex={deckIndexes.current[deck] ?? 0}
+              initialIndex={deckIndexes.current[deck] ?? Math.floor(items.length / 2)}
               onIndexChange={(i) => {
                 deckIndexes.current[deck] = i;
                 setCenterIdx(i);

@@ -296,6 +296,12 @@ export const StraightCarousel = forwardRef<
     },
     [onIndexChange],
   );
+  // On mount (and on each deck remount via the key) tell the parent where we START (#150: decks
+  // open centered on the middle card) so the SELECT controls target it.
+  useEffect(() => {
+    onIndexChange?.(clampIdx(initialIndex, count));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useDerivedValue(() => {
     if (grind.value > 0.05) return; // same freeze rule as the sheet (#78)
     const c = clampIdx(Math.round(pos.value), count);
