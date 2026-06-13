@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, type SharedValue, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
 
 import { Body, Display, Rune } from '@/constants/theme';
@@ -9,15 +9,16 @@ import { box } from '@/lib/design';
 
 import { useCarousel } from '../carousel-context';
 import { DeckToggleIcon } from './deck-toggle-icon';
-import { ChamferFrame } from './chamfer';
 
 /**
- * The float menu (#161): the deck toggle no longer switches inv/arsenal on its own. PRESS it and a
- * radial menu blooms over a full-screen dim — Canva/PowerPoint pie style. From the press you can
- * either DRAG toward an option (a line follows your finger; the nearest option highlights; release
- * on it fires, release back near the button cancels) OR just tap to PIN it open and then tap an
- * option. The button sits in the upper-left corner, so the options fan into the open right/down arc
- * rather than a full compass rose (owner pick). Built with /impeccable craft, product register.
+ * The float menu (#161/#162): the deck toggle no longer switches inv/arsenal on its own. PRESS it
+ * and a radial wheel blooms over a full-screen dim — modeled on an FPS emote/spray wheel (Fortnite/
+ * Valorant). The options are contiguous angular WEDGES around the trigger, not separate buttons:
+ * wherever the finger points (past a center dead-zone) selects the wedge it's inside, with NO dead
+ * gaps between options. Release on a wedge fires it; release in the dead-zone (or the open top) cancels.
+ * A plain tap pins the wheel open so the labels can also be tapped directly. The trigger hugs the
+ * upper-left corner, so the wheel is a ~225° arc opening up/right/down (the top-left is the gap).
+ * Built with /impeccable craft, product register.
  */
 
 export type PlaceholderKind = 'custom' | 'level' | 'rest' | 'settings';
@@ -26,31 +27,56 @@ type SlotKind = 'switch' | PlaceholderKind | 'classfeat';
 interface Slot {
   kind: SlotKind;
   label: string;
-  angle: number; // degrees, screen coords (0 = +x right, +90 = down)
   disabled?: boolean;
 }
 
 // Trigger centre in DESIGN px (header group box(16,12) + child centre (65,237)).
 const T = { x: 81, y: 249 };
-const R = 150; // puck-ring radius (design px)
-const PW = 88; // puck width
-const PH = 66; // puck height
-const TAP_SLOP = 12; // movement under this on release = a tap (pin), not a drag-select
-const DEAD = 46; // no option highlights while the finger is within this of the trigger (cancel zone)
-const PICK = 60; // highlight an option when the finger is within this of its centre
+const ARC0 = -90; // wheel arc start (deg, screen coords: 0 = +x right, +90 = down) — straight up
+const ARC1 = 135; // arc end — down-left. Top-left (135°..270°) is the open gap.
+const N = 6; // wedge count
+const WEDGE = (ARC1 - ARC0) / N; // 37.5° each
+const DEAD = 38; // center dead-zone radius (design px): inside = no selection
+const RIN = 40; // wedge inner radius
+const ROUT = 205; // wedge outer radius
+const RLABEL = 148; // label-puck radius
+const PW = 78; // puck width
+const PH = 58; // puck height
+const SVG_R = 230; // half the wedge SVG canvas (covers C ± SVG_R)
+const TAP_SLOP = 12;
 
-// Fanned into the open arc (the trigger hugs the left edge, so a due-west arm won't fit). Switch is
-// due-right (a quick flick-right + release does the old toggle); the disabled class-feature slot
-// (druid wild shape etc., #161 — left empty on purpose) tucks at the bottom.
 const SLOTS: Slot[] = [
-  { kind: 'settings', label: 'Settings', angle: -55 },
-  { kind: 'custom', label: 'New Card', angle: -25 },
-  { kind: 'switch', label: 'Switch', angle: 5 },
-  { kind: 'level', label: 'Level Up', angle: 35 },
-  { kind: 'rest', label: 'Rest', angle: 65 },
-  { kind: 'classfeat', label: '—', angle: 95, disabled: true },
+  { kind: 'settings', label: 'Settings' },
+  { kind: 'custom', label: 'New Card' },
+  { kind: 'switch', label: 'Switch' }, // due-right: a quick flick-right + release = the old toggle
+  { kind: 'level', label: 'Level Up' },
+  { kind: 'rest', label: 'Rest' },
+  { kind: 'classfeat', label: '—', disabled: true }, // class feature (druid wild shape etc.) — empty on purpose
 ];
-const POS = SLOTS.map((s) => ({ x: T.x + R * Math.cos((s.angle * Math.PI) / 180), y: T.y + R * Math.sin((s.angle * Math.PI) / 180) }));
+const MID = (i: number) => ARC0 + WEDGE * (i + 0.5); // wedge mid-angle (deg)
+// Label centres, clamped on-screen (the down-left disabled slot would otherwise hang off the left edge).
+const POS = SLOTS.map((_, i) => {
+  const a = (MID(i) * Math.PI) / 180;
+  const x = Math.min(412 - PW / 2 - 6, Math.max(PW / 2 + 6, T.x + RLABEL * Math.cos(a)));
+  const y = T.y + RLABEL * Math.sin(a);
+  return { x, y };
+});
+
+/** Which wedge the finger is in (-1 = none/cancel). Pure angular hit-test — no per-button hitboxes,
+ *  so there are no dead gaps between options (the spray-wheel feel). */
+function pickWedge(fx: number, fy: number): number {
+  'worklet';
+  const dx = fx - T.x;
+  const dy = fy - T.y;
+  if (Math.hypot(dx, dy) < DEAD) return -1;
+  let a = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (a < ARC0 || a > ARC1) return -1; // in the open top-left gap
+  let i = Math.floor((a - ARC0) / WEDGE);
+  if (i < 0) i = 0;
+  if (i >= N) i = N - 1;
+  if (SLOTS[i].disabled) return -1;
+  return i;
+}
 
 interface FloatMenuContextValue {
   open: boolean;
@@ -119,9 +145,7 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
     }
   }, [openSV, openingSV, dragging, highlight, progress, reduced]);
 
-  const pinMenu = useCallback(() => {
-    setPinned(true);
-  }, []);
+  const pinMenu = useCallback(() => setPinned(true), []);
 
   const select = useCallback(
     (index: number) => {
@@ -177,20 +201,8 @@ export function FloatMenuTrigger() {
           const fy = T.y + e.translationY / s;
           fingerX.value = fx;
           fingerY.value = fy;
-          const dT = Math.hypot(fx - T.x, fy - T.y);
-          if (dT > TAP_SLOP) movedSV.value = 1;
-          let best = -1;
-          let bd = PICK;
-          for (let i = 0; i < POS.length; i++) {
-            if (SLOTS[i].disabled) continue;
-            const d = Math.hypot(fx - POS[i].x, fy - POS[i].y);
-            if (d < bd) {
-              bd = d;
-              best = i;
-            }
-          }
-          if (dT < DEAD) best = -1;
-          highlight.value = best;
+          if (Math.hypot(fx - T.x, fy - T.y) > TAP_SLOP) movedSV.value = 1;
+          highlight.value = pickWedge(fx, fy);
         })
         .onFinalize(() => {
           'worklet';
@@ -231,7 +243,7 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
   switch (kind) {
     case 'switch':
       return (
-        <Svg width={26} height={26} viewBox="0 0 24 24">
+        <Svg width={24} height={24} viewBox="0 0 24 24">
           <Polyline points="4,8 18,8" {...common} />
           <Polyline points="15,5 18,8 15,11" {...common} />
           <Polyline points="20,16 6,16" {...common} />
@@ -240,7 +252,7 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
       );
     case 'custom':
       return (
-        <Svg width={26} height={26} viewBox="0 0 24 24">
+        <Svg width={24} height={24} viewBox="0 0 24 24">
           <Rect x={5} y={3.5} width={14} height={17} rx={2} {...common} />
           <Line x1={12} y1={8} x2={12} y2={16} {...common} />
           <Line x1={8} y1={12} x2={16} y2={12} {...common} />
@@ -248,31 +260,45 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
       );
     case 'level':
       return (
-        <Svg width={26} height={26} viewBox="0 0 24 24">
+        <Svg width={24} height={24} viewBox="0 0 24 24">
           <Polyline points="5,12 12,5 19,12" {...common} />
           <Polyline points="5,18 12,11 19,18" {...common} />
         </Svg>
       );
     case 'rest':
       return (
-        <Svg width={26} height={26} viewBox="0 0 24 24">
+        <Svg width={24} height={24} viewBox="0 0 24 24">
           <Path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5Z" {...common} />
         </Svg>
       );
     case 'settings':
       return (
-        <Svg width={26} height={26} viewBox="0 0 24 24">
+        <Svg width={24} height={24} viewBox="0 0 24 24">
           <Circle cx={12} cy={12} r={3.2} {...common} />
           <Path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1" {...common} />
         </Svg>
       );
     default:
       return (
-        <Svg width={26} height={26} viewBox="0 0 24 24">
+        <Svg width={24} height={24} viewBox="0 0 24 24">
           <Line x1={7} y1={12} x2={17} y2={12} stroke={Rune.muted} strokeWidth={sw} strokeLinecap="round" />
         </Svg>
       );
   }
+}
+
+/** One annular-sector path (local SVG coords, centre at SVG_R,SVG_R). */
+function sectorPath(a0: number, a1: number, ri: number, ro: number): string {
+  const p = (r: number, aDeg: number) => {
+    const a = (aDeg * Math.PI) / 180;
+    return [SVG_R + r * Math.cos(a), SVG_R + r * Math.sin(a)];
+  };
+  const [x0, y0] = p(ro, a0);
+  const [x1, y1] = p(ro, a1);
+  const [x2, y2] = p(ri, a1);
+  const [x3, y3] = p(ri, a0);
+  const large = a1 - a0 > 180 ? 1 : 0;
+  return `M${x0},${y0} A${ro},${ro} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${ri},${ri} 0 ${large} 0 ${x3},${y3} Z`;
 }
 
 function FloatPuck({ index }: { index: number }) {
@@ -284,51 +310,50 @@ function FloatPuck({ index }: { index: number }) {
 
   const entrance = useAnimatedStyle(() => {
     const p = progress.value;
+    const on = highlight.value === index ? 1 : 0;
     return {
       opacity: p,
-      transform: [{ translateX: (T.x - pos.x) * (1 - p) }, { translateY: (T.y - pos.y) * (1 - p) }, { scale: 0.5 + 0.5 * p }],
+      transform: [{ translateX: (T.x - pos.x) * (1 - p) }, { translateY: (T.y - pos.y) * (1 - p) }, { scale: (0.5 + 0.5 * p) * (1 + 0.08 * on) }],
     };
   });
-  const inner = useAnimatedStyle(() => ({ transform: [{ scale: highlight.value === index ? 1.08 : 1 }] }));
-  const red = useAnimatedStyle(() => ({ opacity: highlight.value === index ? 1 : 0 }));
-
-  const labelColor = slot.disabled ? Rune.muted : Rune.goldText;
 
   return (
     <Animated.View style={[box(left, top, PW, PH), entrance]} pointerEvents={pinned ? 'box-none' : 'none'}>
       <Pressable
-        style={{ flex: 1 }}
+        style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
         disabled={!pinned || slot.disabled}
         onPress={pinned && !slot.disabled ? () => select(index) : undefined}
         hitSlop={8}
         accessibilityRole="button"
         accessibilityState={{ disabled: slot.disabled }}
         accessibilityLabel={slot.disabled ? 'Empty slot' : slot.label}>
-        <Animated.View style={[{ flex: 1 }, inner]}>
-          <ChamferFrame left={0} top={0} width={PW} height={PH} chamfer={12} fill={Rune.panel} stroke={slot.disabled ? Rune.muted : Rune.goldEdge} strokeWidth={1.6} />
-          <Animated.View style={[box(0, 0, PW, PH), red]} pointerEvents="none">
-            <ChamferFrame left={0} top={0} width={PW} height={PH} chamfer={12} fill={Rune.red} stroke="transparent" strokeWidth={0} />
-          </Animated.View>
-          <View style={box((PW - 26) / 2, 9, 26, 26)} pointerEvents="none">
-            <MenuIcon kind={slot.kind} />
-          </View>
-          {!slot.disabled ? (
-            <Text numberOfLines={1} style={{ position: 'absolute', left: 3, top: 38, width: PW - 6, textAlign: 'center', color: labelColor, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>
-              {slot.label}
-            </Text>
-          ) : null}
-        </Animated.View>
+        <View style={box((PW - 24) / 2, 8, 24, 24)} pointerEvents="none">
+          <MenuIcon kind={slot.kind} />
+        </View>
+        {!slot.disabled ? (
+          <Text numberOfLines={1} style={{ position: 'absolute', left: 2, top: 35, width: PW - 4, textAlign: 'center', color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+            {slot.label}
+          </Text>
+        ) : null}
       </Pressable>
     </Animated.View>
   );
 }
 
-/** The dim + connector line + finger dot + fanned pucks. Rendered ABOVE the carousel, inside the
- *  DesignStage (design-px coords). Mounts only while the menu is open (animates in/out via progress). */
+/** The dim + wedge ring + connector line + finger dot + fanned labels. Wrapped in ONE high-zIndex
+ *  layer so the whole sheet (stat icons AND cards) sits UNDER the dim and can't be touched (#161). */
 export function FloatMenuOverlay() {
-  const { open, pinned, progress, dragging, fingerX, fingerY, closeMenu } = useFloatMenu();
+  const { open, pinned, progress, dragging, fingerX, fingerY, highlight, closeMenu } = useFloatMenu();
+  const [hl, setHl] = useState(-1);
+  useAnimatedReaction(
+    () => highlight.value,
+    (v, prev) => {
+      if (v !== prev) runOnJS(setHl)(v);
+    },
+  );
 
   const dim = useAnimatedStyle(() => ({ opacity: progress.value * 0.72 }));
+  const ring = useAnimatedStyle(() => ({ opacity: progress.value }));
   const line = useAnimatedStyle(() => {
     const dx = fingerX.value - T.x;
     const dy = fingerY.value - T.y;
@@ -338,32 +363,58 @@ export function FloatMenuOverlay() {
 
   if (!open) return null;
   return (
-    <>
-      {/* full-screen dim, oversized past the (unclipped) stage so it reaches the physical edges with
-          square corners — one unified color, matching ExpandVeil (#161 / #30 B). */}
+    <View style={[StyleSheet.absoluteFill, { zIndex: 9999 }]} pointerEvents="box-none">
+      {/* full-screen dim (oversized past the unclipped stage → square corners, reaches the edges) */}
       <Animated.View style={[box(-220, -220, 852, 1332), { backgroundColor: '#06080d' }, dim]} pointerEvents="none" />
+      {/* tap-scrim: only live while pinned, so a tap on empty space closes (during a drag the trigger
+          gesture owns the touch and release-handling closes/selects). */}
       {pinned ? <Pressable style={box(-220, -220, 852, 1332)} onPress={closeMenu} accessibilityRole="button" accessibilityLabel="Close menu" /> : null}
-      {/* connector line from the trigger to the finger (drag mode only) */}
+      {/* the wedge ring: contiguous annular sectors, the selected one lit. The SVG is centred on the
+          trigger and overdraws left (off-screen) so the down-left wedge is whole. */}
+      <Animated.View style={[box(T.x - SVG_R, T.y - SVG_R, SVG_R * 2, SVG_R * 2), ring]} pointerEvents="none">
+        <Svg width={SVG_R * 2} height={SVG_R * 2}>
+          {SLOTS.map((slot, i) => {
+            const a0 = ARC0 + WEDGE * i;
+            const a1 = a0 + WEDGE;
+            const sel = hl === i;
+            return (
+              <Path
+                key={slot.kind}
+                d={sectorPath(a0 + 1.2, a1 - 1.2, RIN, ROUT)}
+                fill={sel ? 'rgba(200,27,24,0.5)' : slot.disabled ? 'rgba(147,142,136,0.08)' : 'rgba(20,24,31,0.55)'}
+                stroke={sel ? Rune.goldBright : 'rgba(218,162,73,0.5)'}
+                strokeWidth={sel ? 2 : 1.2}
+                strokeLinejoin="round"
+              />
+            );
+          })}
+        </Svg>
+      </Animated.View>
+      {/* connector line + finger dot (drag feedback) */}
       <Animated.View style={[{ position: 'absolute', left: T.x, top: T.y - 1.5, height: 3, backgroundColor: Rune.goldBright, transformOrigin: 'left center' }, line]} pointerEvents="none" />
       <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: Rune.goldBright }, dot]} pointerEvents="none" />
       {SLOTS.map((slot, i) => (
         <FloatPuck key={slot.kind} index={i} />
       ))}
-    </>
+    </View>
   );
 }
 
-/** Stub interface for the not-yet-built options (Rest / Level Up / New Card / Settings). Opens an
- *  empty on-brand panel; each gets its real interface in a later PR (#161). */
+/** Stub interface for any not-yet-built option. Opens an empty on-brand panel; replaced by the real
+ *  interface in its own PR (#161). */
 export function FloatPlaceholder({ kind, onClose }: { kind: PlaceholderKind; onClose: () => void }) {
   const TITLE: Record<PlaceholderKind, string> = { custom: 'New Card', level: 'Level Up', rest: 'Rest', settings: 'Settings' };
   const W = 320;
   const H = 220;
+  const c = 18;
+  const pts = `${c},0 ${W - c},0 ${W},${c} ${W},${H - c} ${W - c},${H} ${c},${H} 0,${H - c} 0,${c}`;
   return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
       <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.82)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
       <View style={{ width: W, height: H }}>
-        <ChamferFrame left={0} top={0} width={W} height={H} chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} />
+        <Svg width={W} height={H} style={StyleSheet.absoluteFill}>
+          <Polyline points={`${pts} ${c},0`} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} strokeLinejoin="miter" />
+        </Svg>
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 }}>
           <Text style={{ color: Rune.goldText, fontSize: 26, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' }}>{TITLE[kind]}</Text>
           <Text style={{ marginTop: 12, color: Rune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center' }}>This interface is coming soon.</Text>
