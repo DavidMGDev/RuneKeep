@@ -471,11 +471,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
-  const { abilitiesCards, inventoryCards } = useMemo(() => {
-    if (!characterFile) return { abilitiesCards: undefined, inventoryCards: undefined };
+  const { abilitiesCards, inventoryCards, originIndices } = useMemo(() => {
+    const none = { abilitiesCards: undefined, inventoryCards: undefined, originIndices: undefined };
+    if (!characterFile) return none;
     const ids = [characterFile.subclassCardId, characterFile.ancestryCardId, characterFile.communityCardId];
     const cards = ids.map(cardById);
-    if (cards.some((c) => !c)) return { abilitiesCards: undefined, inventoryCards: undefined };
+    if (cards.some((c) => !c)) return none;
     // the actual cards the player PICKED at creation (#121: no more sample/placeholder cards) — the
     // two domain cards lead the abilities hand.
     const domainItems = characterFile.domainCardIds
@@ -504,16 +505,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       jobs.map((j) => ({ j, src: featureSources[j.key] })).filter((x) => x.src).map((x) => ({ id: x.j.key, source: x.src!.full, thumb: x.src!.thumb }));
     const weaponItems = forgedItems(weaponJobs);
     const armorItems = armorJob ? forgedItems([armorJob]) : [];
-    const trio = cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
-    // abilities = ONLY the player's cards: domains, experiences, the feature card, weapons, then the
-    // origin trio LAST (the badges target the last three).
-    const abilities = [...domainItems, ...expItems, ...featItem, ...weaponItems, ...trio];
+    const [subclassC, ancestryC, communityC] = cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
+    // Arsenal order (#136, owner): weapons → domains → class feature card → subclass → experiences
+    // → ancestry → community. The origin badges target subclass/ancestry/community by their actual
+    // index now (they're no longer the contiguous last three).
+    const abilities = [...weaponItems, ...domainItems, ...featItem, subclassC, ...expItems, ancestryC, communityC];
+    const originIndices: [number, number, number] = [abilities.indexOf(subclassC), abilities.indexOf(ancestryC), abilities.indexOf(communityC)];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
     const goldItems = goldJob ? forgedItems([goldJob]) : [];
     const inv = [...invItems, ...goldItems, ...weaponItems, ...armorItems];
-    return { abilitiesCards: abilities, inventoryCards: inv };
+    return { abilitiesCards: abilities, inventoryCards: inv, originIndices };
   }, [characterFile, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, goldJob, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const onInfo = useCallback(() => setDamageOpen(true), []);
@@ -548,7 +551,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards}>
+      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} originIndices={originIndices}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
