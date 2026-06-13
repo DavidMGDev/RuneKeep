@@ -113,6 +113,7 @@ export function LevelUpPanel({
       title="Level Up"
       subtitle={`Level ${file.level} → ${newLevel} · Tier ${tier}`}
       onClose={onClose}
+      dismissOnScrim={false}
       footer={
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <RuneButton label="Cancel" kind="ghost" height={44} style={{ flex: 1 }} onPress={onClose} />

@@ -51,21 +51,25 @@ export function NumberKeypad({
   const back = () => setTyped((t) => (t.length > 1 ? t.slice(0, -1) : '0'));
   const toggleSign = () => setNeg((v) => !v);
 
+  // Type freely — do NOT clamp the digits as they're entered (#168). Only the RESULT is validated:
+  // an out-of-range value shows an error and blocks OK, rather than silently snapping to the cap.
   const magnitude = parseInt(typed.replace('-', '') || '0', 10) || 0;
-  const value = Math.max(min, Math.min(max, (neg ? -1 : 1) * magnitude));
+  const value = (neg ? -1 : 1) * magnitude;
+  const valid = value >= min && value <= max;
   const confirm = () => {
+    if (!valid) return;
     onConfirm(value);
     onClose();
   };
 
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 9500, alignItems: 'center', justifyContent: 'center' }]}>
+    <View style={[StyleSheet.absoluteFill, { zIndex: 10500, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.9)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
       <ChamferBox chamfer={16} fill="rgba(11,14,19,0.99)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.4} style={{ width: 264, padding: 16, gap: 12 }}>
         <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{title}</Text>
         <View style={{ alignItems: 'center', minHeight: 50, justifyContent: 'center' }}>
-          <Text style={{ color: Rune.sheet, fontSize: 42, fontFamily: Display.black, lineHeight: 46 }}>{value}</Text>
-          <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.6 }}>{`range ${min} to ${max}`}</Text>
+          <Text style={{ color: valid ? Rune.sheet : '#E2705A', fontSize: 42, fontFamily: Display.black, lineHeight: 46 }}>{value}</Text>
+          <Text style={{ color: valid ? Rune.muted : '#E2705A', fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.6 }}>{valid ? `range ${min} to ${max}` : `must be ${min} to ${max}`}</Text>
         </View>
         {[
           ['1', '2', '3'],
@@ -83,9 +87,9 @@ export function NumberKeypad({
           <Key label="0" onPress={() => press('0')} />
           <Key label="back" glyph={<Text style={{ color: Rune.sheet, fontSize: 16, fontFamily: Display.bold }}>⌫</Text>} onPress={back} />
         </View>
-        <Pressable onPress={confirm} accessibilityRole="button" accessibilityLabel="Confirm">
+        <Pressable onPress={confirm} disabled={!valid} accessibilityRole="button" accessibilityState={{ disabled: !valid }} accessibilityLabel="Confirm">
           {({ pressed }) => (
-            <ChamferBox chamfer={8} fill={pressed ? '#A91613' : Rune.red} stroke="transparent" strokeWidth={0} style={{ height: 46, alignItems: 'center', justifyContent: 'center' }}>
+            <ChamferBox chamfer={8} fill={pressed ? '#A91613' : Rune.red} stroke="transparent" strokeWidth={0} style={{ height: 46, alignItems: 'center', justifyContent: 'center', opacity: valid ? 1 : 0.4 }}>
               <Svg width={22} height={22} viewBox="0 0 20 20">
                 <Path d="M 4 10 L 8.5 14.5 L 16 6" fill="none" stroke={Rune.ivory} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
