@@ -21,6 +21,7 @@
       "barStyle": "light-content"
     },
     "android": {
+      "package": "com.davidmgdev.runekeep",
       "backgroundColor": "#0B0E13",
       "adaptiveIcon": {
         "backgroundColor": "#0B0E13",
@@ -43,6 +44,15 @@
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
+          }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
       ]

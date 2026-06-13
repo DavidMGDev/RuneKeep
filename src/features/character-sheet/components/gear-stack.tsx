@@ -2,8 +2,8 @@ import { Image } from 'expo-image';
 import { View } from 'react-native';
 import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
-const U2 = require('../../../../assets/art/gears/raster/U2.png');
-const U3 = require('../../../../assets/art/gears/raster/U3.png');
+const U2 = require('../../../../assets/art/gears/raster/U2.webp');
+const U3 = require('../../../../assets/art/gears/raster/U3.webp');
 
 // The U-parts pre-rasterized in a shared union viewBox (so they composite concentrically) on a
 // transparent background. Rotating a flat image is GPU-cheap — far smoother on device than animating

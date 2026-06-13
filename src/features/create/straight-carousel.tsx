@@ -22,7 +22,7 @@ import { FORGED_H, FORGED_W } from './forged-card';
 
 // The sheet's inner gear (U3) — here it IS the fast-scroll control, riding the bottom edge.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const INNER_GEAR = require('../../../assets/art/gears/raster/U3.png') as number;
+const INNER_GEAR = require('../../../assets/art/gears/raster/U3.webp') as number;
 
 /**
  * The forge's STRAIGHT carousel (#102): the sheet hand's feel — 1:1 pan, predicted-detent spring
