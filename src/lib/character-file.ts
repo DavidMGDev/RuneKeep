@@ -34,6 +34,20 @@ export interface CustomCardDef extends ExperienceDef {
   target: 'inventory' | 'arsenal' | 'both';
 }
 
+export type ModTarget = TraitKey | 'evasion';
+/** A named, reversible modifier (#166 settings): e.g. armor's -1 Evasion while equipped. Kept as a
+ *  history so any one can be removed without touching the base value. */
+export interface StatModifier {
+  id: string;
+  target: ModTarget;
+  delta: number;
+  label: string;
+}
+/** Net delta from all modifiers aimed at one target. */
+export function modSum(mods: StatModifier[] | undefined, target: ModTarget): number {
+  return (mods ?? []).reduce((sum, m) => sum + (m.target === target ? m.delta : 0), 0);
+}
+
 export interface CharacterFile {
   schemaVersion: number;
   id: string;
@@ -64,6 +78,24 @@ export interface CharacterFile {
   portraitTransform?: { scale: number; x: number; y: number };
   /** Player-authored cards made on the sheet (#164), each routed to inventory / arsenal / both. */
   customCards?: CustomCardDef[];
+  // --- settings + level-up overrides (#166/#167). All additive; schemaVersion stays 1 so existing
+  //     saved characters keep loading and simply fall back to the class/creation defaults. ---
+  /** HP ceiling override (#166: edit "instead of 6 I want 7"; #167: +1 per Hit Point advancement). */
+  maxHp?: number;
+  /** Unlocked Stress slots (default 6; +1 per Stress advancement). */
+  stressMax?: number;
+  /** Unlocked Armor slots (default = armor card's base score). */
+  armorScoreMax?: number;
+  /** Base Evasion override (default = class starting Evasion; +1 per Evasion advancement). */
+  evasionBase?: number;
+  /** Permanent Proficiency bonus from level-up advancements (on top of the level-derived value). */
+  proficiencyBonus?: number;
+  /** Permanent per-trait bonuses from level-up advancements. */
+  traitBonuses?: Partial<Record<TraitKey, number>>;
+  /** Reversible settings modifiers on traits/evasion (#166). */
+  modifiers?: StatModifier[];
+  /** Vault (#166): which domain cards are active (≤5). Undefined → the first ≤5 of domainCardIds. */
+  activeDomainCardIds?: string[];
   level: number;
 }
 
@@ -115,6 +147,16 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const [tMajor, tSevere] = (armor?.thresholds ?? '0 / 0').split('/').map((n) => parseInt(n.trim(), 10) || 0);
   const baseScore = armor?.baseScore ?? 0;
   const ARMOR_SLOTS = 12;
+  // Settings/level-up overrides (#166/#167) layer on the class/creation defaults; modifiers add on top.
+  const maxHp = file.maxHp ?? data.startingHp;
+  const stressMax = file.stressMax ?? 6;
+  const armorMax = file.armorScoreMax ?? baseScore;
+  const baseEvasion = file.evasionBase ?? data.startingEvasion;
+  const TRAIT_KEYS: TraitKey[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+  const baseTraits = file.traits ?? SAMPLE_CHARACTER.traits;
+  const traits = Object.fromEntries(
+    TRAIT_KEYS.map((k) => [k, (baseTraits[k] ?? 0) + (file.traitBonuses?.[k] ?? 0) + modSum(file.modifiers, k)]),
+  ) as Record<TraitKey, number>;
   return {
     ...SAMPLE_CHARACTER,
     name: file.name,
@@ -126,19 +168,19 @@ export function toSheetCharacter(file: CharacterFile): Character {
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
     portraitUri: file.portraitUri,
     portraitTransform: file.portraitTransform ?? { scale: 1, x: 0, y: 0 },
-    evasion: data.startingEvasion,
-    proficiency: proficiencyForLevel(file.level), // level 1 → 1 (#128, was stuck at the sample's 2)
-    armorScore: baseScore,
+    evasion: baseEvasion + modSum(file.modifiers, 'evasion'),
+    proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
+    armorScore: armorMax,
     damageThresholds: { major: tMajor, severe: tSevere },
     // Rulebook starting resources (#107): hearts full at the class's max (only that many hearts
     // are drawn; 7 hp = one golden + five red), 6 of 12 stress unlocked, hope starts at 2 of 6.
-    hp: data.startingHp,
-    maxHp: data.startingHp,
-    // armor: the base-score slots are enabled (filled), the rest disabled (#128)
-    armor: { active: baseScore, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - baseScore) },
-    stress: { active: 0, total: 12, locked: 6 },
+    hp: maxHp,
+    maxHp,
+    // armor: the unlocked slots are enabled (filled), the rest disabled (#128)
+    armor: { active: armorMax, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - armorMax) },
+    stress: { active: 0, total: 12, locked: Math.max(0, 12 - stressMax) },
     hope: { active: 2, total: 6 },
     gold: file.gold ?? { handfuls: 1, bags: 0, chest: 0 }, // the kit's handful of gold (#136)
-    ...(file.traits ? { traits: file.traits } : null),
+    traits,
   };
 }
