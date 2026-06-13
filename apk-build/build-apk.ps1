@@ -1,101 +1,79 @@
 # RuneKeep -> Android APK builder (#173)
-# Run from a normal PowerShell window (NOT admin needed):
+# Run from a normal PowerShell window (no admin needed):
 #   powershell -ExecutionPolicy Bypass -File "D:\Tools\Homebrew\Daggerheart\RuneKeep\apk-build\build-apk.ps1"
 #
 # Produces a small arm64-v8a release APK (offline, all card data bundled) from the asset-optimized
 # `apk-optimize` branch, then uploads it as a GitHub release.
 #
-# The NDK is installed by DIRECT download + 7-Zip extract, NOT sdkmanager (sdkmanager's NDK install
-# stalls badly on Windows). sdkmanager is used only for the small platform/build-tools packages.
+# sdkmanager's downloader STALLS on this machine, so every SDK component is fetched by DIRECT
+# download (curl) + 7-Zip extract instead. cmake + licenses are already in place.
 #
-# PS 5.1 notes baked in: ErrorActionPreference = Continue (native tools write to stderr normally),
-# no 2>&1 on native commands, explicit $LASTEXITCODE checks.
-#
+# PS 5.1-safe: ErrorActionPreference = Continue, no 2>&1 on native commands, explicit exit checks.
 # Tell Claude when it prints  ===ALL DONE===  (with the size), or paste any line containing FAILED.
 
 $ErrorActionPreference = 'Continue'
-$repo   = 'D:\Tools\Homebrew\Daggerheart\RuneKeep'
-$sdk    = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
+$repo = 'D:\Tools\Homebrew\Daggerheart\RuneKeep'
+$sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
-$ndkVer = '27.1.12297006'          # NDK r27b == the version Expo SDK 54 / RN 0.81 pins
-$ndkUrl = 'https://dl.google.com/android/repository/android-ndk-r27b-windows.zip'
+$base = 'https://dl.google.com/android/repository'
 
 function Section($m) { Write-Host "`n==== $m ====" -ForegroundColor Cyan }
 function Fail($m)    { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 
-# locate sdkmanager.bat (layout can vary)
-$sm = Join-Path $sdk 'cmdline-tools\latest\bin\sdkmanager.bat'
-if (-not (Test-Path $sm)) {
-  $found = Get-ChildItem (Join-Path $sdk 'cmdline-tools') -Recurse -Filter 'sdkmanager.bat' -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($found) { $sm = $found.FullName }
-}
-if (-not (Test-Path $sm)) { Fail "sdkmanager.bat not found under $sdk\cmdline-tools" }
-
-# locate 7-Zip
+# 7-Zip (fast extract); fall back to Expand-Archive
 $sevenZip = @("$env:ProgramFiles\7-Zip\7z.exe", "${env:ProgramFiles(x86)}\7-Zip\7z.exe") |
   Where-Object { Test-Path $_ } | Select-Object -First 1
+
+# Download $url, extract, and place its single top folder at $target. Skips if $target/$marker exists.
+function Install-SdkZip($name, $url, $target, $marker) {
+  if (Test-Path (Join-Path $target $marker)) { Write-Host "  $name already installed." -ForegroundColor Green; return }
+  if (Test-Path $target) { Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue }  # drop any partial
+  $safe = ($name -replace '[^\w]', '_')
+  $zip  = Join-Path $env:TEMP "rk-$safe.zip"
+  $tmp  = Join-Path $env:TEMP "rk-$safe-x"
+  if (Test-Path $zip) { Remove-Item -Force $zip }
+  if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+  Write-Host "  downloading $name ..." -ForegroundColor Yellow
+  curl.exe -L -o $zip $url
+  if (-not (Test-Path $zip) -or (Get-Item $zip).Length -lt 1MB) { Fail "$name download failed" }
+  Write-Host ("  extracting $name ({0:N0} MB)..." -f ((Get-Item $zip).Length / 1MB))
+  New-Item -ItemType Directory -Force $tmp | Out-Null
+  if ($sevenZip) { & $sevenZip x $zip "-o$tmp" -y | Out-Null } else { Expand-Archive -Path $zip -DestinationPath $tmp -Force }
+  $inner = Get-ChildItem $tmp -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $inner) { Fail "$name extract produced no folder" }
+  New-Item -ItemType Directory -Force (Split-Path $target -Parent) | Out-Null
+  if (Test-Path $target) { Remove-Item -Recurse -Force $target }
+  Move-Item $inner.FullName $target
+  Remove-Item -Force $zip -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+  if (-not (Test-Path (Join-Path $target $marker))) { Fail "$name install incomplete (no $marker)" }
+  Write-Host "  $name -> $target" -ForegroundColor Green
+}
 
 Section "Environment"
 Write-Host "Repo : $repo"
 Write-Host "SDK  : $sdk"
-Write-Host "7-Zip: $(if ($sevenZip) { $sevenZip } else { 'not found (will use Expand-Archive)' })"
+Write-Host "7-Zip: $(if ($sevenZip) { $sevenZip } else { 'not found (Expand-Archive fallback)' })"
 
-# --- 0. is the NDK already valid? ---
-$ndkDir = Join-Path $sdk "ndk\$ndkVer"
-$ndkOK  = (Test-Path (Join-Path $ndkDir 'source.properties')) -and
-          ((Get-Content (Join-Path $ndkDir 'source.properties') -Raw -ErrorAction SilentlyContinue) -match [regex]::Escape($ndkVer))
-
-Section "Clean half-installed NDK + sdkmanager staging"
-if (-not $ndkOK) {
-  foreach ($p in @((Join-Path $sdk 'ndk'), (Join-Path $sdk '.temp'), (Join-Path $sdk '.downloadIntermediates'))) {
-    if (Test-Path $p) { Write-Host "  removing $p"; Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
-  }
-  if (Test-Path (Join-Path $sdk 'ndk')) { Fail "could not delete old NDK (is another build/sdkmanager still running? close it, then re-run)" }
-  Write-Host "Clean." -ForegroundColor Green
-} else {
-  Write-Host "NDK $ndkVer already valid, keeping it." -ForegroundColor Green
+Section "Clean sdkmanager staging"
+foreach ($p in @((Join-Path $sdk '.temp'), (Join-Path $sdk '.downloadIntermediates'))) {
+  if (Test-Path $p) { Write-Host "  removing $p"; Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
 }
 
-# --- 1. small SDK packages via sdkmanager (NO ndk here) ---
-Section "SDK packages (platform-35, build-tools 35, platform-tools, cmake)"
-1..80 | ForEach-Object { 'y' } | & $sm --licenses | Out-Null
-& $sm "platform-tools" "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1"
-if (-not (Test-Path (Join-Path $sdk 'platforms\android-35'))) { Fail "platforms;android-35 missing" }
-if (-not (Test-Path (Join-Path $sdk 'build-tools\35.0.0')))   { Fail "build-tools;35.0.0 missing" }
-Write-Host "SDK packages OK." -ForegroundColor Green
+Section "SDK components (direct download; cmake + licenses already present)"
+Install-SdkZip "platform-tools"       "$base/platform-tools-latest-windows.zip" (Join-Path $sdk 'platform-tools')        'source.properties'
+Install-SdkZip "build-tools;35.0.0"   "$base/build-tools_r35_windows.zip"       (Join-Path $sdk 'build-tools\35.0.0')    'source.properties'
+Install-SdkZip "platforms;android-35" "$base/platform-35_r02.zip"               (Join-Path $sdk 'platforms\android-35')  'android.jar'
+Install-SdkZip "ndk;27.1.12297006"    "$base/android-ndk-r27b-windows.zip"      (Join-Path $sdk 'ndk\27.1.12297006')     'source.properties'
+if (-not (Test-Path (Join-Path $sdk 'cmake\3.22.1\bin\cmake.exe'))) { Fail "cmake;3.22.1 missing (expected already installed)" }
+Write-Host "All SDK components present." -ForegroundColor Green
 
-# --- 2. NDK via direct download + 7-Zip ---
-Section "NDK $ndkVer (direct install)"
-if (-not $ndkOK) {
-  $zip = Join-Path $env:TEMP 'ndk-r27b.zip'
-  $tmp = Join-Path $env:TEMP 'ndk-r27b-x'
-  if (Test-Path $zip) { Remove-Item -Force $zip }
-  if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
-  Write-Host "Downloading NDK r27b (~700 MB)..."
-  curl.exe -L -o $zip $ndkUrl
-  if (-not (Test-Path $zip) -or (Get-Item $zip).Length -lt 100MB) { Fail "NDK download failed" }
-  Write-Host ("Downloaded {0:N0} MB. Extracting..." -f ((Get-Item $zip).Length / 1MB))
-  New-Item -ItemType Directory -Force $tmp | Out-Null
-  if ($sevenZip) { & $sevenZip x $zip "-o$tmp" -y -bso0 -bsp0 } else { Expand-Archive -Path $zip -DestinationPath $tmp -Force }
-  $inner = Get-ChildItem $tmp -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'android-ndk-*' } | Select-Object -First 1
-  if (-not $inner) { Fail "NDK extract produced no android-ndk-* folder" }
-  New-Item -ItemType Directory -Force (Join-Path $sdk 'ndk') | Out-Null
-  if (Test-Path $ndkDir) { Remove-Item -Recurse -Force $ndkDir }
-  Move-Item $inner.FullName $ndkDir
-  Remove-Item -Force $zip -ErrorAction SilentlyContinue
-  Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
-}
-if (-not (Test-Path (Join-Path $ndkDir 'source.properties'))) { Fail "NDK still missing after install" }
-Write-Host "NDK ready: $ndkDir" -ForegroundColor Green
-
-# --- 3. build the APK (arm64-v8a only -> small + fast) ---
 Section "Build release APK (arm64-v8a). First run downloads Gradle + compiles native (~10-20 min)."
 Set-Location (Join-Path $repo 'android')
 & .\gradlew.bat assembleRelease "-PreactNativeArchitectures=arm64-v8a" --console=plain
 if ($LASTEXITCODE -ne 0) { Fail "gradle build (exit $LASTEXITCODE) - paste the red error lines to Claude" }
 
-# --- 4. locate + release ---
 Section "Locate APK"
 $apk = Get-ChildItem (Join-Path $repo 'android\app\build\outputs\apk\release') -Filter *.apk -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $apk) { Fail "no APK produced" }
