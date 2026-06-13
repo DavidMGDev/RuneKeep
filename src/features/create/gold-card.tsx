@@ -61,10 +61,10 @@ function Coin({ filled, size }: { filled: boolean; size: number }) {
 
 function Row({ label, count, max, size }: { label: string; count: number; max: number; size: number }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
-      {/* numberOfLines 1 + a slightly tighter label so "Handfuls" can't break onto two lines (#155) */}
-      <Text numberOfLines={1} style={{ width: 46, color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{label}</Text>
-      {/* NO flexWrap: all `max` coins stay on ONE row (sized so 9 fit) (#155) */}
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 }}>
+      {/* wider, smaller, auto-fit label so the FULL word renders — no "Handfu..." ellipsis (#155) */}
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ width: 56, color: Rune.inkMuted, fontSize: 7, fontFamily: Body.bold, letterSpacing: 0.2, textTransform: 'uppercase' }}>{label}</Text>
+      {/* NO flexWrap: all `max` coins stay on ONE row (sized so 9 fit), pushed right by the wider label (#155) */}
       <View style={{ flexDirection: 'row', gap: 2, flex: 1, overflow: 'hidden' }}>
         {Array.from({ length: max }, (_, i) => (
           <Coin key={i} filled={i < count} size={size} />
