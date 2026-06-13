@@ -12,8 +12,8 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, type CustomCardDef, toSheetCharacter } from '@/lib/character-file';
-import { cardById } from '@/features/cards/catalog';
-import { classColor } from '@/constants/identity';
+import { CATALOG, cardById } from '@/features/cards/catalog';
+import { CLASSES, classColor, classInfo } from '@/constants/identity';
 import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
 import { CLASS_DATA, featurePages } from '@/features/create/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
@@ -44,6 +44,7 @@ import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, type PlaceholderKind } from './float-menu';
 import { type CardDraft } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
+import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import { type DomainCardInfo, SettingsPanel } from './settings-panel';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
@@ -588,6 +589,37 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], domain: c.domain, level: c.level }));
     return { defaults: { evasion: data.startingEvasion, maxHp: data.startingHp, armorMax: armor?.baseScore ?? 0 }, domainPool };
   }, [file]);
+  // Level Up (#167): the domain cards available to gain (≤ the NEXT level, in this class's domains,
+  // not already owned), the multiclass options, and the class-derived stat defaults.
+  const levelData = useMemo(() => {
+    if (!file) return { domainOptions: [] as DomainCardInfo[], classOptions: [] as { key: string; label: string }[], defaults: { maxHp: 6, stressMax: 6, evasion: 10 } };
+    const cls = classInfo(file.className);
+    const owned = new Set(file.domainCardIds);
+    const targetLevel = file.level + 1;
+    const domainOptions: DomainCardInfo[] = CATALOG.filter((c) => c.kind === 'domain' && !!c.domain && cls.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel && !owned.has(c.id)).map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], domain: c.domain, level: c.level }));
+    const data = CLASS_DATA[file.className];
+    const classOptions = CLASSES.filter((c) => c.key !== file.className).map((c) => ({ key: c.key, label: c.label }));
+    return { domainOptions, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
+  }, [file]);
+  const onApplyLevelUp = useCallback((next: CharacterFile) => {
+    setFile(next);
+    void saveCharacter(next);
+    // re-derive build stats from the new file, but keep in-play resource positions (clamped to maxes)
+    setCharacter((c) => {
+      const d = toSheetCharacter(next);
+      return {
+        ...d,
+        hp: Math.min(c.hp, d.maxHp),
+        stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
+        armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
+        hope: { ...d.hope, active: c.hope.active },
+        gold: c.gold,
+        portraitUri: c.portraitUri,
+        portraitTransform: c.portraitTransform,
+      };
+    });
+    setFloatKind(null);
+  }, []);
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
   const onApplyDamage = useCallback((hpLoss: number) => heartRef.current?.applyDamage(hpLoss), []);
@@ -708,6 +740,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <RestPanel character={character} onApply={(next) => setCharacter(next)} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'settings' && file ? (
             <SettingsPanel file={file} character={character} defaults={settingsData.defaults} domainPool={settingsData.domainPool} onPatchFile={mutateFile} setCharacter={setCharacter} onClose={() => setFloatKind(null)} />
+          ) : floatKind === 'level' && file ? (
+            <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
           ) : null}
