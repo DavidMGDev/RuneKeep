@@ -38,9 +38,11 @@ import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
+import * as ImagePicker from 'expo-image-picker';
+import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { DeckToggleIcon } from './deck-toggle-icon';
-import { PortraitImage } from './portrait-image';
+import { PortraitImage, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
 const SHEET = Rune.sheet;
@@ -138,7 +140,7 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle> }) {
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortraitTransform, onPortraitReplace }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void }) {
   const { toggleCategory, openOriginCard, category } = useCarousel();
   const tint = useAccentTint();
 
@@ -170,25 +172,26 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef }: { charac
           ON TOP (bigger symbol + generous hitSlop); the portrait keeps its full-frame hitbox
           underneath. */}
       <View style={box(16, 12, 150, 282)}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => {}} accessibilityRole="button" accessibilityLabel="Character portrait. Add a photo">
-          {/* the player's photo, clipped to the portrait mask, UNDER the gold frame (#135). It sits
-              in the body layer so the carousel/expand dims darken it like the rest of the sheet. */}
-          {character.portraitUri ? (
-            // shrunk by the bottom toggle-diamond's height (~52) so the photo fills only the upper
-            // portrait, not the deck-toggle button below it (#136).
-            <View style={box(0, 3, 148, 222)} pointerEvents="none">
-              <PortraitImage uri={character.portraitUri} width={148} height={222} />
-            </View>
-          ) : (
+        {/* the player's photo, clipped to the portrait mask, UNDER the gold frame (#135). When set
+            it's INTERACTIVE (drag/pinch/hold-to-replace, #155); when not, a tap-to-add Pressable. */}
+        {character.portraitUri ? (
+          <View style={box(0, 3, 148, 222)}>
+            <PortraitImage uri={character.portraitUri} width={148} height={222} transform={character.portraitTransform} onTransform={onPortraitTransform} onReplace={onPortraitReplace} />
+          </View>
+        ) : (
+          <Pressable style={StyleSheet.absoluteFill} onPress={onPortraitReplace} accessibilityRole="button" accessibilityLabel="Character portrait. Add a photo">
             <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
-          )}
+          </Pressable>
+        )}
+        {/* gold frame ON TOP, but pointer-events none so the photo's drag/pinch gestures pass through */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <ArtImage source={Art.portraitFrame} fit="fill" />
-          {!character.portraitUri ? (
-            <SheetText left={0} top={155} width={150} height={15} color={BRONZE} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
-              + Tap to add
-            </SheetText>
-          ) : null}
-        </Pressable>
+        </View>
+        {!character.portraitUri ? (
+          <SheetText left={0} top={155} width={150} height={15} color={BRONZE} size={12} family={Body.bold} align="center" uppercase letterSpacing={0.6} numberOfLines={1}>
+            + Tap to add
+          </SheetText>
+        ) : null}
         {/* Deck toggle inside the frame's bottom diamond — its centroid for THIS frame size. */}
         <Pressable style={box(39, 211, 52, 52)} hitSlop={10} onPress={toggleCategory} accessibilityRole="button" accessibilityLabel={`Card deck: ${category}. Double tap to switch`}>
           <DeckToggleIcon category={category} />
@@ -545,6 +548,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
   const onApplyDamage = useCallback((hpLoss: number) => heartRef.current?.applyDamage(hpLoss), []);
+
+  // Portrait edits (#155) persist to the character FILE (accumulated in a ref so successive edits
+  // don't clobber each other) and update the runtime character.
+  const fileRef = useRef(characterFile);
+  fileRef.current = fileRef.current ?? characterFile;
+  const onPortraitTransform = useCallback((t: PortraitTransform) => {
+    setCharacter((c) => ({ ...c, portraitTransform: t }));
+    if (fileRef.current) saveCharacter((fileRef.current = { ...fileRef.current, portraitTransform: t }));
+  }, []);
+  const onPortraitReplace = useCallback(async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
+    if (res.canceled || !res.assets[0]) return;
+    const portraitUri = res.assets[0].uri;
+    const reset = { scale: 1, x: 0, y: 0 };
+    setCharacter((c) => ({ ...c, portraitUri, portraitTransform: reset }));
+    if (fileRef.current) saveCharacter((fileRef.current = { ...fileRef.current, portraitUri, portraitTransform: reset }));
+  }, []);
   const onHp = useCallback(
     // No overhealing past the character's TRUE maximum (#107) — not the slot capacity.
     (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.maxHp, n)) })),
@@ -594,7 +614,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
