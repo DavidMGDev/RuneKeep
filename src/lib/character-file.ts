@@ -25,6 +25,13 @@ export interface ExperienceDef {
   imageUri: string | null;
   /** Flat random art color (#153) — used when there's no image. */
   color?: string | null;
+  /** Numeric bonus on the experience (#164 level-up: starts at +2, advancements add +1). */
+  modifier?: number;
+}
+
+/** A player-authored card created on the sheet (#164), routed to one or both decks. */
+export interface CustomCardDef extends ExperienceDef {
+  target: 'inventory' | 'arsenal' | 'both';
 }
 
 export interface CharacterFile {
@@ -55,6 +62,8 @@ export interface CharacterFile {
   gold?: { handfuls: number; bags: number; chest: number };
   /** Portrait position in its mask (#155): zoom + offset. */
   portraitTransform?: { scale: number; x: number; y: number };
+  /** Player-authored cards made on the sheet (#164), each routed to inventory / arsenal / both. */
+  customCards?: CustomCardDef[];
   level: number;
 }
 
