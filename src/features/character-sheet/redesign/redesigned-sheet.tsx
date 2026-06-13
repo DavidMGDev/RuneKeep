@@ -531,9 +531,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const armorItems = armorJob ? forgedItems([armorJob]) : [];
     const [subclassC, ancestryC, communityC] = cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
     // Arsenal order (#157, owner): domains (by level) → ancestry → community → subclass → class
-    // feature card → experiences → weapons. The origin badges target subclass/ancestry/community by
+    // feature card → weapons → experiences. The origin badges target subclass/ancestry/community by
     // their actual index (no longer the contiguous last three).
-    const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...expItems, ...weaponItems];
+    const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...weaponItems, ...expItems];
     const originIndices: [number, number, number] = [abilities.indexOf(subclassC), abilities.indexOf(ancestryC), abilities.indexOf(communityC)];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
