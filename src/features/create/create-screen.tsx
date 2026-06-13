@@ -334,25 +334,38 @@ function DeckRail({ children }: { children: ReactNode }) {
   );
 }
 
-/** Sigil pulse shown while a deck swap loads (cards faded out). */
+/** The deck-swap loader (#150): a turning rune ring + pulsing core, centered while the cards +
+ *  controls are faded out — clearly a loader, not a tiny blip. */
 function DeckLoader() {
-  const pulse = useSharedValue(0.35);
+  const pulse = useSharedValue(0.4);
+  const spin = useSharedValue(0);
   const reduced = useReducedMotion();
   useEffect(() => {
     if (reduced) {
-      pulse.value = 0.8;
+      pulse.value = 0.85;
       return;
     }
-    pulse.value = withRepeat(withTiming(1, { duration: 700, easing: Easing.out(Easing.quad) }), -1, true);
-  }, [pulse, reduced]);
-  const glow = useAnimatedStyle(() => ({ opacity: pulse.value }));
+    pulse.value = withRepeat(withTiming(1, { duration: 720, easing: Easing.inOut(Easing.quad) }), -1, true);
+    spin.value = withRepeat(withTiming(1, { duration: 3600, easing: Easing.linear }), -1, false);
+  }, [pulse, spin, reduced]);
+  const glow = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * pulse.value, transform: [{ scale: 0.9 + 0.14 * pulse.value }] }));
+  const ring = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
   return (
-    <Animated.View style={[{ position: 'absolute', alignSelf: 'center', top: '42%' }, glow]} pointerEvents="none">
-      <Svg width={44} height={44} viewBox="0 0 56 56">
-        <Polygon points="28,2 50,24 50,32 28,54 6,32 6,24" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinejoin="miter" />
-        <Polygon points="28,16 39,27 39,29 28,40 17,29 17,27" fill={Rune.gold} opacity={0.85} />
-      </Svg>
-    </Animated.View>
+    <View style={{ position: 'absolute', left: 0, right: 0, top: '38%', alignItems: 'center' }} pointerEvents="none">
+      <View style={{ width: 90, height: 90, alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }, ring]}>
+          <Svg width={90} height={90} viewBox="0 0 92 92">
+            <Polygon points="46,4 84,25 84,67 46,88 8,67 8,25" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinejoin="miter" opacity={0.5} />
+            <Polygon points="46,16 72,31 72,61 46,76 20,61 20,31" fill="none" stroke="rgba(218,162,73,0.25)" strokeWidth={1} strokeLinejoin="miter" />
+          </Svg>
+        </Animated.View>
+        <Animated.View style={glow}>
+          <Svg width={40} height={40} viewBox="0 0 56 56">
+            <Polygon points="28,8 46,27 46,29 28,48 10,29 10,27" fill={Rune.gold} />
+          </Svg>
+        </Animated.View>
+      </View>
+    </View>
   );
 }
 
@@ -439,11 +452,12 @@ export function CreateScreen() {
     (next: DeckKey) => {
       setDeck(next);
       setCenterIdx(deckIndexes.current[next] ?? 0);
-      // grace: let the freshly mounted thumbs paint at opacity 0 before revealing them
+      // a real grace (#150): the freshly mounted thumbs/cards decode at opacity 0 behind the loader
+      // before we reveal them — long enough that nothing is seen assembling.
       setTimeout(() => {
         setPendingDeck(null); // cards are painted → drop the loader
-        fade.value = withTiming(1, { duration: 340, easing: Easing.out(Easing.quad) });
-      }, 360);
+        fade.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.quad) });
+      }, 620);
     },
     [fade],
   );
@@ -452,7 +466,8 @@ export function CreateScreen() {
       if (next === deck || pendingDeck) return;
       setPendingDeck(next);
       const apply = () => finishFade(next);
-      fade.value = withTiming(0, { duration: 150 }, (finished) => {
+      // fade EVERYTHING (cards + the SELECT controls) out before the swap so no button morphs (#150)
+      fade.value = withTiming(0, { duration: 200, easing: Easing.in(Easing.quad) }, (finished) => {
         if (finished) runOnJS(apply)();
       });
     },
@@ -919,7 +934,7 @@ export function CreateScreen() {
           the features reader, never dimmed, always tappable, one spot. Card decks only. Hierarchy
           top-to-bottom (#108): SELECT (primary, biggest) → CLASS FEATURES → the n/n counter. */}
       {isCarouselDeck(deck) ? (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }} pointerEvents="box-none">
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
             label={centerInvAdd ? 'Create item' : centerInvCustom ? 'Edit item' : centerSelected ? 'Deselect' : `Select ${noun}`}
             kind={centerSelected && !centerInvAdd && !centerInvCustom ? 'ghost' : 'primary'}
@@ -938,7 +953,7 @@ export function CreateScreen() {
           <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
             {deck === 'inventory' ? `${draft.inventoryItemIds.length}/2` : `${selectedIds.length}/${maxSelect}`}
           </Text>
-        </View>
+        </Animated.View>
       ) : null}
       {stage}
       {loaderUp ? <CreateLoader done={loaderDone} onHidden={() => setLoaderUp(false)} /> : null}
