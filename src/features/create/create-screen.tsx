@@ -24,6 +24,7 @@ import { featurePages } from './class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard, FORGED_H, FORGED_W } from './forged-card';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from './equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from './class-inventory-data';
+import { itemColor } from './item-colors';
 import { type GoldAmount, GOLD_DEFAULT } from './gold-card';
 
 // Default art for a custom inventory item with no player image (#128, owner-provided).
@@ -599,7 +600,7 @@ export function CreateScreen() {
       const optionCards: StraightItem[] = (cinv?.choices.flat() ?? []).map((name) => ({
         id: itemOptionId(name),
         label: name,
-        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
       }));
       const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
         id: it.id,

@@ -19,6 +19,7 @@ import { featurePages } from '@/features/create/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
+import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
 import { RuneLoader } from '@/components/rune-loader';
 
@@ -452,9 +453,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
     const cinv = CLASS_INVENTORY[cls];
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
-    const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} multilineTitle /> }));
+    const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const chosenIds = characterFile.inventoryItemIds ?? [];
-    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} fallbackArt={ITEM_DEFAULT_ART} multilineTitle /> }));
+    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const customJobs: Job[] = (characterFile.inventoryCustom ?? []).map((it) => ({
       key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
       node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
