@@ -15,7 +15,7 @@ import { type CharacterFile, type CustomCardDef, toSheetCharacter } from '@/lib/
 import { cardById } from '@/features/cards/catalog';
 import { classColor } from '@/constants/identity';
 import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
-import { featurePages } from '@/features/create/class-data';
+import { CLASS_DATA, featurePages } from '@/features/create/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
@@ -45,6 +45,7 @@ import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder
 import { type CardDraft } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { RestPanel } from './rest-panel';
+import { type DomainCardInfo, SettingsPanel } from './settings-panel';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -526,7 +527,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     if (cards.some((c) => !c)) return none;
     // the actual cards the player PICKED at creation (#121: no more sample/placeholder cards) — the
     // two domain cards lead the abilities hand.
+    // Vault (#166): only the ≤5 ACTIVE domain cards ride the deck; the rest sit in the vault.
+    const activeDomainSet = file.activeDomainCardIds ?? file.domainCardIds.slice(0, 5);
     const domainItems = file.domainCardIds
+      .filter((id) => activeDomainSet.includes(id))
       .map(cardById)
       .filter((c): c is NonNullable<typeof c> => !!c)
       .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || (a.domain ?? '').localeCompare(b.domain ?? '')) // by level (then domain) (#157)
@@ -572,7 +576,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     return { abilitiesCards: abilities, inventoryCards: inv, originIndices };
   }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
-  const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu stub interface (#161)
+  const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
+  // Settings (#166): class-derived defaults + the resolved domain-card pool for the vault.
+  const settingsData = useMemo(() => {
+    if (!file) return { defaults: { evasion: 10, maxHp: 6, armorMax: 0 }, domainPool: [] as DomainCardInfo[] };
+    const data = CLASS_DATA[file.className];
+    const armor = file.armorId ? armorById(file.armorId) : undefined;
+    const domainPool: DomainCardInfo[] = file.domainCardIds
+      .map(cardById)
+      .filter((c): c is NonNullable<typeof c> => !!c)
+      .map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], domain: c.domain, level: c.level }));
+    return { defaults: { evasion: data.startingEvasion, maxHp: data.startingHp, armorMax: armor?.baseScore ?? 0 }, domainPool };
+  }, [file]);
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
   const onApplyDamage = useCallback((hpLoss: number) => heartRef.current?.applyDamage(hpLoss), []);
@@ -691,6 +706,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <NewCardFlow onSave={onAddCustomCard} onCancel={() => setFloatKind(null)} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => setCharacter(next)} onClose={() => setFloatKind(null)} />
+          ) : floatKind === 'settings' && file ? (
+            <SettingsPanel file={file} character={character} defaults={settingsData.defaults} domainPool={settingsData.domainPool} onPatchFile={mutateFile} setCharacter={setCharacter} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
           ) : null}
