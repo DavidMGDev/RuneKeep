@@ -1,0 +1,174 @@
+/**
+ * Leveling (#167) — the Daggerheart advancement system, from assets/temp/Level/.
+ *
+ * Each level you gain (auto): +1 level, +1 to BOTH damage thresholds, and a new domain card of your
+ * level or lower. At the start of a new TIER (levels 2, 5, 8) you also gain a new Experience at +2
+ * and a permanent +1 Proficiency (already encoded by proficiencyForLevel), and at 5 & 8 you clear all
+ * trait marks. Then you choose TWO advancements from the tier's list (proficiency and multiclass each
+ * consume both choices). Tiers: T1 = lvl 1, T2 = 2-4, T3 = 5-7, T4 = 8-10.
+ *
+ * This module is the pure, testable core. The UI builds a LevelUpPlan; applyLevelUp folds it into a
+ * new CharacterFile (which toSheetCharacter then derives the runtime stats from).
+ */
+
+import type { TraitKey } from '@/features/character-sheet/character';
+import type { CharacterFile } from './character-file';
+import { tierForLevel } from './rest';
+
+export { tierForLevel };
+
+export type AdvKey = 'trait' | 'hp' | 'stress' | 'exp' | 'domain' | 'evasion' | 'prof' | 'subclass' | 'multiclass';
+
+export interface AdvancementOption {
+  key: AdvKey;
+  label: string;
+  desc: string;
+  /** Total slots across the whole campaign. */
+  slots: number;
+  /** How many of the level's 2 choices a single take consumes (prof/multiclass = 2). */
+  picks: number;
+  /** Lowest tier this option is available at (prof/subclass/multiclass = tier 3). */
+  minTier: number;
+  /** Sub-selection the UI must collect. */
+  needs?: 'traits' | 'exps' | 'domain' | 'multiclass';
+}
+
+export const ADVANCEMENTS: AdvancementOption[] = [
+  { key: 'trait', label: '+1 to two traits', desc: 'Gain +1 to two unmarked character traits and mark them.', slots: 3, picks: 1, minTier: 2, needs: 'traits' },
+  { key: 'hp', label: '+1 Hit Point slot', desc: 'Permanently gain one Hit Point slot.', slots: 2, picks: 1, minTier: 2 },
+  { key: 'stress', label: '+1 Stress slot', desc: 'Permanently gain one Stress slot.', slots: 2, picks: 1, minTier: 2 },
+  { key: 'exp', label: '+1 to two Experiences', desc: 'Permanently gain a +1 bonus to two Experiences.', slots: 1, picks: 1, minTier: 2, needs: 'exps' },
+  { key: 'domain', label: 'Extra domain card', desc: 'Take an additional domain card of your level or lower.', slots: 1, picks: 1, minTier: 2, needs: 'domain' },
+  { key: 'evasion', label: '+1 Evasion', desc: 'Permanently gain a +1 bonus to your Evasion.', slots: 1, picks: 1, minTier: 2 },
+  { key: 'prof', label: '+1 Proficiency', desc: 'Increase your Proficiency by +1. Uses both choices.', slots: 2, picks: 2, minTier: 3 },
+  { key: 'subclass', label: 'Upgrade subclass', desc: 'Take the next subclass card (specialization, then mastery).', slots: 1, picks: 1, minTier: 3 },
+  { key: 'multiclass', label: 'Multiclass', desc: 'Take an additional class. Uses both choices.', slots: 2, picks: 2, minTier: 3, needs: 'multiclass' },
+];
+
+export function advOption(key: AdvKey): AdvancementOption {
+  return ADVANCEMENTS.find((o) => o.key === key)!;
+}
+export function advMarksUsed(file: CharacterFile, key: AdvKey): number {
+  return file.advancementMarks?.[key] ?? 0;
+}
+export function advRemaining(file: CharacterFile, key: AdvKey): number {
+  return advOption(key).slots - advMarksUsed(file, key);
+}
+/** Options selectable at the given (new) level: in-tier and with slots left. */
+export function availableAdvancements(file: CharacterFile, newLevel: number): AdvancementOption[] {
+  const tier = tierForLevel(newLevel);
+  return ADVANCEMENTS.filter((o) => o.minTier <= tier && advRemaining(file, o.key) > 0);
+}
+export function isTierStart(newLevel: number): boolean {
+  return newLevel === 2 || newLevel === 5 || newLevel === 8;
+}
+export function clearsTraitMarks(newLevel: number): boolean {
+  return newLevel === 5 || newLevel === 8;
+}
+
+const SUBCLASS_NEXT: Record<string, 'foundation' | 'specialization' | 'mastery'> = { foundation: 'specialization', specialization: 'mastery', mastery: 'mastery' };
+
+export interface ChosenAdv {
+  key: AdvKey;
+  traits?: TraitKey[]; // exactly 2 for 'trait'
+  expIds?: string[]; // exactly 2 for 'exp'
+  domainCardId?: string; // for 'domain'
+  multiclass?: string; // for 'multiclass'
+}
+export interface LevelUpPlan {
+  /** The automatic per-level domain card (≤ new level). */
+  domainCardId: string;
+  /** New Experience name when this level starts a tier (2/5/8). */
+  experienceTitle?: string;
+  advancements: ChosenAdv[];
+}
+export interface LevelDefaults {
+  maxHp: number;
+  stressMax: number;
+  evasion: number;
+}
+
+/** Total choices consumed by a set of chosen advancements (prof/multiclass = 2 each). */
+export function picksUsed(advs: ChosenAdv[]): number {
+  return advs.reduce((n, a) => n + advOption(a.key).picks, 0);
+}
+
+/** Fold a level-up plan into a new CharacterFile. Pure — deterministic ids, no Date/Math.random. */
+export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelDefaults): CharacterFile {
+  const newLevel = file.level + 1;
+  const next: CharacterFile = { ...file, level: newLevel };
+  next.thresholdBonus = (file.thresholdBonus ?? 0) + 1;
+
+  const activate = (ids: string[], add: string) => (ids.length < 5 ? [...ids, add] : ids);
+  let domainIds = [...file.domainCardIds, plan.domainCardId];
+  let activeIds = activate(file.activeDomainCardIds ?? file.domainCardIds.slice(0, 5), plan.domainCardId);
+
+  let experiences = [...(file.experiences ?? [])];
+  if (isTierStart(newLevel) && plan.experienceTitle) {
+    experiences.push({ id: `exp-lvl${newLevel}-${experiences.length}`, title: plan.experienceTitle, text: '', imageUri: null, modifier: 2 });
+  }
+  let traitMarks = clearsTraitMarks(newLevel) ? [] : [...(file.traitMarks ?? [])];
+
+  const marks = { ...(file.advancementMarks ?? {}) };
+  const traitBonuses = { ...(file.traitBonuses ?? {}) };
+  let maxHp = file.maxHp ?? def.maxHp;
+  let stressMax = file.stressMax ?? def.stressMax;
+  let evasionBase = file.evasionBase ?? def.evasion;
+  let proficiencyBonus = file.proficiencyBonus ?? 0;
+  let subclassTier = file.subclassTier ?? 'foundation';
+  let multiclassName = file.multiclassName;
+
+  for (const a of plan.advancements) {
+    const opt = advOption(a.key);
+    marks[a.key] = (marks[a.key] ?? 0) + opt.picks;
+    switch (a.key) {
+      case 'trait':
+        for (const t of a.traits ?? []) {
+          traitBonuses[t] = (traitBonuses[t] ?? 0) + 1;
+          if (!traitMarks.includes(t)) traitMarks.push(t);
+        }
+        break;
+      case 'hp':
+        maxHp += 1;
+        break;
+      case 'stress':
+        stressMax += 1;
+        break;
+      case 'exp':
+        experiences = experiences.map((e) => ((a.expIds ?? []).includes(e.id) ? { ...e, modifier: (e.modifier ?? 2) + 1 } : e));
+        break;
+      case 'domain':
+        if (a.domainCardId) {
+          domainIds = [...domainIds, a.domainCardId];
+          activeIds = activate(activeIds, a.domainCardId);
+        }
+        break;
+      case 'evasion':
+        evasionBase += 1;
+        break;
+      case 'prof':
+        proficiencyBonus += 1;
+        break;
+      case 'subclass':
+        subclassTier = SUBCLASS_NEXT[subclassTier];
+        break;
+      case 'multiclass':
+        multiclassName = (a.multiclass as CharacterFile['multiclassName']) ?? multiclassName;
+        break;
+    }
+  }
+
+  next.domainCardIds = domainIds;
+  next.activeDomainCardIds = activeIds;
+  next.experiences = experiences;
+  next.traitMarks = traitMarks;
+  next.advancementMarks = marks;
+  next.traitBonuses = traitBonuses;
+  next.maxHp = maxHp;
+  next.stressMax = stressMax;
+  next.evasionBase = evasionBase;
+  next.proficiencyBonus = proficiencyBonus;
+  next.subclassTier = subclassTier;
+  next.multiclassName = multiclassName;
+  return next;
+}

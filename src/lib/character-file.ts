@@ -96,6 +96,17 @@ export interface CharacterFile {
   modifiers?: StatModifier[];
   /** Vault (#166): which domain cards are active (≤5). Undefined → the first ≤5 of domainCardIds. */
   activeDomainCardIds?: string[];
+  // --- level-up (#167) ---
+  /** +1 to both damage thresholds per level (added to the armor card's base thresholds). */
+  thresholdBonus?: number;
+  /** Advancement slots marked per option key, persisted across the campaign. */
+  advancementMarks?: Record<string, number>;
+  /** Traits marked by the trait advancement (can't raise again until cleared at level 5/8). */
+  traitMarks?: TraitKey[];
+  /** Subclass progression from the "upgrade subclass" advancement. */
+  subclassTier?: 'foundation' | 'specialization' | 'mastery';
+  /** Multiclass chosen via the multiclass advancement. */
+  multiclassName?: ClassName;
   level: number;
 }
 
@@ -171,7 +182,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     evasion: baseEvasion + modSum(file.modifiers, 'evasion'),
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
     armorScore: armorMax,
-    damageThresholds: { major: tMajor, severe: tSevere },
+    damageThresholds: { major: tMajor + (file.thresholdBonus ?? 0), severe: tSevere + (file.thresholdBonus ?? 0) }, // +1/level (#167)
     // Rulebook starting resources (#107): hearts full at the class's max (only that many hearts
     // are drawn; 7 hp = one golden + five red), 6 of 12 stress unlocked, hope starts at 2 of 6.
     hp: maxHp,
