@@ -61,9 +61,11 @@ function Coin({ filled, size }: { filled: boolean; size: number }) {
 
 function Row({ label, count, max, size }: { label: string; count: number; max: number; size: number }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 }}>
-      <Text style={{ width: 52, color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, flex: 1 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
+      {/* numberOfLines 1 + a slightly tighter label so "Handfuls" can't break onto two lines (#155) */}
+      <Text numberOfLines={1} style={{ width: 46, color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{label}</Text>
+      {/* NO flexWrap: all `max` coins stay on ONE row (sized so 9 fit) (#155) */}
+      <View style={{ flexDirection: 'row', gap: 2, flex: 1, overflow: 'hidden' }}>
         {Array.from({ length: max }, (_, i) => (
           <Coin key={i} filled={i < count} size={size} />
         ))}
@@ -103,8 +105,8 @@ export function GoldCard({ gold, onChange }: { gold: GoldAmount; onChange: (g: G
         <Text style={{ color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>Gold</Text>
         {/* handfuls near the title, chest at the bottom (#128 inverted order) */}
         <Row label="Handfuls" count={gold.handfuls} max={9} size={12} />
-        <Row label="Bags" count={gold.bags} max={9} size={14} />
-        <Row label="Chest" count={gold.chest} max={1} size={20} />
+        <Row label="Bags" count={gold.bags} max={9} size={12} />
+        <Row label="Chest" count={gold.chest} max={1} size={18} />
         {/* one central +/- — adds/removes a handful, carrying across the rows */}
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 'auto' }}>
           <Step label="–" onPress={() => onChange(subHandful(gold))} disabled={isEmpty(gold)} />
