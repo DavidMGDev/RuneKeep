@@ -516,9 +516,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
     // Player-authored cards (#164) → routed to the inventory and/or arsenal deck by `target`.
     const customCardJobs: CustomJob[] = (file.customCards ?? []).map((it) => ({
-      key: `cc-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
+      key: `cc-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13 + (it.typeLabel?.length ?? 0) * 17) % 99991}`,
       id: it.id,
-      node: <ForgedCard title={it.title} kindLabel={it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+      node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       raster: !!it.imageUri,
       target: it.target,
     }));
@@ -699,17 +699,30 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setCharacter((c) => ({ ...c, portraitUri, portraitTransform: reset }));
     mutateFile({ portraitUri, portraitTransform: reset });
   }, [mutateFile]);
-  // New Card (#164): append a player-authored card routed to the chosen deck(s); the decks re-derive.
+  // New Card (#164/#214): append a player-authored card. The current category decided the target;
+  // 'notes' lands in the Notes deck, everything else rides inventory/arsenal. The decks re-derive.
   const onAddCustomCard = useCallback((draft: CardDraft, target: CardTarget) => {
-    const card: CustomCardDef = {
-      id: `cc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    const id = `cc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const baseCard = {
+      id,
       title: draft.title,
       text: draft.text,
       imageUri: draft.imageUri,
       color: draft.color,
       effects: draft.effects,
-      target,
+      typeLabel: draft.typeLabel,
     };
+    if (target === 'notes') {
+      setFile((f) => {
+        if (!f) return f;
+        const next = { ...f, notes: [...(f.notes ?? []), baseCard] };
+        void saveCharacter(next);
+        return next;
+      });
+      setFloatKind(null);
+      return;
+    }
+    const card: CustomCardDef = { ...baseCard, target };
     setFile((f) => {
       if (!f) return f;
       const next = { ...f, customCards: [...(f.customCards ?? []), card] };

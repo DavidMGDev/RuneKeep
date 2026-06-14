@@ -19,6 +19,8 @@ export interface CardDraft {
   color: string | null;
   /** Structured stat effects the card applies when enabled (#175). */
   effects: CardEffect[];
+  /** The player-chosen card type shown on the plaque (#214), cycled by tapping the card's chip. */
+  typeLabel?: string;
 }
 
 /** Target groups for the effect picker list (#191) — pick from a labelled list, not a blind cycle. */
@@ -130,6 +132,7 @@ export function CardEditor({
   extraField,
   experienceMode = false,
   modifier,
+  typeOptions,
 }: {
   kindLabel: string;
   initial?: CardDraft;
@@ -142,9 +145,23 @@ export function CardEditor({
   experienceMode?: boolean;
   /** The experience bonus shown on the preview card (experience mode). */
   modifier?: number;
+  /** Type options (#214): tapping the card's plaque chip cycles these (e.g. Note/Reminder/Story).
+   *  The first is the default. Absent → the plaque shows the static `kindLabel` (not tappable). */
+  typeOptions?: string[];
 }) {
-  // New cards open with a random color already set, as if Random Color was pressed (#153).
-  const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [] });
+  // New cards open with a random color already set, as if Random Color was pressed (#153). The type
+  // chip defaults to the first option (#214).
+  const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [], typeLabel: typeOptions?.[0] });
+  // The plaque label: the cycled type when a type list is supplied, else the caller's static label.
+  const plaqueLabel = typeOptions?.length ? draft.typeLabel ?? typeOptions[0] : kindLabel;
+  const cycleType = useCallback(() => {
+    if (!typeOptions?.length) return;
+    setDraft((d) => {
+      const cur = d.typeLabel ?? typeOptions[0];
+      const i = typeOptions.indexOf(cur);
+      return { ...d, typeLabel: typeOptions[(i + 1) % typeOptions.length] };
+    });
+  }, [typeOptions]);
 
   // Adding an image clears the random color; Random Color clears any uploaded image.
   const pickImage = useCallback(async () => {
@@ -196,9 +213,23 @@ export function CardEditor({
           {experienceMode ? (
             <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
           ) : (
-            <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+            <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={plaqueLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
           )}
+          {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
+              transparent hit-band over the divider seam (~40% down), so the player taps the chip on
+              the card itself. Only when type options are supplied (New Card), not experiences. */}
+          {typeOptions?.length && !experienceMode ? (
+            <Pressable
+              onPress={cycleType}
+              accessibilityRole="button"
+              accessibilityLabel={`Card type: ${plaqueLabel}. Tap to change`}
+              style={{ position: 'absolute', left: 0, right: 0, top: Math.round(FORGED_H * 0.4) - 16, height: 32 }}
+            />
+          ) : null}
         </Animated.View>
+        {typeOptions?.length && !experienceMode ? (
+          <Text style={{ marginTop: 8, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Tap the card type to change it</Text>
+        ) : null}
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
