@@ -1,12 +1,12 @@
 import * as ImagePicker from 'expo-image-picker';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { ForgedCard } from '@/features/create/forged-card';
+import { FORGED_H, ForgedCard } from '@/features/create/forged-card';
 import { type CardEffect, type EffectTarget, EFFECT_TARGETS, TARGET_LABEL } from '@/lib/modifiers';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -164,16 +164,41 @@ export function CardEditor({
   const scrimStyle = useAnimatedStyle(() => ({ opacity: p.value }));
   const contentStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 20 }] }));
 
+  // Keyboard-aware compaction (#210): while a field is focused, shrink the preview (from its top) and
+  // pull the fields up so the card + inputs + buttons live in the top ~40% (keyboard ~60%). onFocus
+  // drives it immediately (responsive); keyboardDidHide animates it back (covers closing via Back).
+  const kb = useSharedValue(0);
+  const KB = { duration: 240, easing: Easing.out(Easing.cubic) };
+  const onFieldFocus = useCallback(() => {
+    if (!reduced) kb.value = withTiming(1, KB);
+  }, [kb, reduced]);
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidHide', () => {
+      kb.value = withTiming(0, KB);
+    });
+    return () => sub.remove();
+  }, [kb]);
+  const topSpacer = useAnimatedStyle(() => ({ height: 180 - 156 * kb.value })); // 180 -> 24
+  const previewStyle = useAnimatedStyle(() => {
+    const scale = 1 - 0.52 * kb.value; // down to ~0.48 from the top
+    return { transform: [{ scale }], marginBottom: -FORGED_H * (1 - scale) }; // negative margin reclaims the freed space
+  });
+
   return (
     <View style={{ position: 'absolute', top: -80, bottom: -80, left: -60, right: -60, zIndex: 10000 }}>
       <AnimatedPressable style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
-      <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingTop: 180, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
-        {/* live preview — the real card, the real size */}
-        {experienceMode ? (
-          <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
-        ) : (
-          <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
-        )}
+      <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
+        {/* top gap that collapses while typing so the card + fields ride up into the visible band (#210) */}
+        <Animated.View style={topSpacer} />
+        {/* live preview — scales down from its TOP while a field is focused, the negative margin pulling
+            the fields up so they sit above the keyboard */}
+        <Animated.View style={[{ transformOrigin: 'top center' }, previewStyle]}>
+          {experienceMode ? (
+            <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
+          ) : (
+            <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+          )}
+        </Animated.View>
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
@@ -185,6 +210,7 @@ export function CardEditor({
             <TextInput
               value={draft.title}
               onChangeText={(title) => setDraft((d) => ({ ...d, title }))}
+              onFocus={onFieldFocus}
               placeholder={experienceMode ? 'The experience — a word or a whole phrase…' : 'Title'}
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
@@ -199,6 +225,7 @@ export function CardEditor({
               <TextInput
                 value={draft.text}
                 onChangeText={(text) => setDraft((d) => ({ ...d, text }))}
+                onFocus={onFieldFocus}
                 placeholder="Describe it — what it means, when it helps."
                 placeholderTextColor={Rune.muted}
                 selectionColor={Rune.goldBright}
