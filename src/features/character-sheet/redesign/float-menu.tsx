@@ -21,7 +21,7 @@ import { DeckToggleIcon } from './deck-toggle-icon';
  * Built with /impeccable craft, product register.
  */
 
-export type PlaceholderKind = 'custom' | 'level' | 'rest' | 'settings';
+export type PlaceholderKind = 'custom' | 'level' | 'rest' | 'modifiers';
 type SlotKind = PlaceholderKind | 'classfeat';
 
 interface Slot {
@@ -51,7 +51,7 @@ const SVG_R = 230; // half the wedge SVG canvas (covers C ± SVG_R)
 const TAP_SLOP = 12;
 
 const SLOTS: Slot[] = [
-  { kind: 'settings', label: 'Settings' }, // due-NORTH
+  { kind: 'modifiers', label: 'Modifiers' }, // due-NORTH
   { kind: 'custom', label: 'New Card' },
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
@@ -260,11 +260,16 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
           <Path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5Z" {...common} />
         </Svg>
       );
-    case 'settings':
+    case 'modifiers':
+      // equalizer/sliders — base stats with adjustments stacked on top
       return (
         <Svg width={24} height={24} viewBox="0 0 24 24">
-          <Circle cx={12} cy={12} r={3.2} {...common} />
-          <Path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1" {...common} />
+          <Line x1={5} y1={7} x2={19} y2={7} {...common} />
+          <Circle cx={9} cy={7} r={2.2} {...common} />
+          <Line x1={5} y1={12} x2={19} y2={12} {...common} />
+          <Circle cx={15} cy={12} r={2.2} {...common} />
+          <Line x1={5} y1={17} x2={19} y2={17} {...common} />
+          <Circle cx={11} cy={17} r={2.2} {...common} />
         </Svg>
       );
     default:
@@ -392,7 +397,7 @@ export function FloatMenuOverlay() {
 /** Stub interface for any not-yet-built option. Opens an empty on-brand panel; replaced by the real
  *  interface in its own PR (#161). */
 export function FloatPlaceholder({ kind, onClose }: { kind: PlaceholderKind; onClose: () => void }) {
-  const TITLE: Record<PlaceholderKind, string> = { custom: 'New Card', level: 'Level Up', rest: 'Rest', settings: 'Settings' };
+  const TITLE: Record<PlaceholderKind, string> = { custom: 'New Card', level: 'Level Up', rest: 'Rest', modifiers: 'Modifiers' };
   const W = 320;
   const H = 220;
   const c = 18;

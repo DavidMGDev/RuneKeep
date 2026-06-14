@@ -18,6 +18,7 @@ import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
 import { CLASS_DATA, featurePages } from '@/features/create/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
+import { lootById } from '@/lib/loot-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -46,7 +47,8 @@ import { type CardDraft } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
-import { type DomainCardInfo, SettingsPanel } from './settings-panel';
+import type { DomainCardInfo } from './domain-card-info';
+import { ModifiersPanel } from './modifiers-panel';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
@@ -432,13 +434,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs } = useMemo(() => {
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -477,6 +479,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> }));
     const armorDef = file.armorId ? armorById(file.armorId) : undefined;
     const armorJob = armorDef ? { key: armorDef.id, node: <ForgedArmorCard armor={armorDef} /> } : null;
+    // Acquired gear/loot (#180): system cards picked up beyond creation, forged into the decks so
+    // tier 2+ equipment + loot can be equipped + enabled. Skip ids already held as starting equipment.
+    const startEquip = new Set([file.weaponPrimaryId, file.weaponSecondaryId, file.armorId].filter(Boolean) as string[]);
+    const acquired = (file.acquiredCardIds ?? []).filter((id) => !startEquip.has(id));
+    const acqWeaponJobs: Job[] = acquired
+      .map((id) => weaponById(id))
+      .filter((w): w is NonNullable<typeof w> => !!w)
+      .map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> }));
+    const acqArmorJobs: Job[] = acquired
+      .map((id) => armorById(id))
+      .filter((a): a is NonNullable<typeof a> => !!a)
+      .map((a) => ({ key: a.id, node: <ForgedArmorCard armor={a} /> }));
+    const acqLootJobs: Job[] = acquired
+      .map((id) => lootById(id))
+      .filter((l): l is NonNullable<typeof l> => !!l)
+      .map((l) => ({ key: l.id, node: <ForgedCard title={l.name} kindLabel={l.kind === 'consumable' ? 'Consumable' : 'Loot'} body={l.text} accentDeep={Rune.panel} colorArt={itemColor(l.name)} fallbackArt={ITEM_DEFAULT_ART} multilineTitle /> }));
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
     const cinv = CLASS_INVENTORY[cls];
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
@@ -498,11 +516,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       raster: !!it.imageUri,
       target: it.target,
     }));
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs };
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs };
   }, [file]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -581,7 +599,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Player-authored cards (#164) ride whichever deck(s) their target names.
     const arsenalCustom = forgedItems(customCardJobs.filter((j) => j.target !== 'inventory'));
     const invCustom = forgedItems(customCardJobs.filter((j) => j.target !== 'arsenal'));
-    const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...weaponItems, ...expItems, ...arsenalCustom];
+    // Acquired gear/loot (#180): weapons ride arsenal + inventory; armor + loot are inventory.
+    const acqWeaponItems = forgedItems(acqWeaponJobs);
+    const acqArmorItems = forgedItems(acqArmorJobs);
+    const acqLootItems = forgedItems(acqLootJobs);
+    const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...weaponItems, ...acqWeaponItems, ...expItems, ...arsenalCustom];
     const originIndices: [number, number, number] = [abilities.indexOf(subclassC), abilities.indexOf(ancestryC), abilities.indexOf(communityC)];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
@@ -589,23 +611,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // the GOLD card is LIVE + interactive (#136): its +/- adjusts character.gold in place. dummy
     // source/thumb are never drawn (the live node renders instead).
     const goldItem = { id: 'gold', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, live: <GoldCard gold={character.gold} onChange={(g) => setCharacter((c) => ({ ...c, gold: g }))} />, interactive: true };
-    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...invCustom];
+    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqWeaponItems, ...acqArmorItems, ...acqLootItems, ...invCustom];
     return { abilitiesCards: abilities, inventoryCards: inv, originIndices };
-  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, featureSources]);
+  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
-  // Settings (#166): class-derived defaults + the resolved domain-card pool for the vault.
-  const settingsData = useMemo(() => {
-    if (!file) return { defaults: { evasion: 10, maxHp: 6, armorMax: 0 }, domainPool: [] as DomainCardInfo[] };
-    const data = CLASS_DATA[file.className];
-    const armor = file.armorId ? armorById(file.armorId) : undefined;
-    const domainPool: DomainCardInfo[] = file.domainCardIds
-      .map(cardById)
-      .filter((c): c is NonNullable<typeof c> => !!c)
-      .map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], domain: c.domain, level: c.level }));
-    return { defaults: { evasion: data.startingEvasion, maxHp: data.startingHp, armorMax: armor?.baseScore ?? 0 }, domainPool };
-  }, [file]);
   // Level Up (#167): the domain cards available to gain (≤ the NEXT level, in this class's domains,
   // not already owned), the multiclass options, and the class-derived stat defaults.
   const levelData = useMemo(() => {
@@ -673,6 +684,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
     setFloatKind(null);
+  }, []);
+  // Acquired system gear/loot (#180): adding an id forges it into the decks (re-derives from file).
+  const acquiredIds = useMemo(() => new Set(file?.acquiredCardIds ?? []), [file]);
+  const onAcquireCard = useCallback((id: string) => {
+    setFile((f) => {
+      if (!f) return f;
+      if ((f.acquiredCardIds ?? []).includes(id)) return f;
+      const next = { ...f, acquiredCardIds: [...(f.acquiredCardIds ?? []), id] };
+      void saveCharacter(next);
+      return next;
+    });
   }, []);
   // Enabled/equipped cards (#175): the set drives the corner check; toggling re-derives the build
   // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
@@ -781,11 +803,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow onSave={onAddCustomCard} onCancel={() => setFloatKind(null)} />
+            <NewCardFlow onSave={onAddCustomCard} onCancel={() => setFloatKind(null)} onAcquire={onAcquireCard} acquiredIds={acquiredIds} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => setCharacter(next)} onClose={() => setFloatKind(null)} />
-          ) : floatKind === 'settings' && file ? (
-            <SettingsPanel file={file} character={character} defaults={settingsData.defaults} domainPool={settingsData.domainPool} onPatchFile={mutateFile} setCharacter={setCharacter} onClose={() => setFloatKind(null)} />
+          ) : floatKind === 'modifiers' && file ? (
+            <ModifiersPanel file={file} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'level' && file ? (
             <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (

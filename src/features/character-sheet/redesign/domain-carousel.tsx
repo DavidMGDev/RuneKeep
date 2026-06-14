@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Rune } from '@/constants/theme';
 
-import type { DomainCardInfo } from './settings-panel';
+import type { DomainCardInfo } from './domain-card-info';
 
 const CARD_W = 150;
 const CARD_H = 210;
