@@ -1,6 +1,6 @@
 import { type ImageContentFit } from 'expo-image';
-import { type ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type NativeSyntheticEvent, Text, type TextLayoutEventData, View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
 import { PressableArt } from '@/components/pressable-art';
@@ -133,6 +133,95 @@ export function SheetText({
           textTransform: uppercase ? 'uppercase' : 'none',
           fontStyle: italic ? 'italic' : 'normal',
           fontVariant: tabularNums ? ['tabular-nums'] : undefined,
+        }}>
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+interface FillTextProps {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  color: string;
+  family?: string;
+  align?: HAlign;
+  vAlign?: VAlign;
+  uppercase?: boolean;
+  letterSpacing?: number;
+  /** Max wrapped lines the text may use (the character name fills up to 2). */
+  maxLines?: number;
+  minSize?: number;
+  maxSize?: number;
+  children: string;
+}
+
+/**
+ * FILL-the-box auto-size text (#214): unlike `SheetText fit` (which only *shrinks* from a fixed size
+ * via `adjustsFontSizeToFit` — and on Android mis-wraps a long name onto one tiny line), this
+ * binary-searches the LARGEST font that fits the box, GROWING a short one-word name up to fill it and
+ * SHRINKING a long name down (wrapping to `maxLines`). It measures real line widths/heights via
+ * `onTextLayout` (design px — the DesignStage scales by transform, not layout), so it never stretches
+ * the glyphs — only sizes them. Used for the sheet's character name.
+ */
+export function FillText({ left, top, width, height, color, family = Display.black, align = 'left', vAlign = 'center', uppercase, letterSpacing = 0, maxLines = 2, minSize = 13, maxSize = 56, children }: FillTextProps) {
+  const [size, setSize] = useState(maxSize);
+  const [ready, setReady] = useState(false);
+  const lo = useRef(minSize);
+  const hi = useRef(maxSize);
+  // Re-search whenever the text or box changes.
+  useEffect(() => {
+    lo.current = minSize;
+    hi.current = maxSize;
+    setReady(false);
+    setSize(maxSize);
+  }, [children, width, height, minSize, maxSize, maxLines]);
+
+  const onTextLayout = useCallback(
+    (e: NativeSyntheticEvent<TextLayoutEventData>) => {
+      if (ready) return;
+      const lines = e.nativeEvent.lines;
+      if (!lines.length) return;
+      const lineCount = lines.length;
+      const maxLineW = lines.reduce((m, l) => Math.max(m, l.width), 0);
+      const totalH = lines.reduce((s, l) => s + l.height, 0);
+      const fits = lineCount <= maxLines && maxLineW <= width + 0.5 && totalH <= height + 0.5;
+      if (fits) lo.current = size;
+      else hi.current = size;
+      // Converged: settle on the largest size known to fit (lo), then reveal.
+      if (hi.current - lo.current <= 1) {
+        const final = Math.max(minSize, Math.floor(lo.current));
+        if (final !== size) setSize(final);
+        setReady(true);
+        return;
+      }
+      const next = Math.max(minSize, Math.min(maxSize, Math.round((lo.current + hi.current) / 2)));
+      if (next === size) {
+        setReady(true);
+        return;
+      }
+      setSize(next);
+    },
+    [ready, size, width, height, maxLines, minSize, maxSize],
+  );
+
+  return (
+    <View style={[box(left, top, width, height), { justifyContent: justify[vAlign], alignItems: items[align], overflow: 'hidden' }]} pointerEvents="none">
+      <Text
+        onTextLayout={onTextLayout}
+        numberOfLines={ready ? maxLines : undefined}
+        style={{
+          maxWidth: width,
+          color,
+          fontSize: size,
+          lineHeight: size * 1.04,
+          fontFamily: family,
+          textAlign: align,
+          letterSpacing,
+          textTransform: uppercase ? 'uppercase' : 'none',
+          opacity: ready ? 1 : 0, // hide the search frames; reveal once the size is settled
         }}>
         {children}
       </Text>
