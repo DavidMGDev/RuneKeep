@@ -265,11 +265,11 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
       return (
         <Svg width={24} height={24} viewBox="0 0 24 24">
           <Line x1={5} y1={7} x2={19} y2={7} {...common} />
-          <Circle cx={9} cy={7} r={2.2} {...common} />
+          <Circle cx={9} cy={7} r={1.6} {...common} fill={g} />
           <Line x1={5} y1={12} x2={19} y2={12} {...common} />
-          <Circle cx={15} cy={12} r={2.2} {...common} />
+          <Circle cx={15} cy={12} r={1.6} {...common} fill={g} />
           <Line x1={5} y1={17} x2={19} y2={17} {...common} />
-          <Circle cx={11} cy={17} r={2.2} {...common} />
+          <Circle cx={11} cy={17} r={1.6} {...common} fill={g} />
         </Svg>
       );
     default:
@@ -337,7 +337,7 @@ function FloatPuck({ index }: { index: number }) {
 /** The dim + wedge ring + connector line + finger dot + fanned labels. Wrapped in ONE high-zIndex
  *  layer so the whole sheet (stat icons AND cards) sits UNDER the dim and can't be touched (#161). */
 export function FloatMenuOverlay() {
-  const { open, pinned, progress, dragging, fingerX, fingerY, highlight, closeMenu } = useFloatMenu();
+  const { open, pinned, progress, dragging, fingerX, fingerY, highlight, closeMenu, select } = useFloatMenu();
   const [hl, setHl] = useState(-1);
   useAnimatedReaction(
     () => highlight.value,
@@ -360,9 +360,21 @@ export function FloatMenuOverlay() {
     <View style={[StyleSheet.absoluteFill, { zIndex: 9999 }]} pointerEvents="box-none">
       {/* full-screen dim (oversized past the unclipped stage → square corners, reaches the edges) */}
       <Animated.View style={[box(-220, -220, 852, 1332), { backgroundColor: '#06080d' }, dim]} pointerEvents="none" />
-      {/* tap-scrim: only live while pinned, so a tap on empty space closes (during a drag the trigger
-          gesture owns the touch and release-handling closes/selects). */}
-      {pinned ? <Pressable style={box(-220, -220, 852, 1332)} onPress={closeMenu} accessibilityRole="button" accessibilityLabel="Close menu" /> : null}
+      {/* tap-scrim: while pinned, a tap anywhere inside a wedge's angular area selects it (#190 —
+          the whole wedge is the hitbox, not just the small puck); a tap in the cancel gap closes.
+          The scrim sits at design (-220,-220), so design coords = local locationX/Y - 220. */}
+      {pinned ? (
+        <Pressable
+          style={box(-220, -220, 852, 1332)}
+          onPress={(e) => {
+            const w = pickWedge(e.nativeEvent.locationX - 220, e.nativeEvent.locationY - 220);
+            if (w >= 0) select(w);
+            else closeMenu();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Close menu"
+        />
+      ) : null}
       {/* the wedge ring: contiguous annular sectors, the selected one lit. The SVG is centred on the
           trigger and overdraws left (off-screen) so the down-left wedge is whole. */}
       <Animated.View style={[box(T.x - SVG_R, T.y - SVG_R, SVG_R * 2, SVG_R * 2), ring]} pointerEvents="none">
