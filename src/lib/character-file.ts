@@ -7,9 +7,11 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { cardById } from '@/features/cards/catalog';
+import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/features/create/class-data';
 import { armorById } from '@/features/create/equipment-data';
+import { type BaseStats, type CardEffect, computeSheet, type EffectSource } from '@/lib/modifiers';
 
 /** Daggerheart proficiency by level (#128): tier 1 = 1, tier 2 (L2-4) = 2, tier 3 (L5-7) = 3, tier 4 = 4. */
 export function proficiencyForLevel(level: number): number {
@@ -27,6 +29,9 @@ export interface ExperienceDef {
   color?: string | null;
   /** Numeric bonus on the experience (#164 level-up: starts at +2, advancements add +1). */
   modifier?: number;
+  /** Structured stat effects a player attached to this card (#175): applied when the card is
+   *  enabled in the carousel. Authored via the card editor's "add effect" control. */
+  effects?: CardEffect[];
 }
 
 /** A player-authored card created on the sheet (#164), routed to one or both decks. */
@@ -107,6 +112,10 @@ export interface CharacterFile {
   subclassTier?: 'foundation' | 'specialization' | 'mastery';
   /** Multiclass chosen via the multiclass advancement. */
   multiclassName?: ClassName;
+  /** Cards the player has ENABLED/equipped (#175): the modifier engine layers each enabled card's
+   *  effects onto the base stats. Ids are stable deck-card ids (catalog / equipment / loot / custom).
+   *  Additive + optional, so existing saves (undefined) compute exactly as before. */
+  enabledCardIds?: string[];
   level: number;
 }
 
@@ -159,15 +168,35 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const baseScore = armor?.baseScore ?? 0;
   const ARMOR_SLOTS = 12;
   // Settings/level-up overrides (#166/#167) layer on the class/creation defaults; modifiers add on top.
-  const maxHp = file.maxHp ?? data.startingHp;
-  const stressMax = file.stressMax ?? 6;
-  const armorMax = file.armorScoreMax ?? baseScore;
-  const baseEvasion = file.evasionBase ?? data.startingEvasion;
   const TRAIT_KEYS: TraitKey[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
   const baseTraits = file.traits ?? SAMPLE_CHARACTER.traits;
-  const traits = Object.fromEntries(
-    TRAIT_KEYS.map((k) => [k, (baseTraits[k] ?? 0) + (file.traitBonuses?.[k] ?? 0) + modSum(file.modifiers, k)]),
-  ) as Record<TraitKey, number>;
+  // The BASE stats are the intrinsic class/creation values plus the legacy file overrides (so an
+  // existing save with no enabled cards derives exactly as before). The modifier engine (#175) then
+  // layers every ENABLED card's effects on top.
+  const base: BaseStats = {
+    agility: (baseTraits.agility ?? 0) + (file.traitBonuses?.agility ?? 0) + modSum(file.modifiers, 'agility'),
+    strength: (baseTraits.strength ?? 0) + (file.traitBonuses?.strength ?? 0) + modSum(file.modifiers, 'strength'),
+    finesse: (baseTraits.finesse ?? 0) + (file.traitBonuses?.finesse ?? 0) + modSum(file.modifiers, 'finesse'),
+    instinct: (baseTraits.instinct ?? 0) + (file.traitBonuses?.instinct ?? 0) + modSum(file.modifiers, 'instinct'),
+    presence: (baseTraits.presence ?? 0) + (file.traitBonuses?.presence ?? 0) + modSum(file.modifiers, 'presence'),
+    knowledge: (baseTraits.knowledge ?? 0) + (file.traitBonuses?.knowledge ?? 0) + modSum(file.modifiers, 'knowledge'),
+    evasion: (file.evasionBase ?? data.startingEvasion) + modSum(file.modifiers, 'evasion'),
+    armorScore: file.armorScoreMax ?? baseScore,
+    maxHp: file.maxHp ?? data.startingHp,
+    stressMax: file.stressMax ?? 6,
+    hopeMax: 6,
+    proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
+    majorThreshold: tMajor + (file.thresholdBonus ?? 0), // +1/level (#167)
+    severeThreshold: tSevere + (file.thresholdBonus ?? 0),
+  };
+  const sources: EffectSource[] = (file.enabledCardIds ?? [])
+    .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
+    .filter((s) => s.effects.length > 0);
+  const sheet = computeSheet(base, file.level, sources);
+  const maxHp = sheet.maxHp.total;
+  const stressMax = sheet.stressMax.total;
+  const armorMax = sheet.armorScore.total;
+  const traits = Object.fromEntries(TRAIT_KEYS.map((k) => [k, sheet[k].total])) as Record<TraitKey, number>;
   return {
     ...SAMPLE_CHARACTER,
     name: file.name,
@@ -179,10 +208,10 @@ export function toSheetCharacter(file: CharacterFile): Character {
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
     portraitUri: file.portraitUri,
     portraitTransform: file.portraitTransform ?? { scale: 1, x: 0, y: 0 },
-    evasion: baseEvasion + modSum(file.modifiers, 'evasion'),
-    proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
+    evasion: sheet.evasion.total,
+    proficiency: sheet.proficiency.total,
     armorScore: armorMax,
-    damageThresholds: { major: tMajor + (file.thresholdBonus ?? 0), severe: tSevere + (file.thresholdBonus ?? 0) }, // +1/level (#167)
+    damageThresholds: { major: sheet.majorThreshold.total, severe: sheet.severeThreshold.total },
     // Rulebook starting resources (#107): hearts full at the class's max (only that many hearts
     // are drawn; 7 hp = one golden + five red), 6 of 12 stress unlocked, hope starts at 2 of 6.
     hp: maxHp,
@@ -190,8 +219,41 @@ export function toSheetCharacter(file: CharacterFile): Character {
     // armor: the unlocked slots are enabled (filled), the rest disabled (#128)
     armor: { active: armorMax, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - armorMax) },
     stress: { active: 0, total: 12, locked: Math.max(0, 12 - stressMax) },
-    hope: { active: 2, total: 6 },
+    hope: { active: 2, total: sheet.hopeMax.total },
     gold: file.gold ?? { handfuls: 1, bags: 0, chest: 0 }, // the kit's handful of gold (#136)
     traits,
   };
+}
+
+/**
+ * The full stat breakdown for the Modifiers panel (#175): base value + every enabled card's
+ * contribution + capped total, per sheet stat. Re-derived from the file like `toSheetCharacter`,
+ * but exposing the provenance the panel renders.
+ */
+export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').SheetBreakdown {
+  const data = CLASS_DATA[file.className];
+  const armor = file.armorId ? armorById(file.armorId) : undefined;
+  const [tMajor, tSevere] = (armor?.thresholds ?? '0 / 0').split('/').map((n) => parseInt(n.trim(), 10) || 0);
+  const baseScore = armor?.baseScore ?? 0;
+  const baseTraits = file.traits ?? SAMPLE_CHARACTER.traits;
+  const base: BaseStats = {
+    agility: (baseTraits.agility ?? 0) + (file.traitBonuses?.agility ?? 0) + modSum(file.modifiers, 'agility'),
+    strength: (baseTraits.strength ?? 0) + (file.traitBonuses?.strength ?? 0) + modSum(file.modifiers, 'strength'),
+    finesse: (baseTraits.finesse ?? 0) + (file.traitBonuses?.finesse ?? 0) + modSum(file.modifiers, 'finesse'),
+    instinct: (baseTraits.instinct ?? 0) + (file.traitBonuses?.instinct ?? 0) + modSum(file.modifiers, 'instinct'),
+    presence: (baseTraits.presence ?? 0) + (file.traitBonuses?.presence ?? 0) + modSum(file.modifiers, 'presence'),
+    knowledge: (baseTraits.knowledge ?? 0) + (file.traitBonuses?.knowledge ?? 0) + modSum(file.modifiers, 'knowledge'),
+    evasion: (file.evasionBase ?? data.startingEvasion) + modSum(file.modifiers, 'evasion'),
+    armorScore: file.armorScoreMax ?? baseScore,
+    maxHp: file.maxHp ?? data.startingHp,
+    stressMax: file.stressMax ?? 6,
+    hopeMax: 6,
+    proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0),
+    majorThreshold: tMajor + (file.thresholdBonus ?? 0),
+    severeThreshold: tSevere + (file.thresholdBonus ?? 0),
+  };
+  const sources: EffectSource[] = (file.enabledCardIds ?? [])
+    .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
+    .filter((s) => s.effects.length > 0);
+  return computeSheet(base, file.level, sources);
 }
