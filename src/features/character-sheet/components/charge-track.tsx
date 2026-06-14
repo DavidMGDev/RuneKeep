@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, type ReactNode, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -397,7 +397,14 @@ export interface ChargeTrackProps {
   trackLabel: string;
 }
 
-export function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, onDown, renderSlot, renderFilled, renderEmpty, flavor, accent, grow = 2.2, crossUpAt = 0.15, crossDownAt = 0.1, sideSlop = 12, zone, trackLabel }: ChargeTrackProps) {
+export interface ChargeTrackHandle {
+  /** Burst-animate the slots that changed between two active counts (#192): a gain plays the 'up'
+   *  fx on the newly-filled slots, a loss plays the 'down' fx on the emptied ones. Visual only —
+   *  the caller is responsible for the actual state change. */
+  burst: (prevActive: number, nextActive: number) => void;
+}
+
+export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, onDown, renderSlot, renderFilled, renderEmpty, flavor, accent, grow = 2.2, crossUpAt = 0.15, crossDownAt = 0.1, sideSlop = 12, zone, trackLabel }: ChargeTrackProps, ref) {
   const reduced = useReducedMotion();
   const [anims, setAnims] = useState<Anim[]>([]);
   const charging = useRef<Anim | null>(null);
@@ -405,6 +412,25 @@ export function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, 
   const nextId = useRef(1);
 
   const onDone = useCallback((id: number) => setAnims((list) => list.filter((a) => a.id !== id)), []);
+
+  // Programmatic burst (#192): Rest + card unequip animate the slots they change, all at once.
+  useImperativeHandle(
+    ref,
+    () => ({
+      burst: (prevActive: number, nextActive: number) => {
+        const n = slots.length;
+        const add: Anim[] = [];
+        const clamp = (i: number) => i >= 0 && i < n;
+        if (nextActive > prevActive) {
+          for (let i = prevActive; i < nextActive; i++) if (clamp(i)) add.push({ id: nextId.current++, index: i, dir: 'up', phase: 'fx' });
+        } else {
+          for (let i = nextActive; i < prevActive; i++) if (clamp(i)) add.push({ id: nextId.current++, index: i, dir: 'down', phase: 'fx' });
+        }
+        if (add.length) setAnims((list) => [...list, ...add]);
+      },
+    }),
+    [slots.length],
+  );
 
   const begin = useCallback(
     (index: number, dir: Dir, step: () => void) => {
@@ -541,4 +567,4 @@ export function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, 
       ))}
     </View>
   );
-}
+});

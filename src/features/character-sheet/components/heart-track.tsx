@@ -264,6 +264,9 @@ interface HeartTrackProps {
 export interface HeartTrackHandle {
   /** Apply N HP of loss at once (#128): the destroyed hearts burst together; HP floors at 0. */
   applyDamage: (hpLoss: number) => void;
+  /** Burst-animate the hearts that changed between two HP values (#192) — gains fly in, losses
+   *  shatter; gold transitions handled. VISUAL ONLY: the caller owns the actual HP change. */
+  burst: (prevHp: number, nextHp: number) => void;
 }
 
 export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function HeartTrack({ left, top, width, pip, hp, slots = 6, maxHp = Infinity, accent, onHp }, ref) {
@@ -300,6 +303,19 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
           add.push({ id: nextId.current++, index: i, action, pre: before[i], phase: 'burst' });
         }
         onHp(target);
+        if (add.length) setAnims((list) => [...list, ...add]);
+      },
+      burst: (prevHp: number, nextHp: number) => {
+        if (prevHp === nextHp) return;
+        const before = resolveHearts(prevHp, slots).states;
+        const after = resolveHearts(nextHp, slots).states;
+        const add: Anim[] = [];
+        for (let i = 0; i < slots; i++) {
+          if (before[i] === after[i]) continue;
+          const action: HeartAction =
+            after[i] === 'empty' ? 'break' : before[i] === 'golden' && after[i] === 'active' ? 'degold' : after[i] === 'golden' ? 'goldify' : 'fill';
+          add.push({ id: nextId.current++, index: i, action, pre: before[i], phase: 'burst' });
+        }
         if (add.length) setAnims((list) => [...list, ...add]);
       },
     }),
