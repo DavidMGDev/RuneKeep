@@ -64,10 +64,15 @@ import {
   SNAP_SPRING,
 } from '../carousel-geometry';
 import { Card, CardThumb } from './card';
+import { EnabledCorner } from './enabled-corner';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
+import { focusHaptic } from '@/lib/haptics';
 
 const flipPar = (t: number) => ((t % 2) + 2) % 2;
+
+/** Press-and-hold duration to toggle a card on/off (#175): the bottom-to-top fill fills over this. */
+const HOLD_MS = 620;
 
 /**
  * The 3D flip element (#110) — only mounted/visible when a multi-face card is FOCUSED (the parent
@@ -121,9 +126,13 @@ interface SlotProps {
   closeFullscreen: () => void;
   /** Multi-face slots register their pager so the parent pan can flip them on a horizontal swipe. */
   registerPager: (index: number, pager: ((delta: number) => void) | null) => void;
+  /** This card is currently enabled/equipped (#175) — show the corner check. */
+  enabled: boolean;
+  /** Toggle this card's enabled state (#175): committed by a press-and-hold on the centered/focused card. */
+  onToggle: (id: string) => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, overscrollX, machineState, focusIndex, closeFullscreen, registerPager }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, overscrollX, machineState, focusIndex, closeFullscreen, registerPager, enabled, onToggle }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -259,6 +268,50 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     [index, count, hasFaces, item.interactive, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
   );
 
+  // Press-and-hold to enable/disable a card (#175): only the CENTERED card (expanded) or the FOCUSED
+  // card (full-screen) arms. A bottom-to-top fill scans over the hold; reaching the top commits the
+  // toggle. Moving the finger (>maxDistance) cancels — so it never fights a scroll/flip. Live cards
+  // (gold) keep their own controls and are not holdable.
+  const holdProgress = useSharedValue(0); // 0 = no fill .. 1 = filled
+  const holdArmed = useSharedValue(0);
+  const commitToggle = useCallback(() => {
+    onToggle(item.id);
+    focusHaptic();
+  }, [onToggle, item.id]);
+  const hold = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(HOLD_MS)
+        .maxDistance(14)
+        .onBegin(() => {
+          'worklet';
+          const centered = Math.round(rotation.value / ANGLE_STEP) === index;
+          const focused = Math.round(focusIndex.value) === index;
+          const ms = machineState.value;
+          const armed = !item.interactive && ((ms === 'expanded' && centered) || (ms === 'fullscreen' && focused));
+          holdArmed.value = armed ? 1 : 0;
+          if (armed) holdProgress.value = withTiming(1, { duration: HOLD_MS, easing: Easing.linear });
+        })
+        .onStart(() => {
+          'worklet';
+          if (holdArmed.value === 1) {
+            runOnJS(commitToggle)();
+            holdProgress.value = withTiming(0, { duration: 240 }); // snap the fill out, revealing the corner check
+            holdArmed.value = 0;
+          }
+        })
+        .onFinalize(() => {
+          'worklet';
+          cancelAnimation(holdProgress);
+          if (holdProgress.value !== 0) holdProgress.value = withTiming(0, { duration: 160 });
+          holdArmed.value = 0;
+        }),
+    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed],
+  );
+  const slotGesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
+  // The scan-fill overlay: a translucent gold sheet rising from the bottom with a bright leading edge.
+  const fillStyle = useAnimatedStyle(() => ({ height: holdProgress.value * CARD_H, opacity: holdProgress.value > 0.001 ? 1 : 0 }));
+
   // A live interactive card (#136 gold) only accepts touches when FOCUSED; otherwise its controls
   // would swallow the compact-hand expand tap. Gate pointerEvents on a JS focused flag.
   const [liveActive, setLiveActive] = useState(false);
@@ -276,7 +329,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     // scrolled frame, which invalidates a rasterized layer each frame — N re-uploaded textures per
     // frame tanked the device globally. Plain composite of a static image is far cheaper.
     <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
-      <GestureDetector gesture={tap}>
+      <GestureDetector gesture={slotGesture}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
           {item.live ? (
             // a LIVE interactive card (#136 gold): rendered as-is; its controls only take touches
@@ -328,6 +381,12 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
               ) : null}
             </>
           )}
+          {/* hold-to-toggle scan fill (#175): rises bottom-to-top while held on the centered/focused card */}
+          <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.26)' }, fillStyle]}>
+            <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 2.5, backgroundColor: Rune.goldBright }} />
+          </Animated.View>
+          {/* enabled corner check (#175): overlay on any equipped card, in both LOD and focused states */}
+          {enabled ? <EnabledCorner width={CARD_W} height={CARD_H} /> : null}
         </View>
       </GestureDetector>
     </Animated.View>
@@ -429,7 +488,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed }: { osProgress: Share
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, closeFullscreen, collapse, toggleCategory } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, closeFullscreen, collapse, toggleCategory, enabledIds, toggleCard } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
@@ -691,6 +750,8 @@ export function CardCarousel() {
         focusIndex={focusIndex}
         closeFullscreen={closeFullscreen}
         registerPager={registerPager}
+        enabled={enabledIds.has(deck[i].id)}
+        onToggle={toggleCard}
       />,
     );
   }

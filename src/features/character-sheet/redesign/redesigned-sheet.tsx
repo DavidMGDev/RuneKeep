@@ -432,7 +432,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
   const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs } = useMemo(() => {
-    type Job = { key: string; node: ReactNode; raster?: boolean };
+    // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
+    // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
+    // & experience cards carry their own stable id here so a toggle survives an edit.
+    type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
     const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[] };
     if (!file) return empty;
@@ -461,6 +464,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     }));
     const expJobs = (file.experiences ?? []).map((e) => ({
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0) + (e.color?.length ?? 0) * 13) % 99991}`,
+      id: e.id,
       node: <ForgedCard title={e.title} kindLabel="Experience" body={e.text} accentDeep={Rune.panel} imageUri={e.imageUri} colorArt={e.color} multilineTitle />,
       // player photo (file://) decodes async — needs the forge settle so it isn't captured black (#121)
       raster: !!e.imageUri,
@@ -480,6 +484,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
       key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
+      id: it.id,
       node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       raster: !!it.imageUri,
     }));
@@ -487,6 +492,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Player-authored cards (#164) → routed to the inventory and/or arsenal deck by `target`.
     const customCardJobs: CustomJob[] = (file.customCards ?? []).map((it) => ({
       key: `cc-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
+      id: it.id,
       node: <ForgedCard title={it.title} kindLabel={it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       raster: !!it.imageUri,
       target: it.target,
@@ -546,9 +552,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || (a.domain ?? '').localeCompare(b.domain ?? '')) // by level (then domain) (#157)
       .map((c) => ({ id: c.id, source: c.source, thumb: c.thumb }));
     const expItems = expJobs
-      .map((j) => ({ key: j.key, src: featureSources[j.key] }))
+      .map((j) => ({ key: j.key, id: j.id ?? j.key, src: featureSources[j.key] }))
       .filter((x) => x.src)
-      .map((x) => ({ id: x.key, source: x.src!.full, thumb: x.src!.thumb }));
+      .map((x) => ({ id: x.id, source: x.src!.full, thumb: x.src!.thumb }));
     // Faces in STABLE order [class, ...features] — an un-forged face keeps its slot and renders its
     // live node (no .filter that dropped pages and shifted indices, the #110 missing-page bug).
     const faceJobs = classJob ? [classJob, ...featJobs] : featJobs;
@@ -563,8 +569,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         : [];
     // Equipment (#121): weapons + armor appear once forged. Weapons ride BOTH the abilities hand and
     // inventory; armor is inventory only.
-    const forgedItems = (jobs: { key: string; node: ReactNode }[]) =>
-      jobs.map((j) => ({ j, src: featureSources[j.key] })).filter((x) => x.src).map((x) => ({ id: x.j.key, source: x.src!.full, thumb: x.src!.thumb }));
+    const forgedItems = (jobs: { key: string; node: ReactNode; id?: string }[]) =>
+      jobs.map((j) => ({ j, src: featureSources[j.key] })).filter((x) => x.src).map((x) => ({ id: x.j.id ?? x.j.key, source: x.src!.full, thumb: x.src!.thumb }));
     const weaponItems = forgedItems(weaponJobs);
     const armorItems = armorJob ? forgedItems([armorJob]) : [];
     const [subclassC, ancestryC, communityC] = cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
@@ -665,6 +671,34 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     });
     setFloatKind(null);
   }, []);
+  // Enabled/equipped cards (#175): the set drives the corner check; toggling re-derives the build
+  // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
+  const enabledIds = useMemo(() => new Set(file?.enabledCardIds ?? []), [file]);
+  const onToggleCard = useCallback(
+    (id: string) => {
+      if (!file) return;
+      const cur = new Set(file.enabledCardIds ?? []);
+      if (cur.has(id)) cur.delete(id);
+      else cur.add(id);
+      const next = { ...file, enabledCardIds: [...cur] };
+      setFile(next);
+      void saveCharacter(next);
+      setCharacter((c) => {
+        const d = toSheetCharacter(next);
+        return {
+          ...d,
+          hp: Math.min(c.hp, d.maxHp),
+          stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
+          armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
+          hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+          gold: c.gold,
+          portraitUri: c.portraitUri,
+          portraitTransform: c.portraitTransform,
+        };
+      });
+    },
+    [file],
+  );
   const onHp = useCallback(
     // No overhealing past the character's TRUE maximum (#107) — not the slot capacity.
     (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.maxHp, n)) })),
@@ -694,7 +728,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} originIndices={originIndices}>
+      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
