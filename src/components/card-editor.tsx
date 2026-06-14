@@ -1,12 +1,15 @@
 import * as ImagePicker from 'expo-image-picker';
-import { type ReactNode, useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { ForgedCard } from '@/features/create/forged-card';
 import { type CardEffect, type EffectTarget, EFFECT_TARGETS, TARGET_LABEL } from '@/lib/modifiers';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface CardDraft {
   title: string;
@@ -146,10 +149,19 @@ export function CardEditor({
 
   const canSave = draft.title.trim().length > 0;
 
+  // Entrance (#201): the scrim fades in and the card + fields rise/fade in instead of popping.
+  const reduced = useReducedMotion();
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = reduced ? 1 : withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
+  }, [p, reduced]);
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: p.value }));
+  const contentStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 20 }] }));
+
   return (
     <View style={{ position: 'absolute', top: -80, bottom: -80, left: -60, right: -60, zIndex: 10000 }}>
-      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
-      <ScrollView contentContainerStyle={{ alignItems: 'center', paddingTop: 180, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
+      <AnimatedPressable style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
+      <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingTop: 180, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
         {/* live preview — the real card, the real size */}
         <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
         {/* fields */}
@@ -192,7 +204,7 @@ export function CardEditor({
           </View>
           <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>Same format as every RuneKeep card.</Text>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 }
