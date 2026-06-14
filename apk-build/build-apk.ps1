@@ -83,10 +83,10 @@ Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v1.1.0-android'
-$notes = "RuneKeep v1.1.0 - card-driven character sheet. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nNew: equip/enable any card by pressing and holding it in the carousel (a fill scans bottom-to-top, then a corner check marks it). Weapons, armor, ancestry, subclass, domain, loot, and your own custom cards now apply their stat modifiers automatically - HP, Stress, Armor, Evasion, traits, Proficiency, and damage thresholds are computed for you, tier-aware. A focused card's Modifiers button shows what it applies; the float-menu Modifiers panel shows every base stat and what each equipped card layers on top. Settings is gone - cards do it all. Add tier 1-4 gear + loot from the catalog in New Card.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v1.1.1-android'
+$notes = "RuneKeep v1.1.1 - card-driven character sheet (UX polish). Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nEquip/enable any card by pressing and holding it in the carousel; weapons, armor, ancestry, subclass, domain, loot, and your own custom cards apply their stat modifiers automatically (HP, Stress, Armor, Evasion, traits, Proficiency, damage thresholds), tier-aware. Focused card's Modifiers button shows what it applies; the float-menu Modifiers panel shows every base stat + what each equipped card layers on. Add tier 1-4 gear + loot from the catalog in New Card.`n`nThis build: smooth Modifiers scrolling; list-based effect picker; deliberate press-and-hold to equip (quartic ease-in, single-tap guard, arm haptic); full-wedge taps in the actions wheel; Rest + unequip now burst-animate every changed track; reworked deck switch (time-based 1s hold, capped over-scroll, carousel-aligned indicator, continuation arrival).`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$($apk.FullName)" --target main --title "RuneKeep v1.1.0 (Android)" --notes $notes
+gh release create $tag "$($apk.FullName)" --target main --title "RuneKeep v1.1.1 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
