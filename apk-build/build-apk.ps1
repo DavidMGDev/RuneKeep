@@ -1,9 +1,9 @@
-# RuneKeep -> Android APK builder (#173)
+# RuneKeep -> Android APK builder
 # Run from a normal PowerShell window (no admin needed):
 #   powershell -ExecutionPolicy Bypass -File "D:\Tools\Homebrew\Daggerheart\RuneKeep\apk-build\build-apk.ps1"
 #
-# Produces a small arm64-v8a release APK (offline, all card data bundled) from the asset-optimized
-# `apk-optimize` branch, then uploads it as a GitHub release.
+# Produces a small arm64-v8a release APK (offline, all card data bundled) from `main`, renames it to
+# "Runekeep <version>.apk", and uploads it as a GitHub release. Versioning restarts at v0.2 (#220).
 #
 # sdkmanager's downloader STALLS on this machine, so every SDK component is fetched by DIRECT
 # download (curl) + 7-Zip extract instead. cmake + licenses are already in place.
@@ -81,12 +81,18 @@ $mb = [math]::Round($apk.Length / 1MB, 1)
 Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
+Section "Rename APK to a friendly asset name"
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.apk" (#220).
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.apk'
+Copy-Item -Force $apk.FullName $niceApk
+Write-Host "ASSET: $niceApk" -ForegroundColor Green
+
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v1.1.2-android'
-$notes = "RuneKeep v1.1.2 - card-driven character sheet (UX polish 2). Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nEquip/enable any card by pressing and holding it in the carousel; weapons, armor, ancestry, subclass, domain, loot, and your own custom cards apply their stat modifiers automatically (HP, Stress, Armor, Evasion, traits, Proficiency, damage thresholds), tier-aware. Focused card's Modifiers button shows what it applies; the float-menu Modifiers panel shows every base stat + what each equipped card layers on. Add tier 1-4 gear + loot from the catalog in New Card.`n`nThis build: deck-switch indicator glides in + 40% normal over-scroll + 0.4s hold; equip scan fades in; smaller equipped-corner check; experiences now have long auto-fitting titles + a visible bonus and their own editor; level-up rebuilt with a real full-screen card carousel (and the sheet carousel unloads while it's open); all float-menu panels animate in.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2'
+$notes = "RuneKeep v0.2 - first release of the rebuilt card-carousel. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThe carousel is now a looping RING of card categories you over-scroll between: Arsenal, Inventory, an all-class Notes deck (toggle it on/off from the float menu), and - for Druids - a Wild Shape deck of every Beastform (all four tiers, each its own color). Assume a form and it applies its trait / Evasion / damage-threshold changes automatically and marks the Stress it costs (spilling to HP when Stress is full, never the killing blow); only one form is active at a time, you stay transformed when you browse other cards, and your name on the sheet becomes the creature so you never forget. New Card now creates in the category you're viewing and its type is a tappable chip (Note / Reminder / Story; Item / Tool; Ability / Skill / Weapon...). Long character names now fill the space they're given instead of shrinking to one tiny line.`n`nStill here from before: press-and-hold any card to equip/enable it; weapons, armor, ancestry, subclass, domain, loot, and your own cards apply their modifiers automatically; the Modifiers panel shows every stat's provenance; Rest and Level Up flows.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$($apk.FullName)" --target main --title "RuneKeep v1.1.2 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
