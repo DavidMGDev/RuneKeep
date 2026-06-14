@@ -7,17 +7,20 @@ import Animated, {
   Easing,
   runOnJS,
   type SharedValue,
+  useAnimatedProps,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
 
 import { box } from '@/lib/design';
-import { Rune } from '@/constants/theme';
-import { type CardItem } from '../card-data';
+import { Body, Rune } from '@/constants/theme';
+import { type CardCategory, type CardItem } from '../card-data';
 import { type ExpandState, useCarousel } from '../carousel-context';
+import { ArsenalIcon, InventoryIcon } from '../redesign/deck-toggle-icon';
 import {
   ANGLE_STEP,
   CARD_H,
@@ -47,6 +50,11 @@ import {
   PAD_Y,
   maxRotation,
   OVERSCROLL_RESIST,
+  OVERSCROLL_GAIN,
+  OVERSCROLL_ARM,
+  OVERSCROLL_MAX,
+  DECK_EXIT_DROP,
+  DECK_ENTER_RISE,
   OX,
   OY,
   PAN_R,
@@ -106,6 +114,8 @@ interface SlotProps {
   fullscreenProgress: SharedValue<number>;
   grindProgress: SharedValue<number>;
   deckShift: SharedValue<number>;
+  /** Gear over-scroll fan push (#174): design px the whole hand is shoved sideways past a deck end. */
+  overscrollX: SharedValue<number>;
   machineState: SharedValue<ExpandState>;
   focusIndex: SharedValue<number>;
   closeFullscreen: () => void;
@@ -113,7 +123,7 @@ interface SlotProps {
   registerPager: (index: number, pager: ((delta: number) => void) | null) => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, machineState, focusIndex, closeFullscreen, registerPager }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, overscrollX, machineState, focusIndex, closeFullscreen, registerPager }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -122,7 +132,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     const theta = (index - centerPos) * stepNow;
     const dist = Math.abs(index - centerPos); // in card steps, state-independent
 
-    let x = OX + R * Math.sin(theta);
+    let x = OX + R * Math.sin(theta) + overscrollX.value; // gear over-scroll shoves the whole fan sideways (#174)
     let y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
     // Grinding shrinks the cards 30% (spacing already tightened above) so more of the deck shows.
     let scale = cardScaleAt(theta) * (COMPACT_SCALE + (1 - COMPACT_SCALE) * p) * (1 - GRIND_SHRINK * grindProgress.value);
@@ -134,13 +144,14 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     let opacity = slotOpacityAt(dist, p);
     let z = Math.round(1000 - dist * 10);
 
-    // Deck switch (#95 C): the whole hand FADES in place (a light 30px settle, no big travel —
-    // a real sweep read as the old hand "coming back", owner) while the decks swap underneath,
-    // then fades back in once the new thumbs have painted. Rests at 0 → integer alphas at rest.
+    // Deck switch EXIT (#174): the OLD hand slides DOWN off the bottom and fades only as it nears the
+    // edge (it stays visible most of the travel), while the incoming ghost fan rises + fades in over
+    // it — no fade-to-empty in place. Rests at 0 → integer alphas at rest (the saveLayerAlpha rule).
     const sweep = deckShift.value;
     if (sweep > 0) {
-      y += sweep * 30;
-      opacity *= 1 - sweep;
+      y += sweep * DECK_EXIT_DROP;
+      const fade = sweep < 0.6 ? 0 : (sweep - 0.6) / 0.4; // hold opaque, fade only in the last ~40%
+      opacity *= 1 - fade;
     }
 
     // Focus: the SAME card grows in place toward screen centre over the dim veil (#8c) — no second
@@ -323,6 +334,94 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   );
 });
 
+/** The incoming deck rendered as a static, centered ghost fan during a switch (#174): thumbs only,
+ *  rising + fading in (deckEnter 0→1) while the OLD live hand slides down and fades out beneath it.
+ *  At commit the live deck takes this exact centered pose, so the hand-off is seamless. */
+function GhostFan({ items, enter }: { items: CardItem[]; enter: SharedValue<number> }) {
+  const n = items.length;
+  const mid = (n - 1) / 2;
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: 1500 }]}>
+      {items.map((it, i) => (
+        <GhostSlot key={it.id} item={it} index={i} mid={mid} enter={enter} />
+      ))}
+    </View>
+  );
+}
+
+function GhostSlot({ item, index, mid, enter }: { item: CardItem; index: number; mid: number; enter: SharedValue<number> }) {
+  // Resting EXPANDED arc pose (p=1, no grind), centered on the deck middle — where the live hand
+  // lands at commit. Static geometry; only the enter progress (rise + fade) animates.
+  const theta = (index - mid) * ANGLE_STEP;
+  const x = OX + R * Math.sin(theta);
+  const y0 = OY - R * Math.cos(theta);
+  const scale = cardScaleAt(theta);
+  const tilt = theta * 0.5;
+  const dist = Math.abs(index - mid);
+  const base = slotOpacityAt(dist, 1);
+  const z = Math.round(1000 - dist * 10);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: x }, { translateY: y0 + (1 - enter.value) * DECK_ENTER_RISE }, { rotateZ: `${tilt}rad` }, { scale }],
+    opacity: base * enter.value,
+    zIndex: z,
+  }));
+  return (
+    <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
+      <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
+        <CardThumb item={item} />
+      </View>
+    </Animated.View>
+  );
+}
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const IND = 64; // indicator box (design px)
+const RING_R = 28;
+const RING_C = 2 * Math.PI * RING_R;
+const IND_Y = 548; // sits in the band beside the expanded hand
+const IND_LX = 30; // left gap x (first card pushed right)
+const IND_RX = 412 - 30 - IND; // right gap x (last card pushed left)
+
+/** The over-scroll indicator (#174): emerges in the gap OPPOSITE the pushed edge, showing a progress
+ *  ring filling toward the arm point + the TARGET deck's own SVG (chest / fanned cards). Hidden until
+ *  the gear actually over-scrolls past an end; brightens to red + "RELEASE" once armed. */
+function DeckSwitchIndicator({ osProgress, osDir, osArmed }: { osProgress: SharedValue<number>; osDir: SharedValue<number>; osArmed: SharedValue<number> }) {
+  const { category } = useCarousel();
+  const target: CardCategory = category === 'abilities' ? 'inventory' : 'abilities';
+  const wrap = useAnimatedStyle(() => {
+    const p = Math.min(1, osProgress.value);
+    return {
+      opacity: osDir.value === 0 ? 0 : Math.min(1, osProgress.value * 1.6),
+      transform: [{ translateX: osDir.value > 0 ? IND_LX : IND_RX }, { translateY: IND_Y }, { scale: 0.82 + 0.18 * p + (osArmed.value === 1 ? 0.06 : 0) }],
+    };
+  });
+  const ringProps = useAnimatedProps(() => ({
+    strokeDashoffset: RING_C * (1 - Math.min(1, osProgress.value)),
+    stroke: osArmed.value === 1 ? Rune.red : Rune.goldBright,
+  }));
+  const pullLabel = useAnimatedStyle(() => ({ opacity: osArmed.value === 1 ? 0 : 1 }));
+  const armLabel = useAnimatedStyle(() => ({ opacity: osArmed.value === 1 ? 1 : 0 }));
+  return (
+    <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: IND, height: IND + 16, alignItems: 'center', zIndex: 2700 }, wrap]}>
+      <View style={{ width: IND, height: IND }}>
+        <Svg width={IND} height={IND} style={StyleSheet.absoluteFill}>
+          <Circle cx={IND / 2} cy={IND / 2} r={RING_R} stroke="rgba(218,162,73,0.22)" strokeWidth={3} fill="rgba(10,12,17,0.66)" />
+          <AnimatedCircle cx={IND / 2} cy={IND / 2} r={RING_R} strokeWidth={3.6} fill="none" strokeLinecap="round" strokeDasharray={RING_C} animatedProps={ringProps} transform={`rotate(-90 ${IND / 2} ${IND / 2})`} />
+        </Svg>
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>{target === 'inventory' ? <InventoryIcon /> : <ArsenalIcon />}</View>
+      </View>
+      <View style={{ height: 14, marginTop: 2, width: 120, alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.Text numberOfLines={1} style={[{ position: 'absolute', color: Rune.goldText, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }, pullLabel]}>
+          {target === 'inventory' ? 'Inventory' : 'Arsenal'}
+        </Animated.Text>
+        <Animated.Text numberOfLines={1} style={[{ position: 'absolute', color: Rune.goldBright, fontSize: 9, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }, armLabel]}>
+          Release
+        </Animated.Text>
+      </View>
+    </Animated.View>
+  );
+}
+
 /**
  * The card hand — three states (compact → expanded → fullscreen), no timers, no lock. A full-sheet
  * pan scrolls the arc 1:1 and drives the state transitions; each card owns a nested tap. Focusing a
@@ -330,10 +429,17 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, decks, category, closeFullscreen, collapse } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, closeFullscreen, collapse, toggleCategory } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
+
+  // Gear over-scroll → category switch (#174). All UI-thread shared state for the sideways
+  // pull-to-refresh at a deck end: how far the fan is shoved, which end, and whether it's armed.
+  const overscrollX = useSharedValue(0); // design px the fan is pushed sideways past the end
+  const osDir = useSharedValue(0); // +1 = first card pushed RIGHT (start end), -1 = last card pushed LEFT (end)
+  const osProgress = useSharedValue(0); // 0..1 toward the arm point (OVERSCROLL_ARM)
+  const osArmed = useSharedValue(0); // 1 once the push reached the arm point — release here fires the switch
 
   const startRot = useSharedValue(0);
   const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
@@ -396,12 +502,37 @@ export function CardCarousel() {
         })
         .onUpdate((e) => {
           if (machineState.value === 'fullscreen') return;
-          // Grinding the gear (#62 D): a much stronger scroll.
+          // Grinding the gear (#62 D): the power-scroll. Past a deck END it stops feeding rotation
+          // (clamped) and instead pushes the WHOLE fan sideways — a sideways pull-to-refresh that
+          // arms a category switch at OVERSCROLL_ARM and fires on release (#174). The sensitive sweep
+          // (GEAR_SWIPE_PX) means one center->edge drag covers the whole deck AND this over-scroll.
           if (padTouch.value && padWasExpanded.value) {
             scrolled.value = true;
             const raw = startRot.value - e.translationX / gearPanR;
             const max = maxRotation(count);
-            rotation.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
+            if (raw < 0) {
+              rotation.value = 0;
+              const push = Math.min(OVERSCROLL_MAX, -raw * gearPanR * OVERSCROLL_GAIN);
+              overscrollX.value = push; // first card shoved RIGHT, gap opens LEFT
+              osDir.value = 1;
+              osProgress.value = push / OVERSCROLL_ARM;
+              osArmed.value = push >= OVERSCROLL_ARM ? 1 : 0;
+            } else if (raw > max) {
+              rotation.value = max;
+              const push = Math.min(OVERSCROLL_MAX, (raw - max) * gearPanR * OVERSCROLL_GAIN);
+              overscrollX.value = -push; // last card shoved LEFT, gap opens RIGHT
+              osDir.value = -1;
+              osProgress.value = push / OVERSCROLL_ARM;
+              osArmed.value = push >= OVERSCROLL_ARM ? 1 : 0;
+            } else {
+              rotation.value = raw;
+              if (osDir.value !== 0) {
+                overscrollX.value = 0;
+                osDir.value = 0;
+                osProgress.value = 0;
+                osArmed.value = 0;
+              }
+            }
             return;
           }
           const dx = e.translationX - prevX.value;
@@ -479,6 +610,24 @@ export function CardCarousel() {
             padTouch.value = false;
             return;
           }
+          // Gear over-scroll release (#174): armed → fire the category switch (the fan stays expanded;
+          // the vertical preload-swap plays). Disarmed (dragged back below the line) → just spring the
+          // push back. Either way settle the clamped rotation at the end and end the grind.
+          if (osDir.value !== 0) {
+            if (osArmed.value === 1) {
+              runOnJS(toggleCategory)();
+              overscrollX.value = withTiming(0, { duration: 220 });
+            } else {
+              overscrollX.value = withSpring(0, SNAP_SPRING);
+            }
+            osDir.value = 0;
+            osProgress.value = 0;
+            osArmed.value = 0;
+            rotation.value = withSpring(snapRot(rotation.value, count), SNAP_SPRING);
+            grindProgress.value = withTiming(0, { duration: 220 });
+            padTouch.value = false;
+            return;
+          }
           // Predict the landing detent from the capped velocity and spring there CARRYING the
           // velocity (#30 A). The spring overshoots a little on a hard fling — intentional, bounded —
           // and always converges onto a detent, even released past a deck end (drag overscroll snaps
@@ -505,10 +654,18 @@ export function CardCarousel() {
               expandProgress.value = withSpring(1, EXPAND_SPRING);
             }
           }
+          // Safety (#174): a gear over-scroll cancelled mid-drag (onEnd never ran) must not leave the
+          // fan stranded pushed-aside — spring it home without firing a switch.
+          if (osDir.value !== 0) {
+            overscrollX.value = withSpring(0, SNAP_SPRING);
+            osDir.value = 0;
+            osProgress.value = 0;
+            osArmed.value = 0;
+          }
           if (grindProgress.value !== 0 && !scrolled.value) grindProgress.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress],
+    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, toggleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osArmed],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -529,6 +686,7 @@ export function CardCarousel() {
         fullscreenProgress={fullscreenProgress}
         grindProgress={grindProgress}
         deckShift={deckShift}
+        overscrollX={overscrollX}
         machineState={machineState}
         focusIndex={focusIndex}
         closeFullscreen={closeFullscreen}
@@ -551,7 +709,12 @@ export function CardCarousel() {
             normally, above the fullscreen dim, under the focused card (#62 D). */}
         <GearDecoration />
         {slots}
+        {/* Incoming deck preloaded off-screen as a ghost fan during a switch (#174) — rises + fades
+            in over the outgoing hand, then the live deck takes its place at commit. */}
+        {incoming ? <GhostFan items={decks[incoming]} enter={deckEnter} /> : null}
         <FocusOverlay />
+        {/* Gear over-scroll indicator (#174): progress ring + target deck SVG in the opened gap. */}
+        <DeckSwitchIndicator osProgress={osProgress} osDir={osDir} osArmed={osArmed} />
         {/* The inner gear's touchable pad: a transparent hit-target child, so the container pan
             receives gear touches instead of the ExpandVeil swallowing them. Above the dim (2600)
             so the gear stays usable while a card is focused. */}
