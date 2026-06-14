@@ -9,7 +9,7 @@ import type { CharacterFile } from '@/lib/character-file';
 
 import { TRAIT_ORDER } from '../character';
 import { DomainCarousel } from './domain-carousel';
-import type { DomainCardInfo } from './settings-panel';
+import type { DomainCardInfo } from './domain-card-info';
 import { OverlayShell } from './overlay-shell';
 
 /** Small selectable chip. */

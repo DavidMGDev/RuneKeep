@@ -116,6 +116,9 @@ export interface CharacterFile {
    *  effects onto the base stats. Ids are stable deck-card ids (catalog / equipment / loot / custom).
    *  Additive + optional, so existing saves (undefined) compute exactly as before. */
   enabledCardIds?: string[];
+  /** System equipment/loot the player picked up beyond creation (#175/#180): weapon/armor/loot ids
+   *  from the rulebook catalog, forged into the decks so tier 2+ gear can be equipped + enabled. */
+  acquiredCardIds?: string[];
   level: number;
 }
 
