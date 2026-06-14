@@ -18,26 +18,54 @@ export interface CardDraft {
   effects: CardEffect[];
 }
 
-/** Target cycle order for the effect picker — the most-used stats first. */
-const TARGET_CYCLE: EffectTarget[] = [
-  'maxHp', 'stressMax', 'armorScore', 'evasion', 'majorThreshold', 'severeThreshold', 'proficiency', 'hopeMax',
-  'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge',
+/** Target groups for the effect picker list (#191) — pick from a labelled list, not a blind cycle. */
+const TARGET_GROUPS: { label: string; targets: EffectTarget[] }[] = [
+  { label: 'Resources', targets: ['maxHp', 'stressMax', 'hopeMax', 'armorScore'] },
+  { label: 'Defense', targets: ['evasion', 'majorThreshold', 'severeThreshold', 'proficiency'] },
+  { label: 'Traits', targets: ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'] },
 ];
-// keep the constant honest if the engine adds a target
-EFFECT_TARGETS.forEach((t) => { if (!TARGET_CYCLE.includes(t)) TARGET_CYCLE.push(t); });
+// keep the list honest if the engine adds a target
+const LISTED = new Set(TARGET_GROUPS.flatMap((g) => g.targets));
+const EXTRA = EFFECT_TARGETS.filter((t) => !LISTED.has(t));
+const TARGET_GROUPS_FULL = EXTRA.length ? [...TARGET_GROUPS, { label: 'Other', targets: EXTRA }] : TARGET_GROUPS;
+
+/** Full-screen list to pick an effect target (#191). Sits above the card editor. */
+function TargetPicker({ current, onPick, onClose }: { current: EffectTarget; onPick: (t: EffectTarget) => void; onClose: () => void }) {
+  return (
+    <View style={{ position: 'absolute', top: -80, bottom: -80, left: -60, right: -60, zIndex: 10001, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 300, maxHeight: '78%', paddingHorizontal: 16, paddingVertical: 16 }}>
+        <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Pick a stat</Text>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
+          {TARGET_GROUPS_FULL.map((g) => (
+            <View key={g.label} style={{ gap: 5 }}>
+              <Text style={{ color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{g.label}</Text>
+              {g.targets.map((t) => {
+                const on = t === current;
+                return (
+                  <Pressable key={t} onPress={() => onPick(t)} accessibilityRole="button" accessibilityState={{ selected: on }}>
+                    <View style={{ height: 40, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
+                      <Text style={{ color: on ? Rune.ivory : Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{TARGET_LABEL[t]}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </ScrollView>
+      </ChamferBox>
+    </View>
+  );
+}
 
 /**
- * Effects authoring (#175): add as many stat effects as you need to a custom card. Each effect is a
- * target (tap to cycle) and a signed amount (stepper). The engine still clamps to the game caps when
- * the card is enabled, so e.g. "+9 Max HP" simply tops out at 12.
+ * Effects authoring (#175/#191): add as many stat effects as you need to a custom card. Each effect
+ * is a target (picked from a list) and a signed amount (stepper). The engine still clamps to the game
+ * caps when the card is enabled, so e.g. "+9 Max HP" simply tops out at 12.
  */
 function EffectsField({ effects, onChange }: { effects: CardEffect[]; onChange: (e: CardEffect[]) => void }) {
+  const [picking, setPicking] = useState<number | null>(null);
   const setAt = (i: number, patch: Partial<CardEffect>) => onChange(effects.map((e, j) => (j === i ? { ...e, ...patch } : e)));
-  const cycle = (i: number) => {
-    const cur = effects[i].target;
-    const next = TARGET_CYCLE[(TARGET_CYCLE.indexOf(cur) + 1) % TARGET_CYCLE.length];
-    setAt(i, { target: next });
-  };
   const bump = (i: number, d: number) => setAt(i, { delta: Math.max(-9, Math.min(12, (effects[i].delta ?? 0) + d)) });
   return (
     <View style={{ gap: 7, marginTop: 2 }}>
@@ -47,21 +75,21 @@ function EffectsField({ effects, onChange }: { effects: CardEffect[]; onChange: 
       ) : null}
       {effects.map((e, i) => (
         <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-          <Pressable onPress={() => cycle(i)} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Effect target ${TARGET_LABEL[e.target]}, tap to change`}>
-            <ChamferBox chamfer={7} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 11 }}>
+          <Pressable onPress={() => setPicking(i)} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Effect target ${TARGET_LABEL[e.target]}, tap to choose`}>
+            <View style={{ height: 38, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 5, backgroundColor: 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
               <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.bold }}>{TARGET_LABEL[e.target]}</Text>
-            </ChamferBox>
+            </View>
           </Pressable>
           <Pressable onPress={() => bump(i, -1)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Decrease">
-            <ChamferBox chamfer={6} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 5, backgroundColor: 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
               <Text style={{ color: Rune.sheet, fontSize: 19, fontFamily: Display.bold }}>−</Text>
-            </ChamferBox>
+            </View>
           </Pressable>
           <Text style={{ color: Rune.goldBright, fontSize: 17, fontFamily: Display.black, width: 38, textAlign: 'center' }}>{(e.delta ?? 0) >= 0 ? `+${e.delta ?? 0}` : `${e.delta}`}</Text>
           <Pressable onPress={() => bump(i, 1)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Increase">
-            <ChamferBox chamfer={6} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 5, backgroundColor: 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
               <Text style={{ color: Rune.sheet, fontSize: 19, fontFamily: Display.bold }}>+</Text>
-            </ChamferBox>
+            </View>
           </Pressable>
           <Pressable onPress={() => onChange(effects.filter((_, j) => j !== i))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove effect" style={{ padding: 3 }}>
             <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
@@ -69,6 +97,9 @@ function EffectsField({ effects, onChange }: { effects: CardEffect[]; onChange: 
         </View>
       ))}
       <RuneButton label="+ Add effect" kind="secondary" dense height={36} onPress={() => onChange([...effects, { target: 'maxHp', delta: 1 }])} />
+      {picking != null && effects[picking] ? (
+        <TargetPicker current={effects[picking].target} onPick={(t) => { setAt(picking, { target: t }); setPicking(null); }} onClose={() => setPicking(null)} />
+      ) : null}
     </View>
   );
 }
