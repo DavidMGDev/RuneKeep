@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polygon, Rect } from 'react-native-svg';
@@ -46,26 +46,72 @@ export function InventoryIcon() {
   );
 }
 
+/** Notes (#214): a dog-eared page with rule lines. */
+export function NotesIcon() {
+  return (
+    <Svg width={42} height={42} viewBox="0 0 48 48">
+      <Path d="M 12 7 H 30 L 37 14 V 41 H 12 Z" fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      <Path d="M 30 7 V 14 H 37" fill="none" stroke={GOLD} strokeWidth={2.2} strokeLinejoin="round" />
+      <Line x1={17} y1={21} x2={32} y2={21} stroke={GOLD} strokeWidth={2} strokeLinecap="round" />
+      <Line x1={17} y1={27} x2={32} y2={27} stroke={GOLD} strokeWidth={2} strokeLinecap="round" />
+      <Line x1={17} y1={33} x2={27} y2={33} stroke={GOLD} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** Wild Shape (#214, Druid): a beast paw print. */
+export function WildshapeIcon() {
+  return (
+    <Svg width={42} height={42} viewBox="0 0 48 48">
+      {/* main pad */}
+      <Path d="M 24 40 C 16 40 14 33 17 29 C 19 26 29 26 31 29 C 34 33 32 40 24 40 Z" fill={GOLD} />
+      {/* toe beans */}
+      <Circle cx={14.5} cy={24} r={3.6} fill={GOLD} />
+      <Circle cx={20} cy={18.5} r={3.8} fill={GOLD} />
+      <Circle cx={28} cy={18.5} r={3.8} fill={GOLD} />
+      <Circle cx={33.5} cy={24} r={3.6} fill={GOLD} />
+    </Svg>
+  );
+}
+
+/** The right glyph for any category (#214) — used by the trigger and the over-scroll indicator. */
+export function CategoryGlyph({ category }: { category: CardCategory }) {
+  switch (category) {
+    case 'inventory':
+      return <InventoryIcon />;
+    case 'notes':
+      return <NotesIcon />;
+    case 'wildshape':
+      return <WildshapeIcon />;
+    default:
+      return <ArsenalIcon />;
+  }
+}
+
 export function DeckToggleIcon({ category }: { category: CardCategory }) {
-  const t = useSharedValue(category === 'inventory' ? 1 : 0);
+  // Cross-fade the OUTGOING glyph to the INCOMING one on any category change (#214: the ring may hold
+  // up to four categories now, so the old two-face flip generalizes to a fade between glyphs).
+  const [shown, setShown] = useState(category);
+  const [prev, setPrev] = useState<CardCategory | null>(null);
+  const t = useSharedValue(1);
   useEffect(() => {
-    t.value = withTiming(category === 'inventory' ? 1 : 0, { duration: 280, easing: Easing.inOut(Easing.cubic) });
-  }, [category, t]);
-  const arsenal = useAnimatedStyle(() => ({
-    opacity: 1 - t.value,
-    transform: [{ perspective: 400 }, { rotateY: `${t.value * 90}deg` }, { scale: 0.78 + (1 - t.value) * 0.22 }],
-  }));
-  const inventory = useAnimatedStyle(() => ({
-    opacity: t.value,
-    transform: [{ perspective: 400 }, { rotateY: `${(1 - t.value) * -90}deg` }, { scale: 0.78 + t.value * 0.22 }],
-  }));
+    if (category === shown) return;
+    setPrev(shown);
+    setShown(category);
+    t.value = 0;
+    t.value = withTiming(1, { duration: 280, easing: Easing.inOut(Easing.cubic) });
+  }, [category, shown, t]);
+  const incoming = useAnimatedStyle(() => ({ opacity: t.value, transform: [{ scale: 0.8 + 0.2 * t.value }] }));
+  const outgoing = useAnimatedStyle(() => ({ opacity: 1 - t.value, transform: [{ scale: 0.8 + 0.2 * (1 - t.value) }] }));
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
-      <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, arsenal]}>
-        <ArsenalIcon />
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, inventory]}>
-        <InventoryIcon />
+      {prev ? (
+        <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, outgoing]}>
+          <CategoryGlyph category={prev} />
+        </Animated.View>
+      ) : null}
+      <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, incoming]}>
+        <CategoryGlyph category={shown} />
       </Animated.View>
     </View>
   );

@@ -9,6 +9,7 @@ import Animated, {
   runOnJS,
   type SharedValue,
   useAnimatedProps,
+  useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -20,8 +21,9 @@ import Svg, { Circle } from 'react-native-svg';
 import { box } from '@/lib/design';
 import { Body, Rune } from '@/constants/theme';
 import { type CardCategory, type CardItem } from '../card-data';
+import { CATEGORY_LABEL, nextCategory } from '../carousel-categories';
 import { type ArrivalEnd, type ExpandState, useCarousel } from '../carousel-context';
-import { ArsenalIcon, InventoryIcon } from '../redesign/deck-toggle-icon';
+import { CategoryGlyph } from '../redesign/deck-toggle-icon';
 import {
   ANGLE_STEP,
   CARD_H,
@@ -469,8 +471,18 @@ const RING_C = 2 * Math.PI * RING_R;
  *  (osProgress), then its ring fills over the 1s hold (osHold); brightens to red + "RELEASE" when
  *  armed (the hold completed → release switches). */
 function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }: { osProgress: SharedValue<number>; osDir: SharedValue<number>; osArmed: SharedValue<number>; osHold: SharedValue<number>; overscrollX: SharedValue<number> }) {
-  const { category } = useCarousel();
-  const target: CardCategory = category === 'abilities' ? 'inventory' : 'abilities';
+  const { category, ring } = useCarousel();
+  // The target depends on the pull direction (#214): osDir > 0 (first card pulled right) walks the
+  // ring BACKWARD (-1), osDir < 0 (last card pulled left) walks it FORWARD (+1). Sync the live dir to
+  // JS so the right glyph/label renders; the indicator is hidden whenever osDir is 0.
+  const [dir, setDir] = useState(0);
+  useAnimatedReaction(
+    () => osDir.value,
+    (v, prev) => {
+      if (v !== prev && v !== 0) runOnJS(setDir)(v);
+    },
+  );
+  const target: CardCategory = nextCategory(ring, category, dir > 0 ? -1 : 1);
   const wrap = useAnimatedStyle(() => {
     // Phantom card slot one step beyond the pushed edge (left of first / right of last), riding the
     // push. It enters from ~4 card-steps further out, sliding + fading toward the slot as the
@@ -500,11 +512,11 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
           <Circle cx={IND / 2} cy={IND / 2} r={RING_R} stroke="rgba(218,162,73,0.22)" strokeWidth={3} fill="rgba(10,12,17,0.66)" />
           <AnimatedCircle cx={IND / 2} cy={IND / 2} r={RING_R} strokeWidth={3.6} fill="none" strokeLinecap="round" strokeDasharray={RING_C} animatedProps={ringProps} transform={`rotate(-90 ${IND / 2} ${IND / 2})`} />
         </Svg>
-        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>{target === 'inventory' ? <InventoryIcon /> : <ArsenalIcon />}</View>
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}><CategoryGlyph category={target} /></View>
       </View>
       <View style={{ height: 14, marginTop: 2, width: 120, alignItems: 'center', justifyContent: 'center' }}>
         <Animated.Text numberOfLines={1} style={[{ position: 'absolute', color: Rune.goldText, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }, pullLabel]}>
-          {target === 'inventory' ? 'Inventory' : 'Arsenal'}
+          {CATEGORY_LABEL[target]}
         </Animated.Text>
         <Animated.Text numberOfLines={1} style={[{ position: 'absolute', color: Rune.goldBright, fontSize: 9, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }, armLabel]}>
           Release
@@ -521,7 +533,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, closeFullscreen, collapse, toggleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
@@ -755,9 +767,12 @@ export function CardCarousel() {
           // the OPPOSITE extreme (pulled from the first card → arrive at the last card of the new deck,
           // and vice-versa). Not armed (released early / dragged back) → just spring the push back.
           if (osDir.value !== 0) {
+            // osDir > 0 = first card pulled RIGHT → previous category (arrive at its END); osDir < 0
+            // = last card pulled LEFT → next category (arrive at its START). The ring loops (#214).
             const arrival = osDir.value > 0 ? 'end' : 'start';
+            const dir = osDir.value > 0 ? -1 : 1;
             if (osArmed.value === 1) {
-              runOnJS(toggleCategory)(arrival);
+              runOnJS(cycleCategory)(dir, arrival);
               overscrollX.value = withTiming(0, { duration: 220 });
             } else {
               overscrollX.value = withSpring(0, SNAP_SPRING);
@@ -814,7 +829,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, toggleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed],
+    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
