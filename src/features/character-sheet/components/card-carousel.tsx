@@ -20,7 +20,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { box } from '@/lib/design';
 import { Body, Rune } from '@/constants/theme';
 import { type CardCategory, type CardItem } from '../card-data';
-import { type ExpandState, useCarousel } from '../carousel-context';
+import { type ArrivalEnd, type ExpandState, useCarousel } from '../carousel-context';
 import { ArsenalIcon, InventoryIcon } from '../redesign/deck-toggle-icon';
 import {
   ANGLE_STEP,
@@ -50,10 +50,10 @@ import {
   PAD_X,
   PAD_Y,
   maxRotation,
-  OVERSCROLL_RESIST,
   OVERSCROLL_GAIN,
-  OVERSCROLL_ARM,
-  OVERSCROLL_MAX,
+  OVERSCROLL_CAP_GEAR,
+  OVERSCROLL_CAP_NORMAL,
+  OVERSCROLL_HOLD_MS,
   DECK_EXIT_DROP,
   DECK_ENTER_RISE,
   OX,
@@ -415,30 +415,31 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   );
 });
 
-/** The incoming deck rendered as a static, centered ghost fan during a switch (#174): thumbs only,
- *  rising + fading in (deckEnter 0→1) while the OLD live hand slides down and fades out beneath it.
- *  At commit the live deck takes this exact centered pose, so the hand-off is seamless. */
-function GhostFan({ items, enter }: { items: CardItem[]; enter: SharedValue<number> }) {
+/** The incoming deck rendered as a ghost fan during a switch (#174/#188): rising + fading in
+ *  (deckEnter 0→1) while the OLD live hand slides down and fades out beneath it. Centered on the
+ *  ARRIVAL extreme (#188 continuation) — so the FIRST cards the user will see are the ones near that
+ *  end, and they're preloaded at full-res (not just LOD) before the live deck takes this exact pose. */
+function GhostFan({ items, enter, arrival }: { items: CardItem[]; enter: SharedValue<number>; arrival: ArrivalEnd }) {
   const n = items.length;
-  const mid = (n - 1) / 2;
+  const center = arrival === 'start' ? 0 : n - 1; // the extreme the switch lands on
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: 1500 }]}>
       {items.map((it, i) => (
-        <GhostSlot key={it.id} item={it} index={i} mid={mid} enter={enter} />
+        <GhostSlot key={it.id} item={it} index={i} center={center} enter={enter} withImage={Math.abs(i - center) <= IMG_MOUNT_HALF} />
       ))}
     </View>
   );
 }
 
-function GhostSlot({ item, index, mid, enter }: { item: CardItem; index: number; mid: number; enter: SharedValue<number> }) {
-  // Resting EXPANDED arc pose (p=1, no grind), centered on the deck middle — where the live hand
+function GhostSlot({ item, index, center, enter, withImage }: { item: CardItem; index: number; center: number; enter: SharedValue<number>; withImage: boolean }) {
+  // Resting EXPANDED arc pose (p=1, no grind), centered on the arrival extreme — where the live hand
   // lands at commit. Static geometry; only the enter progress (rise + fade) animates.
-  const theta = (index - mid) * ANGLE_STEP;
+  const theta = (index - center) * ANGLE_STEP;
   const x = OX + R * Math.sin(theta);
   const y0 = OY - R * Math.cos(theta);
   const scale = cardScaleAt(theta);
   const tilt = theta * 0.5;
-  const dist = Math.abs(index - mid);
+  const dist = Math.abs(index - center);
   const base = slotOpacityAt(dist, 1);
   const z = Math.round(1000 - dist * 10);
   const style = useAnimatedStyle(() => ({
@@ -450,6 +451,8 @@ function GhostSlot({ item, index, mid, enter }: { item: CardItem; index: number;
     <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
       <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
         <CardThumb item={item} />
+        {/* preload full-res for the first-seen cards so they don't pop from LOD after the swap (#188) */}
+        {withImage ? <Card item={item} width={CARD_W} height={CARD_H} /> : null}
       </View>
     </Animated.View>
   );
@@ -459,25 +462,27 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const IND = 64; // indicator box (design px)
 const RING_R = 28;
 const RING_C = 2 * Math.PI * RING_R;
-const IND_Y = 548; // sits in the band beside the expanded hand
-const IND_LX = 30; // left gap x (first card pushed right)
-const IND_RX = 412 - 30 - IND; // right gap x (last card pushed left)
 
-/** The over-scroll indicator (#174): emerges in the gap OPPOSITE the pushed edge, showing a progress
- *  ring filling toward the arm point + the TARGET deck's own SVG (chest / fanned cards). Hidden until
- *  the gear actually over-scrolls past an end; brightens to red + "RELEASE" once armed. */
-function DeckSwitchIndicator({ osProgress, osDir, osArmed }: { osProgress: SharedValue<number>; osDir: SharedValue<number>; osArmed: SharedValue<number> }) {
+/** The over-scroll indicator (#174/#188): sits where a PHANTOM card would be — just left of the first
+ *  card / right of the last (carousel-aligned, #9), riding the fan push. Fades in over the push
+ *  (osProgress), then its ring fills over the 1s hold (osHold); brightens to red + "RELEASE" when
+ *  armed (the hold completed → release switches). */
+function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }: { osProgress: SharedValue<number>; osDir: SharedValue<number>; osArmed: SharedValue<number>; osHold: SharedValue<number>; overscrollX: SharedValue<number> }) {
   const { category } = useCarousel();
   const target: CardCategory = category === 'abilities' ? 'inventory' : 'abilities';
   const wrap = useAnimatedStyle(() => {
+    // Phantom card slot one step beyond the pushed edge (left of first / right of last), riding the push.
+    const theta = (osDir.value > 0 ? -1 : 1) * ANGLE_STEP;
+    const x = OX + R * Math.sin(theta) + overscrollX.value;
+    const y = OY - R * Math.cos(theta);
     const p = Math.min(1, osProgress.value);
     return {
-      opacity: osDir.value === 0 ? 0 : Math.min(1, osProgress.value * 1.6),
-      transform: [{ translateX: osDir.value > 0 ? IND_LX : IND_RX }, { translateY: IND_Y }, { scale: 0.82 + 0.18 * p + (osArmed.value === 1 ? 0.06 : 0) }],
+      opacity: osDir.value === 0 ? 0 : Math.min(1, osProgress.value * 1.4),
+      transform: [{ translateX: x - IND / 2 }, { translateY: y - IND / 2 }, { scale: 0.85 + 0.15 * p + (osArmed.value === 1 ? 0.06 : 0) }],
     };
   });
   const ringProps = useAnimatedProps(() => ({
-    strokeDashoffset: RING_C * (1 - Math.min(1, osProgress.value)),
+    strokeDashoffset: RING_C * (1 - Math.min(1, osHold.value)),
     stroke: osArmed.value === 1 ? Rune.red : Rune.goldBright,
   }));
   const pullLabel = useAnimatedStyle(() => ({ opacity: osArmed.value === 1 ? 0 : 1 }));
@@ -510,7 +515,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed }: { osProgress: Share
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, closeFullscreen, collapse, toggleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, closeFullscreen, collapse, toggleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
@@ -519,8 +524,10 @@ export function CardCarousel() {
   // pull-to-refresh at a deck end: how far the fan is shoved, which end, and whether it's armed.
   const overscrollX = useSharedValue(0); // design px the fan is pushed sideways past the end
   const osDir = useSharedValue(0); // +1 = first card pushed RIGHT (start end), -1 = last card pushed LEFT (end)
-  const osProgress = useSharedValue(0); // 0..1 toward the arm point (OVERSCROLL_ARM)
-  const osArmed = useSharedValue(0); // 1 once the push reached the arm point — release here fires the switch
+  const osProgress = useSharedValue(0); // 0..1 = indicator fade-in (push / cap)
+  const osHold = useSharedValue(0); // 0..1 = radial fill while held AT the cap (over OVERSCROLL_HOLD_MS)
+  const osHolding = useSharedValue(0); // 1 while the hold timer is running (so it only starts once)
+  const osArmed = useSharedValue(0); // 1 once osHold reached 1 — release here fires the switch
 
   const startRot = useSharedValue(0);
   const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
@@ -575,9 +582,46 @@ export function CardCarousel() {
     }
   });
 
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
+  const pan = useMemo(() => {
+    // Over-scroll → time-based deck switch (#188). Past a deck end the fan is pushed sideways up to a
+    // CAP (gear 50% / normal 15%); the indicator fades in over that push (osProgress). AT the cap a
+    // radial bar fills over OVERSCROLL_HOLD_MS (quartic ease in+out, osHold) and arms; release while
+    // armed switches, scrolling back below the cap cancels.
+    const osPush = (push: number, dir: number, cap: number) => {
+      'worklet';
+      overscrollX.value = dir > 0 ? push : -push;
+      osDir.value = dir;
+      osProgress.value = Math.min(1, push / cap);
+      if (push >= cap) {
+        if (osHolding.value === 0) {
+          osHolding.value = 1;
+          osHold.value = withTiming(1, { duration: OVERSCROLL_HOLD_MS, easing: Easing.inOut(Easing.poly(4)) }, (fin) => {
+            if (fin) {
+              osArmed.value = 1;
+              runOnJS(focusHaptic)();
+            }
+          });
+        }
+      } else if (osHolding.value === 1) {
+        osHolding.value = 0;
+        osArmed.value = 0;
+        cancelAnimation(osHold);
+        osHold.value = withTiming(0, { duration: 200 });
+      }
+    };
+    // Back in range mid-drag: drop the over-scroll instantly (no spring — the finger is still down).
+    const osClear = () => {
+      'worklet';
+      if (osDir.value === 0) return;
+      overscrollX.value = 0;
+      osDir.value = 0;
+      osProgress.value = 0;
+      osHolding.value = 0;
+      osArmed.value = 0;
+      cancelAnimation(osHold);
+      osHold.value = 0;
+    };
+    return Gesture.Pan()
         .minDistance(2)
         .onBegin((e) => {
           cancelAnimation(rotation);
@@ -604,27 +648,14 @@ export function CardCarousel() {
             const raw = startRot.value - e.translationX / gearPanR;
             const max = maxRotation(count);
             if (raw < 0) {
-              rotation.value = 0;
-              const push = Math.min(OVERSCROLL_MAX, -raw * gearPanR * OVERSCROLL_GAIN);
-              overscrollX.value = push; // first card shoved RIGHT, gap opens LEFT
-              osDir.value = 1;
-              osProgress.value = push / OVERSCROLL_ARM;
-              osArmed.value = push >= OVERSCROLL_ARM ? 1 : 0;
+              rotation.value = 0; // first card shoved RIGHT, gap opens LEFT
+              osPush(Math.min(OVERSCROLL_CAP_GEAR, -raw * gearPanR * OVERSCROLL_GAIN), 1, OVERSCROLL_CAP_GEAR);
             } else if (raw > max) {
-              rotation.value = max;
-              const push = Math.min(OVERSCROLL_MAX, (raw - max) * gearPanR * OVERSCROLL_GAIN);
-              overscrollX.value = -push; // last card shoved LEFT, gap opens RIGHT
-              osDir.value = -1;
-              osProgress.value = push / OVERSCROLL_ARM;
-              osArmed.value = push >= OVERSCROLL_ARM ? 1 : 0;
+              rotation.value = max; // last card shoved LEFT, gap opens RIGHT
+              osPush(Math.min(OVERSCROLL_CAP_GEAR, (raw - max) * gearPanR * OVERSCROLL_GAIN), -1, OVERSCROLL_CAP_GEAR);
             } else {
               rotation.value = raw;
-              if (osDir.value !== 0) {
-                overscrollX.value = 0;
-                osDir.value = 0;
-                osProgress.value = 0;
-                osArmed.value = 0;
-              }
+              osClear();
             }
             return;
           }
@@ -645,7 +676,18 @@ export function CardCarousel() {
             scrolled.value = true;
             const raw = startRot.value - e.translationX / PAN_R;
             const max = maxRotation(count);
-            rotation.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
+            // Normal-scroll over-scroll on the first/last card (#188 #8): clamp + push the fan up to
+            // the 15% cap, driving the same time-based switch (gentler than the gear's 50%).
+            if (raw < 0) {
+              rotation.value = 0;
+              osPush(Math.min(OVERSCROLL_CAP_NORMAL, -raw * PAN_R * OVERSCROLL_GAIN), 1, OVERSCROLL_CAP_NORMAL);
+            } else if (raw > max) {
+              rotation.value = max;
+              osPush(Math.min(OVERSCROLL_CAP_NORMAL, (raw - max) * PAN_R * OVERSCROLL_GAIN), -1, OVERSCROLL_CAP_NORMAL);
+            } else {
+              rotation.value = raw;
+              osClear();
+            }
             return;
           }
           if (transitioned.value) return; // one transition per gesture
@@ -703,12 +745,13 @@ export function CardCarousel() {
             padTouch.value = false;
             return;
           }
-          // Gear over-scroll release (#174): armed → fire the category switch (the fan stays expanded;
-          // the vertical preload-swap plays). Disarmed (dragged back below the line) → just spring the
-          // push back. Either way settle the clamped rotation at the end and end the grind.
+          // Over-scroll release (#188): armed (the radial filled over the 1s hold) → switch, landing on
+          // the OPPOSITE extreme (pulled from the first card → arrive at the last card of the new deck,
+          // and vice-versa). Not armed (released early / dragged back) → just spring the push back.
           if (osDir.value !== 0) {
+            const arrival = osDir.value > 0 ? 'end' : 'start';
             if (osArmed.value === 1) {
-              runOnJS(toggleCategory)();
+              runOnJS(toggleCategory)(arrival);
               overscrollX.value = withTiming(0, { duration: 220 });
             } else {
               overscrollX.value = withSpring(0, SNAP_SPRING);
@@ -716,6 +759,9 @@ export function CardCarousel() {
             osDir.value = 0;
             osProgress.value = 0;
             osArmed.value = 0;
+            osHolding.value = 0;
+            cancelAnimation(osHold);
+            osHold.value = withTiming(0, { duration: 200 });
             rotation.value = withSpring(snapRot(rotation.value, count), SNAP_SPRING);
             grindProgress.value = withTiming(0, { duration: 220 });
             padTouch.value = false;
@@ -754,11 +800,15 @@ export function CardCarousel() {
             osDir.value = 0;
             osProgress.value = 0;
             osArmed.value = 0;
+            osHolding.value = 0;
+            cancelAnimation(osHold);
+            osHold.value = withTiming(0, { duration: 200 });
           }
           if (grindProgress.value !== 0 && !scrolled.value) grindProgress.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
-        }),
-    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, toggleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osArmed],
+        });
+    },
+    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, toggleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -806,7 +856,7 @@ export function CardCarousel() {
         {slots}
         {/* Incoming deck preloaded off-screen as a ghost fan during a switch (#174) — rises + fades
             in over the outgoing hand, then the live deck takes its place at commit. */}
-        {incoming ? <GhostFan items={decks[incoming]} enter={deckEnter} /> : null}
+        {incoming ? <GhostFan items={decks[incoming]} enter={deckEnter} arrival={incomingArrival} /> : null}
         <FocusOverlay />
         {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view. */}
         <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 730, 200, 40), { zIndex: 3500, alignItems: 'center' }, modBtnStyle]}>
@@ -819,7 +869,7 @@ export function CardCarousel() {
           ) : null}
         </Animated.View>
         {/* Gear over-scroll indicator (#174): progress ring + target deck SVG in the opened gap. */}
-        <DeckSwitchIndicator osProgress={osProgress} osDir={osDir} osArmed={osArmed} />
+        <DeckSwitchIndicator osProgress={osProgress} osDir={osDir} osArmed={osArmed} osHold={osHold} overscrollX={overscrollX} />
         {/* The inner gear's touchable pad: a transparent hit-target child, so the container pan
             receives gear touches instead of the ExpandVeil swallowing them. Above the dim (2600)
             so the gear stays usable while a card is focused. */}

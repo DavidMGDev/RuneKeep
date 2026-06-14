@@ -2,7 +2,11 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { Easing, runOnJS, type SharedValue, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
-import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, middleRotation, snapRot } from './carousel-geometry';
+import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, maxRotation, middleRotation, snapRot } from './carousel-geometry';
+
+/** Which end of the incoming deck a switch lands on (#188): a switch begun from the FIRST card
+ *  arrives at the LAST card of the new deck (and vice-versa), so it reads as one continuous deck. */
+export type ArrivalEnd = 'start' | 'end';
 
 /** Three states only (see docs/ui-fix-brief §2): the hand is bundled, fanned, or one card is focused. */
 export type ExpandState = 'compact' | 'expanded' | 'fullscreen';
@@ -25,13 +29,16 @@ interface CarouselContextValue {
   /** The category being switched TO while a swap is mid-flight (#174), else null. CardCarousel renders
    *  its deck as a ghost fan so the new cards paint before they show. */
   incoming: CardCategory | null;
+  /** Which end the in-flight switch lands on (#188): the ghost fan centers on this extreme. */
+  incomingArrival: ArrivalEnd;
   /** The live decks. Abilities = base deck + the character's origin cards pinned at the RIGHT end
    *  (subclass, ancestry, community — #100). Inventory never shows them. */
   decks: Record<CardCategory, CardItem[]>;
   category: CardCategory;
-  /** Switch deck; animates the fan re-center to the new deck's middle. */
-  setCategory: (c: CardCategory) => void;
-  toggleCategory: () => void;
+  /** Switch deck; lands at the opposite extreme (#188) — `arrival` = which end of the NEW deck to
+   *  show ('end' = last card, the default continuation from the start; 'start' = first card). */
+  setCategory: (c: CardCategory, arrival?: ArrivalEnd) => void;
+  toggleCategory: (arrival?: ArrivalEnd) => void;
   /** JS actions (call from React handlers). They drive the shared values directly. */
   expand: () => void;
   collapse: () => void;
@@ -75,6 +82,8 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
   const deckShift = useSharedValue(0);
   const deckEnter = useSharedValue(0);
   const [incoming, setIncoming] = useState<CardCategory | null>(null);
+  const [incomingArrival, setIncomingArrival] = useState<ArrivalEnd>('end');
+  const arrivalRef = useRef<ArrivalEnd>('end');
   const decksRef = useRef(decks);
   decksRef.current = decks;
   const categoryRef = useRef(category);
@@ -107,8 +116,10 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
     (c: CardCategory) => {
       setCategoryState(c);
       const n = decksRef.current[c].length;
-      rotation.value = middleRotation(n);
-      focusIndex.value = Math.round(middleRotation(n) / ANGLE_STEP);
+      // Continuation (#188): land on the opposite extreme of the new deck, not its middle.
+      const land = arrivalRef.current === 'start' ? 0 : arrivalRef.current === 'end' ? maxRotation(n) : middleRotation(n);
+      rotation.value = land;
+      focusIndex.value = Math.round(land / ANGLE_STEP);
       deckShift.value = 0;
       const idx = pendingOpen.current;
       pendingOpen.current = null;
@@ -126,8 +137,10 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
   );
 
   const setCategory = useCallback(
-    (c: CardCategory) => {
+    (c: CardCategory, arrival: ArrivalEnd = 'end') => {
       if (c === categoryRef.current || incomingRef.current) return; // ignore re-entrancy mid-switch
+      arrivalRef.current = arrival;
+      setIncomingArrival(arrival);
       incomingRef.current = c;
       setIncoming(c); // mount the incoming deck as a ghost fan (hidden) so it paints before it shows
       deckEnter.value = 0;
@@ -145,9 +158,12 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
     [deckShift, deckEnter, commitSwitch],
   );
 
-  const toggleCategory = useCallback(() => {
-    setCategory(categoryRef.current === 'abilities' ? 'inventory' : 'abilities');
-  }, [setCategory]);
+  const toggleCategory = useCallback(
+    (arrival: ArrivalEnd = 'end') => {
+      setCategory(categoryRef.current === 'abilities' ? 'inventory' : 'abilities', arrival);
+    },
+    [setCategory],
+  );
 
   // Carousel loads CENTERED on create + load (#174): the initial rotation is computed from whatever
   // deck length is present at mount, but a real character's decks arrive async (file derivation +
@@ -206,6 +222,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       deckShift,
       deckEnter,
       incoming,
+      incomingArrival,
       decks,
       category,
       setCategory,
@@ -219,7 +236,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       toggleCard: onToggleCard ?? noopToggle,
       showCardInfo: onShowCardInfo ?? noopInfo,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
