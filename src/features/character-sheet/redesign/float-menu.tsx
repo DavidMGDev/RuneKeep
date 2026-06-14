@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
 
 import { Body, Display, Rune } from '@/constants/theme';
@@ -127,8 +127,9 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
     setOpen(true);
     setPinned(false);
     openSV.value = 1;
+    // Clear fade/bloom in (#201) — a timed ease-out reads as a fade, not a pop.
     if (reduced) progress.value = 1;
-    else progress.value = withSpring(1, { damping: 16, stiffness: 210, mass: 0.7 });
+    else progress.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) });
   }, [openSV, progress, reduced]);
 
   // Close IMMEDIATELY (no animated fade-out): a lingering full-screen scrim at zIndex 9999 was
