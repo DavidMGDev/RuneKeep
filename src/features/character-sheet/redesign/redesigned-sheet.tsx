@@ -31,7 +31,7 @@ import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
-import { SheetText } from '../components/primitives';
+import { FillText, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
 import { ChargeTrack, type ChargeTrackHandle } from '../components/charge-track';
 import { HeartTrack, type HeartTrackHandle } from '../components/heart-track';
@@ -207,9 +207,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
           #48 D), and spans to the defense panel's right edge (396). */}
       {/* Name stretches to the panel's right edge; sits ABOVE the frame layer (C2). */}
       <View style={{ zIndex: 2100 }}>
-        {/* size 46 so a SHORT one-word name grows to fill the row (#136); fit shrinks long names
-            back onto two lines. vAlign center keeps a single line vertically centered in the box. */}
-        <SheetText left={176} top={14} width={220} height={54} color={INK} size={46} family={Display.black} align="left" vAlign="center" lineHeight={46} numberOfLines={2} uppercase letterSpacing={-0.6} fit>{character.name}</SheetText>
+        {/* FILL the box (#214): the largest font that fits — a SHORT one-word name grows up to fill
+            the row, a LONG name shrinks + wraps to ≤2 lines (no more one tiny line). Glyphs are only
+            sized, never stretched; a touch of letter-spacing for openness. */}
+        <FillText left={176} top={14} width={220} height={54} color={INK} family={Display.black} align="left" vAlign="center" uppercase letterSpacing={0.3} maxLines={2} minSize={15} maxSize={54}>{character.name}</FillText>
       </View>
       {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
       <DomainChip left={176} top={74} label={character.domains[0]} />
