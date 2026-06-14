@@ -1,5 +1,6 @@
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChamferBox } from '@/components/chamfer-box';
 // (useState/useCallback/useMemo/useEffect/useRef used by the multi-face flip slot, #108/#110)
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -488,7 +489,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed }: { osProgress: Share
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, closeFullscreen, collapse, toggleCategory, enabledIds, toggleCard } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, closeFullscreen, collapse, toggleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const middle = Math.round((count - 1) / 2);
@@ -516,6 +517,18 @@ export function CardCarousel() {
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
   const [center, setCenter] = useState(middle);
+
+  // The "Modifiers" button (#175) fades in on focus and reveals what the focused card applies.
+  const [focused, setFocused] = useState(false);
+  const wasFocused = useSharedValue(false);
+  useDerivedValue(() => {
+    const f = fullscreenProgress.value > 0.6;
+    if (f !== wasFocused.value) {
+      wasFocused.value = f;
+      runOnJS(setFocused)(f);
+    }
+  });
+  const modBtnStyle = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value }));
 
   // Multi-face slots register their pager here so a horizontal swipe in fullscreen flips the
   // FOCUSED card (#110: the page state is per-slot, the pan is here — this is the small lift).
@@ -774,6 +787,16 @@ export function CardCarousel() {
             in over the outgoing hand, then the live deck takes its place at commit. */}
         {incoming ? <GhostFan items={decks[incoming]} enter={deckEnter} /> : null}
         <FocusOverlay />
+        {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view. */}
+        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 730, 200, 40), { zIndex: 3500, alignItems: 'center' }, modBtnStyle]}>
+          {focused && deck[c] && !deck[c].interactive ? (
+            <Pressable onPress={() => showCardInfo(deck[c].id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="View this card's modifiers">
+              <ChamferBox chamfer={9} fill="rgba(14,17,22,0.95)" stroke={Rune.goldEdge} strokeWidth={1.4} style={{ paddingHorizontal: 18, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Modifiers</Text>
+              </ChamferBox>
+            </Pressable>
+          ) : null}
+        </Animated.View>
         {/* Gear over-scroll indicator (#174): progress ring + target deck SVG in the opened gap. */}
         <DeckSwitchIndicator osProgress={osProgress} osDir={osDir} osArmed={osArmed} />
         {/* The inner gear's touchable pad: a transparent hit-target child, so the container pan

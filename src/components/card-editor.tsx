@@ -4,8 +4,9 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import { ForgedCard } from '@/features/create/forged-card';
+import { type CardEffect, type EffectTarget, EFFECT_TARGETS, TARGET_LABEL } from '@/lib/modifiers';
 
 export interface CardDraft {
   title: string;
@@ -13,6 +14,63 @@ export interface CardDraft {
   imageUri: string | null;
   /** A flat random fill color for the art (#153) — used when there's no uploaded image. */
   color: string | null;
+  /** Structured stat effects the card applies when enabled (#175). */
+  effects: CardEffect[];
+}
+
+/** Target cycle order for the effect picker — the most-used stats first. */
+const TARGET_CYCLE: EffectTarget[] = [
+  'maxHp', 'stressMax', 'armorScore', 'evasion', 'majorThreshold', 'severeThreshold', 'proficiency', 'hopeMax',
+  'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge',
+];
+// keep the constant honest if the engine adds a target
+EFFECT_TARGETS.forEach((t) => { if (!TARGET_CYCLE.includes(t)) TARGET_CYCLE.push(t); });
+
+/**
+ * Effects authoring (#175): add as many stat effects as you need to a custom card. Each effect is a
+ * target (tap to cycle) and a signed amount (stepper). The engine still clamps to the game caps when
+ * the card is enabled, so e.g. "+9 Max HP" simply tops out at 12.
+ */
+function EffectsField({ effects, onChange }: { effects: CardEffect[]; onChange: (e: CardEffect[]) => void }) {
+  const setAt = (i: number, patch: Partial<CardEffect>) => onChange(effects.map((e, j) => (j === i ? { ...e, ...patch } : e)));
+  const cycle = (i: number) => {
+    const cur = effects[i].target;
+    const next = TARGET_CYCLE[(TARGET_CYCLE.indexOf(cur) + 1) % TARGET_CYCLE.length];
+    setAt(i, { target: next });
+  };
+  const bump = (i: number, d: number) => setAt(i, { delta: Math.max(-9, Math.min(12, (effects[i].delta ?? 0) + d)) });
+  return (
+    <View style={{ gap: 7, marginTop: 2 }}>
+      <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Effects when enabled</Text>
+      {effects.length === 0 ? (
+        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>None. Add one for a buff or penalty (e.g. +3 Max HP, −1 Evasion).</Text>
+      ) : null}
+      {effects.map((e, i) => (
+        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          <Pressable onPress={() => cycle(i)} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Effect target ${TARGET_LABEL[e.target]}, tap to change`}>
+            <ChamferBox chamfer={7} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 11 }}>
+              <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.bold }}>{TARGET_LABEL[e.target]}</Text>
+            </ChamferBox>
+          </Pressable>
+          <Pressable onPress={() => bump(i, -1)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Decrease">
+            <ChamferBox chamfer={6} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: Rune.sheet, fontSize: 19, fontFamily: Display.bold }}>−</Text>
+            </ChamferBox>
+          </Pressable>
+          <Text style={{ color: Rune.goldBright, fontSize: 17, fontFamily: Display.black, width: 38, textAlign: 'center' }}>{(e.delta ?? 0) >= 0 ? `+${e.delta ?? 0}` : `${e.delta}`}</Text>
+          <Pressable onPress={() => bump(i, 1)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Increase">
+            <ChamferBox chamfer={6} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ width: 34, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: Rune.sheet, fontSize: 19, fontFamily: Display.bold }}>+</Text>
+            </ChamferBox>
+          </Pressable>
+          <Pressable onPress={() => onChange(effects.filter((_, j) => j !== i))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove effect" style={{ padding: 3 }}>
+            <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
+          </Pressable>
+        </View>
+      ))}
+      <RuneButton label="+ Add effect" kind="secondary" dense height={36} onPress={() => onChange([...effects, { target: 'maxHp', delta: 1 }])} />
+    </View>
+  );
 }
 
 /** A pleasant-but-random flat color (controlled S/L so it never looks garish). */
@@ -46,7 +104,7 @@ export function CardEditor({
   extraField?: ReactNode;
 }) {
   // New cards open with a random color already set, as if Random Color was pressed (#153).
-  const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor() });
+  const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [] });
 
   // Adding an image clears the random color; Random Color clears any uploaded image.
   const pickImage = useCallback(async () => {
@@ -95,6 +153,7 @@ export function CardEditor({
               accessibilityLabel="Card text"
             />
           </ChamferBox>
+          <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} />
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
