@@ -798,7 +798,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
-              <CardCarousel />
+              {/* Unload the sheet carousel while the Level-Up panel is open (#203) — its full-screen
+                  card carousel owns the screen, so the sheet's hand is dead weight + perf cost. */}
+              {floatKind === 'level' ? null : <CardCarousel />}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
             </DesignStage>
