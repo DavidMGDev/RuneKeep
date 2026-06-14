@@ -30,6 +30,8 @@ const ITEM_DEFAULT_ART = require('../../../../assets/temp/ItemCardImage.jpg') as
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
+import { activeRing } from '../carousel-categories';
+import { type CardItem } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
@@ -438,13 +440,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs } = useMemo(() => {
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], notesJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -520,11 +522,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       raster: !!it.imageUri,
       target: it.target,
     }));
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs };
+    // Notes (#214): freeform note cards, their own category (every class). Optional title → 'Note'.
+    const notesJobs: Job[] = (file.notes ?? []).map((it) => ({
+      key: `note-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13 + (it.typeLabel?.length ?? 0) * 17) % 99991}`,
+      id: it.id,
+      node: <ForgedCard title={it.title || 'Note'} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+      raster: !!it.imageUri,
+    }));
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs };
   }, [file]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...notesJobs],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -558,8 +567,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
-  const { abilitiesCards, inventoryCards, originIndices } = useMemo(() => {
-    const none = { abilitiesCards: undefined, inventoryCards: undefined, originIndices: undefined };
+  const { abilitiesCards, inventoryCards, notesCards, originIndices } = useMemo(() => {
+    const none = { abilitiesCards: undefined, inventoryCards: undefined, notesCards: undefined, originIndices: undefined };
     if (!file) return none;
     const ids = [file.subclassCardId, file.ancestryCardId, file.communityCardId];
     const cards = ids.map(cardById);
@@ -616,8 +625,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // source/thumb are never drawn (the live node renders instead).
     const goldItem = { id: 'gold', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, live: <GoldCard gold={character.gold} onChange={(g) => setCharacter((c) => ({ ...c, gold: g }))} />, interactive: true };
     const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqWeaponItems, ...acqArmorItems, ...acqLootItems, ...invCustom];
-    return { abilitiesCards: abilities, inventoryCards: inv, originIndices };
-  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, featureSources]);
+    // Notes (#214): the player's note cards; an empty deck shows one non-toggleable placeholder so
+    // the category never reads as broken and tells the player how to add the first note.
+    const notesItems = forgedItems(notesJobs);
+    const notesCards: CardItem[] = notesItems.length
+      ? notesItems
+      : [{ id: 'notes-empty', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, interactive: true, live: <ForgedCard title="Notes" kindLabel="Notes" body="No notes yet. Open the float menu and choose New Card to jot one down — reminders, places, and story beats all live here." accentDeep={Rune.panel} colorArt="#2A2F3A" multilineTitle /> }];
+    return { abilitiesCards: abilities, inventoryCards: inv, notesCards, originIndices };
+  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
@@ -714,6 +729,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
+  // The active category ring (#214): abilities + inventory always, + notes when shown (default on).
+  // Wild Shape (Druids) joins in its own PR. `category` snaps back if the ring loses it (toggled off).
+  const ring = useMemo(() => activeRing({ showNotes: file?.showNotes ?? true }), [file?.showNotes]);
+  // Toggle Notes (#214, float-menu south slot): add/remove Notes from the over-scroll ring.
+  const onToggleNotes = useCallback(() => {
+    setFile((f) => {
+      if (!f) return f;
+      const next = { ...f, showNotes: !(f.showNotes ?? true) };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
   // Enabled/equipped cards (#175): the set drives the corner check; toggling re-derives the build
   // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
   const enabledIds = useMemo(() => new Set(file?.enabledCardIds ?? []), [file]);
@@ -773,8 +800,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId}>
-       <FloatMenuProvider onOpenInterface={setFloatKind}>
+      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} notesCards={notesCards} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId}>
+       <FloatMenuProvider onOpenInterface={setFloatKind} onToggleNotes={onToggleNotes}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>

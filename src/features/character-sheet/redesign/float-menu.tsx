@@ -22,7 +22,7 @@ import { DeckToggleIcon } from './deck-toggle-icon';
  */
 
 export type PlaceholderKind = 'custom' | 'level' | 'rest' | 'modifiers';
-type SlotKind = PlaceholderKind | 'classfeat';
+type SlotKind = PlaceholderKind | 'notes';
 
 interface Slot {
   kind: SlotKind;
@@ -55,8 +55,9 @@ const SLOTS: Slot[] = [
   { kind: 'custom', label: 'New Card' },
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
-  { kind: 'classfeat', label: '—', disabled: true }, // due-SOUTH — class feature (druid wild shape etc.), empty on purpose
+  { kind: 'notes', label: 'Toggle Notes' }, // due-SOUTH (#214) — add/remove the Notes category from the ring
   // Switch (inv/arsenal) is gone (#174): it now lives on the gear over-scroll at the carousel edge.
+  // Wild Shape (#214) is NOT here — it's a Druid-only carousel category, not a float-menu slot.
 ];
 const POS = SLOTS.map((_, i) => {
   const a = (CENTERS[i] * Math.PI) / 180;
@@ -107,7 +108,7 @@ function useFloatMenu() {
   return ctx;
 }
 
-export function FloatMenuProvider({ children, onOpenInterface }: { children: ReactNode; onOpenInterface: (kind: PlaceholderKind) => void }) {
+export function FloatMenuProvider({ children, onOpenInterface, onToggleNotes }: { children: ReactNode; onOpenInterface: (kind: PlaceholderKind) => void; onToggleNotes?: () => void }) {
   const reduced = useReducedMotion();
 
   const progress = useSharedValue(0);
@@ -154,10 +155,13 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
         closeMenu();
         return;
       }
-      onOpenInterface(slot.kind as PlaceholderKind); // disabled (classfeat) already returned above
+      // Toggle Notes (#214) flips a sheet preference instead of opening a panel; everything else
+      // opens its interface.
+      if (slot.kind === 'notes') onToggleNotes?.();
+      else onOpenInterface(slot.kind as PlaceholderKind);
       closeMenu();
     },
-    [onOpenInterface, closeMenu],
+    [onOpenInterface, onToggleNotes, closeMenu],
   );
 
   const value = useMemo<FloatMenuContextValue>(
@@ -259,6 +263,16 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
       return (
         <Svg width={24} height={24} viewBox="0 0 24 24">
           <Path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5Z" {...common} />
+        </Svg>
+      );
+    case 'notes':
+      // a page with lines — the Notes category toggle
+      return (
+        <Svg width={24} height={24} viewBox="0 0 24 24">
+          <Rect x={5} y={3.5} width={14} height={17} rx={2} {...common} />
+          <Line x1={8} y1={8} x2={16} y2={8} {...common} />
+          <Line x1={8} y1={12} x2={16} y2={12} {...common} />
+          <Line x1={8} y1={16} x2={13} y2={16} {...common} />
         </Svg>
       );
     case 'modifiers':
