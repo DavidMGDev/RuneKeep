@@ -22,7 +22,7 @@ import { DeckToggleIcon } from './deck-toggle-icon';
  */
 
 export type PlaceholderKind = 'custom' | 'level' | 'rest' | 'settings';
-type SlotKind = 'switch' | PlaceholderKind | 'classfeat';
+type SlotKind = PlaceholderKind | 'classfeat';
 
 interface Slot {
   kind: SlotKind;
@@ -32,15 +32,15 @@ interface Slot {
 
 // Trigger centre in DESIGN px (header group box(16,12) + child centre (65,237)).
 const T = { x: 81, y: 249 };
-const N = 6; // wedge count
+const N = 5; // wedge count (#174: the Switch slot moved to the gear, 6 -> 5)
 // Slot centre angles (deg, screen coords: 0 = +x right, -90 = straight up, +90 = straight down).
 // Settings sits due-NORTH, the class-feature slot due-SOUTH (owner #168); the rest fan down the
 // right side in between (the left half is the open cancel gap — the trigger hugs the left edge).
-const CENTERS = [-90, -54, -18, 18, 54, 90];
-const STEP = 36; // angle between adjacent centres
-const HALF = 18; // wedge half-width
-const ARC_MIN = -108; // covered arc = CENTERS[0]-HALF .. CENTERS[last]+HALF
-const ARC_MAX = 108;
+const CENTERS = [-90, -45, 0, 45, 90];
+const STEP = 45; // angle between adjacent centres
+const HALF = 22.5; // wedge half-width
+const ARC_MIN = -112.5; // covered arc = CENTERS[0]-HALF .. CENTERS[last]+HALF
+const ARC_MAX = 112.5;
 const DEAD = 38; // center dead-zone radius (design px): inside = no selection
 const RIN = 40; // wedge inner radius
 const ROUT = 205; // wedge outer radius
@@ -53,10 +53,10 @@ const TAP_SLOP = 12;
 const SLOTS: Slot[] = [
   { kind: 'settings', label: 'Settings' }, // due-NORTH
   { kind: 'custom', label: 'New Card' },
-  { kind: 'switch', label: 'Switch' },
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
   { kind: 'classfeat', label: '—', disabled: true }, // due-SOUTH — class feature (druid wild shape etc.), empty on purpose
+  // Switch (inv/arsenal) is gone (#174): it now lives on the gear over-scroll at the carousel edge.
 ];
 const POS = SLOTS.map((_, i) => {
   const a = (CENTERS[i] * Math.PI) / 180;
@@ -108,7 +108,6 @@ function useFloatMenu() {
 }
 
 export function FloatMenuProvider({ children, onOpenInterface }: { children: ReactNode; onOpenInterface: (kind: PlaceholderKind) => void }) {
-  const { toggleCategory } = useCarousel();
   const reduced = useReducedMotion();
 
   const progress = useSharedValue(0);
@@ -154,11 +153,10 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
         closeMenu();
         return;
       }
-      if (slot.kind === 'switch') toggleCategory();
-      else onOpenInterface(slot.kind as PlaceholderKind); // disabled (classfeat) already returned above
+      onOpenInterface(slot.kind as PlaceholderKind); // disabled (classfeat) already returned above
       closeMenu();
     },
-    [toggleCategory, onOpenInterface, closeMenu],
+    [onOpenInterface, closeMenu],
   );
 
   const value = useMemo<FloatMenuContextValue>(
@@ -241,15 +239,6 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
   const sw = 2.2;
   const common = { stroke: g, strokeWidth: sw, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   switch (kind) {
-    case 'switch':
-      return (
-        <Svg width={24} height={24} viewBox="0 0 24 24">
-          <Polyline points="4,8 18,8" {...common} />
-          <Polyline points="15,5 18,8 15,11" {...common} />
-          <Polyline points="20,16 6,16" {...common} />
-          <Polyline points="9,13 6,16 9,19" {...common} />
-        </Svg>
-      );
     case 'custom':
       return (
         <Svg width={24} height={24} viewBox="0 0 24 24">

@@ -14,7 +14,7 @@ import type { CardCategory } from '../card-data';
 const GOLD = Rune.goldBright;
 const FILL = '#15191F';
 
-function ArsenalIcon() {
+export function ArsenalIcon() {
   return (
     <Svg width={46} height={46} viewBox="0 0 48 48">
       {/* two fanned back cards */}
@@ -28,7 +28,7 @@ function ArsenalIcon() {
   );
 }
 
-function InventoryIcon() {
+export function InventoryIcon() {
   return (
     <Svg width={44} height={44} viewBox="0 0 48 48">
       {/* lid */}

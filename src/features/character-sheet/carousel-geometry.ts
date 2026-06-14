@@ -70,9 +70,25 @@ export const OVERSCROLL_RESIST = 0.35; // drag past a deck end moves at 35% (sof
 // Dragging the inner gear is the power-scroll: ONE full swipe sweeps the whole deck (adaptive —
 // gearPanR = GEAR_SWIPE_PX / maxRotation(count)), a haptic ticks at every detent crossed, and the
 // fan keeps its tightened spacing while the cards shrink so more of the deck is visible at once.
-// 200: HALF A SCREEN of travel sweeps the whole deck, last card to first (#80 — the grind starts
-// at the screen center, so half a screen is all the room a thumb ever has).
-export const GEAR_SWIPE_PX = 200; // finger px that cover first card -> last card on the gear
+// 120 (was 200, #174): the gear must sweep the WHOLE deck AND leave finger room in the SAME
+// center->edge drag to over-scroll past the end and commit a category switch (~60px past the
+// end arms it). 120 deck-sweep + ~60 over-scroll ≈ one comfortable half-screen drag, with ~10px
+// of slack so a phone-case user who can't reach the very screen edge still passes the arm point.
+export const GEAR_SWIPE_PX = 120; // finger px that cover first card -> last card on the gear
+
+// --- Gear over-scroll → category switch (#174) ---
+// Past a deck END, the gear grind stops feeding `rotation` (clamped) and instead pushes the WHOLE
+// fan sideways (a sideways pull-to-refresh): the centered edge card slides toward its side of the
+// screen. At OVERSCROLL_ARM design px of push the indicator is FULL + armed; releasing while armed
+// switches the category (the fan never collapses). Dragging back below disarms.
+export const OVERSCROLL_GAIN = 2.5; // design px of fan-push per finger-px past the deck end
+export const OVERSCROLL_ARM = 150; // push (design px) that arms the switch — edge card ~85% to its side (206 -> ~356)
+export const OVERSCROLL_MAX = 158; // hard cap (~90%, the 5% margin past the arm) — the fan stops moving here
+// The whole hand's vertical SWAP travel (#174): on a switch the OLD deck slides DOWN off the bottom
+// (fading only as it nears the edge) while the incoming deck rises + fades in centered — no
+// fade-to-empty in place. Only ever non-zero mid-switch, so the normal scroll feel is untouched.
+export const DECK_EXIT_DROP = 300; // design px the outgoing hand sinks (center card 631 -> 931, off-screen)
+export const DECK_ENTER_RISE = 90; // design px the incoming hand rises from as it fades in
 // Grind fan (#80, tuned on the LOD thumbs): much smaller cards packed much tighter — spacing
 // ~83px vs ~97px card width ≈ 14% overlap, ~7 cards visible at once while skimming.
 export const GRIND_TIGHTEN = 0.58; // fan step shrinks to 42% while grinding

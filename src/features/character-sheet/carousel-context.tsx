@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { runOnJS, type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { Easing, runOnJS, type SharedValue, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
 import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, middleRotation, snapRot } from './carousel-geometry';
@@ -18,8 +18,13 @@ interface CarouselContextValue {
   machineState: SharedValue<ExpandState>;
   /** Which card index is currently flown full-screen (so badges/taps can open a specific card). */
   focusIndex: SharedValue<number>;
-  /** Deck-switch sweep (#95 C): 0 = deck in place, 1 = swept down + faded out (mid category swap). */
+  /** Deck-switch EXIT sweep (#95 C / #174): 0 = deck in place, 1 = old hand slid down + faded out. */
   deckShift: SharedValue<number>;
+  /** Deck-switch ENTER progress (#174): 0 = incoming ghost hidden/below, 1 = risen + faded in centered. */
+  deckEnter: SharedValue<number>;
+  /** The category being switched TO while a swap is mid-flight (#174), else null. CardCarousel renders
+   *  its deck as a ghost fan so the new cards paint before they show. */
+  incoming: CardCategory | null;
   /** The live decks. Abilities = base deck + the character's origin cards pinned at the RIGHT end
    *  (subclass, ancestry, community — #100). Inventory never shows them. */
   decks: Record<CardCategory, CardItem[]>;
@@ -62,10 +67,14 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
   const focusIndex = useSharedValue(Math.round(startMiddle / ANGLE_STEP));
   const [category, setCategoryState] = useState<CardCategory>('abilities');
   const deckShift = useSharedValue(0);
+  const deckEnter = useSharedValue(0);
+  const [incoming, setIncoming] = useState<CardCategory | null>(null);
   const decksRef = useRef(decks);
   decksRef.current = decks;
   const categoryRef = useRef(category);
   categoryRef.current = category;
+  const incomingRef = useRef<CardCategory | null>(null);
+  incomingRef.current = incoming;
 
   const openCardAt = useCallback(
     (index: number) => {
@@ -79,54 +88,72 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
     [rotation, focusIndex, machineState, expandProgress, fullscreenProgress],
   );
 
-  // #95 C: the swap itself happens while the hand is INVISIBLE, and the fade-IN waits for the new
-  // deck to be committed AND painted. Sequence: fade the old deck out in place (deckShift → 1) →
-  // swap the deck + teleport the rotation on the JS thread (nobody can see the jump) → after the
-  // commit, hold a short grace so the freshly mounted thumbs get their paint frames (expo-image
-  // takes 1-2 frames; the continuity rule, #88) → fade the whole new hand in at once. Without the
-  // grace the hand fades back in still showing the OLD images and then flash-swaps mid-fade.
-  // #100: a pending origin-card open fires only after that fade-in lands — switch first, then show.
-  const switching = useRef(false);
+  // Category switch (#174): a smooth vertical SWAP that never fades to empty in place. The incoming
+  // deck mounts off-screen as a ghost fan (see CardCarousel) and is given a paint grace; then the
+  // OLD hand slides DOWN off the bottom (deckShift → 1, fading only as it nears the edge) while the
+  // incoming ghost RISES + fades in centered (deckEnter → 1). When the ghost has fully landed we
+  // commit: the live deck becomes the new one at the SAME centered pose the ghost held, so the
+  // hand-off is seamless (identical pixels) and the hand never collapses.
+  // #100: a pending origin-card open fires only after the commit — switch first, then show.
   const pendingOpen = useRef<number | null>(null);
-  const applyCategory = useCallback(
+
+  const commitSwitch = useCallback(
     (c: CardCategory) => {
-      switching.current = true;
       setCategoryState(c);
-      rotation.value = middleRotation(decksRef.current[c].length);
+      const n = decksRef.current[c].length;
+      rotation.value = middleRotation(n);
+      focusIndex.value = Math.round(middleRotation(n) / ANGLE_STEP);
+      deckShift.value = 0;
+      const idx = pendingOpen.current;
+      pendingOpen.current = null;
+      if (idx != null) openCardAt(idx);
+      // Keep the (fully faded-in, centered) ghost up one more beat so the freshly-mounted LIVE deck
+      // paints UNDER it before it drops — the uris are cache-warm from the ghost, so this guards the
+      // last 1-frame blank at the hand-off. Both fans are identical + centered, so the overlap is
+      // invisible. Drop the ghost after the grace.
+      setTimeout(() => {
+        deckEnter.value = 0;
+        setIncoming(null);
+      }, 120);
     },
-    [rotation],
+    [rotation, focusIndex, deckShift, deckEnter, openCardAt],
   );
-
-  const finishSwitch = useCallback(() => {
-    const idx = pendingOpen.current;
-    pendingOpen.current = null;
-    if (idx != null) openCardAt(idx);
-  }, [openCardAt]);
-
-  useEffect(() => {
-    if (!switching.current) return;
-    switching.current = false;
-    const t = setTimeout(() => {
-      deckShift.value = withTiming(0, { duration: 200 }, (finished) => {
-        if (finished) runOnJS(finishSwitch)();
-      });
-    }, 200);
-    return () => clearTimeout(t);
-  }, [category, deckShift, finishSwitch]);
 
   const setCategory = useCallback(
     (c: CardCategory) => {
-      if (c === category) return;
-      deckShift.value = withTiming(1, { duration: 130 }, (finished) => {
-        if (finished) runOnJS(applyCategory)(c);
-      });
+      if (c === categoryRef.current || incomingRef.current) return; // ignore re-entrancy mid-switch
+      incomingRef.current = c;
+      setIncoming(c); // mount the incoming deck as a ghost fan (hidden) so it paints before it shows
+      deckEnter.value = 0;
+      // OLD hand sinks + fades near the bottom
+      deckShift.value = withTiming(1, { duration: 300, easing: Easing.in(Easing.cubic) });
+      // after a short preload grace (ghost thumbs paint), rise + fade the incoming hand in; commit
+      // once it has fully landed. The grace overlaps the old hand's exit tail → minimal empty beat.
+      deckEnter.value = withDelay(
+        150,
+        withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) }, (finished) => {
+          if (finished) runOnJS(commitSwitch)(c);
+        }),
+      );
     },
-    [category, deckShift, applyCategory],
+    [deckShift, deckEnter, commitSwitch],
   );
 
   const toggleCategory = useCallback(() => {
-    setCategory(category === 'abilities' ? 'inventory' : 'abilities');
-  }, [category, setCategory]);
+    setCategory(categoryRef.current === 'abilities' ? 'inventory' : 'abilities');
+  }, [setCategory]);
+
+  // Carousel loads CENTERED on create + load (#174): the initial rotation is computed from whatever
+  // deck length is present at mount, but a real character's decks arrive async (file derivation +
+  // forge), so when the live deck finally lands the rotation was left near the FIRST card. While the
+  // hand is at rest (compact — before any browse, e.g. under the entry loader) recenter on the new
+  // deck's middle whenever its length changes. Guarded to compact so it never yanks a live scroll.
+  const liveCount = decks[category].length;
+  useEffect(() => {
+    if (machineState.value !== 'compact') return;
+    rotation.value = middleRotation(liveCount);
+    focusIndex.value = Math.round(middleRotation(liveCount) / ANGLE_STEP);
+  }, [liveCount, category, rotation, focusIndex, machineState]);
 
   const expand = useCallback(() => {
     machineState.value = 'expanded';
@@ -168,6 +195,8 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       machineState,
       focusIndex,
       deckShift,
+      deckEnter,
+      incoming,
       decks,
       category,
       setCategory,
@@ -178,7 +207,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       closeFullscreen,
       openOriginCard,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
