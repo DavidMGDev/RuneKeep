@@ -32,6 +32,9 @@ export interface ExperienceDef {
   /** Structured stat effects a player attached to this card (#175): applied when the card is
    *  enabled in the carousel. Authored via the card editor's "add effect" control. */
   effects?: CardEffect[];
+  /** The player-chosen card "type" shown on the plaque (#214): e.g. Note / Reminder / Story, or
+   *  Item / Tool, or Ability / Skill. Cycled via the editor's type chip; falls back per category. */
+  typeLabel?: string;
 }
 
 /** A player-authored card created on the sheet (#164), routed to one or both decks. */
@@ -83,6 +86,12 @@ export interface CharacterFile {
   portraitTransform?: { scale: number; x: number; y: number };
   /** Player-authored cards made on the sheet (#164), each routed to inventory / arsenal / both. */
   customCards?: CustomCardDef[];
+  /** Notes (#214): freeform note-taking cards, their own carousel category. Optional titles. Not in
+   *  the inventory. Additive — absent on existing saves. */
+  notes?: ExperienceDef[];
+  /** Whether the Notes category appears in the over-scroll ring (#214, float-menu "Toggle Notes").
+   *  Undefined → shown by default. */
+  showNotes?: boolean;
   // --- settings + level-up overrides (#166/#167). All additive; schemaVersion stays 1 so existing
   //     saved characters keep loading and simply fall back to the class/creation defaults. ---
   /** HP ceiling override (#166: edit "instead of 6 I want 7"; #167: +1 per Hit Point advancement). */
