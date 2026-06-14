@@ -912,12 +912,12 @@ export function CreateScreen() {
       {editingExperience != null ? (
         <CardEditor
           kindLabel="Experience"
-          initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null } : undefined}
+          initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null, effects: draft.experiences[editingExperience].effects ?? [] } : undefined}
           onCancel={() => setEditingExperience(null)}
           onSave={(d) => {
             const next = [...draft.experiences];
             const existing = next[editingExperience];
-            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color };
+            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects };
             set({ experiences: next.filter(Boolean) });
             setEditingExperience(null);
           }}
@@ -926,12 +926,12 @@ export function CreateScreen() {
       {editingItem != null ? (
         <CardEditor
           kindLabel="Item"
-          initial={typeof editingItem === 'number' && draft.inventoryCustom[editingItem] ? { title: draft.inventoryCustom[editingItem].title, text: draft.inventoryCustom[editingItem].text, imageUri: draft.inventoryCustom[editingItem].imageUri, color: draft.inventoryCustom[editingItem].color ?? null } : undefined}
+          initial={typeof editingItem === 'number' && draft.inventoryCustom[editingItem] ? { title: draft.inventoryCustom[editingItem].title, text: draft.inventoryCustom[editingItem].text, imageUri: draft.inventoryCustom[editingItem].imageUri, color: draft.inventoryCustom[editingItem].color ?? null, effects: draft.inventoryCustom[editingItem].effects ?? [] } : undefined}
           onCancel={() => setEditingItem(null)}
           onSave={(d) => {
             const next = [...draft.inventoryCustom];
-            if (editingItem === 'new') next.push({ id: `itm-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color });
-            else next[editingItem] = { ...next[editingItem], title: d.title, text: d.text, imageUri: d.imageUri, color: d.color };
+            if (editingItem === 'new') next.push({ id: `itm-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects });
+            else next[editingItem] = { ...next[editingItem], title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects };
             set({ inventoryCustom: next });
             setEditingItem(null);
           }}

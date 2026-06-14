@@ -47,6 +47,7 @@ import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import { type DomainCardInfo, SettingsPanel } from './settings-panel';
+import { CardModifiersSheet } from './card-modifiers-sheet';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -593,6 +594,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
+  const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   // Settings (#166): class-derived defaults + the resolved domain-card pool for the vault.
   const settingsData = useMemo(() => {
     if (!file) return { defaults: { evasion: 10, maxHp: 6, armorMax: 0 }, domainPool: [] as DomainCardInfo[] };
@@ -661,6 +663,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       text: draft.text,
       imageUri: draft.imageUri,
       color: draft.color,
+      effects: draft.effects,
       target,
     };
     setFile((f) => {
@@ -728,7 +731,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard}>
+      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
@@ -787,6 +790,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
+          ) : null}
+          {/* per-card modifier view (#175): opened by the focused card's "Modifiers" button */}
+          {cardInfoId && file ? (
+            <CardModifiersSheet cardId={cardInfoId} file={file} character={character} enabled={enabledIds.has(cardInfoId)} onToggle={onToggleCard} onClose={() => setCardInfoId(null)} />
           ) : null}
         </View>
        </FloatMenuProvider>
