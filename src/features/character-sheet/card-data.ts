@@ -11,7 +11,7 @@
  */
 export const CARD_ASPECT = 750 / 1050; // 5:7
 
-export type CardCategory = 'abilities' | 'inventory';
+export type CardCategory = 'abilities' | 'inventory' | 'notes' | 'wildshape';
 
 /** One LOD pair (full-res + thumb), the unit both `CardItem` and a multi-page page hold. */
 export interface CardImage {
@@ -45,6 +45,8 @@ export interface CardItem extends CardImage {
 export const CARD_CATEGORIES: { key: CardCategory; label: string }[] = [
   { key: 'abilities', label: 'Abilities' },
   { key: 'inventory', label: 'Inventory' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'wildshape', label: 'Wild Shape' },
 ];
 
 export const CARD_DECKS: Record<CardCategory, CardItem[]> = {
@@ -88,4 +90,7 @@ export const CARD_DECKS: Record<CardCategory, CardItem[]> = {
     { id: 'i17', source: require('../../../assets/extracted_cards/Domains/Codex/codex-02-2.webp'), thumb: require('../../../assets/extracted_cards/Domains/Codex/codex-02-2_lod.webp') },
     { id: 'i18', source: require('../../../assets/extracted_cards/Domains/Grace/grace-02-1.webp'), thumb: require('../../../assets/extracted_cards/Domains/Grace/grace-02-1_lod.webp') },
   ],
+  // Notes (#214) + Wild Shape (#214, Druid) decks are character-supplied; the demo sheet has none.
+  notes: [],
+  wildshape: [],
 };

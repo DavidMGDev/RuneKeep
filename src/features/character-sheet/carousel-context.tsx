@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { Easing, runOnJS, type SharedValue, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
+import { nextCategory } from './carousel-categories';
 import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, maxRotation, middleRotation, snapRot } from './carousel-geometry';
 
 /** Which end of the incoming deck a switch lands on (#188): a switch begun from the FIRST card
@@ -35,10 +36,15 @@ interface CarouselContextValue {
    *  (subclass, ancestry, community — #100). Inventory never shows them. */
   decks: Record<CardCategory, CardItem[]>;
   category: CardCategory;
+  /** The active, ordered category RING the over-scroll loops through (#214): abilities + inventory
+   *  always, + notes when toggled on, + wildshape for Druids. */
+  ring: CardCategory[];
   /** Switch deck; lands at the opposite extreme (#188) — `arrival` = which end of the NEW deck to
    *  show ('end' = last card, the default continuation from the start; 'start' = first card). */
   setCategory: (c: CardCategory, arrival?: ArrivalEnd) => void;
-  toggleCategory: (arrival?: ArrivalEnd) => void;
+  /** Step `dir` (+1 forward / -1 backward) around the ring with wraparound (#214). Replaces the old
+   *  inv↔arsenal binary toggle so 3- and 4-category rings (Notes / Druid Wild Shape) loop. */
+  cycleCategory: (dir: number, arrival?: ArrivalEnd) => void;
   /** JS actions (call from React handlers). They drive the shared values directly. */
   expand: () => void;
   collapse: () => void;
@@ -60,7 +66,7 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, abilitiesCards, inventoryCards, originIndices, enabledIds, onToggleCard, onShowCardInfo }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void }) {
+export function CarouselProvider({ children, abilitiesCards, inventoryCards, notesCards, wildshapeCards, ring = ['abilities', 'inventory'], originIndices, enabledIds, onToggleCard, onShowCardInfo }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; notesCards?: CardItem[]; wildshapeCards?: CardItem[]; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void }) {
   // A real character supplies its OWN full decks (only the cards it picked, #121) — no sample/
   // placeholder cards mixed in. The hardcoded CARD_DECKS are only the fallback for the demo sheet.
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
@@ -69,9 +75,15 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       // a real character supplies its inventory array (even while items forge — may be briefly
       // empty); only the demo sheet (undefined) falls back to the sample deck (#136).
       inventory: inventoryCards ?? CARD_DECKS.inventory,
+      // Notes (#214): all-class freeform deck; Wild Shape (#214): Druid Beastform deck. Both
+      // character-supplied — empty arrays when absent (the ring simply won't include them).
+      notes: notesCards ?? CARD_DECKS.notes,
+      wildshape: wildshapeCards ?? CARD_DECKS.wildshape,
     }),
-    [abilitiesCards, inventoryCards],
+    [abilitiesCards, inventoryCards, notesCards, wildshapeCards],
   );
+  const ringRef = useRef(ring);
+  ringRef.current = ring;
   const startMiddle = middleRotation(decks.abilities.length);
   const rotation = useSharedValue(startMiddle);
   const expandProgress = useSharedValue(0);
@@ -158,12 +170,24 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
     [deckShift, deckEnter, commitSwitch],
   );
 
-  const toggleCategory = useCallback(
-    (arrival: ArrivalEnd = 'end') => {
-      setCategory(categoryRef.current === 'abilities' ? 'inventory' : 'abilities', arrival);
+  const cycleCategory = useCallback(
+    (dir: number, arrival: ArrivalEnd = 'end') => {
+      setCategory(nextCategory(ringRef.current, categoryRef.current, dir), arrival);
     },
     [setCategory],
   );
+
+  // The ring can change underfoot (#214): toggling Notes off while viewing it, or loading a
+  // non-Druid, can leave `category` outside the active ring. Snap back to a valid category (at rest).
+  useEffect(() => {
+    if (ring.includes(category)) return;
+    if (machineState.value !== 'compact') return;
+    const fallback = ring[0] ?? 'abilities';
+    setCategoryState(fallback);
+    const n = decksRef.current[fallback].length;
+    rotation.value = middleRotation(n);
+    focusIndex.value = Math.round(middleRotation(n) / ANGLE_STEP);
+  }, [ring, category, machineState, rotation, focusIndex]);
 
   // Carousel loads CENTERED on create + load (#174): the initial rotation is computed from whatever
   // deck length is present at mount, but a real character's decks arrive async (file derivation +
@@ -225,8 +249,9 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       incomingArrival,
       decks,
       category,
+      ring,
       setCategory,
-      toggleCategory,
+      cycleCategory,
       expand,
       collapse,
       openCardAt,
@@ -236,7 +261,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       toggleCard: onToggleCard ?? noopToggle,
       showCardInfo: onShowCardInfo ?? noopInfo,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
