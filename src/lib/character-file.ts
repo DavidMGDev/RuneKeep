@@ -11,6 +11,7 @@ import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-ef
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/features/create/class-data';
 import { armorById } from '@/features/create/equipment-data';
+import { activeWildshapeName } from '@/lib/wildshape-data';
 import { type BaseStats, type CardEffect, computeSheet, type EffectSource } from '@/lib/modifiers';
 
 /** Daggerheart proficiency by level (#128): tier 1 = 1, tier 2 (L2-4) = 2, tier 3 (L5-7) = 3, tier 4 = 4. */
@@ -211,7 +212,9 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const traits = Object.fromEntries(TRAIT_KEYS.map((k) => [k, sheet[k].total])) as Record<TraitKey, number>;
   return {
     ...SAMPLE_CHARACTER,
-    name: file.name,
+    // Wild Shape (#214): while a Beastform is enabled, the sheet shows the FORM's name so the player
+    // always knows they're transformed — even when browsing other categories. file.name is unchanged.
+    name: activeWildshapeName(file) ?? file.name,
     level: file.level,
     className: cls.label,
     subclass: subclass?.label.replace(/ Foundation$/, '') ?? '',

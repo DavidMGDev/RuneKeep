@@ -19,6 +19,7 @@ import { CLASS_DATA, featurePages } from '@/features/create/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { lootById } from '@/lib/loot-data';
+import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/lib/wildshape-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -440,13 +441,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs } = useMemo(() => {
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], notesJobs: [] as Job[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], notesJobs: [] as Job[], wildshapeJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -529,11 +530,20 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       node: <ForgedCard title={it.title || 'Note'} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       raster: !!it.imageUri,
     }));
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs };
+    // Wild Shape (#214): Druid-only Beastform cards, one per form, each its own color. Static content
+    // (no player data) → a stable key; the deck appears only for Druids.
+    const wildshapeJobs: Job[] = cls === 'druid'
+      ? WILDSHAPES.map((w) => ({
+          key: `ws-${w.id}`,
+          id: w.id,
+          node: <ForgedCard title={w.name} kindLabel="Wild Shape" body={`Tier ${w.tier} · ${w.attack}\n\n${w.features}\n\nLike: ${w.examples}`} accentDeep={Rune.panel} colorArt={w.color} multilineTitle />,
+        }))
+      : [];
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs };
   }, [file]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...notesJobs],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...notesJobs, ...wildshapeJobs],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -567,8 +577,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
-  const { abilitiesCards, inventoryCards, notesCards, originIndices } = useMemo(() => {
-    const none = { abilitiesCards: undefined, inventoryCards: undefined, notesCards: undefined, originIndices: undefined };
+  const { abilitiesCards, inventoryCards, notesCards, wildshapeCards, originIndices } = useMemo(() => {
+    const none = { abilitiesCards: undefined, inventoryCards: undefined, notesCards: undefined, wildshapeCards: undefined, originIndices: undefined };
     if (!file) return none;
     const ids = [file.subclassCardId, file.ancestryCardId, file.communityCardId];
     const cards = ids.map(cardById);
@@ -631,8 +641,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const notesCards: CardItem[] = notesItems.length
       ? notesItems
       : [{ id: 'notes-empty', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, interactive: true, live: <ForgedCard title="Notes" kindLabel="Notes" body="No notes yet. Open the float menu and choose New Card to jot one down — reminders, places, and story beats all live here." accentDeep={Rune.panel} colorArt="#2A2F3A" multilineTitle /> }];
-    return { abilitiesCards: abilities, inventoryCards: inv, notesCards, originIndices };
-  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, featureSources]);
+    // Wild Shape (#214): the Druid's Beastform deck (empty for every other class → not in the ring).
+    const wildshapeCards = forgedItems(wildshapeJobs);
+    return { abilitiesCards: abilities, inventoryCards: inv, notesCards, wildshapeCards, originIndices };
+  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
@@ -742,9 +754,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
-  // The active category ring (#214): abilities + inventory always, + notes when shown (default on).
-  // Wild Shape (Druids) joins in its own PR. `category` snaps back if the ring loses it (toggled off).
-  const ring = useMemo(() => activeRing({ showNotes: file?.showNotes ?? true }), [file?.showNotes]);
+  // The active category ring (#214): abilities + inventory always, + notes when shown (default on),
+  // + Wild Shape for Druids. `category` snaps back if the ring loses it (e.g. Notes toggled off).
+  const ring = useMemo(() => activeRing({ isDruid: file?.className === 'druid', showNotes: file?.showNotes ?? true }), [file?.className, file?.showNotes]);
   // Toggle Notes (#214, float-menu south slot): add/remove Notes from the over-scroll ring.
   const onToggleNotes = useCallback(() => {
     setFile((f) => {
@@ -760,15 +772,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onToggleCard = useCallback(
     (id: string) => {
       if (!file) return;
+      const wasEnabled = (file.enabledCardIds ?? []).includes(id);
+      const isWs = isWildshapeId(id);
       const cur = new Set(file.enabledCardIds ?? []);
-      if (cur.has(id)) cur.delete(id);
-      else cur.add(id);
+      if (wasEnabled) {
+        cur.delete(id); // dropping out of a form reverts its effects; the Stress cost is NOT refunded
+      } else {
+        // Wild Shape (#214): only one Beastform at a time — assuming one drops any other.
+        if (isWs) for (const x of [...cur]) if (isWildshapeId(x)) cur.delete(x);
+        cur.add(id);
+      }
       const next = { ...file, enabledCardIds: [...cur] };
       setFile(next);
       void saveCharacter(next);
       const c = characterRef.current;
       const d = toSheetCharacter(next);
-      const result: Character = {
+      let result: Character = {
         ...d,
         hp: Math.min(c.hp, d.maxHp),
         stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
@@ -778,6 +797,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         portraitUri: c.portraitUri,
         portraitTransform: c.portraitTransform,
       };
+      // Assuming a Beastform costs Stress (#214) — spill to HP when Stress is full, never lethal.
+      if (isWs && !wasEnabled) {
+        const ws = wildshapeById(id);
+        if (ws) {
+          const { stressActive, hp } = applyWildshapeCost(
+            { stressActive: result.stress.active, stressUnlocked: result.stress.total - (result.stress.locked ?? 0), hp: result.hp },
+            ws.stress,
+          );
+          result = { ...result, hp, stress: { ...result.stress, active: stressActive } };
+        }
+      }
       // animate any track whose value the equip/unequip changed (e.g. +1 Max HP at full HP, removed)
       burstResources(c, result);
       setCharacter(result);
@@ -813,7 +843,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} notesCards={notesCards} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId}>
+      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} notesCards={notesCards} wildshapeCards={wildshapeCards} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId}>
        <FloatMenuProvider onOpenInterface={setFloatKind} onToggleNotes={onToggleNotes}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
