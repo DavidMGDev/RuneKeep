@@ -912,12 +912,14 @@ export function CreateScreen() {
       {editingExperience != null ? (
         <CardEditor
           kindLabel="Experience"
+          experienceMode
+          modifier={draft.experiences[editingExperience]?.modifier ?? 2}
           initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null, effects: draft.experiences[editingExperience].effects ?? [] } : undefined}
           onCancel={() => setEditingExperience(null)}
           onSave={(d) => {
             const next = [...draft.experiences];
             const existing = next[editingExperience];
-            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects };
+            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: '', imageUri: d.imageUri, color: d.color, effects: d.effects, modifier: existing?.modifier ?? 2 };
             set({ experiences: next.filter(Boolean) });
             setEditingExperience(null);
           }}

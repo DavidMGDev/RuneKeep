@@ -54,6 +54,8 @@ export function ForgedCard({
   pageMark,
   multilineTitle,
   classKey,
+  experience,
+  modifier,
 }: {
   title: string;
   kindLabel: string;
@@ -72,6 +74,11 @@ export function ForgedCard({
    *  and shrink the body to fit. One short line stays at full size. */
   multilineTitle?: boolean;
   classKey?: ClassName;
+  /** Experience card (#202): no body — the title is a big auto-fitting phrase (up to 7 lines), with
+   *  the experience's bonus shown below. Short and long phrases both read well (min/max size). */
+  experience?: boolean;
+  /** The experience bonus to show (e.g. +2), experience cards only. */
+  modifier?: number;
 }) {
   const theme = getPlaqueTheme(kindLabel, classKey);
   return (
@@ -95,25 +102,44 @@ export function ForgedCard({
       </View>
       {/* printed-card lower body — typeset against the DH scans (#103 impeccable typeset):
           extrabold caps title, regular near-black body, ~1.7 title:body ratio. */}
-      <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 15 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
+      {experience ? (
+        // Experience (#202): no body — the phrase IS the card. One auto-fitting block (up to 7 lines)
+        // that fills the space, big for short phrases, smaller for long ones; the bonus sits below.
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 16, paddingHorizontal: 16, paddingBottom: 26 }}>
           <Text
-            numberOfLines={multilineTitle ? 3 : 1}
-            adjustsFontSizeToFit={multilineTitle}
-            minimumFontScale={0.55}
-            style={{ flexShrink: 1, color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>
+            numberOfLines={7}
+            adjustsFontSizeToFit
+            minimumFontScale={0.42}
+            style={{ color: Rune.inkText, fontSize: 23, lineHeight: 26, fontFamily: Display.bold, letterSpacing: 0.2, textAlign: 'center', flexShrink: 1 }}>
             {title}
           </Text>
-          {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+          {modifier != null ? (
+            <View style={{ marginTop: 12, paddingHorizontal: 14, paddingVertical: 3, backgroundColor: Rune.red }}>
+              <Text style={{ color: Rune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.5 }}>{modifier >= 0 ? `+${modifier}` : `${modifier}`}</Text>
+            </View>
+          ) : null}
         </View>
-        <Text
-          numberOfLines={multilineTitle ? 9 : undefined}
-          adjustsFontSizeToFit={multilineTitle}
-          minimumFontScale={0.6}
-          style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7, flexShrink: 1 }}>
-          {body}
-        </Text>
-      </View>
+      ) : (
+        <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 15 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
+            <Text
+              numberOfLines={multilineTitle ? 3 : 1}
+              adjustsFontSizeToFit={multilineTitle}
+              minimumFontScale={0.55}
+              style={{ flexShrink: 1, color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>
+              {title}
+            </Text>
+            {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+          </View>
+          <Text
+            numberOfLines={multilineTitle ? 9 : undefined}
+            adjustsFontSizeToFit={multilineTitle}
+            minimumFontScale={0.6}
+            style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7, flexShrink: 1 }}>
+            {body}
+          </Text>
+        </View>
+      )}
       <ForgedFooter />
     </View>
   );
