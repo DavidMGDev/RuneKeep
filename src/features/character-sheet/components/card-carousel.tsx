@@ -332,7 +332,8 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   );
   const slotGesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
   // The scan-fill overlay: a translucent gold sheet rising from the bottom with a bright leading edge.
-  const fillStyle = useAnimatedStyle(() => ({ height: holdProgress.value * CARD_H, opacity: holdProgress.value > 0.001 ? 1 : 0 }));
+  // Opacity ramps in over the first slice of the hold (#200) — no pop / first-frames jitter.
+  const fillStyle = useAnimatedStyle(() => ({ height: holdProgress.value * CARD_H, opacity: Math.min(1, holdProgress.value * 14) }));
 
   // A live interactive card (#136 gold) only accepts touches when FOCUSED; otherwise its controls
   // would swallow the compact-hand expand tap. Gate pointerEvents on a JS focused flag.
@@ -471,13 +472,18 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
   const { category } = useCarousel();
   const target: CardCategory = category === 'abilities' ? 'inventory' : 'abilities';
   const wrap = useAnimatedStyle(() => {
-    // Phantom card slot one step beyond the pushed edge (left of first / right of last), riding the push.
-    const theta = (osDir.value > 0 ? -1 : 1) * ANGLE_STEP;
-    const x = OX + R * Math.sin(theta) + overscrollX.value;
-    const y = OY - R * Math.cos(theta);
+    // Phantom card slot one step beyond the pushed edge (left of first / right of last), riding the
+    // push. It enters from ~4 card-steps further out, sliding + fading toward the slot as the
+    // over-scroll grows to the cap (#200 — a smooth glide, never a pop).
     const p = Math.min(1, osProgress.value);
+    const side = osDir.value > 0 ? -1 : 1; // left phantom for a start-end pull, right for an end pull
+    const theta = side * ANGLE_STEP;
+    const entrance = side * (1 - p) * 4 * 64; // 4 card-steps out at p=0, at the slot by p=1
+    const x = OX + R * Math.sin(theta) + overscrollX.value + entrance;
+    const y = OY - R * Math.cos(theta);
+    const fade = p * p * (3 - 2 * p); // smoothstep — perceptible early, fully in by the cap
     return {
-      opacity: osDir.value === 0 ? 0 : Math.min(1, osProgress.value * 1.4),
+      opacity: osDir.value === 0 ? 0 : fade,
       transform: [{ translateX: x - IND / 2 }, { translateY: y - IND / 2 }, { scale: 0.85 + 0.15 * p + (osArmed.value === 1 ? 0.06 : 0) }],
     };
   });

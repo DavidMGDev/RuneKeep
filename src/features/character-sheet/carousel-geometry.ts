@@ -87,8 +87,8 @@ export const OVERSCROLL_GAIN = 2.5; // design px of fan-push per finger-px past 
 // fills over OVERSCROLL_HOLD_MS (quartic ease in+out); releasing while full commits the switch,
 // scrolling back below the cap cancels it.
 export const OVERSCROLL_CAP_GEAR = 206; // 50% of the 412 design width
-export const OVERSCROLL_CAP_NORMAL = 62; // 15% of the 412 design width (first/last card only)
-export const OVERSCROLL_HOLD_MS = 1000; // hold-at-cap time that fills the radial + arms the switch
+export const OVERSCROLL_CAP_NORMAL = 165; // 40% of the 412 design width (first/last card only, #200)
+export const OVERSCROLL_HOLD_MS = 400; // hold-at-cap time that fills the radial + arms the switch (#200)
 // The whole hand's vertical SWAP travel (#174): on a switch the OLD deck slides DOWN off the bottom
 // (fading only as it nears the edge) while the incoming deck rises + fades in centered — no
 // fade-to-empty in place. Only ever non-zero mid-switch, so the normal scroll feel is untouched.
