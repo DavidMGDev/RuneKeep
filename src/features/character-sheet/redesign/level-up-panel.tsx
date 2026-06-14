@@ -61,6 +61,13 @@ export function LevelUpPanel({
   const [takes, setTakes] = useState<ChosenAdv[]>([]);
   const carRef = useRef<StraightCarouselHandle>(null);
 
+  // The new tier Experience the player is writing now (#211): predict the id applyLevelUp will give
+  // it so the '+1 to two Experiences' advancement can target it, and count it toward that option's
+  // availability. Advancements stay LOCKED until it's written (so they can boost the one just made).
+  const pendingExp = tierStart && expTitle.trim() ? { id: `exp-lvl${newLevel}-${exps.length}`, title: expTitle.trim() } : null;
+  const expChoices = pendingExp ? [...exps, pendingExp] : exps;
+  const expReady = !tierStart || !!expTitle.trim();
+
   const hasDomainAdv = takes.some((t) => t.key === 'domain');
   const maxDomains = 1 + (hasDomainAdv ? 1 : 0);
   const items: StraightItem[] = domainOptions.map((d) => ({ id: d.id, thumb: d.thumb, source: d.source, label: d.title }));
@@ -81,7 +88,7 @@ export function LevelUpPanel({
   const takesOfKey = (k: string) => takes.filter((t) => t.key === k).length;
   const canAdd = (key: ReturnType<typeof advOption>['key']) => {
     const opt = advOption(key);
-    if (opt.needs === 'exps' && exps.length < 2) return false;
+    if (opt.needs === 'exps' && expChoices.length < 2) return false;
     if (remainingPicks < opt.picks) return false;
     return advRemaining(file, key) - takesOfKey(key) * opt.picks >= opt.picks;
   };
@@ -178,8 +185,11 @@ export function LevelUpPanel({
             </>
           ) : null}
 
-          {/* advancements */}
+          {/* advancements — locked until the tier Experience is written (#211), so it can be boosted */}
           <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>{`Choose 2 advancements · ${picks}/2`}</Text>
+          {!expReady ? (
+            <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>Write your new Experience above first — then choose your advancements (you can boost the one you just made).</Text>
+          ) : null}
           {takes.map((t, i) => {
             const opt = advOption(t.key);
             return (
@@ -204,7 +214,7 @@ export function LevelUpPanel({
                 ) : null}
                 {opt.needs === 'exps' ? (
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {exps.map((e) => {
+                    {expChoices.map((e) => {
                       const sel = (t.expIds ?? []).includes(e.id);
                       return <Chip key={e.id} label={e.title} on={sel} disabled={!sel && (t.expIds ?? []).length >= 2} onPress={() => toggleIn(i, 'expIds', e.id, 2)} />;
                     })}
@@ -219,7 +229,7 @@ export function LevelUpPanel({
             );
           })}
 
-          {remainingPicks > 0 ? (
+          {expReady && remainingPicks > 0 ? (
             <View style={{ gap: 6 }}>
               {addable.length === 0 ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>No more advancements available.</Text> : null}
               {addable.map((o) => (
