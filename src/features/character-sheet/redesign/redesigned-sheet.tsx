@@ -33,7 +33,7 @@ import { CarouselProvider, useCarousel } from '../carousel-context';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
-import { ChargeTrack } from '../components/charge-track';
+import { ChargeTrack, type ChargeTrackHandle } from '../components/charge-track';
 import { HeartTrack, type HeartTrackHandle } from '../components/heart-track';
 import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
@@ -148,7 +148,7 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortraitTransform, onPortraitReplace }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void }) {
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void }) {
   const { openOriginCard } = useCarousel();
   const tint = useAccentTint();
 
@@ -252,6 +252,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortrait
           the barrier after the LAST filled shield own the gestures: left of it clears, right of it
           marks, verticality irrelevant. Each shield still charges/animates individually. */}
       <ChargeTrack
+        ref={armorRef}
         left={262}
         top={234}
         slots={armor.map((_, i) => ({ x: (i % 6) * 21, y: Math.floor(i / 6) * 22 }))}
@@ -308,6 +309,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortrait
       {/* Stress (#89 C): hold-to-charge boundaries with the lightning flavor — quantized jumps,
           jitter, flicker. Boundary pips reach further on their outward side (sideSlop). */}
       <ChargeTrack
+        ref={stressRef}
         left={44}
         top={432}
         slots={stress.map((_, i) => ({ x: (i % 6) * 56, y: Math.floor(i / 6) * 34 }))}
@@ -335,6 +337,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, onPortrait
       {/* Hope (#89 D): abrupt but grandiose — instant rays of light + rising twinkling sparks on a
           gain; dimmer rays, falling sparks on a spend. */}
       <ChargeTrack
+        ref={hopeRef}
         left={44}
         top={544}
         slots={hope.map((_, i) => ({ x: i * 56, y: 0 }))}
@@ -650,7 +653,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, []);
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
+  const stressRef = useRef<ChargeTrackHandle>(null);
+  const armorRef = useRef<ChargeTrackHandle>(null);
+  const hopeRef = useRef<ChargeTrackHandle>(null);
   const onApplyDamage = useCallback((hpLoss: number) => heartRef.current?.applyDamage(hpLoss), []);
+  // Latest runtime character, for handlers that must read it without re-subscribing (toggle/rest).
+  const characterRef = useRef(character);
+  characterRef.current = character;
+  // Burst-animate every resource track that changed (#192): used by Rest + equip/unequip so the
+  // hearts / stress / armor / hope icons all animate at once, like the damage panel.
+  const burstResources = useCallback((prev: Character, next: Character) => {
+    heartRef.current?.burst(prev.hp, next.hp);
+    stressRef.current?.burst(prev.stress.active, next.stress.active);
+    armorRef.current?.burst(prev.armor.active, next.armor.active);
+    hopeRef.current?.burst(prev.hope.active, next.hope.active);
+  }, []);
 
   // Portrait edits (#155) persist to the character FILE (via the file state, #164) and update the
   // runtime character.
@@ -708,21 +725,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const next = { ...file, enabledCardIds: [...cur] };
       setFile(next);
       void saveCharacter(next);
-      setCharacter((c) => {
-        const d = toSheetCharacter(next);
-        return {
-          ...d,
-          hp: Math.min(c.hp, d.maxHp),
-          stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
-          armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
-          hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
-          gold: c.gold,
-          portraitUri: c.portraitUri,
-          portraitTransform: c.portraitTransform,
-        };
-      });
+      const c = characterRef.current;
+      const d = toSheetCharacter(next);
+      const result: Character = {
+        ...d,
+        hp: Math.min(c.hp, d.maxHp),
+        stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
+        armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
+        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+        gold: c.gold,
+        portraitUri: c.portraitUri,
+        portraitTransform: c.portraitTransform,
+      };
+      // animate any track whose value the equip/unequip changed (e.g. +1 Max HP at full HP, removed)
+      burstResources(c, result);
+      setCharacter(result);
     },
-    [file],
+    [file, burstResources],
   );
   const onHp = useCallback(
     // No overhealing past the character's TRUE maximum (#107) — not the slot capacity.
@@ -774,7 +793,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
@@ -805,7 +824,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {floatKind === 'custom' ? (
             <NewCardFlow onSave={onAddCustomCard} onCancel={() => setFloatKind(null)} onAcquire={onAcquireCard} acquiredIds={acquiredIds} />
           ) : floatKind === 'rest' ? (
-            <RestPanel character={character} onApply={(next) => setCharacter(next)} onClose={() => setFloatKind(null)} />
+            <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
             <ModifiersPanel file={file} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'level' && file ? (
