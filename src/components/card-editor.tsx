@@ -128,6 +128,8 @@ export function CardEditor({
   onCancel,
   saveLabel = 'Save card',
   extraField,
+  experienceMode = false,
+  modifier,
 }: {
   kindLabel: string;
   initial?: CardDraft;
@@ -136,6 +138,10 @@ export function CardEditor({
   saveLabel?: string;
   /** Optional extra control rendered in the fields column (#164: the inventory/arsenal target picker). */
   extraField?: ReactNode;
+  /** Experience mode (#202): a long-title phrase, no description/effects; preview shows the bonus. */
+  experienceMode?: boolean;
+  /** The experience bonus shown on the preview card (experience mode). */
+  modifier?: number;
 }) {
   // New cards open with a random color already set, as if Random Color was pressed (#153).
   const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [] });
@@ -163,7 +169,11 @@ export function CardEditor({
       <AnimatedPressable style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
       <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingTop: 180, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
         {/* live preview — the real card, the real size */}
-        <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+        {experienceMode ? (
+          <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
+        ) : (
+          <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={kindLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+        )}
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
@@ -171,32 +181,35 @@ export function CardEditor({
             <RuneButton label="Add Image" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={pickImage} />
             <RuneButton label="Random Color" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={rollColor} />
           </View>
-          <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 46, justifyContent: 'center', paddingHorizontal: 13 }}>
+          <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: experienceMode ? 80 : 46, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: experienceMode ? 9 : 0 }}>
             <TextInput
               value={draft.title}
               onChangeText={(title) => setDraft((d) => ({ ...d, title }))}
-              placeholder="Title"
+              placeholder={experienceMode ? 'The experience — a word or a whole phrase…' : 'Title'}
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
-              maxLength={36}
-              style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0 }}
-              accessibilityLabel="Card title"
+              multiline={experienceMode}
+              maxLength={experienceMode ? 160 : 36}
+              style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0, textAlignVertical: experienceMode ? 'top' : 'center' }}
+              accessibilityLabel={experienceMode ? 'Experience' : 'Card title'}
             />
           </ChamferBox>
-          <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
-            <TextInput
-              value={draft.text}
-              onChangeText={(text) => setDraft((d) => ({ ...d, text }))}
-              placeholder="Describe it — what it means, when it helps."
-              placeholderTextColor={Rune.muted}
-              selectionColor={Rune.goldBright}
-              multiline
-              maxLength={280}
-              style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, flex: 1, textAlignVertical: 'top' }}
-              accessibilityLabel="Card text"
-            />
-          </ChamferBox>
-          <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} />
+          {experienceMode ? null : (
+            <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
+              <TextInput
+                value={draft.text}
+                onChangeText={(text) => setDraft((d) => ({ ...d, text }))}
+                placeholder="Describe it — what it means, when it helps."
+                placeholderTextColor={Rune.muted}
+                selectionColor={Rune.goldBright}
+                multiline
+                maxLength={280}
+                style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, flex: 1, textAlignVertical: 'top' }}
+                accessibilityLabel="Card text"
+              />
+            </ChamferBox>
+          )}
+          {experienceMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} />}
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
