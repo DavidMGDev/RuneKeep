@@ -68,12 +68,15 @@ import { Card, CardThumb } from './card';
 import { EnabledCorner } from './enabled-corner';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
-import { focusHaptic } from '@/lib/haptics';
+import { focusHaptic, tapHaptic } from '@/lib/haptics';
 
 const flipPar = (t: number) => ((t % 2) + 2) % 2;
 
-/** Press-and-hold duration to toggle a card on/off (#175): the bottom-to-top fill fills over this. */
-const HOLD_MS = 620;
+/** Press-and-hold duration to toggle a card (#175). Quartic ease-IN (#189) so the fill starts slow
+ *  (a quick tap barely moves it) and finishes fast — a deliberate hold, never an accidental one. */
+const HOLD_MS = 760;
+/** Stationary time before the hold "arms" with a light haptic (past the tap window, #189). */
+const ARM_MS = 200;
 
 /**
  * The 3D flip element (#110) — only mounted/visible when a multi-face card is FOCUSED (the parent
@@ -273,17 +276,27 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   // card (full-screen) arms. A bottom-to-top fill scans over the hold; reaching the top commits the
   // toggle. Moving the finger (>maxDistance) cancels — so it never fights a scroll/flip. Live cards
   // (gold) keep their own controls and are not holdable.
-  const holdProgress = useSharedValue(0); // 0 = no fill .. 1 = filled
+  const holdProgress = useSharedValue(0); // 0 = no fill .. 1 = filled (quartic ease-in)
   const holdArmed = useSharedValue(0);
+  const armSignal = useSharedValue(0); // linear 0->1 over ARM_MS — the arm-haptic timer
+  const armHapticDone = useSharedValue(0);
   const commitToggle = useCallback(() => {
     onToggle(item.id);
-    focusHaptic();
+    focusHaptic(); // medium = the commit
   }, [onToggle, item.id]);
+  // Light haptic once the hold ARMS (past the tap window) — distinct from the commit, and never on a
+  // quick tap-to-fullscreen (a tap releases before armSignal reaches 1, so it's cancelled first).
+  useDerivedValue(() => {
+    if (armSignal.value >= 0.999 && holdArmed.value === 1 && armHapticDone.value === 0) {
+      armHapticDone.value = 1;
+      runOnJS(tapHaptic)();
+    }
+  });
   const hold = useMemo(
     () =>
       Gesture.LongPress()
         .minDuration(HOLD_MS)
-        .maxDistance(14)
+        .maxDistance(12) // any real movement (a scroll) cancels — only a stationary hold equips
         .onBegin(() => {
           'worklet';
           const centered = Math.round(rotation.value / ANGLE_STEP) === index;
@@ -291,7 +304,13 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           const ms = machineState.value;
           const armed = !item.interactive && ((ms === 'expanded' && centered) || (ms === 'fullscreen' && focused));
           holdArmed.value = armed ? 1 : 0;
-          if (armed) holdProgress.value = withTiming(1, { duration: HOLD_MS, easing: Easing.linear });
+          armHapticDone.value = 0;
+          if (armed) {
+            // quartic ease-in: ~no visible fill in the first ~40% of the hold, so a tap never starts it
+            holdProgress.value = withTiming(1, { duration: HOLD_MS, easing: Easing.in(Easing.poly(4)) });
+            armSignal.value = 0;
+            armSignal.value = withTiming(1, { duration: ARM_MS, easing: Easing.linear });
+          }
         })
         .onStart(() => {
           'worklet';
@@ -304,10 +323,12 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         .onFinalize(() => {
           'worklet';
           cancelAnimation(holdProgress);
+          cancelAnimation(armSignal);
           if (holdProgress.value !== 0) holdProgress.value = withTiming(0, { duration: 160 });
+          armSignal.value = 0;
           holdArmed.value = 0;
         }),
-    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed],
+    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed, armSignal, armHapticDone],
   );
   const slotGesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
   // The scan-fill overlay: a translucent gold sheet rising from the bottom with a bright leading edge.
