@@ -43,11 +43,15 @@ interface CarouselContextValue {
    * the new hand has faded in (#100 owner spec). No-op when no origin cards are pinned.
    */
   openOriginCard: (slot: 0 | 1 | 2) => void;
+  /** Ids of cards the player has enabled/equipped (#175) — drives the corner check + toggle state. */
+  enabledIds: Set<string>;
+  /** Toggle a card's enabled state by id (#175): hold the centered/focused card to call this. */
+  toggleCard: (id: string) => void;
 }
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, abilitiesCards, inventoryCards, originIndices }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; originIndices?: [number, number, number] }) {
+export function CarouselProvider({ children, abilitiesCards, inventoryCards, originIndices, enabledIds, onToggleCard }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; onToggleCard?: (id: string) => void }) {
   // A real character supplies its OWN full decks (only the cards it picked, #121) — no sample/
   // placeholder cards mixed in. The hardcoded CARD_DECKS are only the fallback for the demo sheet.
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
@@ -187,6 +191,8 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
     [originIndices, openCardAt, setCategory],
   );
 
+  const emptyEnabled = useMemo(() => new Set<string>(), []);
+  const noopToggle = useCallback((_id: string) => {}, []);
   const value = useMemo<CarouselContextValue>(
     () => ({
       rotation,
@@ -206,8 +212,10 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, ori
       openCardAt,
       closeFullscreen,
       openOriginCard,
+      enabledIds: enabledIds ?? emptyEnabled,
+      toggleCard: onToggleCard ?? noopToggle,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, decks, category, setCategory, toggleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
