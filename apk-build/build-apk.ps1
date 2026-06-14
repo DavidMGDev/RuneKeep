@@ -83,10 +83,10 @@ Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v1.0.0-android'
-$notes = "Offline Android APK (arm64-v8a, $mb MB). All card data bundled, no download needed. Built from the asset-optimized apk-optimize branch. Sideload: enable Install unknown apps, then open the APK."
-gh release delete $tag --yes --cleanup-tag
-gh release create $tag "$($apk.FullName)" --target apk-optimize --title "RuneKeep v1.0.0 (Android)" --notes $notes
+$tag = 'v1.1.0-android'
+$notes = "RuneKeep v1.1.0 - card-driven character sheet. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nNew: equip/enable any card by pressing and holding it in the carousel (a fill scans bottom-to-top, then a corner check marks it). Weapons, armor, ancestry, subclass, domain, loot, and your own custom cards now apply their stat modifiers automatically - HP, Stress, Armor, Evasion, traits, Proficiency, and damage thresholds are computed for you, tier-aware. A focused card's Modifiers button shows what it applies; the float-menu Modifiers panel shows every base stat and what each equipped card layers on top. Settings is gone - cards do it all. Add tier 1-4 gear + loot from the catalog in New Card.`n`nSideload: enable Install unknown apps, then open the APK."
+gh release delete $tag --yes --cleanup-tag 2>$null
+gh release create $tag "$($apk.FullName)" --target main --title "RuneKeep v1.1.0 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
