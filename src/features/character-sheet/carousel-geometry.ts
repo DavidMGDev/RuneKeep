@@ -82,8 +82,13 @@ export const GEAR_SWIPE_PX = 120; // finger px that cover first card -> last car
 // screen. At OVERSCROLL_ARM design px of push the indicator is FULL + armed; releasing while armed
 // switches the category (the fan never collapses). Dragging back below disarms.
 export const OVERSCROLL_GAIN = 2.5; // design px of fan-push per finger-px past the deck end
-export const OVERSCROLL_ARM = 150; // push (design px) that arms the switch — edge card ~85% to its side (206 -> ~356)
-export const OVERSCROLL_MAX = 158; // hard cap (~90%, the 5% margin past the arm) — the fan stops moving here
+// #188 (time-based switch): the fan-push CAPS — 50% of screen width on the gear fast-scroll, 15% on a
+// normal scroll. The indicator fades in as the push grows toward the cap; AT the cap a radial bar
+// fills over OVERSCROLL_HOLD_MS (quartic ease in+out); releasing while full commits the switch,
+// scrolling back below the cap cancels it.
+export const OVERSCROLL_CAP_GEAR = 206; // 50% of the 412 design width
+export const OVERSCROLL_CAP_NORMAL = 62; // 15% of the 412 design width (first/last card only)
+export const OVERSCROLL_HOLD_MS = 1000; // hold-at-cap time that fills the radial + arms the switch
 // The whole hand's vertical SWAP travel (#174): on a switch the OLD deck slides DOWN off the bottom
 // (fading only as it nears the edge) while the incoming deck rises + fades in centered — no
 // fade-to-empty in place. Only ever non-zero mid-switch, so the normal scroll feel is untouched.
