@@ -10,6 +10,7 @@ import type { CardEffect } from '@/lib/modifiers';
 import type { CharacterFile, ExperienceDef } from '@/lib/character-file';
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { lootById } from '@/lib/loot-data';
+import { wildshapeById } from '@/lib/wildshape-data';
 import { cardById } from './catalog';
 import { CATALOG_EFFECTS } from './catalog-effects';
 
@@ -30,6 +31,8 @@ export function effectsForCardId(id: string, file?: CharacterFile): CardEffect[]
   if (a?.effects?.length) return a.effects;
   const l = lootById(id);
   if (l?.effects?.length) return l.effects;
+  const ws = wildshapeById(id);
+  if (ws?.effects?.length) return ws.effects;
   return [];
 }
 
@@ -42,5 +45,5 @@ export function cardHasEffects(id: string, file?: CharacterFile): boolean {
 export function sourceLabelForCardId(id: string, file?: CharacterFile): string {
   const custom = customCards(file).find((c) => c.id === id);
   if (custom) return custom.title;
-  return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? id;
+  return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? wildshapeById(id)?.name ?? id;
 }
