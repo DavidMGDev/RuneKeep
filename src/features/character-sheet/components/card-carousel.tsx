@@ -536,6 +536,7 @@ export function CardCarousel() {
   const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
+  const ringLen = ring.length; // #233 item 6: no over-scroll switch when ≤1 category is enabled
   const middle = Math.round((count - 1) / 2);
 
   // Gear over-scroll → category switch (#174). All UI-thread shared state for the sideways
@@ -613,8 +614,26 @@ export function CardCarousel() {
     // CAP (gear 50% / normal 15%); the indicator fades in over that push (osProgress). AT the cap a
     // radial bar fills over OVERSCROLL_HOLD_MS (quartic ease in+out, osHold) and arms; release while
     // armed switches, scrolling back below the cap cancels.
+    // Back in range mid-drag: drop the over-scroll instantly (no spring — the finger is still down).
+    const osClear = () => {
+      'worklet';
+      if (osDir.value === 0) return;
+      overscrollX.value = 0;
+      osDir.value = 0;
+      osProgress.value = 0;
+      osHolding.value = 0;
+      osArmed.value = 0;
+      cancelAnimation(osHold);
+      osHold.value = 0;
+    };
     const osPush = (push: number, dir: number, cap: number) => {
       'worklet';
+      // No category to switch to (#233 item 6): with ≤1 enabled category, suppress the whole
+      // over-scroll switch — no fan push, no indicator, no animation. The end just clamps.
+      if (ringLen <= 1) {
+        osClear();
+        return;
+      }
       overscrollX.value = dir > 0 ? push : -push;
       osDir.value = dir;
       osProgress.value = Math.min(1, push / cap);
@@ -634,18 +653,6 @@ export function CardCarousel() {
         cancelAnimation(osHold);
         osHold.value = withTiming(0, { duration: 200 });
       }
-    };
-    // Back in range mid-drag: drop the over-scroll instantly (no spring — the finger is still down).
-    const osClear = () => {
-      'worklet';
-      if (osDir.value === 0) return;
-      overscrollX.value = 0;
-      osDir.value = 0;
-      osProgress.value = 0;
-      osHolding.value = 0;
-      osArmed.value = 0;
-      cancelAnimation(osHold);
-      osHold.value = 0;
     };
     return Gesture.Pan()
         .minDistance(2)
@@ -837,7 +844,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -887,8 +894,9 @@ export function CardCarousel() {
             in over the outgoing hand, then the live deck takes its place at commit. */}
         {incoming ? <GhostFan items={decks[incoming]} enter={deckEnter} arrival={incomingArrival} /> : null}
         <FocusOverlay />
-        {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view. */}
-        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 730, 200, 40), { zIndex: 3500, alignItems: 'center' }, modBtnStyle]}>
+        {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view.
+            Sits BELOW the multi-page page dots (#233 item 3) so it never collides with them. */}
+        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 770, 200, 40), { zIndex: 3500, alignItems: 'center' }, modBtnStyle]}>
           {focused && deck[c] && !deck[c].interactive ? (
             <Pressable onPress={() => showCardInfo(deck[c].id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="View this card's modifiers">
               <ChamferBox chamfer={9} fill="rgba(14,17,22,0.95)" stroke={Rune.goldEdge} strokeWidth={1.4} style={{ paddingHorizontal: 18, height: 40, alignItems: 'center', justifyContent: 'center' }}>

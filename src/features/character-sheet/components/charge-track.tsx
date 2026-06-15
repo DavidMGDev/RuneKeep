@@ -494,7 +494,9 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
     <View style={[box(left, top, Math.max(...slots.map((s) => s.x)) + w, Math.max(...slots.map((s) => s.y)) + h), { zIndex: 10, overflow: 'visible' }]}>
       {slots.map((s, i) => {
         const dir: Dir | null = i === upIndex ? 'up' : i === downIndex ? 'down' : null;
-        const hidden = anims.some((a) => a.index === i);
+        // Keep the static pip visible during the 'hold' charge (#233 item 7) so a tap / hold-start
+        // never blanks for one frame; the anim takes over once it fires or cancels.
+        const hidden = anims.some((a) => a.index === i && a.phase !== 'hold');
         const bodyEl = (
           <View
             style={[box(s.x, s.y, w, h), { opacity: hidden ? 0 : 1 }]}
