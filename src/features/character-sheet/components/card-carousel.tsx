@@ -422,19 +422,19 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
  *  (deckEnter 0→1) while the OLD live hand slides down and fades out beneath it. Centered on the
  *  ARRIVAL extreme (#188 continuation) — so the FIRST cards the user will see are the ones near that
  *  end, and they're preloaded at full-res (not just LOD) before the live deck takes this exact pose. */
-function GhostFan({ items, enter, arrival }: { items: CardItem[]; enter: SharedValue<number>; arrival: ArrivalEnd }) {
+function GhostFan({ items, enter, arrival, enabledIds }: { items: CardItem[]; enter: SharedValue<number>; arrival: ArrivalEnd; enabledIds: Set<string> }) {
   const n = items.length;
   const center = arrival === 'start' ? 0 : n - 1; // the extreme the switch lands on
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: 1500 }]}>
       {items.map((it, i) => (
-        <GhostSlot key={it.id} item={it} index={i} center={center} enter={enter} withImage={Math.abs(i - center) <= IMG_MOUNT_HALF} />
+        <GhostSlot key={it.id} item={it} index={i} center={center} enter={enter} withImage={Math.abs(i - center) <= IMG_MOUNT_HALF} enabled={enabledIds.has(it.id)} />
       ))}
     </View>
   );
 }
 
-function GhostSlot({ item, index, center, enter, withImage }: { item: CardItem; index: number; center: number; enter: SharedValue<number>; withImage: boolean }) {
+function GhostSlot({ item, index, center, enter, withImage, enabled }: { item: CardItem; index: number; center: number; enter: SharedValue<number>; withImage: boolean; enabled: boolean }) {
   // Resting EXPANDED arc pose (p=1, no grind), centered on the arrival extreme — where the live hand
   // lands at commit. Static geometry; only the enter progress (rise + fade) animates.
   const theta = (index - center) * ANGLE_STEP;
@@ -456,6 +456,8 @@ function GhostSlot({ item, index, center, enter, withImage }: { item: CardItem; 
         <CardThumb item={item} />
         {/* preload full-res for the first-seen cards so they don't pop from LOD after the swap (#188) */}
         {withImage ? <Card item={item} width={CARD_W} height={CARD_H} /> : null}
+        {/* equipped corner mark stays visible through the transition (#239 item 5) */}
+        {enabled ? <EnabledCorner width={CARD_W} height={CARD_H} /> : null}
       </View>
     </Animated.View>
   );
@@ -533,7 +535,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, switching, liveReveal, incoming, incomingArrival, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const ringLen = ring.length; // #233 item 6: no over-scroll switch when ≤1 category is enabled
@@ -584,6 +586,18 @@ export function CardCarousel() {
     }
   });
   const modBtnStyle = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value }));
+
+  // Live-deck reveal (#239 item 3): the live slots are hidden + non-interactive while a switch is in
+  // flight (the ghost fan shows the destination), then cross-revealed once the new deck is mounted at
+  // its final, usable pose — so the player never sees or grabs mid-transition cards.
+  const liveStyle = useAnimatedStyle(() => ({ opacity: liveReveal.value }));
+  const [deckInteractive, setDeckInteractive] = useState(true);
+  useAnimatedReaction(
+    () => switching.value,
+    (v, prev) => {
+      if (v !== prev) runOnJS(setDeckInteractive)(v !== 1);
+    },
+  );
 
   // Multi-face slots register their pager here so a horizontal swipe in fullscreen flips the
   // FOCUSED card (#110: the page state is per-slot, the pan is here — this is the small lift).
@@ -657,6 +671,7 @@ export function CardCarousel() {
     return Gesture.Pan()
         .minDistance(2)
         .onBegin((e) => {
+          if (switching.value === 1) return; // a switch is in flight — deck isn't grabbable yet (#239)
           cancelAnimation(rotation);
           startRot.value = rotation.value;
           anchorY.value = 0;
@@ -671,6 +686,7 @@ export function CardCarousel() {
           if (padTouch.value && padWasExpanded.value) grindProgress.value = withTiming(1, { duration: 160 });
         })
         .onUpdate((e) => {
+          if (switching.value === 1) return; // ignore drags while the deck is switching (#239 item 3)
           if (machineState.value === 'fullscreen') return;
           // Grinding the gear (#62 D): the power-scroll. Past a deck END it stops feeding rotation
           // (clamped) and instead pushes the WHOLE fan sideways — a sideways pull-to-refresh that
@@ -745,6 +761,7 @@ export function CardCarousel() {
           }
         })
         .onEnd((e) => {
+          if (switching.value === 1) return; // a switch owns the deck right now (#239 item 3)
           const stillTap = Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8;
           // Focused: a tap on the gear closes the card AND collapses the whole hand (#62 D);
           // a downward swipe (or flick) returns the card; otherwise settle it back open.
@@ -817,6 +834,7 @@ export function CardCarousel() {
         })
         // A clean tap never activates the pan (minDistance) — onEnd doesn't run, onFinalize does.
         .onFinalize((e, success) => {
+          if (switching.value === 1) return; // don't settle/spring a deck that's mid-switch (#239)
           if (!success && padTouch.value && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
             if (machineState.value === 'fullscreen') {
               runOnJS(closeFullscreen)();
@@ -844,7 +862,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -889,10 +907,14 @@ export function CardCarousel() {
         {/* Gear art INSIDE the container so it interleaves with the stack: under the cards
             normally, above the fullscreen dim, under the focused card (#62 D). */}
         <GearDecoration />
-        {slots}
+        {/* live deck — hidden + inert while a switch swaps it underneath (#239 item 3) */}
+        <Animated.View style={[StyleSheet.absoluteFill, liveStyle]} pointerEvents={deckInteractive ? 'box-none' : 'none'}>
+          {slots}
+        </Animated.View>
         {/* Incoming deck preloaded off-screen as a ghost fan during a switch (#174) — rises + fades
-            in over the outgoing hand, then the live deck takes its place at commit. */}
-        {incoming ? <GhostFan items={decks[incoming]} enter={deckEnter} arrival={incomingArrival} /> : null}
+            in over the outgoing hand, then the live deck takes its place at commit. Carries enabled
+            corner marks too (#239 item 5) so equipped cards stay marked through the transition. */}
+        {incoming ? <GhostFan items={decks[incoming]} enter={deckEnter} arrival={incomingArrival} enabledIds={enabledIds} /> : null}
         <FocusOverlay />
         {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view.
             Sits BELOW the multi-page page dots (#233 item 3) so it never collides with them. */}

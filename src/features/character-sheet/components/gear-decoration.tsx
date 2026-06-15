@@ -1,4 +1,4 @@
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { useAnimatedReaction, useAnimatedStyle } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
 import { useCarousel } from '../carousel-context';
@@ -20,11 +20,20 @@ const GEAR_TOP = 714; // the half-point stays well below the design bottom (892)
  * layer, never on top of a card.
  */
 export function GearDecoration() {
-  const { rotation, expandProgress, fullscreenProgress } = useCarousel();
+  const { rotation, gearRotation, switching, expandProgress, fullscreenProgress } = useCarousel();
+  // The gear runs off its OWN rotation (#239 item 4): normally it tracks the card rotation 1:1, but on
+  // a category switch commitSwitch eases gearRotation to the landed angle while the cards snap — so the
+  // cogs glide to their new rotation instead of snapping (or freezing) with the hard card jump.
+  useAnimatedReaction(
+    () => rotation.value,
+    (v) => {
+      if (switching.value !== 1) gearRotation.value = v;
+    },
+  );
   const layer = useAnimatedStyle(() => ({ zIndex: fullscreenProgress.value > 0.02 ? 2500 : 0 }));
   return (
     <Animated.View style={[box(GEAR_LEFT, GEAR_TOP, GEAR_W, GEAR_W), layer]} pointerEvents="none">
-      <GearStack rotation={rotation} expandProgress={expandProgress} size={GEAR_W} />
+      <GearStack rotation={gearRotation} expandProgress={expandProgress} size={GEAR_W} />
     </Animated.View>
   );
 }

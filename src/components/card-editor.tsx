@@ -134,12 +134,17 @@ export function CardEditor({
   experienceMode = false,
   modifier,
   typeOptions,
+  scrimless = false,
 }: {
   kindLabel: string;
   initial?: CardDraft;
   onSave: (draft: CardDraft) => void;
   onCancel: () => void;
   saveLabel?: string;
+  /** Drop the editor's own dark scrim (#239 item 9): used inside the sheet, where the shared SheetDim
+   *  already darkens the screen — keeping a second scrim caused a double-dim that popped on open/close.
+   *  A transparent tap-catcher still closes on outside tap. Standalone (creation) keeps its dark scrim. */
+  scrimless?: boolean;
   /** Optional extra control rendered in the fields column (#164: the inventory/arsenal target picker). */
   extraField?: ReactNode;
   /** Experience mode (#202): a long-title phrase, no description/effects; preview shows the bonus. */
@@ -223,7 +228,7 @@ export function CardEditor({
 
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
-      <AnimatedPressable style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
+      <AnimatedPressable style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: scrimless ? 'transparent' : 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
       <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* top gap: collapses while typing so the card + fields ride up to just below the border (#227) */}
         <Animated.View style={topSpacer} />

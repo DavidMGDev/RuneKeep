@@ -71,11 +71,15 @@ export function GearBrowser({ acquiredIds, onAdd, onBack, onClose }: { acquiredI
           ))}
         </View>
       ) : null}
+      {/* Plain bordered rows (#239 item 8): the per-row chamfer SVG was the catalog's perf sink — a
+          long loot/consumable list rendered dozens of SVGs. A lightweight bordered View scrolls
+          smoothly. Items with a modifier are NOT highlighted differently — the row reads the same as
+          any other and simply shows its modifier on its own line. */}
       {rows.map((r) => {
         const has = acquiredIds.has(r.id);
         const eff = effSummary(r.effects);
         return (
-          <ChamferBox key={r.id} chamfer={8} fill="rgba(20,24,31,0.6)" stroke={eff ? Rune.red : 'rgba(218,162,73,0.35)'} strokeWidth={eff ? 1.2 : 1} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12, gap: 10 }}>
+          <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12, gap: 10, borderWidth: 1, borderColor: 'rgba(218,162,73,0.3)', backgroundColor: 'rgba(20,24,31,0.6)' }}>
             <View style={{ flex: 1 }}>
               <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{r.name}</Text>
               <Text numberOfLines={2} style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{r.sub}</Text>
@@ -86,7 +90,7 @@ export function GearBrowser({ acquiredIds, onAdd, onBack, onClose }: { acquiredI
             ) : (
               <RuneButton label="Add" kind="secondary" dense height={32} style={{ paddingHorizontal: 14 }} onPress={() => onAdd(r.id)} />
             )}
-          </ChamferBox>
+          </View>
         );
       })}
       {!usesTier && rows.length > 30 ? <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic, textAlign: 'center' }}>{`${rows.length} items`}</Text> : null}

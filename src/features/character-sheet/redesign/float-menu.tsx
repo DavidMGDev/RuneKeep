@@ -133,18 +133,28 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
     else progress.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) });
   }, [openSV, progress, reduced]);
 
-  // Close IMMEDIATELY (no animated fade-out): a lingering full-screen scrim at zIndex 9999 was
-  // covering the interface panels for the fade duration and could strand if the timing callback was
-  // dropped — that was the "tap an option, then the app freezes" bug (#168). Unmount at once instead.
+  // Close with a FADE-OUT (#239 item 9): the menu used to vanish in one frame (POP). The old freeze
+  // (#168) came from a lingering *blocking* tap-scrim — that scrim only renders while `pinned`, so we
+  // drop `pinned` first; the dim + wedges that remain during the fade are all pointer-transparent, so
+  // nothing can strand even if the timing callback is dropped. Reduced motion still closes instantly.
   const closeMenu = useCallback(() => {
     setPinned(false);
-    setOpen(false);
-    openSV.value = 0;
-    openingSV.value = 0;
     dragging.value = 0;
     highlight.value = -1;
-    progress.value = 0;
-  }, [openSV, openingSV, dragging, highlight, progress]);
+    openingSV.value = 0;
+    if (reduced) {
+      progress.value = 0;
+      openSV.value = 0;
+      setOpen(false);
+      return;
+    }
+    progress.value = withTiming(0, { duration: 180, easing: Easing.in(Easing.cubic) }, (fin) => {
+      if (fin) {
+        openSV.value = 0;
+        runOnJS(setOpen)(false);
+      }
+    });
+  }, [openSV, openingSV, dragging, highlight, progress, reduced]);
 
   const pinMenu = useCallback(() => setPinned(true), []);
 
