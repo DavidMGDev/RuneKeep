@@ -563,6 +563,14 @@ export function CardCarousel() {
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
   const [center, setCenter] = useState(middle);
+  // On a category SWITCH the deck changes (#227): snap `center` to the landed index right away so the
+  // new center card mounts its full-res from the first frame. Otherwise `center` lingers on the old
+  // deck's index (the live tracker is frozen while the grind relaxes), so the landed card shows its
+  // LOD thumb and only sharpens ~1s later — reading as a "cards reloaded" flicker after the switch.
+  useEffect(() => {
+    setCenter(Math.min(count - 1, Math.max(0, Math.round(rotation.value / ANGLE_STEP))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, count]);
 
   // The "Modifiers" button (#175) fades in on focus and reveals what the focused card applies.
   const [focused, setFocused] = useState(false);

@@ -19,7 +19,7 @@ import { CLASS_DATA, featurePages } from '@/features/create/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { lootById } from '@/lib/loot-data';
-import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/lib/wildshape-data';
+import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -62,6 +62,21 @@ const RED = Rune.red;
 const GOLDD = Rune.goldEdge;
 const IVORY = Rune.sheet;
 const BRONZE = Rune.bronze; // deep gold labels on parchment (AA at small sizes, L3)
+
+/** One-line stat summary for a Beastform's overview face (#227): "+2 Strength · +2 Evasion · …". */
+const WS_TRAIT_LABEL: Record<string, string> = { agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge' };
+function wildshapeSummary(w: Wildshape): string {
+  const parts: string[] = [];
+  for (const e of w.effects) {
+    const d = e.delta ?? 0;
+    const s = d >= 0 ? '+' : '';
+    if (e.target === 'evasion') parts.push(`${s}${d} Evasion`);
+    else if (e.target === 'majorThreshold') parts.push(`${s}${d} Thresholds`); // major+severe move together
+    else if (e.target === 'severeThreshold') continue;
+    else if (WS_TRAIT_LABEL[e.target]) parts.push(`${s}${d} ${WS_TRAIT_LABEL[e.target]}`);
+  }
+  return parts.join(' · ');
+}
 
 const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 'locked' ? Art.armorLocked : Art.armorIcon);
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
@@ -441,13 +456,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs } = useMemo(() => {
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], notesJobs: [] as Job[], wildshapeJobs: [] as Job[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], notesJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -530,20 +545,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       node: <ForgedCard title={it.title || 'Note'} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
       raster: !!it.imageUri,
     }));
-    // Wild Shape (#214): Druid-only Beastform cards, one per form, each its own color. Static content
-    // (no player data) → a stable key; the deck appears only for Druids.
-    const wildshapeJobs: Job[] = cls === 'druid'
-      ? WILDSHAPES.map((w) => ({
-          key: `ws-${w.id}`,
-          id: w.id,
-          node: <ForgedCard title={w.name} kindLabel="Wild Shape" body={`Tier ${w.tier} · ${w.attack}\n\n${w.features}\n\nLike: ${w.examples}`} accentDeep={Rune.panel} colorArt={w.color} multilineTitle />,
-        }))
+    // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
+    // deck like the class-feature card (#227 item 8) so the title stays a normal size and the rules
+    // text isn't crammed tiny: face 0 = overview (tier · stress · attack · stat deltas · examples),
+    // face 1 = the form's features. Static content → stable keys; the deck appears only for Druids.
+    const wildshapeFaceJobs: Job[] = cls === 'druid'
+      ? WILDSHAPES.flatMap((w) => [
+          { key: `ws-${w.id}-0`, node: <ForgedCard title={w.name} kindLabel="Beastform" body={`Tier ${w.tier} · ${w.stress} Stress\nAttack: ${w.attack}\n${wildshapeSummary(w)}\nExamples: ${w.examples}`} accentDeep={Rune.panel} colorArt={w.color} pageMark="1/2" multilineTitle /> },
+          { key: `ws-${w.id}-1`, node: <ForgedCard title={w.name} kindLabel="Features" body={w.features} accentDeep={Rune.panel} colorArt={w.color} pageMark="2/2" multilineTitle /> },
+        ])
       : [];
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs };
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs };
   }, [file]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...notesJobs, ...wildshapeJobs],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...notesJobs, ...wildshapeFaceJobs],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -641,10 +657,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const notesCards: CardItem[] = notesItems.length
       ? notesItems
       : [{ id: 'notes-empty', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, interactive: true, live: <ForgedCard title="Notes" kindLabel="Notes" body="No notes yet. Open the float menu and choose New Card to jot one down — reminders, places, and story beats all live here." accentDeep={Rune.panel} colorArt="#2A2F3A" multilineTitle /> }];
-    // Wild Shape (#214): the Druid's Beastform deck (empty for every other class → not in the ring).
-    const wildshapeCards = forgedItems(wildshapeJobs);
+    // Beastform (#227): assemble each form's two forged faces into ONE multi-face flip card (id =
+    // the form id, so enabling/toggling still targets it). Mirrors the class-feature card assembly.
+    const wildshapeCards: CardItem[] = file.className === 'druid'
+      ? WILDSHAPES.map((w): CardItem | null => {
+          const faces = [`ws-${w.id}-0`, `ws-${w.id}-1`].map((k) => {
+            const src = featureSources[k];
+            return src ? { source: src.full, thumb: src.thumb } : { custom: wildshapeFaceJobs.find((j) => j.key === k)?.node };
+          });
+          const first = faces.find((f) => 'source' in f && f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
+          if (!first) return null;
+          return { id: w.id, source: first.source, thumb: first.thumb, faces };
+        }).filter((c): c is CardItem => c !== null)
+      : [];
     return { abilitiesCards: abilities, inventoryCards: inv, notesCards, wildshapeCards, originIndices };
-  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeJobs, featureSources]);
+  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
