@@ -39,14 +39,15 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onCl
   const clear = useCallback(() => setTyped(''), []);
   const submit = useCallback(() => { if (ok) onSubmit(val); }, [ok, onSubmit, val]);
 
-  const dimStyle = useAnimatedStyle(() => ({ opacity: vis.value }));
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));
 
+  // No own dark scrim (#250): the shared SheetDim already darkens the screen; this sits ABOVE it
+  // (zIndex 10001) so the keypad is never hidden behind a dim. Transparent tap-catcher closes it.
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 5000, alignItems: 'center', justifyContent: 'center' }]}>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, dimStyle]} />
+    <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
-      <Animated.View style={panelStyle} onStartShouldSetResponder={() => true}>
+      <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+      <Animated.View style={panelStyle}>
         <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.4} style={{ width: 264, padding: 16, gap: 12 }}>
           <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{title}</Text>
           {subtitle ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, textAlign: 'center', marginTop: -6 }}>{subtitle}</Text> : null}
@@ -72,6 +73,7 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onCl
           <Text style={{ color: Rune.muted, fontSize: 8.5, fontFamily: Body.medium, textAlign: 'center', letterSpacing: 0.4 }}>{`Enter ${min}–${max} · tap outside to cancel`}</Text>
         </ChamferBox>
       </Animated.View>
+      </View>
     </View>
   );
 }

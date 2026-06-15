@@ -13,7 +13,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { Easing, runOnJS, type SharedValue, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
 import { Rune } from '@/constants/theme';
 import { useStageScale } from '@/components/design-stage';
@@ -361,9 +361,26 @@ export function CarouselTokenBoard() {
       runOnJS(setSt)({ active: active === 1, idx });
     }
   });
-  // Fade the board IN only over the last quarter of the focus fly (#248 item 8), after the card has
-  // settled — so tokens don't render mid-flight at the wrong scale and "jump".
-  const fade = useAnimatedStyle(() => ({ opacity: Math.max(0, Math.min(1, (fullscreenProgress.value - 0.75) / 0.25)) }));
+  // Settle-gate the board fade (#250): wait until the focused card has fully STOPPED moving before the
+  // tokens appear. Arm a delayed fade once fullscreenProgress crosses ~1 (the spring has essentially
+  // arrived); the 380ms delay lets any settle/overshoot finish. If progress drops (closing), cancel +
+  // hide immediately. Better late than mid-flight (owner: "I don't care if late").
+  const ready = useSharedValue(0);
+  const arming = useSharedValue(0);
+  useAnimatedReaction(
+    () => fullscreenProgress.value,
+    (v) => {
+      if (v > 0.99 && arming.value === 0) {
+        arming.value = 1;
+        ready.value = withDelay(380, withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) }));
+      } else if (v <= 0.99 && arming.value === 1) {
+        arming.value = 0;
+        cancelAnimation(ready);
+        ready.value = 0;
+      }
+    },
+  );
+  const fade = useAnimatedStyle(() => ({ opacity: ready.value }));
 
   const deck = decks[category];
   const card = st.active ? deck[Math.min(deck.length - 1, Math.max(0, st.idx))] : null;
