@@ -177,17 +177,18 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
     [setCategory],
   );
 
-  // The ring can change underfoot (#214): toggling Notes off while viewing it, or loading a
-  // non-Druid, can leave `category` outside the active ring. Snap back to a valid category (at rest).
+  // The ring can change underfoot (#214/#227): hiding the current category in the Cards panel, or
+  // loading a non-Druid, can leave `category` outside the active ring. Snap to a valid category and
+  // recenter. No machine-state guard (#227): category only ever leaves the ring via the Cards panel,
+  // where the carousel is unloaded — so the user is safely on an enabled category when it reloads.
   useEffect(() => {
     if (ring.includes(category)) return;
-    if (machineState.value !== 'compact') return;
     const fallback = ring[0] ?? 'abilities';
     setCategoryState(fallback);
     const n = decksRef.current[fallback].length;
     rotation.value = middleRotation(n);
     focusIndex.value = Math.round(middleRotation(n) / ANGLE_STEP);
-  }, [ring, category, machineState, rotation, focusIndex]);
+  }, [ring, category, rotation, focusIndex]);
 
   // Carousel loads CENTERED on create + load (#174): the initial rotation is computed from whatever
   // deck length is present at mount, but a real character's decks arrive async (file derivation +

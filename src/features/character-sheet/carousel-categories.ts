@@ -25,19 +25,18 @@ export const CATEGORY_LABEL: Record<CardCategory, string> = {
 };
 
 export interface RingOptions {
-  /** The character is a Druid → the Wild Shape category is available. */
+  /** The character is a Druid → the Beastform category is available. */
   isDruid?: boolean;
-  /** The player has enabled Notes in the over-scroll ring (float-menu "Toggle Notes"). */
-  showNotes?: boolean;
+  /** Categories the player has toggled OFF in the Cards panel (#227). At least one always stays on. */
+  hidden?: CardCategory[];
 }
 
-/** The ordered list of ACTIVE categories for this character. Always contains abilities + inventory. */
-export function activeRing({ isDruid, showNotes }: RingOptions): CardCategory[] {
-  return CATEGORY_ORDER.filter((c) => {
-    if (c === 'notes') return !!showNotes;
-    if (c === 'wildshape') return !!isDruid;
-    return true; // abilities + inventory are always present
-  });
+/** The ordered list of ACTIVE categories (#227): canonical order minus the ones toggled off in the
+ *  Cards panel; Beastform only for Druids. Never empty — falls back to abilities so the ring always
+ *  has at least one category. */
+export function activeRing({ isDruid, hidden = [] }: RingOptions): CardCategory[] {
+  const ring = CATEGORY_ORDER.filter((c) => (c === 'wildshape' ? !!isDruid : true) && !hidden.includes(c));
+  return ring.length ? ring : ['abilities'];
 }
 
 /**

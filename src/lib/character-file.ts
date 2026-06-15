@@ -90,9 +90,12 @@ export interface CharacterFile {
   /** Notes (#214): freeform note-taking cards, their own carousel category. Optional titles. Not in
    *  the inventory. Additive — absent on existing saves. */
   notes?: ExperienceDef[];
-  /** Whether the Notes category appears in the over-scroll ring (#214, float-menu "Toggle Notes").
-   *  Undefined → shown by default. */
+  /** Whether the Notes category appears in the over-scroll ring (#214). DEPRECATED by
+   *  `hiddenCategories` (#227) — read only for back-compat (showNotes === false → notes hidden). */
   showNotes?: boolean;
+  /** Card categories the player toggled OFF in the Cards panel (#227). Absent → all shown. At least
+   *  one category always stays on (enforced in the UI + activeRing's fallback). */
+  hiddenCategories?: import('@/features/character-sheet/card-data').CardCategory[];
   // --- settings + level-up overrides (#166/#167). All additive; schemaVersion stays 1 so existing
   //     saved characters keep loading and simply fall back to the class/creation defaults. ---
   /** HP ceiling override (#166: edit "instead of 6 I want 7"; #167: +1 per Hit Point advancement). */
