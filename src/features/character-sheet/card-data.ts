@@ -11,7 +11,17 @@
  */
 export const CARD_ASPECT = 750 / 1050; // 5:7
 
-export type CardCategory = 'abilities' | 'inventory' | 'notes' | 'wildshape';
+/**
+ * A carousel category key. The four BUILT-IN keys are fixed; custom categories (#246) use their own
+ * generated ids, so the type is a widened `string` rather than a closed union. Resolve a key's label /
+ * icon through `carousel-categories` (built-in) or the character's `customCategories` (custom).
+ */
+export type CardCategory = string;
+
+/** The four immutable built-in categories (#246): always present, never deletable. */
+export const BUILTIN_CATEGORIES = ['abilities', 'inventory', 'wildshape', 'notes'] as const;
+export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
+export const isBuiltinCategory = (k: string): k is BuiltinCategory => (BUILTIN_CATEGORIES as readonly string[]).includes(k);
 
 /** One LOD pair (full-res + thumb), the unit both `CardItem` and a multi-page page hold. */
 export interface CardImage {

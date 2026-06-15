@@ -1,48 +1,76 @@
 /**
- * The card-carousel CATEGORY RING (#214). The carousel used to hold exactly two decks toggled a↔b;
- * now it holds an ordered, LOOPING ring of however many categories are active for this character:
- *   - abilities + inventory      (always, every class)
- *   - notes                      (when the player has toggled it on — float-menu "Toggle Notes")
- *   - wildshape                  (Druids only — the Beastform deck)
+ * The card-carousel CATEGORY RING (#214 / #246). The carousel holds an ordered, LOOPING ring of the
+ * categories active for this character:
+ *   - abilities + inventory      (always, every class)        — built-in, never deletable
+ *   - wildshape (Beastform)      (Druids only)                — built-in, never deletable
+ *   - notes                      (every class)                — built-in, never deletable
+ *   - <custom categories>        (#246: player-created, with their own icon, order + visibility)
  *
- * Over-scrolling past a deck end walks the ring (wrapping around), so a Druid with Notes on cycles
- * abilities → inventory → notes → wildshape → abilities → … in either direction. This module is the
- * one pure, testable place that decides what's in the ring and what comes next — no React, no I/O.
+ * Over-scrolling past a deck end walks the ring (wrapping). This module is the one pure, testable
+ * place that decides what's in the ring, in what order, and what comes next — no React, no I/O.
  */
 
-import type { CardCategory } from './card-data';
+import { BUILTIN_CATEGORIES, type CardCategory, isBuiltinCategory } from './card-data';
 
-/** Canonical ring order (#227: Notes sits AFTER Beastform). The active ring is this list filtered to
- *  what's enabled, so order is stable regardless of which optional categories are present. */
-export const CATEGORY_ORDER: CardCategory[] = ['abilities', 'inventory', 'wildshape', 'notes'];
+/** A player-created category (#246): its own id, label, and icon key (from the icon library). */
+export interface CustomCategory {
+  id: string;
+  label: string;
+  icon: string;
+}
 
-/** Human label per category (indicator + a11y). `wildshape` shows as "Beastform" (#227). */
-export const CATEGORY_LABEL: Record<CardCategory, string> = {
+/** Canonical built-in ring order (#227: Notes sits AFTER Beastform). */
+export const CATEGORY_ORDER: CardCategory[] = [...BUILTIN_CATEGORIES];
+
+/** Human label per built-in category (indicator + a11y). `wildshape` shows as "Beastform" (#227). */
+export const CATEGORY_LABEL: Record<string, string> = {
   abilities: 'Arsenal',
   inventory: 'Inventory',
   notes: 'Notes',
   wildshape: 'Beastform',
 };
 
+/** Resolve any category key to its label — built-in name, or a custom category's label. */
+export function categoryLabel(key: CardCategory, custom: CustomCategory[] = []): string {
+  if (isBuiltinCategory(key)) return CATEGORY_LABEL[key] ?? key;
+  return custom.find((c) => c.id === key)?.label ?? 'Cards';
+}
+
 export interface RingOptions {
   /** The character is a Druid → the Beastform category is available. */
   isDruid?: boolean;
   /** Categories the player has toggled OFF in the Cards panel (#227). At least one always stays on. */
   hidden?: CardCategory[];
+  /** Player-created categories (#246). */
+  custom?: CustomCategory[];
+  /** Explicit category order (#246): keys listed here lead, in this order; the rest follow canonically. */
+  order?: CardCategory[];
 }
 
-/** The ordered list of ACTIVE categories (#227): canonical order minus the ones toggled off in the
- *  Cards panel; Beastform only for Druids. Never empty — falls back to abilities so the ring always
- *  has at least one category. */
-export function activeRing({ isDruid, hidden = [] }: RingOptions): CardCategory[] {
-  const ring = CATEGORY_ORDER.filter((c) => (c === 'wildshape' ? !!isDruid : true) && !hidden.includes(c));
+/** Every category that COULD be in the ring (before hide), in canonical-then-custom order. */
+export function availableCategories({ isDruid, custom = [] }: Pick<RingOptions, 'isDruid' | 'custom'>): CardCategory[] {
+  return [
+    ...CATEGORY_ORDER.filter((c) => (c === 'wildshape' ? !!isDruid : true)),
+    ...custom.map((c) => c.id),
+  ];
+}
+
+/**
+ * The ordered list of ACTIVE categories (#227/#246): everything available, reordered by `order`, minus
+ * the ones toggled off. Never empty — falls back to abilities so the ring always has a category.
+ */
+export function activeRing({ isDruid, hidden = [], custom = [], order }: RingOptions): CardCategory[] {
+  const available = availableCategories({ isDruid, custom });
+  const ordered = order && order.length
+    ? [...order.filter((k) => available.includes(k)), ...available.filter((k) => !order.includes(k))]
+    : available;
+  const ring = ordered.filter((c) => !hidden.includes(c));
   return ring.length ? ring : ['abilities'];
 }
 
 /**
- * The category `dir` steps from `current` around the ring (wrapping). dir > 0 = forward (toward the
- * next category), dir < 0 = backward. If `current` isn't in the ring (e.g. Notes was just toggled
- * off while viewing it), fall back to the first ring entry.
+ * The category `dir` steps from `current` around the ring (wrapping). dir > 0 = forward, dir < 0 =
+ * backward. If `current` isn't in the ring, fall back to the first ring entry.
  */
 export function nextCategory(ring: CardCategory[], current: CardCategory, dir: number): CardCategory {
   if (ring.length === 0) return current;

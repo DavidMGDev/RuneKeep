@@ -96,6 +96,40 @@ function EffectPicker({ current, onPick, onClose }: { current?: EffectOption; on
 }
 
 /**
+ * Full-screen card-TYPE picker (#246) — same shape as the modifier picker. Lists the grouped built-in
+ * types plus the player's custom types; picking sets the card's middle-ribbon label.
+ */
+function TypePicker({ groups, current, onPick, onClose }: { groups: { label: string; types: string[] }[]; current?: string; onPick: (t: string) => void; onClose: () => void }) {
+  return (
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, maxHeight: '82%', paddingHorizontal: 16, paddingVertical: 16 }}>
+        <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Card type</Text>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 11, paddingBottom: 4 }}>
+          {groups.map((g) => (
+            <View key={g.label} style={{ gap: 6 }}>
+              <Text style={{ color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{g.label}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+                {g.types.map((t) => {
+                  const on = current === t;
+                  return (
+                    <Pressable key={t} onPress={() => onPick(t)} accessibilityRole="button" accessibilityState={{ selected: on }}>
+                      <View style={{ minHeight: 36, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 7, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
+                        <Text style={{ color: on ? Rune.ivory : Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{t}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </ChamferBox>
+    </View>
+  );
+}
+
+/**
  * Effects authoring (#175/#191/#242): add stat effects to a custom card. Each row is a modifier
  * (tapped to open the root-level picker) and an amount (stepper). "Set" threshold effects are an
  * ABSOLUTE value (0..40); everything else is a signed delta. The engine clamps game caps on enable.
@@ -169,7 +203,7 @@ export function CardEditor({
   extraField,
   experienceMode = false,
   modifier,
-  typeOptions,
+  typeGroups,
   scrimless = false,
 }: {
   kindLabel: string;
@@ -187,23 +221,18 @@ export function CardEditor({
   experienceMode?: boolean;
   /** The experience bonus shown on the preview card (experience mode). */
   modifier?: number;
-  /** Type options (#214): tapping the card's plaque chip cycles these (e.g. Note/Reminder/Story).
-   *  The first is the default. Absent → the plaque shows the static `kindLabel` (not tappable). */
-  typeOptions?: string[];
+  /** Type groups (#214/#246): tapping the card's plaque chip opens a PICKER of these grouped types
+   *  (built-in + the player's custom types). `kindLabel` is the default. Absent → the plaque shows the
+   *  static `kindLabel` (not tappable). */
+  typeGroups?: { label: string; types: string[] }[];
 }) {
   // New cards open with a random color already set, as if Random Color was pressed (#153). The type
-  // chip defaults to the first option (#214).
-  const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [], typeLabel: typeOptions?.[0] });
-  // The plaque label: the cycled type when a type list is supplied, else the caller's static label.
-  const plaqueLabel = typeOptions?.length ? draft.typeLabel ?? typeOptions[0] : kindLabel;
-  const cycleType = useCallback(() => {
-    if (!typeOptions?.length) return;
-    setDraft((d) => {
-      const cur = d.typeLabel ?? typeOptions[0];
-      const i = typeOptions.indexOf(cur);
-      return { ...d, typeLabel: typeOptions[(i + 1) % typeOptions.length] };
-    });
-  }, [typeOptions]);
+  // chip defaults to `kindLabel` when a type picker is available (#246).
+  const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [], typeLabel: typeGroups ? kindLabel : undefined });
+  // The plaque label: the picked type when a type list is supplied, else the caller's static label.
+  const plaqueLabel = typeGroups?.length ? draft.typeLabel ?? kindLabel : kindLabel;
+  // The type picker is lifted to the editor ROOT (like the effect picker) so it covers the screen.
+  const [pickType, setPickType] = useState(false);
 
   // Adding an image clears the random color; Random Color clears any uploaded image.
   const pickImage = useCallback(async () => {
@@ -289,16 +318,16 @@ export function CardEditor({
           {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
               transparent hit-band over the divider seam (~40% down), so the player taps the chip on
               the card itself. Only when type options are supplied (New Card), not experiences. */}
-          {typeOptions?.length && !experienceMode ? (
+          {typeGroups?.length && !experienceMode ? (
             <Pressable
-              onPress={cycleType}
+              onPress={() => setPickType(true)}
               accessibilityRole="button"
               accessibilityLabel={`Card type: ${plaqueLabel}. Tap to change`}
               style={{ position: 'absolute', left: 0, right: 0, top: Math.round(FORGED_H * 0.4) - 16, height: 32 }}
             />
           ) : null}
         </Animated.View>
-        {typeOptions?.length && !experienceMode ? (
+        {typeGroups?.length && !experienceMode ? (
           <Text style={{ marginTop: 8, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Tap the card type to change it</Text>
         ) : null}
         {/* fields */}
@@ -358,6 +387,14 @@ export function CardEditor({
             setPickEffect(null);
           }}
           onClose={() => setPickEffect(null)}
+        />
+      ) : null}
+      {pickType && typeGroups ? (
+        <TypePicker
+          groups={typeGroups}
+          current={plaqueLabel}
+          onPick={(t) => { setDraft((d) => ({ ...d, typeLabel: t })); setPickType(false); }}
+          onClose={() => setPickType(false)}
         />
       ) : null}
     </View>

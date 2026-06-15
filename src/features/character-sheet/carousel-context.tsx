@@ -33,9 +33,11 @@ interface CarouselContextValue {
   /** The GEAR's own rotation (#239 item 4): mirrors `rotation` during normal use, but on a switch it
    *  EASES to the landed rotation instead of snapping with the hard card jump. */
   gearRotation: SharedValue<number>;
-  /** The live decks. Abilities = base deck + the character's origin cards pinned at the RIGHT end
-   *  (subclass, ancestry, community — #100). Inventory never shows them. */
+  /** The live decks, keyed by category (built-in + custom, #246). Abilities = base deck + the
+   *  character's origin cards pinned at the RIGHT end (subclass, ancestry, community — #100). */
   decks: Record<CardCategory, CardItem[]>;
+  /** Label + icon per category key (#246), so the glyph/indicator resolve built-in AND custom names. */
+  categoryMeta: Record<string, { label: string; icon?: string; builtin: boolean }>;
   category: CardCategory;
   /** The active, ordered category RING the over-scroll loops through (#214): abilities + inventory
    *  always, + notes when toggled on, + wildshape for Druids. */
@@ -78,22 +80,15 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, abilitiesCards, inventoryCards, notesCards, wildshapeCards, ring = ['abilities', 'inventory'], originIndices, enabledIds, onToggleCard, onShowCardInfo, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; notesCards?: CardItem[]; wildshapeCards?: CardItem[]; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
-  // A real character supplies its OWN full decks (only the cards it picked, #121) — no sample/
-  // placeholder cards mixed in. The hardcoded CARD_DECKS are only the fallback for the demo sheet.
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], originIndices, enabledIds, onToggleCard, onShowCardInfo, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
+  // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
+  // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
+  // four built-in keys always exist (empty) even if a real map omits one.
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
-    () => ({
-      abilities: abilitiesCards?.length ? abilitiesCards : CARD_DECKS.abilities,
-      // a real character supplies its inventory array (even while items forge — may be briefly
-      // empty); only the demo sheet (undefined) falls back to the sample deck (#136).
-      inventory: inventoryCards ?? CARD_DECKS.inventory,
-      // Notes (#214): all-class freeform deck; Wild Shape (#214): Druid Beastform deck. Both
-      // character-supplied — empty arrays when absent (the ring simply won't include them).
-      notes: notesCards ?? CARD_DECKS.notes,
-      wildshape: wildshapeCards ?? CARD_DECKS.wildshape,
-    }),
-    [abilitiesCards, inventoryCards, notesCards, wildshapeCards],
+    () => ({ ...CARD_DECKS, ...(decksProp ?? {}) }),
+    [decksProp],
   );
+  const emptyMeta = useMemo<Record<string, { label: string; icon?: string; builtin: boolean }>>(() => ({}), []);
   const ringRef = useRef(ring);
   ringRef.current = ring;
   const startMiddle = middleRotation(decks.abilities.length);
@@ -118,7 +113,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
 
   const openCardAt = useCallback(
     (index: number) => {
-      const count = decksRef.current[categoryRef.current].length;
+      const count = decksRef.current[categoryRef.current]?.length ?? 0;
       rotation.value = snapRot(index * ANGLE_STEP, count); // center the focused card
       focusIndex.value = Math.min(count - 1, Math.max(0, index));
       machineState.value = 'fullscreen';
@@ -151,7 +146,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
       arrivalRef.current = arrival;
       switching.value = 1; // pan + grabbing off until the new deck has risen
       setCategoryState(c); // swap NOW — deck data + the portrait glyph change immediately
-      const n = decksRef.current[c].length;
+      const n = decksRef.current[c]?.length ?? 0;
       // Continuation (#188): land on the opposite extreme of the new deck, not its middle.
       const land = arrival === 'start' ? 0 : arrival === 'end' ? maxRotation(n) : middleRotation(n);
       cancelAnimation(rotation);
@@ -207,7 +202,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
     if (ring.includes(category)) return;
     const fallback = ring[0] ?? 'abilities';
     setCategoryState(fallback);
-    const n = decksRef.current[fallback].length;
+    const n = decksRef.current[fallback]?.length ?? 0;
     rotation.value = middleRotation(n);
     focusIndex.value = Math.round(middleRotation(n) / ANGLE_STEP);
   }, [ring, category, rotation, focusIndex]);
@@ -217,7 +212,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
   // forge), so when the live deck finally lands the rotation was left near the FIRST card. While the
   // hand is at rest (compact — before any browse, e.g. under the entry loader) recenter on the new
   // deck's middle whenever its length changes. Guarded to compact so it never yanks a live scroll.
-  const liveCount = decks[category].length;
+  const liveCount = decks[category]?.length ?? 0;
   useEffect(() => {
     if (machineState.value !== 'compact') return;
     rotation.value = middleRotation(liveCount);
@@ -275,6 +270,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
       riseProgress,
       gearRotation,
       decks,
+      categoryMeta: categoryMeta ?? emptyMeta,
       category,
       ring,
       setCategory,
@@ -295,7 +291,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

@@ -33,8 +33,8 @@ const ITEM_DEFAULT_ART = require('../../../../assets/temp/ItemCardImage.jpg') as
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
-import { activeRing, CATEGORY_ORDER } from '../carousel-categories';
-import { type CardCategory, type CardItem } from '../card-data';
+import { activeRing, availableCategories } from '../carousel-categories';
+import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, isBuiltinCategory } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
@@ -56,7 +56,7 @@ import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
 import { ModifiersPanel } from './modifiers-panel';
-import { CategoryPanel } from './category-panel';
+import { CardManagementPanel } from './card-management-panel';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { OriginCardPreview } from './origin-card-preview';
@@ -618,8 +618,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pinned at the RIGHT end of the abilities hand: experiences, then the ONE multi-page class
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
-  const { abilitiesCards, inventoryCards, notesCards, wildshapeCards, originIndices } = useMemo(() => {
-    const none = { abilitiesCards: undefined, inventoryCards: undefined, notesCards: undefined, wildshapeCards: undefined, originIndices: undefined };
+  const { decks: carouselDecks, categoryMeta, originIndices } = useMemo(() => {
+    const none = { decks: undefined as Record<string, CardItem[]> | undefined, categoryMeta: undefined as Record<string, { label: string; icon?: string; builtin: boolean }> | undefined, originIndices: undefined as [number, number, number] | undefined };
     if (!file) return none;
     const ids = [file.subclassCardId, file.ancestryCardId, file.communityCardId];
     const cards = ids.map(cardById);
@@ -668,7 +668,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const acqArmorItems = forgedItems(acqArmorJobs);
     const acqLootItems = forgedItems(acqLootJobs);
     const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...weaponItems, ...acqWeaponItems, ...expItems, ...arsenalCustom];
-    const originIndices: [number, number, number] = [abilities.indexOf(subclassC), abilities.indexOf(ancestryC), abilities.indexOf(communityC)];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
@@ -699,7 +698,34 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           return { id: w.id, source: first.source, thumb: first.thumb, faces };
         }).filter((c): c is CardItem => c !== null)
       : [];
-    return { abilitiesCards: abilities, inventoryCards: inv, notesCards, wildshapeCards, originIndices };
+    // Card management (#246): assemble the full category→deck MAP and apply per-card category overrides
+    // (a card moved to another built-in or custom category), then build custom-category decks. With no
+    // custom categories + no overrides this yields the exact four built-in decks as before (additive).
+    const customCats = file.customCategories ?? [];
+    const override = file.cardCategory ?? {};
+    const base: Record<string, CardItem[]> = { abilities, inventory: inv, wildshape: wildshapeCards, notes: notesCards };
+    const validKeys = new Set<string>([...BUILTIN_CATEGORIES, ...customCats.map((c) => c.id)]);
+    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], notes: [] };
+    for (const c of customCats) decks[c.id] = [];
+    for (const cat of Object.keys(base)) {
+      for (const item of base[cat]) {
+        const ov = override[item.id];
+        const target = ov && validKeys.has(ov) ? ov : cat;
+        (decks[target] ??= []).push(item);
+      }
+    }
+    const categoryMeta: Record<string, { label: string; icon?: string; builtin: boolean }> = {
+      abilities: { label: 'Arsenal', builtin: true },
+      inventory: { label: 'Inventory', builtin: true },
+      wildshape: { label: 'Beastform', builtin: true },
+      notes: { label: 'Notes', builtin: true },
+    };
+    for (const c of customCats) categoryMeta[c.id] = { label: c.label, icon: c.icon, builtin: false };
+    // Origin badges (#100) target the FINAL abilities deck (a card may have been moved out → -1, which
+    // the legacy openOriginCard guards; the badges themselves use the standalone preview now).
+    const fa = decks.abilities;
+    const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
+    return { decks, categoryMeta, originIndices };
   }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
@@ -802,9 +828,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setCharacter((c) => ({ ...c, portraitUri, portraitTransform: reset }));
     mutateFile({ portraitUri, portraitTransform: reset });
   }, [mutateFile]);
-  // New Card (#164/#214): append a player-authored card. The current category decided the target;
-  // 'notes' lands in the Notes deck, everything else rides inventory/arsenal. The decks re-derive.
-  const onAddCustomCard = useCallback((draft: CardDraft, target: CardTarget) => {
+  // New Card (#164/#214/#246): append a player-authored card into a target CATEGORY (built-in or
+  // custom). Notes land in the Notes deck; inventory in inventoryCustom; everything else is an Arsenal
+  // custom card. A custom category also gets a card→category override so the card lives there.
+  const onAddCustomCard = useCallback((draft: CardDraft, categoryKey: CardCategory) => {
     const id = `cc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     const baseCard = {
       id,
@@ -815,24 +842,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       effects: draft.effects,
       typeLabel: draft.typeLabel,
     };
-    if (target === 'notes') {
-      setFile((f) => {
-        if (!f) return f;
-        const next = { ...f, notes: [...(f.notes ?? []), baseCard] };
-        void saveCharacter(next);
-        return next;
-      });
-      setFloatKind(null);
-      return;
-    }
-    const card: CustomCardDef = { ...baseCard, target };
     setFile((f) => {
       if (!f) return f;
-      const next = { ...f, customCards: [...(f.customCards ?? []), card] };
+      let next: CharacterFile;
+      if (categoryKey === 'notes') {
+        next = { ...f, notes: [...(f.notes ?? []), baseCard] };
+      } else {
+        const target: CardTarget = categoryKey === 'inventory' ? 'inventory' : 'arsenal';
+        const card: CustomCardDef = { ...baseCard, target };
+        next = { ...f, customCards: [...(f.customCards ?? []), card] };
+      }
+      if (!isBuiltinCategory(categoryKey)) {
+        next = { ...next, cardCategory: { ...(next.cardCategory ?? {}), [id]: categoryKey } };
+      }
       void saveCharacter(next);
       return next;
     });
     setFloatKind(null);
+    setNewCardCat(null);
   }, []);
   // Acquired system gear/loot (#180): adding an id forges it into the decks (re-derives from file).
   const acquiredIds = useMemo(() => new Set(file?.acquiredCardIds ?? []), [file]);
@@ -851,25 +878,142 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     () => file?.hiddenCategories ?? (file?.showNotes === false ? ['notes'] : []),
     [file?.hiddenCategories, file?.showNotes],
   );
-  // The active category ring (#214/#227): canonical order minus hidden; Beastform only for Druids.
-  // `category` snaps back if the ring loses it (e.g. the current category was toggled off).
-  const ring = useMemo(() => activeRing({ isDruid: file?.className === 'druid', hidden }), [file?.className, hidden]);
-  // Cards panel (#227): toggle a category on/off (≥1 must stay enabled).
+  // Custom categories (#246) the player has created.
+  const customCategories = useMemo(() => file?.customCategories ?? [], [file]);
+  // The active category ring (#214/#227/#246): available categories (built-in + custom) reordered by
+  // `categoryOrder`, minus hidden; Beastform only for Druids. `category` snaps back if it loses it.
+  const ring = useMemo(
+    () => activeRing({ isDruid: file?.className === 'druid', hidden, custom: customCategories, order: file?.categoryOrder }),
+    [file?.className, hidden, customCategories, file?.categoryOrder],
+  );
+  // Re-derive the runtime character from a new file, keeping in-play resource positions (clamped to the
+  // new maxes). Used by edits that can change stats (e.g. deleting an enabled card).
+  const commitFile = useCallback((next: CharacterFile) => {
+    setFile(next);
+    void saveCharacter(next);
+    const c = characterRef.current;
+    const d = toSheetCharacter(next);
+    setCharacter({
+      ...d,
+      hp: Math.min(d.maxHp, c.hp),
+      stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
+      armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
+      hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+      gold: c.gold,
+      portraitUri: c.portraitUri,
+      portraitTransform: c.portraitTransform,
+    });
+  }, []);
+  // Cards panel (#227/#246): toggle a category on/off (≥1 must stay enabled). Works for built-in AND
+  // custom categories (the available set includes both).
   const onToggleCategory = useCallback((c: CardCategory) => {
     setFile((f) => {
       if (!f) return f;
-      const isDruid = f.className === 'druid';
-      const applicable = CATEGORY_ORDER.filter((x) => (x === 'wildshape' ? isDruid : true));
+      const available = availableCategories({ isDruid: f.className === 'druid', custom: f.customCategories ?? [] });
       const cur = new Set<CardCategory>(f.hiddenCategories ?? (f.showNotes === false ? ['notes'] : []));
       if (cur.has(c)) cur.delete(c);
       else {
-        if (applicable.filter((x) => !cur.has(x)).length <= 1) return f; // never hide the last one
+        if (available.filter((x) => !cur.has(x)).length <= 1) return f; // never hide the last one
         cur.add(c);
       }
       const next = { ...f, hiddenCategories: [...cur] };
       void saveCharacter(next);
       return next;
     });
+  }, []);
+  // Create a custom category (#246): a fresh id, the given label + icon, appended to the order.
+  const onCreateCategory = useCallback((label: string, icon: string) => {
+    const id = `cat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    setFile((f) => {
+      if (!f) return f;
+      const cat = { id, label: label.trim() || 'New Category', icon };
+      const order = f.categoryOrder ?? activeRing({ isDruid: f.className === 'druid', custom: f.customCategories ?? [] });
+      const next = { ...f, customCategories: [...(f.customCategories ?? []), cat], categoryOrder: [...order, id] };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
+  // Rename / re-icon a custom category (#246).
+  const onUpdateCategory = useCallback((id: string, patch: { label?: string; icon?: string }) => {
+    mutateFile({ customCategories: (file?.customCategories ?? []).map((c) => (c.id === id ? { ...c, ...patch, label: (patch.label ?? c.label).trim() || c.label } : c)) });
+  }, [file, mutateFile]);
+  // Delete a custom category (#246): drop it, un-hide it, remove from the order, and revert any cards
+  // it held back to their default category (clear their overrides).
+  const onDeleteCategory = useCallback((id: string) => {
+    setFile((f) => {
+      if (!f) return f;
+      const cardCategory = { ...(f.cardCategory ?? {}) };
+      for (const k of Object.keys(cardCategory)) if (cardCategory[k] === id) delete cardCategory[k];
+      const next = {
+        ...f,
+        customCategories: (f.customCategories ?? []).filter((c) => c.id !== id),
+        categoryOrder: (f.categoryOrder ?? []).filter((k) => k !== id),
+        hiddenCategories: (f.hiddenCategories ?? []).filter((k) => k !== id),
+        cardCategory,
+      };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
+  // Reorder the ring (#246): persist the explicit category order.
+  const onReorderCategories = useCallback((order: string[]) => mutateFile({ categoryOrder: order }), [mutateFile]);
+  // Move a card to a different category (#246): a per-card override (built-in or custom key).
+  const onMoveCard = useCallback((cardId: string, categoryKey: string) => {
+    setFile((f) => {
+      if (!f) return f;
+      const next = { ...f, cardCategory: { ...(f.cardCategory ?? {}), [cardId]: categoryKey } };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
+  // Delete a player card (#246): remove it from whichever authored array holds it, plus its enabled
+  // state, category override, and tokens. Re-derives stats in case it was enabled.
+  const onDeleteCard = useCallback((id: string) => {
+    if (!file) return;
+    const cardCategory = { ...(file.cardCategory ?? {}) };
+    delete cardCategory[id];
+    const cardTokens = { ...(file.cardTokens ?? {}) };
+    delete cardTokens[id];
+    const next: CharacterFile = {
+      ...file,
+      customCards: (file.customCards ?? []).filter((c) => c.id !== id),
+      inventoryCustom: (file.inventoryCustom ?? []).filter((c) => c.id !== id),
+      notes: (file.notes ?? []).filter((c) => c.id !== id),
+      experiences: (file.experiences ?? []).filter((c) => c.id !== id),
+      acquiredCardIds: (file.acquiredCardIds ?? []).filter((x) => x !== id),
+      enabledCardIds: (file.enabledCardIds ?? []).filter((x) => x !== id),
+      cardCategory,
+      cardTokens,
+    };
+    commitFile(next);
+  }, [file, commitFile]);
+  // Whether a card id is a player-authored / acquired card (only those can be DELETED; system cards
+  // like domains, origins, the class feature, starting equipment + the gold/sample tiles cannot).
+  const isDeletableCard = useCallback((id: string) => {
+    if (!file) return false;
+    return (
+      (file.customCards ?? []).some((c) => c.id === id) ||
+      (file.inventoryCustom ?? []).some((c) => c.id === id) ||
+      (file.notes ?? []).some((c) => c.id === id) ||
+      (file.experiences ?? []).some((c) => c.id === id) ||
+      (file.acquiredCardIds ?? []).includes(id)
+    );
+  }, [file]);
+  // Card types (#246): add / remove the player's custom middle-ribbon types.
+  const customCardTypes = useMemo(() => file?.customCardTypes ?? [], [file]);
+  const onAddCardType = useCallback((label: string) => {
+    const v = label.trim();
+    if (!v) return;
+    mutateFile({ customCardTypes: [...new Set([...(file?.customCardTypes ?? []), v])] });
+  }, [file, mutateFile]);
+  const onDeleteCardType = useCallback((label: string) => {
+    mutateFile({ customCardTypes: (file?.customCardTypes ?? []).filter((t) => t !== label) });
+  }, [file, mutateFile]);
+  // Add a card targeted at a specific category (#246): open New Card with that category preselected.
+  const [newCardCat, setNewCardCat] = useState<CardCategory | null>(null);
+  const onAddCardInCategory = useCallback((key: CardCategory) => {
+    setNewCardCat(key);
+    setFloatKind('custom');
   }, []);
   // Enabled/equipped cards (#175): the set drives the corner check; toggling re-derives the build
   // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
@@ -995,7 +1139,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} notesCards={notesCards} wildshapeCards={wildshapeCards} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
@@ -1057,13 +1201,31 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow onSave={onAddCustomCard} onCancel={() => setFloatKind(null)} onAcquire={onAcquireCard} acquiredIds={acquiredIds} />
+            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} acquiredIds={acquiredIds} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
             <ModifiersPanel file={file} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (
-            <CategoryPanel isDruid={file.className === 'druid'} hidden={hidden} onToggle={onToggleCategory} onClose={() => setFloatKind(null)} />
+            <CardManagementPanel
+              isDruid={file.className === 'druid'}
+              hidden={hidden}
+              order={file.categoryOrder}
+              customCategories={customCategories}
+              customTypes={customCardTypes}
+              isDeletable={isDeletableCard}
+              onToggle={onToggleCategory}
+              onCreateCategory={onCreateCategory}
+              onUpdateCategory={onUpdateCategory}
+              onDeleteCategory={onDeleteCategory}
+              onReorder={onReorderCategories}
+              onMoveCard={onMoveCard}
+              onDeleteCard={onDeleteCard}
+              onAddCardInCategory={onAddCardInCategory}
+              onAddType={onAddCardType}
+              onDeleteType={onDeleteCardType}
+              onClose={() => setFloatKind(null)}
+            />
           ) : floatKind === 'level' && file ? (
             <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (

@@ -4,7 +4,9 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import Svg, { Circle, Line, Path, Polygon, Rect } from 'react-native-svg';
 
 import { Rune } from '@/constants/theme';
-import type { CardCategory } from '../card-data';
+import { type CardCategory, isBuiltinCategory } from '../card-data';
+import { useCarousel } from '../carousel-context';
+import { CategoryIconSvg } from './category-icons';
 
 /**
  * The deck-mode toggle below the portrait (#136): two distinct gold icons — a fanned hand of cards
@@ -74,8 +76,13 @@ export function WildshapeIcon() {
   );
 }
 
-/** The right glyph for any category (#214) — used by the trigger and the over-scroll indicator. */
+/** The right glyph for any category (#214/#246) — built-in glyph, or a custom category's chosen icon
+ *  (resolved from the carousel's category meta). Used by the trigger + the over-scroll indicator. */
 export function CategoryGlyph({ category }: { category: CardCategory }) {
+  const { categoryMeta } = useCarousel();
+  const m = categoryMeta[category];
+  if (m && !m.builtin) return <CategoryIconSvg iconKey={m.icon} size={42} />;
+  if (!isBuiltinCategory(category)) return <CategoryIconSvg iconKey={m?.icon} size={42} />;
   switch (category) {
     case 'inventory':
       return <InventoryIcon />;

@@ -1,4 +1,9 @@
-import { activeRing, nextCategory, ringContains } from './carousel-categories';
+import { activeRing, availableCategories, type CustomCategory, nextCategory, ringContains } from './carousel-categories';
+
+const CUSTOM: CustomCategory[] = [
+  { id: 'cat-a', label: 'Spells', icon: 'flame' },
+  { id: 'cat-b', label: 'Quests', icon: 'scroll' },
+];
 
 describe('activeRing', () => {
   it('shows abilities + inventory + notes by default for a plain hero', () => {
@@ -45,5 +50,25 @@ describe('ringContains', () => {
   it('reflects membership', () => {
     expect(ringContains(activeRing({ hidden: ['notes'] }), 'notes')).toBe(false);
     expect(ringContains(activeRing({}), 'notes')).toBe(true);
+  });
+});
+
+describe('custom categories (#246)', () => {
+  it('appends custom categories after the built-ins', () => {
+    expect(activeRing({ custom: CUSTOM })).toEqual(['abilities', 'inventory', 'notes', 'cat-a', 'cat-b']);
+  });
+  it('availableCategories lists built-in + custom (incl. wildshape for druids)', () => {
+    expect(availableCategories({ isDruid: true, custom: CUSTOM })).toEqual(['abilities', 'inventory', 'wildshape', 'notes', 'cat-a', 'cat-b']);
+  });
+  it('applies an explicit order, then appends anything not listed', () => {
+    expect(activeRing({ custom: CUSTOM, order: ['cat-b', 'notes'] })).toEqual(['cat-b', 'notes', 'abilities', 'inventory', 'cat-a']);
+  });
+  it('hides a custom category', () => {
+    expect(activeRing({ custom: CUSTOM, hidden: ['cat-a'] })).toEqual(['abilities', 'inventory', 'notes', 'cat-b']);
+  });
+  it('a custom category rides the overscroll ring', () => {
+    const ring = activeRing({ custom: CUSTOM });
+    expect(nextCategory(ring, 'notes', 1)).toBe('cat-a');
+    expect(nextCategory(ring, 'cat-b', 1)).toBe('abilities');
   });
 });

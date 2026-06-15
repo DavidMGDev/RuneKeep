@@ -1,18 +1,19 @@
 /**
  * Card tokens (#244) — decorative "buttons" the player drags onto a fullscreen card. They imitate
- * grandma's sewing buttons: a round disc with a soft bevel, a drop shadow, and four center holes.
- * Purely cosmetic — tokens NEVER feed the modifier engine or change a card's functionality.
+ * grandma's sewing buttons: a round disc with a soft bevel, a baked-in drop shadow, and four center
+ * holes. Purely cosmetic — tokens NEVER feed the modifier engine or change a card's functionality.
  *
- * The data shape + pure colour helpers live in `card-tokens-data.ts` (re-exported here); this module
- * owns the visuals: the interactive HD `TokenButton` (SVG bevel + shadow) and the cheap
- * `BakedTokenLayer` that rides every carousel slot as a flat LOD so a card covered in tokens still
- * composites for almost nothing.
+ * The data shape + pure helpers live in `card-tokens-data.ts` (re-exported here); this module owns the
+ * visual. There is ONE `TokenButton` used at every LOD — the SAME bevelled button near and far, it
+ * just scales down with its slot (so a deck-far token is cheaper without ever looking different). No
+ * separate flat LOD, no native elevation (the shadow is drawn inside the SVG) — both of which made
+ * tokens look wrong far away and lag while "becoming HD".
  */
 import { memo, useId } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
 
-import { type PlacedToken, TOKEN_FRAC, tokenFill } from './card-tokens-data';
+import { kindScale, type PlacedToken, TOKEN_FRAC, tokenFill } from './card-tokens-data';
 
 export * from './card-tokens-data';
 
@@ -33,33 +34,36 @@ function shade(hex: string, amt: number): string {
 }
 
 /**
- * One token, drawn as a bevelled sewing button. `lod` draws a cheap flat disc (no gradient, no
- * shadow) for the carousel; the interactive HD variant adds a radial highlight + a drop shadow so the
- * focused card's tokens read as little 3D buttons.
+ * One token, drawn as a bevelled sewing button — rim + radial-gradient face + four holes, over a soft
+ * shadow ellipse baked into the SVG (so it reads as 3D at every size with no platform shadow cost).
+ * The viewBox is padded so the shadow + the disc never clip. Used by the baked deck layer AND the
+ * interactive board — identical at all sizes.
  */
-export const TokenButton = memo(function TokenButton({ size, fill, lod = false }: { size: number; fill: string; lod?: boolean }) {
+export const TokenButton = memo(function TokenButton({ size, fill }: { size: number; fill: string }) {
   const gid = useId();
-  const c = size / 2;
-  const R = size * 0.46;
+  // Author the button in a 100-unit box (12 units of padding all round for the shadow), scaled to size.
+  const VB = 124;
+  const c = VB / 2;
+  const R = 50;
   const face = R * 0.9;
-  const hole = R * 0.12;
-  const off = R * 0.24;
-  const rim = shade(fill, -0.3);
+  const hole = R * 0.13;
+  const off = R * 0.25;
+  const rim = shade(fill, -0.32);
   const holeColor = shade(fill, -0.55);
-  const svg = (
-    <Svg width={size} height={size} pointerEvents="none">
-      {!lod ? (
-        <Defs>
-          <RadialGradient id={gid} cx="36%" cy="30%" r="78%">
-            <Stop offset="0" stopColor={shade(fill, 0.45)} />
-            <Stop offset="0.62" stopColor={fill} />
-            <Stop offset="1" stopColor={shade(fill, -0.16)} />
-          </RadialGradient>
-        </Defs>
-      ) : null}
-      {/* rim (catches the shadow), then the button face */}
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${VB} ${VB}`} pointerEvents="none">
+      <Defs>
+        <RadialGradient id={gid} cx="36%" cy="30%" r="80%">
+          <Stop offset="0" stopColor={shade(fill, 0.5)} />
+          <Stop offset="0.6" stopColor={fill} />
+          <Stop offset="1" stopColor={shade(fill, -0.18)} />
+        </RadialGradient>
+      </Defs>
+      {/* soft drop shadow, offset down */}
+      <Ellipse cx={c} cy={c + R * 0.2} rx={R * 1.02} ry={R * 0.98} fill="rgba(0,0,0,0.32)" />
+      {/* rim, then the gradient face */}
       <Circle cx={c} cy={c} r={R} fill={rim} />
-      <Circle cx={c} cy={c} r={face} fill={lod ? fill : `url(#${gid})`} />
+      <Circle cx={c} cy={c} r={face} fill={`url(#${gid})`} />
       {/* four stitch holes */}
       <Circle cx={c - off} cy={c - off} r={hole} fill={holeColor} />
       <Circle cx={c + off} cy={c - off} r={hole} fill={holeColor} />
@@ -67,60 +71,26 @@ export const TokenButton = memo(function TokenButton({ size, fill, lod = false }
       <Circle cx={c + off} cy={c + off} r={hole} fill={holeColor} />
     </Svg>
   );
-  if (lod) return svg;
-  // HD: a soft drop shadow under the disc sells the 3D button (elevation on Android, shadow on iOS).
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        shadowColor: '#000',
-        shadowOpacity: 0.4,
-        shadowRadius: size * 0.1,
-        shadowOffset: { width: 0, height: size * 0.07 },
-        elevation: Math.max(2, Math.round(size * 0.12)),
-      }}>
-      {svg}
-    </View>
-  );
 });
 
 /**
- * A LOD token (#244): a plain-View disc (NO SVG, gradient, or shadow) so the whole deck's baked
- * tokens composite for almost nothing — every carousel slot always mounts, so this runs across the
- * entire deck at once.
- */
-const LodToken = memo(function LodToken({ size, fill }: { size: number; fill: string }) {
-  const c = size / 2;
-  const off = size * 0.22;
-  const hole = size * 0.1;
-  const holeColor = shade(fill, -0.55);
-  const dot = (left: number, top: number) => ({ position: 'absolute' as const, left, top, width: hole, height: hole, borderRadius: hole / 2, backgroundColor: holeColor });
-  return (
-    <View style={{ width: size, height: size, borderRadius: c, backgroundColor: fill, borderWidth: size * 0.07, borderColor: shade(fill, -0.3) }}>
-      <View style={dot(c - off - hole / 2, c - off - hole / 2)} />
-      <View style={dot(c + off - hole / 2, c - off - hole / 2)} />
-      <View style={dot(c - off - hole / 2, c + off - hole / 2)} />
-      <View style={dot(c + off - hole / 2, c + off - hole / 2)} />
-    </View>
-  );
-});
-
-/**
- * The baked LOD layer (#244 item 9): every token on a card, drawn as flat discs, non-interactive.
- * Mounted INSIDE a carousel slot next to `EnabledCorner`, so it scales/translates with the slot and
- * stays visible through rise/switch transitions. Cheap enough to leave on for the whole deck.
+ * The baked token layer (#244): every token on a card. Same `TokenButton` as the board, so it looks
+ * identical in the deck and through rise/switch transitions (it rides the slot, next to
+ * `EnabledCorner`). Per-kind sizes give the three defaults a subtle size step.
  */
 export const BakedTokenLayer = memo(function BakedTokenLayer({ tokens, cardW, cardH }: { tokens: PlacedToken[] | undefined; cardW: number; cardH: number }) {
   if (!tokens || tokens.length === 0) return null;
-  const size = cardW * TOKEN_FRAC;
+  const base = cardW * TOKEN_FRAC;
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {tokens.map((t) => (
-        <View key={t.id} style={{ position: 'absolute', left: t.x * cardW - size / 2, top: t.y * cardH - size / 2 }}>
-          <LodToken size={size} fill={tokenFill(t)} />
-        </View>
-      ))}
+      {tokens.map((t) => {
+        const size = base * kindScale(t.kind);
+        return (
+          <View key={t.id} style={{ position: 'absolute', left: t.x * cardW - size / 2, top: t.y * cardH - size / 2 }}>
+            <TokenButton size={size} fill={tokenFill(t)} />
+          </View>
+        );
+      })}
     </View>
   );
 });

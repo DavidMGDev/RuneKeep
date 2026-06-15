@@ -879,7 +879,9 @@ export function CardCarousel() {
         {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view.
             Sits BELOW the multi-page page dots (#233 item 3) so it never collides with them. */}
         <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 770, 200, 40), { zIndex: 3500, alignItems: 'center' }, modBtnStyle]}>
-          {focused && deck[c] && !deck[c].interactive ? (
+          {/* kept MOUNTED whenever there's a focusable card so it FADES with fullscreenProgress (no
+              pop). pointerEvents above gates taps to the focused state. */}
+          {deck[c] && !deck[c].interactive ? (
             <Pressable onPress={() => showCardInfo(deck[c].id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="View this card's modifiers">
               <ChamferBox chamfer={9} fill="rgba(14,17,22,0.95)" stroke={Rune.goldEdge} strokeWidth={1.4} style={{ paddingHorizontal: 18, height: 40, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Modifiers</Text>

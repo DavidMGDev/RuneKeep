@@ -36,6 +36,16 @@ export const TOKEN_COLORS: string[] = [
 /** Token diameter as a fraction of the card's width — same on every LOD so it never jumps. */
 export const TOKEN_FRAC = 0.17;
 
+/** Per-kind size multiplier (#244 follow-up): wood smallest, bone baseline, iron largest; colour
+ *  standard. A subtle ~20% step between the three defaults. */
+export function kindScale(kind: TokenKind): number {
+  switch (kind) {
+    case 'wood': return 0.8;
+    case 'iron': return 1.2;
+    default: return 1; // bone + color
+  }
+}
+
 /** The token's base fill: the material for a default kind, or the frozen custom colour. */
 export function tokenFill(t: { kind: TokenKind; color?: string }): string {
   if (t.kind === 'color') return t.color ?? TOKEN_COLORS[0];
