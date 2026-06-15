@@ -31,8 +31,8 @@ const ITEM_DEFAULT_ART = require('../../../../assets/temp/ItemCardImage.jpg') as
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
-import { activeRing } from '../carousel-categories';
-import { type CardItem } from '../card-data';
+import { activeRing, CATEGORY_ORDER } from '../carousel-categories';
+import { type CardCategory, type CardItem } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
@@ -52,6 +52,7 @@ import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
 import { ModifiersPanel } from './modifiers-panel';
+import { CategoryPanel } from './category-panel';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
@@ -781,14 +782,28 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
-  // The active category ring (#214): abilities + inventory always, + notes when shown (default on),
-  // + Wild Shape for Druids. `category` snaps back if the ring loses it (e.g. Notes toggled off).
-  const ring = useMemo(() => activeRing({ isDruid: file?.className === 'druid', showNotes: file?.showNotes ?? true }), [file?.className, file?.showNotes]);
-  // Toggle Notes (#214, float-menu south slot): add/remove Notes from the over-scroll ring.
-  const onToggleNotes = useCallback(() => {
+  // Hidden categories (#227, Cards panel): which categories the player toggled off. Back-compat:
+  // a legacy save with showNotes === false maps to notes hidden.
+  const hidden = useMemo<CardCategory[]>(
+    () => file?.hiddenCategories ?? (file?.showNotes === false ? ['notes'] : []),
+    [file?.hiddenCategories, file?.showNotes],
+  );
+  // The active category ring (#214/#227): canonical order minus hidden; Beastform only for Druids.
+  // `category` snaps back if the ring loses it (e.g. the current category was toggled off).
+  const ring = useMemo(() => activeRing({ isDruid: file?.className === 'druid', hidden }), [file?.className, hidden]);
+  // Cards panel (#227): toggle a category on/off (≥1 must stay enabled).
+  const onToggleCategory = useCallback((c: CardCategory) => {
     setFile((f) => {
       if (!f) return f;
-      const next = { ...f, showNotes: !(f.showNotes ?? true) };
+      const isDruid = f.className === 'druid';
+      const applicable = CATEGORY_ORDER.filter((x) => (x === 'wildshape' ? isDruid : true));
+      const cur = new Set<CardCategory>(f.hiddenCategories ?? (f.showNotes === false ? ['notes'] : []));
+      if (cur.has(c)) cur.delete(c);
+      else {
+        if (applicable.filter((x) => !cur.has(x)).length <= 1) return f; // never hide the last one
+        cur.add(c);
+      }
+      const next = { ...f, hiddenCategories: [...cur] };
       void saveCharacter(next);
       return next;
     });
@@ -871,7 +886,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   return (
     <AccentProvider>
       <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} notesCards={notesCards} wildshapeCards={wildshapeCards} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId}>
-       <FloatMenuProvider onOpenInterface={setFloatKind} onToggleNotes={onToggleNotes}>
+       <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
@@ -896,9 +911,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
-              {/* Unload the sheet carousel while the Level-Up panel is open (#203) — its full-screen
-                  card carousel owns the screen, so the sheet's hand is dead weight + perf cost. */}
-              {floatKind === 'level' ? null : <CardCarousel />}
+              {/* Unload the sheet carousel while Level-Up (#203) or the Cards panel (#227) is open —
+                  Level-Up owns the screen; the Cards panel may disable the current category, so the
+                  hand must be down to land safely on an enabled one when it reopens. */}
+              {floatKind === 'level' || floatKind === 'cards' ? null : <CardCarousel />}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
             </DesignStage>
@@ -927,6 +943,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
             <ModifiersPanel file={file} onClose={() => setFloatKind(null)} />
+          ) : floatKind === 'cards' && file ? (
+            <CategoryPanel isDruid={file.className === 'druid'} hidden={hidden} onToggle={onToggleCategory} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'level' && file ? (
             <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
