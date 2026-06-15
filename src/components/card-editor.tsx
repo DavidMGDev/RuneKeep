@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { Keyboard, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, useWindowDimensions, View, type ViewStyle } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -71,7 +71,6 @@ function EffectPicker({ current, onPick, onClose }: { current?: EffectOption; on
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
-      <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, maxHeight: '82%', paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Pick a modifier</Text>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 11, paddingBottom: 4 }}>
@@ -92,7 +91,6 @@ function EffectPicker({ current, onPick, onClose }: { current?: EffectOption; on
           ))}
         </ScrollView>
       </ChamferBox>
-      </View>
     </View>
   );
 }
@@ -105,7 +103,6 @@ function TypePicker({ groups, current, onPick, onClose }: { groups: { label: str
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
-      <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, maxHeight: '82%', paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Card type</Text>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 11, paddingBottom: 4 }}>
@@ -128,7 +125,6 @@ function TypePicker({ groups, current, onPick, onClose }: { groups: { label: str
           ))}
         </ScrollView>
       </ChamferBox>
-      </View>
     </View>
   );
 }
@@ -190,6 +186,25 @@ export function randomCardColor(): string {
   const s = 42 + Math.floor(Math.random() * 28); // 42-70%
   const l = 30 + Math.floor(Math.random() * 22); // 30-52%
   return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+/**
+ * Editor frame (#252): in-sheet (framed) the scroller lives inside a full-screen chamfered SVG border
+ * with `overflow: hidden`, so the card + fields can never escape past the border / the status bar.
+ * Standalone (creation) it's a plain full-screen container. Module-level so it never remounts the
+ * scroller (which would drop scroll position).
+ */
+function EditorFrame({ framed, insetTop, insetBottom, animStyle, children }: { framed: boolean; insetTop: number; insetBottom: number; animStyle: StyleProp<ViewStyle>; children: ReactNode }) {
+  if (framed) {
+    return (
+      <Animated.View style={[{ position: 'absolute', top: insetTop + 8, bottom: insetBottom + 8, left: 10, right: 10 }, animStyle]}>
+        <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1, overflow: 'hidden' }}>
+          {children}
+        </ChamferBox>
+      </Animated.View>
+    );
+  }
+  return <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }, animStyle]}>{children}</Animated.View>;
 }
 
 /**
@@ -266,8 +281,10 @@ export function CardEditor({
   // it FADES OUT instead and fades back when typing ends (item 1).
   const { height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const padFull = insets.top + 64; // resting top gap (keyboard closed)
-  const padCompact = insets.top + 12; // typing: card top ~10px below the border
+  // In the in-sheet (scrimless) full-screen frame (#252) the bordered frame already provides the top
+  // inset, so the content's own top gap is small; standalone (creation) keeps the safe-area gap.
+  const padFull = scrimless ? 30 : insets.top + 64; // resting top gap (keyboard closed)
+  const padCompact = scrimless ? 8 : insets.top + 12; // typing: card top ~10px below the border
   // Height the fields column + buttons occupy below the card (approx; experiences have no body/effects).
   const fieldsH = experienceMode ? 196 : 340;
   const cardRoom = screenH * 0.55 - padCompact - fieldsH; // vertical space left for the card while typing
@@ -300,15 +317,15 @@ export function CardEditor({
 
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
-      <AnimatedPressable style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: scrimless ? 'transparent' : 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
-      {/* In-sheet: a creation-style bordered panel behind the content (#242 item 6) so it reads as a
-          real dialog, not just a dim. Standalone (creation) keeps its plain dark scrim. */}
       {scrimless ? (
-        <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: insets.top + 8, bottom: insets.bottom + 8, left: 10, right: 10 }, contentStyle]}>
-          <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1 }} />
-        </Animated.View>
-      ) : null}
-      <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        // In-sheet (#252): OPAQUE full-screen backdrop (the carousel is unloaded behind it); closes
+        // only via the Cancel button, never by tapping outside. The content is clipped to the border.
+        <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, scrimStyle]} />
+      ) : (
+        <AnimatedPressable style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
+      )}
+      <EditorFrame framed={scrimless} insetTop={insets.top} insetBottom={insets.bottom} animStyle={contentStyle}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* top gap: collapses while typing so the card + fields ride up to just below the border (#227) */}
         <Animated.View style={topSpacer} />
         {/* live preview — scales down from its TOP while a field is focused, the negative margin pulling
@@ -379,7 +396,8 @@ export function CardEditor({
           </View>
           <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>Same format as every RuneKeep card.</Text>
         </View>
-      </Animated.ScrollView>
+      </ScrollView>
+      </EditorFrame>
       {pickEffect != null && draft.effects[pickEffect] ? (
         <EffectPicker
           current={matchOption(draft.effects[pickEffect])}

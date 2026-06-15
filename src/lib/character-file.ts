@@ -153,6 +153,10 @@ export interface CharacterFile {
    *  every deck. Lets system cards (domains, origins, equipment, gold) be removed without corrupting
    *  the file's structure. Authored/acquired cards are also dropped from their own arrays. */
   removedCardIds?: string[];
+  /** Explicit per-category card order (#252): category key → ordered card ids. Drag-drop in the Cards
+   *  gallery writes this; deck assembly sorts each category by it (ids not listed keep their natural
+   *  order, after the listed ones). Additive. */
+  cardOrder?: Record<string, string[]>;
   level: number;
 }
 

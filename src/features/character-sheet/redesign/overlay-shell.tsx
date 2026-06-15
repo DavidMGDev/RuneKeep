@@ -50,11 +50,9 @@ export function OverlayShell({
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
       {/* Transparent tap-catcher only (#239 item 9): the shared SheetDim darkens the screen now, so a
           per-shell dark scrim would double-dim and pop on open/close. This still closes on outside tap. */}
+      {/* A catching backdrop (#252): closes on a TRUE outside tap; the box (a real View) catches its
+          OWN taps so nothing inside closes the panel or reaches the carousel beneath. No box-none. */}
       <AnimatedPressable style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimStyle]} onPress={dismissOnScrim ? onClose : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
-      {/* box-none centering layer (#250): taps NOT on the box fall through to the scrim (close); taps on
-          the box are dropped by its non-responder background (no close) while the ScrollView/buttons
-          still work. Replaces the onStartShouldSetResponder barrier that broke scrolling. */}
-      <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
       <Animated.View style={boxStyle}>
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -76,7 +74,6 @@ export function OverlayShell({
         {footer ? <View style={{ marginTop: 14 }}>{footer}</View> : null}
       </ChamferBox>
       </Animated.View>
-      </View>
     </View>
   );
 }
