@@ -44,6 +44,14 @@ describe('tier achievements', () => {
     const f = applyLevelUp(baseFile({ level: 1 }), plan({ experienceTitle: 'Silver Tongue' }), DEF);
     expect(f.experiences?.at(-1)).toMatchObject({ title: 'Silver Tongue', modifier: 2 });
   });
+  it('persists the new Experience color, image, and body (#239 item 5)', () => {
+    const f = applyLevelUp(
+      baseFile({ level: 1 }),
+      plan({ experienceTitle: 'Trail Sense', experienceColor: '#3A6E4F', experienceImageUri: 'file:///exp.jpg', experienceText: 'Years in the wild.' }),
+      DEF,
+    );
+    expect(f.experiences?.at(-1)).toMatchObject({ title: 'Trail Sense', color: '#3A6E4F', imageUri: 'file:///exp.jpg', text: 'Years in the wild.', modifier: 2 });
+  });
   it('clears trait marks at level 5', () => {
     const f = applyLevelUp(baseFile({ level: 4, traitMarks: ['agility', 'finesse'] }), plan(), DEF);
     expect(f.traitMarks).toEqual([]);

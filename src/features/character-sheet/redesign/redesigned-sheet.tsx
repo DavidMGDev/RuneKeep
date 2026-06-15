@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
+import Animated, { Easing, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccentTint } from '@/components/accent';
@@ -435,6 +435,23 @@ function ExpandVeil() {
 }
 
 /**
+ * ONE shared dim for every sheet overlay (#239 item 9). Driven by "is any sheet overlay open"; it
+ * fades both directions. Because it persists across overlays, switching from one panel to another
+ * (e.g. New Card → gear catalog) or float-menu → panel keeps the screen dark the whole time — no
+ * bright flashbang between scrims. The individual overlays now carry only a transparent tap-catcher.
+ * Sits above the sheet (zIndex 9500) but below the overlay panels (10000).
+ */
+function SheetDim({ up }: { up: boolean }) {
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = withTiming(up ? 1 : 0, { duration: up ? 200 : 220, easing: up ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic) });
+  }, [up, p]);
+  const style = useAnimatedStyle(() => ({ opacity: p.value * 0.84 }));
+  // Oversized so it covers the unclipped stage spill, the status/nav bars, and the letterbox margins.
+  return <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: -240, bottom: -240, left: -240, right: -240, backgroundColor: '#06080d', zIndex: 9500 }, style]} />;
+}
+
+/**
  * The single redesigned sheet (style from the AELIANA mockup): chamfered/flat, red + gold; restored
  * interlocking portrait + dark defense panel; gold level/proficiency banner; octagon origin badges;
  * big resource icons; armor shown as its 12 icons. Accent locked to red (picker UI removed).
@@ -679,6 +696,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
   const toastId = useRef(1);
+  // Emit a toast per changed stat, capped to the newest 5 on screen (#239 item 2: FIFO — oldest drop
+  // first so they never stack endlessly). Shared by card toggle (#233) and level-up confirm (#239).
+  const pushToasts = useCallback((prev: Character, next: Character) => {
+    const fresh = diffStatToasts(prev, next, toastId.current);
+    if (!fresh.length) return;
+    toastId.current += fresh.length;
+    setToasts((list) => [...list, ...fresh].slice(-5));
+  }, []);
   // Level Up (#167): the domain cards available to gain (≤ the NEXT level, in this class's domains,
   // not already owned), the multiclass options, and the class-derived stat defaults.
   const levelData = useMemo(() => {
@@ -691,25 +716,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const classOptions = CLASSES.filter((c) => c.key !== file.className).map((c) => ({ key: c.key, label: c.label }));
     return { domainOptions, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
   }, [file]);
-  const onApplyLevelUp = useCallback((next: CharacterFile) => {
-    setFile(next);
-    void saveCharacter(next);
-    // re-derive build stats from the new file, but keep in-play resource positions (clamped to maxes)
-    setCharacter((c) => {
-      const d = toSheetCharacter(next);
-      return {
-        ...d,
-        hp: Math.min(c.hp, d.maxHp),
-        stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
-        armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
-        hope: { ...d.hope, active: c.hope.active },
-        gold: c.gold,
-        portraitUri: c.portraitUri,
-        portraitTransform: c.portraitTransform,
-      };
-    });
-    setFloatKind(null);
-  }, []);
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
   const stressRef = useRef<ChargeTrackHandle>(null);
@@ -727,6 +733,37 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     armorRef.current?.burst(prev.armor.active, next.armor.active);
     hopeRef.current?.burst(prev.hope.active, next.hope.active);
   }, []);
+
+  // Confirming Level Up (#239 items 6 + 7): re-derive build stats, keep in-play resource positions
+  // (clamped to the new maxes), and CELEBRATE the result — a gained Max HP slot fills with its heart
+  // animation and every stat change pops a toast.
+  const onApplyLevelUp = useCallback(
+    (next: CharacterFile) => {
+      setFile(next);
+      void saveCharacter(next);
+      const c = characterRef.current;
+      const d = toSheetCharacter(next);
+      const hpGain = Math.max(0, d.maxHp - c.maxHp); // follow the gain so the new heart animates filling
+      const result: Character = {
+        ...d,
+        hp: Math.min(d.maxHp, c.hp + hpGain),
+        stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
+        armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
+        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+        gold: c.gold,
+        portraitUri: c.portraitUri,
+        portraitTransform: c.portraitTransform,
+      };
+      pushToasts(c, result); // toast the stat changes this level brought (item 7)
+      setCharacter(result);
+      setFloatKind(null);
+      // Burst AFTER the panel closes + the HeartTrack re-mounts with the new slot count (item 6): the
+      // track's imperative handle is rebuilt when maxHp grows, so a synchronous burst would target the
+      // OLD slot count and miss the new heart. A short defer lets the new slot exist before it fills.
+      setTimeout(() => burstResources(c, result), 90);
+    },
+    [pushToasts, burstResources],
+  );
 
   // Portrait edits (#155) persist to the character FILE (via the file state, #164) and update the
   // runtime character.
@@ -857,16 +894,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         }
       }
       // Toast each attribute the toggle changed (#233 item 1): "+1 Finesse", "−2 Evasion", …
-      const fresh = diffStatToasts(c, result, toastId.current);
-      if (fresh.length) {
-        toastId.current += fresh.length;
-        setToasts((list) => [...list, ...fresh]);
-      }
+      pushToasts(c, result);
       // animate any track whose value the equip/unequip changed (e.g. +1 Max HP at full HP, removed)
       burstResources(c, result);
       setCharacter(result);
     },
-    [file, burstResources],
+    [file, burstResources, pushToasts],
   );
   const onHp = useCallback(
     // No overhealing past the character's TRUE maximum (#107) — not the slot capacity.
@@ -943,6 +976,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               gears/card spill below the design box can only be COVERED, not clipped. */}
           <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: topInset, backgroundColor: Rune.ink }} />
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
+          {/* Unified overlay dim (#239 item 9): one fading scrim shared by the float-menu panels +
+              the per-card modifier sheet, so transitions never flashbang the bright sheet. */}
+          <SheetDim up={floatKind !== null || cardInfoId !== null} />
           {/* damage-threshold keypad (#128): full-screen overlay above everything; on confirm it
               animates out, then bursts the lost hearts via the HeartTrack handle */}
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}

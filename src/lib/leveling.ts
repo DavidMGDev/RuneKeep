@@ -80,6 +80,11 @@ export interface LevelUpPlan {
   domainCardId: string;
   /** New Experience name when this level starts a tier (2/5/8). */
   experienceTitle?: string;
+  /** The new Experience's authored art + body (#239 item 5): persisted so it forges with the chosen
+   *  color/image instead of a blank card. */
+  experienceColor?: string | null;
+  experienceImageUri?: string | null;
+  experienceText?: string;
   advancements: ChosenAdv[];
 }
 export interface LevelDefaults {
@@ -105,7 +110,14 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
 
   let experiences = [...(file.experiences ?? [])];
   if (isTierStart(newLevel) && plan.experienceTitle) {
-    experiences.push({ id: `exp-lvl${newLevel}-${experiences.length}`, title: plan.experienceTitle, text: '', imageUri: null, modifier: 2 });
+    experiences.push({
+      id: `exp-lvl${newLevel}-${experiences.length}`,
+      title: plan.experienceTitle,
+      text: plan.experienceText ?? '',
+      imageUri: plan.experienceImageUri ?? null,
+      color: plan.experienceColor ?? null,
+      modifier: 2,
+    });
   }
   let traitMarks = clearsTraitMarks(newLevel) ? [] : [...(file.traitMarks ?? [])];
 

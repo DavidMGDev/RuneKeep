@@ -117,6 +117,10 @@ export function LevelUpPanel({
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [centerIdx, setCenterIdx] = useState(0);
   const [expTitle, setExpTitle] = useState('');
+  // The new Experience's authored art + body (#239 item 5): kept so Confirm persists what was set.
+  const [expColor, setExpColor] = useState<string | null>(null);
+  const [expImage, setExpImage] = useState<string | null>(null);
+  const [expText, setExpText] = useState('');
   const [editingExp, setEditingExp] = useState(false);
   const [takes, setTakes] = useState<ChosenAdv[]>([]);
   const carRef = useRef<StraightCarouselHandle>(null);
@@ -193,7 +197,14 @@ export function LevelUpPanel({
   const canConfirm = domainDone && expReady && advanceDone;
   const confirm = () => {
     const advs = takes.map((t) => (t.key === 'domain' ? { ...t, domainCardId: selectedDomains[1] } : t));
-    const plan: LevelUpPlan = { domainCardId: selectedDomains[0], experienceTitle: tierStart ? expTitle.trim() : undefined, advancements: advs };
+    const plan: LevelUpPlan = {
+      domainCardId: selectedDomains[0],
+      experienceTitle: tierStart ? expTitle.trim() : undefined,
+      experienceColor: tierStart ? expColor : undefined,
+      experienceImageUri: tierStart ? expImage : undefined,
+      experienceText: tierStart ? expText : undefined,
+      advancements: advs,
+    };
     onApply(applyLevelUp(file, plan, defaults));
   };
 
@@ -206,6 +217,8 @@ export function LevelUpPanel({
     p.value = reduced ? 1 : withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
   }, [p, reduced]);
   const panelStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 16 }] }));
+  // Fade the full-screen backdrop in (#239 item 9): it used to POP opaque on the first frame.
+  const bgStyle = useAnimatedStyle(() => ({ opacity: p.value }));
   const cfade = useSharedValue(1);
   useEffect(() => {
     if (reduced) return;
@@ -215,7 +228,8 @@ export function LevelUpPanel({
   const contentStyle = useAnimatedStyle(() => ({ opacity: cfade.value }));
 
   return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, backgroundColor: 'rgba(8,10,15,0.98)' }}>
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} pointerEvents="none" />
       <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 14 }, panelStyle]}>
         {/* header */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -273,7 +287,7 @@ export function LevelUpPanel({
                 <Pressable onPress={() => setEditingExp(true)} accessibilityRole="button" accessibilityLabel="Write your new experience" style={{ width: 230 * 0.74, height: 322 * 0.74 }}>
                   {expTitle.trim() ? (
                     <View style={{ transform: [{ scale: 0.74 }], width: 230, height: 322, marginLeft: (230 * (0.74 - 1)) / 2, marginTop: (322 * (0.74 - 1)) / 2 }}>
-                      <ForgedCard title={expTitle.trim()} kindLabel="Experience" body="" accentDeep={Rune.panel} colorArt={null} experience modifier={2} />
+                      <ForgedCard title={expTitle.trim()} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={expImage} colorArt={expColor} experience modifier={2} />
                     </View>
                   ) : (
                     <ChamferBox chamfer={12} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.3} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
@@ -370,11 +384,15 @@ export function LevelUpPanel({
         <CardEditor
           kindLabel="Experience"
           experienceMode
+          scrimless
           modifier={2}
-          initial={{ title: expTitle, text: '', imageUri: null, color: null, effects: [] }}
+          initial={{ title: expTitle, text: expText, imageUri: expImage, color: expColor, effects: [] }}
           saveLabel="Set experience"
           onSave={(d) => {
             setExpTitle(d.title);
+            setExpColor(d.color);
+            setExpImage(d.imageUri);
+            setExpText(d.text);
             setEditingExp(false);
           }}
           onCancel={() => setEditingExp(false)}

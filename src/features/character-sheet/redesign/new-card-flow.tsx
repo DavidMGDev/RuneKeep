@@ -43,5 +43,5 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds }: { onSa
   const catalogBtn = onAcquire && (category === 'inventory' || category === 'abilities')
     ? <RuneButton label="Add gear & loot from the catalog →" kind="ghost" dense height={36} onPress={() => setMode('catalog')} />
     : undefined;
-  return <CardEditor kindLabel={typeOptions[0]} typeOptions={typeOptions} extraField={catalogBtn} saveLabel="Create card" onSave={(d) => onSave(d, target)} onCancel={onCancel} />;
+  return <CardEditor kindLabel={typeOptions[0]} typeOptions={typeOptions} extraField={catalogBtn} scrimless saveLabel="Create card" onSave={(d) => onSave(d, target)} onCancel={onCancel} />;
 }

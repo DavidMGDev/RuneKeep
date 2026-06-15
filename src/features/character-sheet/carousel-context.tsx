@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Easing, runOnJS, type SharedValue, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
+import { cancelAnimation, Easing, runOnJS, type SharedValue, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
 import { nextCategory } from './carousel-categories';
@@ -27,6 +27,15 @@ interface CarouselContextValue {
   deckShift: SharedValue<number>;
   /** Deck-switch ENTER progress (#174): 0 = incoming ghost hidden/below, 1 = risen + faded in centered. */
   deckEnter: SharedValue<number>;
+  /** While a category switch is mid-flight (#239 item 3): the pan disables scrolling and the live deck
+   *  is hidden, so the player can never grab un-ready / mid-transition cards. */
+  switching: SharedValue<number>;
+  /** Live-deck reveal (#239 item 3): 0 while the deck swaps under the ghost, animates to 1 to
+   *  cross-reveal the new deck once it's mounted at its final, usable pose. */
+  liveReveal: SharedValue<number>;
+  /** The GEAR's own rotation (#239 item 4): mirrors `rotation` during normal use, but on a switch it
+   *  EASES to the landed rotation instead of snapping with the hard card jump. */
+  gearRotation: SharedValue<number>;
   /** The category being switched TO while a swap is mid-flight (#174), else null. CardCarousel renders
    *  its deck as a ghost fan so the new cards paint before they show. */
   incoming: CardCategory | null;
@@ -93,6 +102,10 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
   const [category, setCategoryState] = useState<CardCategory>('abilities');
   const deckShift = useSharedValue(0);
   const deckEnter = useSharedValue(0);
+  const switching = useSharedValue(0);
+  const liveReveal = useSharedValue(1);
+  const gearRotation = useSharedValue(startMiddle);
+  const switchFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [incoming, setIncoming] = useState<CardCategory | null>(null);
   const [incomingArrival, setIncomingArrival] = useState<ArrivalEnd>('end');
   const arrivalRef = useRef<ArrivalEnd>('end');
@@ -124,28 +137,62 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
   // #100: a pending origin-card open fires only after the commit — switch first, then show.
   const pendingOpen = useRef<number | null>(null);
 
+  // End-of-switch cleanup: drop the ghost + clear the safety net. Idempotent.
+  const finishSwitch = useCallback(() => {
+    if (switchFallback.current) {
+      clearTimeout(switchFallback.current);
+      switchFallback.current = null;
+    }
+    incomingRef.current = null;
+    setIncoming(null);
+  }, []);
+
+  // Commit the switch once the incoming ghost has fully faded in (#239 items 3 + 4). The ghost is
+  // already centered on the EXACT landed pose, so the live deck can swap to it with NO visible motion:
+  //  • hide the live deck (liveReveal → 0) while it swaps + jumps to `land`, so the OLD deck never
+  //    flashes at the new rotation (the experiences-past-the-last-card bug),
+  //  • snap `rotation` straight to `land` (no card ease → no center-tracking churn; the ghost covers),
+  //  • EASE only the gear to `land` so the cogs glide to their new rotation instead of snapping,
+  //  • after the new deck paints a frame, cross-reveal: live deck fades in while the ghost fades out,
+  //    and only THEN clear `switching` — so the player can't grab the deck until it's fully usable.
   const commitSwitch = useCallback(
     (c: CardCategory) => {
       setCategoryState(c);
       const n = decksRef.current[c].length;
       // Continuation (#188): land on the opposite extreme of the new deck, not its middle.
       const land = arrivalRef.current === 'start' ? 0 : arrivalRef.current === 'end' ? maxRotation(n) : middleRotation(n);
+      const idx = pendingOpen.current;
+      pendingOpen.current = null;
+      if (idx != null) {
+        // Origin-card open (#100): swap, then fly the card to focus — the focus animation owns the
+        // reveal, so no hide/ease here.
+        rotation.value = land;
+        gearRotation.value = land;
+        deckShift.value = 0;
+        liveReveal.value = 1;
+        openCardAt(idx);
+        deckEnter.value = 0;
+        switching.value = 0;
+        finishSwitch();
+        return;
+      }
+      liveReveal.value = 0;
       rotation.value = land;
       focusIndex.value = Math.round(land / ANGLE_STEP);
       deckShift.value = 0;
-      const idx = pendingOpen.current;
-      pendingOpen.current = null;
-      if (idx != null) openCardAt(idx);
-      // Keep the (fully faded-in, centered) ghost up one more beat so the freshly-mounted LIVE deck
-      // paints UNDER it before it drops — the uris are cache-warm from the ghost, so this guards the
-      // last 1-frame blank at the hand-off. Both fans are identical + centered, so the overlap is
-      // invisible. Drop the ghost after the grace.
+      cancelAnimation(gearRotation);
+      gearRotation.value = withTiming(land, { duration: 360, easing: Easing.inOut(Easing.cubic) });
       setTimeout(() => {
-        deckEnter.value = 0;
-        setIncoming(null);
-      }, 120);
+        liveReveal.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
+        deckEnter.value = withTiming(0, { duration: 200, easing: Easing.in(Easing.cubic) }, (fin) => {
+          if (fin) {
+            switching.value = 0;
+            runOnJS(finishSwitch)();
+          }
+        });
+      }, 70);
     },
-    [rotation, focusIndex, deckShift, deckEnter, openCardAt],
+    [rotation, gearRotation, focusIndex, deckShift, deckEnter, liveReveal, switching, openCardAt, finishSwitch],
   );
 
   const setCategory = useCallback(
@@ -155,19 +202,32 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
       setIncomingArrival(arrival);
       incomingRef.current = c;
       setIncoming(c); // mount the incoming deck as a ghost fan (hidden) so it paints before it shows
+      switching.value = 1; // disable scroll + grabbing while the switch runs (#239 item 3)
+      liveReveal.value = 1; // the OLD hand stays visible while it slides out
       deckEnter.value = 0;
       // OLD hand sinks + fades near the bottom
-      deckShift.value = withTiming(1, { duration: 300, easing: Easing.in(Easing.cubic) });
+      deckShift.value = withTiming(1, { duration: 260, easing: Easing.in(Easing.cubic) });
       // after a short preload grace (ghost thumbs paint), rise + fade the incoming hand in; commit
       // once it has fully landed. The grace overlaps the old hand's exit tail → minimal empty beat.
       deckEnter.value = withDelay(
-        150,
-        withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) }, (finished) => {
+        110,
+        withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }, (finished) => {
           if (finished) runOnJS(commitSwitch)(c);
         }),
       );
+      // Safety net (#239): if a timing callback is ever dropped, force the switch to finish so the
+      // carousel can't lock (the pan stays disabled while switching === 1).
+      if (switchFallback.current) clearTimeout(switchFallback.current);
+      switchFallback.current = setTimeout(() => {
+        switching.value = 0;
+        liveReveal.value = 1;
+        deckEnter.value = 0;
+        switchFallback.current = null;
+        incomingRef.current = null;
+        setIncoming(null);
+      }, 1600);
     },
-    [deckShift, deckEnter, commitSwitch],
+    [deckShift, deckEnter, switching, liveReveal, commitSwitch],
   );
 
   const cycleCategory = useCallback(
@@ -246,6 +306,9 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
       focusIndex,
       deckShift,
       deckEnter,
+      switching,
+      liveReveal,
+      gearRotation,
       incoming,
       incomingArrival,
       decks,
@@ -262,7 +325,7 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
       toggleCard: onToggleCard ?? noopToggle,
       showCardInfo: onShowCardInfo ?? noopInfo,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, incoming, incomingArrival, decks, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, deckShift, deckEnter, switching, liveReveal, gearRotation, incoming, incomingArrival, decks, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
