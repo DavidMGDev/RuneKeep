@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Svg, { Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
 import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -10,27 +11,86 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, picksUsed, tierForLevel } from '@/lib/leveling';
 import type { CharacterFile } from '@/lib/character-file';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/straight-carousel';
+import { ForgedCard } from '@/features/create/forged-card';
 
 import { TRAIT_ORDER } from '../character';
 import type { DomainCardInfo } from './domain-card-info';
 
-/** Small selectable chip. */
-function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; disabled?: boolean; onPress: () => void }) {
+type StepKey = 'summary' | 'domain' | 'exp' | 'advance';
+
+/** Step icons — the creation-screen visual language (icon tabs that reveal the next part, #233 item 4). */
+function StepGlyph({ step, color }: { step: StepKey; color: string }) {
+  const s = { fill: 'none', stroke: color, strokeWidth: 1.8, strokeLinejoin: 'round' as const, strokeLinecap: 'round' as const };
+  switch (step) {
+    case 'summary':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Polyline points="4,11 11,4 18,11" {...s} />
+          <Polyline points="4,17 11,10 18,17" {...s} />
+        </Svg>
+      );
+    case 'domain':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Rect x={3} y={4} width={10} height={14} {...s} />
+          <Rect x={9} y={2} width={10} height={14} transform="rotate(8 14 9)" {...s} />
+        </Svg>
+      );
+    case 'exp':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Path d="M 4 18 Q 6 10 18 3 Q 14 12 8 16 Z" {...s} />
+          <Line x1={4} y1={18} x2={9} y2={13} {...s} />
+        </Svg>
+      );
+    case 'advance':
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Polygon points="11,2 13.4,8 19.5,8 14.5,12 16.5,18 11,14.5 5.5,18 7.5,12 2.5,8 8.6,8" {...s} />
+        </Svg>
+      );
+  }
+}
+
+function StepTab({ step, label, active, done, onPress }: { step: StepKey; label: string; active: boolean; done: boolean; onPress: () => void }) {
+  const color = active ? Rune.goldBright : done ? Rune.goldText : Rune.muted;
   return (
-    <Pressable onPress={disabled ? undefined : onPress} disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: on, disabled }}>
-      <ChamferBox chamfer={6} fill={on ? Rune.red : 'rgba(20,24,31,0.7)'} stroke={on ? 'transparent' : 'rgba(218,162,73,0.4)'} strokeWidth={1} style={{ paddingHorizontal: 10, paddingVertical: 6, opacity: disabled ? 0.4 : 1 }}>
-        <Text style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
+    <Pressable onPress={onPress} style={{ flex: 1 }} accessibilityRole="tab" accessibilityState={{ selected: active }} accessibilityLabel={`${label}${done ? ', done' : ''}`}>
+      <ChamferBox chamfer={7} fill={active ? 'rgba(224,181,99,0.12)' : 'transparent'} stroke={active ? Rune.goldBright : done ? 'rgba(218,162,73,0.55)' : 'rgba(147,142,136,0.3)'} strokeWidth={active ? 1.6 : 1.1} style={{ alignItems: 'center', paddingVertical: 8, gap: 3, overflow: 'hidden' }}>
+        <View>
+          <StepGlyph step={step} color={color} />
+          {done ? (
+            <Svg width={11} height={11} viewBox="0 0 11 11" style={{ position: 'absolute', right: -8, top: -4 }}>
+              <Polygon points="5.5,0 11,5.5 5.5,11 0,5.5" fill={Rune.gold} />
+              <Polyline points="3,5.5 5,7.5 8.2,3.6" fill="none" stroke={Rune.ink} strokeWidth={1.5} />
+            </Svg>
+          ) : null}
+        </View>
+        <Text numberOfLines={1} style={{ color, fontSize: 8, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
     </Pressable>
   );
 }
 
+/** Small selectable chip. */
+function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; disabled?: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={disabled ? undefined : onPress} disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: on, disabled }}>
+      <ChamferBox chamfer={6} fill={on ? Rune.red : 'rgba(20,24,31,0.7)'} stroke={on ? 'transparent' : 'rgba(218,162,73,0.4)'} strokeWidth={1} style={{ paddingHorizontal: 11, paddingVertical: 7, opacity: disabled ? 0.4 : 1 }}>
+        <Text style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 11.5, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
+      </ChamferBox>
+    </Pressable>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{children}</Text>;
+}
+
 /**
- * Level Up (#167; rebuilt #203) — full-screen, with the real card carousel (StraightCarousel) for the
- * domain pick (fullscreen-able, no name labels needed) as the ONE carousel. The "extra domain card"
- * advancement just lets you pick TWO cards on it. Everything else (auto effects, the tier Experience
- * via the experience editor, the other advancements) sits in a scroll below. The sheet's own carousel
- * is unloaded while this is open (redesigned-sheet), so it stays smooth.
+ * Level Up (#233 item 4) — rebuilt to mirror character creation: a rail of ICON STEPS at the top
+ * (Gains · Domain · Experience · Advance) that each reveal their own focused panel, instead of one
+ * long scroll. The sheet's carousel is unloaded while this is open (redesigned-sheet). /impeccable.
  */
 export function LevelUpPanel({
   file,
@@ -62,8 +122,7 @@ export function LevelUpPanel({
   const carRef = useRef<StraightCarouselHandle>(null);
 
   // The new tier Experience the player is writing now (#211): predict the id applyLevelUp will give
-  // it so the '+1 to two Experiences' advancement can target it, and count it toward that option's
-  // availability. Advancements stay LOCKED until it's written (so they can boost the one just made).
+  // it so the '+1 to two Experiences' advancement can target it, and count it toward availability.
   const pendingExp = tierStart && expTitle.trim() ? { id: `exp-lvl${newLevel}-${exps.length}`, title: expTitle.trim() } : null;
   const expChoices = pendingExp ? [...exps, pendingExp] : exps;
   const expReady = !tierStart || !!expTitle.trim();
@@ -71,7 +130,6 @@ export function LevelUpPanel({
   const hasDomainAdv = takes.some((t) => t.key === 'domain');
   const maxDomains = 1 + (hasDomainAdv ? 1 : 0);
   const items: StraightItem[] = domainOptions.map((d) => ({ id: d.id, thumb: d.thumb, source: d.source, label: d.title }));
-
   const centerId = domainOptions[Math.min(centerIdx, domainOptions.length - 1)]?.id;
   const centeredSelected = !!centerId && selectedDomains.includes(centerId);
   const toggleDomain = () => {
@@ -79,7 +137,7 @@ export function LevelUpPanel({
     setSelectedDomains((cur) => {
       if (cur.includes(centerId)) return cur.filter((x) => x !== centerId);
       if (cur.length < maxDomains) return [...cur, centerId];
-      return maxDomains === 1 ? [centerId] : cur; // single pick replaces; at the 2-cap, block
+      return maxDomains === 1 ? [centerId] : cur;
     });
   };
 
@@ -96,7 +154,7 @@ export function LevelUpPanel({
   const removeTake = (i: number) =>
     setTakes((t) => {
       const nt = t.filter((_, j) => j !== i);
-      if (!nt.some((x) => x.key === 'domain')) setSelectedDomains((d) => d.slice(0, 1)); // dropping the extra → keep one
+      if (!nt.some((x) => x.key === 'domain')) setSelectedDomains((d) => d.slice(0, 1));
       return nt;
     });
   const toggleIn = (i: number, field: 'traits' | 'expIds', val: string, max: number) =>
@@ -115,11 +173,24 @@ export function LevelUpPanel({
     const needs = advOption(t.key).needs;
     if (needs === 'traits') return (t.traits ?? []).length === 2;
     if (needs === 'exps') return (t.expIds ?? []).length === 2;
-    if (needs === 'domain') return selectedDomains.length === 2; // the 2nd carousel pick fills it
+    if (needs === 'domain') return selectedDomains.length === 2;
     if (needs === 'multiclass') return !!t.multiclass;
     return true;
   };
-  const canConfirm = selectedDomains.length >= 1 && (!hasDomainAdv || selectedDomains.length === 2) && (!tierStart || expTitle.trim().length > 0) && picks === 2 && takes.every(takeComplete);
+
+  const domainDone = selectedDomains.length >= 1 && (!hasDomainAdv || selectedDomains.length === 2);
+  const advanceDone = picks === 2 && takes.every(takeComplete);
+  const stepDone = (k: StepKey) => (k === 'summary' ? true : k === 'domain' ? domainDone : k === 'exp' ? expReady : advanceDone);
+
+  const steps: { key: StepKey; label: string }[] = [
+    { key: 'summary', label: 'Gains' },
+    { key: 'domain', label: 'Domain' },
+    ...(tierStart ? [{ key: 'exp' as StepKey, label: 'Exp' }] : []),
+    { key: 'advance', label: 'Advance' },
+  ];
+  const [step, setStep] = useState<StepKey>('summary');
+
+  const canConfirm = domainDone && expReady && advanceDone;
   const confirm = () => {
     const advs = takes.map((t) => (t.key === 'domain' ? { ...t, domainCardId: selectedDomains[1] } : t));
     const plan: LevelUpPlan = { domainCardId: selectedDomains[0], experienceTitle: tierStart ? expTitle.trim() : undefined, advancements: advs };
@@ -128,19 +199,26 @@ export function LevelUpPanel({
 
   const addable = availableAdvancements(file, newLevel).filter((o) => canAdd(o.key));
 
-  // entrance (#201/#203)
+  // entrance + per-step fade (#201/#233)
   const reduced = useReducedMotion();
   const p = useSharedValue(0);
   useEffect(() => {
     p.value = reduced ? 1 : withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
   }, [p, reduced]);
   const panelStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 16 }] }));
+  const cfade = useSharedValue(1);
+  useEffect(() => {
+    if (reduced) return;
+    cfade.value = 0;
+    cfade.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
+  }, [step, cfade, reduced]);
+  const contentStyle = useAnimatedStyle(() => ({ opacity: cfade.value }));
 
   return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, backgroundColor: 'rgba(8,10,15,0.97)' }}>
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, backgroundColor: 'rgba(8,10,15,0.98)' }}>
       <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 14 }, panelStyle]}>
         {/* header */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Level Up</Text>
             <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>{`Level ${file.level} → ${newLevel} · Tier ${tier}`}</Text>
@@ -150,105 +228,139 @@ export function LevelUpPanel({
           </Pressable>
         </View>
 
-        {/* the ONE carousel — the new domain card(s); tap a card to full-screen it (#203) */}
-        <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{`New domain card · pick ${selectedDomains.length}/${maxDomains}`}</Text>
-        <View style={{ flex: 1.15, minHeight: 230 }}>
-          {items.length === 0 ? (
-            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 8 }}>No new domain cards available.</Text>
-          ) : (
-            <StraightCarousel ref={carRef} items={items} selectedIds={selectedDomains} onIndexChange={setCenterIdx} />
-          )}
+        {/* step rail — the icon tabs that reveal each part (creation-style) */}
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {steps.map((s) => (
+            <StepTab key={s.key} step={s.key} label={s.label} active={step === s.key} done={stepDone(s.key)} onPress={() => setStep(s.key)} />
+          ))}
         </View>
-        {items.length > 0 ? (
-          <RuneButton label={centeredSelected ? 'Selected ✓ — tap to remove' : selectedDomains.length >= maxDomains && maxDomains === 1 ? 'Choose this card' : 'Choose this card'} kind={centeredSelected ? 'secondary' : 'primary'} dense height={40} onPress={toggleDomain} />
-        ) : null}
 
-        {/* controls below the carousel */}
-        <ScrollView style={{ flex: 1, marginTop: 8 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 6 }} keyboardShouldPersistTaps="handled">
-          {/* auto effects */}
-          <ChamferBox chamfer={9} fill="rgba(20,24,31,0.55)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ paddingVertical: 10, paddingHorizontal: 12 }}>
-            <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 4 }}>Automatic</Text>
-            {[`Level ${newLevel}`, '+1 to both damage thresholds', 'Gain a domain card', ...(tierStart ? ['New Experience (+2)', '+1 Proficiency', ...(newLevel === 5 || newLevel === 8 ? ['Clear trait marks'] : [])] : [])].map((line) => (
-              <Text key={line} style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular }}>{`· ${line}`}</Text>
-            ))}
-          </ChamferBox>
-
-          {/* tier experience — its own editor (#202/#203): long phrase, no description, +2 shown */}
-          {tierStart ? (
-            <>
-              <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>New Experience (+2)</Text>
-              <Pressable onPress={() => setEditingExp(true)} accessibilityRole="button" accessibilityLabel="Edit new experience">
-                <ChamferBox chamfer={8} fill="rgba(20,24,31,0.6)" stroke={expTitle.trim() ? Rune.red : 'rgba(218,162,73,0.45)'} strokeWidth={1.2} style={{ minHeight: 44, justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 12 }}>
-                  <Text style={{ color: expTitle.trim() ? Rune.sheet : Rune.muted, fontSize: 13.5, fontFamily: expTitle.trim() ? Body.bold : Body.regular }}>{expTitle.trim() || 'Tap to write your experience…'}</Text>
-                </ChamferBox>
-              </Pressable>
-            </>
-          ) : null}
-
-          {/* advancements — locked until the tier Experience is written (#211), so it can be boosted */}
-          <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>{`Choose 2 advancements · ${picks}/2`}</Text>
-          {!expReady ? (
-            <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>Write your new Experience above first — then choose your advancements (you can boost the one you just made).</Text>
-          ) : null}
-          {takes.map((t, i) => {
-            const opt = advOption(t.key);
-            return (
-              <ChamferBox key={`${t.key}-${i}`} chamfer={8} fill="rgba(200,27,24,0.12)" stroke={Rune.red} strokeWidth={1.2} style={{ paddingVertical: 9, paddingHorizontal: 11, gap: 7 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold, flex: 1 }}>{opt.label}{opt.picks === 2 ? ' (×2)' : ''}</Text>
-                  <Pressable onPress={() => removeTake(i)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Remove ${opt.label}`} style={{ padding: 3 }}>
-                    <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
-                  </Pressable>
-                </View>
-                {opt.needs === 'domain' ? (
-                  <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>Pick a 2nd card on the carousel above.</Text>
-                ) : null}
-                {opt.needs === 'traits' ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {TRAIT_ORDER.map((tr) => {
-                      const sel = (t.traits ?? []).includes(tr.key);
-                      const lockMarked = marked.includes(tr.key);
-                      return <Chip key={tr.key} label={tr.label} on={sel} disabled={lockMarked || (!sel && (t.traits ?? []).length >= 2)} onPress={() => toggleIn(i, 'traits', tr.key, 2)} />;
-                    })}
-                  </View>
-                ) : null}
-                {opt.needs === 'exps' ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {expChoices.map((e) => {
-                      const sel = (t.expIds ?? []).includes(e.id);
-                      return <Chip key={e.id} label={e.title} on={sel} disabled={!sel && (t.expIds ?? []).length >= 2} onPress={() => toggleIn(i, 'expIds', e.id, 2)} />;
-                    })}
-                  </View>
-                ) : null}
-                {opt.needs === 'multiclass' ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {classOptions.map((c) => <Chip key={c.key} label={c.label} on={t.multiclass === c.key} onPress={() => setField(i, { multiclass: t.multiclass === c.key ? undefined : c.key })} />)}
-                  </View>
-                ) : null}
+        {/* step content */}
+        <Animated.View style={[{ flex: 1, marginTop: 12 }, contentStyle]}>
+          {step === 'summary' ? (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+              <SectionLabel>This level brings</SectionLabel>
+              <ChamferBox chamfer={9} fill="rgba(20,24,31,0.55)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ paddingVertical: 12, paddingHorizontal: 14, gap: 3 }}>
+                {[`Level ${newLevel}`, '+1 to both damage thresholds', 'A new domain card', ...(tierStart ? ['A new Experience (+2)', '+1 Proficiency', ...(newLevel === 5 || newLevel === 8 ? ['Clear all trait marks'] : [])] : [])].map((line) => (
+                  <Text key={line} style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.regular }}>{`·  ${line}`}</Text>
+                ))}
               </ChamferBox>
-            );
-          })}
+              <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 18 }}>Then choose your new domain card{tierStart ? ', write a new Experience,' : ''} and two advancements using the steps above.</Text>
+              <RuneButton label="Choose domain card →" kind="primary" dense height={40} onPress={() => setStep('domain')} />
+            </ScrollView>
+          ) : null}
 
-          {expReady && remainingPicks > 0 ? (
-            <View style={{ gap: 6 }}>
-              {addable.length === 0 ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>No more advancements available.</Text> : null}
-              {addable.map((o) => (
-                <Pressable key={o.key} onPress={() => addTake(o.key)} accessibilityRole="button" accessibilityLabel={o.label}>
-                  <ChamferBox chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{o.label}{o.picks === 2 ? ' (uses both)' : ''}</Text>
-                      <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{o.desc}</Text>
-                    </View>
-                    <Text style={{ color: Rune.goldBright, fontSize: 22, fontFamily: Body.bold, marginLeft: 8 }}>+</Text>
-                  </ChamferBox>
-                </Pressable>
-              ))}
+          {step === 'domain' ? (
+            <View style={{ flex: 1 }}>
+              <SectionLabel>{`New domain card · ${selectedDomains.length}/${maxDomains}`}</SectionLabel>
+              <View style={{ flex: 1, minHeight: 230, marginTop: 4 }}>
+                {items.length === 0 ? (
+                  <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 8 }}>No new domain cards available at this level.</Text>
+                ) : (
+                  <StraightCarousel ref={carRef} items={items} selectedIds={selectedDomains} onIndexChange={setCenterIdx} />
+                )}
+              </View>
+              {items.length > 0 ? (
+                <RuneButton label={centeredSelected ? 'Selected ✓ — tap to remove' : 'Choose this card'} kind={centeredSelected ? 'secondary' : 'primary'} dense height={42} onPress={toggleDomain} />
+              ) : null}
             </View>
           ) : null}
-        </ScrollView>
+
+          {step === 'exp' ? (
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <SectionLabel>New Experience (+2)</SectionLabel>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Pressable onPress={() => setEditingExp(true)} accessibilityRole="button" accessibilityLabel="Write your new experience" style={{ width: 230 * 0.74, height: 322 * 0.74 }}>
+                  {expTitle.trim() ? (
+                    <View style={{ transform: [{ scale: 0.74 }], width: 230, height: 322, marginLeft: (230 * (0.74 - 1)) / 2, marginTop: (322 * (0.74 - 1)) / 2 }}>
+                      <ForgedCard title={expTitle.trim()} kindLabel="Experience" body="" accentDeep={Rune.panel} colorArt={null} experience modifier={2} />
+                    </View>
+                  ) : (
+                    <ChamferBox chamfer={12} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.3} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                      <Svg width={30} height={30} viewBox="0 0 30 30">
+                        <Line x1={15} y1={5} x2={15} y2={25} stroke={Rune.goldEdge} strokeWidth={2.4} />
+                        <Line x1={5} y1={15} x2={25} y2={15} stroke={Rune.goldEdge} strokeWidth={2.4} />
+                      </Svg>
+                      <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Write it</Text>
+                    </ChamferBox>
+                  )}
+                </Pressable>
+              </View>
+              {expTitle.trim() ? <RuneButton label="Edit experience" kind="ghost" dense height={38} onPress={() => setEditingExp(true)} /> : null}
+            </View>
+          ) : null}
+
+          {step === 'advance' ? (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 6 }} keyboardShouldPersistTaps="handled">
+              <SectionLabel>{`Choose 2 advancements · ${picks}/2`}</SectionLabel>
+              {!expReady ? (
+                <ChamferBox chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ paddingVertical: 11, paddingHorizontal: 12, gap: 8 }}>
+                  <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>Write your new Experience first — then you can boost the one you just made.</Text>
+                  <RuneButton label="Write Experience →" kind="primary" dense height={36} onPress={() => setStep('exp')} />
+                </ChamferBox>
+              ) : null}
+              {takes.map((t, i) => {
+                const opt = advOption(t.key);
+                return (
+                  <ChamferBox key={`${t.key}-${i}`} chamfer={8} fill="rgba(200,27,24,0.12)" stroke={Rune.red} strokeWidth={1.2} style={{ paddingVertical: 10, paddingHorizontal: 12, gap: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold, flex: 1 }}>{opt.label}{opt.picks === 2 ? ' (×2)' : ''}</Text>
+                      <Pressable onPress={() => removeTake(i)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Remove ${opt.label}`} style={{ padding: 3 }}>
+                        <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
+                      </Pressable>
+                    </View>
+                    {opt.needs === 'domain' ? (
+                      <Pressable onPress={() => setStep('domain')} accessibilityRole="button">
+                        <Text style={{ color: selectedDomains.length === 2 ? Rune.goldText : Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>{selectedDomains.length === 2 ? '2nd card chosen ✓' : 'Pick a 2nd card on the Domain step →'}</Text>
+                      </Pressable>
+                    ) : null}
+                    {opt.needs === 'traits' ? (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {TRAIT_ORDER.map((tr) => {
+                          const sel = (t.traits ?? []).includes(tr.key);
+                          const lockMarked = marked.includes(tr.key);
+                          return <Chip key={tr.key} label={tr.label} on={sel} disabled={lockMarked || (!sel && (t.traits ?? []).length >= 2)} onPress={() => toggleIn(i, 'traits', tr.key, 2)} />;
+                        })}
+                      </View>
+                    ) : null}
+                    {opt.needs === 'exps' ? (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {expChoices.map((e) => {
+                          const sel = (t.expIds ?? []).includes(e.id);
+                          return <Chip key={e.id} label={e.title} on={sel} disabled={!sel && (t.expIds ?? []).length >= 2} onPress={() => toggleIn(i, 'expIds', e.id, 2)} />;
+                        })}
+                      </View>
+                    ) : null}
+                    {opt.needs === 'multiclass' ? (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {classOptions.map((c) => <Chip key={c.key} label={c.label} on={t.multiclass === c.key} onPress={() => setField(i, { multiclass: t.multiclass === c.key ? undefined : c.key })} />)}
+                      </View>
+                    ) : null}
+                  </ChamferBox>
+                );
+              })}
+              {expReady && remainingPicks > 0 ? (
+                <View style={{ gap: 6 }}>
+                  {addable.length === 0 ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>No more advancements available.</Text> : null}
+                  {addable.map((o) => (
+                    <Pressable key={o.key} onPress={() => addTake(o.key)} accessibilityRole="button" accessibilityLabel={o.label}>
+                      <ChamferBox chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{o.label}{o.picks === 2 ? ' (uses both)' : ''}</Text>
+                          <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{o.desc}</Text>
+                        </View>
+                        <Text style={{ color: Rune.goldBright, fontSize: 22, fontFamily: Body.bold, marginLeft: 8 }}>+</Text>
+                      </ChamferBox>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
+            </ScrollView>
+          ) : null}
+        </Animated.View>
 
         {/* footer */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
           <RuneButton label="Cancel" kind="ghost" height={44} style={{ flex: 1 }} onPress={onClose} />
           <RuneButton label="Confirm level" kind="primary" height={44} style={{ flex: 1.6 }} disabled={!canConfirm} onPress={confirm} />
         </View>
