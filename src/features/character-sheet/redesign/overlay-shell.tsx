@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -32,6 +32,12 @@ export function OverlayShell({
   /** When false, tapping the dim does NOT close — the user must press the ✕ (#168, owner). */
   dismissOnScrim?: boolean;
 }) {
+  // The body ScrollView is capped to a real pixel height (#233): a flex-shrink ScrollView inside a
+  // content-sized ChamferBox collapsed to ~nothing (it has no intrinsic main-axis height), which
+  // cropped the Modifiers + Rest panels. Sizing the ChamferBox to its content and the ScrollView to
+  // maxHeight = a slice of the screen lets short content show fully and tall content scroll.
+  const { height: screenH } = useWindowDimensions();
+  const scrollMax = Math.round(screenH * 0.6);
   // Entrance (#201): the scrim fades in and the panel rises + scales in instead of popping.
   const reduced = useReducedMotion();
   const p = useSharedValue(0);
@@ -44,7 +50,7 @@ export function OverlayShell({
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
       <AnimatedPressable style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.86)' }, scrimStyle]} onPress={dismissOnScrim ? onClose : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
       <Animated.View style={boxStyle}>
-      <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width, maxHeight: '86%', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
+      <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
           <View style={{ flex: 1, paddingRight: 8 }}>
             <Text style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>
@@ -55,7 +61,7 @@ export function OverlayShell({
           </Pressable>
         </View>
         {scroll ? (
-          <ScrollView style={{ flexGrow: 0, flexShrink: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 2 }} keyboardShouldPersistTaps="handled">
+          <ScrollView style={{ maxHeight: scrollMax }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 2 }} keyboardShouldPersistTaps="handled">
             {children}
           </ScrollView>
         ) : (
