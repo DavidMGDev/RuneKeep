@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.6.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.6.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.7.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.7.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.6'
-$notes = "RuneKeep v0.2.6 - token fixes + Card Management. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nTokens: holding a placed token now removes it with a grow-and-drop animation instead of crashing, and tapping a placed token (drawer open) copies its colour without crashing. Tokens look like the same bevelled buttons whether a card is far away in the deck or full-screen, the drawer and the Modifiers button fade in instead of popping, and the three default tokens are subtly different sizes.`n`nCard Management: the float menu's Cards panel is now a full manager. CATEGORIES tab - turn categories on/off, reorder them, tap one to switch the carousel to it, and create your own custom categories with a name and an icon (delete custom ones, built-ins are protected). CARDS tab - an image gallery of every card grouped by category; move any card into a different category, delete a card (with confirmation), and add a new card straight into a category. You can also manage custom card 'types' (the middle ribbon), chosen from a picker of built-in + your own types. Custom categories work with over-scroll just like the built-in ones.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.7'
+$notes = "RuneKeep v0.2.7 - Bare Bones armor + UI/data fixes. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: the Valor 'Bare Bones' card now works as armor when enabled (base Armor Score = 3 + Strength, with the right damage thresholds for your tier). The Modifiers button no longer accidentally closes a card when tapped near the gear. Panels (the Cards menu, new-category dialog, pickers) only close when you tap OUTSIDE them. The Notes category opens on a real, deletable welcome note instead of a placeholder. The Cards gallery now lets you SELECT MULTIPLE cards and move or delete them in one go, and you can delete ANY card; 'Add card from catalog' now lists character cards (domains, ancestries, communities, subclasses) instead of loot/items. Short rests no longer auto-roll - you enter each d4 result on a keypad (1d4 + tier). The token drawer button on the Subclass/Ancestry/Community cards no longer hides under the status bar; tokens fade out and back in when you full-screen a card; short names fill their space; and the origin badges sit a touch lower for balance.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.6 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.7 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
