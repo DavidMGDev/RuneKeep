@@ -20,6 +20,8 @@ import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { lootById } from '@/lib/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
+import { tierForLevel } from '@/lib/modifiers';
+import { effectsForCardId } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -55,6 +57,7 @@ import { ModifiersPanel } from './modifiers-panel';
 import { CategoryPanel } from './category-panel';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
+import { OriginCardPreview } from './origin-card-preview';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -168,8 +171,7 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void }) {
-  const { openOriginCard } = useCarousel();
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onOpenOrigin }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onOpenOrigin: (slot: 0 | 1 | 2) => void }) {
   const tint = useAccentTint();
 
   // Every resource now uses the boundary-only ±1 hold/double-tap model (#81 hearts, #89 the rest).
@@ -252,9 +254,9 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* #100: each badge opens ITS pinned origin card (last three of the abilities hand); if the
           Inventory deck is up, the switch animation plays first, then the card flies up. */}
       {/* taller, squarer badges (#128): they rise into the space the proficiency line used to take */}
-      <OctaBadge left={176} top={120} w={48} h={52} icon={Art.subclassIcon} label="Subclass" onPress={() => openOriginCard(0)} />
-      <OctaBadge left={254} top={120} w={48} h={52} icon={Art.ancestryIcon} label="Ancestry" onPress={() => openOriginCard(1)} />
-      <OctaBadge left={332} top={120} w={48} h={52} icon={Art.communityIcon} label="Community" onPress={() => openOriginCard(2)} />
+      <OctaBadge left={176} top={120} w={48} h={52} icon={Art.subclassIcon} label="Subclass" onPress={() => onOpenOrigin(0)} />
+      <OctaBadge left={254} top={120} w={48} h={52} icon={Art.ancestryIcon} label="Ancestry" onPress={() => onOpenOrigin(1)} />
+      <OctaBadge left={332} top={120} w={48} h={52} icon={Art.communityIcon} label="Community" onPress={() => onOpenOrigin(2)} />
       <GoldRuleV left={239} top={130} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
       <GoldRuleV left={317} top={130} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
@@ -568,8 +570,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // deck like the class-feature card (#227 item 8) so the title stays a normal size and the rules
     // text isn't crammed tiny: face 0 = overview (tier · stress · attack · stat deltas · examples),
     // face 1 = the form's features. Static content → stable keys; the deck appears only for Druids.
+    // Beastform is tier-gated (#242 item 1): only forms of the player's current tier or lower.
+    const wsTier = tierForLevel(file.level);
     const wildshapeFaceJobs: Job[] = cls === 'druid'
-      ? WILDSHAPES.flatMap((w) => [
+      ? WILDSHAPES.filter((w) => w.tier <= wsTier).flatMap((w) => [
           { key: `ws-${w.id}-0`, node: <ForgedCard title={w.name} kindLabel="Beastform" body={`Tier ${w.tier} · ${w.stress} Stress\nAttack: ${w.attack}\n${wildshapeSummary(w)}\nExamples: ${w.examples}`} accentDeep={Rune.panel} colorArt={w.color} pageMark="1/2" multilineTitle /> },
           { key: `ws-${w.id}-1`, node: <ForgedCard title={w.name} kindLabel="Features" body={w.features} accentDeep={Rune.panel} colorArt={w.color} pageMark="2/2" multilineTitle /> },
         ])
@@ -673,13 +677,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Notes (#214): the player's note cards; an empty deck shows one non-toggleable placeholder so
     // the category never reads as broken and tells the player how to add the first note.
     const notesItems = forgedItems(notesJobs);
+    // Empty Notes deck (#242 item 2): one default SAMPLE note rendered live with a pleasant color —
+    // never the temp placeholder image. It's `live` so the carousel draws the ForgedCard directly
+    // (no CardThumb / ITEM_DEFAULT_ART ever flashes).
     const notesCards: CardItem[] = notesItems.length
       ? notesItems
-      : [{ id: 'notes-empty', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, interactive: true, live: <ForgedCard title="Notes" kindLabel="Notes" body="No notes yet. Open the float menu and choose New Card to jot one down — reminders, places, and story beats all live here." accentDeep={Rune.panel} colorArt="#2A2F3A" multilineTitle /> }];
+      : [{ id: 'notes-empty', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, interactive: true, live: <ForgedCard title="Sample Note" kindLabel="Note" body="This is a note. Open the float menu and choose New Card to write your own — reminders, places, people, and story beats all live in this category." accentDeep={Rune.panel} colorArt={itemColor('Sample Note')} multilineTitle /> }];
     // Beastform (#227): assemble each form's two forged faces into ONE multi-face flip card (id =
     // the form id, so enabling/toggling still targets it). Mirrors the class-feature card assembly.
+    const wsTier = tierForLevel(file.level);
     const wildshapeCards: CardItem[] = file.className === 'druid'
-      ? WILDSHAPES.map((w): CardItem | null => {
+      ? WILDSHAPES.filter((w) => w.tier <= wsTier).map((w): CardItem | null => {
           const faces = [`ws-${w.id}-0`, `ws-${w.id}-1`].map((k) => {
             const src = featureSources[k];
             return src ? { source: src.full, thumb: src.thumb } : { custom: wildshapeFaceJobs.find((j) => j.key === k)?.node };
@@ -694,6 +702,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
+  // Origin-card preview (#242 item 4): a standalone copy of subclass/ancestry/community, not the carousel.
+  const [originPreview, setOriginPreview] = useState<{ id: string; source: number | { uri: string }; label: string } | null>(null);
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
   const toastId = useRef(1);
   // Emit a toast per changed stat, capped to the newest 5 on screen (#239 item 2: FIFO — oldest drop
@@ -717,6 +727,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     return { domainOptions, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
   }, [file]);
   const onInfo = useCallback(() => setDamageOpen(true), []);
+  // Origin badge → standalone card preview (#242 item 4): show a copy of the picked card; never touch
+  // the carousel/category. The preview equips/unequips the SAME id, so it stays in sync.
+  const onOpenOrigin = useCallback(
+    (slot: 0 | 1 | 2) => {
+      if (!file) return;
+      const id = [file.subclassCardId, file.ancestryCardId, file.communityCardId][slot];
+      const c = cardById(id);
+      if (c) setOriginPreview({ id: c.id, source: c.source, label: c.label });
+    },
+    [file],
+  );
   const heartRef = useRef<HeartTrackHandle>(null);
   const stressRef = useRef<ChargeTrackHandle>(null);
   const armorRef = useRef<ChargeTrackHandle>(null);
@@ -862,6 +883,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       } else {
         // Wild Shape (#214): only one Beastform at a time — assuming one drops any other.
         if (isWs) for (const x of [...cur]) if (isWildshapeId(x)) cur.delete(x);
+        // Threshold SET conflict (#242 item 9): a card that SETS Major (or Severe) disables any other
+        // enabled card that sets the same threshold — two "set major" can't both apply. Bonuses stack.
+        const eff = effectsForCardId(id, file);
+        const setsMajor = eff.some((e) => e.target === 'majorThreshold' && e.mode === 'set');
+        const setsSevere = eff.some((e) => e.target === 'severeThreshold' && e.mode === 'set');
+        if (setsMajor || setsSevere) {
+          for (const x of [...cur]) {
+            if (x === id) continue;
+            const xe = effectsForCardId(x, file);
+            if (setsMajor && xe.some((e) => e.target === 'majorThreshold' && e.mode === 'set')) cur.delete(x);
+            if (setsSevere && xe.some((e) => e.target === 'severeThreshold' && e.mode === 'set')) cur.delete(x);
+          }
+        }
         cur.add(id);
       }
       const next = { ...file, enabledCardIds: [...cur] };
@@ -951,7 +985,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenOrigin={onOpenOrigin} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
@@ -978,7 +1012,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
           {/* Unified overlay dim (#239 item 9): one fading scrim shared by the float-menu panels +
               the per-card modifier sheet, so transitions never flashbang the bright sheet. */}
-          <SheetDim up={floatKind !== null || cardInfoId !== null} />
+          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null} />
           {/* damage-threshold keypad (#128): full-screen overlay above everything; on confirm it
               animates out, then bursts the lost hearts via the HeartTrack handle */}
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}
@@ -1004,6 +1038,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* per-card modifier view (#175): opened by the focused card's "Modifiers" button */}
           {cardInfoId && file ? (
             <CardModifiersSheet cardId={cardInfoId} file={file} character={character} enabled={enabledIds.has(cardInfoId)} onToggle={onToggleCard} onClose={() => setCardInfoId(null)} />
+          ) : null}
+          {/* origin card preview (#242 item 4): a standalone equippable copy, decoupled from the carousel */}
+          {originPreview ? (
+            <OriginCardPreview source={originPreview.source} label={originPreview.label} enabled={enabledIds.has(originPreview.id)} onToggle={() => onToggleCard(originPreview.id)} onClose={() => setOriginPreview(null)} />
           ) : null}
         </View>
        </FloatMenuProvider>

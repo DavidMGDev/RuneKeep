@@ -22,10 +22,10 @@ function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
 const plan = (over: Partial<LevelUpPlan> = {}): LevelUpPlan => ({ domainCardId: 'arcana-02-1', advancements: [], ...over });
 
 describe('auto per-level effects', () => {
-  it('raises level and bumps both thresholds by 1', () => {
+  it('raises the level (thresholds are level-based now, not a per-level bonus — #242)', () => {
     const f = applyLevelUp(baseFile(), plan(), DEF);
     expect(f.level).toBe(2);
-    expect(f.thresholdBonus).toBe(1);
+    expect(f.thresholdBonus ?? 0).toBe(0);
   });
   it('adds the new domain card and activates it when there is room', () => {
     const f = applyLevelUp(baseFile(), plan({ domainCardId: 'arcana-02-1' }), DEF);

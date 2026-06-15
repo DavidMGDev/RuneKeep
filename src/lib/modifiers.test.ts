@@ -72,3 +72,38 @@ describe('computeSheet', () => {
     expect(s.strength.contributions).toHaveLength(0);
   });
 });
+
+describe('damage thresholds — set / bonus (#242)', () => {
+  // The level-based base (Major = level, Severe = 2×level) is supplied by the caller in BaseStats.
+  const base: BaseStats = { ...ZERO, majorThreshold: 3, severeThreshold: 6 };
+
+  it('keeps the base when no card touches thresholds', () => {
+    const s = computeSheet(base, 3, []);
+    expect(s.majorThreshold.total).toBe(3);
+    expect(s.severeThreshold.total).toBe(6);
+  });
+
+  it('a set effect OVERRIDES the base', () => {
+    const s = computeSheet(base, 3, [src('Chainmail', [{ target: 'majorThreshold', mode: 'set', delta: 7 }, { target: 'severeThreshold', mode: 'set', delta: 15 }])]);
+    expect(s.majorThreshold.total).toBe(7);
+    expect(s.severeThreshold.total).toBe(15);
+  });
+
+  it('a bonus effect ADDS to the base/set', () => {
+    const s = computeSheet(base, 3, [src('Charm', [{ target: 'majorThreshold', mode: 'bonus', delta: 2 }])]);
+    expect(s.majorThreshold.total).toBe(5); // base 3 + 2
+    const s2 = computeSheet(base, 3, [
+      src('Chainmail', [{ target: 'majorThreshold', mode: 'set', delta: 7 }]),
+      src('Charm', [{ target: 'majorThreshold', mode: 'bonus', delta: 2 }]),
+    ]);
+    expect(s2.majorThreshold.total).toBe(9); // set 7 + bonus 2
+  });
+
+  it('the last set wins when two slip through', () => {
+    const s = computeSheet(base, 3, [
+      src('A', [{ target: 'severeThreshold', mode: 'set', delta: 10 }]),
+      src('B', [{ target: 'severeThreshold', mode: 'set', delta: 20 }]),
+    ]);
+    expect(s.severeThreshold.total).toBe(20);
+  });
+});

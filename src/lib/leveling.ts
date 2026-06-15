@@ -102,7 +102,8 @@ export function picksUsed(advs: ChosenAdv[]): number {
 export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelDefaults): CharacterFile {
   const newLevel = file.level + 1;
   const next: CharacterFile = { ...file, level: newLevel };
-  next.thresholdBonus = (file.thresholdBonus ?? 0) + 1;
+  // Thresholds are level-based now (#242 item 9): Major = level, Severe = 2×level, derived in
+  // toSheetCharacter. No per-level thresholdBonus to accumulate.
 
   const activate = (ids: string[], add: string) => (ids.length < 5 ? [...ids, add] : ids);
   let domainIds = [...file.domainCardIds, plan.domainCardId];

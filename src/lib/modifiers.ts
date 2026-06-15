@@ -35,9 +35,22 @@ export interface CardEffect {
   delta?: number;
   byTier?: [number, number, number, number];
   dynamic?: 'proficiency' | 'halfAgility';
+  /**
+   * Damage-threshold mode (#242 item 9) — only meaningful for `majorThreshold` / `severeThreshold`:
+   * - `set`   — OVERRIDE the level-based base to `delta` (e.g. armor "8"). Only one set-major and one
+   *             set-severe may be enabled at once (the toggle layer enforces it); if more slip through,
+   *             the last in source order wins.
+   * - `bonus` (or undefined) — ADD `delta` on top of the base/set.
+   * Ignored for every non-threshold target (those are always additive).
+   */
+  mode?: 'set' | 'bonus';
   /** Optional human note (the rule text the effect came from) — shown in the Modifiers panel. */
   note?: string;
 }
+
+/** The two damage-threshold stats, modeled specially (set-or-bonus) rather than plain additive. */
+const THRESHOLD_TARGETS: EffectTarget[] = ['majorThreshold', 'severeThreshold'];
+const isThreshold = (t: EffectTarget) => (THRESHOLD_TARGETS as string[]).includes(t);
 
 /** A card's contribution to one stat, kept in application order so the panel can show provenance. */
 export interface Contribution {
@@ -111,9 +124,11 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
   const out = {} as SheetBreakdown;
   for (const t of EFFECT_TARGETS) out[t] = { base: base[t] ?? 0, contributions: [], total: base[t] ?? 0 };
 
-  // Pass 1: flat + tier-dependent effects.
+  // Pass 1: flat + tier-dependent effects. Threshold targets are handled in their own pass below
+  // (they are set-or-bonus, not plain additive), so skip them here.
   for (const src of sources) {
     for (const e of src.effects) {
+      if (isThreshold(e.target)) continue;
       const d = flatDelta(e, tier);
       if (d === null || d === 0) continue;
       const b = out[e.target];
@@ -121,6 +136,30 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
       b.contributions.push({ source: src.source, delta: d, note: e.note });
       b.total += d;
     }
+  }
+  // Threshold pass (#242 item 9): base is level-based (Major = level, Severe = 2×level, supplied in
+  // `base`). A `set` effect overrides that base (last enabled wins — the toggle layer keeps it to one);
+  // `bonus` effects add on top. Contributions are recorded so the Modifiers panel shows provenance.
+  for (const t of THRESHOLD_TARGETS) {
+    const b = out[t];
+    let setVal: number | null = null;
+    let setSource = '';
+    let setNote: string | undefined;
+    const bonuses: Contribution[] = [];
+    for (const src of sources) {
+      for (const e of src.effects) {
+        if (e.target !== t) continue;
+        const d = flatDelta(e, tier);
+        if (d === null) continue;
+        if (e.mode === 'set') { setVal = d; setSource = src.source; setNote = e.note; }
+        else if (d !== 0) bonuses.push({ source: src.source, delta: d, note: e.note });
+      }
+    }
+    if (setVal !== null) {
+      b.contributions.push({ source: setSource, delta: setVal - b.base, note: setNote ?? `set to ${setVal}` });
+      b.total = setVal;
+    }
+    for (const bn of bonuses) { b.contributions.push(bn); b.total += bn.delta; }
   }
   // Pass 2: dynamic effects (read finalized Proficiency / Agility from pass 1).
   for (const src of sources) {
