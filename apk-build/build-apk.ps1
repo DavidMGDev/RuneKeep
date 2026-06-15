@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.8.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.8.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.9.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.9.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.8'
-$notes = "RuneKeep v0.2.8 - polish pass. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: tokens now fade in only AFTER a card has fully stopped moving when you full-screen it (no more early jump). The per-card Modifiers sheet no longer exits the card when you tap inside it, and it's a bit taller. Empty card categories are skipped by the over-scroll and can't be enabled until you add a card; you can empty any category (it disables itself) but you can't delete your very last card. The 'Add card from catalog' screen is rebuilt as a swipeable CARD CAROUSEL showing the actual card art for domains, ancestries, communities, subclasses, and CLASS cards (class cards add for multiclassing without changing your stats) - and the scrolling there is fixed. All dimming is unified into one layer, so the rest-roll keypad is no longer hidden behind a dim and panels don't double-dim.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.9'
+$notes = "RuneKeep v0.2.9 - full-screen card interfaces. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: the Cards menu, New Card, and Add-from-catalog are now FULL-SCREEN interfaces with their own border (like Level Up) - fully opaque, you can't tap through them, and they only close with the Back/X button (no more accidental close when tapping inside, and nothing escapes past the border). The catalog is a swipeable card CAROUSEL showing the real card art (no redundant names) for domains, ancestries, communities, subclasses, and class cards; swipe to the card you want and press Select. The gold card shows a proper tile in the gallery now. In the Cards gallery you can tap to multi-select (then move or delete), or HOLD a card to pick it up and drag it to reorder it or move it to another category. Class cards can be added for multiclassing without changing your stats.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.8 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.9 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
