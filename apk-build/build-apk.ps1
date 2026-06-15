@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.7.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.7.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.8.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.8.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.7'
-$notes = "RuneKeep v0.2.7 - Bare Bones armor + UI/data fixes. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: the Valor 'Bare Bones' card now works as armor when enabled (base Armor Score = 3 + Strength, with the right damage thresholds for your tier). The Modifiers button no longer accidentally closes a card when tapped near the gear. Panels (the Cards menu, new-category dialog, pickers) only close when you tap OUTSIDE them. The Notes category opens on a real, deletable welcome note instead of a placeholder. The Cards gallery now lets you SELECT MULTIPLE cards and move or delete them in one go, and you can delete ANY card; 'Add card from catalog' now lists character cards (domains, ancestries, communities, subclasses) instead of loot/items. Short rests no longer auto-roll - you enter each d4 result on a keypad (1d4 + tier). The token drawer button on the Subclass/Ancestry/Community cards no longer hides under the status bar; tokens fade out and back in when you full-screen a card; short names fill their space; and the origin badges sit a touch lower for balance.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.8'
+$notes = "RuneKeep v0.2.8 - polish pass. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: tokens now fade in only AFTER a card has fully stopped moving when you full-screen it (no more early jump). The per-card Modifiers sheet no longer exits the card when you tap inside it, and it's a bit taller. Empty card categories are skipped by the over-scroll and can't be enabled until you add a card; you can empty any category (it disables itself) but you can't delete your very last card. The 'Add card from catalog' screen is rebuilt as a swipeable CARD CAROUSEL showing the actual card art for domains, ancestries, communities, subclasses, and CLASS cards (class cards add for multiclassing without changing your stats) - and the scrolling there is fixed. All dimming is unified into one layer, so the rest-roll keypad is no longer hidden behind a dim and panels don't double-dim.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.7 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.8 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
