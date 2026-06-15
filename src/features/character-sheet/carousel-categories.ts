@@ -12,16 +12,16 @@
 
 import type { CardCategory } from './card-data';
 
-/** Canonical ring order. The active ring is this list filtered to what's enabled, so order is stable
- *  regardless of which optional categories are present. */
-export const CATEGORY_ORDER: CardCategory[] = ['abilities', 'inventory', 'notes', 'wildshape'];
+/** Canonical ring order (#227: Notes sits AFTER Beastform). The active ring is this list filtered to
+ *  what's enabled, so order is stable regardless of which optional categories are present. */
+export const CATEGORY_ORDER: CardCategory[] = ['abilities', 'inventory', 'wildshape', 'notes'];
 
-/** Human label per category (indicator + a11y). */
+/** Human label per category (indicator + a11y). `wildshape` shows as "Beastform" (#227). */
 export const CATEGORY_LABEL: Record<CardCategory, string> = {
   abilities: 'Arsenal',
   inventory: 'Inventory',
   notes: 'Notes',
-  wildshape: 'Wild Shape',
+  wildshape: 'Beastform',
 };
 
 export interface RingOptions {

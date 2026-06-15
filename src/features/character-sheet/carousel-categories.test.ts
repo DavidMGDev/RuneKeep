@@ -10,19 +10,20 @@ describe('activeRing', () => {
   it('adds wildshape for a druid', () => {
     expect(activeRing({ isDruid: true })).toEqual(['abilities', 'inventory', 'wildshape']);
   });
-  it('is four categories for a druid with notes, in canonical order', () => {
-    expect(activeRing({ isDruid: true, showNotes: true })).toEqual(['abilities', 'inventory', 'notes', 'wildshape']);
+  it('is four categories for a druid with notes, Notes after Beastform', () => {
+    expect(activeRing({ isDruid: true, showNotes: true })).toEqual(['abilities', 'inventory', 'wildshape', 'notes']);
   });
 });
 
 describe('nextCategory', () => {
-  const ring = activeRing({ isDruid: true, showNotes: true });
+  const ring = activeRing({ isDruid: true, showNotes: true }); // [abilities, inventory, wildshape, notes]
   it('steps forward and wraps', () => {
     expect(nextCategory(ring, 'abilities', 1)).toBe('inventory');
-    expect(nextCategory(ring, 'wildshape', 1)).toBe('abilities');
+    expect(nextCategory(ring, 'wildshape', 1)).toBe('notes');
+    expect(nextCategory(ring, 'notes', 1)).toBe('abilities');
   });
   it('steps backward and wraps', () => {
-    expect(nextCategory(ring, 'abilities', -1)).toBe('wildshape');
+    expect(nextCategory(ring, 'abilities', -1)).toBe('notes');
     expect(nextCategory(ring, 'inventory', -1)).toBe('abilities');
   });
   it('with two categories, both directions are the other one (old toggle behavior)', () => {
