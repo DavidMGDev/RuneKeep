@@ -90,6 +90,9 @@ export function CardManagementPanel(props: Props) {
     return order && order.length ? [...order.filter((k) => avail.includes(k)), ...avail.filter((k) => !order.includes(k))] : avail;
   }, [isDruid, customCategories, order]);
   const enabledCount = ordered.filter((k) => !hiddenSet.has(k)).length;
+  // Total cards across all decks (#250 item 3): you can empty a category, but never delete the very
+  // last card overall.
+  const totalCards = useMemo(() => Object.values(decks).reduce((s, a) => s + (a?.length ?? 0), 0), [decks]);
 
   // sub-overlays
   const [createOpen, setCreateOpen] = useState(false);
@@ -125,7 +128,8 @@ export function CardManagementPanel(props: Props) {
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimStyle]}>
         <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
       </Animated.View>
-      <Animated.View style={boxStyle} onStartShouldSetResponder={() => true}>
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+      <Animated.View style={boxStyle}>
         <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: W, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 15 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
             <View style={{ flex: 1, paddingRight: 8 }}>
@@ -147,6 +151,7 @@ export function CardManagementPanel(props: Props) {
             {view === 'categories' ? (
               <CategoriesView
                 ordered={ordered}
+                decks={decks}
                 hiddenSet={hiddenSet}
                 enabledCount={enabledCount}
                 currentCategory={currentCategory}
@@ -174,15 +179,19 @@ export function CardManagementPanel(props: Props) {
           </ScrollView>
           {/* selection action bar (#248 item 5): appears on the Cards tab once cards are selected */}
           {view === 'cards' && selected.size > 0 ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
-              <Pressable onPress={clearSelect} hitSlop={6} accessibilityRole="button" accessibilityLabel="Clear selection"><Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold, textTransform: 'uppercase' }}>Clear</Text></Pressable>
-              <Text style={{ flex: 1, color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>{selected.size} selected</Text>
-              <RuneButton label="Move" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => setMoveOpen(true)} />
-              <RuneButton label="Delete" kind="primary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => setConfirmDel(true)} />
+            <View style={{ marginTop: 10, gap: 4 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Pressable onPress={clearSelect} hitSlop={6} accessibilityRole="button" accessibilityLabel="Clear selection"><Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold, textTransform: 'uppercase' }}>Clear</Text></Pressable>
+                <Text style={{ flex: 1, color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>{selected.size} selected</Text>
+                <RuneButton label="Move" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => setMoveOpen(true)} />
+                <RuneButton label="Delete" kind="primary" dense height={36} style={{ paddingHorizontal: 16 }} disabled={selected.size >= totalCards} onPress={() => setConfirmDel(true)} />
+              </View>
+              {selected.size >= totalCards ? <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, textAlign: 'right' }}>Keep at least one card — you can&apos;t delete them all.</Text> : null}
             </View>
           ) : null}
         </ChamferBox>
       </Animated.View>
+      </View>
 
       {/* ---- sub-overlays ---- */}
       {createOpen ? (
@@ -233,27 +242,30 @@ export function CardManagementPanel(props: Props) {
 }
 
 // ---------------- Categories view ----------------
-function CategoriesView({ ordered, hiddenSet, enabledCount, currentCategory, customCategories, onToggle, onQuickSwitch, onMoveUpDown, onEdit, onAskDelete, onCreate, onManageTypes }: {
-  ordered: string[]; hiddenSet: Set<string>; enabledCount: number; currentCategory: string; customCategories: CustomCategory[];
+function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCategory, customCategories, onToggle, onQuickSwitch, onMoveUpDown, onEdit, onAskDelete, onCreate, onManageTypes }: {
+  ordered: string[]; decks: Record<string, CardItem[]>; hiddenSet: Set<string>; enabledCount: number; currentCategory: string; customCategories: CustomCategory[];
   onToggle: (c: string) => void; onQuickSwitch: (c: string) => void; onMoveUpDown: (key: string, dir: -1 | 1) => void;
   onEdit: (c: CustomCategory) => void; onAskDelete: (c: CustomCategory) => void; onCreate: () => void; onManageTypes: () => void;
 }) {
   return (
     <>
       {ordered.map((key, idx) => {
-        const on = !hiddenSet.has(key);
         const builtin = isBuiltinCategory(key);
         const custom = customCategories.find((c) => c.id === key);
-        const locked = on && enabledCount <= 1;
+        // Empty categories (#250 item 3) can't be enabled or switched-to until a card is added; they
+        // never appear in the over-scroll ring. Shown OFF + the switch disabled.
+        const empty = (decks[key]?.length ?? 0) === 0;
+        const on = !hiddenSet.has(key) && !empty;
+        const locked = empty || (on && enabledCount <= 1);
         const isCurrent = key === currentCategory;
         return (
           <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 7, backgroundColor: on ? 'rgba(200,27,24,0.13)' : SCRIM, borderWidth: 1, borderColor: on ? 'rgba(200,27,24,0.55)' : GOLD_BORDER }}>
-            {/* quick-switch by tapping the glyph + label */}
-            <Pressable onPress={() => onQuickSwitch(key)} accessibilityRole="button" accessibilityLabel={`Switch to ${categoryLabel(key, customCategories)}`} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+            {/* quick-switch by tapping the glyph + label (disabled for empty categories) */}
+            <Pressable onPress={() => { if (!empty) onQuickSwitch(key); }} disabled={empty} accessibilityRole="button" accessibilityLabel={`Switch to ${categoryLabel(key, customCategories)}`} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9, opacity: empty ? 0.6 : 1 }}>
               <CatTile categoryKey={key} />
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 14.5, fontFamily: Body.bold }}>{categoryLabel(key, customCategories)}</Text>
-                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium }}>{builtin ? 'Built-in' : 'Custom'}{isCurrent ? '  ·  current' : ''}</Text>
+                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium }}>{builtin ? 'Built-in' : 'Custom'}{empty ? '  ·  empty' : isCurrent ? '  ·  current' : ''}</Text>
               </View>
             </Pressable>
             {/* reorder */}
@@ -389,7 +401,7 @@ function CategoryForm({ title, initialLabel = '', initialIcon = DEFAULT_CATEGORY
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10003, alignItems: 'center', justifyContent: 'center' }}>
       <Backdrop onPress={onCancel} />
-      <View onStartShouldSetResponder={() => true}>
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>{title}</Text>
         <ChamferBox chamfer={7} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 44, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 12 }}>
@@ -428,7 +440,7 @@ function MoveSheet({ count, ordered, customCategories, onMove, onClose }: {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10003, alignItems: 'center', justifyContent: 'center' }}>
       <Backdrop onPress={onClose} />
-      <View onStartShouldSetResponder={() => true}>
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase' }}>{`Move ${count} card${count > 1 ? 's' : ''}`}</Text>
         <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>Choose a category to move into.</Text>
@@ -453,7 +465,7 @@ function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: st
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10004, alignItems: 'center', justifyContent: 'center' }}>
       <Backdrop onPress={onCancel} />
-      <View onStartShouldSetResponder={() => true}>
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.4 }}>{title}</Text>
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18, marginTop: 8 }}>{body}</Text>

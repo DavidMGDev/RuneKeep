@@ -45,6 +45,9 @@ export function CardModifiersSheet({
   return (
     <OverlayShell title={label} subtitle={enabled ? 'Equipped — applying to your sheet' : 'Not equipped'} onClose={onClose} dismissOnScrim
       footer={<RuneButton label={enabled ? 'Disable card' : 'Enable card'} kind={enabled ? 'ghost' : 'primary'} height={44} onPress={() => { onToggle(cardId); onClose(); }} />}>
+      {/* #250 item 2: a comfortable min-height so the panel reads as a real sheet and the Disable/Enable
+          button sits well clear of the edge (the box-none layer already stops inside taps from closing). */}
+      <View style={{ minHeight: 96, gap: 10 }}>
       {effects.length === 0 ? (
         <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19 }}>
           This card has no stat modifiers. Enabling it just marks it as part of your loadout.
@@ -63,6 +66,7 @@ export function CardModifiersSheet({
           );
         })
       )}
+      </View>
     </OverlayShell>
   );
 }

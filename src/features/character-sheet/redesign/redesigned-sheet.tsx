@@ -29,7 +29,6 @@ import { RuneLoader } from '@/components/rune-loader';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
@@ -489,13 +488,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs } = useMemo(() => {
+  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], notesJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -550,6 +549,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .map((id) => lootById(id))
       .filter((l): l is NonNullable<typeof l> => !!l)
       .map((l) => ({ key: l.id, node: <ForgedCard title={l.name} kindLabel={l.kind === 'consumable' ? 'Consumable' : 'Loot'} body={l.text} accentDeep={Rune.panel} colorArt={itemColor(l.name)} multilineTitle /> }));
+    // Acquired CLASS cards (#250 item 4): a multiclass card forged from CLASS_CARDS, NO stat effects.
+    const acqClassJobs: Job[] = acquired
+      .filter((id) => id.startsWith('class-'))
+      .map((id) => ({ id, def: CLASS_CARDS.find((c) => c.key === id.slice(6)) }))
+      .filter((x): x is { id: string; def: NonNullable<(typeof CLASS_CARDS)[number]> } => !!x.def)
+      .map((x) => ({ key: x.id, id: x.id, node: <ForgedCard title={x.def.title} kindLabel="Class" body={x.def.body} accentDeep={classColor(x.def.key).deep} Banner={x.def.Banner} classKey={x.def.key} multilineTitle /> }));
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
     const cinv = CLASS_INVENTORY[cls];
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
@@ -590,11 +595,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           { key: `ws-${w.id}-1`, node: <ForgedCard title={w.name} kindLabel="Features" body={w.features} accentDeep={Rune.panel} colorArt={w.color} pageMark="2/2" multilineTitle /> },
         ])
       : [];
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs };
+    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs };
   }, [file]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...notesJobs, ...wildshapeFaceJobs],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs],
+    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -677,7 +682,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const acqWeaponItems = forgedItems(acqWeaponJobs);
     const acqArmorItems = forgedItems(acqArmorJobs);
     const acqLootItems = forgedItems(acqLootJobs);
-    const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...weaponItems, ...acqWeaponItems, ...expItems, ...arsenalCustom];
+    const acqClassItems = forgedItems(acqClassJobs); // acquired multiclass cards (#250 item 4)
+    const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
@@ -743,7 +749,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const fa = decks.abilities;
     const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
     return { decks, categoryMeta, originIndices };
-  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, notesJobs, wildshapeFaceJobs, featureSources]);
+  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
@@ -897,12 +903,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   );
   // Custom categories (#246) the player has created.
   const customCategories = useMemo(() => file?.customCategories ?? [], [file]);
-  // The active category ring (#214/#227/#246): available categories (built-in + custom) reordered by
-  // `categoryOrder`, minus hidden; Beastform only for Druids. `category` snaps back if it loses it.
-  const ring = useMemo(
-    () => activeRing({ isDruid: file?.className === 'druid', hidden, custom: customCategories, order: file?.categoryOrder }),
-    [file?.className, hidden, customCategories, file?.categoryOrder],
-  );
+  // The active category ring (#214/#227/#246/#250): available categories (built-in + custom) reordered
+  // by `categoryOrder`, minus hidden, minus EMPTY ones — an over-scroll never lands on a category with
+  // no cards (#250 item 3), so the player can't get trapped. Falls back to any non-empty category.
+  const ring = useMemo(() => {
+    const r = activeRing({ isDruid: file?.className === 'druid', hidden, custom: customCategories, order: file?.categoryOrder });
+    if (!carouselDecks) return r; // demo sheet (no file) — no per-deck counts, use the ring as-is
+    const nonEmpty = r.filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
+    if (nonEmpty.length) return nonEmpty;
+    const anyNonEmpty = availableCategories({ isDruid: file?.className === 'druid', custom: customCategories }).filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
+    return anyNonEmpty.length ? anyNonEmpty : ['abilities'];
+  }, [file?.className, hidden, customCategories, file?.categoryOrder, carouselDecks]);
   // Re-derive the runtime character from a new file, keeping in-play resource positions (clamped to the
   // new maxes). Used by edits that can change stats (e.g. deleting an enabled card).
   const commitFile = useCallback((next: CharacterFile) => {
@@ -1202,7 +1213,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
           {/* Unified overlay dim (#239 item 9): one fading scrim shared by the float-menu panels +
               the per-card modifier sheet, so transitions never flashbang the bright sheet. */}
-          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null} />
+          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null || damageOpen} />
           {/* damage-threshold keypad (#128): full-screen overlay above everything; on confirm it
               animates out, then bursts the lost hearts via the HeartTrack handle */}
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}

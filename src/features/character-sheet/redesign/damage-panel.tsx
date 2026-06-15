@@ -80,15 +80,16 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
     [charge, confirm, reduced],
   );
 
-  const dimStyle = useAnimatedStyle(() => ({ opacity: vis.value }));
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));
   const okStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + charge.value * 0.12 }] }));
   const okFill = useAnimatedStyle(() => ({ opacity: charge.value }));
 
+  // No own dark scrim (#250): the shared SheetDim darkens the screen; this sits ABOVE it. Transparent
+  // tap-catcher cancels; the box-none layer keeps inside taps off the catcher.
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 4500, alignItems: 'center', justifyContent: 'center' }]}>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, dimStyle]} />
+    <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={StyleSheet.absoluteFill} onPress={() => finish(false)} accessibilityRole="button" accessibilityLabel="Close damage panel" accessibilityHint="Cancels and lets you adjust hit points manually" />
+      <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View style={panelStyle}>
         <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.4} style={{ width: 264, padding: 16, gap: 12 }}>
           <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>Incoming damage</Text>
@@ -142,6 +143,7 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
           <Text style={{ color: Rune.muted, fontSize: 8.5, fontFamily: Body.medium, textAlign: 'center', letterSpacing: 0.4 }}>Hold OK to take the hit · tap outside to adjust manually</Text>
         </ChamferBox>
       </Animated.View>
+      </View>
     </View>
   );
 }
