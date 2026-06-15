@@ -737,6 +737,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         (decks[target] ??= []).push(item);
       }
     }
+    // Drag-drop order (#252): sort each category by the player's explicit card order; ids not listed
+    // keep their natural order after the listed ones (Hermes sort is stable).
+    const cardOrderMap = file.cardOrder ?? {};
+    for (const k of Object.keys(decks)) {
+      const ord = cardOrderMap[k];
+      if (ord?.length) {
+        const rank = new Map(ord.map((id, i) => [id, i]));
+        decks[k].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+      }
+    }
     const categoryMeta: Record<string, { label: string; icon?: string; builtin: boolean }> = {
       abilities: { label: 'Arsenal', builtin: true },
       inventory: { label: 'Inventory', builtin: true },
@@ -997,6 +1007,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
+  // Drag-drop apply (#252): `movedId` lands in `toCat` and `orderedIds` is the target category's full
+  // visible order (incl. movedId at its dropped index). Persist the override + the explicit order, and
+  // drop movedId from any other category's order list.
+  const onReorderCard = useCallback((movedId: string, toCat: string, orderedIds: string[]) => {
+    setFile((f) => {
+      if (!f) return f;
+      const cardCategory = { ...(f.cardCategory ?? {}), [movedId]: toCat };
+      const cardOrder = { ...(f.cardOrder ?? {}) };
+      for (const k of Object.keys(cardOrder)) if (k !== toCat) cardOrder[k] = cardOrder[k].filter((x) => x !== movedId);
+      cardOrder[toCat] = orderedIds;
+      const next = { ...f, cardCategory, cardOrder };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
   // Delete ANY cards (#248 item 5): strip authored/acquired/domain entries + enabled/override/tokens,
   // and add every id to `removedCardIds` so SYSTEM cards (origins, class feature, equipment, gold) drop
   // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
@@ -1191,10 +1216,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* Unload the sheet carousel while Level-Up (#203) or the Cards panel (#227) is open —
                   Level-Up owns the screen; the Cards panel may disable the current category, so the
                   hand must be down to land safely on an enabled one when it reopens. */}
-              {floatKind === 'level' || floatKind === 'cards' ? null : <CardCarousel />}
-              {/* card token board (#244): the drawer + draggable tokens over a focused card. A sibling
-                  of the carousel (not nested under its pan) so token gestures never fight the scroll. */}
-              {floatKind === 'level' || floatKind === 'cards' ? null : <CarouselTokenBoard />}
+              {/* Unload the carousel + token board for every FULL-SCREEN interface (#252): Level Up,
+                  Cards management, and New Card (incl. the catalog reached from it) all cover the sheet. */}
+              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
+              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CarouselTokenBoard />}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
             </DesignStage>
@@ -1242,6 +1267,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onDeleteCategory={onDeleteCategory}
               onReorder={onReorderCategories}
               onMoveCards={onMoveCards}
+              onReorderCard={onReorderCard}
               onDeleteCards={onDeleteCards}
               onAddCardInCategory={onAddCardInCategory}
               onAddType={onAddCardType}
