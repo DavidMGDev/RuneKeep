@@ -103,19 +103,24 @@ export function ForgedCard({
       {/* printed-card lower body — typeset against the DH scans (#103 impeccable typeset):
           extrabold caps title, regular near-black body, ~1.7 title:body ratio. */}
       {experience ? (
-        // Experience (#202): no body — the phrase IS the card. One auto-fitting block (up to 7 lines)
-        // that fills the space, big for short phrases, smaller for long ones; the bonus sits below.
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 16, paddingHorizontal: 16, paddingBottom: 26 }}>
-          <Text
-            numberOfLines={7}
-            adjustsFontSizeToFit
-            minimumFontScale={0.42}
-            style={{ color: Rune.inkText, fontSize: 23, lineHeight: 26, fontFamily: Display.bold, letterSpacing: 0.2, textAlign: 'center', flexShrink: 1 }}>
-            {title}
-          </Text>
+        // Experience (#202/#233): the phrase fills the area ABOVE a FIXED bonus pill. The title block
+        // is absolutely bounded (top..just above the pill) so it auto-fits within that band, and the
+        // +N pill is anchored at a constant height regardless of how many lines the title takes.
+        <View style={{ flex: 1 }}>
+          <View style={{ position: 'absolute', top: 16, left: 16, right: 16, bottom: 58, alignItems: 'center', justifyContent: 'center' }}>
+            <Text
+              numberOfLines={7}
+              adjustsFontSizeToFit
+              minimumFontScale={0.42}
+              style={{ color: Rune.inkText, fontSize: 23, lineHeight: 26, fontFamily: Display.bold, letterSpacing: 0.2, textAlign: 'center' }}>
+              {title}
+            </Text>
+          </View>
           {modifier != null ? (
-            <View style={{ marginTop: 12, paddingHorizontal: 14, paddingVertical: 3, backgroundColor: Rune.red }}>
-              <Text style={{ color: Rune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.5 }}>{modifier >= 0 ? `+${modifier}` : `${modifier}`}</Text>
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 30, alignItems: 'center' }}>
+              <View style={{ paddingHorizontal: 14, paddingVertical: 3, backgroundColor: Rune.red }}>
+                <Text style={{ color: Rune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.5 }}>{modifier >= 0 ? `+${modifier}` : `${modifier}`}</Text>
+              </View>
             </View>
           ) : null}
         </View>

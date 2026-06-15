@@ -71,3 +71,6 @@ scripts/_features_full.txt
 
 # stray editor/calibration backups
 *.bak
+
+# build log (transient)
+apk-build/last-build.log
