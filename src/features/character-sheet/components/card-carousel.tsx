@@ -65,6 +65,7 @@ import {
   SNAP_SPRING,
 } from '../carousel-geometry';
 import { Card, CardThumb } from './card';
+import { BakedTokenLayer, type PlacedToken } from './card-tokens';
 import { EnabledCorner } from './enabled-corner';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
@@ -144,9 +145,11 @@ interface SlotProps {
   enabled: boolean;
   /** Toggle this card's enabled state (#175): committed by a press-and-hold on the centered/focused card. */
   onToggle: (id: string) => void;
+  /** Cosmetic tokens stuck on this card (#244): drawn as a cheap baked LOD that rides the slot. */
+  tokens?: PlacedToken[];
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, onToggle }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, onToggle, tokens }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -252,6 +255,10 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   // the flat LOD fades OUT under the flip element (so the old card never shows behind a turning
   // card) and fades back IN before the card slides home (#110, owner). Crossfade of the same face.
   const lodFade = useAnimatedStyle(() => ({ opacity: 1 - fullscreenProgress.value }));
+  // Baked tokens (#244): the cheap LOD layer of stuck tokens. Visible in the deck + through every
+  // transition, but HIDDEN on the focused card so the interactive board owns those tokens (the
+  // board's HD/draggable copies take over, and a drop animation never doubles with a static twin).
+  const tokenFade = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value > 0.5 && Math.round(focusIndex.value) === index ? 0 : 1 }));
 
   // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close, OR (a
   // multi-face card) flip back/forward by which half you tapped (#110) — close by swipe-down/gear.
@@ -417,6 +424,12 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.26)' }, fillStyle]}>
             <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 2.5, backgroundColor: Rune.goldBright }} />
           </Animated.View>
+          {/* baked tokens (#244): the cheap LOD layer; hidden on the focused card (board takes over) */}
+          {tokens && tokens.length ? (
+            <Animated.View style={[StyleSheet.absoluteFill, tokenFade]} pointerEvents="none">
+              <BakedTokenLayer tokens={tokens} cardW={CARD_W} cardH={CARD_H} />
+            </Animated.View>
+          ) : null}
           {/* enabled corner check (#175): overlay on any equipped card, in both LOD and focused states */}
           {enabled ? <EnabledCorner width={CARD_W} height={CARD_H} /> : null}
         </View>
@@ -497,7 +510,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, toggleCard, showCardInfo } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, toggleCard, showCardInfo, cardTokens } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const ringLen = ring.length; // #233 item 6: no over-scroll switch when ≤1 category is enabled
@@ -841,6 +854,7 @@ export function CardCarousel() {
         registerPager={registerPager}
         enabled={enabledIds.has(deck[i].id)}
         onToggle={toggleCard}
+        tokens={cardTokens[deck[i].id]}
       />,
     );
   }

@@ -38,6 +38,8 @@ import { type CardCategory, type CardItem } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
+import { CarouselTokenBoard } from '../components/card-token-board';
+import type { PlacedToken } from '../components/card-tokens';
 import { ChargeTrack, type ChargeTrackHandle } from '../components/charge-track';
 import { HeartTrack, type HeartTrackHandle } from '../components/heart-track';
 import { SheetFrame } from '../components/sheet-frame';
@@ -935,6 +937,35 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     },
     [file, burstResources, pushToasts],
   );
+  // Card tokens (#244): cosmetic buttons stuck on cards, keyed by deck-card id. They never feed the
+  // modifier engine — pure decoration — so they don't re-derive `character`; they only persist.
+  const cardTokens = useMemo(() => file?.cardTokens ?? {}, [file]);
+  const placeToken = useCallback((cardId: string, token: PlacedToken) => {
+    setFile((f) => {
+      if (!f) return f;
+      const map = { ...(f.cardTokens ?? {}) };
+      map[cardId] = [...(map[cardId] ?? []), token];
+      const next = { ...f, cardTokens: map };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
+  const removeToken = useCallback((cardId: string, tokenId: string) => {
+    setFile((f) => {
+      if (!f) return f;
+      const cur = (f.cardTokens ?? {})[cardId];
+      if (!cur) return f;
+      const map = { ...(f.cardTokens ?? {}) };
+      const left = cur.filter((t) => t.id !== tokenId);
+      if (left.length) map[cardId] = left;
+      else delete map[cardId];
+      const next = { ...f, cardTokens: map };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
+  const setTokenColor = useCallback((color: string) => mutateFile({ tokenColor: color }), [mutateFile]);
+  const moveTokenDrawer = useCallback((x: number) => mutateFile({ tokenDrawerX: x }), [mutateFile]);
   const onHp = useCallback(
     // No overhealing past the character's TRUE maximum (#107) — not the slot capacity.
     (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.maxHp, n)) })),
@@ -964,7 +995,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} notesCards={notesCards} wildshapeCards={wildshapeCards} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId}>
+      <CarouselProvider abilitiesCards={abilitiesCards} inventoryCards={inventoryCards} notesCards={notesCards} wildshapeCards={wildshapeCards} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
@@ -994,6 +1025,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   Level-Up owns the screen; the Cards panel may disable the current category, so the
                   hand must be down to land safely on an enabled one when it reopens. */}
               {floatKind === 'level' || floatKind === 'cards' ? null : <CardCarousel />}
+              {/* card token board (#244): the drawer + draggable tokens over a focused card. A sibling
+                  of the carousel (not nested under its pan) so token gestures never fight the scroll. */}
+              {floatKind === 'level' || floatKind === 'cards' ? null : <CarouselTokenBoard />}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
             </DesignStage>
@@ -1041,7 +1075,20 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           ) : null}
           {/* origin card preview (#242 item 4): a standalone equippable copy, decoupled from the carousel */}
           {originPreview ? (
-            <OriginCardPreview source={originPreview.source} label={originPreview.label} enabled={enabledIds.has(originPreview.id)} onToggle={() => onToggleCard(originPreview.id)} onClose={() => setOriginPreview(null)} />
+            <OriginCardPreview
+              source={originPreview.source}
+              label={originPreview.label}
+              enabled={enabledIds.has(originPreview.id)}
+              onToggle={() => onToggleCard(originPreview.id)}
+              onClose={() => setOriginPreview(null)}
+              tokens={cardTokens[originPreview.id] ?? []}
+              drawerColor={file?.tokenColor}
+              drawerX={file?.tokenDrawerX}
+              onPlaceToken={(t) => placeToken(originPreview.id, t)}
+              onRemoveToken={(tid) => removeToken(originPreview.id, tid)}
+              onSetTokenColor={setTokenColor}
+              onMoveTokenDrawer={moveTokenDrawer}
+            />
           ) : null}
         </View>
        </FloatMenuProvider>
