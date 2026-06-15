@@ -43,7 +43,7 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds, category
   // The catalog (system gear/loot) suits the gear-bearing decks + custom categories, not Notes.
   const showsCatalog = onAcquire && category !== 'notes';
   const catalogBtn = showsCatalog
-    ? <RuneButton label="Add gear & loot from the catalog →" kind="ghost" dense height={36} onPress={() => setMode('catalog')} />
+    ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => setMode('catalog')} />
     : undefined;
   return <CardEditor kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" onSave={(d) => onSave(d, category)} onCancel={onCancel} />;
 }

@@ -27,9 +27,6 @@ import { CLASS_INVENTORY, itemOptionId, itemTitle } from './class-inventory-data
 import { itemColor } from './item-colors';
 import { type GoldAmount, GOLD_DEFAULT } from './gold-card';
 
-// Default art for a custom inventory item with no player image (#128, owner-provided).
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-export const ITEM_DEFAULT_ART = require('../../../assets/temp/ItemCardImage.jpg') as number;
 import { useForgedSnapshots } from './forged-snapshots';
 import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './straight-carousel';
 
@@ -605,7 +602,7 @@ export function CreateScreen() {
       const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
         id: it.id,
         label: it.title || 'Item',
-        custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+        custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       }));
       const add: StraightItem = { id: 'item-add', label: 'Add item', custom: <AddItemCard /> };
       return [...optionCards, ...customs, add];

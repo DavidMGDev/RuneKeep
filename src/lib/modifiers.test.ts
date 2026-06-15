@@ -23,6 +23,23 @@ describe('computeSheet', () => {
     expect(s.maxHp.total).toBe(6);
   });
 
+  it('Bare Bones (#248): set armorScore = 3 + Strength, set thresholds by tier', () => {
+    const base: BaseStats = { ...ZERO, strength: 2, majorThreshold: 1, severeThreshold: 2 };
+    const eff: CardEffect[] = [
+      { target: 'armorScore', mode: 'set', dynamic: 'strengthPlus3' },
+      { target: 'majorThreshold', mode: 'set', byTier: [9, 11, 13, 15] },
+      { target: 'severeThreshold', mode: 'set', byTier: [19, 24, 31, 38] },
+    ];
+    const t1 = computeSheet(base, 1, [src('Bare Bones', eff)]);
+    expect(t1.armorScore.total).toBe(5); // 3 + Strength(2)
+    expect(t1.majorThreshold.total).toBe(9);
+    expect(t1.severeThreshold.total).toBe(19);
+    const t2 = computeSheet({ ...base, strength: 4 }, 3, [src('Bare Bones', eff)]); // level 3 = tier 2
+    expect(t2.armorScore.total).toBe(7); // 3 + 4
+    expect(t2.majorThreshold.total).toBe(11);
+    expect(t2.severeThreshold.total).toBe(24);
+  });
+
   it('sums flat deltas and records each contribution with its source', () => {
     const s = computeSheet(ZERO, 1, [
       src('Tower Shield', [{ target: 'armorScore', delta: 2 }, { target: 'evasion', delta: -1 }]),

@@ -212,10 +212,13 @@ export interface TokenBoardProps {
   onRemove: (id: string) => void;
   onSetDrawerColor: (color: string) => void;
   onMoveDrawer: (x: number) => void;
+  /** Top offset for the drawer tab (#248 item 7): screen-space hosts pass the safe-area inset so the
+   *  tab clears the status bar / screen border, matching the in-stage board's inset. Defaults to 6. */
+  drawerTop?: number;
 }
 
 /** The reusable token surface — fills its parent; pass the focused card's `cardRect` in parent space. */
-export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawerX, scale, onPlace, onRemove, onSetDrawerColor, onMoveDrawer }: TokenBoardProps) {
+export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawerX, scale, onPlace, onRemove, onSetDrawerColor, onMoveDrawer, drawerTop = DRAWER_TOP }: TokenBoardProps) {
   const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
   const openP = useSharedValue(0);
@@ -227,7 +230,7 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
 
   const cardBase = cardRect.width * TOKEN_FRAC; // base diameter; per-kind scale applied per token
   const drawerLeft = Math.max(0, Math.min(width - TRAY_W, drawerX * (width - TRAY_W)));
-  const trayTop = DRAWER_TOP + TAB_H;
+  const trayTop = drawerTop + TAB_H;
 
   const place = useCallback(
     (kind: TokenKind, cx: number, cy: number) => {
@@ -323,7 +326,7 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
 
       {/* the tab — always shown; tap to open, drag to reposition */}
       <GestureDetector gesture={tabGesture}>
-        <Animated.View style={[{ position: 'absolute', left: drawerLeft + TRAY_W / 2 - TAB_W / 2, top: DRAWER_TOP, width: TAB_W, height: TAB_H, backgroundColor: 'rgba(14,17,22,0.94)', borderRadius: 8, borderWidth: 1.4, borderColor: Rune.goldEdge, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 }, tabStyle]} accessible accessibilityRole="button" accessibilityLabel="Token drawer. Tap to open, drag to move">
+        <Animated.View style={[{ position: 'absolute', left: drawerLeft + TRAY_W / 2 - TAB_W / 2, top: drawerTop, width: TAB_W, height: TAB_H, backgroundColor: 'rgba(14,17,22,0.94)', borderRadius: 8, borderWidth: 1.4, borderColor: Rune.goldEdge, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 }, tabStyle]} accessible accessibilityRole="button" accessibilityLabel="Token drawer. Tap to open, drag to move">
           <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: Rune.goldBright }} />
           <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: Rune.goldBright }} />
           <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: Rune.goldBright }} />
@@ -358,7 +361,9 @@ export function CarouselTokenBoard() {
       runOnJS(setSt)({ active: active === 1, idx });
     }
   });
-  const fade = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value }));
+  // Fade the board IN only over the last quarter of the focus fly (#248 item 8), after the card has
+  // settled — so tokens don't render mid-flight at the wrong scale and "jump".
+  const fade = useAnimatedStyle(() => ({ opacity: Math.max(0, Math.min(1, (fullscreenProgress.value - 0.75) / 0.25)) }));
 
   const deck = decks[category];
   const card = st.active ? deck[Math.min(deck.length - 1, Math.max(0, st.idx))] : null;

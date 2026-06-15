@@ -23,14 +23,13 @@ interface Props {
   customCategories: CustomCategory[];
   customTypes: string[];
   order?: string[];
-  isDeletable: (id: string) => boolean;
   onToggle: (c: CardCategory) => void;
   onCreateCategory: (label: string, icon: string) => void;
   onUpdateCategory: (id: string, patch: { label?: string; icon?: string }) => void;
   onDeleteCategory: (id: string) => void;
   onReorder: (order: string[]) => void;
-  onMoveCard: (cardId: string, categoryKey: string) => void;
-  onDeleteCard: (id: string) => void;
+  onMoveCards: (ids: string[], categoryKey: string) => void;
+  onDeleteCards: (ids: string[]) => void;
   onAddCardInCategory: (key: CardCategory) => void;
   onAddType: (label: string) => void;
   onDeleteType: (label: string) => void;
@@ -73,7 +72,7 @@ function TabButton({ label, active, onPress }: { label: string; active: boolean;
  * and manage the middle-ribbon card types. Built-in categories + types can't be deleted.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hidden, customCategories, customTypes, order, isDeletable, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCard, onDeleteCard, onAddCardInCategory, onAddType, onDeleteType, onClose } = props;
+  const { isDruid, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   const { height: screenH, width: screenW } = useWindowDimensions();
   const [view, setView] = useState<'categories' | 'cards' | 'types'>('categories');
@@ -96,8 +95,12 @@ export function CardManagementPanel(props: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<CustomCategory | null>(null);
   const [confirmDelCat, setConfirmDelCat] = useState<CustomCategory | null>(null);
-  const [selectedCard, setSelectedCard] = useState<{ id: string; from: string } | null>(null);
-  const [confirmDelCard, setConfirmDelCard] = useState<string | null>(null);
+  // Gallery multi-select (#248 item 5): tap cards to select; the action bar moves/deletes the lot.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const clearSelect = () => setSelected(new Set());
 
   const quickSwitch = (key: CardCategory) => {
     if (hiddenSet.has(key)) onToggle(key); // enabling a hidden one so it can become current
@@ -122,7 +125,7 @@ export function CardManagementPanel(props: Props) {
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimStyle]}>
         <Pressable style={{ flex: 1 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
       </Animated.View>
-      <Animated.View style={boxStyle}>
+      <Animated.View style={boxStyle} onStartShouldSetResponder={() => true}>
         <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: W, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 15 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
             <View style={{ flex: 1, paddingRight: 8 }}>
@@ -161,13 +164,23 @@ export function CardManagementPanel(props: Props) {
                 ordered={ordered}
                 decks={decks}
                 customCategories={customCategories}
-                onSelectCard={(id, from) => setSelectedCard({ id, from })}
+                selected={selected}
+                onToggleSelect={toggleSelect}
                 onAddCardInCategory={onAddCardInCategory}
               />
             ) : (
               <TypesView customTypes={customTypes} onAddType={onAddType} onDeleteType={onDeleteType} onBack={() => setView('categories')} />
             )}
           </ScrollView>
+          {/* selection action bar (#248 item 5): appears on the Cards tab once cards are selected */}
+          {view === 'cards' && selected.size > 0 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              <Pressable onPress={clearSelect} hitSlop={6} accessibilityRole="button" accessibilityLabel="Clear selection"><Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold, textTransform: 'uppercase' }}>Clear</Text></Pressable>
+              <Text style={{ flex: 1, color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>{selected.size} selected</Text>
+              <RuneButton label="Move" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => setMoveOpen(true)} />
+              <RuneButton label="Delete" kind="primary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => setConfirmDel(true)} />
+            </View>
+          ) : null}
         </ChamferBox>
       </Animated.View>
 
@@ -197,25 +210,22 @@ export function CardManagementPanel(props: Props) {
           onConfirm={() => { onDeleteCategory(confirmDelCat.id); setConfirmDelCat(null); }}
         />
       ) : null}
-      {selectedCard ? (
-        <CardActions
-          cardId={selectedCard.id}
-          item={(decks[selectedCard.from] ?? []).find((c) => c.id === selectedCard.id)}
+      {moveOpen ? (
+        <MoveSheet
+          count={selected.size}
           ordered={ordered}
           customCategories={customCategories}
-          deletable={isDeletable(selectedCard.id)}
-          onMove={(key) => { onMoveCard(selectedCard.id, key); setSelectedCard(null); }}
-          onAskDelete={() => { setConfirmDelCard(selectedCard.id); }}
-          onClose={() => setSelectedCard(null)}
+          onMove={(key) => { onMoveCards([...selected], key); clearSelect(); setMoveOpen(false); }}
+          onClose={() => setMoveOpen(false)}
         />
       ) : null}
-      {confirmDelCard ? (
+      {confirmDel ? (
         <Confirm
-          title="Delete this card?"
-          body="The card is permanently removed from your character. This can't be undone."
-          confirmLabel="Delete card"
-          onCancel={() => setConfirmDelCard(null)}
-          onConfirm={() => { onDeleteCard(confirmDelCard); setConfirmDelCard(null); setSelectedCard(null); }}
+          title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'}
+          body="The selected cards are permanently removed from your character. This can't be undone."
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDel(false)}
+          onConfirm={() => { onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }}
         />
       ) : null}
     </View>
@@ -273,12 +283,13 @@ function CategoriesView({ ordered, hiddenSet, enabledCount, currentCategory, cus
 }
 
 // ---------------- Cards gallery view ----------------
-function CardsView({ ordered, decks, customCategories, onSelectCard, onAddCardInCategory }: {
+function CardsView({ ordered, decks, customCategories, selected, onToggleSelect, onAddCardInCategory }: {
   ordered: string[]; decks: Record<string, CardItem[]>; customCategories: CustomCategory[];
-  onSelectCard: (id: string, from: string) => void; onAddCardInCategory: (key: string) => void;
+  selected: Set<string>; onToggleSelect: (id: string) => void; onAddCardInCategory: (key: string) => void;
 }) {
   return (
     <>
+      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>Tap cards to select, then move or delete them below.</Text>
       {ordered.map((key) => {
         const items = decks[key] ?? [];
         return (
@@ -298,17 +309,25 @@ function CardsView({ ordered, decks, customCategories, onSelectCard, onAddCardIn
               <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, paddingLeft: 2, paddingBottom: 4 }}>No cards here yet.</Text>
             ) : (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {items.map((item) => (
-                  <Pressable key={item.id} onPress={() => onSelectCard(item.id, key)} accessibilityRole="button" accessibilityLabel="Card. Tap to move or delete">
-                    <View style={{ width: 96, height: 134, borderRadius: 6, borderWidth: 1, borderColor: GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden' }}>
-                      {item.thumb ? (
-                        <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} />
-                      ) : (
-                        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>
-                      )}
-                    </View>
-                  </Pressable>
-                ))}
+                {items.map((item) => {
+                  const on = selected.has(item.id);
+                  return (
+                    <Pressable key={item.id} onPress={() => onToggleSelect(item.id)} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel="Card. Tap to select">
+                      <View style={{ width: 96, height: 134, borderRadius: 6, borderWidth: on ? 2.5 : 1, borderColor: on ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden' }}>
+                        {item.thumb ? (
+                          <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} />
+                        ) : (
+                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>
+                        )}
+                        {on ? (
+                          <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -370,6 +389,7 @@ function CategoryForm({ title, initialLabel = '', initialIcon = DEFAULT_CATEGORY
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10003, alignItems: 'center', justifyContent: 'center' }}>
       <Backdrop onPress={onCancel} />
+      <View onStartShouldSetResponder={() => true}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>{title}</Text>
         <ChamferBox chamfer={7} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 44, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 12 }}>
@@ -395,42 +415,36 @@ function CategoryForm({ title, initialLabel = '', initialIcon = DEFAULT_CATEGORY
           <RuneButton label="Save" kind="primary" height={42} style={{ flex: 1.4 }} disabled={!label.trim()} onPress={() => onSave(label.trim(), icon)} />
         </View>
       </ChamferBox>
+      </View>
     </View>
   );
 }
 
-function CardActions({ cardId, item, ordered, customCategories, deletable, onMove, onAskDelete, onClose }: {
-  cardId: string; item?: CardItem; ordered: string[]; customCategories: CustomCategory[]; deletable: boolean;
-  onMove: (key: string) => void; onAskDelete: () => void; onClose: () => void;
+/** Pick a destination category for the selected cards (#248 item 5). */
+function MoveSheet({ count, ordered, customCategories, onMove, onClose }: {
+  count: number; ordered: string[]; customCategories: CustomCategory[];
+  onMove: (key: string) => void; onClose: () => void;
 }) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10003, alignItems: 'center', justifyContent: 'center' }}>
       <Backdrop onPress={onClose} />
+      <View onStartShouldSetResponder={() => true}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
-        <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
-          <View style={{ width: 80, height: 112, borderRadius: 6, borderWidth: 1, borderColor: GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden' }}>
-            {item?.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" /> : null}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase' }}>Move card</Text>
-            <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3 }}>Choose a category to move this card into.</Text>
-          </View>
-        </View>
+        <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase' }}>{`Move ${count} card${count > 1 ? 's' : ''}`}</Text>
+        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>Choose a category to move into.</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
           {ordered.map((key) => (
             <Pressable key={key} onPress={() => onMove(key)} accessibilityRole="button" accessibilityLabel={`Move to ${categoryLabel(key, customCategories)}`}>
-              <View style={{ paddingHorizontal: 12, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 5, backgroundColor: SCRIM, borderWidth: 1, borderColor: GOLD_BORDER }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 36, borderRadius: 5, backgroundColor: SCRIM, borderWidth: 1, borderColor: GOLD_BORDER }}>
+                <CatTile categoryKey={key} size={22} />
                 <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.bold }}>{categoryLabel(key, customCategories)}</Text>
               </View>
             </Pressable>
           ))}
         </View>
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-          <RuneButton label="Close" kind="ghost" height={42} style={{ flex: 1 }} onPress={onClose} />
-          {deletable ? <RuneButton label="Delete" kind="secondary" height={42} style={{ flex: 1 }} onPress={onAskDelete} /> : null}
-        </View>
-        {!deletable ? <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular, textAlign: 'center', marginTop: 8 }}>System cards can be moved but not deleted.</Text> : null}
+        <RuneButton label="Cancel" kind="ghost" height={42} style={{ marginTop: 16 }} onPress={onClose} />
       </ChamferBox>
+      </View>
     </View>
   );
 }
@@ -439,6 +453,7 @@ function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: st
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10004, alignItems: 'center', justifyContent: 'center' }}>
       <Backdrop onPress={onCancel} />
+      <View onStartShouldSetResponder={() => true}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.4 }}>{title}</Text>
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18, marginTop: 8 }}>{body}</Text>
@@ -447,6 +462,7 @@ function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: st
           <RuneButton label={confirmLabel} kind="primary" height={42} style={{ flex: 1.3 }} onPress={onConfirm} />
         </View>
       </ChamferBox>
+      </View>
     </View>
   );
 }
