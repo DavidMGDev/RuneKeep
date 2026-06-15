@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.5.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.5.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.6.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.6.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.5'
-$notes = "RuneKeep v0.2.5 - card tokens. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: decorate any FULLSCREEN card with little 3D sewing-button tokens. When a card (or a Subclass / Ancestry / Community card from the badges) is full-screen, a drawer tab fades in at the top - tap it to open the tray and DRAG tokens onto the card, where they stick. There are three default buttons plus one custom-colour button: tap that button to cycle a random colour (it stays the same across every card), or, with the drawer open, tap a token already on a card to copy its colour back into the drawer. Hold a placed token (only in full-screen) to make it grow, spark, and drop off the card under gravity. Tokens are purely decorative - they never change a card's stats - and you can stack as many as you like; off the focused card they bake into a cheap layer that stays visible while you scroll and switch categories. The drawer can be slid along the top to wherever you like.`n`nThe card-carousel: a looping ring of categories (Arsenal / Inventory / Beastform / Notes, toggled in the Cards panel); press-and-hold to equip any card; New Card creates in the current category with a tappable type chip.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.6'
+$notes = "RuneKeep v0.2.6 - token fixes + Card Management. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nTokens: holding a placed token now removes it with a grow-and-drop animation instead of crashing, and tapping a placed token (drawer open) copies its colour without crashing. Tokens look like the same bevelled buttons whether a card is far away in the deck or full-screen, the drawer and the Modifiers button fade in instead of popping, and the three default tokens are subtly different sizes.`n`nCard Management: the float menu's Cards panel is now a full manager. CATEGORIES tab - turn categories on/off, reorder them, tap one to switch the carousel to it, and create your own custom categories with a name and an icon (delete custom ones, built-ins are protected). CARDS tab - an image gallery of every card grouped by category; move any card into a different category, delete a card (with confirmation), and add a new card straight into a category. You can also manage custom card 'types' (the middle ribbon), chosen from a picker of built-in + your own types. Custom categories work with over-scroll just like the built-in ones.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.5 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.6 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
