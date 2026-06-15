@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -7,6 +7,8 @@ import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 
 import { EnabledCorner } from '../components/enabled-corner';
+import { TokenBoard } from '../components/card-token-board';
+import { type PlacedToken, TOKEN_COLORS } from '../components/card-tokens';
 
 /**
  * Origin card preview (#242 item 4) — the Subclass / Ancestry / Community badges no longer drive the
@@ -21,12 +23,27 @@ export function OriginCardPreview({
   enabled,
   onToggle,
   onClose,
+  tokens,
+  drawerColor,
+  drawerX,
+  onPlaceToken,
+  onRemoveToken,
+  onSetTokenColor,
+  onMoveTokenDrawer,
 }: {
   source: number | { uri: string };
   label: string;
   enabled: boolean;
   onToggle: () => void;
   onClose: () => void;
+  /** Card tokens (#244): a screen-space board lets the player decorate this card too. */
+  tokens?: PlacedToken[];
+  drawerColor?: string;
+  drawerX?: number;
+  onPlaceToken?: (t: PlacedToken) => void;
+  onRemoveToken?: (id: string) => void;
+  onSetTokenColor?: (color: string) => void;
+  onMoveTokenDrawer?: (x: number) => void;
 }) {
   const { width: screenW, height: screenH } = useWindowDimensions();
   const cardW = Math.min(290, screenW * 0.72, (screenH * 0.6 * 5) / 7);
@@ -39,12 +56,15 @@ export function OriginCardPreview({
   }, [p, reduced]);
   const cardStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 40 }, { scale: 0.9 + 0.1 * p.value }] }));
   const ctrlStyle = useAnimatedStyle(() => ({ opacity: p.value }));
+  // The card isn't screen-centered (the controls sit below it), so MEASURE its real on-screen box and
+  // anchor the token board to that — otherwise tokens would land offset from the card (#244).
+  const [cardRect, setCardRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
       {/* transparent tap-catcher (the shared SheetDim darkens the screen); tap outside to close */}
       <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
-      <Animated.View style={[{ width: cardW, height: cardH }, cardStyle]} pointerEvents="none">
+      <Animated.View style={[{ width: cardW, height: cardH }, cardStyle]} pointerEvents="none" onLayout={(e) => { const l = e.nativeEvent.layout; setCardRect({ left: l.x, top: l.y, width: l.width, height: l.height }); }}>
         <Image source={source} style={{ width: '100%', height: '100%', borderRadius: 10 }} contentFit="contain" transition={120} />
         {enabled ? <EnabledCorner width={cardW} height={cardH} /> : null}
       </Animated.View>
@@ -60,6 +80,22 @@ export function OriginCardPreview({
           <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Close</Text>
         </Pressable>
       </Animated.View>
+      {/* token board (#244): the same drawer + draggable tokens, in screen space (scale 1) */}
+      {cardRect && onPlaceToken && onRemoveToken && onSetTokenColor && onMoveTokenDrawer ? (
+        <TokenBoard
+          cardRect={cardRect}
+          width={screenW}
+          height={screenH}
+          tokens={tokens ?? []}
+          drawerColor={drawerColor || TOKEN_COLORS[0]}
+          drawerX={drawerX ?? 0.5}
+          scale={1}
+          onPlace={onPlaceToken}
+          onRemove={onRemoveToken}
+          onSetDrawerColor={onSetTokenColor}
+          onMoveDrawer={onMoveTokenDrawer}
+        />
+      ) : null}
     </View>
   );
 }

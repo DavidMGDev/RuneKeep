@@ -1,8 +1,18 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
 import { type LayoutChangeEvent, type StyleProp, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { computeStageScale, type StageFit } from '@/lib/stage-scale';
+
+/**
+ * The uniform scale DesignStage applied to its children (#244): in-stage gestures report screen-px
+ * translations, so a descendant that drags something laid out in design-px must divide by this to
+ * match the finger. Default 1 for trees rendered outside any stage.
+ */
+const StageScaleContext = createContext(1);
+export function useStageScale(): number {
+  return useContext(StageScaleContext);
+}
 
 interface DesignStageProps {
   /** Width the children are authored at, in design pixels. */
@@ -72,7 +82,7 @@ export function DesignStage({
             },
             fade,
           ]}>
-          {children}
+          <StageScaleContext.Provider value={scale}>{children}</StageScaleContext.Provider>
         </Animated.View>
       )}
     </View>

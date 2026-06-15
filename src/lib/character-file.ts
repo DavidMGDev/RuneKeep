@@ -132,6 +132,13 @@ export interface CharacterFile {
   /** System equipment/loot the player picked up beyond creation (#175/#180): weapon/armor/loot ids
    *  from the rulebook catalog, forged into the decks so tier 2+ gear can be equipped + enabled. */
   acquiredCardIds?: string[];
+  /** Card tokens (#244): cosmetic "buttons" the player drags onto a fullscreen card, keyed by deck-card
+   *  id. Purely decorative — never read by the modifier engine. Additive; absent on old saves. */
+  cardTokens?: Record<string, import('@/features/character-sheet/components/card-tokens-data').PlacedToken[]>;
+  /** The custom-colour token drawer button's colour, persisted across all cards (#244). */
+  tokenColor?: string;
+  /** The token drawer's horizontal anchor along the top (#244), normalized 0..1. */
+  tokenDrawerX?: number;
   level: number;
 }
 

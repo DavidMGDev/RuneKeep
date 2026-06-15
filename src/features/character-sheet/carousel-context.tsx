@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { cancelAnimation, Easing, runOnJS, type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
+import type { PlacedToken } from './components/card-tokens';
 import { nextCategory } from './carousel-categories';
 import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, maxRotation, middleRotation, snapRot } from './carousel-geometry';
 
@@ -62,11 +63,22 @@ interface CarouselContextValue {
   toggleCard: (id: string) => void;
   /** Open the per-card modifier view (#175): the focused card's "Modifiers" button calls this. */
   showCardInfo: (id: string) => void;
+  // --- card tokens (#244): cosmetic buttons the player drags onto a fullscreen card. ---
+  /** Placed tokens per deck-card id (drives both the baked LOD layer and the interactive board). */
+  cardTokens: Record<string, PlacedToken[]>;
+  /** The custom-colour drawer button's current colour, persisted across all cards. */
+  tokenColor: string;
+  /** The drawer's horizontal anchor along the top (normalized 0..1). */
+  tokenDrawerX: number;
+  placeToken: (cardId: string, token: PlacedToken) => void;
+  removeToken: (cardId: string, tokenId: string) => void;
+  setTokenColor: (color: string) => void;
+  moveTokenDrawer: (x: number) => void;
 }
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, abilitiesCards, inventoryCards, notesCards, wildshapeCards, ring = ['abilities', 'inventory'], originIndices, enabledIds, onToggleCard, onShowCardInfo }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; notesCards?: CardItem[]; wildshapeCards?: CardItem[]; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void }) {
+export function CarouselProvider({ children, abilitiesCards, inventoryCards, notesCards, wildshapeCards, ring = ['abilities', 'inventory'], originIndices, enabledIds, onToggleCard, onShowCardInfo, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; abilitiesCards?: CardItem[]; inventoryCards?: CardItem[]; notesCards?: CardItem[]; wildshapeCards?: CardItem[]; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
   // A real character supplies its OWN full decks (only the cards it picked, #121) — no sample/
   // placeholder cards mixed in. The hardcoded CARD_DECKS are only the fallback for the demo sheet.
   const decks = useMemo<Record<CardCategory, CardItem[]>>(
@@ -247,6 +259,11 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
   const emptyEnabled = useMemo(() => new Set<string>(), []);
   const noopToggle = useCallback((_id: string) => {}, []);
   const noopInfo = useCallback((_id: string) => {}, []);
+  const emptyTokens = useMemo<Record<string, PlacedToken[]>>(() => ({}), []);
+  const noopPlace = useCallback((_cardId: string, _token: PlacedToken) => {}, []);
+  const noopRemoveToken = useCallback((_cardId: string, _tokenId: string) => {}, []);
+  const noopColor = useCallback((_color: string) => {}, []);
+  const noopDrawer = useCallback((_x: number) => {}, []);
   const value = useMemo<CarouselContextValue>(
     () => ({
       rotation,
@@ -270,8 +287,15 @@ export function CarouselProvider({ children, abilitiesCards, inventoryCards, not
       enabledIds: enabledIds ?? emptyEnabled,
       toggleCard: onToggleCard ?? noopToggle,
       showCardInfo: onShowCardInfo ?? noopInfo,
+      cardTokens: cardTokens ?? emptyTokens,
+      tokenColor: tokenColor ?? '',
+      tokenDrawerX: tokenDrawerX ?? 0.5,
+      placeToken: onPlaceToken ?? noopPlace,
+      removeToken: onRemoveToken ?? noopRemoveToken,
+      setTokenColor: onSetTokenColor ?? noopColor,
+      moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
