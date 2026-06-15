@@ -1,4 +1,4 @@
-import { DEFAULT_TOKEN_KINDS, hashStr, pickTokenColor, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
+import { DEFAULT_TOKEN_KINDS, hashStr, kindScale, pickTokenColor, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
 
 describe('card tokens — pure helpers (#244)', () => {
   describe('pickTokenColor', () => {
@@ -60,5 +60,14 @@ describe('card tokens — pure helpers (#244)', () => {
   it('exposes three draggable default kinds', () => {
     expect(DEFAULT_TOKEN_KINDS).toEqual(['wood', 'bone', 'iron']);
     expect(TOKEN_COLORS.length).toBeGreaterThan(1);
+  });
+
+  describe('kindScale', () => {
+    it('steps wood < bone < iron, colour standard', () => {
+      expect(kindScale('wood')).toBeLessThan(kindScale('bone'));
+      expect(kindScale('iron')).toBeGreaterThan(kindScale('bone'));
+      expect(kindScale('bone')).toBe(1);
+      expect(kindScale('color')).toBe(1);
+    });
   });
 });

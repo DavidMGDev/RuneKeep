@@ -139,6 +139,16 @@ export interface CharacterFile {
   tokenColor?: string;
   /** The token drawer's horizontal anchor along the top (#244), normalized 0..1. */
   tokenDrawerX?: number;
+  // --- card management (#246) — all additive; absent on old saves means "no customisation". ---
+  /** Player-created carousel categories: id, label, icon key (from the category icon library). */
+  customCategories?: import('@/features/character-sheet/carousel-categories').CustomCategory[];
+  /** Per-card category OVERRIDE (#246): deck-card id → category key. Moves a card to a different
+   *  (built-in or custom) category than its default. Cards without an entry stay in their default. */
+  cardCategory?: Record<string, string>;
+  /** Explicit category order for the over-scroll ring (#246): keys lead in this order, rest follow. */
+  categoryOrder?: string[];
+  /** Player-created card "type" labels (#246) for the middle ribbon, on top of the built-in types. */
+  customCardTypes?: string[];
   level: number;
 }
 

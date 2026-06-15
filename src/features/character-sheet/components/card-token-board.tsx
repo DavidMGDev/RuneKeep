@@ -25,6 +25,7 @@ import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geo
 import {
   DEFAULT_TOKEN_KINDS,
   hashStr,
+  kindScale,
   type PlacedToken,
   randomTokenColor,
   TOKEN_COLORS,
@@ -82,7 +83,7 @@ const FallingToken = memo(function FallingToken({ token, size, left, top, reduce
         { translateX: driftX * f },
         { translateY: f * f * (size * 9) }, // gravity accel — well past the card edge
         { scale: 1 + (reduced ? 0.18 : 0.55) * g - 0.25 * f },
-        { rotate: `${spin * f}turn` },
+        { rotate: `${spin * f * 360}deg` }, // RN transforms accept deg/rad only — NEVER 'turn' (crashes)
       ],
     };
   });
@@ -113,6 +114,7 @@ function SparkBit({ ang, dist, center, grow }: { ang: number; dist: number; cent
 /** A placed, interactive token: HOLD → drop (off the card), TAP (drawer open) → eyedrop its colour. */
 const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, onBeginDrop, onEyedrop }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; onBeginDrop: (t: PlacedToken) => void; onEyedrop: (color: string) => void }) {
   const press = useSharedValue(0);
+  const fill = tokenFill(token); // computed on JS — NEVER call tokenFill() inside a worklet (crashes)
   const hold = useMemo(
     () =>
       Gesture.LongPress()
@@ -138,16 +140,16 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         .maxDuration(260)
         .onEnd(() => {
           'worklet';
-          if (drawerOpen) runOnJS(onEyedrop)(tokenFill(token));
+          if (drawerOpen) runOnJS(onEyedrop)(fill);
         }),
-    [drawerOpen, onEyedrop, token],
+    [drawerOpen, onEyedrop, fill],
   );
   const gesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: 1 + press.value * 0.12 }] }));
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={[{ position: 'absolute', left, top, width: size, height: size }, style]}>
-        <TokenButton size={size} fill={tokenFill(token)} />
+        <TokenButton size={size} fill={fill} />
       </Animated.View>
     </GestureDetector>
   );
@@ -162,7 +164,7 @@ const DraggableSource = memo(function DraggableSource({ kind, fill, localX, loca
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const drag = useSharedValue(0);
-  const size = DRAWER_TOKEN;
+  const size = DRAWER_TOKEN * kindScale(kind);
   const drop = useCallback((cx: number, cy: number) => onPlace(kind, cx, cy), [onPlace, kind]);
   const pan = useMemo(
     () =>
@@ -223,32 +225,33 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
     openP.value = withTiming(open ? 1 : 0, { duration: 220, easing: Easing.out(Easing.cubic) });
   }, [open, openP]);
 
-  const cardSize = cardRect.width * TOKEN_FRAC;
+  const cardBase = cardRect.width * TOKEN_FRAC; // base diameter; per-kind scale applied per token
   const drawerLeft = Math.max(0, Math.min(width - TRAY_W, drawerX * (width - TRAY_W)));
   const trayTop = DRAWER_TOP + TAB_H;
 
   const place = useCallback(
     (kind: TokenKind, cx: number, cy: number) => {
       // Only land if the drop is over the card (a little slop). Else it just springs back.
-      const m = cardSize * 0.5;
+      const m = cardBase * 0.5;
       if (cx < cardRect.left - m || cx > cardRect.left + cardRect.width + m || cy < cardRect.top - m || cy > cardRect.top + cardRect.height + m) return;
       const x = Math.max(0, Math.min(1, (cx - cardRect.left) / cardRect.width));
       const y = Math.max(0, Math.min(1, (cy - cardRect.top) / cardRect.height));
       onPlace({ id: newTokenId(), kind, color: kind === 'color' ? drawerColor : undefined, x, y });
       focusHaptic();
     },
-    [cardRect, cardSize, drawerColor, onPlace],
+    [cardRect, cardBase, drawerColor, onPlace],
   );
 
   const beginDrop = useCallback(
     (t: PlacedToken) => {
-      const left = cardRect.left + t.x * cardRect.width - cardSize / 2;
-      const top = cardRect.top + t.y * cardRect.height - cardSize / 2;
+      const size = cardBase * kindScale(t.kind);
+      const left = cardRect.left + t.x * cardRect.width - size / 2;
+      const top = cardRect.top + t.y * cardRect.height - size / 2;
       setFalling((list) => [...list, { token: t, left, top }]);
       onRemove(t.id);
       tapHaptic();
     },
-    [cardRect, cardSize, onRemove],
+    [cardRect, cardBase, onRemove],
   );
   const fallingDone = useCallback((id: string) => setFalling((list) => list.filter((f) => f.token.id !== id)), []);
   const eyedrop = useCallback((color: string) => { onSetDrawerColor(color); tapHaptic(); }, [onSetDrawerColor]);
@@ -281,21 +284,24 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* placed tokens (interactive) */}
-      {shown.map((t) => (
-        <PlacedTokenView
-          key={t.id}
-          token={t}
-          size={cardSize}
-          left={cardRect.left + t.x * cardRect.width - cardSize / 2}
-          top={cardRect.top + t.y * cardRect.height - cardSize / 2}
-          drawerOpen={open}
-          onBeginDrop={beginDrop}
-          onEyedrop={eyedrop}
-        />
-      ))}
+      {shown.map((t) => {
+        const size = cardBase * kindScale(t.kind);
+        return (
+          <PlacedTokenView
+            key={t.id}
+            token={t}
+            size={size}
+            left={cardRect.left + t.x * cardRect.width - size / 2}
+            top={cardRect.top + t.y * cardRect.height - size / 2}
+            drawerOpen={open}
+            onBeginDrop={beginDrop}
+            onEyedrop={eyedrop}
+          />
+        );
+      })}
       {/* tokens dropping off the card */}
       {falling.map((f) => (
-        <FallingToken key={f.token.id} token={f.token} size={cardSize} left={f.left} top={f.top} reduced={reduced} onDone={fallingDone} />
+        <FallingToken key={f.token.id} token={f.token} size={cardBase * kindScale(f.token.kind)} left={f.left} top={f.top} reduced={reduced} onDone={fallingDone} />
       ))}
 
       {/* the drawer tray (sources) — drops below the tab when open */}
@@ -334,13 +340,17 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
  * layer inside the slots.
  */
 export function CarouselTokenBoard() {
-  const { fullscreenProgress, machineState, focusIndex, switching, decks, category, cardTokens, tokenColor, tokenDrawerX, placeToken, removeToken, setTokenColor, moveTokenDrawer } = useCarousel();
+  const { fullscreenProgress, focusIndex, switching, decks, category, cardTokens, tokenColor, tokenDrawerX, placeToken, removeToken, setTokenColor, moveTokenDrawer } = useCarousel();
   const scale = useStageScale();
   const [st, setSt] = useState<{ active: boolean; idx: number }>({ active: false, idx: 0 });
   const lastActive = useSharedValue(0);
   const lastIdx = useSharedValue(-1);
+  // Mount whenever a card is even slightly focused (so the board FADES in with fullscreenProgress
+  // instead of popping at a 0.5 threshold) and stays mounted through the close fade. A switch unmounts
+  // it. `machineState` isn't checked: it flips to 'expanded' the instant a close starts, which would
+  // pop the board out before the card finishes shrinking.
   useDerivedValue(() => {
-    const active = fullscreenProgress.value > 0.5 && switching.value !== 1 && machineState.value === 'fullscreen' ? 1 : 0;
+    const active = fullscreenProgress.value > 0.02 && switching.value !== 1 ? 1 : 0;
     const idx = Math.round(focusIndex.value);
     if (active !== lastActive.value || idx !== lastIdx.value) {
       lastActive.value = active;
