@@ -1,7 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -181,31 +182,50 @@ export function CardEditor({
   const scrimStyle = useAnimatedStyle(() => ({ opacity: p.value }));
   const contentStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 20 }] }));
 
-  // Keyboard-aware compaction (#210): while a field is focused, shrink the preview (from its top) and
-  // pull the fields up so the card + inputs + buttons live in the top ~40% (keyboard ~60%). onFocus
-  // drives it immediately (responsive); keyboardDidHide animates it back (covers closing via Back).
+  // Keyboard-aware compaction (#227): while typing, the card + fields + buttons must fit in the top
+  // ~55% (the keyboard takes ~45%, #227 item 2). The top gap collapses so the card rides up to ~10px
+  // below the UI border (item 1) — never off-screen. The card scale is COMPUTED from the space left
+  // after the fields, so on short screens it shrinks just enough; if that would leave it < 50px tall,
+  // it FADES OUT instead and fades back when typing ends (item 1).
+  const { height: screenH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const padFull = insets.top + 64; // resting top gap (keyboard closed)
+  const padCompact = insets.top + 12; // typing: card top ~10px below the border
+  // Height the fields column + buttons occupy below the card (approx; experiences have no body/effects).
+  const fieldsH = experienceMode ? 196 : 340;
+  const cardRoom = screenH * 0.55 - padCompact - fieldsH; // vertical space left for the card while typing
+  const fadeCard = cardRoom < 50; // too small to be worth showing → fade out instead of shrinking
+  const targetScale = fadeCard ? 0.2 : Math.max(0.32, Math.min(1, cardRoom / FORGED_H));
+
   const kb = useSharedValue(0);
   const KB = { duration: 240, easing: Easing.out(Easing.cubic) };
   const onFieldFocus = useCallback(() => {
     if (!reduced) kb.value = withTiming(1, KB);
   }, [kb, reduced]);
+  // Drive compaction off the keyboard itself (item 1): re-tapping an already-focused field re-opens
+  // the keyboard (no onFocus fires) but DOES fire keyboardDidShow — so the UI re-compacts; hiding it
+  // (Back / dismiss) animates back even though the field keeps its cursor.
   useEffect(() => {
-    const sub = Keyboard.addListener('keyboardDidHide', () => {
-      kb.value = withTiming(0, KB);
-    });
-    return () => sub.remove();
-  }, [kb]);
-  const topSpacer = useAnimatedStyle(() => ({ height: 180 - 156 * kb.value })); // 180 -> 24
+    if (reduced) return;
+    const show = Keyboard.addListener('keyboardDidShow', () => { kb.value = withTiming(1, KB); });
+    const hide = Keyboard.addListener('keyboardDidHide', () => { kb.value = withTiming(0, KB); });
+    return () => { show.remove(); hide.remove(); };
+  }, [kb, reduced]);
+  const topSpacer = useAnimatedStyle(() => ({ height: padFull + (padCompact - padFull) * kb.value }));
   const previewStyle = useAnimatedStyle(() => {
-    const scale = 1 - 0.52 * kb.value; // down to ~0.48 from the top
-    return { transform: [{ scale }], marginBottom: -FORGED_H * (1 - scale) }; // negative margin reclaims the freed space
+    const scale = 1 + (targetScale - 1) * kb.value; // 1 (resting) -> targetScale (typing)
+    return {
+      transform: [{ scale }],
+      marginBottom: -FORGED_H * (1 - scale), // negative margin reclaims the freed space, pulling fields up
+      opacity: fadeCard ? 1 - kb.value : 1, // fade the card out when there isn't room for it
+    };
   });
 
   return (
-    <View style={{ position: 'absolute', top: -80, bottom: -80, left: -60, right: -60, zIndex: 10000 }}>
-      <AnimatedPressable style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
-      <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
-        {/* top gap that collapses while typing so the card + fields ride up into the visible band (#210) */}
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
+      <AnimatedPressable style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
+      <Animated.ScrollView style={contentStyle} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {/* top gap: collapses while typing so the card + fields ride up to just below the border (#227) */}
         <Animated.View style={topSpacer} />
         {/* live preview — scales down from its TOP while a field is focused, the negative margin pulling
             the fields up so they sit above the keyboard */}
