@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.apk" (#220).
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.1.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.1.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2'
-$notes = "RuneKeep v0.2 - first release of the rebuilt card-carousel. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThe carousel is now a looping RING of card categories you over-scroll between: Arsenal, Inventory, an all-class Notes deck (toggle it on/off from the float menu), and - for Druids - a Wild Shape deck of every Beastform (all four tiers, each its own color). Assume a form and it applies its trait / Evasion / damage-threshold changes automatically and marks the Stress it costs (spilling to HP when Stress is full, never the killing blow); only one form is active at a time, you stay transformed when you browse other cards, and your name on the sheet becomes the creature so you never forget. New Card now creates in the category you're viewing and its type is a tappable chip (Note / Reminder / Story; Item / Tool; Ability / Skill / Weapon...). Long character names now fill the space they're given instead of shrinking to one tiny line.`n`nStill here from before: press-and-hold any card to equip/enable it; weapons, armor, ancestry, subclass, domain, loot, and your own cards apply their modifiers automatically; the Modifiers panel shows every stat's provenance; Rest and Level Up flows.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.1'
+$notes = "RuneKeep v0.2.1 - device fix pass on the card-carousel. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: the Druid category is now 'Beastform' and its cards are flip decks (overview + features pages) with normal-sized titles, so nothing is crammed tiny; switching categories no longer flickers the cards. The float-menu 'Cards' panel toggles any category on or off (Arsenal / Inventory / Beastform / Notes, at least one stays on), with Notes after Beastform in the loop. The card editor keeps the card on-screen while typing (assumes a 45% keyboard), re-compacts every time you tap a field, and fades the preview out gracefully on tiny screens; custom card titles take up to 70 characters; no card text overlaps the RuneKeep footer.`n`nThe v0.2 rebuild, still here: a looping ring of card categories you over-scroll between; press-and-hold to equip/enable any card; Beastform applies its trait/Evasion/threshold changes + Stress cost (never lethal) and renames you to the creature; New Card creates in the current category with a tappable type chip; long names fill their space.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.1 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
