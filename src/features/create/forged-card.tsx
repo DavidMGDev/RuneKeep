@@ -120,12 +120,12 @@ export function ForgedCard({
           ) : null}
         </View>
       ) : (
-        <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 15 }}>
+        <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 15, paddingBottom: 24 }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
             <Text
-              numberOfLines={multilineTitle ? 3 : 1}
+              numberOfLines={multilineTitle ? 4 : 1}
               adjustsFontSizeToFit={multilineTitle}
-              minimumFontScale={0.55}
+              minimumFontScale={0.42}
               style={{ flexShrink: 1, color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>
               {title}
             </Text>

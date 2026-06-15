@@ -266,7 +266,7 @@ export function CardEditor({
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
               multiline={experienceMode}
-              maxLength={experienceMode ? 160 : 36}
+              maxLength={experienceMode ? 160 : 70}
               style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0, textAlignVertical: experienceMode ? 'top' : 'center' }}
               accessibilityLabel={experienceMode ? 'Experience' : 'Card title'}
             />
