@@ -127,6 +127,13 @@ interface SlotProps {
   deckShift: SharedValue<number>;
   /** Gear over-scroll fan push (#174): design px the whole hand is shoved sideways past a deck end. */
   overscrollX: SharedValue<number>;
+  /** Live-deck reveal (#239 item 3): multiplies slot opacity so the deck is hidden while a switch
+   *  swaps it underneath (no old-deck flash), then cross-revealed at its final pose. Per-slot (not a
+   *  wrapper) so each slot keeps its own zIndex — the focused card must still rise over the veil. */
+  liveReveal: SharedValue<number>;
+  /** 1 while a category switch is in flight (#239): the slot's own tap/hold go inert so un-ready
+   *  cards can't be grabbed mid-transition. */
+  switching: SharedValue<number>;
   machineState: SharedValue<ExpandState>;
   focusIndex: SharedValue<number>;
   closeFullscreen: () => void;
@@ -138,7 +145,7 @@ interface SlotProps {
   onToggle: (id: string) => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, overscrollX, machineState, focusIndex, closeFullscreen, registerPager, enabled, onToggle }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, deckShift, overscrollX, liveReveal, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, onToggle }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -180,6 +187,11 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
       opacity = 1;
       z = 3000;
     }
+
+    // Hidden while a switch swaps the deck under the ghost, faded back in on reveal (#239 item 3).
+    // During a focus (fs > 0) there is never a switch, so liveReveal is 1 and the focused card stays
+    // fully opaque.
+    opacity *= liveReveal.value;
 
     return {
       transform: [{ translateX: x }, { translateY: y }, { rotateZ: `${tilt}rad` }, { scale }],
@@ -255,6 +267,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
       Gesture.Tap()
         .maxDuration(260)
         .onEnd((e) => {
+          if (switching.value === 1) return; // deck is mid-switch — not grabbable yet (#239 item 3)
           if (machineState.value === 'fullscreen') {
             if (item.interactive) return; // live card (#136 gold) keeps its taps; close via swipe/gear
             if (hasFaces) runOnJS(pageBy)(e.x < CARD_W / 2 ? -1 : 1);
@@ -271,7 +284,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             fullscreenProgress.value = withSpring(1, FS_SPRING);
           }
         }),
-    [index, count, hasFaces, item.interactive, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen],
+    [index, count, hasFaces, item.interactive, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen, switching],
   );
 
   // Press-and-hold to enable/disable a card (#175): only the CENTERED card (expanded) or the FOCUSED
@@ -301,6 +314,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         .maxDistance(12) // any real movement (a scroll) cancels — only a stationary hold equips
         .onBegin(() => {
           'worklet';
+          if (switching.value === 1) return; // don't arm a hold on a mid-switch deck (#239 item 3)
           const centered = Math.round(rotation.value / ANGLE_STEP) === index;
           const focused = Math.round(focusIndex.value) === index;
           const ms = machineState.value;
@@ -330,7 +344,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           armSignal.value = 0;
           holdArmed.value = 0;
         }),
-    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed, armSignal, armHapticDone],
+    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed, armSignal, armHapticDone, switching],
   );
   const slotGesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
   // The scan-fill overlay: a translucent gold sheet rising from the bottom with a bright leading edge.
@@ -586,18 +600,6 @@ export function CardCarousel() {
     }
   });
   const modBtnStyle = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value }));
-
-  // Live-deck reveal (#239 item 3): the live slots are hidden + non-interactive while a switch is in
-  // flight (the ghost fan shows the destination), then cross-revealed once the new deck is mounted at
-  // its final, usable pose — so the player never sees or grabs mid-transition cards.
-  const liveStyle = useAnimatedStyle(() => ({ opacity: liveReveal.value }));
-  const [deckInteractive, setDeckInteractive] = useState(true);
-  useAnimatedReaction(
-    () => switching.value,
-    (v, prev) => {
-      if (v !== prev) runOnJS(setDeckInteractive)(v !== 1);
-    },
-  );
 
   // Multi-face slots register their pager here so a horizontal swipe in fullscreen flips the
   // FOCUSED card (#110: the page state is per-slot, the pan is here — this is the small lift).
@@ -884,6 +886,8 @@ export function CardCarousel() {
         grindProgress={grindProgress}
         deckShift={deckShift}
         overscrollX={overscrollX}
+        liveReveal={liveReveal}
+        switching={switching}
         machineState={machineState}
         focusIndex={focusIndex}
         closeFullscreen={closeFullscreen}
@@ -907,10 +911,7 @@ export function CardCarousel() {
         {/* Gear art INSIDE the container so it interleaves with the stack: under the cards
             normally, above the fullscreen dim, under the focused card (#62 D). */}
         <GearDecoration />
-        {/* live deck — hidden + inert while a switch swaps it underneath (#239 item 3) */}
-        <Animated.View style={[StyleSheet.absoluteFill, liveStyle]} pointerEvents={deckInteractive ? 'box-none' : 'none'}>
-          {slots}
-        </Animated.View>
+        {slots}
         {/* Incoming deck preloaded off-screen as a ghost fan during a switch (#174) — rises + fades
             in over the outgoing hand, then the live deck takes its place at commit. Carries enabled
             corner marks too (#239 item 5) so equipped cards stay marked through the transition. */}
