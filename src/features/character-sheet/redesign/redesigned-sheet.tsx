@@ -27,9 +27,10 @@ import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
 import { RuneLoader } from '@/components/rune-loader';
 
-// Default art for an inventory item with no player image (#136) — same asset as creation.
+// A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
+// temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const ITEM_DEFAULT_ART = require('../../../../assets/temp/ItemCardImage.jpg') as number;
+const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
@@ -50,7 +51,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, type PlaceholderKind } from './float-menu';
-import { type CardDraft } from '@/components/card-editor';
+import { type CardDraft, randomCardColor } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
@@ -234,7 +235,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
         {/* FILL the box (#214): the largest font that fits — a SHORT one-word name grows up to fill
             the row, a LONG name shrinks + wraps to ≤2 lines (no more one tiny line). Glyphs are only
             sized, never stretched; a touch of letter-spacing for openness. */}
-        <FillText left={176} top={14} width={220} height={54} color={INK} family={Display.black} align="left" vAlign="center" uppercase letterSpacing={0.3} maxLines={2} minSize={15} maxSize={54}>{character.name}</FillText>
+        <FillText left={176} top={12} width={220} height={58} color={INK} family={Display.black} align="left" vAlign="center" uppercase letterSpacing={0.3} maxLines={2} minSize={15} maxSize={60}>{character.name}</FillText>
       </View>
       {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
       <DomainChip left={176} top={74} label={character.domains[0]} />
@@ -256,11 +257,12 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* #100: each badge opens ITS pinned origin card (last three of the abilities hand); if the
           Inventory deck is up, the switch animation plays first, then the card flies up. */}
       {/* taller, squarer badges (#128): they rise into the space the proficiency line used to take */}
-      <OctaBadge left={176} top={120} w={48} h={52} icon={Art.subclassIcon} label="Subclass" onPress={() => onOpenOrigin(0)} />
-      <OctaBadge left={254} top={120} w={48} h={52} icon={Art.ancestryIcon} label="Ancestry" onPress={() => onOpenOrigin(1)} />
-      <OctaBadge left={332} top={120} w={48} h={52} icon={Art.communityIcon} label="Community" onPress={() => onOpenOrigin(2)} />
-      <GoldRuleV left={239} top={130} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
-      <GoldRuleV left={317} top={130} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      {/* #248 item 10: badges + their dividers nudged 4px DOWN for clear air under the level/prof line. */}
+      <OctaBadge left={176} top={124} w={48} h={52} icon={Art.subclassIcon} label="Subclass" onPress={() => onOpenOrigin(0)} />
+      <OctaBadge left={254} top={124} w={48} h={52} icon={Art.ancestryIcon} label="Ancestry" onPress={() => onOpenOrigin(1)} />
+      <OctaBadge left={332} top={124} w={48} h={52} icon={Art.communityIcon} label="Community" onPress={() => onOpenOrigin(2)} />
+      <GoldRuleV left={239} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <GoldRuleV left={317} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
@@ -476,6 +478,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
+  // Default note (#248 item 4): a brand-new character (notes never touched) is seeded with ONE real,
+  // deletable note with a random colour. Guarded on `notes === undefined`, so deleting it (→ []) never
+  // re-seeds. Replaces the old synthetic placeholder that used the now-deleted temp item image.
+  useEffect(() => {
+    if (file && file.notes === undefined) {
+      mutateFile({ notes: [{ id: 'note-welcome', title: '', text: 'Use the button below the character portrait to open the cards menu, there you can delete this note and add new ones.', imageUri: null, color: randomCardColor() }] });
+    }
+  }, [file, mutateFile]);
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
@@ -539,7 +549,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const acqLootJobs: Job[] = acquired
       .map((id) => lootById(id))
       .filter((l): l is NonNullable<typeof l> => !!l)
-      .map((l) => ({ key: l.id, node: <ForgedCard title={l.name} kindLabel={l.kind === 'consumable' ? 'Consumable' : 'Loot'} body={l.text} accentDeep={Rune.panel} colorArt={itemColor(l.name)} fallbackArt={ITEM_DEFAULT_ART} multilineTitle /> }));
+      .map((l) => ({ key: l.id, node: <ForgedCard title={l.name} kindLabel={l.kind === 'consumable' ? 'Consumable' : 'Loot'} body={l.text} accentDeep={Rune.panel} colorArt={itemColor(l.name)} multilineTitle /> }));
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
     const cinv = CLASS_INVENTORY[cls];
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
@@ -549,7 +559,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
       key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
       id: it.id,
-      node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+      node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
     }));
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
@@ -557,7 +567,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const customCardJobs: CustomJob[] = (file.customCards ?? []).map((it) => ({
       key: `cc-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13 + (it.typeLabel?.length ?? 0) * 17) % 99991}`,
       id: it.id,
-      node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+      node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
       target: it.target,
     }));
@@ -565,7 +575,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const notesJobs: Job[] = (file.notes ?? []).map((it) => ({
       key: `note-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13 + (it.typeLabel?.length ?? 0) * 17) % 99991}`,
       id: it.id,
-      node: <ForgedCard title={it.title || 'Note'} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} fallbackArt={ITEM_DEFAULT_ART} multilineTitle />,
+      node: <ForgedCard title={it.title || 'Note'} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
     }));
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
@@ -673,17 +683,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const invItems = forgedItems(invJobs);
     // the GOLD card is LIVE + interactive (#136): its +/- adjusts character.gold in place. dummy
     // source/thumb are never drawn (the live node renders instead).
-    const goldItem = { id: 'gold', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, live: <GoldCard gold={character.gold} onChange={(g) => setCharacter((c) => ({ ...c, gold: g }))} />, interactive: true };
+    const goldItem = { id: 'gold', source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: <GoldCard gold={character.gold} onChange={(g) => setCharacter((c) => ({ ...c, gold: g }))} />, interactive: true };
     const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqWeaponItems, ...acqArmorItems, ...acqLootItems, ...invCustom];
-    // Notes (#214): the player's note cards; an empty deck shows one non-toggleable placeholder so
-    // the category never reads as broken and tells the player how to add the first note.
+    // Acquired CATALOG cards (#248 item 5): domain/ancestry/community/subclass picked from the catalog
+    // browser, added as their real card image (no forging). Skip ids already in a deck (e.g. an owned
+    // domain card) so there's never a duplicate id.
+    const existingIds = new Set<string>([...abilities, ...inv].map((i) => i.id));
+    const acqCatalogItems: CardItem[] = (file.acquiredCardIds ?? [])
+      .map((id) => cardById(id))
+      .filter((c): c is NonNullable<typeof c> => !!c && !existingIds.has(c.id))
+      .map((c) => ({ id: c.id, source: c.source, thumb: c.thumb }));
+    const invFull = [...inv, ...acqCatalogItems];
+    // Notes (#214/#248 item 4): just the player's note cards (forged from file.notes). A brand-new
+    // character is SEEDED with one real, deletable default note (see the seed effect) — no synthetic
+    // placeholder card and never the deleted temp item image.
     const notesItems = forgedItems(notesJobs);
-    // Empty Notes deck (#242 item 2): one default SAMPLE note rendered live with a pleasant color —
-    // never the temp placeholder image. It's `live` so the carousel draws the ForgedCard directly
-    // (no CardThumb / ITEM_DEFAULT_ART ever flashes).
-    const notesCards: CardItem[] = notesItems.length
-      ? notesItems
-      : [{ id: 'notes-empty', source: ITEM_DEFAULT_ART, thumb: ITEM_DEFAULT_ART, interactive: true, live: <ForgedCard title="Sample Note" kindLabel="Note" body="This is a note. Open the float menu and choose New Card to write your own — reminders, places, people, and story beats all live in this category." accentDeep={Rune.panel} colorArt={itemColor('Sample Note')} multilineTitle /> }];
+    const notesCards: CardItem[] = notesItems;
     // Beastform (#227): assemble each form's two forged faces into ONE multi-face flip card (id =
     // the form id, so enabling/toggling still targets it). Mirrors the class-feature card assembly.
     const wsTier = tierForLevel(file.level);
@@ -703,12 +718,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // custom categories + no overrides this yields the exact four built-in decks as before (additive).
     const customCats = file.customCategories ?? [];
     const override = file.cardCategory ?? {};
-    const base: Record<string, CardItem[]> = { abilities, inventory: inv, wildshape: wildshapeCards, notes: notesCards };
+    const removed = new Set(file.removedCardIds ?? []); // universal delete (#248 item 5)
+    const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, notes: notesCards };
     const validKeys = new Set<string>([...BUILTIN_CATEGORIES, ...customCats.map((c) => c.id)]);
     const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], notes: [] };
     for (const c of customCats) decks[c.id] = [];
     for (const cat of Object.keys(base)) {
       for (const item of base[cat]) {
+        if (removed.has(item.id)) continue; // deleted from the gallery → filtered out of every deck
         const ov = override[item.id];
         const target = ov && validKeys.has(ov) ? ov : cat;
         (decks[target] ??= []).push(item);
@@ -958,47 +975,42 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Reorder the ring (#246): persist the explicit category order.
   const onReorderCategories = useCallback((order: string[]) => mutateFile({ categoryOrder: order }), [mutateFile]);
   // Move a card to a different category (#246): a per-card override (built-in or custom key).
-  const onMoveCard = useCallback((cardId: string, categoryKey: string) => {
+  // Move one or more cards to a category (#246/#248): per-card override (built-in or custom key).
+  const onMoveCards = useCallback((ids: string[], categoryKey: string) => {
     setFile((f) => {
       if (!f) return f;
-      const next = { ...f, cardCategory: { ...(f.cardCategory ?? {}), [cardId]: categoryKey } };
+      const map = { ...(f.cardCategory ?? {}) };
+      for (const id of ids) map[id] = categoryKey;
+      const next = { ...f, cardCategory: map };
       void saveCharacter(next);
       return next;
     });
   }, []);
-  // Delete a player card (#246): remove it from whichever authored array holds it, plus its enabled
-  // state, category override, and tokens. Re-derives stats in case it was enabled.
-  const onDeleteCard = useCallback((id: string) => {
-    if (!file) return;
+  // Delete ANY cards (#248 item 5): strip authored/acquired/domain entries + enabled/override/tokens,
+  // and add every id to `removedCardIds` so SYSTEM cards (origins, class feature, equipment, gold) drop
+  // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
+  const onDeleteCards = useCallback((ids: string[]) => {
+    if (!file || ids.length === 0) return;
+    const del = new Set(ids);
     const cardCategory = { ...(file.cardCategory ?? {}) };
-    delete cardCategory[id];
     const cardTokens = { ...(file.cardTokens ?? {}) };
-    delete cardTokens[id];
+    for (const id of ids) { delete cardCategory[id]; delete cardTokens[id]; }
     const next: CharacterFile = {
       ...file,
-      customCards: (file.customCards ?? []).filter((c) => c.id !== id),
-      inventoryCustom: (file.inventoryCustom ?? []).filter((c) => c.id !== id),
-      notes: (file.notes ?? []).filter((c) => c.id !== id),
-      experiences: (file.experiences ?? []).filter((c) => c.id !== id),
-      acquiredCardIds: (file.acquiredCardIds ?? []).filter((x) => x !== id),
-      enabledCardIds: (file.enabledCardIds ?? []).filter((x) => x !== id),
+      customCards: (file.customCards ?? []).filter((c) => !del.has(c.id)),
+      inventoryCustom: (file.inventoryCustom ?? []).filter((c) => !del.has(c.id)),
+      notes: (file.notes ?? []).filter((c) => !del.has(c.id)),
+      experiences: (file.experiences ?? []).filter((c) => !del.has(c.id)),
+      acquiredCardIds: (file.acquiredCardIds ?? []).filter((x) => !del.has(x)),
+      domainCardIds: file.domainCardIds.filter((x) => !del.has(x)),
+      activeDomainCardIds: file.activeDomainCardIds?.filter((x) => !del.has(x)),
+      enabledCardIds: (file.enabledCardIds ?? []).filter((x) => !del.has(x)),
+      removedCardIds: [...new Set([...(file.removedCardIds ?? []), ...ids])],
       cardCategory,
       cardTokens,
     };
     commitFile(next);
   }, [file, commitFile]);
-  // Whether a card id is a player-authored / acquired card (only those can be DELETED; system cards
-  // like domains, origins, the class feature, starting equipment + the gold/sample tiles cannot).
-  const isDeletableCard = useCallback((id: string) => {
-    if (!file) return false;
-    return (
-      (file.customCards ?? []).some((c) => c.id === id) ||
-      (file.inventoryCustom ?? []).some((c) => c.id === id) ||
-      (file.notes ?? []).some((c) => c.id === id) ||
-      (file.experiences ?? []).some((c) => c.id === id) ||
-      (file.acquiredCardIds ?? []).includes(id)
-    );
-  }, [file]);
   // Card types (#246): add / remove the player's custom middle-ribbon types.
   const customCardTypes = useMemo(() => file?.customCardTypes ?? [], [file]);
   const onAddCardType = useCallback((label: string) => {
@@ -1213,14 +1225,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               order={file.categoryOrder}
               customCategories={customCategories}
               customTypes={customCardTypes}
-              isDeletable={isDeletableCard}
               onToggle={onToggleCategory}
               onCreateCategory={onCreateCategory}
               onUpdateCategory={onUpdateCategory}
               onDeleteCategory={onDeleteCategory}
               onReorder={onReorderCategories}
-              onMoveCard={onMoveCard}
-              onDeleteCard={onDeleteCard}
+              onMoveCards={onMoveCards}
+              onDeleteCards={onDeleteCards}
               onAddCardInCategory={onAddCardInCategory}
               onAddType={onAddCardType}
               onDeleteType={onDeleteCardType}

@@ -3,6 +3,8 @@ import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { Image } from 'expo-image';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 
@@ -46,6 +48,7 @@ export function OriginCardPreview({
   onMoveTokenDrawer?: (x: number) => void;
 }) {
   const { width: screenW, height: screenH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const cardW = Math.min(290, screenW * 0.72, (screenH * 0.6 * 5) / 7);
   const cardH = (cardW * 7) / 5;
 
@@ -86,6 +89,7 @@ export function OriginCardPreview({
           cardRect={cardRect}
           width={screenW}
           height={screenH}
+          drawerTop={Math.max(insets.top, 24) + 16}
           tokens={tokens ?? []}
           drawerColor={drawerColor || TOKEN_COLORS[0]}
           drawerX={drawerX ?? 0.5}

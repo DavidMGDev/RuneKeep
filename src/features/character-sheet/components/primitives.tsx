@@ -219,6 +219,10 @@ export function FillText({ left, top, width, height, color, family = Display.bla
           lineHeight: size * 1.04,
           fontFamily: family,
           textAlign: align,
+          textAlignVertical: 'center',
+          // Drop Android's extra font padding (#248 item 9) so the glyph fills the line box — a short
+          // name ("Joe") then sizes UP to fill the whole name box instead of floating at the top.
+          includeFontPadding: false,
           letterSpacing,
           textTransform: uppercase ? 'uppercase' : 'none',
           opacity: ready ? 1 : 0, // hide the search frames; reveal once the size is settled

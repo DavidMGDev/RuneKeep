@@ -149,6 +149,10 @@ export interface CharacterFile {
   categoryOrder?: string[];
   /** Player-created card "type" labels (#246) for the middle ribbon, on top of the built-in types. */
   customCardTypes?: string[];
+  /** Cards the player DELETED from the gallery (#248 item 5): any deck-card id here is filtered out of
+   *  every deck. Lets system cards (domains, origins, equipment, gold) be removed without corrupting
+   *  the file's structure. Authored/acquired cards are also dropped from their own arrays. */
+  removedCardIds?: string[];
   level: number;
 }
 

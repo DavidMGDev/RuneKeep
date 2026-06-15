@@ -7,9 +7,8 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { applyRestMoves, movesFor, restMoveById, type RestKind, type RestLogEntry, type RestMove, type RestSelection, tierForLevel } from '@/lib/rest';
 
 import type { Character } from '../character';
+import { NumberKeypad } from './number-keypad';
 import { OverlayShell } from './overlay-shell';
-
-const d4 = () => 1 + Math.floor(Math.random() * 4);
 
 function Stepper({ minus, disabled, onPress }: { minus?: boolean; disabled?: boolean; onPress: () => void }) {
   return (
@@ -46,12 +45,16 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
   const [picks, setPicks] = useState<string[]>([]);
   const [withParty, setWithParty] = useState(false);
   const [result, setResult] = useState<RestLogEntry[] | null>(null);
+  // Dice entry (#248 item 6): a queue of pick-indices that roll a die; the player enters each result on
+  // the keypad. `rolls` accumulates one number per dice pick, in pick order.
+  const [rolling, setRolling] = useState<{ queue: number[]; rolls: number[] } | null>(null);
   const tier = tierForLevel(character.level);
 
   const reset = () => {
     setKind(null);
     setPicks([]);
     setResult(null);
+    setRolling(null);
   };
   const addPick = (id: string) => setPicks((p) => (p.length < 2 ? [...p, id] : p));
   const removePick = (id: string) =>
@@ -61,15 +64,49 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
     });
   const countOf = (id: string) => picks.filter((p) => p === id).length;
 
-  const confirm = () => {
+  // Apply once every die has been entered (or immediately when there are no dice picks).
+  const finalize = (rolls: number[]) => {
+    let k = 0;
     const sels: RestSelection[] = picks.map((id) => {
       const m = restMoveById(id)!;
-      return { moveId: id, roll: m.dice ? d4() : undefined, withParty };
+      return { moveId: id, roll: m.dice ? rolls[k++] : undefined, withParty };
     });
     const res = applyRestMoves(character, tier, sels);
     onApply(res.character);
     setResult(res.log);
+    setRolling(null);
   };
+  // #248 item 6: never auto-roll. If any picked move has a die, ask the player for each result on the
+  // keypad (in pick order); otherwise apply straight away.
+  const confirm = () => {
+    const diceQueue = picks.map((id, i) => ({ id, i })).filter((x) => restMoveById(x.id)?.dice).map((x) => x.i);
+    if (diceQueue.length === 0) { finalize([]); return; }
+    setRolling({ queue: diceQueue, rolls: [] });
+  };
+  const submitRoll = (n: number) => {
+    setRolling((r) => {
+      if (!r) return r;
+      const rolls = [...r.rolls, n];
+      if (rolls.length >= r.queue.length) { finalize(rolls); return null; }
+      return { ...r, rolls };
+    });
+  };
+
+  // ---- dice-entry phase ----
+  if (rolling) {
+    const idx = rolling.rolls.length;
+    const move = restMoveById(picks[rolling.queue[idx]]);
+    return (
+      <NumberKeypad
+        title={`Dice ${idx + 1} of ${rolling.queue.length}`}
+        subtitle={`${move?.title ?? 'Roll'} — enter your 1d4`}
+        min={1}
+        max={4}
+        onSubmit={submitRoll}
+        onClose={() => setRolling(null)}
+      />
+    );
+  }
 
   // ---- result phase ----
   if (result) {

@@ -28,13 +28,15 @@ export type EffectTarget =
  * - `delta`   — a flat signed amount (most effects).
  * - `byTier`  — tier-dependent amount; the value is `byTier[tier - 1]` (tier 1..4).
  * - `dynamic` — computed from the resolved sheet AFTER the flat pass: `proficiency` = the character's
- *               final Proficiency; `halfAgility` = floor(final Agility / 2).
+ *               final Proficiency; `halfAgility` = floor(final Agility / 2); `strengthPlus3` = final
+ *               Strength + 3 (Bare Bones' unarmored Armor Score). With `mode:'set'` it REPLACES the
+ *               target's running total (e.g. armorScore) instead of adding.
  */
 export interface CardEffect {
   target: EffectTarget;
   delta?: number;
   byTier?: [number, number, number, number];
-  dynamic?: 'proficiency' | 'halfAgility';
+  dynamic?: 'proficiency' | 'halfAgility' | 'strengthPlus3';
   /**
    * Damage-threshold mode (#242 item 9) — only meaningful for `majorThreshold` / `severeThreshold`:
    * - `set`   — OVERRIDE the level-based base to `delta` (e.g. armor "8"). Only one set-major and one
@@ -161,16 +163,26 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
     }
     for (const bn of bonuses) { b.contributions.push(bn); b.total += bn.delta; }
   }
-  // Pass 2: dynamic effects (read finalized Proficiency / Agility from pass 1).
+  // Pass 2: dynamic effects (read finalized Proficiency / Agility / Strength from pass 1). A dynamic
+  // effect with `mode:'set'` REPLACES the running total (Bare Bones' Armor Score = 3 + Strength);
+  // otherwise it adds.
   for (const src of sources) {
     for (const e of src.effects) {
       if (!e.dynamic) continue;
       const b = out[e.target];
       if (!b) continue;
-      const d = e.dynamic === 'proficiency' ? out.proficiency.total : Math.floor(out.agility.total / 2);
-      if (d === 0) continue;
-      b.contributions.push({ source: src.source, delta: d, note: e.note });
-      b.total += d;
+      const d =
+        e.dynamic === 'proficiency' ? out.proficiency.total
+        : e.dynamic === 'strengthPlus3' ? out.strength.total + 3
+        : Math.floor(out.agility.total / 2);
+      if (e.mode === 'set') {
+        b.contributions.push({ source: src.source, delta: d - b.total, note: e.note });
+        b.total = d;
+      } else {
+        if (d === 0) continue;
+        b.contributions.push({ source: src.source, delta: d, note: e.note });
+        b.total += d;
+      }
     }
   }
   // Apply caps.

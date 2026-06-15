@@ -258,7 +258,12 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   // Baked tokens (#244): the cheap LOD layer of stuck tokens. Visible in the deck + through every
   // transition, but HIDDEN on the focused card so the interactive board owns those tokens (the
   // board's HD/draggable copies take over, and a drop animation never doubles with a static twin).
-  const tokenFade = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value > 0.5 && Math.round(focusIndex.value) === index ? 0 : 1 }));
+  const tokenFade = useAnimatedStyle(() => {
+    if (Math.round(focusIndex.value) !== index) return { opacity: 1 };
+    // On the focused card, FADE the baked tokens OUT over the first quarter of the focus fly (the
+    // interactive board fades them back in over the last quarter) — no jump/rerender pop (#248 item 8).
+    return { opacity: Math.max(0, 1 - fullscreenProgress.value / 0.25) };
+  });
 
   // Tap a card: compact → fan open; expanded → fly THIS card to focus; focused → close, OR (a
   // multi-face card) flip back/forward by which half you tapped (#110) — close by swipe-down/gear.
@@ -645,6 +650,9 @@ export function CardCarousel() {
           // Touch began on the inner-gear pad? (coords are design px — the container IS the
           // 412x892 design box.) Grinding tightens the fan only from the expanded hand.
           padTouch.value = e.x >= PAD_X && e.x <= PAD_X + PAD_W && e.y >= PAD_Y && e.y <= PAD_Y + PAD_H;
+          // Never treat a touch on the focused card's Modifiers button as a gear-pad tap (#248 item 2):
+          // it would otherwise close+collapse the card alongside opening the modifiers.
+          if (machineState.value === 'fullscreen' && e.x >= 106 && e.x <= 306 && e.y >= 768 && e.y <= 814) padTouch.value = false;
           padWasExpanded.value = machineState.value === 'expanded';
           if (padTouch.value && padWasExpanded.value) grindProgress.value = withTiming(1, { duration: 160 });
         })
@@ -878,11 +886,13 @@ export function CardCarousel() {
         <FocusOverlay />
         {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view.
             Sits BELOW the multi-page page dots (#233 item 3) so it never collides with them. */}
-        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 770, 200, 40), { zIndex: 3500, alignItems: 'center' }, modBtnStyle]}>
+        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 770, 200, 40), { zIndex: 3500 }, modBtnStyle]}>
           {/* kept MOUNTED whenever there's a focusable card so it FADES with fullscreenProgress (no
-              pop). pointerEvents above gates taps to the focused state. */}
+              pop). The Pressable fills the whole box (no hitSlop into the gear pad below) so a tap
+              here ALWAYS opens the modifiers and is CONSUMED — it never falls through to the focus
+              veil (which would close the card) or the gear (#248 item 2). */}
           {deck[c] && !deck[c].interactive ? (
-            <Pressable onPress={() => showCardInfo(deck[c].id)} hitSlop={10} accessibilityRole="button" accessibilityLabel="View this card's modifiers">
+            <Pressable onPress={() => showCardInfo(deck[c].id)} accessibilityRole="button" accessibilityLabel="View this card's modifiers" style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
               <ChamferBox chamfer={9} fill="rgba(14,17,22,0.95)" stroke={Rune.goldEdge} strokeWidth={1.4} style={{ paddingHorizontal: 18, height: 40, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Modifiers</Text>
               </ChamferBox>
