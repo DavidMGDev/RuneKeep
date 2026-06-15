@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.4.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.4.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.5.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.5.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.4'
-$notes = "RuneKeep v0.2.4 - fourth device fix pass. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: Druid Beastform now only shows forms of your current tier or lower. Notes always opens on a clean sample-note card (no placeholder image). The card-category switch was rebuilt with no ghost copy - the new deck is fully loaded off-screen, then rises into view already usable while the gear and the portrait icon change at the same moment (no frozen cards, no jump). The Subclass / Ancestry / Community badges now pop up a standalone copy of that card that fades in and can be equipped or unequipped, without disturbing the carousel. You can author custom Armor from the Inventory category, and New Card is blocked inside Beastform. Level Up and in-sheet card creation now sit in a proper bordered panel, and the 'effects when enabled' modifier picker is rebuilt into a full-screen list (Max HP, Max Stress, Set/Bonus Major & Severe Threshold, and more). Damage thresholds were redesigned: your base is Major = level and Severe = 2x level; armor or custom cards SET them (only one set-major and one set-severe at a time) or add a bonus - the Modifiers panel shows the base, the set, and the bonuses.`n`nThe card-carousel: a looping ring of categories (Arsenal / Inventory / Beastform / Notes, toggled in the Cards panel); press-and-hold to equip any card; New Card creates in the current category with a tappable type chip.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.5'
+$notes = "RuneKeep v0.2.5 - card tokens. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: decorate any FULLSCREEN card with little 3D sewing-button tokens. When a card (or a Subclass / Ancestry / Community card from the badges) is full-screen, a drawer tab fades in at the top - tap it to open the tray and DRAG tokens onto the card, where they stick. There are three default buttons plus one custom-colour button: tap that button to cycle a random colour (it stays the same across every card), or, with the drawer open, tap a token already on a card to copy its colour back into the drawer. Hold a placed token (only in full-screen) to make it grow, spark, and drop off the card under gravity. Tokens are purely decorative - they never change a card's stats - and you can stack as many as you like; off the focused card they bake into a cheap layer that stays visible while you scroll and switch categories. The drawer can be slid along the top to wherever you like.`n`nThe card-carousel: a looping ring of categories (Arsenal / Inventory / Beastform / Notes, toggled in the Cards panel); press-and-hold to equip any card; New Card creates in the current category with a tappable type chip.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.4 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.5 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
