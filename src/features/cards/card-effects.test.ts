@@ -24,7 +24,12 @@ describe('effectsForCardId', () => {
     expect(effectsForCardId('wpn-greatsword')).toEqual([{ target: 'evasion', delta: -1 }]);
   });
   it('resolves armor and catalog cards', () => {
-    expect(effectsForCardId('arm-gambeson')).toEqual([{ target: 'evasion', delta: 1 }]);
+    // Armor now also SETS the damage thresholds when enabled (#242 item 9), parsed from "5 / 11".
+    expect(effectsForCardId('arm-gambeson')).toEqual([
+      { target: 'evasion', delta: 1 },
+      { target: 'majorThreshold', mode: 'set', delta: 5 },
+      { target: 'severeThreshold', mode: 'set', delta: 11 },
+    ]);
     expect(effectsForCardId('ancestry-giant')[0]).toMatchObject({ target: 'maxHp', delta: 1 });
   });
   it('resolves a player-authored custom card from the file', () => {
@@ -43,10 +48,22 @@ describe('effectsForCardId', () => {
 });
 
 describe('toSheetCharacter with enabled cards', () => {
-  it('matches the legacy derivation when nothing is enabled', () => {
-    const c = toSheetCharacter(baseFile());
-    expect(c.damageThresholds).toEqual({ major: 7, severe: 15 }); // chainmail base, level 1 (+0)
+  it('base thresholds are level-based when no armor is enabled (#242)', () => {
+    const c = toSheetCharacter(baseFile()); // level 1, armor NOT enabled
+    expect(c.damageThresholds).toEqual({ major: 1, severe: 2 }); // Major = level, Severe = 2×level
     expect(c.armorScore).toBe(4);
+  });
+
+  it('enabling armor SETS the thresholds; a bonus card stacks on top (#242)', () => {
+    const set = toSheetCharacter(baseFile({ enabledCardIds: ['arm-chainmail'] })); // 7 / 15
+    expect(set.damageThresholds).toEqual({ major: 7, severe: 15 });
+    const bonus = toSheetCharacter(
+      baseFile({
+        customCards: [{ id: 'cc-thr', title: 'Wardstone', text: '', imageUri: null, target: 'inventory', effects: [{ target: 'majorThreshold', mode: 'bonus', delta: 2 }] }],
+        enabledCardIds: ['arm-chainmail', 'cc-thr'],
+      }),
+    );
+    expect(bonus.damageThresholds).toEqual({ major: 9, severe: 15 }); // set 7 + bonus 2
   });
 
   it('applies an enabled armor + shield + ancestry to the derived sheet', () => {
@@ -61,9 +78,9 @@ describe('toSheetCharacter with enabled cards', () => {
     expect(c.maxHp).toBe(8);
   });
 
-  it('applies an enabled subclass threshold passive', () => {
+  it('applies an enabled subclass threshold passive as a bonus on the level-based base', () => {
     const c = toSheetCharacter(baseFile({ enabledCardIds: ['subclass-stalwart-1-foundation'] }));
-    expect(c.damageThresholds).toEqual({ major: 8, severe: 16 }); // +1 / +1
+    expect(c.damageThresholds).toEqual({ major: 2, severe: 3 }); // base 1/2 + bonus +1/+1
   });
 
   it('never exceeds the HP cap of 12', () => {

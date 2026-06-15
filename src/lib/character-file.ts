@@ -177,10 +177,10 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const ancestry = cardById(file.ancestryCardId);
   const community = cardById(file.communityCardId);
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  // Armor (#128): the chosen card sets the damage thresholds (used VERBATIM, no level bonus per
-  // owner) and the base score = how many armor slots are enabled (the rest stay locked/disabled).
+  // Armor (#128/#242): the chosen card's base score = how many armor slots are enabled (the rest stay
+  // locked). Damage thresholds are NO LONGER armor-derived at the base — see the level-based base below
+  // (#242 item 9); armor SETS thresholds via its effects only when it is enabled.
   const armor = file.armorId ? armorById(file.armorId) : undefined;
-  const [tMajor, tSevere] = (armor?.thresholds ?? '0 / 0').split('/').map((n) => parseInt(n.trim(), 10) || 0);
   const baseScore = armor?.baseScore ?? 0;
   const ARMOR_SLOTS = 12;
   // Settings/level-up overrides (#166/#167) layer on the class/creation defaults; modifiers add on top.
@@ -202,8 +202,10 @@ export function toSheetCharacter(file: CharacterFile): Character {
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
-    majorThreshold: tMajor + (file.thresholdBonus ?? 0), // +1/level (#167)
-    severeThreshold: tSevere + (file.thresholdBonus ?? 0),
+    // Base thresholds are level-based (#242 item 9): Major = level, Severe = 2×level. Cards SET (armor /
+    // custom) or BONUS them via effects when enabled; the engine resolves that in computeSheet.
+    majorThreshold: file.level,
+    severeThreshold: file.level * 2,
   };
   const sources: EffectSource[] = (file.enabledCardIds ?? [])
     .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
@@ -251,7 +253,6 @@ export function toSheetCharacter(file: CharacterFile): Character {
 export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').SheetBreakdown {
   const data = CLASS_DATA[file.className];
   const armor = file.armorId ? armorById(file.armorId) : undefined;
-  const [tMajor, tSevere] = (armor?.thresholds ?? '0 / 0').split('/').map((n) => parseInt(n.trim(), 10) || 0);
   const baseScore = armor?.baseScore ?? 0;
   const baseTraits = file.traits ?? SAMPLE_CHARACTER.traits;
   const base: BaseStats = {
@@ -267,8 +268,8 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0),
-    majorThreshold: tMajor + (file.thresholdBonus ?? 0),
-    severeThreshold: tSevere + (file.thresholdBonus ?? 0),
+    majorThreshold: file.level,
+    severeThreshold: file.level * 2,
   };
   const sources: EffectSource[] = (file.enabledCardIds ?? [])
     .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))

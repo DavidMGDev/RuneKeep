@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.3.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.3.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.4.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.4.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.3'
-$notes = "RuneKeep v0.2.3 - third device fix pass. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: the equipped marker now sits in a card's top-right corner, and stat toasts are capped to the newest 5 (no endless stacking). The card-category switch was reworked - the carousel stays hidden until the new deck is fully loaded (contents + equip marks) and at its final, usable position, so cards never flash in the wrong spot or feel 'fake' mid-transition; equipped cards keep their corner mark throughout, and the gold gear eases to its new rotation instead of snapping. Level Up now keeps the color and image you set on a new Experience, animates a gained Max HP heart filling, and pops toasts for what changed. The gear and loot catalog scrolls smoothly, and items with a modifier just show it instead of being highlighted. Every sheet overlay now shares one screen dim that fades in and out - opening/closing the float menu, picking an option, and moving between panels no longer flash the bright sheet.`n`nThe card-carousel rebuild, still here: a looping ring of categories (Arsenal / Inventory / Beastform / Notes, toggled in the Cards panel); press-and-hold to equip any card; Druid Beastform flip-cards apply their changes + Stress cost; New Card creates in the current category with a tappable type chip.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.4'
+$notes = "RuneKeep v0.2.4 - fourth device fix pass. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: Druid Beastform now only shows forms of your current tier or lower. Notes always opens on a clean sample-note card (no placeholder image). The card-category switch was rebuilt with no ghost copy - the new deck is fully loaded off-screen, then rises into view already usable while the gear and the portrait icon change at the same moment (no frozen cards, no jump). The Subclass / Ancestry / Community badges now pop up a standalone copy of that card that fades in and can be equipped or unequipped, without disturbing the carousel. You can author custom Armor from the Inventory category, and New Card is blocked inside Beastform. Level Up and in-sheet card creation now sit in a proper bordered panel, and the 'effects when enabled' modifier picker is rebuilt into a full-screen list (Max HP, Max Stress, Set/Bonus Major & Severe Threshold, and more). Damage thresholds were redesigned: your base is Major = level and Severe = 2x level; armor or custom cards SET them (only one set-major and one set-severe at a time) or add a bonus - the Modifiers panel shows the base, the set, and the bonuses.`n`nThe card-carousel: a looping ring of categories (Arsenal / Inventory / Beastform / Notes, toggled in the Cards panel); press-and-hold to equip any card; New Card creates in the current category with a tappable type chip.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.3 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.4 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2

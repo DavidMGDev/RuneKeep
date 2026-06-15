@@ -230,7 +230,9 @@ export function LevelUpPanel({
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} pointerEvents="none" />
-      <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 14 }, panelStyle]}>
+      <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
+       {/* creation-style bordered panel (#242 item 6) — the level-up UI lives inside it */}
+       <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
         {/* header */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
           <View style={{ flex: 1 }}>
@@ -378,6 +380,7 @@ export function LevelUpPanel({
           <RuneButton label="Cancel" kind="ghost" height={44} style={{ flex: 1 }} onPress={onClose} />
           <RuneButton label="Confirm level" kind="primary" height={44} style={{ flex: 1.6 }} disabled={!canConfirm} onPress={confirm} />
         </View>
+       </ChamferBox>
       </Animated.View>
 
       {editingExp ? (

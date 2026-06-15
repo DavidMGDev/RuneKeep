@@ -1,11 +1,15 @@
 import { useState } from 'react';
 
+import { Text } from 'react-native';
+
 import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { RuneButton } from '@/components/rune-button';
+import { Body, Rune } from '@/constants/theme';
 
 import type { CardCategory } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { GearBrowser } from './gear-browser';
+import { OverlayShell } from './overlay-shell';
 
 /** Where a created card lands. `notes` (#214) is the Notes deck; the others ride inventory/arsenal. */
 export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
@@ -21,7 +25,9 @@ const CATEGORY_TARGET: Record<CardCategory, CardTarget> = {
 /** Type-chip options per category (#214): the first is the default; tap the card's plaque to cycle. */
 const TYPE_OPTIONS: Record<CardCategory, string[]> = {
   abilities: ['Ability', 'Skill', 'Weapon', 'Spell', 'Trick', 'Maneuver'],
-  inventory: ['Item', 'Tool', 'Treasure', 'Key', 'Trinket', 'Supply', 'Relic'],
+  // Armor (#242 item 5): a custom armor item — pair the 'Armor' type with Set Major/Severe Threshold +
+  // Armor Score effects in the editor to make a working piece of armor.
+  inventory: ['Item', 'Armor', 'Tool', 'Treasure', 'Key', 'Trinket', 'Supply', 'Relic'],
   notes: ['Note', 'Reminder', 'Important', 'Story', 'Place', 'Person', 'Quest'],
   wildshape: ['Ability', 'Skill', 'Trick'],
 };
@@ -34,6 +40,16 @@ const TYPE_OPTIONS: Record<CardCategory, string[]> = {
 export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds }: { onSave: (draft: CardDraft, target: CardTarget) => void; onCancel: () => void; onAcquire?: (id: string) => void; acquiredIds?: Set<string> }) {
   const { category } = useCarousel();
   const [mode, setMode] = useState<'author' | 'catalog'>('author');
+  // Beastform is Druid-only and not player-authored (#242 item 5): block New Card here.
+  if (category === 'wildshape') {
+    return (
+      <OverlayShell title="Beastform" subtitle="Druid transformation deck" onClose={onCancel} scroll={false}>
+        <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19 }}>
+          Beastform cards can&apos;t be created — they&apos;re the Druid&apos;s built-in transformations. Switch to another card category to author a custom card.
+        </Text>
+      </OverlayShell>
+    );
+  }
   if (mode === 'catalog' && onAcquire) {
     return <GearBrowser acquiredIds={acquiredIds ?? new Set()} onAdd={onAcquire} onBack={() => setMode('author')} onClose={onCancel} />;
   }
