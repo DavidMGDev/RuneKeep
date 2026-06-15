@@ -53,6 +53,7 @@ import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
 import { ModifiersPanel } from './modifiers-panel';
 import { CategoryPanel } from './category-panel';
+import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
@@ -676,6 +677,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
+  const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
+  const toastId = useRef(1);
   // Level Up (#167): the domain cards available to gain (≤ the NEXT level, in this class's domains,
   // not already owned), the multiclass options, and the class-derived stat defaults.
   const levelData = useMemo(() => {
@@ -829,9 +832,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       void saveCharacter(next);
       const c = characterRef.current;
       const d = toSheetCharacter(next);
+      // Gaining Max HP fills the new heart(s) (#233 item 5): hp follows the gain so the added slot
+      // animates filling; on a loss hp clamps down (the burst shows the heart breaking).
+      const hpGain = Math.max(0, d.maxHp - c.maxHp);
       let result: Character = {
         ...d,
-        hp: Math.min(c.hp, d.maxHp),
+        hp: Math.min(d.maxHp, c.hp + hpGain),
         stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
         armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
         hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
@@ -849,6 +855,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           );
           result = { ...result, hp, stress: { ...result.stress, active: stressActive } };
         }
+      }
+      // Toast each attribute the toggle changed (#233 item 1): "+1 Finesse", "−2 Evasion", …
+      const fresh = diffStatToasts(c, result, toastId.current);
+      if (fresh.length) {
+        toastId.current += fresh.length;
+        setToasts((list) => [...list, ...fresh]);
       }
       // animate any track whose value the equip/unequip changed (e.g. +1 Max HP at full HP, removed)
       burstResources(c, result);
@@ -918,6 +930,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
             </DesignStage>
+            {/* Stat-change toasts (#233): pinned at the top, UNDER the gold border (rendered before
+                SheetFrame) so the border overlays them — layer + position per owner. */}
+            <StatToastHost toasts={toasts} onExpire={(id) => setToasts((list) => list.filter((t) => t.id !== id))} />
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />
