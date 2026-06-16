@@ -67,6 +67,38 @@ describe('catalogIdOf + duplicate copies (#269)', () => {
   });
 });
 
+describe('mixed ancestry effect filtering (#265)', () => {
+  it('keeps a passive on the ACTIVE half, drops it on the crossed-out half', () => {
+    // Giant's +1 Max HP is trait 1 ("Endurance").
+    const asFirst = baseFile({ mixedAncestry: { first: 'ancestry-giant', second: 'ancestry-human' } });
+    expect(effectsForCardId('ancestry-giant', asFirst)[0]).toMatchObject({ target: 'maxHp', delta: 1 });
+    const asSecond = baseFile({ mixedAncestry: { first: 'ancestry-human', second: 'ancestry-giant' } });
+    expect(effectsForCardId('ancestry-giant', asSecond)).toEqual([]); // Reach (trait 2) → no Max HP
+  });
+  it('handles a trait-2 passive (Simiah Nimble = +1 Evasion)', () => {
+    const keep = baseFile({ mixedAncestry: { first: 'ancestry-human', second: 'ancestry-simiah' } });
+    expect(effectsForCardId('ancestry-simiah', keep)[0]).toMatchObject({ target: 'evasion', delta: 1 });
+    const drop = baseFile({ mixedAncestry: { first: 'ancestry-simiah', second: 'ancestry-human' } });
+    expect(effectsForCardId('ancestry-simiah', drop)).toEqual([]);
+  });
+  it('a no-passive ancestry contributes nothing either way', () => {
+    const file = baseFile({ mixedAncestry: { first: 'ancestry-drakona', second: 'ancestry-elf' } });
+    expect(effectsForCardId('ancestry-drakona', file)).toEqual([]);
+    expect(effectsForCardId('ancestry-elf', file)).toEqual([]);
+  });
+  it('single-ancestry characters are unaffected', () => {
+    expect(effectsForCardId('ancestry-giant', baseFile())[0]).toMatchObject({ target: 'maxHp', delta: 1 });
+  });
+  it('end-to-end: a mixed Giant(1st)+Human(2nd) gets +1 Max HP but NOT +1 Stress', () => {
+    const c = toSheetCharacter(
+      baseFile({ mixedAncestry: { first: 'ancestry-giant', second: 'ancestry-human' }, enabledCardIds: ['ancestry-giant', 'ancestry-human'] }),
+    );
+    const plain = toSheetCharacter(baseFile());
+    expect(c.maxHp).toBe(plain.maxHp + 1); // Giant Endurance (trait 1) applies
+    expect(c.stress.total).toBe(plain.stress.total); // Human High Stamina (trait 1) is crossed out → no +1 Stress
+  });
+});
+
 describe('editable-card helpers (#264 item 5)', () => {
   const file = baseFile({
     customCards: [{ id: 'cc-1', title: 'Lucky Ring', text: '', imageUri: null, target: 'inventory' }],

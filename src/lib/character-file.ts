@@ -157,6 +157,10 @@ export interface CharacterFile {
    *  gallery writes this; deck assembly sorts each category by it (ids not listed keep their natural
    *  order, after the listed ones). Additive. */
   cardOrder?: Record<string, string[]>;
+  /** Mixed ancestry (#265): two ancestries combined — `first` keeps its FIRST trait, `second` keeps its
+   *  SECOND trait. Both cards are added to the sheet; each card's inactive half is crossed out and its
+   *  modifiers dropped. When set, the single `ancestryCardId` is unused. Additive; absent → single. */
+  mixedAncestry?: { first: string; second: string };
   level: number;
 }
 
