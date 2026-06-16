@@ -71,15 +71,19 @@ import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
 import { playSfx } from '@/lib/sfx';
-import { GEAR_FAST_FLIP_PX, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
+import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 
 const flipPar = (t: number) => ((t % 2) + 2) % 2;
 
-// A golden-gear "swoosh" (#258): one of the two gear sounds at random (so it doesn't get repetitive),
-// played on each FAST direction-reversal while grinding — that swooshing-through-the-UI feel. Module-
-// level + JS-only so it's safe to call via runOnJS from the pan worklet.
+// Golden-gear "swoosh" (#258r2): gearScroll1 only (owner dislikes 2 for the gear), on each FAST
+// direction-reversal while grinding. Module-level + JS-only for safe runOnJS from the pan worklet.
 function playGearGrind() {
-  playSfx(Math.random() < 0.5 ? 'gearScroll1' : 'gearScroll2');
+  playSfx('gearScroll1');
+}
+// Per-detent pip while grinding the gear (#258r2): the normal carousel scroll tick, quieter (the gear
+// scrolls fast). Tunable via GEAR_SCROLL_PIP_VOLUME.
+function playGearPip() {
+  playSfx('carouselScroll', { volume: GEAR_SCROLL_PIP_VOLUME });
 }
 
 /** Design-px the new deck sits BELOW its resting pose while a category switch readies it, before it
@@ -557,6 +561,7 @@ export function CardCarousel() {
   // fast reversal, never on the gear TAP that closes the carousel.
   const gearPrevTX = useSharedValue(0);
   const gearDirX = useSharedValue(0);
+  const gearPipIdx = useSharedValue(0); // #258r2: last detent index seen while grinding (for the pip)
   // Adaptive gear sensitivity (#67 C): one ~GEAR_SWIPE_PX swipe sweeps the WHOLE deck.
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
@@ -644,7 +649,7 @@ export function CardCarousel() {
             if (fin) {
               osArmed.value = 1;
               runOnJS(focusHaptic)();
-              runOnJS(playSfx)('transitionIconFilled'); // #255: over-scroll ring filled / armed
+              runOnJS(playSfx)('panelOpen'); // #258r2: over-scroll ring filled / armed (was transitionIconFilled — too low)
             }
           });
         }
@@ -677,6 +682,7 @@ export function CardCarousel() {
             grindProgress.value = withTiming(1, { duration: 160 });
             gearPrevTX.value = 0; // #258: reset swoosh tracking — a plain tap-to-close makes no sound
             gearDirX.value = 0;
+            gearPipIdx.value = Math.round(rotation.value / ANGLE_STEP);
           }
         })
         .onUpdate((e) => {
@@ -709,6 +715,12 @@ export function CardCarousel() {
             } else {
               rotation.value = raw;
               osClear();
+            }
+            // #258r2: per-detent scroll pip while grinding (quieter — see GEAR_SCROLL_PIP_VOLUME)
+            const pip = Math.round(rotation.value / ANGLE_STEP);
+            if (pip !== gearPipIdx.value) {
+              gearPipIdx.value = pip;
+              runOnJS(playGearPip)();
             }
             return;
           }
@@ -866,7 +878,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch

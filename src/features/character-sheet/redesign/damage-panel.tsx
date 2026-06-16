@@ -117,12 +117,13 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
   const okFill = useAnimatedStyle(() => ({ transform: [{ translateY: (1 - charge.value) * 46 }] }));
   const okEdge = useAnimatedStyle(() => ({ opacity: charge.value > 0.02 ? 1 : 0 }));
 
-  // No own dark scrim (#250): the shared SheetDim darkens the screen; this sits ABOVE it. Transparent
-  // tap-catcher cancels; the box-none layer keeps inside taps off the catcher.
+  // No own dark scrim (#250): the shared SheetDim darkens the screen; this sits ABOVE it. A full-screen
+  // tap-catcher (#258r2) absorbs every touch so the character sheet can't be reached through the panel
+  // (an outside tap cancels). The centered panel sits directly above it — NO box-none, which leaked
+  // (matches the OverlayShell pattern).
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={StyleSheet.absoluteFill} onPress={() => finish(false)} accessibilityRole="button" accessibilityLabel="Close damage panel" accessibilityHint="Cancels and lets you adjust hit points manually" />
-      <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View style={panelStyle}>
         <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.4} style={{ width: 264, padding: 16, gap: 12 }}>
           <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>Incoming damage</Text>
@@ -181,7 +182,6 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
           <Text style={{ color: Rune.muted, fontSize: 8.5, fontFamily: Body.medium, textAlign: 'center', letterSpacing: 0.4 }}>Hold OK to take the hit · tap outside to adjust manually</Text>
         </ChamferBox>
       </Animated.View>
-      </View>
     </View>
   );
 }

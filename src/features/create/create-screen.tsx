@@ -999,7 +999,8 @@ function TraitsTab({ traits, onTraits }: { traits: Partial<Record<TraitKey, numb
   const assignedCount = assignedValues.length;
 
   const placeOn = (key: TraitKey) => {
-    playSfx('numpadPress'); // #258: the trait's tap animation
+    // #258r2: creation traits play ONLY the assignment chime (the numpad tap sound belongs to the
+    // sheet's trait buttons, not here).
     const next = { ...traits };
     if (armed !== null) {
       next[key] = armed;
@@ -1009,7 +1010,7 @@ function TraitsTab({ traits, onTraits }: { traits: Partial<Record<TraitKey, numb
       delete next[key];
       playSfx('cardDeselect'); // clearing an assignment
     } else {
-      return; // no-op tap — numpadPress already gave feedback
+      return;
     }
     onTraits(next);
   };

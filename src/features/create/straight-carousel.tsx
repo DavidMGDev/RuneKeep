@@ -18,14 +18,18 @@ import { ArtImage } from '@/components/art-image';
 import { useScreenInsets } from '@/components/app-screen';
 import { Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
-import { GEAR_FAST_FLIP_PX, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
+import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
 import { FORGED_H, FORGED_W } from './forged-card';
 
-// Gear swoosh (#258): a random gear sound on each fast direction-reversal while grinding the gear —
-// matches the sheet carousel. Module-level + JS-only for safe runOnJS from the pan worklet.
+// Gear swoosh (#258r2): gearScroll1 only, on each fast direction-reversal while grinding — matches
+// the sheet carousel. Module-level + JS-only for safe runOnJS from the pan worklet.
 function playGearGrind() {
-  playSfx(Math.random() < 0.5 ? 'gearScroll1' : 'gearScroll2');
+  playSfx('gearScroll1');
+}
+// Per-detent pip while grinding the gear (#258r2): the carousel scroll tick, quieter.
+function playGearPip() {
+  playSfx('carouselScroll', { volume: GEAR_SCROLL_PIP_VOLUME });
 }
 
 // The sheet's inner gear (U3) — here it IS the fast-scroll control, riding the bottom edge.
@@ -290,6 +294,7 @@ export const StraightCarousel = forwardRef<
   // #258: gear swoosh tracking (fast direction-reversal only)
   const gearPrevTX = useSharedValue(0);
   const gearDirX = useSharedValue(0);
+  const gearPipIdx = useSharedValue(0); // #258r2: last detent seen while grinding (for the pip)
   const lastCenter = useSharedValue(clampIdx(initialIndex, count));
   const [center, setCenter] = useState(() => Math.min(count - 1, Math.max(0, initialIndex)));
   const [fsOpen, setFsOpen] = useState(false);
@@ -405,6 +410,7 @@ export const StraightCarousel = forwardRef<
             grind.value = withTiming(1, { duration: 160 });
             gearPrevTX.value = 0; // #258: reset swoosh tracking for the new grind
             gearDirX.value = 0;
+            gearPipIdx.value = Math.round(pos.value);
           }
         })
         .onUpdate((e) => {
@@ -426,6 +432,14 @@ export const StraightCarousel = forwardRef<
           const raw = startPos.value - e.translationX / ratio;
           const max = count - 1;
           pos.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
+          if (padTouch.value) {
+            // #258r2: per-detent scroll pip while grinding (quieter)
+            const pip = Math.round(pos.value);
+            if (pip !== gearPipIdx.value && pip >= 0 && pip <= max) {
+              gearPipIdx.value = pip;
+              runOnJS(playGearPip)();
+            }
+          }
         })
         .onEnd((e) => {
           if (fs.value > 0.5) {
@@ -450,7 +464,7 @@ export const StraightCarousel = forwardRef<
           if (grind.value !== 0 && !scrolled.value) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, closeFs, heightSV, flip],
+    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, flip],
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
