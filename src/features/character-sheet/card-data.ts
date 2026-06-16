@@ -52,6 +52,25 @@ export interface CardItem extends CardImage {
   interactive?: boolean;
 }
 
+/**
+ * Make a list of card ids unique by suffixing repeats (#269): the FIRST occurrence of an id is kept as
+ * is (so existing per-card state keyed by the catalog id still matches), the 2nd+ become `id#2`, `id#3`.
+ * This lets a player hold several copies of one catalog card and treat each as an individual card; the
+ * catalog id is recovered for content lookup via `catalogIdOf`. Pure + positional (stable while the
+ * source ordering is stable).
+ *
+ * ponytail: positional ids — if the order of two IDENTICAL copies changes, their per-instance state
+ * (tokens/enabled) may swap. Non-corrupting (same card). A stored-instance-id model would remove this.
+ */
+export function dedupeIds(ids: string[]): string[] {
+  const seen = new Map<string, number>();
+  return ids.map((id) => {
+    const n = seen.get(id) ?? 0;
+    seen.set(id, n + 1);
+    return n === 0 ? id : `${id}#${n + 1}`;
+  });
+}
+
 export const CARD_CATEGORIES: { key: CardCategory; label: string }[] = [
   { key: 'abilities', label: 'Abilities' },
   { key: 'inventory', label: 'Inventory' },
