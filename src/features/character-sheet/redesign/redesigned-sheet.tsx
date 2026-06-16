@@ -22,7 +22,7 @@ import { lootById } from '@/lib/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
 import { tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
-import { editableCardIds, effectsForCardId } from '@/features/cards/card-effects';
+import { catalogIdOf, editableCardIds, effectsForCardId } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -35,7 +35,7 @@ import { useForgedSnapshots } from '@/features/create/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories } from '../carousel-categories';
-import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, isBuiltinCategory } from '../card-data';
+import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
@@ -731,13 +731,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const validKeys = new Set<string>([...BUILTIN_CATEGORIES, ...customCats.map((c) => c.id)]);
     const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], notes: [] };
     for (const c of customCats) decks[c.id] = [];
-    for (const cat of Object.keys(base)) {
-      for (const item of base[cat]) {
-        if (removed.has(item.id)) continue; // deleted from the gallery → filtered out of every deck
-        const ov = override[item.id];
-        const target = ov && validKeys.has(ov) ? ov : cat;
-        (decks[target] ??= []).push(item);
-      }
+    // Unique instance ids (#269): a catalog card the player holds twice (e.g. equipped AND acquired)
+    // would otherwise share one id, so selecting/dragging/tokening one hit both. The first copy keeps
+    // its catalog id (back-compat with saved tokens/category/enable), repeats get `id#2`. Assigned
+    // across ALL base decks in order so it's stable; content still resolves via catalogIdOf.
+    const flat: { cat: string; item: CardItem }[] = [];
+    for (const cat of Object.keys(base)) for (const item of base[cat]) flat.push({ cat, item });
+    const instanceIds = dedupeIds(flat.map((f) => f.item.id));
+    for (let i = 0; i < flat.length; i++) {
+      const { cat, item } = flat[i];
+      const iid = instanceIds[i];
+      const it = iid === item.id ? item : { ...item, id: iid };
+      if (removed.has(it.id)) continue; // deleted from the gallery → filtered out of every deck
+      const ov = override[it.id];
+      const target = ov && validKeys.has(ov) ? ov : cat;
+      (decks[target] ??= []).push(it);
     }
     // Drag-drop order (#252): sort each category by the player's explicit card order; ids not listed
     // keep their natural order after the listed ones (Hermes sort is stable).
@@ -904,7 +912,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onAcquireCard = useCallback((id: string) => {
     setFile((f) => {
       if (!f) return f;
-      if ((f.acquiredCardIds ?? []).includes(id)) return f;
+      // #269: allow MULTIPLE copies — acquiredCardIds is a multiset; each copy gets a unique instance
+      // id in the deck (catalogIdOf maps it back to content). The catalog browser offers "Add another".
       const next = { ...f, acquiredCardIds: [...(f.acquiredCardIds ?? []), id] };
       void saveCharacter(next);
       return next;
@@ -1047,17 +1056,28 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const cardCategory = { ...(file.cardCategory ?? {}) };
     const cardTokens = { ...(file.cardTokens ?? {}) };
     for (const id of ids) { delete cardCategory[id]; delete cardTokens[id]; }
+    // #269 duplicate-aware: an instance id may be a suffixed copy. For an ACQUIRED catalog card, drop
+    // exactly ONE matching copy from the multiset (not every copy); cards with no acquired entry
+    // (equipped weapon/armor, domain, origin) are hidden by their instance id via removedCardIds.
+    const acquired = [...(file.acquiredCardIds ?? [])];
+    const hide: string[] = [];
+    for (const iid of ids) {
+      const cid = catalogIdOf(iid);
+      const ai = acquired.indexOf(cid);
+      if (ai >= 0) acquired.splice(ai, 1);
+      else hide.push(iid);
+    }
     const next: CharacterFile = {
       ...file,
       customCards: (file.customCards ?? []).filter((c) => !del.has(c.id)),
       inventoryCustom: (file.inventoryCustom ?? []).filter((c) => !del.has(c.id)),
       notes: (file.notes ?? []).filter((c) => !del.has(c.id)),
       experiences: (file.experiences ?? []).filter((c) => !del.has(c.id)),
-      acquiredCardIds: (file.acquiredCardIds ?? []).filter((x) => !del.has(x)),
+      acquiredCardIds: acquired,
       domainCardIds: file.domainCardIds.filter((x) => !del.has(x)),
       activeDomainCardIds: file.activeDomainCardIds?.filter((x) => !del.has(x)),
       enabledCardIds: (file.enabledCardIds ?? []).filter((x) => !del.has(x)),
-      removedCardIds: [...new Set([...(file.removedCardIds ?? []), ...ids])],
+      removedCardIds: [...new Set([...(file.removedCardIds ?? []), ...hide])],
       cardCategory,
       cardTokens,
     };

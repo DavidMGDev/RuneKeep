@@ -20,6 +20,14 @@ function customCards(file?: CharacterFile): ExperienceDef[] {
   return [...(file.experiences ?? []), ...(file.inventoryCustom ?? []), ...(file.customCards ?? []), ...(file.notes ?? [])];
 }
 
+/** Strip the per-instance suffix from a card id (#269). A player can hold several copies of one catalog
+ *  card; each deck copy gets a unique instance id (`wpn-x`, `wpn-x#2`, …) so it can be selected/dragged/
+ *  tokened independently, but its CONTENT (effects, label, art) still resolves by the catalog id. The
+ *  first copy is unsuffixed, so existing saves are unchanged. Custom-card ids never carry a `#n` suffix. */
+export function catalogIdOf(id: string): string {
+  return id.replace(/#\d+$/, '');
+}
+
 /** The file collections that hold player-authored, editable cards (#264 item 5). */
 export type EditableCollection = 'customCards' | 'inventoryCustom' | 'notes' | 'experiences';
 
@@ -46,7 +54,8 @@ export function editableCardIds(file?: CharacterFile): Set<string> {
 }
 
 /** The structured effects a card applies when enabled. Empty when the card has none. */
-export function effectsForCardId(id: string, file?: CharacterFile): CardEffect[] {
+export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffect[] {
+  const id = catalogIdOf(rawId); // resolve a duplicate copy (e.g. wpn-x#2) to its catalog content (#269)
   const custom = customCards(file).find((c) => c.id === id);
   if (custom?.effects?.length) return custom.effects;
   if (CATALOG_EFFECTS[id]?.length) return CATALOG_EFFECTS[id];
@@ -76,7 +85,8 @@ export function cardHasEffects(id: string, file?: CharacterFile): boolean {
 }
 
 /** A human label for a card id — used as the modifier source in the Modifiers panel. */
-export function sourceLabelForCardId(id: string, file?: CharacterFile): string {
+export function sourceLabelForCardId(rawId: string, file?: CharacterFile): string {
+  const id = catalogIdOf(rawId); // a duplicate copy shares its catalog card's label (#269)
   const custom = customCards(file).find((c) => c.id === id);
   if (custom) return custom.title;
   return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? wildshapeById(id)?.name ?? id;

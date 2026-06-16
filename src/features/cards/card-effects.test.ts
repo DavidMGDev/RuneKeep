@@ -1,5 +1,5 @@
 import { type CharacterFile, toSheetCharacter } from '@/lib/character-file';
-import { cardHasEffects, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, sourceLabelForCardId } from './card-effects';
+import { cardHasEffects, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, sourceLabelForCardId } from './card-effects';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
   return {
@@ -44,6 +44,26 @@ describe('effectsForCardId', () => {
   it('labels a card by its human name', () => {
     expect(sourceLabelForCardId('wpn-greatsword')).toBe('Greatsword');
     expect(sourceLabelForCardId('ancestry-giant')).toBe('Giant');
+  });
+});
+
+describe('catalogIdOf + duplicate copies (#269)', () => {
+  it('strips a trailing instance suffix only', () => {
+    expect(catalogIdOf('wpn-greatsword')).toBe('wpn-greatsword');
+    expect(catalogIdOf('wpn-greatsword#2')).toBe('wpn-greatsword');
+    expect(catalogIdOf('wpn-greatsword#10')).toBe('wpn-greatsword');
+    // mid-string digits/dashes are NOT suffixes
+    expect(catalogIdOf('subclass-stalwart-1-foundation')).toBe('subclass-stalwart-1-foundation');
+    expect(catalogIdOf('cc-abc123')).toBe('cc-abc123');
+  });
+  it('resolves a duplicate copy to its catalog effects + label', () => {
+    expect(effectsForCardId('ancestry-giant#2')[0]).toMatchObject({ target: 'maxHp', delta: 1 });
+    expect(sourceLabelForCardId('ancestry-giant#2')).toBe('Giant');
+  });
+  it('applies an effect once per enabled copy', () => {
+    const one = toSheetCharacter(baseFile({ enabledCardIds: ['ancestry-giant'] }));
+    const two = toSheetCharacter(baseFile({ enabledCardIds: ['ancestry-giant', 'ancestry-giant#2'] }));
+    expect(two.maxHp).toBe(one.maxHp + 1); // each copy contributes its +1 Max HP
   });
 });
 

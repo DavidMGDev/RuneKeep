@@ -72,7 +72,8 @@ export function GearBrowser({ acquiredIds, onAdd, onBack, onClose }: { acquiredI
       footer={
         <View style={{ gap: 8 }}>
           {isCardKind && items.length > 0 ? (
-            <RuneButton label={centerAcquired ? 'Already added ✓' : 'Select this card'} kind={centerAcquired ? 'secondary' : 'primary'} height={46} disabled={centerAcquired} onPress={() => { if (centerId) onAdd(centerId); }} />
+            // #269: a card can be added more than once — each copy becomes an individual card.
+            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (centerId) onAdd(centerId); }} />
           ) : null}
           <RuneButton label="← Author a custom card instead" kind="ghost" dense height={36} onPress={onBack} />
         </View>
@@ -130,7 +131,8 @@ export function GearBrowser({ acquiredIds, onAdd, onBack, onClose }: { acquiredI
                   <Text numberOfLines={2} style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{r.sub}</Text>
                   {eff ? <Text numberOfLines={1} style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, marginTop: 2 }}>{eff}</Text> : null}
                 </View>
-                {has ? <Text style={{ color: Rune.goldBright, fontSize: 12, fontFamily: Body.bold }}>Added ✓</Text> : <RuneButton label="Add" kind="secondary" dense height={32} style={{ paddingHorizontal: 14 }} onPress={() => onAdd(r.id)} />}
+                {/* #269: allow several copies — each becomes an individual card */}
+                <RuneButton label={has ? 'Add again' : 'Add'} kind="secondary" dense height={32} style={{ paddingHorizontal: 14 }} onPress={() => onAdd(r.id)} />
               </View>
             );
           })}
