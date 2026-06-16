@@ -104,7 +104,7 @@ interface FloatMenuContextValue {
 
 const FloatMenuContext = createContext<FloatMenuContextValue | null>(null);
 
-function useFloatMenu() {
+export function useFloatMenu() {
   const ctx = useContext(FloatMenuContext);
   if (!ctx) throw new Error('useFloatMenu must be used within a FloatMenuProvider');
   return ctx;

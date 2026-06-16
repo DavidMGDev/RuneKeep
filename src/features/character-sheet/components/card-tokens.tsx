@@ -14,7 +14,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Display } from '@/constants/theme';
-import { DIE_BOX, DIE_COLOR, DIE_MAX, type DieType, dieGeometry, dieNumberFrac, dieNumberOffset, kindScale, type PlacedToken, type TokenKind, TOKEN_FRAC, tokenFill } from './card-tokens-data';
+import { DIE_BOX, DIE_COLOR, DIE_MAX, type DieType, dieGeometry, dieNumberFrac, dieNumberOffset, placedKindScale, type PlacedToken, type TokenKind, TOKEN_FRAC, tokenFill } from './card-tokens-data';
 
 export * from './card-tokens-data';
 
@@ -120,14 +120,16 @@ export const DieButton = memo(function DieButton({ size, dieType, value }: { siz
   );
 });
 
-/** Render any token at `size`: a die gets the DieButton, everything else the sewing button. */
-export function TokenGlyph({ size, token }: { size: number; token: { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number } }) {
+/** Render any token at `size`: a die gets the DieButton, everything else the sewing button. Memoized
+ *  (#293 perf): the baked deck layer renders these gradient SVGs per token, so skipping re-renders when
+ *  props are unchanged keeps decorated decks cheap to composite (e.g. under the float-menu dim). */
+export const TokenGlyph = memo(function TokenGlyph({ size, token }: { size: number; token: { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number } }) {
   if (token.kind === 'die') {
     const dt = token.dieType ?? 'd6';
     return <DieButton size={size} dieType={dt} value={token.dieValue ?? DIE_MAX[dt]} />;
   }
   return <TokenButton size={size} fill={tokenFill(token)} />;
-}
+});
 
 /**
  * The baked token layer (#244): every token on a card. Same glyphs as the board, so it looks identical
@@ -139,7 +141,7 @@ export const BakedTokenLayer = memo(function BakedTokenLayer({ tokens, cardW, ca
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {tokens.map((t) => {
-        const size = base * kindScale(t.kind);
+        const size = base * placedKindScale(t.kind);
         return (
           <View key={t.id} style={{ position: 'absolute', left: t.x * cardW - size / 2, top: t.y * cardH - size / 2 }}>
             <TokenGlyph size={size} token={t} />

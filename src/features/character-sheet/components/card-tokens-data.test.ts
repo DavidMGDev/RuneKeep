@@ -1,4 +1,4 @@
-import { DEFAULT_TOKEN_KINDS, DIE_BOX, DIE_COLOR, DIE_MAX, DIE_TYPES, dieGeometry, hashStr, kindScale, nextDieType, nextDieValue, pickTokenColor, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
+import { DEFAULT_TOKEN_KINDS, DIE_BOX, DIE_COLOR, DIE_MAX, DIE_PLACED_MULT, DIE_TYPES, dieGeometry, hashStr, kindScale, nextDieType, nextDieValue, pickTokenColor, placedKindScale, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
 
 describe('card tokens — pure helpers (#244)', () => {
   describe('pickTokenColor', () => {
@@ -68,6 +68,16 @@ describe('card tokens — pure helpers (#244)', () => {
       expect(kindScale('iron')).toBeGreaterThan(kindScale('bone'));
       expect(kindScale('bone')).toBe(1);
       expect(kindScale('color')).toBe(1);
+    });
+  });
+
+  describe('placedKindScale (#297)', () => {
+    it('doubles a placed die but leaves every other kind unchanged', () => {
+      expect(DIE_PLACED_MULT).toBe(2);
+      expect(placedKindScale('die')).toBe(kindScale('die') * 2);
+      for (const k of ['wood', 'bone', 'iron', 'color'] as const) {
+        expect(placedKindScale(k)).toBe(kindScale(k));
+      }
     });
   });
 

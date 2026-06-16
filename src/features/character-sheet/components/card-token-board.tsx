@@ -37,6 +37,7 @@ import {
   kindScale,
   nextDieType,
   nextDieValue,
+  placedKindScale,
   type PlacedToken,
   randomTokenColor,
   TOKEN_COLORS,
@@ -57,15 +58,15 @@ export interface Rect {
 }
 
 // Drawer layout (parent-px) — three aligned panels in the top band (#293): edit/delete (left),
-// the token sources (centre), the die (right). All share the same top + height.
-const DRAWER_TOKEN = 40; // each source / action button
+// the token sources (centre), the die (right). All share the same top + height. The side panels
+// (action + die) EXPAND horizontally to fill the row and carry a bigger, square glyph (#297).
+const DRAWER_TOKEN = 40; // each centre source token
 const GAP = 8;
 const PAD = 8;
-const PANEL_H = PAD * 2 + DRAWER_TOKEN; // 56
-const LEFT_W = PAD * 2 + DRAWER_TOKEN; // the contextual action button (edit OR delete)
+const PANEL_H = 60; // a touch taller so the action/die glyphs read bigger (#297)
 const CENTER_W = PAD * 2 + 4 * DRAWER_TOKEN + 3 * GAP; // wood/bone/iron/colour
-const RIGHT_W = PAD * 2 + DRAWER_TOKEN; // the die
 const SIDE = 6; // gap from the screen edge
+const SIDE_GLYPH = 48; // the edit/delete icon + the die source — bigger than a centre token (#297)
 const OPEN_W = 66; // the closed "open drawer" button
 const OPEN_H = 42;
 const DRAWER_TOP = 6;
@@ -180,11 +181,11 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
  * `localX/localY` position it WITHIN the tray; `homeX/homeY` are its absolute board-space centre, used
  * to test the drop against the card rect.
  */
-const DraggableSource = memo(function DraggableSource({ token, localX, localY, homeX, homeY, scale, onPlace, onCycle }: { token: TokenDesc; localX: number; localY: number; homeX: number; homeY: number; scale: number; onPlace: (desc: TokenDesc, cx: number, cy: number) => void; onCycle?: () => void }) {
+const DraggableSource = memo(function DraggableSource({ token, localX, localY, homeX, homeY, scale, base = DRAWER_TOKEN, onPlace, onCycle }: { token: TokenDesc; localX: number; localY: number; homeX: number; homeY: number; scale: number; base?: number; onPlace: (desc: TokenDesc, cx: number, cy: number) => void; onCycle?: () => void }) {
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const drag = useSharedValue(0);
-  const size = DRAWER_TOKEN * kindScale(token.kind);
+  const size = base * kindScale(token.kind);
   const drop = useCallback((cx: number, cy: number) => onPlace(token, cx, cy), [onPlace, token]);
   const pan = useMemo(
     () =>
@@ -266,7 +267,8 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
       const y = Math.max(0, Math.min(1, (cy - cardRect.top) / cardRect.height));
       const tok: PlacedToken = { id: newTokenId(), kind: desc.kind, x, y };
       if (desc.kind === 'color') tok.color = drawerColor;
-      if (desc.kind === 'die') { const dt = desc.dieType ?? dieType; tok.dieType = dt; tok.dieValue = DIE_MAX[dt]; }
+      // #297: a placed die starts at its LOWEST value (1), even though the source shows the maximum.
+      if (desc.kind === 'die') { const dt = desc.dieType ?? dieType; tok.dieType = dt; tok.dieValue = 1; }
       onPlace(tok);
       focusHaptic();
       playSfx('placeToken'); // #255
@@ -276,7 +278,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
 
   const beginDrop = useCallback(
     (t: PlacedToken) => {
-      const size = cardBase * kindScale(t.kind);
+      const size = cardBase * placedKindScale(t.kind);
       const left = cardRect.left + t.x * cardRect.width - size / 2;
       const top = cardRect.top + t.y * cardRect.height - size / 2;
       setFalling((list) => [...list, { token: t, left, top }]);
@@ -304,11 +306,13 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
   const fallingIds = useMemo(() => new Set(falling.map((f) => f.token.id)), [falling]);
   const shown = tokens.filter((t) => !fallingIds.has(t.id));
 
-  // Three aligned panels in the top band (#293): action (left), token sources (centre), die (right).
+  // Three aligned panels in the top band (#293/#297): action (left), token sources (centre), die
+  // (right). The side panels EXPAND to fill the row width on each side of the fixed centre panel.
+  const sideW = Math.max(SIDE_GLYPH + PAD * 2, (width - 2 * SIDE - CENTER_W - 2 * GAP) / 2);
   const leftX = SIDE;
-  const rightX = width - SIDE - RIGHT_W;
+  const rightX = width - SIDE - sideW;
   const centerX = (width - CENTER_W) / 2;
-  const ly = PAD + DRAWER_TOKEN / 2;
+  const ly = PANEL_H / 2;
   const openStyle = useAnimatedStyle(() => ({ opacity: 1 - openP.value }));
   const panelStyle = useAnimatedStyle(() => ({ opacity: openP.value, transform: [{ translateY: (1 - openP.value) * -8 }] }));
   const panelBox = (x: number, w: number) => ({ position: 'absolute' as const, left: x, top: drawerTop, width: w, height: PANEL_H, backgroundColor: 'rgba(14,17,22,0.94)', borderRadius: 12, borderWidth: 1.4, borderColor: Rune.goldEdge });
@@ -317,7 +321,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* placed tokens (interactive) */}
       {shown.map((t) => {
-        const size = cardBase * kindScale(t.kind);
+        const size = cardBase * placedKindScale(t.kind);
         return (
           <PlacedTokenView
             key={t.id}
@@ -334,7 +338,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
       })}
       {/* tokens dropping off the card */}
       {falling.map((f) => (
-        <FallingToken key={f.token.id} token={f.token} size={cardBase * kindScale(f.token.kind)} left={f.left} top={f.top} reduced={reduced} onDone={fallingDone} />
+        <FallingToken key={f.token.id} token={f.token} size={cardBase * placedKindScale(f.token.kind)} left={f.left} top={f.top} reduced={reduced} onDone={fallingDone} />
       ))}
 
       {/* CLOSED: one obvious "open drawer" button, centred at the top. No close — the drawer closes when
@@ -353,12 +357,16 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
           outside the panels still reach the card / focus veil; each panel View absorbs its own taps. */}
       {open ? (
         <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, panelStyle]}>
+          {/* LEFT: a SINGLE outlined panel IS the action button — no inner box, icon centred (#297). */}
           {canAct ? (
-            <View style={panelBox(leftX, LEFT_W)}>
-              <View style={{ position: 'absolute', left: PAD, top: PAD }}>
-                <CardActionButton kind={editable ? 'edit' : 'delete'} onPress={() => (editable ? onEditCard?.() : onRequestDelete?.())} />
-              </View>
-            </View>
+            <Pressable
+              onPress={() => (editable ? onEditCard?.() : onRequestDelete?.())}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={editable ? 'Edit card' : 'Delete card'}
+              style={[panelBox(leftX, sideW), { alignItems: 'center', justifyContent: 'center' }]}>
+              <ActionIcon kind={editable ? 'edit' : 'delete'} size={Math.round(SIDE_GLYPH * 0.64)} />
+            </Pressable>
           ) : null}
           <View style={panelBox(centerX, CENTER_W)}>
             {DEFAULT_TOKEN_KINDS.map((kind, i) => {
@@ -370,10 +378,11 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
               return <DraggableSource token={{ kind: 'color', color: drawerColor }} localX={lx} localY={ly} homeX={centerX + lx} homeY={drawerTop + ly} scale={scale} onPlace={place} onCycle={cycleColor} />;
             })()}
           </View>
-          <View style={panelBox(rightX, RIGHT_W)}>
+          {/* RIGHT: the die source, a bigger glyph centred in the wide panel (#297). */}
+          <View style={panelBox(rightX, sideW)}>
             {(() => {
-              const lx = PAD + DRAWER_TOKEN / 2;
-              return <DraggableSource token={{ kind: 'die', dieType, dieValue: DIE_MAX[dieType] }} localX={lx} localY={ly} homeX={rightX + lx} homeY={drawerTop + ly} scale={scale} onPlace={place} onCycle={cycleDieType} />;
+              const lx = sideW / 2;
+              return <DraggableSource token={{ kind: 'die', dieType, dieValue: DIE_MAX[dieType] }} localX={lx} localY={ly} homeX={rightX + lx} homeY={drawerTop + ly} scale={scale} base={SIDE_GLYPH} onPlace={place} onCycle={cycleDieType} />;
             })()}
           </View>
         </Animated.View>
@@ -382,32 +391,26 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
   );
 }
 
-/** Top-left fullscreen card action (#264 item 5): pencil to edit a custom card, trash to delete a
- *  catalog card. Sits in the same faded layer as the token drawer tab, so it appears with it. */
-function CardActionButton({ kind, onPress }: { kind: 'edit' | 'delete'; onPress: () => void }) {
+/** The fullscreen card action GLYPH (#264 item 5 / #297): pencil to edit a custom card, trash to
+ *  delete a catalog card. Just the icon — the surrounding panel is the single outline, so there's no
+ *  box-in-a-box. The parent Pressable owns the tap; this is centred inside it. */
+function ActionIcon({ kind, size }: { kind: 'edit' | 'delete'; size: number }) {
   const color = kind === 'edit' ? Rune.goldText : '#E2705A';
   return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={8}
-      accessibilityRole="button"
-      accessibilityLabel={kind === 'edit' ? 'Edit card' : 'Delete card'}
-      style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(14,17,22,0.94)', borderWidth: 1.4, borderColor: Rune.goldEdge, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={20} height={20} viewBox="0 0 24 24">
-        {kind === 'edit' ? (
-          <>
-            <Path d="M4 20 L4.5 15.5 L15 5 L19 9 L8.5 19.5 Z" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-            <Path d="M13 7 L17 11" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-          </>
-        ) : (
-          <>
-            <Path d="M5 7 H19" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-            <Path d="M9.5 7 V5.2 H14.5 V7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-            <Path d="M6.5 7 L7.4 19.5 H16.6 L17.5 7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-          </>
-        )}
-      </Svg>
-    </Pressable>
+    <Svg width={size} height={size} viewBox="0 0 24 24" pointerEvents="none">
+      {kind === 'edit' ? (
+        <>
+          <Path d="M4 20 L4.5 15.5 L15 5 L19 9 L8.5 19.5 Z" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+          <Path d="M13 7 L17 11" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          <Path d="M5 7 H19" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+          <Path d="M9.5 7 V5.2 H14.5 V7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+          <Path d="M6.5 7 L7.4 19.5 H16.6 L17.5 7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+        </>
+      )}
+    </Svg>
   );
 }
 
