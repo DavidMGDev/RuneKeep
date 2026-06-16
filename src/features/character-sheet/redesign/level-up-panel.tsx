@@ -237,7 +237,9 @@ export function LevelUpPanel({
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
-      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} pointerEvents="none" />
+      {/* opaque catching backdrop (#258): NO pointerEvents="none" — it must absorb every tap so nothing
+          ever falls through to the character sheet / carousel underneath. Button-only close. */}
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} />
       <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
        {/* creation-style bordered panel (#242 item 6) — the level-up UI lives inside it */}
        <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>

@@ -17,6 +17,8 @@
 
 import type { AudioBuffer, AudioContext, GainNode } from 'react-native-audio-api';
 
+import { DEFAULT_CENTS, DEFAULT_VOLUME, SFX_PITCH_CENTS, SFX_VOLUME } from './sfx-config';
+
 // ---------------------------------------------------------------------------
 // Manifest — every sound id -> bundled asset (require returns a numeric module id,
 // which `decodeAudioData` accepts directly, so no expo-asset round-trip is needed).
@@ -107,23 +109,7 @@ const MEMES: number[] = [
   require('../../assets/sounds/UI/OnLoseHP-1in10chance/tacobell.mp3'),
 ];
 
-// Per-id defaults: base volume (0..1) and pitch-variation spread in cents (±). 0 cents = no variation
-// (consistency-critical sounds). Anything absent uses DEFAULT_VOL / DEFAULT_CENTS.
-const DEFAULT_VOL = 0.9;
-const DEFAULT_CENTS = 60;
-const VOL: Partial<Record<SfxId, number>> = {
-  carouselScroll: 0.45, floatMenuHighlight: 0.4, cardSelect: 0.5, cardDeselect: 0.5,
-  numpadPress: 0.7, buttonTap: 0.7, panelOpen: 0.8, panelClose: 0.8, cardDragStart: 0.7,
-  cardDragEnd: 0.7, gearScroll1: 0.7, gearScroll2: 0.7, placeToken: 0.8, tokenRemove: 0.85,
-  tokenCopyColor: 0.8, categoryToggleOn: 0.8, categoryToggleOff: 0.8, cardEnable: 0.85, cardDisable: 0.85,
-};
-const CENTS: Partial<Record<SfxId, number>> = {
-  appStartup: 0, sheetEnter: 0, levelUpComplete: 0, restComplete: 0,
-  gainGoldenHp: 40, activateBeastform: 40, disableBeastform: 40, selectCharacter: 30, enterCardViewer: 30,
-  panelOpen: 50, panelClose: 50, floatMenuOpen: 50, floatMenuClose: 50, transitionIconFilled: 50,
-  tokenCopyColor: 130, carouselScroll: 90, gearScroll1: 90, gearScroll2: 90, placeToken: 90, tokenRemove: 90,
-  floatMenuHighlight: 80, numpadPress: 80, cardDragStart: 80, cardDragEnd: 80, buttonTap: 60,
-};
+// Per-id base volume + pitch-variation spread live in sfx-config.ts (the owner's tuning file).
 
 // ---------------------------------------------------------------------------
 // Guarded native context
@@ -242,9 +228,31 @@ function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) 
   });
 }
 
+// Loading-screen guard (#258): NEVER play an "enter" sound while a loading screen is up. The latest
+// such request is DEFERRED and fires when the last loader clears (so the sheet/panel chime lands as
+// the UI becomes visible, not behind the loader). Other sounds don't fire during loaders anyway.
+const ENTER_SOUNDS = new Set<SfxId>(['sheetEnter', 'panelOpen', 'enterCardViewer']);
+let loadingCount = 0;
+let deferredEnter: SfxId | null = null;
+export function beginLoading() {
+  loadingCount += 1;
+}
+export function endLoading() {
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0 && deferredEnter) {
+    const id = deferredEnter;
+    deferredEnter = null;
+    playSfx(id);
+  }
+}
+
 /** Fire a one-shot SFX by id (with default per-play pitch variation). */
 export function playSfx(id: SfxId, opts?: PlayOpts) {
-  fire(FILES[id], VOL[id] ?? DEFAULT_VOL, CENTS[id] ?? DEFAULT_CENTS, opts);
+  if (loadingCount > 0 && ENTER_SOUNDS.has(id)) {
+    deferredEnter = id; // a loader is up — hold the enter chime until it clears
+    return;
+  }
+  fire(FILES[id], SFX_VOLUME[id] ?? DEFAULT_VOLUME, SFX_PITCH_CENTS[id] ?? DEFAULT_CENTS, opts);
 }
 
 /** Lose-HP impact: ~10% of the time a random meme (no variation), else OnLoseHP-Default (varied). */
