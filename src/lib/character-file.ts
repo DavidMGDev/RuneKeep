@@ -10,7 +10,6 @@ import { cardById } from '@/features/cards/catalog';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/features/create/class-data';
-import { armorById } from '@/features/create/equipment-data';
 import { activeWildshapeName } from '@/lib/wildshape-data';
 import { type BaseStats, type CardEffect, computeSheet, type EffectSource } from '@/lib/modifiers';
 
@@ -216,9 +215,11 @@ export function serializeCharacterFile(file: CharacterFile): string {
 function levelThresholdSources(level: number): EffectSource[] {
   const out: EffectSource[] = [];
   for (let L = 2; L <= level; L++) {
+    // #297: the source is already "Level N"; the note must NOT repeat it (the panel renders
+    // "{source} · {note}", so a "Level N:" note printed "Level 2 · Level 2: …").
     out.push({ source: `Level ${L}`, effects: [
-      { target: 'majorThreshold', mode: 'bonus', delta: 1, note: `Level ${L}: +1 damage thresholds` },
-      { target: 'severeThreshold', mode: 'bonus', delta: 1, note: `Level ${L}: +1 damage thresholds` },
+      { target: 'majorThreshold', mode: 'bonus', delta: 1, note: '+1 damage thresholds' },
+      { target: 'severeThreshold', mode: 'bonus', delta: 1, note: '+1 damage thresholds' },
     ] });
   }
   return out;
@@ -236,11 +237,10 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const ancestry = cardById(file.ancestryCardId);
   const community = cardById(file.communityCardId);
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  // Armor (#128/#242): the chosen card's base score = how many armor slots are enabled (the rest stay
-  // locked). Damage thresholds are NO LONGER armor-derived at the base — see the level-based base below
-  // (#242 item 9); armor SETS thresholds via its effects only when it is enabled.
-  const armor = file.armorId ? armorById(file.armorId) : undefined;
-  const baseScore = armor?.baseScore ?? 0;
+  // Armor (#128/#242/#297): an UNARMORED character has armor score 0 — the base is 0, never the chosen
+  // card's score. Equipping an armor card contributes its base score (and SETS the damage thresholds)
+  // through the modifier engine, so all of it shows in the Modifiers panel. `armorScoreMax` is kept only
+  // as a legacy manual override. Damage thresholds are likewise level-based at the base (#242 item 9).
   const ARMOR_SLOTS = 12;
   // Settings/level-up overrides (#166/#167) layer on the class/creation defaults; modifiers add on top.
   const TRAIT_KEYS: TraitKey[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
@@ -256,7 +256,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     presence: (baseTraits.presence ?? 0) + (file.traitBonuses?.presence ?? 0) + modSum(file.modifiers, 'presence'),
     knowledge: (baseTraits.knowledge ?? 0) + (file.traitBonuses?.knowledge ?? 0) + modSum(file.modifiers, 'knowledge'),
     evasion: (file.evasionBase ?? data.startingEvasion) + modSum(file.modifiers, 'evasion'),
-    armorScore: file.armorScoreMax ?? baseScore,
+    armorScore: file.armorScoreMax ?? 0, // #297: unarmored = 0; equipped armor adds its score as a modifier
     maxHp: file.maxHp ?? data.startingHp,
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
@@ -316,8 +316,6 @@ export function toSheetCharacter(file: CharacterFile): Character {
  */
 export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').SheetBreakdown {
   const data = CLASS_DATA[file.className];
-  const armor = file.armorId ? armorById(file.armorId) : undefined;
-  const baseScore = armor?.baseScore ?? 0;
   const baseTraits = file.traits ?? SAMPLE_CHARACTER.traits;
   const base: BaseStats = {
     agility: (baseTraits.agility ?? 0) + (file.traitBonuses?.agility ?? 0) + modSum(file.modifiers, 'agility'),
@@ -327,7 +325,7 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     presence: (baseTraits.presence ?? 0) + (file.traitBonuses?.presence ?? 0) + modSum(file.modifiers, 'presence'),
     knowledge: (baseTraits.knowledge ?? 0) + (file.traitBonuses?.knowledge ?? 0) + modSum(file.modifiers, 'knowledge'),
     evasion: (file.evasionBase ?? data.startingEvasion) + modSum(file.modifiers, 'evasion'),
-    armorScore: file.armorScoreMax ?? baseScore,
+    armorScore: file.armorScoreMax ?? 0, // #297: unarmored = 0; equipped armor adds its score as a modifier
     maxHp: file.maxHp ?? data.startingHp,
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,

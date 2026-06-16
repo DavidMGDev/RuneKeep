@@ -125,6 +125,13 @@ export function kindScale(kind: TokenKind): number {
   }
 }
 
+/** Placed dice render twice the size of their drawer source (#293 owner: on-card dice were too small).
+ *  Only the PLACED/baked glyphs use this; the drawer source keeps {@link kindScale}. */
+export const DIE_PLACED_MULT = 2;
+export function placedKindScale(kind: TokenKind): number {
+  return kindScale(kind) * (kind === 'die' ? DIE_PLACED_MULT : 1);
+}
+
 /** The token's base fill: the material for a default kind, the frozen custom colour, or the die colour. */
 export function tokenFill(t: { kind: TokenKind; color?: string; dieType?: DieType }): string {
   if (t.kind === 'die') return DIE_COLOR[t.dieType ?? 'd6'];

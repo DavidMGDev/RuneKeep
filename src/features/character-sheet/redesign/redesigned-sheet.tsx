@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,6 +27,9 @@ import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/clas
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
 import { RuneLoader } from '@/components/rune-loader';
+import { ChamferBox } from '@/components/chamfer-box';
+import { RuneButton } from '@/components/rune-button';
+import { CenterDialog } from './full-screen-panel';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -50,7 +53,7 @@ import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
-import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, type PlaceholderKind } from './float-menu';
+import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { EditCardFlow } from './edit-card-flow';
@@ -61,7 +64,7 @@ import { ModifiersPanel } from './modifiers-panel';
 import { CardManagementPanel } from './card-management-panel';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
-import { OriginCardPreview } from './origin-card-preview';
+import { OriginCardPreview, type OriginPage } from './origin-card-preview';
 import { PortraitImage, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -395,26 +398,75 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
   );
 }
 
+interface BackGuardState {
+  leaveConfirm: boolean;
+  editCardId: string | null;
+  cardInfoId: string | null;
+  damageOpen: boolean;
+  originPreview: boolean;
+  floatKind: PlaceholderKind | null;
+  onCloseLeave: () => void;
+  onCloseEdit: () => void;
+  onCloseCardInfo: () => void;
+  onCloseDamage: () => void;
+  onCloseOrigin: () => void;
+  onCloseFloat: () => void;
+  onLeave: () => void;
+}
+
 /**
- * Device-back guard (#108): when a card is full-screen, the hardware back button CLOSES it instead
- * of navigating away — backing out mid-fullscreen used to leave a leaked veil that froze the next
- * screen. Lives inside CarouselProvider so it can reach the machine state.
+ * Device-back guard (#108/#297): the hardware back button CLOSES the topmost open panel/overlay rather
+ * than navigating away (backing out mid-fullscreen used to leak a veil that froze the next screen).
+ * Only when EVERYTHING is closed does it raise a leave confirmation. Lives inside the carousel + float
+ * menu providers so it can reach both machine states. Latest props are read from a ref so the listener
+ * subscribes once (no churn from inline closers).
  */
-function CarouselBackGuard() {
-  const { machineState, closeFullscreen } = useCarousel();
+function SheetBackGuard(props: BackGuardState) {
+  const { machineState, closeFullscreen, collapse } = useCarousel();
+  const { open: menuOpen, closeMenu } = useFloatMenu();
+  const ref = useRef(props);
+  ref.current = props;
+  const menuOpenRef = useRef(menuOpen);
+  menuOpenRef.current = menuOpen;
   useFocusEffect(
     useCallback(() => {
-      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (machineState.value === 'fullscreen') {
-          closeFullscreen();
-          return true;
-        }
-        return false;
-      });
+      const onBack = () => {
+        const p = ref.current;
+        // Close the topmost overlay first (most-recently-opened wins), THEN carousel states, THEN leave.
+        if (p.leaveConfirm) { p.onCloseLeave(); return true; }
+        if (p.editCardId) { p.onCloseEdit(); return true; }
+        if (p.cardInfoId) { p.onCloseCardInfo(); return true; }
+        if (p.damageOpen) { p.onCloseDamage(); return true; }
+        if (p.originPreview) { p.onCloseOrigin(); return true; }
+        if (p.floatKind) { p.onCloseFloat(); return true; }
+        if (menuOpenRef.current) { closeMenu(); return true; }
+        if (machineState.value === 'fullscreen') { closeFullscreen(); return true; }
+        if (machineState.value === 'expanded') { collapse(); return true; }
+        p.onLeave(); // nothing open → confirm before leaving (never an accidental exit)
+        return true;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
       return () => sub.remove();
-    }, [machineState, closeFullscreen]),
+    }, [machineState, closeFullscreen, collapse, closeMenu]),
   );
   return null;
+}
+
+/** Leave-to-character-selection confirmation (#297): reuses the centred chamfer dialog so the device
+ *  back button never drops the player out of the sheet by accident. */
+function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <CenterDialog onClose={onCancel} zIndex={10006}>
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>
+        <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.4 }}>Leave character?</Text>
+        <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18, marginTop: 8 }}>Return to character selection. Your character is saved.</Text>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+          <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
+          <RuneButton label="Leave" kind="primary" height={42} style={{ flex: 1 }} onPress={onConfirm} />
+        </View>
+      </ChamferBox>
+    </CenterDialog>
+  );
 }
 
 function ExpandVeil() {
@@ -791,8 +843,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
-  // Origin-card preview (#242 item 4): a standalone copy of subclass/ancestry/community, not the carousel.
-  const [originPreview, setOriginPreview] = useState<{ id: string; source: number | { uri: string }; label: string } | null>(null);
+  // Origin-card preview (#242 item 4 / #297): a standalone copy of subclass/ancestry/community — now a
+  // multi-page card (subclass→class, mixed-ancestry pair). Not the carousel.
+  const [originPreview, setOriginPreview] = useState<{ id: string; pages: OriginPage[]; label: string } | null>(null);
+  const [leaveConfirm, setLeaveConfirm] = useState(false); // #297: device-back leave confirmation
+  const router = useRouter();
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
   const toastId = useRef(1);
   // Emit a toast per changed stat, capped to the newest 5 on screen (#239 item 2: FIFO — oldest drop
@@ -821,11 +876,37 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onOpenOrigin = useCallback(
     (slot: 0 | 1 | 2) => {
       if (!file) return;
-      const id = [file.subclassCardId, file.ancestryCardId, file.communityCardId][slot];
-      const c = cardById(id);
-      if (c) setOriginPreview({ id: c.id, source: c.source, label: c.label });
+      if (slot === 0) {
+        // Subclass → multi-page (#297): the subclass card, then the chosen CLASS card and all its
+        // feature pages (reusing the faces already assembled for the carousel's class-feature card).
+        const sc = cardById(file.subclassCardId);
+        if (!sc) return;
+        const pages: OriginPage[] = [{ source: sc.source, catalogId: sc.id }];
+        const featuresItem = carouselDecks?.abilities?.find((c) => c.id === `features-${file.className}`);
+        for (const f of featuresItem?.faces ?? []) pages.push({ source: f.source, custom: f.custom });
+        setOriginPreview({ id: sc.id, pages, label: sc.label });
+        return;
+      }
+      if (slot === 1) {
+        // Ancestry → a mixed ancestry shows BOTH cards, each with its per-line strike-through (#265/#297:
+        // the FIRST card keeps trait 1 → its trait 2 is struck; the SECOND keeps trait 2 → trait 1 struck).
+        const m = file.mixedAncestry;
+        if (m) {
+          const a1 = cardById(m.first);
+          const a2 = cardById(m.second);
+          const pages: OriginPage[] = [];
+          if (a1) pages.push({ source: a1.source, catalogId: a1.id, crossTrait: 2 });
+          if (a2) pages.push({ source: a2.source, catalogId: a2.id, crossTrait: 1 });
+          if (pages.length) { setOriginPreview({ id: file.ancestryCardId, pages, label: a1?.label ?? 'Ancestry' }); return; }
+        }
+        const a = cardById(file.ancestryCardId);
+        if (a) setOriginPreview({ id: a.id, pages: [{ source: a.source, catalogId: a.id }], label: a.label });
+        return;
+      }
+      const c = cardById(file.communityCardId);
+      if (c) setOriginPreview({ id: c.id, pages: [{ source: c.source, catalogId: c.id }], label: c.label });
     },
-    [file],
+    [file, carouselDecks],
   );
   const heartRef = useRef<HeartTrackHandle>(null);
   const stressRef = useRef<ChargeTrackHandle>(null);
@@ -1310,7 +1391,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [character.hp, file]);
   // Card tokens (#244): cosmetic buttons stuck on cards, keyed by deck-card id. They never feed the
   // modifier engine — pure decoration — so they don't re-derive `character`; they only persist.
-  const cardTokens = useMemo(() => file?.cardTokens ?? {}, [file]);
+  // Keyed on file.cardTokens (NOT the whole file, #297 perf): unrelated edits (HP, equips, level-up)
+  // used to mint a new map ref every save, churning the entire carousel context + re-rendering every
+  // slot. Now the context's token map only changes identity when a token actually changes.
+  const cardTokens = useMemo(() => file?.cardTokens ?? {}, [file?.cardTokens]);
   const placeToken = useCallback((cardId: string, token: PlacedToken) => {
     setFile((f) => {
       if (!f) return f;
@@ -1381,7 +1465,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     <AccentProvider>
       <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
-        <CarouselBackGuard />
+        <SheetBackGuard
+          leaveConfirm={leaveConfirm}
+          editCardId={editCardId}
+          cardInfoId={cardInfoId}
+          damageOpen={damageOpen}
+          originPreview={originPreview !== null}
+          floatKind={floatKind}
+          onCloseLeave={() => setLeaveConfirm(false)}
+          onCloseEdit={() => setEditCardId(null)}
+          onCloseCardInfo={() => setCardInfoId(null)}
+          onCloseDamage={() => setDamageOpen(false)}
+          onCloseOrigin={() => setOriginPreview(null)}
+          onCloseFloat={() => { setFloatKind(null); setNewCardCat(null); }}
+          onLeave={() => setLeaveConfirm(true)}
+        />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
@@ -1496,10 +1594,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onClose={() => setCardInfoId(null)}
             />
           ) : null}
-          {/* origin card preview (#242 item 4): a standalone equippable copy, decoupled from the carousel */}
+          {/* origin card preview (#242 item 4 / #297): a standalone equippable copy, decoupled from the
+              carousel — now multi-page (subclass→class, mixed-ancestry pair with strikes) */}
           {originPreview ? (
             <OriginCardPreview
-              source={originPreview.source}
+              key={originPreview.id}
+              pages={originPreview.pages}
               label={originPreview.label}
               enabled={enabledIds.has(originPreview.id)}
               onToggle={() => onToggleCard(originPreview.id)}
@@ -1510,6 +1610,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onRemoveToken={(tid) => removeToken(originPreview.id, tid)}
               onUpdateToken={(tid, patch) => updateToken(originPreview.id, tid, patch)}
               onSetTokenColor={setTokenColor}
+            />
+          ) : null}
+          {/* leave-to-character-selection confirmation (#297): device back on the bare sheet */}
+          {leaveConfirm ? (
+            <LeaveConfirm
+              onConfirm={() => { setLeaveConfirm(false); if (router.canGoBack()) router.back(); else router.replace('/'); }}
+              onCancel={() => setLeaveConfirm(false)}
             />
           ) : null}
         </View>

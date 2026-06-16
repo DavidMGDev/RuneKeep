@@ -24,9 +24,11 @@ describe('effectsForCardId', () => {
     expect(effectsForCardId('wpn-greatsword')).toEqual([{ target: 'evasion', delta: -1 }]);
   });
   it('resolves armor and catalog cards', () => {
-    // Armor now also SETS the damage thresholds when enabled (#242 item 9), parsed from "5 / 11".
+    // Armor grants its ARMOR SCORE (#297) and SETS the damage thresholds when enabled (#242 item 9,
+    // parsed from "5 / 11"); the unarmored base is now 0, so the score arrives as a modifier.
     expect(effectsForCardId('arm-gambeson')).toEqual([
       { target: 'evasion', delta: 1 },
+      { target: 'armorScore', mode: 'bonus', delta: 3 },
       { target: 'majorThreshold', mode: 'set', delta: 5 },
       { target: 'severeThreshold', mode: 'set', delta: 11 },
     ]);
@@ -161,10 +163,10 @@ describe('editable-card helpers (#264 item 5)', () => {
 });
 
 describe('toSheetCharacter with enabled cards', () => {
-  it('base thresholds are level-based when no armor is enabled (#242)', () => {
+  it('base thresholds are level-based and armor score is 0 when no armor is enabled (#242/#297)', () => {
     const c = toSheetCharacter(baseFile()); // level 1, armor NOT enabled
     expect(c.damageThresholds).toEqual({ major: 1, severe: 2 }); // Major = level, Severe = 2×level
-    expect(c.armorScore).toBe(4);
+    expect(c.armorScore).toBe(0); // #297: unarmored = 0; armor adds its score only when equipped
   });
 
   it('enabling armor SETS the thresholds; a bonus card stacks on top (#242)', () => {

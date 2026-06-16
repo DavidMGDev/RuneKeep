@@ -448,8 +448,10 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.26)' }, fillStyle]}>
             <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 2.5, backgroundColor: Rune.goldBright }} />
           </Animated.View>
-          {/* baked tokens (#244): the cheap LOD layer; hidden on the focused card (board takes over) */}
-          {tokens && tokens.length ? (
+          {/* baked tokens (#244): the cheap LOD layer; hidden on the focused card (board takes over).
+              Only on the near-centre (full-res) window (#297 perf): far thumbs no longer composite the
+              gradient token SVGs — which, under the float-menu dim, tanked to ~3 FPS on decorated decks. */}
+          {withImage && tokens && tokens.length ? (
             <Animated.View style={[StyleSheet.absoluteFill, tokenFade]} pointerEvents="none">
               <BakedTokenLayer tokens={tokens} cardW={CARD_W} cardH={CARD_H} />
             </Animated.View>

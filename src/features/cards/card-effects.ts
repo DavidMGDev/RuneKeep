@@ -83,10 +83,12 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
   if (w?.effects?.length) return w.effects;
   const a = armorById(id);
   if (a) {
-    // Armor SETS the damage thresholds when enabled (#242 item 9) — parsed from its "major / severe"
-    // string — on top of any other effects it carries (e.g. ±Evasion). Base thresholds are level-based.
+    // Armor, when enabled (#242 item 9 / #297): grants its ARMOR SCORE (slots — the unarmored base is
+    // now 0) and SETS the damage thresholds (parsed from its "major / severe" string), on top of any
+    // other effects it carries (e.g. ±Evasion). All of it shows in the Modifiers panel.
     const [mj, sv] = a.thresholds.split('/').map((n) => parseInt(n.trim(), 10) || 0);
     const thr: CardEffect[] = [];
+    if (a.baseScore) thr.push({ target: 'armorScore', mode: 'bonus', delta: a.baseScore });
     if (mj) thr.push({ target: 'majorThreshold', mode: 'set', delta: mj });
     if (sv) thr.push({ target: 'severeThreshold', mode: 'set', delta: sv });
     const eff = [...(a.effects ?? []), ...thr];

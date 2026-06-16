@@ -120,7 +120,7 @@ function GoldTile() {
 export function CardManagementPanel(props: Props) {
   const { isDruid, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
-  const [view, setView] = useState<'categories' | 'cards' | 'types'>('categories');
+  const [view, setView] = useState<'categories' | 'cards' | 'types'>('cards'); // #297: open on Cards
 
   const hiddenSet = useMemo(() => new Set(hidden), [hidden]);
   const ordered = useMemo(() => {
@@ -259,9 +259,10 @@ export function CardManagementPanel(props: Props) {
           </View>
         ) : undefined
       }>
+      {/* #297: Cards is the first/left tab and the default view. */}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-        <TabButton label="Categories" active={view === 'categories'} onPress={() => setView('categories')} />
         <TabButton label="Cards" active={view === 'cards'} onPress={() => setView('cards')} />
+        <TabButton label="Categories" active={view === 'categories'} onPress={() => setView('categories')} />
       </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 8 }} scrollEnabled={!dragId} keyboardShouldPersistTaps="handled">
