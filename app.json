@@ -2,14 +2,14 @@
   "expo": {
     "name": "RuneKeep",
     "slug": "RuneKeep",
-    "version": "0.2.13",
+    "version": "0.2.14",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "runekeep",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0B0E13",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "androidStatusBar": {
       "backgroundColor": "#0B0E13",
@@ -41,10 +41,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0B0E13",
-          "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
-          }
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 210
         }
       ],
       [
