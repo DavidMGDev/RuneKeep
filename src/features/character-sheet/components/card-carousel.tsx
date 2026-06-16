@@ -67,6 +67,8 @@ import {
 import { Card, CardThumb } from './card';
 import { BakedTokenLayer, type PlacedToken } from './card-tokens';
 import { EnabledCorner } from './enabled-corner';
+import { TraitCrossOut } from './trait-cross-out';
+import { catalogIdOf } from '@/features/cards/card-effects';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
@@ -156,13 +158,15 @@ interface SlotProps {
   registerPager: (index: number, pager: ((delta: number) => void) | null) => void;
   /** This card is currently enabled/equipped (#175) — show the corner check. */
   enabled: boolean;
+  /** Mixed ancestry (#265): which trait (1|2) is crossed out on this card, if any. */
+  crossTrait?: 1 | 2;
   /** Toggle this card's enabled state (#175): committed by a press-and-hold on the centered/focused card. */
   onToggle: (id: string) => void;
   /** Cosmetic tokens stuck on this card (#244): drawn as a cheap baked LOD that rides the slot. */
   tokens?: PlacedToken[];
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, onToggle, tokens }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -452,6 +456,8 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           ) : null}
           {/* enabled corner check (#175): overlay on any equipped card, in both LOD and focused states */}
           {enabled ? <EnabledCorner width={CARD_W} height={CARD_H} /> : null}
+          {/* mixed-ancestry cross-out (#265): strikes the trait not taken; rides the slot like the corner */}
+          {crossTrait ? <TraitCrossOut width={CARD_W} height={CARD_H} catalogId={catalogIdOf(item.id)} crossedTrait={crossTrait} /> : null}
         </View>
       </GestureDetector>
     </Animated.View>
@@ -530,7 +536,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, toggleCard, showCardInfo, cardTokens } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const ringLen = ring.length; // #233 item 6: no over-scroll switch when ≤1 category is enabled
@@ -906,6 +912,7 @@ export function CardCarousel() {
         closeFullscreen={closeFullscreen}
         registerPager={registerPager}
         enabled={enabledIds.has(deck[i].id)}
+        crossTrait={crossOuts[deck[i].id]}
         onToggle={toggleCard}
         tokens={cardTokens[deck[i].id]}
       />,

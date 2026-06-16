@@ -1086,6 +1086,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
   const editableIds = useMemo(() => editableCardIds(file), [file]);
+  // Mixed ancestry (#265): the FIRST card keeps trait 1 (so its trait 2 is crossed out), the SECOND
+  // keeps trait 2 (its trait 1 crossed out). Maps each ancestry card id → the trait struck through.
+  const crossOuts = useMemo<Record<string, 1 | 2>>(() => {
+    const m = file?.mixedAncestry;
+    if (!m) return {};
+    return { [m.first]: 2, [m.second]: 1 };
+  }, [file?.mixedAncestry]);
   // Save edits to a player-authored card in place, preserving its id + collection (and a custom card's
   // `target`). commitFile re-derives the sheet so effect edits take immediate effect.
   const onSaveEditedCard = useCallback((id: string, draft: CardDraft) => {
@@ -1247,7 +1254,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
