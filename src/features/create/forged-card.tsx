@@ -3,6 +3,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
 
+import { CardMarkdownBody } from '@/components/card-markdown';
 import { DividerPlaque, getPlaqueTheme } from '@/components/card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
@@ -136,13 +137,13 @@ export function ForgedCard({
             </Text>
             {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
           </View>
-          <Text
+          <CardMarkdownBody
+            body={body}
             numberOfLines={multilineTitle ? 9 : undefined}
             adjustsFontSizeToFit={multilineTitle}
             minimumFontScale={0.6}
-            style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7, flexShrink: 1 }}>
-            {body}
-          </Text>
+            style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7, flexShrink: 1 }}
+          />
         </View>
       )}
       <ForgedFooter />
