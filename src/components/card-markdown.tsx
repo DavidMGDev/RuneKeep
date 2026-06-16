@@ -1,0 +1,92 @@
+import { Fragment } from 'react';
+import { Text, type TextStyle, View } from 'react-native';
+
+import { Body } from '@/constants/theme';
+import { hasMarkdown, type MdSpan, parseCardMarkdown } from '@/lib/card-markdown';
+
+/**
+ * Renders a custom-card description with minimal markdown (#264 item 6). Two paths:
+ *  - no markdown  → the plain autosizing <Text> exactly as before (zero regression).
+ *  - inline only  → one autosizing <Text> with nested bold/italic spans (keeps adjustsFontSizeToFit).
+ *  - has lists    → a <View> of paragraphs + bullet/numbered rows (block layout, no autosize — lists
+ *                   are opt-in and the card body area is fixed).
+ */
+function spanNodes(spans: MdSpan[]) {
+  return spans.map((s, i) => {
+    const style: TextStyle = {};
+    if (s.bold) style.fontFamily = Body.bold;
+    if (s.italic) style.fontStyle = 'italic';
+    return (
+      <Text key={i} style={s.bold || s.italic ? style : undefined}>
+        {s.text}
+      </Text>
+    );
+  });
+}
+
+export function CardMarkdownBody({
+  body,
+  style,
+  numberOfLines,
+  adjustsFontSizeToFit,
+  minimumFontScale,
+}: {
+  body: string;
+  style: TextStyle;
+  numberOfLines?: number;
+  adjustsFontSizeToFit?: boolean;
+  minimumFontScale?: number;
+}) {
+  if (!hasMarkdown(body)) {
+    return (
+      <Text numberOfLines={numberOfLines} adjustsFontSizeToFit={adjustsFontSizeToFit} minimumFontScale={minimumFontScale} style={style}>
+        {body}
+      </Text>
+    );
+  }
+  const blocks = parseCardMarkdown(body);
+  const hasList = blocks.some((b) => b.kind !== 'p');
+
+  if (!hasList) {
+    return (
+      <Text numberOfLines={numberOfLines} adjustsFontSizeToFit={adjustsFontSizeToFit} minimumFontScale={minimumFontScale} style={style}>
+        {blocks.map((b, i) => (
+          <Fragment key={i}>
+            {i > 0 ? '\n\n' : ''}
+            {spanNodes((b as { spans: MdSpan[] }).spans)}
+          </Fragment>
+        ))}
+      </Text>
+    );
+  }
+
+  // Block layout: strip the per-text vertical margin onto the container; list rows align left.
+  const { marginTop, alignSelf, flexShrink, ...textStyle } = style;
+  const rowText: TextStyle = { ...textStyle, marginTop: 0 };
+  const listText: TextStyle = { ...rowText, textAlign: 'left', flexShrink: 1 };
+  return (
+    <View style={{ marginTop, alignSelf: alignSelf ?? 'stretch', flexShrink }}>
+      {blocks.map((b, i) => {
+        const gap = i > 0 ? 4 : 0;
+        if (b.kind === 'p') {
+          return (
+            <Text key={i} style={[rowText, { marginTop: gap }]}>
+              {spanNodes(b.spans)}
+            </Text>
+          );
+        }
+        const items = b.kind === 'ul' ? b.items.map((spans, j) => ({ marker: '•', spans, j })) : b.items.map((it, j) => ({ marker: `${it.n}.`, spans: it.spans, j }));
+        return (
+          <View key={i} style={{ marginTop: gap }}>
+            {items.map(({ marker, spans, j }) => (
+              <View key={j} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                <Text style={[rowText, { width: b.kind === 'ol' ? 14 : 9 }]}>{marker}</Text>
+                <Text style={listText}>{spanNodes(spans)}</Text>
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
