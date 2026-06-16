@@ -438,11 +438,11 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
           pip={pip}
           state={s}
           accent={accent}
-          // The animating copy owns the slot — but NOT during the 'hold' charge (#233 item 7): keep
-          // the static heart visible while holding so a tap / hold-start never blanks for the frame
-          // between the slot hiding and the anim's first paint. Once it fires/cancels the anim is
-          // already on screen, so hiding then is seamless.
-          hidden={anims.some((a) => a.index === i && a.phase !== 'hold')}
+          // The animating copy owns the slot the entire time it exists (#276 item 6): hide the static
+          // heart the moment an anim starts — INCLUDING the 'hold' charge — so the semi-transparent
+          // icon never shows a static ghost behind the growing one. The anim mounts in the same commit
+          // at scale 1, so there's no blank frame; the static returns when the anim completes.
+          hidden={anims.some((a) => a.index === i)}
         />
       ))}
       {zones.map((z, i) => (
