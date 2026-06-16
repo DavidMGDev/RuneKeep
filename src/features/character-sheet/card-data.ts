@@ -39,6 +39,9 @@ export interface CardFace {
 
 export interface CardItem extends CardImage {
   id: string;
+  /** The card's SYNC KEY (#277): its underlying catalog/custom id. Copies of one card share a ref, so
+   *  enable state + effects (keyed by ref) apply once across every copy. Defaults to the id. */
+  ref?: string;
   /**
    * A MULTI-FACE card (#110, ex-#108 pages): the class-feature card is a single element in the hand
    * that, when focused, becomes a 3D flip-deck — face 0 = the class card, then each feature page.

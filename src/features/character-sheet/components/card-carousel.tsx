@@ -911,7 +911,7 @@ export function CardCarousel() {
         focusIndex={focusIndex}
         closeFullscreen={closeFullscreen}
         registerPager={registerPager}
-        enabled={enabledIds.has(deck[i].id)}
+        enabled={enabledIds.has(deck[i].ref ?? deck[i].id)}
         crossTrait={crossOuts[deck[i].id]}
         onToggle={toggleCard}
         tokens={cardTokens[deck[i].id]}
