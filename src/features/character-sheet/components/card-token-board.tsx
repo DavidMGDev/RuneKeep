@@ -23,6 +23,7 @@ import { box } from '@/lib/design';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
 import { playSfx } from '@/lib/sfx';
 import { useCarousel } from '../carousel-context';
+import { DeleteCardConfirm } from '../redesign/edit-card-flow';
 import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geometry';
 import {
   DEFAULT_TOKEN_KINDS,
@@ -420,6 +421,9 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
     },
   );
   const fade = useAnimatedStyle(() => ({ opacity: ready.value }));
+  // #276 item 4: deleting a catalog card from fullscreen must NOT exit fullscreen until it's actually
+  // deleted — the confirm lives here (inside the carousel) so it can collapse only on confirm.
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const deck = decks[category];
   const card = st.active ? deck[Math.min(deck.length - 1, Math.max(0, st.idx))] : null;
@@ -457,12 +461,23 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
           <CardActionButton
             kind={editable ? 'edit' : 'delete'}
             onPress={() => {
-              closeFullscreen();
+              // #276 item 4: do NOT exit fullscreen — edit opens over the still-fullscreen card; delete
+              // opens its confirm over it. Only an actual delete (below) collapses fullscreen.
               if (editable) onEditCard?.(id);
-              else onDeleteCard?.(id);
+              else setConfirmDelete(true);
             }}
           />
         </View>
+      ) : null}
+      {confirmDelete ? (
+        <DeleteCardConfirm
+          onConfirm={() => {
+            setConfirmDelete(false);
+            closeFullscreen();
+            onDeleteCard?.(id);
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
       ) : null}
     </Animated.View>
   );

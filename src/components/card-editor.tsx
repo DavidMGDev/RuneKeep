@@ -319,9 +319,11 @@ export function CardEditor({
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
       {scrimless ? (
-        // In-sheet (#252): OPAQUE full-screen backdrop (the carousel is unloaded behind it); closes
-        // only via the Cancel button, never by tapping outside. The content is clipped to the border.
-        <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, scrimStyle]} />
+        // In-sheet (#252): OPAQUE full-screen backdrop; closes only via the Cancel button, never by
+        // tapping outside. OCCLUDES touches (#276 item 4): when editing a card from FULLSCREEN the
+        // carousel stays mounted+fullscreen behind this, so the backdrop must swallow stray taps (no
+        // pointerEvents=none) or they'd reach the focused card and close it.
+        <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, scrimStyle]} />
       ) : (
         <AnimatedPressable style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
       )}
