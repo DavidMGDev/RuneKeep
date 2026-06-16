@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Text, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import Svg, { Polygon } from 'react-native-svg';
@@ -18,12 +18,17 @@ export function RuneLoader({ done, onHidden, caption }: { done: boolean; onHidde
   const pulse = useSharedValue(0.4);
   const spin = useSharedValue(0);
   const fade = useSharedValue(1);
-  // #258r3: this is a real loader (the sheet forges behind it) — hold any "enter" chime until it's
-  // gone, so the sheet-enter sound never plays while "Summoning the sheet" is on screen.
+  // #258r3: this is a real loader (the sheet forges behind it) — hold any "enter" chime until the loader
+  // clears. #289: release it as the loader BEGINS fading out (not on full unmount), so the sheet-enter
+  // sound lands as the sheet reveals (~360ms earlier) instead of after the veil is gone. Released once.
+  const released = useRef(false);
+  const release = useCallback(() => {
+    if (!released.current) { released.current = true; endLoading(); }
+  }, []);
   useEffect(() => {
     beginLoading();
-    return endLoading;
-  }, []);
+    return release; // unmount releases too (e.g. fallback path) — the guard keeps it to exactly one.
+  }, [release]);
   useEffect(() => {
     if (reduced) {
       pulse.value = 0.85;
@@ -33,8 +38,11 @@ export function RuneLoader({ done, onHidden, caption }: { done: boolean; onHidde
     spin.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.linear }), -1, false);
   }, [pulse, spin, reduced]);
   useEffect(() => {
-    if (done) fade.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.quad) }, (f) => f && runOnJS(onHidden)());
-  }, [done, fade, onHidden]);
+    if (done) {
+      release(); // #289: play the deferred sheet-enter chime now, as the veil begins to lift
+      fade.value = withTiming(0, { duration: 360, easing: Easing.out(Easing.quad) }, (f) => f && runOnJS(onHidden)());
+    }
+  }, [done, fade, onHidden, release]);
   const glow = useAnimatedStyle(() => ({ opacity: 0.45 + 0.55 * pulse.value, transform: [{ scale: 0.92 + 0.12 * pulse.value }] }));
   const ring = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
   const veil = useAnimatedStyle(() => ({ opacity: fade.value }));
