@@ -125,17 +125,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.3.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.3.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.4.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.4.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.3'
-$notes = "RuneKeep v0.3 - cards, ancestry & rest. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nMixed ancestry: combine two ancestries in character creation - pick two cards in order (the first gives its 1st trait, the second its 2nd), with the unused half crossed out and only the active half's bonuses applied. Edit custom cards from the gallery or fullscreen in the carousel (hold to delete), with basic markdown (bold/italic/lists) in descriptions. Duplicate catalog cards are now individual - select, drag, and add tokens to each copy separately. Redesigned custom-category icons, custom-category names now show in the over-scroll switch, a proper delete button replaces the trashcan, and the short-rest keypad clears between dice rolls.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.4'
+$notes = "RuneKeep v0.4 - ancestry, card editing & beastform. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nMixed ancestry now strikes through exactly the trait you didn't take (black, on the right lines) and both ancestry cards land in your Arsenal. Edit any card's modifiers from the Modifiers panel (pencil) - including advanced formula effects like x Proficiency or half your Level. Duplicate cards: each copy is its own card to place and move, but copies share one equip and apply their effect once. Beastform rework: transforming unequips your weapons (restored when you leave the form), keeps armor and domains, blocks switching forms or equipping new domains while transformed, and auto-ends at 0 HP. Level-up's +1/+1 damage thresholds now stack on top of armor and show per level in the breakdown. Plus: hold-to-confirm deletes, fullscreen card edit/delete stays fullscreen, the stat-icon ghost is gone, the float menu is reordered (Modifiers / Level Up / Rest / New Card / Cards), and the sheet-enter sound lands on time.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.3 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.4 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
