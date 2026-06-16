@@ -17,6 +17,7 @@ import Svg, { Polygon, Polyline } from 'react-native-svg';
 import { ArtImage } from '@/components/art-image';
 import { useScreenInsets } from '@/components/app-screen';
 import { Rune } from '@/constants/theme';
+import { TraitCrossOut } from '@/features/character-sheet/components/trait-cross-out';
 import { playSfx } from '@/lib/sfx';
 import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
@@ -165,9 +166,11 @@ interface SlotProps {
   flipDir: number;
   onFlipSettle: () => void;
   onTap: (index: number, x: number) => void;
+  /** Mixed ancestry (#265): which trait (1|2) is struck through on this card, if any. */
+  crossTrait?: 1 | 2;
 }
 
-const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap }: SlotProps) {
+const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
@@ -245,6 +248,8 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
               </View>
             </>
           ) : null}
+          {/* mixed-ancestry cross-out (#265): strikes the trait not taken; rides the card like `selected` */}
+          {crossTrait ? <TraitCrossOut width={FORGED_W} height={FORGED_H} catalogId={item.id} crossedTrait={crossTrait} /> : null}
           {/* page indicator (#110): BELOW the card, off the parchment (sibling of FlipCard so it
               never rotates). Fades in/out with focus progress — no pop on close. */}
           {isCenter && (item.faces?.length ?? 0) > 1 ? (
@@ -274,8 +279,10 @@ export const StraightCarousel = forwardRef<
     /** Fires per detent; the PARENT owns the select controls (they live on the screen's top layer,
      *  above every veil — #106) and needs the center index to act on the right card. */
     onIndexChange?: (i: number) => void;
+    /** Mixed ancestry (#265): card id → which trait (1|2) to strike through. */
+    crossOuts?: Record<string, 1 | 2>;
   }
->(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange }, ref) {
+>(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts }, ref) {
   const count = items.length;
   const insets = useScreenInsets();
   const screenH = Dimensions.get('window').height;
@@ -527,6 +534,7 @@ export const StraightCarousel = forwardRef<
                     insetTop={insets.top}
                     screenH={screenH}
                     selected={selectedIds.includes(item.id)}
+                    crossTrait={crossOuts?.[item.id]}
                     withImage={Math.abs(i - center) <= IMG_HALF}
                     focused={fsOpen && i === center}
                     isCenter={i === center}

@@ -49,6 +49,9 @@ interface Draft {
   className: ClassName | null;
   subclassCardId: string | null;
   ancestryCardId: string | null;
+  /** Mixed ancestry (#265): two ancestries — `first` keeps its 1st trait, `second` keeps its 2nd.
+   *  null = single-ancestry mode. While picking, either slot may be null. */
+  mixedAncestry: { first: string | null; second: string | null } | null;
   communityCardId: string | null;
   domainCardIds: string[];
   traits: Partial<Record<TraitKey, number>>;
@@ -69,6 +72,7 @@ const EMPTY: Draft = {
   className: null,
   subclassCardId: null,
   ancestryCardId: null,
+  mixedAncestry: null,
   communityCardId: null,
   domainCardIds: [],
   traits: {},
@@ -81,6 +85,10 @@ const EMPTY: Draft = {
   gold: GOLD_DEFAULT,
 };
 
+/** Synthetic ancestry-carousel cards (#265): the last card toggles single↔mixed mode. */
+const MIXED_ANCESTRY_ID = 'ancestry-mixed';
+const SINGLE_ANCESTRY_ID = 'ancestry-single';
+
 function deckDone(deck: DeckKey, d: Draft): boolean {
   switch (deck) {
     case 'class':
@@ -88,7 +96,7 @@ function deckDone(deck: DeckKey, d: Draft): boolean {
     case 'subclass':
       return !!d.subclassCardId;
     case 'ancestry':
-      return !!d.ancestryCardId;
+      return d.mixedAncestry ? !!(d.mixedAncestry.first && d.mixedAncestry.second) : !!d.ancestryCardId;
     case 'community':
       return !!d.communityCardId;
     case 'domains':
@@ -647,8 +655,14 @@ export function CreateScreen() {
         });
       case 'subclass':
         return CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
-      case 'ancestry':
-        return CATALOG.filter((c) => c.kind === 'ancestry').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+      case 'ancestry': {
+        const base = CATALOG.filter((c) => c.kind === 'ancestry').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+        // #265: the last card flips the mode — "Mixed Ancestry" enters mixed mode, "Single Ancestry" leaves it.
+        const toggle: StraightItem = draft.mixedAncestry
+          ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
+          : { id: MIXED_ANCESTRY_ID, label: 'Mixed Ancestry', custom: <ForgedCard title="Mixed Ancestry" kindLabel="Ancestry" body="Combine two ancestries: take the first trait of one and the second trait of the other. Pick two — order decides which trait you keep." accentDeep={Rune.panel} colorArt="#3A2A4A" multilineTitle /> };
+        return [...base, toggle];
+      }
       case 'community':
         return CATALOG.filter((c) => c.kind === 'community').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       case 'domains': {
@@ -657,7 +671,7 @@ export function CreateScreen() {
         return pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       }
     }
-  }, [deck, draft.className, draft.inventoryCustom, sources, weaponKind, weaponSlot, forgedItem]);
+  }, [deck, draft.className, draft.inventoryCustom, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
@@ -673,13 +687,37 @@ export function CreateScreen() {
       case 'subclass':
         return draft.subclassCardId ? [draft.subclassCardId] : [];
       case 'ancestry':
-        return draft.ancestryCardId ? [draft.ancestryCardId] : [];
+        return draft.mixedAncestry
+          ? [draft.mixedAncestry.first, draft.mixedAncestry.second].filter((x): x is string => !!x)
+          : draft.ancestryCardId ? [draft.ancestryCardId] : [];
       case 'community':
         return draft.communityCardId ? [draft.communityCardId] : [];
       case 'domains':
         return draft.domainCardIds;
     }
   }, [deck, draft, weaponSlot]);
+
+  // #265: live cross-out while picking a mix — the 1st pick keeps trait 1 (cross its trait 2), the 2nd
+  // keeps trait 2 (cross its trait 1).
+  const ancestryCrossOuts = useMemo<Record<string, 1 | 2>>(() => {
+    const m = draft.mixedAncestry;
+    if (!m) return {};
+    const o: Record<string, 1 | 2> = {};
+    if (m.first) o[m.first] = 2;
+    if (m.second) o[m.second] = 1;
+    return o;
+  }, [draft.mixedAncestry]);
+  // Fade the ancestry carousel when toggling single↔mixed so the swap never flickers (#265): dip to 0,
+  // (the items + selection update under the dip), then rise back — the same hide-until-ready idea as the
+  // sheet's ghost-free switch, at the container level.
+  const mixedActive = !!draft.mixedAncestry;
+  const modeFade = useSharedValue(1);
+  const modeFirst = useRef(true);
+  useEffect(() => {
+    if (modeFirst.current) { modeFirst.current = false; return; }
+    modeFade.value = withSequence(withTiming(0, { duration: 150, easing: Easing.in(Easing.cubic) }), withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) }));
+  }, [mixedActive, modeFade]);
+  const modeFadeStyle = useAnimatedStyle(() => ({ opacity: modeFade.value }));
 
   const onToggle = useCallback(
     (id: string) => {
@@ -730,9 +768,23 @@ export function CreateScreen() {
         case 'subclass':
           set({ subclassCardId: draft.subclassCardId === id ? null : id });
           return;
-        case 'ancestry':
+        case 'ancestry': {
+          // #265 mode toggle cards.
+          if (id === MIXED_ANCESTRY_ID) { set({ mixedAncestry: { first: null, second: null }, ancestryCardId: null }); return; }
+          if (id === SINGLE_ANCESTRY_ID) { set({ mixedAncestry: null }); return; }
+          if (draft.mixedAncestry) {
+            // Ordered two-pick: 1st filled slot keeps trait 1, 2nd keeps trait 2. Tapping a picked card
+            // frees its slot. A card can't fill both slots (tapping it just toggles its own).
+            const { first, second } = draft.mixedAncestry;
+            if (id === first) { set({ mixedAncestry: { first: null, second } }); return; }
+            if (id === second) { set({ mixedAncestry: { first, second: null } }); return; }
+            if (!first) { set({ mixedAncestry: { first: id, second } }); return; }
+            if (!second) { set({ mixedAncestry: { first, second: id } }); return; }
+            return; // both slots full → ignore until one is freed
+          }
           set({ ancestryCardId: draft.ancestryCardId === id ? null : id });
           return;
+        }
         case 'community':
           set({ communityCardId: draft.communityCardId === id ? null : id });
           return;
@@ -761,7 +813,10 @@ export function CreateScreen() {
       portraitUri: draft.portraitUri,
       className: draft.className,
       subclassCardId: draft.subclassCardId!,
-      ancestryCardId: draft.ancestryCardId!,
+      // #265: mixed ancestry — `first` is the primary ancestry (drives the name), `second` rides along as
+      // an acquired card; both carry their cross-out + half-applied modifiers via `mixedAncestry`.
+      ancestryCardId: draft.mixedAncestry ? draft.mixedAncestry.first! : draft.ancestryCardId!,
+      ...(draft.mixedAncestry ? { mixedAncestry: { first: draft.mixedAncestry.first!, second: draft.mixedAncestry.second! }, acquiredCardIds: [draft.mixedAncestry.second!] } : {}),
       communityCardId: draft.communityCardId!,
       domainCardIds: draft.domainCardIds,
       traits: draft.traits as Record<TraitKey, number>, // complete ⇒ all six assigned
@@ -784,7 +839,7 @@ export function CreateScreen() {
 
   const locked = (k: DeckKey) =>
     ((k === 'subclass' || k === 'domains') && !draft.className) || !!DECKS.find((d) => d.key === k)?.stub; // stubs land next issue
-  const maxSelect = deck === 'domains' || deck === 'inventory' ? 2 : 1;
+  const maxSelect = deck === 'domains' || deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
   const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
@@ -894,17 +949,20 @@ export function CreateScreen() {
             </View>
           ) : null}
           {isCarouselDeck(deck) && items.length > 0 ? (
-            <StraightCarousel
-              ref={carouselRef}
-              key={deck + (deck === 'weapons' ? `${weaponKind}-${weaponSlot}` : deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
-              items={items}
-              selectedIds={selectedIds}
-              initialIndex={deckIndexes.current[deck] ?? Math.floor(items.length / 2)}
-              onIndexChange={(i) => {
-                deckIndexes.current[deck] = i;
-                setCenterIdx(i);
-              }}
-            />
+            <Animated.View style={[{ flex: 1 }, modeFadeStyle]}>
+              <StraightCarousel
+                ref={carouselRef}
+                key={deck + (deck === 'weapons' ? `${weaponKind}-${weaponSlot}` : deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
+                items={items}
+                selectedIds={selectedIds}
+                crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
+                initialIndex={deckIndexes.current[deck] ?? Math.floor(items.length / 2)}
+                onIndexChange={(i) => {
+                  deckIndexes.current[deck] = i;
+                  setCenterIdx(i);
+                }}
+              />
+            </Animated.View>
           ) : null}
           {deck === 'traits' ? <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} /> : null}
           {deck === 'experiences' ? <ExperiencesTab experiences={draft.experiences} onEdit={(slot) => setEditingExperience(slot)} /> : null}
