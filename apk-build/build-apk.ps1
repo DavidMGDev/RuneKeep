@@ -69,6 +69,49 @@ Install-SdkZip "ndk;27.1.12297006"    "$base/android-ndk-r27b-windows.zip"      
 if (-not (Test-Path (Join-Path $sdk 'cmake\3.22.1\bin\cmake.exe'))) { Fail "cmake;3.22.1 missing (expected already installed)" }
 Write-Host "All SDK components present." -ForegroundColor Green
 
+# ---------------------------------------------------------------------------
+# react-native-audio-api native prerequisites (#255). This module compiles C++ on Android and is
+# fussy on this Windows/WSL machine. Two self-heal steps so a fresh `npm install` still builds:
+#  1) Long-path-aware ninja. The CMake-bundled ninja is 1.10.2 (NOT long-path-aware). audio-api keeps
+#     its C++ in common/cpp, so ninja mirrors the full absolute source path under the obj dir and
+#     blows past MAX_PATH (260) even with the OS LongPathsEnabled flag on -> "ninja: error: mkdir(...)
+#     No such file or directory". ninja 1.12.1 carries the longPathAware manifest and fixes it.
+#  2) Prebuilt native binaries. audio-api's gradle task shells to a WSL bash script that needs `unzip`
+#     (absent in WSL here) to extract the prebuilt opus/vorbis static libs -> the native link fails.
+#     The script SKIPS extraction if the target dir already exists, so we pre-extract with 7-Zip.
+$rnaDir = Join-Path $repo 'node_modules\react-native-audio-api'
+if (Test-Path $rnaDir) {
+  Section "react-native-audio-api native prerequisites"
+  # (1) ninja
+  $ninja = Join-Path $sdk 'cmake\3.22.1\bin\ninja.exe'
+  $ninjaVer = if (Test-Path $ninja) { (& $ninja --version) } else { '0' }
+  if ([version]($ninjaVer -replace '[^0-9.].*$','') -lt [version]'1.11') {
+    Write-Host "  ninja $ninjaVer is not long-path-aware; installing 1.12.1 ..." -ForegroundColor Yellow
+    $nz = Join-Path $env:TEMP 'rk-ninja.zip'; $nx = Join-Path $env:TEMP 'rk-ninja-x'
+    curl.exe -fsSL 'https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip' -o $nz
+    if (Test-Path $nx) { Remove-Item -Recurse -Force $nx }
+    New-Item -ItemType Directory -Force $nx | Out-Null
+    if ($sevenZip) { & $sevenZip x $nz "-o$nx" -y | Out-Null } else { Expand-Archive -Path $nz -DestinationPath $nx -Force }
+    if (Test-Path $ninja) { Copy-Item -Force $ninja (Join-Path $sdk 'cmake\3.22.1\bin\ninja-old.exe.bak') }
+    Copy-Item -Force (Join-Path $nx 'ninja.exe') $ninja
+    Remove-Item -Force $nz -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force $nx -ErrorAction SilentlyContinue
+    Write-Host "  ninja -> $(& $ninja --version)" -ForegroundColor Green
+  } else { Write-Host "  ninja $ninjaVer is long-path-aware." -ForegroundColor Green }
+  # (2) prebuilt static libs (android.zip -> common/cpp/audioapi/external/android)
+  $extAndroid = Join-Path $rnaDir 'common\cpp\audioapi\external\android'
+  if (-not (Test-Path $extAndroid)) {
+    Write-Host "  extracting audio-api prebuilt android libs ..." -ForegroundColor Yellow
+    $az = Join-Path $env:TEMP 'rk-rna-android.zip'
+    curl.exe -fsSL 'https://github.com/software-mansion-labs/rn-audio-libs/releases/download/v3.1.0/android.zip' -o $az
+    $extDir = Join-Path $rnaDir 'common\cpp\audioapi\external'
+    New-Item -ItemType Directory -Force $extDir | Out-Null
+    if ($sevenZip) { & $sevenZip x $az "-o$extDir" -y | Out-Null } else { Expand-Archive -Path $az -DestinationPath $extDir -Force }
+    Remove-Item -Recurse -Force (Join-Path $extDir '__MACOSX') -ErrorAction SilentlyContinue
+    Remove-Item -Force $az -ErrorAction SilentlyContinue
+    if (Test-Path $extAndroid) { Write-Host "  prebuilt libs -> $extAndroid" -ForegroundColor Green } else { Fail "audio-api prebuilt android libs missing after extract" }
+  } else { Write-Host "  audio-api prebuilt libs present." -ForegroundColor Green }
+}
+
 Section "Build release APK (arm64-v8a). First run downloads Gradle + compiles native (~10-20 min)."
 Set-Location (Join-Path $repo 'android')
 & .\gradlew.bat assembleRelease "-PreactNativeArchitectures=arm64-v8a" --console=plain
