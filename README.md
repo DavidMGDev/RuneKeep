@@ -1,46 +1,129 @@
 <div align="center">
 
-# 🛡️ RuneKeep
+<img src="assets/images/icon.png" alt="RuneKeep" width="120" />
+
+# RuneKeep
 
 **An animation-first companion app for the [Daggerheart](https://www.daggerheart.com/) TTRPG.**
 
-Expo · React Native · Reanimated 4 · Skia · TypeScript
+Build a hero, run the living character sheet, and manage your whole deck — fully offline, on your phone.
+
+[![Latest release](https://img.shields.io/github/v/release/DavidMGDev/RuneKeep?label=download&sort=semver)](https://github.com/DavidMGDev/RuneKeep/releases/latest)
+&nbsp;·&nbsp; Android (arm64) &nbsp;·&nbsp; Expo SDK 54 · React Native · Reanimated 4 · TypeScript
 
 </div>
 
 ---
 
-RuneKeep brings the Daggerheart character sheet to life: tappable icons that spring to life,
-particle effects (embers, sparks, magical dust), and dynamic cards that float, drag, and throw
-with real physics — all at 60fps on the GPU.
+RuneKeep isn't a form with text fields. It's the Daggerheart sheet brought to life: hearts you **hold to
+charge** and watch burst, a hand of cards that fans out and grows to **fullscreen** in place, decks you
+flick between on a spinning gear, and a modifier engine that recomputes the whole sheet the instant you
+equip a card. Everything ships in the app — no account, no server, no download-on-launch.
 
-## Stack
-- **Expo SDK 54** (managed) · React Native 0.81 · React 19 · New Architecture — pinned to SDK 54 for Expo Go compatibility
-- **Expo Router** — file-based navigation
-- **Reanimated 4 + Worklets + Gesture Handler** — UI-thread animation & gestures (bundled)
-- **Skia** + **react-native-svg** — GPU particles, shaders, crisp vectors (added per-feature)
-- TypeScript throughout
+## Download
 
-See [`docs/animation-stack.md`](./docs/animation-stack.md) for the full, version-verified library rationale.
+Grab the latest APK from the [**Releases**](https://github.com/DavidMGDev/RuneKeep/releases/latest) page
+(`Runekeep.vX.X.apk`, ~75 MB, arm64-v8a).
 
-## Getting started
+1. On your phone, enable **Install unknown apps** for your browser/file manager.
+2. Open the downloaded APK and install.
+3. Launch RuneKeep — all card data is bundled, so it works with no connection.
+
+> Debug-signed for sideloading. iOS isn't distributed; run it from source via Expo Go (below).
+
+## Features
+
+**Character creation** — a guided, card-by-card forge: class & subclass, ancestry (including **mixed
+ancestry** — take the first trait of one and the second of another), community, two domain cards, the
+trait array, experiences, weapons, armor, inventory and starting gold.
+
+**The living sheet** — HP, Stress, Hope and Armor tracks with spring physics, particle bursts and
+hold-to-charge / double-tap interactions; an **Incoming Damage** keypad that reads your thresholds and
+applies the hit with a hold-to-confirm.
+
+**The card carousel** — your loadout as a fanned hand. Tap to focus a card to fullscreen, hold to
+equip/unequip (with an enabled-corner check), over-scroll the gear to switch decks, and drag cosmetic
+**tokens** onto a card. Decks: Arsenal, Inventory, Beastform (Druid), Notes, plus your own **custom
+categories** with custom icons.
+
+**Cards & modifiers** — author **custom cards** (image or flat colour art, a title, a markdown
+description, a type ribbon) and give them **effects**. Effects can be flat (+2 Max HP) or **formulas**
+(× Proficiency, ½ Level rounded up, your Tier, …). The per-card **Modifiers panel** is read *and* write:
+fix or add modifiers on any catalog card too. **Duplicate** a card to place copies in different
+categories — each copy moves independently but shares one equip and applies its effect once.
+
+**Beastform** — Druid wild shape done right: transforming unequips your weapons (auto-restored when you
+revert), keeps armor and domains, blocks switching forms or equipping new domains mid-form, renames the
+sheet to the creature, and auto-ends at 0 HP.
+
+**Leveling & rest** — the full advancement flow (traits, HP/Stress, Evasion, Proficiency, domains,
+subclass, multiclass) with per-level damage-threshold bonuses that stack on your armor; short/long rest
+with dice rolls.
+
+**Sound** — a native Web-Audio SFX engine (risers, pitch variation, contextual cues) in the built APK.
+
+## Tech stack
+
+- **Expo SDK 54** (managed, New Architecture) · React Native 0.81 · React 19 · TypeScript — pinned to
+  SDK 54 so it runs in the owner's Expo Go.
+- **Expo Router** — file-based navigation.
+- **Reanimated 4 + Worklets + Gesture Handler** — all motion and gestures run on the UI thread.
+- **react-native-svg** — crisp vector icons, card overlays, the modifier glyphs.
+- **react-native-audio-api** — the SFX engine (native; silent in Expo Go, audible in the APK).
+- A pure, unit-tested **modifier engine** (`src/lib/modifiers.ts`) computes every derived stat.
+
+See [`docs/animation-stack.md`](./docs/animation-stack.md) for the version-verified library rationale.
+
+## Run from source
+
 ```bash
-npm install
-npx expo start          # then press i / a, or scan the QR with Expo Go
+npm install --legacy-peer-deps
+npx expo start          # press a / i, or scan the QR with Expo Go (SDK 54)
 ```
+
+Useful checks:
+
+```bash
+npx tsc --noEmit        # types
+npx jest                # the engine + pure-module tests
+npx expo lint           # lint
+```
+
+## Build the offline APK
+
+A self-contained build script provisions the Android toolchain (direct-download, no sdkmanager) and
+produces a small arm64 release APK, then publishes a GitHub release:
+
+```bash
+npx expo prebuild -p android --no-install
+git checkout -- package.json     # revert the prebuild script flip
+powershell -ExecutionPolicy Bypass -File ./apk-build/build-apk.ps1
+```
+
+The bundle stays under ~90 MB, so the whole rulebook's card data ships inside the app — no database,
+no launch-time download. See [`AGENTS.md`](./AGENTS.md) for the toolchain notes and gotchas.
 
 ## Project layout
+
 ```
 src/app/            Expo Router routes & layouts only
-src/components/     shared components
-src/features/       feature screens + local components (e.g. character-sheet)
-src/constants/      theme (Rune palette), spacing
-src/hooks/          shared hooks
-assets/art/         Daggerheart sheet art (PNG)
+src/components/     shared components (card editor, effects editor, loaders, …)
+src/features/       feature areas + local components (character-sheet/, create/, cards/, …)
+src/lib/            pure logic: modifier engine, leveling, rest, wildshape, character file
+src/constants/      theme (the Rune palette sampled from the art), identity
+assets/             card art (webp), images, sounds
 docs/               animation stack + architecture decisions (ADRs)
-design-reference/   Ligma export = ground-truth mockup oracle (see AGENTS.md)
+design-reference/   the Ligma export — the ground-truth layout oracle (see AGENTS.md)
 ```
 
-## Contributing / agents
-Read [`AGENTS.md`](./AGENTS.md) first — it explains the design-reference → screen workflow and the
-responsive `DesignStage` strategy ([`docs/adr/0001`](./docs/adr/0001-responsive-design-stage.md)).
+## Contributing
+
+Read [`AGENTS.md`](./AGENTS.md) first: it covers the `design-reference → screen` workflow and the
+uniformly-scaled `DesignStage` responsive strategy ([`docs/adr/0001`](./docs/adr/0001-responsive-design-stage.md)).
+Keep screens runnable in Expo Go during development; favour the `Rune` theme over raw hex; TypeScript and
+`StyleSheet.create` throughout (no Tailwind/NativeWind).
+
+## Acknowledgements
+
+Daggerheart is © Darrington Press. RuneKeep is an unofficial, fan-made companion tool; card text and art
+are from the Daggerheart SRD/rulebook for personal play. Not affiliated with or endorsed by Darrington Press.
