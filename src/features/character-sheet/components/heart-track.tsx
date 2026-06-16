@@ -8,6 +8,7 @@ import { Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { type HeartAction, heartBoundaries, type PipState, resolveHearts } from '@/lib/pips';
+import { playLoseHp, playRiser, playSfx, type RiserHandle } from '@/lib/sfx';
 import { Art } from '../art';
 import { ChargeMoteView, HEART_MOTES } from './charge-track';
 
@@ -36,6 +37,10 @@ const CANCEL_MS = 180;
 const DOUBLE_MS = 320; // max gap between touch-DOWNs for the instant path
 const GROW = 2.9; // +20% (#93) — ~135px at the peak
 const REDUCED_GROW = 0.4;
+
+// Audio (#255): the impact lands when the heart visually crosses to its post state — a fill turns at
+// ~55% of the fx, goldify at ~15%, losses shatter at ~10% (mirrors `crossAt` below).
+const crossMsFor = (action: HeartAction) => (action === 'fill' ? 0.55 : action === 'goldify' ? 0.15 : 0.1) * FX_MS;
 
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
 const heartTint = (s: PipState, accent: string) => (s === 'golden' ? Rune.goldBright : s === 'active' ? accent : undefined);
@@ -285,6 +290,19 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
 
   const onDone = useCallback((id: number) => setAnims((list) => list.filter((a) => a.id !== id)), []);
 
+  // Audio (#255): one riser sounds while a hold charges, then fades out exactly at the visual climax
+  // where the gain/loss impact lands. Double-tap and keypad damage skip the riser (instant paths).
+  const riser = useRef<RiserHandle | null>(null);
+  const stopRiser = useCallback((fadeMs?: number) => {
+    riser.current?.stop(fadeMs);
+    riser.current = null;
+  }, []);
+  const impact = useCallback((action: HeartAction) => {
+    if (action === 'fill') playSfx('gainHp');
+    else if (action === 'goldify') playSfx('gainGoldenHp');
+    else playLoseHp(); // break / degold — losing a golden heart is regular damage (#255)
+  }, []);
+
   // Damage from the threshold keypad (#128): drop HP by hpLoss (floored at 0) and burst every heart
   // that just emptied (and degold any golden that dropped to red) — all at once.
   useImperativeHandle(
@@ -303,7 +321,11 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
           add.push({ id: nextId.current++, index: i, action, pre: before[i], phase: 'burst' });
         }
         onHp(target);
-        if (add.length) setAnims((list) => [...list, ...add]);
+        if (add.length) {
+          setAnims((list) => [...list, ...add]);
+          // staggered per-heart loss hits (#255): each rolls its own 1/10 meme chance, ~110ms apart
+          add.forEach((_, k) => setTimeout(() => playLoseHp(), 0.1 * FX_MS + k * 110));
+        }
       },
       burst: (prevHp: number, nextHp: number) => {
         if (prevHp === nextHp) return;
@@ -330,12 +352,14 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
       const isDouble = lastDown.current.index === index && now - lastDown.current.t < DOUBLE_MS;
       lastDown.current = { index, t: now };
       if (isDouble) {
+        stopRiser(120); // a first-tap riser may be mid-charge — fade it out
         if (charging.current) {
           const id = charging.current.id;
           charging.current = null;
           setAnims((list) => list.filter((a) => a.id !== id)); // discard the first tap's charge
         }
         onHp(hp + (GAINS[action] ? 1 : -1));
+        impact(action); // instant path: no riser, just the hit
         // feedback, not ceremony: a quick particle-free jump on the heart (#94 follow-up)
         setAnims((list) => [...list, { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'pop' }]);
         return;
@@ -344,8 +368,9 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
       const anim: Anim = { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'hold' };
       charging.current = anim;
       setAnims((list) => [...list, anim]);
+      riser.current = playRiser('riserHp'); // tension build for the duration of the hold
     },
-    [hp, slots, onHp],
+    [hp, slots, onHp, stopRiser, impact],
   );
 
   const onTrigger = useCallback(() => {
@@ -354,14 +379,19 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
     charging.current = null;
     onHp(hp + (GAINS[c.action] ? 1 : -1));
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as AnimPhase } : a)));
-  }, [hp, onHp]);
+    // riser tapers to silence and the impact lands at the cross-fade (heart fills / shatters)
+    const ms = crossMsFor(c.action);
+    stopRiser(ms);
+    setTimeout(() => impact(c.action), ms);
+  }, [hp, onHp, stopRiser, impact]);
 
   const onCancel = useCallback(() => {
     const c = charging.current;
     if (!c) return;
     charging.current = null;
+    stopRiser(160); // released early — fade the tension out, no impact
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'out' as AnimPhase } : a)));
-  }, []);
+  }, [stopRiser]);
 
   // ZONES (#93, the armor system the owner loves): two halves split at a barrier own the
   // gestures. The barrier sits midway between the down-slot and the up-slot, and each zone acts

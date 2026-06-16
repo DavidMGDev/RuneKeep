@@ -5,6 +5,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { applyRestMoves, movesFor, restMoveById, type RestKind, type RestLogEntry, type RestMove, type RestSelection, tierForLevel } from '@/lib/rest';
+import { playSfx } from '@/lib/sfx';
 
 import type { Character } from '../character';
 import { NumberKeypad } from './number-keypad';
@@ -56,11 +57,13 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
     setResult(null);
     setRolling(null);
   };
-  const addPick = (id: string) => setPicks((p) => (p.length < 2 ? [...p, id] : p));
+  const addPick = (id: string) => setPicks((p) => { if (p.length >= 2) return p; playSfx('cardSelect'); return [...p, id]; });
   const removePick = (id: string) =>
     setPicks((p) => {
       const i = p.lastIndexOf(id);
-      return i < 0 ? p : [...p.slice(0, i), ...p.slice(i + 1)];
+      if (i < 0) return p;
+      playSfx('cardDeselect');
+      return [...p.slice(0, i), ...p.slice(i + 1)];
     });
   const countOf = (id: string) => picks.filter((p) => p === id).length;
 
@@ -73,6 +76,7 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
     });
     const res = applyRestMoves(character, tier, sels);
     onApply(res.character);
+    playSfx('restComplete'); // #255
     setResult(res.log);
     setRolling(null);
   };

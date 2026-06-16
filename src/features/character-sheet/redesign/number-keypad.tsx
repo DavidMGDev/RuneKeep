@@ -4,6 +4,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 
 /** A flat chamfered keypad key (shared shape with the damage panel). */
 function Key({ label, onPress, accent, disabled }: { label: string; onPress: () => void; accent?: boolean; disabled?: boolean }) {
@@ -35,8 +36,14 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onCl
 
   const val = parseInt(typed || '0', 10) || 0;
   const ok = val >= min && val <= max;
-  const press = useCallback((d: string) => setTyped((t) => (t.length < 2 ? t + d : t)), []);
-  const clear = useCallback(() => setTyped(''), []);
+  const press = useCallback((d: string) => {
+    playSfx('numpadPress');
+    setTyped((t) => (t.length < 2 ? t + d : t));
+  }, []);
+  const clear = useCallback(() => {
+    playSfx('numpadPress');
+    setTyped('');
+  }, []);
   const submit = useCallback(() => { if (ok) onSubmit(val); }, [ok, onSubmit, val]);
 
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));

@@ -13,6 +13,7 @@ import { classColor, classInfo } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
 import { deleteCharacter, exportCharacter, importCharacter, listCharacters } from '@/lib/character-store';
+import { playSfx } from '@/lib/sfx';
 
 function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
   return (
@@ -130,7 +131,7 @@ export function RosterScreen() {
             contentContainerStyle={{ gap: 12, paddingTop: 4, paddingBottom: 16 }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => (
-              <CharacterRow file={item} onOpen={() => router.push({ pathname: '/sheet', params: { id: item.id } })} onLongPress={() => setActionsFor(item)} />
+              <CharacterRow file={item} onOpen={() => { playSfx('selectCharacter'); router.push({ pathname: '/sheet', params: { id: item.id } }); }} onLongPress={() => { playSfx('floatMenuOpen'); setActionsFor(item); }} />
             )}
           />
           <View style={{ flexDirection: 'row', gap: 10, paddingTop: 10, paddingBottom: 6 }}>
@@ -174,6 +175,7 @@ export function RosterScreen() {
           onConfirm={() => {
             const f = confirmDelete;
             setConfirmDelete(null);
+            playSfx('loseHpDefault'); // deleting a character hits like taking damage (#255) — no meme roll
             void deleteCharacter(f.id).then(reload);
           }}
           onCancel={() => setConfirmDelete(null)}

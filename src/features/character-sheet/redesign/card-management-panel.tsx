@@ -7,6 +7,7 @@ import Animated, { runOnJS, type SharedValue, useAnimatedStyle, useSharedValue }
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 
 import { type CardCategory, type CardItem, isBuiltinCategory } from '../card-data';
 import { availableCategories, categoryLabel, type CustomCategory } from '../carousel-categories';
@@ -108,7 +109,7 @@ export function CardManagementPanel(props: Props) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [moveOpen, setMoveOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) { n.delete(id); playSfx('cardDeselect'); } else { n.add(id); playSfx('cardSelect'); } return n; });
   const clearSelect = () => setSelected(new Set());
 
   // drag-drop state
@@ -149,6 +150,7 @@ export function CardManagementPanel(props: Props) {
 
   // --- drag handlers ---
   const beginDrag = useCallback((id: string) => {
+    playSfx('cardDragStart'); // #255
     // measure all current tiles (post-scroll positions) for accurate drop targeting
     tileRects.current.clear();
     for (const [tid, ref] of tileRefs.current) {
@@ -163,6 +165,7 @@ export function CardManagementPanel(props: Props) {
     setHover(null);
     ghostOn.value = 0;
     if (!moved) return;
+    playSfx('cardDragEnd'); // #255: a card was picked up and dropped
     // find the tile under the finger
     let overId: string | null = null;
     for (const [tid, r] of tileRects.current) {
@@ -266,7 +269,7 @@ export function CardManagementPanel(props: Props) {
       {editing ? <CategoryForm title="Edit category" initialLabel={editing.label} initialIcon={editing.icon} onCancel={() => setEditing(null)} onSave={(label, icon) => { onUpdateCategory(editing.id, { label, icon }); setEditing(null); }} /> : null}
       {confirmDelCat ? <Confirm title={`Delete "${confirmDelCat.label}"?`} body="The category is removed; its cards return to their default category." confirmLabel="Delete category" onCancel={() => setConfirmDelCat(null)} onConfirm={() => { onDeleteCategory(confirmDelCat.id); setConfirmDelCat(null); }} /> : null}
       {moveOpen ? <MoveSheet count={selected.size} ordered={ordered} customCategories={customCategories} onMove={(key) => { onMoveCards([...selected], key); clearSelect(); setMoveOpen(false); }} onClose={() => setMoveOpen(false)} /> : null}
-      {confirmDel ? <Confirm title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setConfirmDel(false)} onConfirm={() => { onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }} /> : null}
+      {confirmDel ? <Confirm title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setConfirmDel(false)} onConfirm={() => { playSfx('tokenRemove'); onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }} /> : null}
     </>
   );
 }
@@ -305,7 +308,7 @@ function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCatego
                 <Pressable onPress={() => onAskDelete(custom)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Delete category" style={{ padding: 4 }}><Text style={{ color: '#E2705A', fontSize: 14 }}>🗑</Text></Pressable>
               </View>
             ) : null}
-            <Pressable onPress={() => { if (!locked) onToggle(key); }} disabled={locked} accessibilityRole="switch" accessibilityState={{ checked: on, disabled: locked }}><Switch on={on} /></Pressable>
+            <Pressable onPress={() => { if (!locked) { playSfx(on ? 'categoryToggleOff' : 'categoryToggleOn'); onToggle(key); } }} disabled={locked} accessibilityRole="switch" accessibilityState={{ checked: on, disabled: locked }}><Switch on={on} /></Pressable>
           </View>
         );
       })}

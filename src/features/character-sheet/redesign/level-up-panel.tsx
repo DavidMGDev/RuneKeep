@@ -10,6 +10,7 @@ import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
 import { advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, picksUsed, tierForLevel } from '@/lib/leveling';
 import type { CharacterFile } from '@/lib/character-file';
+import { playSfx } from '@/lib/sfx';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/straight-carousel';
 import { ForgedCard } from '@/features/create/forged-card';
 
@@ -139,9 +140,10 @@ export function LevelUpPanel({
   const toggleDomain = () => {
     if (!centerId) return;
     setSelectedDomains((cur) => {
-      if (cur.includes(centerId)) return cur.filter((x) => x !== centerId);
-      if (cur.length < maxDomains) return [...cur, centerId];
-      return maxDomains === 1 ? [centerId] : cur;
+      if (cur.includes(centerId)) { playSfx('cardDeselect'); return cur.filter((x) => x !== centerId); }
+      if (cur.length < maxDomains) { playSfx('cardSelect'); return [...cur, centerId]; }
+      if (maxDomains === 1) { playSfx('cardSelect'); return [centerId]; }
+      return cur;
     });
   };
 
@@ -154,13 +156,15 @@ export function LevelUpPanel({
     if (remainingPicks < opt.picks) return false;
     return advRemaining(file, key) - takesOfKey(key) * opt.picks >= opt.picks;
   };
-  const addTake = (key: ChosenAdv['key']) => setTakes((t) => [...t, { key, traits: [], expIds: [] }]);
-  const removeTake = (i: number) =>
+  const addTake = (key: ChosenAdv['key']) => { playSfx('cardSelect'); setTakes((t) => [...t, { key, traits: [], expIds: [] }]); };
+  const removeTake = (i: number) => {
+    playSfx('cardDeselect');
     setTakes((t) => {
       const nt = t.filter((_, j) => j !== i);
       if (!nt.some((x) => x.key === 'domain')) setSelectedDomains((d) => d.slice(0, 1));
       return nt;
     });
+  };
   const toggleIn = (i: number, field: 'traits' | 'expIds', val: string, max: number) =>
     setTakes((t) =>
       t.map((x, j) => {
@@ -196,6 +200,7 @@ export function LevelUpPanel({
 
   const canConfirm = domainDone && expReady && advanceDone;
   const confirm = () => {
+    playSfx('levelUpComplete'); // #255
     const advs = takes.map((t) => (t.key === 'domain' ? { ...t, domainCardId: selectedDomains[1] } : t));
     const plan: LevelUpPlan = {
       domainCardId: selectedDomains[0],
@@ -216,6 +221,9 @@ export function LevelUpPanel({
   useEffect(() => {
     p.value = reduced ? 1 : withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
   }, [p, reduced]);
+  useEffect(() => {
+    playSfx('panelOpen'); // #255: opened from the float menu
+  }, []);
   const panelStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 16 }] }));
   // Fade the full-screen backdrop in (#239 item 9): it used to POP opaque on the first frame.
   const bgStyle = useAnimatedStyle(() => ({ opacity: p.value }));
@@ -378,7 +386,7 @@ export function LevelUpPanel({
         {/* footer */}
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
           <RuneButton label="Cancel" kind="ghost" height={44} style={{ flex: 1 }} onPress={onClose} />
-          <RuneButton label="Confirm level" kind="primary" height={44} style={{ flex: 1.6 }} disabled={!canConfirm} onPress={confirm} />
+          <RuneButton label="Confirm level" kind="primary" height={44} style={{ flex: 1.6 }} disabled={!canConfirm} onPress={confirm} muteSfx />
         </View>
        </ChamferBox>
       </Animated.View>

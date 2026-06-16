@@ -5,6 +5,7 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 import { ChamferBox } from '@/components/chamfer-box';
 import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 
 /**
  * The shared FULL-SCREEN interface shell (#252) — the Level Up pattern, generalised. An OPAQUE
@@ -20,6 +21,14 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
   useEffect(() => {
     p.value = reduced ? 1 : withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
   }, [p, reduced]);
+  // Audio (#255): one panel-open on mount covers every full-screen interface; close fires on the ✕.
+  useEffect(() => {
+    playSfx('panelOpen');
+  }, []);
+  const close = () => {
+    playSfx('panelClose');
+    onClose();
+  };
   const bgStyle = useAnimatedStyle(() => ({ opacity: p.value }));
   const panelStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 16 }] }));
 
@@ -36,7 +45,7 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
               {subtitle ? <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginTop: 2 }}>{subtitle}</Text> : null}
             </View>
             {headerExtra}
-            <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
+            <Pressable onPress={close} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
               <Text style={{ color: Rune.muted, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
             </Pressable>
           </View>

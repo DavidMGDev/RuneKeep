@@ -70,8 +70,15 @@ import { EnabledCorner } from './enabled-corner';
 import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
+import { playSfx } from '@/lib/sfx';
 
 const flipPar = (t: number) => ((t % 2) + 2) % 2;
+
+// One of the two golden-gear grind sounds per grind gesture (#255), chosen at random so it doesn't
+// feel repetitive. Module-level + JS-only so it's safe to call via runOnJS from the pan worklet.
+function playGearGrind() {
+  playSfx(Math.random() < 0.5 ? 'gearScroll1' : 'gearScroll2');
+}
 
 /** Design-px the new deck sits BELOW its resting pose while a category switch readies it, before it
  *  rises into view (#242 item 3). Pushed well past the bottom so the hidden, un-ready deck is off-screen. */
@@ -287,6 +294,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             focusIndex.value = index;
             machineState.value = 'fullscreen';
             fullscreenProgress.value = withSpring(1, FS_SPRING);
+            runOnJS(playSfx)('cardFullscreenEnter'); // #255: tap a centered card to focus it
           }
         }),
     [index, count, hasFaces, item.interactive, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen, switching],
@@ -578,7 +586,10 @@ export function CardCarousel() {
     pagersRef.current[idx]?.(delta);
   }, []);
 
-  const onCenter = useCallback((c: number) => setCenter(c), []);
+  const onCenter = useCallback((c: number) => {
+    setCenter(c);
+    playSfx('carouselScroll'); // #255: a tick each time a new card lands centered
+  }, []);
   useDerivedValue(() => {
     // Center tracking FREEZES while the gear grinds (#78): full-res is fully damped then anyway,
     // and skipping the per-detent React round-trips keeps the grind on the UI thread alone. It
@@ -626,6 +637,7 @@ export function CardCarousel() {
             if (fin) {
               osArmed.value = 1;
               runOnJS(focusHaptic)();
+              runOnJS(playSfx)('transitionIconFilled'); // #255: over-scroll ring filled / armed
             }
           });
         }
@@ -654,7 +666,10 @@ export function CardCarousel() {
           // it would otherwise close+collapse the card alongside opening the modifiers.
           if (machineState.value === 'fullscreen' && e.x >= 106 && e.x <= 306 && e.y >= 768 && e.y <= 814) padTouch.value = false;
           padWasExpanded.value = machineState.value === 'expanded';
-          if (padTouch.value && padWasExpanded.value) grindProgress.value = withTiming(1, { duration: 160 });
+          if (padTouch.value && padWasExpanded.value) {
+            grindProgress.value = withTiming(1, { duration: 160 });
+            runOnJS(playGearGrind)(); // #255: one random gear-grind sound per grind gesture
+          }
         })
         .onUpdate((e) => {
           if (switching.value === 1) return; // ignore drags while the deck is switching (#239 item 3)
