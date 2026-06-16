@@ -4,6 +4,7 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -44,6 +45,14 @@ export function OverlayShell({
   useEffect(() => {
     p.value = reduced ? 1 : withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
   }, [p, reduced]);
+  // Audio (#255): panel-open on mount, panel-close on the ✕ or an outside-tap dismiss.
+  useEffect(() => {
+    playSfx('panelOpen');
+  }, []);
+  const close = () => {
+    playSfx('panelClose');
+    onClose();
+  };
   const scrimStyle = useAnimatedStyle(() => ({ opacity: p.value }));
   const boxStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 18 }, { scale: 0.95 + 0.05 * p.value }] }));
   return (
@@ -52,7 +61,7 @@ export function OverlayShell({
           per-shell dark scrim would double-dim and pop on open/close. This still closes on outside tap. */}
       {/* A catching backdrop (#252): closes on a TRUE outside tap; the box (a real View) catches its
           OWN taps so nothing inside closes the panel or reaches the carousel beneath. No box-none. */}
-      <AnimatedPressable style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimStyle]} onPress={dismissOnScrim ? onClose : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
+      <AnimatedPressable style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimStyle]} onPress={dismissOnScrim ? close : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
       <Animated.View style={boxStyle}>
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -60,7 +69,7 @@ export function OverlayShell({
             <Text style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>
             {subtitle ? <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginTop: 2 }}>{subtitle}</Text> : null}
           </View>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
+          <Pressable onPress={close} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
             <Text style={{ color: Rune.muted, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
           </Pressable>
         </View>

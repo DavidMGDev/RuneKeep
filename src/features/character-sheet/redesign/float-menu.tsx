@@ -6,6 +6,7 @@ import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
 
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
+import { playSfx } from '@/lib/sfx';
 
 import { useCarousel } from '../carousel-context';
 import { DeckToggleIcon } from './deck-toggle-icon';
@@ -127,6 +128,7 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
   const openMenu = useCallback(() => {
     setOpen(true);
     setPinned(false);
+    playSfx('floatMenuOpen');
     openSV.value = 1;
     // Clear fade/bloom in (#201) — a timed ease-out reads as a fade, not a pop.
     if (reduced) progress.value = 1;
@@ -139,6 +141,7 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
   // nothing can strand even if the timing callback is dropped. Reduced motion still closes instantly.
   const closeMenu = useCallback(() => {
     setPinned(false);
+    playSfx('floatMenuClose');
     dragging.value = 0;
     highlight.value = -1;
     openingSV.value = 0;
@@ -362,7 +365,10 @@ export function FloatMenuOverlay() {
   useAnimatedReaction(
     () => highlight.value,
     (v, prev) => {
-      if (v !== prev) runOnJS(setHl)(v);
+      if (v !== prev) {
+        runOnJS(setHl)(v);
+        if (v >= 0) runOnJS(playSfx)('floatMenuHighlight'); // a tick each time a wedge is entered (#255)
+      }
     },
   );
 

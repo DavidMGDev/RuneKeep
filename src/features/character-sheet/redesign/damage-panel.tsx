@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -7,6 +7,7 @@ import Svg, { Path } from 'react-native-svg';
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, Rune } from '@/constants/theme';
 import { hpLostFromDamage } from '@/lib/damage';
+import { playRiser, playSfx, type RiserHandle } from '@/lib/sfx';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 
 const HOLD_MS = 620;
@@ -40,10 +41,14 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
   const vis = useSharedValue(0);
   const charge = useSharedValue(0);
   const [typed, setTyped] = useState('');
+  const riser = useRef<RiserHandle | null>(null);
 
   useEffect(() => {
     vis.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.quad) });
   }, [vis]);
+  useEffect(() => {
+    playSfx('panelOpen'); // #255
+  }, []);
 
   const damage = parseInt(typed || '0', 10) || 0;
   const hpLoss = hpLostFromDamage(damage, thresholds);
@@ -51,6 +56,7 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
   const finish = useCallback(
     (apply: boolean) => {
       const loss = hpLoss;
+      playSfx('panelClose'); // #255: the panel closes; the staggered HP-loss hits then fire from the hearts
       vis.value = withTiming(0, { duration: 200, easing: Easing.in(Easing.quad) }, (f) => {
         if (!f) return;
         if (apply) runOnJS(onApply)(loss); // hearts burst only AFTER the panel is gone (#128)
@@ -60,9 +66,24 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
     [vis, onApply, onClose, hpLoss],
   );
 
-  const press = useCallback((d: string) => setTyped((t) => (t.length < 3 ? t + d : t)), []);
-  const clear = useCallback(() => setTyped(''), []);
+  const press = useCallback((d: string) => {
+    playSfx('numpadPress');
+    setTyped((t) => (t.length < 3 ? t + d : t));
+  }, []);
+  const clear = useCallback(() => {
+    playSfx('numpadPress');
+    setTyped('');
+  }, []);
   const confirm = useCallback(() => finish(true), [finish]);
+
+  // The OK hold gets the HP riser, but MUCH lower (#255), cut the instant the hold completes/cancels.
+  const startOkRiser = useCallback(() => {
+    riser.current = playRiser('riserHp', { cents: -600, volume: 0.8 });
+  }, []);
+  const stopOkRiser = useCallback((fadeMs?: number) => {
+    riser.current?.stop(fadeMs);
+    riser.current = null;
+  }, []);
 
   // OK is a HOLD (#128): charges like a heart, fires at HOLD_MS. A plain tap won't confirm.
   const okHold = useMemo(
@@ -71,18 +92,30 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
         .minDuration(reduced ? 1 : HOLD_MS)
         .maxDistance(44)
         .onBegin(() => {
-          if (!reduced) charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+          if (!reduced) {
+            charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+            runOnJS(startOkRiser)();
+          }
         })
-        .onStart(() => runOnJS(confirm)())
+        .onStart(() => {
+          runOnJS(stopOkRiser)(120);
+          runOnJS(confirm)();
+        })
         .onFinalize((_e, ok) => {
-          if (!ok) charge.value = withTiming(0, { duration: 160 });
+          if (!ok) {
+            charge.value = withTiming(0, { duration: 160 });
+            runOnJS(stopOkRiser)(160);
+          }
         }),
-    [charge, confirm, reduced],
+    [charge, confirm, reduced, startOkRiser, stopOkRiser],
   );
 
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));
   const okStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + charge.value * 0.12 }] }));
-  const okFill = useAnimatedStyle(() => ({ opacity: charge.value }));
+  // The charge now RISES from the bottom of the chamfered key (a filling meter) instead of an ugly
+  // flat rectangle fading in over a 45°-chamfer shape (#255). overflow:hidden clips it to the chamfer.
+  const okFill = useAnimatedStyle(() => ({ transform: [{ translateY: (1 - charge.value) * 46 }] }));
+  const okEdge = useAnimatedStyle(() => ({ opacity: charge.value > 0.02 ? 1 : 0 }));
 
   // No own dark scrim (#250): the shared SheetDim darkens the screen; this sits ABOVE it. Transparent
   // tap-catcher cancels; the box-none layer keeps inside taps off the catcher.
@@ -132,7 +165,12 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
             <GestureDetector gesture={okHold}>
               <Animated.View style={[{ flex: 1 }, okStyle]}>
                 <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke={Rune.red} strokeWidth={1.4} style={{ height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                  <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.red }, okFill]} pointerEvents="none" />
+                  {/* charge meter: a red fill rises from the bottom with a bright leading edge, clipped to
+                      the chamfer — a deliberate "charging the hit" instead of a flat fading rectangle. */}
+                  <Animated.View style={[StyleSheet.absoluteFill, okFill]} pointerEvents="none">
+                    <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.red }]} />
+                    <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, height: 2.5, backgroundColor: Rune.goldBright }, okEdge]} />
+                  </Animated.View>
                   <Svg width={20} height={20} viewBox="0 0 20 20">
                     <Path d="M 4 10 L 8.5 14.5 L 16 6" fill="none" stroke={Rune.ivory} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>

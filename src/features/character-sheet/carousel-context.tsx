@@ -1,6 +1,8 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelAnimation, Easing, runOnJS, type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
+import { playSfx } from '@/lib/sfx';
+
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
 import type { PlacedToken } from './components/card-tokens';
 import { nextCategory } from './carousel-categories';
@@ -119,6 +121,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       machineState.value = 'fullscreen';
       expandProgress.value = withSpring(1, EXPAND_SPRING);
       fullscreenProgress.value = withSpring(1, FS_SPRING);
+      playSfx('cardFullscreenEnter'); // #255: origin-card / programmatic fullscreen open
     },
     [rotation, focusIndex, machineState, expandProgress, fullscreenProgress],
   );
@@ -143,6 +146,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     (c: CardCategory, arrival: ArrivalEnd = 'end') => {
       if (c === categoryRef.current || switchingRef.current) return; // ignore re-entrancy mid-switch
       switchingRef.current = true;
+      playSfx('transitionStart'); // #255: the deck-switch begins
       arrivalRef.current = arrival;
       switching.value = 1; // pan + grabbing off until the new deck has risen
       setCategoryState(c); // swap NOW — deck data + the portrait glyph change immediately
@@ -232,6 +236,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const closeFullscreen = useCallback(() => {
     machineState.value = 'expanded';
     fullscreenProgress.value = withSpring(0, FS_SPRING);
+    playSfx('cardFullscreenLeave'); // #255
   }, [machineState, fullscreenProgress]);
 
   const openOriginCard = useCallback(

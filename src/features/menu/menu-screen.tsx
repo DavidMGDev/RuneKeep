@@ -12,6 +12,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { Body, Display, Rune } from '@/constants/theme';
 import { CATALOG } from '@/features/cards/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { playSfx, preloadSfx } from '@/lib/sfx';
 
 const THUMB_W = 76;
 const THUMB_H = Math.round(THUMB_W * (263 / 188));
@@ -112,9 +113,13 @@ export function MenuScreen() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   useEffect(() => {
+    preloadSfx(); // warm the audio engine + decode latency-sensitive sounds (#255)
     // One frame of intentional loading: lets fonts/thumb decodes land so the menu never flashes
     // half-drawn. Kept short — this screen has no real async data yet.
-    const t = setTimeout(() => setReady(true), 350);
+    const t = setTimeout(() => {
+      setReady(true);
+      playSfx('appStartup'); // the forge is lit
+    }, 350);
     return () => clearTimeout(t);
   }, []);
 
@@ -148,8 +153,8 @@ export function MenuScreen() {
 
         {/* actions */}
         <View style={{ flex: 1, justifyContent: 'flex-end', gap: 16, paddingBottom: 40 }}>
-          <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => router.push('/characters')} />
-          <MenuAction label="Cards" sub="Browse the full card library" glyph="cards" delayIndex={1} onPress={() => router.push('/gallery')} />
+          <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('buttonTap'); router.push('/characters'); }} />
+          <MenuAction label="Cards" sub="Browse the full card library" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} />
         </View>
       </View>
     </AppScreen>

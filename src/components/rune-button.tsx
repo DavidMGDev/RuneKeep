@@ -4,6 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 
 const PRESS_SPRING = { damping: 22, stiffness: 320, mass: 0.6 };
 
@@ -21,10 +22,13 @@ interface RuneButtonProps {
   dense?: boolean;
   style?: object;
   accessibilityLabel?: string;
+  /** Suppress the generic tap SFX (#255) — for buttons that already fire a bigger sound (confirm
+   *  level, finish rest), so the click doesn't double up. */
+  muteSfx?: boolean;
 }
 
 /** The app's chamfered button. Flat fill or hairline, 45° corners, subtle press scale. */
-export function RuneButton({ label, onPress, kind = 'secondary', disabled, height = 48, icon, dense, style, accessibilityLabel }: RuneButtonProps) {
+export function RuneButton({ label, onPress, kind = 'secondary', disabled, height = 48, icon, dense, style, accessibilityLabel, muteSfx }: RuneButtonProps) {
   const scale = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const fill = kind === 'primary' ? Rune.red : 'transparent';
@@ -32,7 +36,14 @@ export function RuneButton({ label, onPress, kind = 'secondary', disabled, heigh
   const color = kind === 'primary' ? Rune.ivory : kind === 'secondary' ? Rune.goldText : Rune.muted;
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
+      onPress={
+        disabled
+          ? undefined
+          : () => {
+              if (!muteSfx) playSfx('buttonTap');
+              onPress?.();
+            }
+      }
       onPressIn={() => {
         scale.value = withSpring(0.965, PRESS_SPRING);
       }}

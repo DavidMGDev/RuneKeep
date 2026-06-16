@@ -6,6 +6,7 @@ import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimat
 import { Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
+import { playRiser, playSfx, type RiserHandle, type SfxId } from '@/lib/sfx';
 
 /**
  * The generic hold-to-charge ±1 track (#89) — the proven heart interaction (see heart-track.tsx,
@@ -413,6 +414,22 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
 
   const onDone = useCallback((id: number) => setAnims((list) => list.filter((a) => a.id !== id)), []);
 
+  // Audio (#255): a flavored riser sounds while a hold charges, fading out at the visual climax where
+  // the gain/loss impact lands. Double-tap skips the riser; programmatic bursts (rest/cards) are silent.
+  const riser = useRef<RiserHandle | null>(null);
+  const stopRiser = useCallback((fadeMs?: number) => {
+    riser.current?.stop(fadeMs);
+    riser.current = null;
+  }, []);
+  const riserId: SfxId = flavor === 'armor' ? 'riserArmor' : flavor === 'hope' ? 'riserHope' : 'riserStress';
+  const impact = useCallback(
+    (dir: Dir) => {
+      if (dir === 'up') playSfx(flavor === 'armor' ? 'gainArmor' : flavor === 'hope' ? 'gainHope' : 'gainStress');
+      else playSfx(flavor === 'armor' ? 'loseArmor' : flavor === 'hope' ? 'loseHope' : 'loseStress');
+    },
+    [flavor],
+  );
+
   // Programmatic burst (#192): Rest + card unequip animate the slots they change, all at once.
   useImperativeHandle(
     ref,
@@ -439,12 +456,14 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
       const isDouble = lastDown.current.key === key && now - lastDown.current.t < DOUBLE_MS;
       lastDown.current = { key, t: now };
       if (isDouble) {
+        stopRiser(120); // a first-tap riser may be mid-charge — fade it out
         if (charging.current) {
           const id = charging.current.id;
           charging.current = null;
           setAnims((list) => list.filter((a) => a.id !== id));
         }
         step();
+        impact(dir); // instant path: no riser, just the hit
         // feedback, not ceremony: a quick particle-free jump on the slot (#94 follow-up)
         setAnims((list) => [...list, { id: nextId.current++, index, dir, phase: 'pop' }]);
         return;
@@ -453,24 +472,33 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
       const anim: Anim = { id: nextId.current++, index, dir, phase: 'hold' };
       charging.current = anim;
       setAnims((list) => [...list, anim]);
+      riser.current = playRiser(riserId); // tension build for the duration of the hold
     },
-    [],
+    [stopRiser, impact, riserId],
   );
 
-  const trigger = useCallback((step: () => void) => {
-    const c = charging.current;
-    if (!c) return;
-    charging.current = null;
-    step();
-    setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as Phase } : a)));
-  }, []);
+  const trigger = useCallback(
+    (step: () => void) => {
+      const c = charging.current;
+      if (!c) return;
+      charging.current = null;
+      step();
+      setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as Phase } : a)));
+      // riser tapers to silence and the impact lands at the cross-fade
+      const ms = (c.dir === 'up' ? crossUpAt : crossDownAt) * FX_MS;
+      stopRiser(ms);
+      setTimeout(() => impact(c.dir), ms);
+    },
+    [crossUpAt, crossDownAt, stopRiser, impact],
+  );
 
   const cancel = useCallback(() => {
     const c = charging.current;
     if (!c) return;
     charging.current = null;
+    stopRiser(160); // released early — fade the tension out, no impact
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'out' as Phase } : a)));
-  }, []);
+  }, [stopRiser]);
 
   const gestureFor = (index: number, dir: Dir) => {
     const step = dir === 'up' ? onUp : onDown;

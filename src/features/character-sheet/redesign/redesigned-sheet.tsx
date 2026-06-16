@@ -21,6 +21,7 @@ import { armorById, weaponById } from '@/features/create/equipment-data';
 import { lootById } from '@/lib/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
 import { tierForLevel } from '@/lib/modifiers';
+import { playSfx } from '@/lib/sfx';
 import { effectsForCardId } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
@@ -875,6 +876,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       effects: draft.effects,
       typeLabel: draft.typeLabel,
     };
+    playSfx('customCardCreate'); // #255: the card is created + added
     setFile((f) => {
       if (!f) return f;
       let next: CharacterFile;
@@ -1082,6 +1084,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       if (!file) return;
       const wasEnabled = (file.enabledCardIds ?? []).includes(id);
       const isWs = isWildshapeId(id);
+      // Audio (#255): Beastform has its own activate/disable; every other card uses enable/disable.
+      if (isWs) playSfx(wasEnabled ? 'disableBeastform' : 'activateBeastform');
+      else playSfx(wasEnabled ? 'cardDisable' : 'cardEnable');
       const cur = new Set(file.enabledCardIds ?? []);
       if (wasEnabled) {
         cur.delete(id); // dropping out of a form reverts its effects; the Stress cost is NOT refunded

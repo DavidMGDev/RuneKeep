@@ -9,6 +9,7 @@ import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { FORGED_H, ForgedCard } from '@/features/create/forged-card';
 import { type CardEffect, type EffectTarget, TARGET_LABEL } from '@/lib/modifiers';
+import { playSfx } from '@/lib/sfx';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -113,7 +114,7 @@ function TypePicker({ groups, current, onPick, onClose }: { groups: { label: str
                 {g.types.map((t) => {
                   const on = current === t;
                   return (
-                    <Pressable key={t} onPress={() => onPick(t)} accessibilityRole="button" accessibilityState={{ selected: on }}>
+                    <Pressable key={t} onPress={() => { playSfx('buttonTap'); onPick(t); }} accessibilityRole="button" accessibilityState={{ selected: on }}>
                       <View style={{ minHeight: 36, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 7, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
                         <Text style={{ color: on ? Rune.ivory : Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{t}</Text>
                       </View>
@@ -258,7 +259,7 @@ export function CardEditor({
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
     if (!res.canceled && res.assets[0]) setDraft((d) => ({ ...d, imageUri: res.assets[0].uri, color: null }));
   }, []);
-  const rollColor = useCallback(() => setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null })), []);
+  const rollColor = useCallback(() => { playSfx('tokenCopyColor'); setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null })); }, []);
 
   const canSave = draft.title.trim().length > 0;
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
@@ -356,7 +357,7 @@ export function CardEditor({
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Add Image" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={pickImage} />
-            <RuneButton label="Random Color" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={rollColor} />
+            <RuneButton label="Random Color" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={rollColor} muteSfx />
           </View>
           <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: experienceMode ? 80 : 46, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: experienceMode ? 9 : 0 }}>
             <TextInput

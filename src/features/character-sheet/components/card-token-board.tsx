@@ -20,6 +20,7 @@ import { useStageScale } from '@/components/design-stage';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
+import { playSfx } from '@/lib/sfx';
 import { useCarousel } from '../carousel-context';
 import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geometry';
 import {
@@ -241,6 +242,7 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
       const y = Math.max(0, Math.min(1, (cy - cardRect.top) / cardRect.height));
       onPlace({ id: newTokenId(), kind, color: kind === 'color' ? drawerColor : undefined, x, y });
       focusHaptic();
+      playSfx('placeToken'); // #255
     },
     [cardRect, cardBase, drawerColor, onPlace],
   );
@@ -253,12 +255,15 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
       setFalling((list) => [...list, { token: t, left, top }]);
       onRemove(t.id);
       tapHaptic();
+      playSfx('tokenRemove'); // #255
     },
     [cardRect, cardBase, onRemove],
   );
   const fallingDone = useCallback((id: string) => setFalling((list) => list.filter((f) => f.token.id !== id)), []);
-  const eyedrop = useCallback((color: string) => { onSetDrawerColor(color); tapHaptic(); }, [onSetDrawerColor]);
-  const cycleColor = useCallback(() => onSetDrawerColor(randomTokenColor(drawerColor)), [onSetDrawerColor, drawerColor]);
+  const eyedrop = useCallback((color: string) => { onSetDrawerColor(color); tapHaptic(); playSfx('tokenCopyColor'); }, [onSetDrawerColor]);
+  // Cycling the custom-colour button to a new random colour uses the colour sound everywhere (#255).
+  const cycleColor = useCallback(() => { onSetDrawerColor(randomTokenColor(drawerColor)); playSfx('tokenCopyColor'); }, [onSetDrawerColor, drawerColor]);
+  const toggleDrawer = useCallback(() => setOpen((o) => { playSfx(o ? 'panelClose' : 'panelOpen'); return !o; }), []);
 
   // Drag the tab to reposition the whole drawer along the top; tap to open/close.
   const tabTx = useSharedValue(0);
@@ -276,7 +281,7 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
         .onFinalize(() => { 'worklet'; tabTx.value = 0; }),
     [tabTx, scale, drawerLeft, width, onMoveDrawer],
   );
-  const tabTap = useMemo(() => Gesture.Tap().maxDuration(260).onEnd(() => { 'worklet'; runOnJS(setOpen)(!open); }), [open]);
+  const tabTap = useMemo(() => Gesture.Tap().maxDuration(260).onEnd(() => { 'worklet'; runOnJS(toggleDrawer)(); }), [toggleDrawer]);
   const tabGesture = useMemo(() => Gesture.Exclusive(tabPan, tabTap), [tabPan, tabTap]);
   const tabStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tabTx.value }] }));
   const trayStyle = useAnimatedStyle(() => ({ opacity: openP.value, transform: [{ translateX: tabTx.value }, { translateY: (1 - openP.value) * -10 }] }));
