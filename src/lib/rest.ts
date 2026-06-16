@@ -1,5 +1,5 @@
 /**
- * Rest moves (#165) — the short/long rest downtime system, verbatim from assets/temp/Rest/Rest.png.
+ * Rest moves (#165) — the short/long rest downtime system, verbatim from the rulebook rest rules.
  *
  * SHORT REST (~1 hour): choose two of the following moves (or the same move twice). Some use your
  * TIER as a value.

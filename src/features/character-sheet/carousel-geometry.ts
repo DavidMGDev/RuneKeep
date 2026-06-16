@@ -3,7 +3,7 @@ import { CARD_ASPECT } from './card-data';
 /**
  * Arc-carousel geometry, in the sheet's 412x892 design space. Cards ride a circle centered far below
  * the screen; the gear (visual) and cards share the same `rotation` angle. See
- * docs/card-carousel-architecture.md. Helpers are worklets so the per-frame layout runs on the UI
+ * docs/architecture.md › Card carousel. Helpers are worklets so the per-frame layout runs on the UI
  * thread; they're plain enough to also unit-test on JS.
  */
 export const OX = 206; // circle center X (screen center)

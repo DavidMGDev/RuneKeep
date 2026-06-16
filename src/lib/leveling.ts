@@ -1,5 +1,5 @@
 /**
- * Leveling (#167) — the Daggerheart advancement system, from assets/temp/Level/.
+ * Leveling (#167) — the Daggerheart advancement system, transcribed from the rulebook advancement tables.
  *
  * Each level you gain (auto): +1 level, +1 to BOTH damage thresholds, and a new domain card of your
  * level or lower. At the start of a new TIER (levels 2, 5, 8) you also gain a new Experience at +2

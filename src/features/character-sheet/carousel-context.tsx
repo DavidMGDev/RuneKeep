@@ -12,7 +12,7 @@ import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, maxRotation, middleRotation, snap
  *  arrives at the LAST card of the new deck (and vice-versa), so it reads as one continuous deck. */
 export type ArrivalEnd = 'start' | 'end';
 
-/** Three states only (see docs/ui-fix-brief §2): the hand is bundled, fanned, or one card is focused. */
+/** Three states only (see docs/architecture.md › Card carousel › state model): bundled, fanned, or one card focused. */
 export type ExpandState = 'compact' | 'expanded' | 'fullscreen';
 
 interface CarouselContextValue {

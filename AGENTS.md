@@ -15,16 +15,15 @@ compositions with tappable/spring icons, particle effects, and floating physics 
 - `src/hooks/**` — shared hooks.
 - `assets/art/**` — game art PNGs referenced by screens (`require('@/assets/art/<file>')`... note
   `@/` maps to `src/`, so import art via a relative path or the `assets` alias — see tsconfig).
-- `docs/animation-stack.md` — the vetted animation/particle/SVG library stack + install commands.
-- `docs/adr/**` — architecture decisions (read **0001** for the responsive strategy before laying out a screen).
-- `design-reference/**` — the Ligma export = the **ground-truth oracle** for layouts. See below.
+- `docs/architecture.md` — the load-bearing technical decisions (DesignStage responsive strategy, card
+  carousel, perf rules). Read it before laying out a screen or touching the carousel.
+- `src/lib/**` — pure, unit-tested logic (modifier engine, leveling, rest, wildshape, character file).
 
-## Translating a screen from the design reference
-`design-reference/` holds the source mockup. **Do not read `layout.json` whole** (it's large).
-1. `python design-reference/simplify.py design-reference/layout.json` → component tree + responsive intent.
-2. `python design-reference/_geom.py` → exact **base geometry** (screen-relative x/y/w/h at 412×892) for every layer — this is what you translate from.
-3. `design-reference/screen-1.html` → open in a browser device toolbar at any resolution = pixel-exact oracle to verify against.
-4. Follow `docs/adr/0001` (uniformly-scaled `DesignStage`): author in design px, scale uniformly, never stretch non-panel art (lock `aspectRatio` / `resizeMode="contain"`).
+## Laying out a screen
+The UI is already built — there's no live mockup oracle to translate from anymore. Author in the fixed
+**412×892** design space and render inside `<DesignStage>`: author in design px, scale uniformly, never
+stretch non-panel art (lock `aspectRatio` / `resizeMode="contain"`). See `docs/architecture.md` ›
+*Responsive layout* for the full rationale.
 
 ## Animation conventions
 - Reanimated 4 + worklets + gesture-handler are already installed and wired (`GestureHandlerRootView` in `_layout.tsx`).

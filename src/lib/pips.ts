@@ -54,7 +54,7 @@ export interface HeartResolve {
 }
 
 /**
- * Daggerheart golden-heart HP (see docs/ui-fix-brief §1A). There are always `slots` heart boxes; each
+ * Daggerheart golden-heart HP. There are always `slots` heart boxes; each
  * is empty, red (worth 1), or golden (worth 2). Golden is pure overflow — a slot only turns golden
  * once all `slots` are red (i.e. HP ≥ slots + 1). Filling fills empties→red left→right, then
  * red→golden left→right; losing HP reverses exactly. The numeric tracker is derived from HP, so the

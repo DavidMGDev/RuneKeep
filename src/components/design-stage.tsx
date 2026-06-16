@@ -32,7 +32,7 @@ interface DesignStageProps {
 
 /**
  * Renders children authored in a fixed design coordinate space, uniformly scaled to fit the
- * available area and centered (see docs/adr/0001). Children use absolute design-px positioning;
+ * available area and centered (see docs/architecture.md › Responsive layout). Children use absolute design-px positioning;
  * the single `scale` transform keeps everything proportional — non-panel art never stretches.
  */
 export function DesignStage({

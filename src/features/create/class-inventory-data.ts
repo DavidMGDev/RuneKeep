@@ -1,6 +1,6 @@
 /**
- * Per-class starting inventory (#128), transcribed from the rulebook class guides (the owner placed
- * the guide images in assets/temp/classInventory; the rulebook PDF stays gitignored).
+ * Per-class starting inventory (#128), transcribed from the rulebook class guides
+ * (local reference only — the licensed rulebook is never bundled or pushed).
  *
  * `take` = items the character STARTS with automatically (a "just take" bundle, shown as owned). A
  * "handful of gold" from the guide is tracked by the Gold card, not listed here. `choices` = the

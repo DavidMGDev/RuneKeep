@@ -1,5 +1,5 @@
 /**
- * Pure responsive math for the DesignStage (see docs/adr/0001).
+ * Pure responsive math for the DesignStage (see docs/architecture.md › Responsive layout).
  *
  * A screen is authored in a fixed design coordinate space (e.g. 412×892). This computes the single
  * uniform scale that fits that design into the available area without ever distorting it, plus the
