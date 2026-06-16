@@ -1,4 +1,4 @@
-import { DEFAULT_TOKEN_KINDS, hashStr, kindScale, pickTokenColor, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
+import { DEFAULT_TOKEN_KINDS, DIE_BOX, DIE_COLOR, DIE_MAX, DIE_TYPES, dieGeometry, hashStr, kindScale, nextDieType, nextDieValue, pickTokenColor, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
 
 describe('card tokens — pure helpers (#244)', () => {
   describe('pickTokenColor', () => {
@@ -68,6 +68,52 @@ describe('card tokens — pure helpers (#244)', () => {
       expect(kindScale('iron')).toBeGreaterThan(kindScale('bone'));
       expect(kindScale('bone')).toBe(1);
       expect(kindScale('color')).toBe(1);
+    });
+  });
+
+  describe('dice (#293)', () => {
+    it('nextDieType cycles the six sizes and wraps', () => {
+      expect(DIE_TYPES).toEqual(['d4', 'd6', 'd8', 'd10', 'd12', 'd20']);
+      expect(nextDieType('d4')).toBe('d6');
+      expect(nextDieType('d12')).toBe('d20');
+      expect(nextDieType('d20')).toBe('d4'); // wrap
+    });
+
+    it('nextDieValue steps 1..max then wraps to 1', () => {
+      expect(nextDieValue('d6', 1)).toBe(2);
+      expect(nextDieValue('d6', 5)).toBe(6);
+      expect(nextDieValue('d6', 6)).toBe(1); // wrap at max
+      expect(nextDieValue('d20', 20)).toBe(1);
+    });
+
+    it('every die has a colour and a max, and tokenFill uses the die colour', () => {
+      for (const t of DIE_TYPES) {
+        expect(DIE_COLOR[t]).toMatch(/^#[0-9A-Fa-f]{6}$/);
+        expect(DIE_MAX[t]).toBeGreaterThan(0);
+        expect(tokenFill({ kind: 'die', dieType: t })).toBe(DIE_COLOR[t]);
+      }
+    });
+
+    it('dieGeometry centres every silhouette in the box and keeps the number on the shape', () => {
+      const c = DIE_BOX / 2;
+      for (const t of DIE_TYPES) {
+        const g = dieGeometry(t);
+        let minx, maxx, miny, maxy;
+        if (g.rect) {
+          [minx, miny] = [g.rect[0], g.rect[1]];
+          [maxx, maxy] = [g.rect[0] + g.rect[2], g.rect[1] + g.rect[3]];
+        } else {
+          const pts = g.points!.split(' ').map((p) => p.split(',').map(Number));
+          const xs = pts.map((p) => p[0]); const ys = pts.map((p) => p[1]);
+          [minx, maxx, miny, maxy] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+        }
+        // bounding box is centred at (62,62) → the die sits centred in its slot (the owner's complaint).
+        expect((minx + maxx) / 2).toBeCloseTo(c, 1);
+        expect((miny + maxy) / 2).toBeCloseTo(c, 1);
+        // the number stays inside the silhouette's vertical extent.
+        expect(g.numberY).toBeGreaterThan(miny);
+        expect(g.numberY).toBeLessThan(maxy);
+      }
     });
   });
 });

@@ -10,10 +10,11 @@
  * tokens look wrong far away and lag while "becoming HD".
  */
 import { memo, useId } from 'react';
-import { StyleSheet, View } from 'react-native';
-import Svg, { Circle, Defs, Ellipse, RadialGradient, Stop } from 'react-native-svg';
+import { StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Defs, Ellipse, G, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
-import { kindScale, type PlacedToken, TOKEN_FRAC, tokenFill } from './card-tokens-data';
+import { Display } from '@/constants/theme';
+import { DIE_BOX, DIE_COLOR, DIE_MAX, type DieType, dieGeometry, dieNumberFrac, dieNumberOffset, kindScale, type PlacedToken, type TokenKind, TOKEN_FRAC, tokenFill } from './card-tokens-data';
 
 export * from './card-tokens-data';
 
@@ -73,10 +74,64 @@ export const TokenButton = memo(function TokenButton({ size, fill }: { size: num
   );
 });
 
+/** Inset a polygon's points toward the box centre by `pad` units (for the rim/bevel rings). */
+function scalePts(pts: string, pad: number): string {
+  const c = DIE_BOX / 2;
+  return pts.split(' ').map((p) => { const [x, y] = p.split(',').map(Number); return `${c + (x - c) * (1 - pad / 43)},${c + (y - c) * (1 - pad / 43)}`; }).join(' ');
+}
+
+/** A die token (#293) in the same sewing-button language: a silhouette drop-shadow, a rim ring, and a
+ *  radial-gradient face in the die's shape, with the number drawn as a centred RN Text (crisp, reliably
+ *  centred). Geometry comes from {@link dieGeometry} so the shape is centred in its slot and the number
+ *  sits on the shape's centroid. */
+export const DieButton = memo(function DieButton({ size, dieType, value }: { size: number; dieType: DieType; value: number }) {
+  const gid = useId();
+  const fill = DIE_COLOR[dieType];
+  const rim = shade(fill, -0.34);
+  const geo = dieGeometry(dieType);
+  const noff = dieNumberOffset(dieType);
+  const face = (pad: number, fillv: string, stroke?: string, sw?: number) =>
+    geo.rect ? (
+      <Rect x={geo.rect[0] + pad} y={geo.rect[1] + pad} width={geo.rect[2] - 2 * pad} height={geo.rect[3] - 2 * pad} rx={geo.rect[4]} fill={fillv} stroke={stroke} strokeWidth={sw} />
+    ) : (
+      <Polygon points={scalePts(geo.points!, pad)} fill={fillv} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />
+    );
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
+      <Svg width={size} height={size} viewBox={`0 0 ${DIE_BOX} ${DIE_BOX}`} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <RadialGradient id={gid} cx="36%" cy="30%" r="80%">
+            <Stop offset="0" stopColor={shade(fill, 0.55)} />
+            <Stop offset="0.6" stopColor={fill} />
+            <Stop offset="1" stopColor={shade(fill, -0.16)} />
+          </RadialGradient>
+        </Defs>
+        {/* drop shadow = the silhouette itself, nudged down, so it hugs every shape */}
+        <G transform="translate(0 5)">{face(0, 'rgba(0,0,0,0.30)')}</G>
+        {face(2, rim)}
+        {face(8, `url(#${gid})`, shade(fill, -0.42), 2)}
+      </Svg>
+      <Text
+        allowFontScaling={false}
+        style={{ color: '#F2ECDC', fontFamily: Display.black, fontSize: size * dieNumberFrac(dieType), textAlign: 'center', textShadowColor: rim, textShadowRadius: 1, textShadowOffset: { width: 0, height: 1 }, transform: [{ translateX: (noff.dx / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2 + noff.dy) / DIE_BOX) * size }] }}>
+        {value}
+      </Text>
+    </View>
+  );
+});
+
+/** Render any token at `size`: a die gets the DieButton, everything else the sewing button. */
+export function TokenGlyph({ size, token }: { size: number; token: { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number } }) {
+  if (token.kind === 'die') {
+    const dt = token.dieType ?? 'd6';
+    return <DieButton size={size} dieType={dt} value={token.dieValue ?? DIE_MAX[dt]} />;
+  }
+  return <TokenButton size={size} fill={tokenFill(token)} />;
+}
+
 /**
- * The baked token layer (#244): every token on a card. Same `TokenButton` as the board, so it looks
- * identical in the deck and through rise/switch transitions (it rides the slot, next to
- * `EnabledCorner`). Per-kind sizes give the three defaults a subtle size step.
+ * The baked token layer (#244): every token on a card. Same glyphs as the board, so it looks identical
+ * in the deck and through rise/switch transitions (it rides the slot, next to `EnabledCorner`).
  */
 export const BakedTokenLayer = memo(function BakedTokenLayer({ tokens, cardW, cardH }: { tokens: PlacedToken[] | undefined; cardW: number; cardH: number }) {
   if (!tokens || tokens.length === 0) return null;
@@ -87,7 +142,7 @@ export const BakedTokenLayer = memo(function BakedTokenLayer({ tokens, cardW, ca
         const size = base * kindScale(t.kind);
         return (
           <View key={t.id} style={{ position: 'absolute', left: t.x * cardW - size / 2, top: t.y * cardH - size / 2 }}>
-            <TokenButton size={size} fill={tokenFill(t)} />
+            <TokenGlyph size={size} token={t} />
           </View>
         );
       })}
