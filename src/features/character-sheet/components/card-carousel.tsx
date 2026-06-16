@@ -468,7 +468,7 @@ const RING_C = 2 * Math.PI * RING_R;
  *  (osProgress), then its ring fills over the 1s hold (osHold); brightens to red + "RELEASE" when
  *  armed (the hold completed → release switches). */
 function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }: { osProgress: SharedValue<number>; osDir: SharedValue<number>; osArmed: SharedValue<number>; osHold: SharedValue<number>; overscrollX: SharedValue<number> }) {
-  const { category, ring } = useCarousel();
+  const { category, ring, categoryMeta } = useCarousel();
   // The target depends on the pull direction (#214): osDir > 0 (first card pulled right) walks the
   // ring BACKWARD (-1), osDir < 0 (last card pulled left) walks it FORWARD (+1). Sync the live dir to
   // JS so the right glyph/label renders; the indicator is hidden whenever osDir is 0.
@@ -513,7 +513,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
       </View>
       <View style={{ height: 14, marginTop: 2, width: 120, alignItems: 'center', justifyContent: 'center' }}>
         <Animated.Text numberOfLines={1} style={[{ position: 'absolute', color: Rune.goldText, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }, pullLabel]}>
-          {CATEGORY_LABEL[target]}
+          {categoryMeta[target]?.label ?? CATEGORY_LABEL[target] ?? ''}
         </Animated.Text>
         <Animated.Text numberOfLines={1} style={[{ position: 'absolute', color: Rune.goldBright, fontSize: 9, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }, armLabel]}>
           Release

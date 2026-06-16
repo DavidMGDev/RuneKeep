@@ -52,7 +52,7 @@ export const SFX_VOLUME: Partial<Record<SfxId, number>> = {
   selectCharacter: 0.9,
   sheetEnter: 0.9,
   // stat impacts
-  loseStress: 1.4, // #258: boost (a very low sound, barely audible)
+  loseStress: 1.5, // #258: boost (a very low sound, barely audible)
   loseHope: 0.63, // #258r2: too loud, -30%
 };
 
@@ -93,7 +93,7 @@ export type StatKey = 'hp' | 'armor' | 'stress' | 'hope';
  * (hp only). Tuned by ear (#258) so the bang lands ON the burst/fill. SOUND-only — visual unchanged.
  */
 export const STAT_SOUND_DELAY_MS: Record<StatKey, { gain: number; lose: number; goldGain?: number }> = {
-  hp: { gain: 234, lose: 32, goldGain: 84 }, // #258r2: fill -250ms, golden fill -400ms
+  hp: { gain: 260, lose: 32, goldGain: 84 }, // #258r2: fill -250ms, golden fill -400ms
   armor: { gain: 41, lose: 117 }, // #258r2: fill -250ms more
   stress: { gain: 21, lose: 0 },
   hope: { gain: 114, lose: 21 },
@@ -114,11 +114,11 @@ export const RISER_START_DELAY_MS = 280;
 /** Golden-gear "swoosh" trigger: minimum per-frame finger travel (px, design space) for a swipe to
  *  count as FAST. The gear plays its swoosh only on a FAST swipe that REVERSES direction — so casual
  *  scrubbing is silent and only deliberate fast flicks swoosh. Raise = less sensitive. */
-export const GEAR_FAST_FLIP_PX = 16;
+export const GEAR_FAST_FLIP_PX = 18;
 
 /** Volume multiplier (on the carousel-scroll base) for the per-detent pip heard WHILE grinding the
  *  golden gear (#258r2). The gear scrolls fast, so it's quieter than the normal hand scroll. */
-export const GEAR_SCROLL_PIP_VOLUME = 0.75;
+export const GEAR_SCROLL_PIP_VOLUME = 0.55;
 
 /** Volume multiplier for the quieter gear sound used when flipping multi-page card faces (#258). */
-export const PAGE_FLIP_VOLUME = 0.45;
+export const PAGE_FLIP_VOLUME = 0.35;
