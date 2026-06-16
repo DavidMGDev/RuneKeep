@@ -53,7 +53,7 @@ import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, type PlaceholderKind } from './float-menu';
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
-import { DeleteCardConfirm, EditCardFlow } from './edit-card-flow';
+import { EditCardFlow } from './edit-card-flow';
 import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
@@ -774,7 +774,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
-  const [delCatalogId, setDelCatalogId] = useState<string | null>(null); // hold-to-confirm delete of a catalog card (#264 item 5)
   // Origin-card preview (#242 item 4): a standalone copy of subclass/ancestry/community, not the carousel.
   const [originPreview, setOriginPreview] = useState<{ id: string; source: number | { uri: string }; label: string } | null>(null);
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
@@ -1285,9 +1284,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   hand must be down to land safely on an enabled one when it reopens. */}
               {/* Unload the carousel + token board for every FULL-SCREEN interface (#252): Level Up,
                   Cards management, and New Card (incl. the catalog reached from it) all cover the sheet. */}
-              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' || editCardId ? null : <CardCarousel />}
-              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' || editCardId ? null : (
-                <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={setDelCatalogId} editableIds={editableIds} />
+              {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
+                  behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
+              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
+              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
+                <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
               )}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
@@ -1307,7 +1308,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
           {/* Unified overlay dim (#239 item 9): one fading scrim shared by the float-menu panels +
               the per-card modifier sheet, so transitions never flashbang the bright sheet. */}
-          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null || damageOpen || editCardId !== null || delCatalogId !== null} />
+          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null || damageOpen || editCardId !== null} />
           {/* damage-threshold keypad (#128): full-screen overlay above everything; on confirm it
               animates out, then bursts the lost hearts via the HeartTrack handle */}
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}
@@ -1350,13 +1351,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
           ) : null}
-          {/* edit a player-authored card (#264 item 5): from the gallery's Edit or the fullscreen pencil */}
+          {/* edit a player-authored card (#264 item 5): from the gallery's Edit or the fullscreen pencil.
+              From fullscreen the carousel stays mounted+fullscreen behind this editor (#276 item 4). */}
           {editCardId && file ? (
             <EditCardFlow key={editCardId} file={file} cardId={editCardId} customTypes={customCardTypes} onSave={onSaveEditedCard} onDelete={onDeleteEditedCard} onCancel={() => setEditCardId(null)} />
-          ) : null}
-          {/* hold-to-confirm delete of a CATALOG card from the fullscreen carousel (#264 item 5) */}
-          {delCatalogId ? (
-            <DeleteCardConfirm onConfirm={() => { onDeleteCards([delCatalogId]); setDelCatalogId(null); }} onCancel={() => setDelCatalogId(null)} />
           ) : null}
           {/* per-card modifier view (#175): opened by the focused card's "Modifiers" button */}
           {cardInfoId && file ? (
