@@ -125,17 +125,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.11.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.11.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.12.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.12.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.11'
-$notes = "RuneKeep v0.2.11 - sound. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build adds a full dynamic sound system across the app: HP/Stress/Hope/Armor each charge with a riser that fades exactly as the heart fills or shatters, the carousel ticks as cards center, the float menu / panels / buttons / tokens / keypad all have feedback, and ~1 in 10 lost hearts plays a random surprise. Every sound is loudness-normalized and gets subtle pitch variation so nothing gets stale. Also: the damage-panel OK button now charges with a rising red meter instead of the old flat rectangle.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.12'
+$notes = "RuneKeep v0.2.12 - sound tuning. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nSecond sound pass: the creation / level-up / catalog carousels now tick + swoosh like the sheet carousel, the golden gear swooshes only on fast direction changes, multi-page cards swoosh on flip, and creation / gallery / origin-badge taps all have feedback. Volume + per-icon timing rebalanced so the stat-bang lands on the burst. Two fixes: enter sounds no longer play behind a loading screen, and the Level Up panel can no longer be tapped through to the character sheet.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.11 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.12 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
