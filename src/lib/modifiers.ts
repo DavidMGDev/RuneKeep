@@ -32,11 +32,22 @@ export type EffectTarget =
  *               Strength + 3 (Bare Bones' unarmored Armor Score). With `mode:'set'` it REPLACES the
  *               target's running total (e.g. armorScore) instead of adding.
  */
+/** A formula value (#278): a sheet VARIABLE scaled by an integer multiply/divide, rounded UP (every
+ *  Daggerheart number rounds up). e.g. {variable:'level',divide:2} = ½ level (round up);
+ *  {variable:'proficiency',multiply:2} = 2× Proficiency; {variable:'tier'} = your Tier. */
+export interface EffectFormula {
+  variable: 'level' | 'tier' | 'proficiency' | TraitKey;
+  multiply?: number;
+  divide?: number;
+}
+
 export interface CardEffect {
   target: EffectTarget;
   delta?: number;
   byTier?: [number, number, number, number];
-  dynamic?: 'proficiency' | 'halfAgility' | 'strengthPlus3';
+  dynamic?: 'proficiency' | 'halfAgility' | 'strengthPlus3' | 'formula';
+  /** Present when `dynamic === 'formula'`: the variable-scaled value (resolved in the dynamic pass). */
+  formula?: EffectFormula;
   /**
    * Damage-threshold mode (#242 item 9) — only meaningful for `majorThreshold` / `severeThreshold`:
    * - `set`   — OVERRIDE the level-based base to `delta` (e.g. armor "8"). Only one set-major and one
@@ -117,6 +128,18 @@ function flatDelta(e: CardEffect, tier: number): number | null {
   return e.delta ?? 0;
 }
 
+/** Resolve a formula value (#278) from the finalized sheet, rounded UP (Daggerheart rounds up). */
+function resolveFormula(f: EffectFormula | undefined, out: SheetBreakdown, level: number): number {
+  if (!f) return 0;
+  const base =
+    f.variable === 'level' ? level
+    : f.variable === 'tier' ? tierForLevel(level)
+    : f.variable === 'proficiency' ? out.proficiency?.total ?? 0
+    : out[f.variable]?.total ?? 0; // a trait total (from pass 1)
+  const div = f.divide && f.divide !== 0 ? f.divide : 1;
+  return Math.ceil((base * (f.multiply ?? 1)) / div);
+}
+
 /**
  * Compute the whole sheet. `base` holds the intrinsic value per target; `sources` are the enabled
  * cards' effects. Pure + deterministic — same inputs always yield the same breakdown.
@@ -174,7 +197,8 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
       const d =
         e.dynamic === 'proficiency' ? out.proficiency.total
         : e.dynamic === 'strengthPlus3' ? out.strength.total + 3
-        : Math.floor(out.agility.total / 2);
+        : e.dynamic === 'halfAgility' ? Math.floor(out.agility.total / 2)
+        : resolveFormula(e.formula, out, level);
       if (e.mode === 'set') {
         b.contributions.push({ source: src.source, delta: d - b.total, note: e.note });
         b.total = d;

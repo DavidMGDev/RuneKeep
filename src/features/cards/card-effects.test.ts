@@ -99,6 +99,22 @@ describe('mixed ancestry effect filtering (#265)', () => {
   });
 });
 
+describe('per-card effect overrides (#278)', () => {
+  it('a player override replaces a catalog card effects', () => {
+    const file = baseFile({ cardEffectOverrides: { 'ancestry-giant': [{ target: 'evasion', delta: 5 }] } });
+    expect(effectsForCardId('ancestry-giant', file)).toEqual([{ target: 'evasion', delta: 5 }]);
+    expect(effectsForCardId('ancestry-giant', baseFile())[0]).toMatchObject({ target: 'maxHp', delta: 1 }); // catalog stands without override
+  });
+  it('an override applies to all copies (keyed by catalog id)', () => {
+    const file = baseFile({ cardEffectOverrides: { 'wpn-greatsword': [{ target: 'strength', delta: 1 }] } });
+    expect(effectsForCardId('wpn-greatsword#2', file)).toEqual([{ target: 'strength', delta: 1 }]);
+  });
+  it('lets the user ADD effects to a catalog card that had none', () => {
+    const file = baseFile({ cardEffectOverrides: { 'wpn-longsword': [{ target: 'maxHp', delta: 2 }] } });
+    expect(effectsForCardId('wpn-longsword', file)).toEqual([{ target: 'maxHp', delta: 2 }]);
+  });
+});
+
 describe('editable-card helpers (#264 item 5)', () => {
   const file = baseFile({
     customCards: [{ id: 'cc-1', title: 'Lucky Ring', text: '', imageUri: null, target: 'inventory' }],

@@ -59,6 +59,13 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
   const id = catalogIdOf(rawId); // resolve a duplicate copy (e.g. wpn-x#2) to its catalog content (#269)
   const custom = customCards(file).find((c) => c.id === id);
   if (custom?.effects?.length) return custom.effects;
+  // #278: a player override replaces a CATALOG card's code-defined effects (custom cards edit their own
+  // `effects` above). Override wins so the Modifiers panel + card editor share one source of truth.
+  const override = file?.cardEffectOverrides?.[id];
+  if (override) {
+    if (isAncestryEffectDisabled(file?.mixedAncestry, id)) return [];
+    return override;
+  }
   if (CATALOG_EFFECTS[id]?.length) {
     // #265: in a mixed ancestry, an ancestry's passive is dropped when it sits on the crossed-out half.
     if (isAncestryEffectDisabled(file?.mixedAncestry, id)) return [];
