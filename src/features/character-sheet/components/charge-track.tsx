@@ -529,9 +529,11 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
     <View style={[box(left, top, Math.max(...slots.map((s) => s.x)) + w, Math.max(...slots.map((s) => s.y)) + h), { zIndex: 10, overflow: 'visible' }]}>
       {slots.map((s, i) => {
         const dir: Dir | null = i === upIndex ? 'up' : i === downIndex ? 'down' : null;
-        // Keep the static pip visible during the 'hold' charge (#233 item 7) so a tap / hold-start
-        // never blanks for one frame; the anim takes over once it fires or cancels.
-        const hidden = anims.some((a) => a.index === i && a.phase !== 'hold');
+        // The animating copy owns the slot the whole time it exists (#276 item 6): hide the static pip
+        // the moment an anim starts — INCLUDING the 'hold' charge — so transparent icons (hope/armor)
+        // never show a static ghost behind the growing one. The anim mounts in the same commit at
+        // scale 1, so there's no blank frame.
+        const hidden = anims.some((a) => a.index === i);
         const bodyEl = (
           <View
             style={[box(s.x, s.y, w, h), { opacity: hidden ? 0 : 1 }]}

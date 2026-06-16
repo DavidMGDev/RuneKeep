@@ -6,6 +6,7 @@ import Animated, { runOnJS, type SharedValue, useAnimatedStyle, useSharedValue }
 import Svg, { Path } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
@@ -295,9 +296,9 @@ export function CardManagementPanel(props: Props) {
 
       {createOpen ? <CategoryForm title="New category" onCancel={() => setCreateOpen(false)} onSave={(label, icon) => { onCreateCategory(label, icon); setCreateOpen(false); }} /> : null}
       {editing ? <CategoryForm title="Edit category" initialLabel={editing.label} initialIcon={editing.icon} onCancel={() => setEditing(null)} onSave={(label, icon) => { onUpdateCategory(editing.id, { label, icon }); setEditing(null); }} /> : null}
-      {confirmDelCat ? <Confirm title={`Delete "${confirmDelCat.label}"?`} body="The category is removed; its cards return to their default category." confirmLabel="Delete category" onCancel={() => setConfirmDelCat(null)} onConfirm={() => { onDeleteCategory(confirmDelCat.id); setConfirmDelCat(null); }} /> : null}
+      {confirmDelCat ? <Confirm title={`Delete "${confirmDelCat.label}"?`} body="The category is removed; its cards return to their default category." confirmLabel="Delete" onCancel={() => setConfirmDelCat(null)} onConfirm={() => { onDeleteCategory(confirmDelCat.id); setConfirmDelCat(null); }} /> : null}
       {moveOpen ? <MoveSheet count={selected.size} ordered={ordered} customCategories={customCategories} onMove={(key) => { onMoveCards([...selected], key); clearSelect(); setMoveOpen(false); }} onClose={() => setMoveOpen(false)} /> : null}
-      {confirmDel ? <Confirm title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setConfirmDel(false)} onConfirm={() => { playSfx('tokenRemove'); onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }} /> : null}
+      {confirmDel ? <Confirm title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setConfirmDel(false)} onConfirm={() => { onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }} /> : null}
     </>
   );
 }
@@ -536,9 +537,12 @@ function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: st
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.4 }}>{title}</Text>
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18, marginTop: 8 }}>{body}</Text>
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, alignItems: 'stretch' }}>
           <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
-          <RuneButton label={confirmLabel} kind="primary" height={42} style={{ flex: 1.3 }} onPress={onConfirm} />
+          {/* #276 item 1: hold-to-confirm so a delete is never a single mis-tap (and "Delete" never truncates) */}
+          <View style={{ flex: 1.3 }}>
+            <HoldToConfirm label={confirmLabel} onConfirm={onConfirm} height={42} />
+          </View>
         </View>
       </ChamferBox>
     </CenterDialog>
