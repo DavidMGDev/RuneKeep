@@ -82,17 +82,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.2.9.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.9.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.2.10.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.2.10.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.2.9'
-$notes = "RuneKeep v0.2.9 - full-screen card interfaces. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: the Cards menu, New Card, and Add-from-catalog are now FULL-SCREEN interfaces with their own border (like Level Up) - fully opaque, you can't tap through them, and they only close with the Back/X button (no more accidental close when tapping inside, and nothing escapes past the border). The catalog is a swipeable card CAROUSEL showing the real card art (no redundant names) for domains, ancestries, communities, subclasses, and class cards; swipe to the card you want and press Select. The gold card shows a proper tile in the gallery now. In the Cards gallery you can tap to multi-select (then move or delete), or HOLD a card to pick it up and drag it to reorder it or move it to another category. Class cards can be added for multiclassing without changing your stats.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.2.10'
+$notes = "RuneKeep v0.2.10 - modifiers + drag polish. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis build: the per-card Modifiers view is now a full-screen interface, so tapping anywhere in it can no longer fall through to the card carousel. Dragging cards in the Cards gallery shows a live gold insertion bar marking exactly where the card will drop (before/after which card), with the lifted card dimmed. And a hard safeguard now prevents deleting your very last card during bulk selection.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.9 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.2.10 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
