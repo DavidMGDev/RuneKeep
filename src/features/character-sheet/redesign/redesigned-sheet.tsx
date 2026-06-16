@@ -1025,8 +1025,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Delete ANY cards (#248 item 5): strip authored/acquired/domain entries + enabled/override/tokens,
   // and add every id to `removedCardIds` so SYSTEM cards (origins, class feature, equipment, gold) drop
   // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
-  const onDeleteCards = useCallback((ids: string[]) => {
-    if (!file || ids.length === 0) return;
+  const onDeleteCards = useCallback((rawIds: string[]) => {
+    if (!file || rawIds.length === 0) return;
+    // HARD safeguard (#252): never delete the last card overall. Count the cards actually in the live
+    // decks; if this deletion would remove them all, keep one. This is the data-layer guard (the UI
+    // disable alone wasn't enough — the owner reached an empty state).
+    const liveIds = new Set(Object.values(carouselDecks ?? {}).flat().map((c) => c.id));
+    const present = rawIds.filter((id) => liveIds.has(id));
+    let ids = rawIds;
+    if (liveIds.size > 0 && present.length >= liveIds.size) {
+      const keep = present[present.length - 1]; // keep the last selected so one card always remains
+      ids = rawIds.filter((id) => id !== keep);
+    }
+    if (ids.length === 0) return;
     const del = new Set(ids);
     const cardCategory = { ...(file.cardCategory ?? {}) };
     const cardTokens = { ...(file.cardTokens ?? {}) };
@@ -1046,7 +1057,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       cardTokens,
     };
     commitFile(next);
-  }, [file, commitFile]);
+  }, [file, commitFile, carouselDecks]);
   // Card types (#246): add / remove the player's custom middle-ribbon types.
   const customCardTypes = useMemo(() => file?.customCardTypes ?? [], [file]);
   const onAddCardType = useCallback((label: string) => {

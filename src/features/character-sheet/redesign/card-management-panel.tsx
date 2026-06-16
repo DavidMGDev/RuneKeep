@@ -113,12 +113,23 @@ export function CardManagementPanel(props: Props) {
 
   // drag-drop state
   const [dragId, setDragId] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ overId: string; before: boolean } | null>(null); // live drop preview
   const ghostX = useSharedValue(0);
   const ghostY = useSharedValue(0);
   const ghostOn = useSharedValue(0);
   const tileRefs = useRef(new Map<string, View>());
   const tileRects = useRef(new Map<string, Rect>());
   const tileCat = useRef(new Map<string, string>());
+
+  // Live drop preview (#252 polish): which tile the gold insertion bar sits before/after as you drag.
+  const updateHover = useCallback((absX: number, absY: number) => {
+    let overId: string | null = null;
+    let before = true;
+    for (const [tid, r] of tileRects.current) {
+      if (absX >= r.x && absX <= r.x + r.w && absY >= r.y && absY <= r.y + r.h) { overId = tid; before = absX < r.x + r.w / 2; break; }
+    }
+    setHover((prev) => (prev?.overId === overId && prev?.before === before ? prev : overId ? { overId, before } : null));
+  }, []);
 
   const quickSwitch = (key: CardCategory) => {
     if ((decks[key]?.length ?? 0) === 0) return; // can't switch to an empty category (#250)
@@ -149,6 +160,7 @@ export function CardManagementPanel(props: Props) {
   const endDrag = useCallback((absX: number, absY: number) => {
     const moved = dragId;
     setDragId(null);
+    setHover(null);
     ghostOn.value = 0;
     if (!moved) return;
     // find the tile under the finger
@@ -225,12 +237,14 @@ export function CardManagementPanel(props: Props) {
             customCategories={customCategories}
             selected={selected}
             dragId={dragId}
+            hover={hover}
             onToggleSelect={toggleSelect}
             onAddCardInCategory={onAddCardInCategory}
             tileRefs={tileRefs.current}
             tileCat={tileCat.current}
             onBeginDrag={beginDrag}
             onEndDrag={endDrag}
+            onHover={updateHover}
             ghostX={ghostX}
             ghostY={ghostY}
             ghostOn={ghostOn}
@@ -304,9 +318,9 @@ function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCatego
 }
 
 // ---------------- Cards gallery view ----------------
-function CardTile({ item, cat, selected, dimmed, onToggleSelect, onBeginDrag, onEndDrag, setRef, setCat, ghostX, ghostY, ghostOn }: {
-  item: CardItem; cat: string; selected: boolean; dimmed: boolean;
-  onToggleSelect: (id: string) => void; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void;
+function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBeginDrag, onEndDrag, onHover, setRef, setCat, ghostX, ghostY, ghostOn }: {
+  item: CardItem; cat: string; selected: boolean; dimmed: boolean; insertBar: 'before' | 'after' | null;
+  onToggleSelect: (id: string) => void; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void; onHover: (x: number, y: number) => void;
   setRef: (id: string, ref: View | null) => void; setCat: (id: string, cat: string) => void;
   ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
 }) {
@@ -322,31 +336,35 @@ function CardTile({ item, cat, selected, dimmed, onToggleSelect, onBeginDrag, on
           ghostOn.value = 1;
           runOnJS(onBeginDrag)(item.id);
         })
-        .onUpdate((e) => { 'worklet'; ghostX.value = e.absoluteX; ghostY.value = e.absoluteY; })
+        .onUpdate((e) => { 'worklet'; ghostX.value = e.absoluteX; ghostY.value = e.absoluteY; runOnJS(onHover)(e.absoluteX, e.absoluteY); })
         .onEnd((e) => { 'worklet'; runOnJS(onEndDrag)(e.absoluteX, e.absoluteY); })
         .onFinalize(() => { 'worklet'; ghostOn.value = 0; }),
-    [item.id, onBeginDrag, onEndDrag, ghostX, ghostY, ghostOn],
+    [item.id, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn],
   );
   const gesture = useMemo(() => Gesture.Race(drag, tap), [drag, tap]);
   return (
     <GestureDetector gesture={gesture}>
-      <View
-        ref={(r) => { setRef(item.id, r); setCat(item.id, cat); }}
-        collapsable={false}
-        accessibilityRole="button"
-        accessibilityLabel="Card. Tap to select, hold to drag"
-        style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: selected ? 2.5 : 1, borderColor: selected ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden', opacity: dimmed ? 0.4 : 1 }}>
-        {item.live ? <GoldTile /> : item.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>}
-        {selected ? <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text></View> : null}
+      <View collapsable={false} style={{ width: TILE_W }}>
+        {/* live drop preview (#252 polish): a gold insertion bar at the slot the card will land in */}
+        {insertBar ? <View pointerEvents="none" style={[{ position: 'absolute', top: -2, bottom: -2, width: 3.5, borderRadius: 2, backgroundColor: Rune.goldBright, zIndex: 5 }, insertBar === 'before' ? { left: -5 } : { right: -5 }]} /> : null}
+        <View
+          ref={(r) => { setRef(item.id, r); setCat(item.id, cat); }}
+          collapsable={false}
+          accessibilityRole="button"
+          accessibilityLabel="Card. Tap to select, hold to drag"
+          style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: selected ? 2.5 : 1, borderColor: selected ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden', opacity: dimmed ? 0.4 : 1 }}>
+          {item.live ? <GoldTile /> : item.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>}
+          {selected ? <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text></View> : null}
+        </View>
       </View>
     </GestureDetector>
   );
 }
 
-function CardsView({ ordered, decks, customCategories, selected, dragId, onToggleSelect, onAddCardInCategory, tileRefs, tileCat, onBeginDrag, onEndDrag, ghostX, ghostY, ghostOn }: {
-  ordered: string[]; decks: Record<string, CardItem[]>; customCategories: CustomCategory[]; selected: Set<string>; dragId: string | null;
+function CardsView({ ordered, decks, customCategories, selected, dragId, hover, onToggleSelect, onAddCardInCategory, tileRefs, tileCat, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn }: {
+  ordered: string[]; decks: Record<string, CardItem[]>; customCategories: CustomCategory[]; selected: Set<string>; dragId: string | null; hover: { overId: string; before: boolean } | null;
   onToggleSelect: (id: string) => void; onAddCardInCategory: (key: string) => void;
-  tileRefs: Map<string, View>; tileCat: Map<string, string>; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void;
+  tileRefs: Map<string, View>; tileCat: Map<string, string>; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void; onHover: (x: number, y: number) => void;
   ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
 }) {
   const setRef = useCallback((id: string, ref: View | null) => { if (ref) tileRefs.set(id, ref); else tileRefs.delete(id); }, [tileRefs]);
@@ -372,7 +390,7 @@ function CardsView({ ordered, decks, customCategories, selected, dragId, onToggl
             ) : (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {items.map((item) => (
-                  <CardTile key={item.id} item={item} cat={key} selected={selected.has(item.id)} dimmed={dragId === item.id} onToggleSelect={onToggleSelect} onBeginDrag={onBeginDrag} onEndDrag={onEndDrag} setRef={setRef} setCat={setCat} ghostX={ghostX} ghostY={ghostY} ghostOn={ghostOn} />
+                  <CardTile key={item.id} item={item} cat={key} selected={selected.has(item.id)} dimmed={dragId === item.id} insertBar={hover?.overId === item.id ? (hover.before ? 'before' : 'after') : null} onToggleSelect={onToggleSelect} onBeginDrag={onBeginDrag} onEndDrag={onEndDrag} onHover={onHover} setRef={setRef} setCat={setCat} ghostX={ghostX} ghostY={ghostY} ghostOn={ghostOn} />
                 ))}
               </View>
             )}
