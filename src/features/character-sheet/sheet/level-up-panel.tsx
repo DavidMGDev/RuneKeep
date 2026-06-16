@@ -11,8 +11,8 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, picksUsed, tierForLevel } from '@/lib/leveling';
 import type { CharacterFile } from '@/lib/character-file';
 import { playSfx } from '@/lib/sfx';
-import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/straight-carousel';
-import { ForgedCard } from '@/features/create/forged-card';
+import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
+import { ForgedCard } from '@/features/create/components/forged-card';
 
 import { TRAIT_ORDER } from '../character';
 import type { DomainCardInfo } from './domain-card-info';

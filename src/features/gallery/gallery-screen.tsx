@@ -9,7 +9,7 @@ import { ArtImage } from '@/components/art-image';
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
-import { RuneChip } from '@/components/rune-chip';
+import { RuneChip } from './components/rune-chip';
 import { type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';

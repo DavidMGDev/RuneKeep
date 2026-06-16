@@ -2,7 +2,7 @@ import { type ReactNode } from 'react';
 import { View } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-import CardDividerSvg from '../../assets/art/cardElements/CardDivider.svg';
+import CardDividerSvg from '../../../../assets/art/cardElements/CardDivider.svg';
 import { type ClassName } from '@/constants/identity';
 
 // Source geometry: divider viewBox 1979x151; the inner mask plaque is 1321x192 and, centered on
