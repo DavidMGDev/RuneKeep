@@ -125,17 +125,17 @@ Write-Host "APK : $($apk.FullName)"
 Write-Host "SIZE: $mb MB" -ForegroundColor Green
 
 Section "Rename APK to a friendly asset name"
-# The release asset (and the file the player downloads) is named "Runekeep v0.5.apk".
-$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.5.apk'
+# The release asset (and the file the player downloads) is named "Runekeep v0.6.apk".
+$niceApk = Join-Path (Split-Path $apk.FullName -Parent) 'Runekeep v0.6.apk'
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
 Section "Upload GitHub release"
 Set-Location $repo
-$tag = 'v0.5'
-$notes = "RuneKeep v0.5 - dice tokens & a redesigned token drawer. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThe token drawer on a fullscreen card is rebuilt: one clear Open button reveals three aligned panels - edit/delete on the left, the wood/bone/iron/colour tokens in the centre, and a new die source on the right. It stays open while you decorate and closes when you leave the card. Dice are a new token in the same hand-stitched style: d4, d6, d8, d10, d12, d20, each its own colour and shape. Tap the source die to change its size, drag it onto the card to place it, tap a placed die to cycle its number, and hold to flick it off. Tapping the top 60% of a fullscreen card no longer dismisses it (so near-misses by the drawer or buttons keep the card open); tap the lower area or swipe down to close.`n`nSideload: enable Install unknown apps, then open the APK."
+$tag = 'v0.6'
+$notes = "RuneKeep v0.6 - token-drawer polish, bigger dice, smoother float menu, and multi-page origin cards. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThe fullscreen-card token drawer is tidier: the edit/delete button is a single clean outline with a centred icon, and the action + die panels are larger. Dice you drag onto a card are now twice as big and start at 1 (the source still shows the die's maximum). The float menu stays smooth after you decorate cards with tokens.`n`nArmor now follows the rules: a new character starts at armor score 0 (unarmored), and equipping armor or levelling raises your armor score and damage thresholds - every change shows in the Modifiers tab.`n`nThe device Back button no longer dumps you out by accident: it closes whatever panel is open, and only asks before leaving to character selection when nothing is open. The Cards menu opens on the Cards tab. Tapping Subclass now flips through your subclass and your whole class card; a mixed-ancestry character's Ancestry badge shows both ancestry cards with the right traits struck through.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep v0.5 (Android)" --notes $notes
+gh release create $tag "$niceApk" --target main --title "RuneKeep v0.6 (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
