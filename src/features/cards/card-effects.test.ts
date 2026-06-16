@@ -1,5 +1,5 @@
 import { type CharacterFile, toSheetCharacter } from '@/lib/character-file';
-import { cardHasEffects, effectsForCardId, sourceLabelForCardId } from './card-effects';
+import { cardHasEffects, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, sourceLabelForCardId } from './card-effects';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
   return {
@@ -44,6 +44,32 @@ describe('effectsForCardId', () => {
   it('labels a card by its human name', () => {
     expect(sourceLabelForCardId('wpn-greatsword')).toBe('Greatsword');
     expect(sourceLabelForCardId('ancestry-giant')).toBe('Giant');
+  });
+});
+
+describe('editable-card helpers (#264 item 5)', () => {
+  const file = baseFile({
+    customCards: [{ id: 'cc-1', title: 'Lucky Ring', text: '', imageUri: null, target: 'inventory' }],
+    notes: [{ id: 'note-1', title: 'A note', text: '', imageUri: null }],
+    inventoryCustom: [{ id: 'inv-1', title: 'Rope', text: '', imageUri: null }],
+  });
+  it('finds a custom card and its collection', () => {
+    expect(findEditableCard(file, 'cc-1')).toMatchObject({ collection: 'customCards', card: { title: 'Lucky Ring' } });
+    expect(findEditableCard(file, 'note-1')?.collection).toBe('notes');
+    expect(findEditableCard(file, 'inv-1')?.collection).toBe('inventoryCustom');
+  });
+  it('treats catalog cards as not editable', () => {
+    expect(findEditableCard(file, 'ancestry-giant')).toBeNull();
+    expect(isEditableCard('ancestry-giant', file)).toBe(false);
+    expect(isEditableCard('wpn-greatsword', file)).toBe(false);
+  });
+  it('reports editability for custom cards', () => {
+    expect(isEditableCard('cc-1', file)).toBe(true);
+    expect(editableCardIds(file)).toEqual(new Set(['cc-1', 'note-1', 'inv-1']));
+  });
+  it('is safe with no file', () => {
+    expect(isEditableCard('cc-1', undefined)).toBe(false);
+    expect(editableCardIds(undefined).size).toBe(0);
   });
 });
 

@@ -11,9 +11,10 @@
  * board lives inside the scaled DesignStage; the origin preview is screen-space, scale 1).
  */
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 
 import { Rune } from '@/constants/theme';
 import { useStageScale } from '@/components/design-stage';
@@ -341,14 +342,47 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
   );
 }
 
+/** Top-left fullscreen card action (#264 item 5): pencil to edit a custom card, trash to delete a
+ *  catalog card. Sits in the same faded layer as the token drawer tab, so it appears with it. */
+function CardActionButton({ kind, onPress }: { kind: 'edit' | 'delete'; onPress: () => void }) {
+  const color = kind === 'edit' ? Rune.goldText : '#E2705A';
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={kind === 'edit' ? 'Edit card' : 'Delete card'}
+      style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: 'rgba(14,17,22,0.94)', borderWidth: 1.4, borderColor: Rune.goldEdge, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={20} height={20} viewBox="0 0 24 24">
+        {kind === 'edit' ? (
+          <>
+            <Path d="M4 20 L4.5 15.5 L15 5 L19 9 L8.5 19.5 Z" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+            <Path d="M13 7 L17 11" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+          </>
+        ) : (
+          <>
+            <Path d="M5 7 H19" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+            <Path d="M9.5 7 V5.2 H14.5 V7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+            <Path d="M6.5 7 L7.4 19.5 H16.6 L17.5 7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+          </>
+        )}
+      </Svg>
+    </Pressable>
+  );
+}
+
 /**
  * The carousel's token board (#244): reads the focus state + the stage scale, computes the focused
  * card's design-space rect, and renders the surface inside DesignStage. Mounted only while a card is
  * focused (fades with `fullscreenProgress`); everything else (LOD tokens on the deck) is the baked
  * layer inside the slots.
+ *
+ * Also hosts the top-left fullscreen card action (#264 item 5): pencil (edit) for player-authored cards,
+ * trash (delete) for catalog cards. It collapses fullscreen first, then asks the sheet to open the
+ * editor / delete confirmation, so the carousel never desyncs while a card is edited/removed.
  */
-export function CarouselTokenBoard() {
-  const { fullscreenProgress, focusIndex, switching, decks, category, cardTokens, tokenColor, tokenDrawerX, placeToken, removeToken, setTokenColor, moveTokenDrawer } = useCarousel();
+export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { onEditCard?: (id: string) => void; onDeleteCard?: (id: string) => void; editableIds?: Set<string> } = {}) {
+  const { fullscreenProgress, focusIndex, switching, decks, category, cardTokens, tokenColor, tokenDrawerX, placeToken, removeToken, setTokenColor, moveTokenDrawer, closeFullscreen } = useCarousel();
   const scale = useStageScale();
   const [st, setSt] = useState<{ active: boolean; idx: number }>({ active: false, idx: 0 });
   const lastActive = useSharedValue(0);
@@ -401,6 +435,8 @@ export function CarouselTokenBoard() {
   const onRemove = useCallback((tid: string) => { if (id) removeToken(id, tid); }, [id, removeToken]);
 
   if (!id) return null;
+  const showAction = onEditCard || onDeleteCard;
+  const editable = editableIds?.has(id) ?? false;
   return (
     <Animated.View pointerEvents="box-none" style={[box(0, 0, 412, 892), { zIndex: 3600 }, fade]}>
       <TokenBoard
@@ -416,6 +452,18 @@ export function CarouselTokenBoard() {
         onSetDrawerColor={setTokenColor}
         onMoveDrawer={moveTokenDrawer}
       />
+      {showAction ? (
+        <View style={{ position: 'absolute', left: 14, top: 2 }}>
+          <CardActionButton
+            kind={editable ? 'edit' : 'delete'}
+            onPress={() => {
+              closeFullscreen();
+              if (editable) onEditCard?.(id);
+              else onDeleteCard?.(id);
+            }}
+          />
+        </View>
+      ) : null}
     </Animated.View>
   );
 }

@@ -20,6 +20,31 @@ function customCards(file?: CharacterFile): ExperienceDef[] {
   return [...(file.experiences ?? []), ...(file.inventoryCustom ?? []), ...(file.customCards ?? []), ...(file.notes ?? [])];
 }
 
+/** The file collections that hold player-authored, editable cards (#264 item 5). */
+export type EditableCollection = 'customCards' | 'inventoryCustom' | 'notes' | 'experiences';
+
+/** Locate an editable (player-authored) card by id and which collection holds it. Catalog cards
+ *  (ancestry/domain/subclass/equipment/loot) are NOT editable → null. */
+export function findEditableCard(file: CharacterFile | undefined, id: string): { card: ExperienceDef; collection: EditableCollection } | null {
+  if (!file) return null;
+  const order: EditableCollection[] = ['customCards', 'inventoryCustom', 'notes', 'experiences'];
+  for (const collection of order) {
+    const card = (file[collection] as ExperienceDef[] | undefined)?.find((c) => c.id === id);
+    if (card) return { card, collection };
+  }
+  return null;
+}
+
+/** Whether a card id can be edited in place (it's player-authored, not a catalog card). */
+export function isEditableCard(id: string, file?: CharacterFile): boolean {
+  return findEditableCard(file, id) != null;
+}
+
+/** The set of all editable (player-authored) card ids on a file. */
+export function editableCardIds(file?: CharacterFile): Set<string> {
+  return new Set(customCards(file).map((c) => c.id));
+}
+
 /** The structured effects a card applies when enabled. Empty when the card has none. */
 export function effectsForCardId(id: string, file?: CharacterFile): CardEffect[] {
   const custom = customCards(file).find((c) => c.id === id);

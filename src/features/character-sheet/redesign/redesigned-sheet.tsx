@@ -22,7 +22,7 @@ import { lootById } from '@/lib/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
 import { tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
-import { effectsForCardId } from '@/features/cards/card-effects';
+import { editableCardIds, effectsForCardId } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -53,6 +53,7 @@ import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, type PlaceholderKind } from './float-menu';
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
+import { DeleteCardConfirm, EditCardFlow } from './edit-card-flow';
 import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
@@ -764,6 +765,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
+  const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
+  const [delCatalogId, setDelCatalogId] = useState<string | null>(null); // hold-to-confirm delete of a catalog card (#264 item 5)
   // Origin-card preview (#242 item 4): a standalone copy of subclass/ancestry/community, not the carousel.
   const [originPreview, setOriginPreview] = useState<{ id: string; source: number | { uri: string }; label: string } | null>(null);
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
@@ -1060,6 +1063,27 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     };
     commitFile(next);
   }, [file, commitFile, carouselDecks]);
+  // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
+  // for these; everything else (catalog) is delete-only.
+  const editableIds = useMemo(() => editableCardIds(file), [file]);
+  // Save edits to a player-authored card in place, preserving its id + collection (and a custom card's
+  // `target`). commitFile re-derives the sheet so effect edits take immediate effect.
+  const onSaveEditedCard = useCallback((id: string, draft: CardDraft) => {
+    if (!file) return;
+    const patch = { title: draft.title, text: draft.text, imageUri: draft.imageUri, color: draft.color, effects: draft.effects, typeLabel: draft.typeLabel };
+    commitFile({
+      ...file,
+      customCards: file.customCards?.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      inventoryCustom: file.inventoryCustom?.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      notes: file.notes?.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      experiences: file.experiences?.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    });
+    setEditCardId(null);
+  }, [file, commitFile]);
+  const onDeleteEditedCard = useCallback((id: string) => {
+    onDeleteCards([id]);
+    setEditCardId(null);
+  }, [onDeleteCards]);
   // Card types (#246): add / remove the player's custom middle-ribbon types.
   const customCardTypes = useMemo(() => file?.customCardTypes ?? [], [file]);
   const onAddCardType = useCallback((label: string) => {
@@ -1234,8 +1258,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   hand must be down to land safely on an enabled one when it reopens. */}
               {/* Unload the carousel + token board for every FULL-SCREEN interface (#252): Level Up,
                   Cards management, and New Card (incl. the catalog reached from it) all cover the sheet. */}
-              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
-              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CarouselTokenBoard />}
+              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' || editCardId ? null : <CardCarousel />}
+              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' || editCardId ? null : (
+                <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={setDelCatalogId} editableIds={editableIds} />
+              )}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
             </DesignStage>
@@ -1254,7 +1280,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
           {/* Unified overlay dim (#239 item 9): one fading scrim shared by the float-menu panels +
               the per-card modifier sheet, so transitions never flashbang the bright sheet. */}
-          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null || damageOpen} />
+          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null || damageOpen || editCardId !== null || delCatalogId !== null} />
           {/* damage-threshold keypad (#128): full-screen overlay above everything; on confirm it
               animates out, then bursts the lost hearts via the HeartTrack handle */}
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}
@@ -1288,12 +1314,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onAddCardInCategory={onAddCardInCategory}
               onAddType={onAddCardType}
               onDeleteType={onDeleteCardType}
+              onEditCard={(id) => { setFloatKind(null); setEditCardId(id); }}
+              editableIds={editableIds}
               onClose={() => setFloatKind(null)}
             />
           ) : floatKind === 'level' && file ? (
             <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
+          ) : null}
+          {/* edit a player-authored card (#264 item 5): from the gallery's Edit or the fullscreen pencil */}
+          {editCardId && file ? (
+            <EditCardFlow key={editCardId} file={file} cardId={editCardId} customTypes={customCardTypes} onSave={onSaveEditedCard} onDelete={onDeleteEditedCard} onCancel={() => setEditCardId(null)} />
+          ) : null}
+          {/* hold-to-confirm delete of a CATALOG card from the fullscreen carousel (#264 item 5) */}
+          {delCatalogId ? (
+            <DeleteCardConfirm onConfirm={() => { onDeleteCards([delCatalogId]); setDelCatalogId(null); }} onCancel={() => setDelCatalogId(null)} />
           ) : null}
           {/* per-card modifier view (#175): opened by the focused card's "Modifiers" button */}
           {cardInfoId && file ? (
