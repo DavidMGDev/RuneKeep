@@ -744,7 +744,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const it = iid === item.id ? item : { ...item, id: iid };
       if (removed.has(it.id)) continue; // deleted from the gallery → filtered out of every deck
       const ov = override[it.id];
-      const target = ov && validKeys.has(ov) ? ov : cat;
+      // Beastform cards are locked to the wildshape deck (#279): ignore any category override that would
+      // move a wildshape out, and never let a non-wildshape card override INTO the wildshape deck.
+      const isWs = isWildshapeId(catalogIdOf(it.id));
+      const target = isWs ? 'wildshape' : ov && validKeys.has(ov) && ov !== 'wildshape' ? ov : cat;
       (decks[target] ??= []).push(it);
     }
     // Drag-drop order (#252): sort each category by the player's explicit card order; ids not listed
@@ -1038,8 +1041,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Delete ANY cards (#248 item 5): strip authored/acquired/domain entries + enabled/override/tokens,
   // and add every id to `removedCardIds` so SYSTEM cards (origins, class feature, equipment, gold) drop
   // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
-  const onDeleteCards = useCallback((rawIds: string[]) => {
-    if (!file || rawIds.length === 0) return;
+  const onDeleteCards = useCallback((rawIds0: string[]) => {
+    if (!file || rawIds0.length === 0) return;
+    // Beastform cards can't be deleted (#279) — drop any wildshape ids from the request.
+    const rawIds = rawIds0.filter((id) => !isWildshapeId(catalogIdOf(id)));
+    if (rawIds.length === 0) return;
     // HARD safeguard (#252): never delete the last card overall. Count the cards actually in the live
     // decks; if this deletion would remove them all, keep one. This is the data-layer guard (the UI
     // disable alone wasn't enough — the owner reached an empty state).
@@ -1150,15 +1156,38 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       if (!file) return;
       const wasEnabled = (file.enabledCardIds ?? []).includes(id);
       const isWs = isWildshapeId(id);
-      // Audio (#255): Beastform has its own activate/disable; every other card uses enable/disable.
-      if (isWs) playSfx(wasEnabled ? 'disableBeastform' : 'activateBeastform');
-      else playSfx(wasEnabled ? 'cardDisable' : 'cardEnable');
       const cur = new Set(file.enabledCardIds ?? []);
+      // Beastform state (#279): the one enabled wildshape (if any) = "transformed".
+      const activeWs = [...cur].find((x) => isWildshapeId(x));
+      const transformed = !!activeWs;
+      const cid = catalogIdOf(id);
+      const cidWeapon = !!weaponById(cid);
+      const cidDomain = cardById(cid)?.kind === 'domain';
+      let beastformUnequipped = file.beastformUnequipped;
+      let beastformDomainSnapshot = file.beastformDomainSnapshot;
       if (wasEnabled) {
-        cur.delete(id); // dropping out of a form reverts its effects; the Stress cost is NOT refunded
+        // Disabling is always allowed. Leaving the active form restores the auto-unequipped weapons.
+        cur.delete(id);
+        if (isWs && id === activeWs) {
+          for (const w of file.beastformUnequipped ?? []) cur.add(w);
+          beastformUnequipped = undefined;
+          beastformDomainSnapshot = undefined;
+        }
+        playSfx(isWs ? 'disableBeastform' : 'cardDisable');
       } else {
-        // Wild Shape (#214): only one Beastform at a time — assuming one drops any other.
-        if (isWs) for (const x of [...cur]) if (isWildshapeId(x)) cur.delete(x);
+        // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
+        if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
+        if (transformed && cidWeapon) { playSfx('floatMenuClose'); return; } // no weapons while transformed
+        if (transformed && cidDomain && !(beastformDomainSnapshot ?? []).includes(id)) { playSfx('floatMenuClose'); return; } // no NEW domain cards
+        playSfx(isWs ? 'activateBeastform' : 'cardEnable');
+        if (isWs) {
+          // Transform: auto-unequip weapon cards (restored on exit); snapshot the enabled domain cards
+          // so the player may re-equip one they drop mid-form (but not equip a brand-new domain).
+          const weapons = [...cur].filter((x) => !!weaponById(catalogIdOf(x)));
+          for (const w of weapons) cur.delete(w);
+          beastformUnequipped = weapons;
+          beastformDomainSnapshot = [...cur].filter((x) => cardById(catalogIdOf(x))?.kind === 'domain');
+        }
         // Threshold SET conflict (#242 item 9): a card that SETS Major (or Severe) disables any other
         // enabled card that sets the same threshold — two "set major" can't both apply. Bonuses stack.
         const eff = effectsForCardId(id, file);
@@ -1174,7 +1203,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         }
         cur.add(id);
       }
-      const next = { ...file, enabledCardIds: [...cur] };
+      const next = { ...file, enabledCardIds: [...cur], beastformUnequipped, beastformDomainSnapshot };
       setFile(next);
       void saveCharacter(next);
       const c = characterRef.current;
@@ -1211,6 +1240,32 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     },
     [file, burstResources, pushToasts],
   );
+  // Beastform auto-exit at 0 HP (#279): dropping to 0 ends the form — weapons re-equip, domain limits
+  // lift. Reactive so it fires however HP reached 0 (damage panel, taps, etc.). Self-terminating: once
+  // the form is gone there's no active wildshape, so it won't re-run.
+  useEffect(() => {
+    if (!file || character.hp > 0) return;
+    const activeWs = (file.enabledCardIds ?? []).find((x) => isWildshapeId(x));
+    if (!activeWs) return;
+    const cur = new Set(file.enabledCardIds ?? []);
+    cur.delete(activeWs);
+    for (const w of file.beastformUnequipped ?? []) cur.add(w);
+    const next = { ...file, enabledCardIds: [...cur], beastformUnequipped: undefined, beastformDomainSnapshot: undefined };
+    setFile(next);
+    void saveCharacter(next);
+    const d = toSheetCharacter(next);
+    setCharacter((c) => ({
+      ...d,
+      hp: 0,
+      stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
+      armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
+      hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+      gold: c.gold,
+      portraitUri: c.portraitUri,
+      portraitTransform: c.portraitTransform,
+    }));
+    playSfx('disableBeastform');
+  }, [character.hp, file]);
   // Card tokens (#244): cosmetic buttons stuck on cards, keyed by deck-card id. They never feed the
   // modifier engine — pure decoration — so they don't re-derive `character`; they only persist.
   const cardTokens = useMemo(() => file?.cardTokens ?? {}, [file]);
