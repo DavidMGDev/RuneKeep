@@ -1,4 +1,4 @@
-import { type CharacterFile, toSheetCharacter } from '@/lib/character-file';
+import { type CharacterFile, sheetBreakdown, toSheetCharacter } from '@/lib/character-file';
 import { cardHasEffects, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, sourceLabelForCardId } from './card-effects';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
@@ -161,6 +161,21 @@ describe('toSheetCharacter with enabled cards', () => {
     expect(c.damageThresholds).toEqual({ major: 2, severe: 3 }); // base 1/2 + bonus +1/+1
   });
 
+  it('level-up +1/+1 thresholds stack on an armor set, per level (#282)', () => {
+    const l1 = toSheetCharacter(baseFile({ enabledCardIds: ['arm-chainmail'] })); // L1, chainmail sets 7/15
+    expect(l1.damageThresholds).toEqual({ major: 7, severe: 15 }); // no level bonus at level 1
+    const l2 = toSheetCharacter(baseFile({ level: 2, enabledCardIds: ['arm-chainmail'] }));
+    expect(l2.damageThresholds).toEqual({ major: 8, severe: 16 }); // set 7/15 + Level 2 (+1/+1)
+    const l3 = toSheetCharacter(baseFile({ level: 3, enabledCardIds: ['arm-chainmail'] }));
+    expect(l3.damageThresholds).toEqual({ major: 9, severe: 17 }); // + Level 3 (+1/+1)
+  });
+  it('the level threshold bonus appears in the breakdown attributed to each level (#282)', () => {
+    const b = sheetBreakdown(baseFile({ level: 3, enabledCardIds: ['arm-chainmail'] }));
+    const sources = b.majorThreshold.contributions.map((c) => c.source);
+    expect(sources).toContain('Level 2');
+    expect(sources).toContain('Level 3');
+    expect(b.majorThreshold.total).toBe(9);
+  });
   it('never exceeds the HP cap of 12', () => {
     const file = baseFile({
       customCards: [{ id: 'cc-hp', title: 'HP Ring', text: '', imageUri: null, target: 'inventory', effects: [{ target: 'maxHp', delta: 9 }] }],

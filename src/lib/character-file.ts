@@ -195,6 +195,23 @@ export function serializeCharacterFile(file: CharacterFile): string {
 }
 
 /**
+ * Per-level +1/+1 damage-threshold bonus as MODIFIER sources (#282), one per level gained, so each
+ * shows in the Modifiers breakdown as "Level N" and — crucially — STACKS on top of an armor's `set`
+ * threshold (the threshold pass adds bonuses after a set). Base thresholds are now the level-1 floor
+ * (1 / 2); the level scaling lives here instead of in the base so a `set` no longer wipes it.
+ */
+function levelThresholdSources(level: number): EffectSource[] {
+  const out: EffectSource[] = [];
+  for (let L = 2; L <= level; L++) {
+    out.push({ source: `Level ${L}`, effects: [
+      { target: 'majorThreshold', mode: 'bonus', delta: 1, note: `Level ${L}: +1 damage thresholds` },
+      { target: 'severeThreshold', mode: 'bonus', delta: 1, note: `Level ${L}: +1 damage thresholds` },
+    ] });
+  }
+  return out;
+}
+
+/**
  * Derive the sheet's runtime Character. Class starting stats come from the rulebook data
  * (#104: starting Evasion + starting Hit Points per class; hearts = HP slots, full at creation).
  * Traits and the other tracks stay at the sheet baseline until leveling/traits ship.
@@ -231,14 +248,18 @@ export function toSheetCharacter(file: CharacterFile): Character {
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
-    // Base thresholds are level-based (#242 item 9): Major = level, Severe = 2×level. Cards SET (armor /
-    // custom) or BONUS them via effects when enabled; the engine resolves that in computeSheet.
-    majorThreshold: file.level,
-    severeThreshold: file.level * 2,
+    // Base thresholds are the LEVEL-1 floor (#282): Major 1 / Severe 2. The per-level +1/+1 is added as
+    // bonus modifier sources (levelThresholdSources) so it stacks on an armor `set` instead of being
+    // wiped by it, and shows per level in the Modifiers breakdown.
+    majorThreshold: 1,
+    severeThreshold: 2,
   };
-  const sources: EffectSource[] = (file.enabledCardIds ?? [])
-    .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
-    .filter((s) => s.effects.length > 0);
+  const sources: EffectSource[] = [
+    ...levelThresholdSources(file.level),
+    ...(file.enabledCardIds ?? [])
+      .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
+      .filter((s) => s.effects.length > 0),
+  ];
   const sheet = computeSheet(base, file.level, sources);
   const maxHp = sheet.maxHp.total;
   const stressMax = sheet.stressMax.total;
@@ -297,11 +318,14 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0),
-    majorThreshold: file.level,
-    severeThreshold: file.level * 2,
+    majorThreshold: 1,
+    severeThreshold: 2,
   };
-  const sources: EffectSource[] = (file.enabledCardIds ?? [])
-    .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
-    .filter((s) => s.effects.length > 0);
+  const sources: EffectSource[] = [
+    ...levelThresholdSources(file.level),
+    ...(file.enabledCardIds ?? [])
+      .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
+      .filter((s) => s.effects.length > 0),
+  ];
   return computeSheet(base, file.level, sources);
 }

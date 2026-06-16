@@ -52,10 +52,11 @@ const SVG_R = 230; // half the wedge SVG canvas (covers C ± SVG_R)
 const TAP_SLOP = 12;
 
 const SLOTS: Slot[] = [
+  // Order (#282): N = Modifiers, then Level Up, Rest, New Card, S = Cards.
   { kind: 'modifiers', label: 'Modifiers' }, // due-NORTH
-  { kind: 'custom', label: 'New Card' },
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
+  { kind: 'custom', label: 'New Card' },
   { kind: 'cards', label: 'Cards' }, // due-SOUTH (#227) — opens the category-toggle panel
   // Switch (inv/arsenal) is gone (#174): it now lives on the gear over-scroll at the carousel edge.
   // Wild Shape (#214) is NOT here — it's a Druid-only carousel category, not a float-menu slot.
