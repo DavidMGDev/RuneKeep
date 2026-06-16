@@ -1335,6 +1335,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
+  // #293: patch a single placed token (a die's value cycling on tap).
+  const updateToken = useCallback((cardId: string, tokenId: string, patch: Partial<PlacedToken>) => {
+    setFile((f) => {
+      if (!f) return f;
+      const cur = (f.cardTokens ?? {})[cardId];
+      if (!cur) return f;
+      const map = { ...(f.cardTokens ?? {}) };
+      map[cardId] = cur.map((t) => (t.id === tokenId ? { ...t, ...patch } : t));
+      const next = { ...f, cardTokens: map };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
   const setTokenColor = useCallback((color: string) => mutateFile({ tokenColor: color }), [mutateFile]);
   const moveTokenDrawer = useCallback((x: number) => mutateFile({ tokenDrawerX: x }), [mutateFile]);
   const onHp = useCallback(
@@ -1366,7 +1379,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <CarouselBackGuard />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
@@ -1493,11 +1506,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onClose={() => setOriginPreview(null)}
               tokens={cardTokens[originPreview.id] ?? []}
               drawerColor={file?.tokenColor}
-              drawerX={file?.tokenDrawerX}
               onPlaceToken={(t) => placeToken(originPreview.id, t)}
               onRemoveToken={(tid) => removeToken(originPreview.id, tid)}
+              onUpdateToken={(tid, patch) => updateToken(originPreview.id, tid, patch)}
               onSetTokenColor={setTokenColor}
-              onMoveTokenDrawer={moveTokenDrawer}
             />
           ) : null}
         </View>

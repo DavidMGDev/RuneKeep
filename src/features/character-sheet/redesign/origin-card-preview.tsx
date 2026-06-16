@@ -28,11 +28,10 @@ export function OriginCardPreview({
   onClose,
   tokens,
   drawerColor,
-  drawerX,
   onPlaceToken,
   onRemoveToken,
+  onUpdateToken,
   onSetTokenColor,
-  onMoveTokenDrawer,
 }: {
   source: number | { uri: string };
   label: string;
@@ -42,11 +41,10 @@ export function OriginCardPreview({
   /** Card tokens (#244): a screen-space board lets the player decorate this card too. */
   tokens?: PlacedToken[];
   drawerColor?: string;
-  drawerX?: number;
   onPlaceToken?: (t: PlacedToken) => void;
   onRemoveToken?: (id: string) => void;
+  onUpdateToken?: (id: string, patch: Partial<PlacedToken>) => void;
   onSetTokenColor?: (color: string) => void;
-  onMoveTokenDrawer?: (x: number) => void;
 }) {
   const { width: screenW, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -95,7 +93,7 @@ export function OriginCardPreview({
         </Pressable>
       </Animated.View>
       {/* token board (#244): the same drawer + draggable tokens, in screen space (scale 1) */}
-      {cardRect && onPlaceToken && onRemoveToken && onSetTokenColor && onMoveTokenDrawer ? (
+      {cardRect && onPlaceToken && onRemoveToken && onSetTokenColor ? (
         <TokenBoard
           cardRect={cardRect}
           width={screenW}
@@ -103,12 +101,11 @@ export function OriginCardPreview({
           drawerTop={Math.max(insets.top, 24) + 16}
           tokens={tokens ?? []}
           drawerColor={drawerColor || TOKEN_COLORS[0]}
-          drawerX={drawerX ?? 0.5}
           scale={1}
           onPlace={onPlaceToken}
           onRemove={onRemoveToken}
+          onUpdate={onUpdateToken}
           onSetDrawerColor={onSetTokenColor}
-          onMoveDrawer={onMoveTokenDrawer}
         />
       ) : null}
     </View>

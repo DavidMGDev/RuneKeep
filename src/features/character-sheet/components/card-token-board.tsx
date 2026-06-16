@@ -1,10 +1,12 @@
 /**
- * The interactive token surface (#244). Shown over a FULLSCREEN card (carousel or the origin-card
- * preview). It owns the drawer (a tab you tap to open + drag to reposition), the draggable source
- * tokens, and the gestures on already-placed tokens (HOLD to drop with a gravity fall; TAP with the
- * drawer open to eyedrop its colour into the custom-colour button). Placed tokens themselves can't be
- * moved (#244 item 8). Everything off the interactive bits is `box-none` so the card still closes by
- * tapping the veil / swiping.
+ * The interactive token surface (#244, redesigned #293). Shown over a FULLSCREEN card (carousel or the
+ * origin-card preview). Closed, it's one centred "open" button; open, it reveals three aligned top
+ * panels — the card action (edit/delete, left), the draggable token sources (centre), and the die
+ * source (right). There is no close button: the drawer closes when the card leaves fullscreen and this
+ * board unmounts. Gestures on already-placed tokens: HOLD to drop with a gravity fall; TAP to eyedrop a
+ * token's colour (drawer open) or cycle a die's number. Placed tokens can't be moved (#244 item 8).
+ * Everything off the interactive bits is `box-none` so the card still closes by tapping the veil /
+ * swiping.
  *
  * Coordinate model: the board fills its parent. `cardRect` is the focused card's rect in that same
  * parent space, and `scale` converts a gesture's screen-px translation into parent-px (the carousel
@@ -29,16 +31,23 @@ import { isWildshapeId } from '@/lib/wildshape-data';
 import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geometry';
 import {
   DEFAULT_TOKEN_KINDS,
+  DIE_MAX,
+  type DieType,
   hashStr,
   kindScale,
+  nextDieType,
+  nextDieValue,
   type PlacedToken,
   randomTokenColor,
   TOKEN_COLORS,
   TOKEN_FRAC,
-  TokenButton,
+  TokenGlyph,
   type TokenKind,
   tokenFill,
 } from './card-tokens';
+
+/** A drawer source / placement descriptor (#293): the kind + (colour or die) it will place. */
+type TokenDesc = { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number };
 
 export interface Rect {
   left: number;
@@ -47,15 +56,18 @@ export interface Rect {
   height: number;
 }
 
-// Drawer layout (parent-px). Four sources: three default buttons + the custom-colour button.
-const DRAWER_TOKEN = 44;
-const GAP = 12;
-const PAD = 12;
-const SOURCES = 4;
-const TRAY_W = PAD * 2 + SOURCES * DRAWER_TOKEN + (SOURCES - 1) * GAP;
-const TRAY_H = PAD * 2 + DRAWER_TOKEN;
-const TAB_W = 70;
-const TAB_H = 22;
+// Drawer layout (parent-px) — three aligned panels in the top band (#293): edit/delete (left),
+// the token sources (centre), the die (right). All share the same top + height.
+const DRAWER_TOKEN = 40; // each source / action button
+const GAP = 8;
+const PAD = 8;
+const PANEL_H = PAD * 2 + DRAWER_TOKEN; // 56
+const LEFT_W = PAD * 2 + DRAWER_TOKEN; // the contextual action button (edit OR delete)
+const CENTER_W = PAD * 2 + 4 * DRAWER_TOKEN + 3 * GAP; // wood/bone/iron/colour
+const RIGHT_W = PAD * 2 + DRAWER_TOKEN; // the die
+const SIDE = 6; // gap from the screen edge
+const OPEN_W = 66; // the closed "open drawer" button
+const OPEN_H = 42;
 const DRAWER_TOP = 6;
 
 const newTokenId = () => `tk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -97,7 +109,7 @@ const FallingToken = memo(function FallingToken({ token, size, left, top, reduce
     <View pointerEvents="none" style={{ position: 'absolute', left, top, width: size, height: size }}>
       {!reduced ? SPARKS.map((s, i) => <SparkBit key={i} ang={s.ang} dist={s.dist} center={size / 2} grow={grow} />) : null}
       <Animated.View style={[StyleSheet.absoluteFill, style]}>
-        <TokenButton size={size} fill={tokenFill(token)} />
+        <TokenGlyph size={size} token={token} />
       </Animated.View>
     </View>
   );
@@ -117,9 +129,10 @@ function SparkBit({ ang, dist, center, grow }: { ang: number; dist: number; cent
 }
 
 /** A placed, interactive token: HOLD → drop (off the card), TAP (drawer open) → eyedrop its colour. */
-const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, onBeginDrop, onEyedrop }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; onBeginDrop: (t: PlacedToken) => void; onEyedrop: (color: string) => void }) {
+const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, onBeginDrop, onEyedrop, onCycleDie }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; onBeginDrop: (t: PlacedToken) => void; onEyedrop: (color: string) => void; onCycleDie: (t: PlacedToken) => void }) {
   const press = useSharedValue(0);
   const fill = tokenFill(token); // computed on JS — NEVER call tokenFill() inside a worklet (crashes)
+  const isDie = token.kind === 'die';
   const hold = useMemo(
     () =>
       Gesture.LongPress()
@@ -145,16 +158,18 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         .maxDuration(260)
         .onEnd(() => {
           'worklet';
-          if (drawerOpen) runOnJS(onEyedrop)(fill);
+          // #293: tapping a placed DIE cycles its number; a regular token eyedrops its colour (drawer open).
+          if (isDie) runOnJS(onCycleDie)(token);
+          else if (drawerOpen) runOnJS(onEyedrop)(fill);
         }),
-    [drawerOpen, onEyedrop, fill],
+    [drawerOpen, onEyedrop, fill, isDie, onCycleDie, token],
   );
   const gesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: 1 + press.value * 0.12 }] }));
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={[{ position: 'absolute', left, top, width: size, height: size }, style]}>
-        <TokenButton size={size} fill={fill} />
+        <TokenGlyph size={size} token={token} />
       </Animated.View>
     </GestureDetector>
   );
@@ -165,12 +180,12 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
  * `localX/localY` position it WITHIN the tray; `homeX/homeY` are its absolute board-space centre, used
  * to test the drop against the card rect.
  */
-const DraggableSource = memo(function DraggableSource({ kind, fill, localX, localY, homeX, homeY, scale, onPlace, onCycle }: { kind: TokenKind; fill: string; localX: number; localY: number; homeX: number; homeY: number; scale: number; onPlace: (kind: TokenKind, cx: number, cy: number) => void; onCycle?: () => void }) {
+const DraggableSource = memo(function DraggableSource({ token, localX, localY, homeX, homeY, scale, onPlace, onCycle }: { token: TokenDesc; localX: number; localY: number; homeX: number; homeY: number; scale: number; onPlace: (desc: TokenDesc, cx: number, cy: number) => void; onCycle?: () => void }) {
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const drag = useSharedValue(0);
-  const size = DRAWER_TOKEN * kindScale(kind);
-  const drop = useCallback((cx: number, cy: number) => onPlace(kind, cx, cy), [onPlace, kind]);
+  const size = DRAWER_TOKEN * kindScale(token.kind);
+  const drop = useCallback((cx: number, cy: number) => onPlace(token, cx, cy), [onPlace, token]);
   const pan = useMemo(
     () =>
       Gesture.Pan()
@@ -199,7 +214,7 @@ const DraggableSource = memo(function DraggableSource({ kind, fill, localX, loca
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={[{ position: 'absolute', left: localX - size / 2, top: localY - size / 2, width: size, height: size }, style]}>
-        <TokenButton size={size} fill={fill} />
+        <TokenGlyph size={size} token={token} />
       </Animated.View>
     </GestureDetector>
   );
@@ -211,21 +226,28 @@ export interface TokenBoardProps {
   height: number;
   tokens: PlacedToken[];
   drawerColor: string;
-  drawerX: number; // normalized 0..1 anchor
   scale: number;
   onPlace: (t: PlacedToken) => void;
   onRemove: (id: string) => void;
+  /** Update a placed token in place (#293): used to cycle a die's value. */
+  onUpdate?: (id: string, patch: Partial<PlacedToken>) => void;
   onSetDrawerColor: (color: string) => void;
-  onMoveDrawer: (x: number) => void;
-  /** Top offset for the drawer tab (#248 item 7): screen-space hosts pass the safe-area inset so the
-   *  tab clears the status bar / screen border, matching the in-stage board's inset. Defaults to 6. */
+  /** Top offset for the drawer (#248 item 7): screen-space hosts pass the safe-area inset so it clears
+   *  the status bar / screen border, matching the in-stage board's inset. Defaults to 6. */
   drawerTop?: number;
+  /** Card actions (#293) shown in the drawer's left panel when open: edit a custom card / delete a
+   *  catalog card. `canAct` is false for beastform (no panel); `editable` picks the pencil vs the trash. */
+  onEditCard?: () => void;
+  onRequestDelete?: () => void;
+  canAct?: boolean;
+  editable?: boolean;
 }
 
 /** The reusable token surface — fills its parent; pass the focused card's `cardRect` in parent space. */
-export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawerX, scale, onPlace, onRemove, onSetDrawerColor, onMoveDrawer, drawerTop = DRAWER_TOP }: TokenBoardProps) {
+export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlace, onRemove, onUpdate, onSetDrawerColor, drawerTop = DRAWER_TOP, onEditCard, onRequestDelete, canAct = false, editable = false }: TokenBoardProps) {
   const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
+  const [dieType, setDieType] = useState<DieType>('d20'); // the source die's current size (#293)
   const openP = useSharedValue(0);
   const [falling, setFalling] = useState<{ token: PlacedToken; left: number; top: number }[]>([]);
 
@@ -234,21 +256,22 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
   }, [open, openP]);
 
   const cardBase = cardRect.width * TOKEN_FRAC; // base diameter; per-kind scale applied per token
-  const drawerLeft = Math.max(0, Math.min(width - TRAY_W, drawerX * (width - TRAY_W)));
-  const trayTop = drawerTop + TAB_H;
 
   const place = useCallback(
-    (kind: TokenKind, cx: number, cy: number) => {
+    (desc: TokenDesc, cx: number, cy: number) => {
       // Only land if the drop is over the card (a little slop). Else it just springs back.
       const m = cardBase * 0.5;
       if (cx < cardRect.left - m || cx > cardRect.left + cardRect.width + m || cy < cardRect.top - m || cy > cardRect.top + cardRect.height + m) return;
       const x = Math.max(0, Math.min(1, (cx - cardRect.left) / cardRect.width));
       const y = Math.max(0, Math.min(1, (cy - cardRect.top) / cardRect.height));
-      onPlace({ id: newTokenId(), kind, color: kind === 'color' ? drawerColor : undefined, x, y });
+      const tok: PlacedToken = { id: newTokenId(), kind: desc.kind, x, y };
+      if (desc.kind === 'color') tok.color = drawerColor;
+      if (desc.kind === 'die') { const dt = desc.dieType ?? dieType; tok.dieType = dt; tok.dieValue = DIE_MAX[dt]; }
+      onPlace(tok);
       focusHaptic();
       playSfx('placeToken'); // #255
     },
-    [cardRect, cardBase, drawerColor, onPlace],
+    [cardRect, cardBase, drawerColor, dieType, onPlace],
   );
 
   const beginDrop = useCallback(
@@ -265,33 +288,30 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
   );
   const fallingDone = useCallback((id: string) => setFalling((list) => list.filter((f) => f.token.id !== id)), []);
   const eyedrop = useCallback((color: string) => { onSetDrawerColor(color); tapHaptic(); playSfx('tokenCopyColor'); }, [onSetDrawerColor]);
-  // Cycling the custom-colour button to a new random colour uses the colour sound everywhere (#255).
   const cycleColor = useCallback(() => { onSetDrawerColor(randomTokenColor(drawerColor)); playSfx('tokenCopyColor'); }, [onSetDrawerColor, drawerColor]);
-  const toggleDrawer = useCallback(() => setOpen((o) => { playSfx(o ? 'panelClose' : 'panelOpen'); return !o; }), []);
-
-  // Drag the tab to reposition the whole drawer along the top; tap to open/close.
-  const tabTx = useSharedValue(0);
-  const tabPan = useMemo(
-    () =>
-      Gesture.Pan()
-        .minDistance(8)
-        .onUpdate((e) => { 'worklet'; tabTx.value = e.translationX / scale; })
-        .onEnd((e) => {
-          'worklet';
-          const nx = (drawerLeft + e.translationX / scale) / Math.max(1, width - TRAY_W);
-          runOnJS(onMoveDrawer)(Math.max(0, Math.min(1, nx)));
-          tabTx.value = 0;
-        })
-        .onFinalize(() => { 'worklet'; tabTx.value = 0; }),
-    [tabTx, scale, drawerLeft, width, onMoveDrawer],
+  // #293: tap the source die → next size; tap a placed die → next value.
+  const cycleDieType = useCallback(() => { setDieType((d) => nextDieType(d)); playSfx('tokenCopyColor'); }, []);
+  const cycleDie = useCallback(
+    (t: PlacedToken) => {
+      if (!t.dieType || !onUpdate) return;
+      onUpdate(t.id, { dieValue: nextDieValue(t.dieType, t.dieValue ?? DIE_MAX[t.dieType]) });
+      tapHaptic();
+      playSfx('numpadPress');
+    },
+    [onUpdate],
   );
-  const tabTap = useMemo(() => Gesture.Tap().maxDuration(260).onEnd(() => { 'worklet'; runOnJS(toggleDrawer)(); }), [toggleDrawer]);
-  const tabGesture = useMemo(() => Gesture.Exclusive(tabPan, tabTap), [tabPan, tabTap]);
-  const tabStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tabTx.value }] }));
-  const trayStyle = useAnimatedStyle(() => ({ opacity: openP.value, transform: [{ translateX: tabTx.value }, { translateY: (1 - openP.value) * -10 }] }));
 
   const fallingIds = useMemo(() => new Set(falling.map((f) => f.token.id)), [falling]);
   const shown = tokens.filter((t) => !fallingIds.has(t.id));
+
+  // Three aligned panels in the top band (#293): action (left), token sources (centre), die (right).
+  const leftX = SIDE;
+  const rightX = width - SIDE - RIGHT_W;
+  const centerX = (width - CENTER_W) / 2;
+  const ly = PAD + DRAWER_TOKEN / 2;
+  const openStyle = useAnimatedStyle(() => ({ opacity: 1 - openP.value }));
+  const panelStyle = useAnimatedStyle(() => ({ opacity: openP.value, transform: [{ translateY: (1 - openP.value) * -8 }] }));
+  const panelBox = (x: number, w: number) => ({ position: 'absolute' as const, left: x, top: drawerTop, width: w, height: PANEL_H, backgroundColor: 'rgba(14,17,22,0.94)', borderRadius: 12, borderWidth: 1.4, borderColor: Rune.goldEdge });
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -308,6 +328,7 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
             drawerOpen={open}
             onBeginDrop={beginDrop}
             onEyedrop={eyedrop}
+            onCycleDie={cycleDie}
           />
         );
       })}
@@ -316,31 +337,47 @@ export function TokenBoard({ cardRect, width, height, tokens, drawerColor, drawe
         <FallingToken key={f.token.id} token={f.token} size={cardBase * kindScale(f.token.kind)} left={f.left} top={f.top} reduced={reduced} onDone={fallingDone} />
       ))}
 
-      {/* the drawer tray (sources) — drops below the tab when open */}
-      <Animated.View
-        pointerEvents={open ? 'box-none' : 'none'}
-        style={[{ position: 'absolute', left: drawerLeft, top: trayTop, width: TRAY_W, height: TRAY_H }, trayStyle]}>
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(14,17,22,0.94)', borderRadius: 12, borderWidth: 1.4, borderColor: Rune.goldEdge }]} pointerEvents="none" />
-        {DEFAULT_TOKEN_KINDS.map((kind, i) => {
-          const lx = PAD + i * (DRAWER_TOKEN + GAP) + DRAWER_TOKEN / 2;
-          const ly = PAD + DRAWER_TOKEN / 2;
-          return <DraggableSource key={kind} kind={kind} fill={tokenFill({ kind })} localX={lx} localY={ly} homeX={drawerLeft + lx} homeY={trayTop + ly} scale={scale} onPlace={place} />;
-        })}
-        {(() => {
-          const lx = PAD + 3 * (DRAWER_TOKEN + GAP) + DRAWER_TOKEN / 2;
-          const ly = PAD + DRAWER_TOKEN / 2;
-          return <DraggableSource kind="color" fill={drawerColor} localX={lx} localY={ly} homeX={drawerLeft + lx} homeY={trayTop + ly} scale={scale} onPlace={place} onCycle={cycleColor} />;
-        })()}
-      </Animated.View>
-
-      {/* the tab — always shown; tap to open, drag to reposition */}
-      <GestureDetector gesture={tabGesture}>
-        <Animated.View style={[{ position: 'absolute', left: drawerLeft + TRAY_W / 2 - TAB_W / 2, top: drawerTop, width: TAB_W, height: TAB_H, backgroundColor: 'rgba(14,17,22,0.94)', borderRadius: 8, borderWidth: 1.4, borderColor: Rune.goldEdge, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 }, tabStyle]} accessible accessibilityRole="button" accessibilityLabel="Token drawer. Tap to open, drag to move">
-          <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: Rune.goldBright }} />
-          <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: Rune.goldBright }} />
-          <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: Rune.goldBright }} />
+      {/* CLOSED: one obvious "open drawer" button, centred at the top. No close — the drawer closes when
+          you leave fullscreen (this whole board unmounts). */}
+      {!open ? (
+        <Animated.View style={[{ position: 'absolute', left: (width - OPEN_W) / 2, top: drawerTop, width: OPEN_W, height: OPEN_H }, openStyle]}>
+          <Pressable onPress={() => { setOpen(true); playSfx('panelOpen'); }} accessibilityRole="button" accessibilityLabel="Open the token drawer" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, backgroundColor: 'rgba(14,17,22,0.94)', borderRadius: 12, borderWidth: 1.6, borderColor: Rune.goldEdge }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Rune.goldBright }} />
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Rune.goldBright }} />
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: Rune.goldBright }} />
+          </Pressable>
         </Animated.View>
-      </GestureDetector>
+      ) : null}
+
+      {/* OPEN: three aligned panels (action · token sources · die). The container is box-none so taps
+          outside the panels still reach the card / focus veil; each panel View absorbs its own taps. */}
+      {open ? (
+        <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, panelStyle]}>
+          {canAct ? (
+            <View style={panelBox(leftX, LEFT_W)}>
+              <View style={{ position: 'absolute', left: PAD, top: PAD }}>
+                <CardActionButton kind={editable ? 'edit' : 'delete'} onPress={() => (editable ? onEditCard?.() : onRequestDelete?.())} />
+              </View>
+            </View>
+          ) : null}
+          <View style={panelBox(centerX, CENTER_W)}>
+            {DEFAULT_TOKEN_KINDS.map((kind, i) => {
+              const lx = PAD + i * (DRAWER_TOKEN + GAP) + DRAWER_TOKEN / 2;
+              return <DraggableSource key={kind} token={{ kind }} localX={lx} localY={ly} homeX={centerX + lx} homeY={drawerTop + ly} scale={scale} onPlace={place} />;
+            })}
+            {(() => {
+              const lx = PAD + 3 * (DRAWER_TOKEN + GAP) + DRAWER_TOKEN / 2;
+              return <DraggableSource token={{ kind: 'color', color: drawerColor }} localX={lx} localY={ly} homeX={centerX + lx} homeY={drawerTop + ly} scale={scale} onPlace={place} onCycle={cycleColor} />;
+            })()}
+          </View>
+          <View style={panelBox(rightX, RIGHT_W)}>
+            {(() => {
+              const lx = PAD + DRAWER_TOKEN / 2;
+              return <DraggableSource token={{ kind: 'die', dieType, dieValue: DIE_MAX[dieType] }} localX={lx} localY={ly} homeX={rightX + lx} homeY={drawerTop + ly} scale={scale} onPlace={place} onCycle={cycleDieType} />;
+            })()}
+          </View>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -385,7 +422,7 @@ function CardActionButton({ kind, onPress }: { kind: 'edit' | 'delete'; onPress:
  * editor / delete confirmation, so the carousel never desyncs while a card is edited/removed.
  */
 export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { onEditCard?: (id: string) => void; onDeleteCard?: (id: string) => void; editableIds?: Set<string> } = {}) {
-  const { fullscreenProgress, focusIndex, switching, decks, category, cardTokens, tokenColor, tokenDrawerX, placeToken, removeToken, setTokenColor, moveTokenDrawer, closeFullscreen } = useCarousel();
+  const { fullscreenProgress, focusIndex, switching, decks, category, cardTokens, tokenColor, placeToken, removeToken, updateToken, setTokenColor, closeFullscreen } = useCarousel();
   const scale = useStageScale();
   const [st, setSt] = useState<{ active: boolean; idx: number }>({ active: false, idx: 0 });
   const lastActive = useSharedValue(0);
@@ -439,11 +476,12 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
 
   const onPlace = useCallback((t: PlacedToken) => { if (id) placeToken(id, t); }, [id, placeToken]);
   const onRemove = useCallback((tid: string) => { if (id) removeToken(id, tid); }, [id, removeToken]);
+  const onUpdate = useCallback((tid: string, patch: Partial<PlacedToken>) => { if (id) updateToken(id, tid, patch); }, [id, updateToken]);
 
   if (!id) return null;
-  // Beastform cards can't be edited or deleted (#279) — no fullscreen action for them.
-  const showAction = (onEditCard || onDeleteCard) && !isWildshapeId(catalogIdOf(id));
+  // Beastform cards can't be edited or deleted (#279) — no fullscreen action shown in the drawer.
   const editable = editableIds?.has(id) ?? false;
+  const canAct = Boolean(editable ? onEditCard : onDeleteCard) && !isWildshapeId(catalogIdOf(id));
   return (
     <Animated.View pointerEvents="box-none" style={[box(0, 0, 412, 892), { zIndex: 3600 }, fade]}>
       <TokenBoard
@@ -452,26 +490,16 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
         height={892}
         tokens={cardTokens[id] ?? []}
         drawerColor={tokenColor || TOKEN_COLORS[0]}
-        drawerX={tokenDrawerX ?? 0.5}
         scale={scale}
         onPlace={onPlace}
         onRemove={onRemove}
+        onUpdate={onUpdate}
         onSetDrawerColor={setTokenColor}
-        onMoveDrawer={moveTokenDrawer}
+        canAct={canAct}
+        editable={editable}
+        onEditCard={onEditCard ? () => onEditCard(id) : undefined}
+        onRequestDelete={() => setConfirmDelete(true)}
       />
-      {showAction ? (
-        <View style={{ position: 'absolute', left: 14, top: 2 }}>
-          <CardActionButton
-            kind={editable ? 'edit' : 'delete'}
-            onPress={() => {
-              // #276 item 4: do NOT exit fullscreen — edit opens over the still-fullscreen card; delete
-              // opens its confirm over it. Only an actual delete (below) collapses fullscreen.
-              if (editable) onEditCard?.(id);
-              else setConfirmDelete(true);
-            }}
-          />
-        </View>
-      ) : null}
       {confirmDelete ? (
         <DeleteCardConfirm
           onConfirm={() => {
