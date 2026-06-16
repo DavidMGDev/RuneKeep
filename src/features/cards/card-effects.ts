@@ -13,6 +13,7 @@ import { lootById } from '@/lib/loot-data';
 import { wildshapeById } from '@/lib/wildshape-data';
 import { cardById } from './catalog';
 import { CATALOG_EFFECTS } from './catalog-effects';
+import { isAncestryEffectDisabled } from './ancestry-traits';
 
 /** All player-authored cards on a file (experiences, inventory items, sheet-made cards). */
 function customCards(file?: CharacterFile): ExperienceDef[] {
@@ -58,7 +59,11 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
   const id = catalogIdOf(rawId); // resolve a duplicate copy (e.g. wpn-x#2) to its catalog content (#269)
   const custom = customCards(file).find((c) => c.id === id);
   if (custom?.effects?.length) return custom.effects;
-  if (CATALOG_EFFECTS[id]?.length) return CATALOG_EFFECTS[id];
+  if (CATALOG_EFFECTS[id]?.length) {
+    // #265: in a mixed ancestry, an ancestry's passive is dropped when it sits on the crossed-out half.
+    if (isAncestryEffectDisabled(file?.mixedAncestry, id)) return [];
+    return CATALOG_EFFECTS[id];
+  }
   const w = weaponById(id);
   if (w?.effects?.length) return w.effects;
   const a = armorById(id);
