@@ -816,7 +816,9 @@ export function CreateScreen() {
       // #265: mixed ancestry — `first` is the primary ancestry (drives the name), `second` rides along as
       // an acquired card; both carry their cross-out + half-applied modifiers via `mixedAncestry`.
       ancestryCardId: draft.mixedAncestry ? draft.mixedAncestry.first! : draft.ancestryCardId!,
-      ...(draft.mixedAncestry ? { mixedAncestry: { first: draft.mixedAncestry.first!, second: draft.mixedAncestry.second! }, acquiredCardIds: [draft.mixedAncestry.second!] } : {}),
+      // Both ancestry cards land in Arsenal, side by side (#276 item 3): the first is the origin card
+      // (already in abilities); the second rides in via acquiredCardIds, so pin it to abilities too.
+      ...(draft.mixedAncestry ? { mixedAncestry: { first: draft.mixedAncestry.first!, second: draft.mixedAncestry.second! }, acquiredCardIds: [draft.mixedAncestry.second!], cardCategory: { [draft.mixedAncestry.second!]: 'abilities' } } : {}),
       communityCardId: draft.communityCardId!,
       domainCardIds: draft.domainCardIds,
       traits: draft.traits as Record<TraitKey, number>, // complete ⇒ all six assigned
