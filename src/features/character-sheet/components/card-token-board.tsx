@@ -24,6 +24,8 @@ import { focusHaptic, tapHaptic } from '@/lib/haptics';
 import { playSfx } from '@/lib/sfx';
 import { useCarousel } from '../carousel-context';
 import { DeleteCardConfirm } from '../redesign/edit-card-flow';
+import { catalogIdOf } from '@/features/cards/card-effects';
+import { isWildshapeId } from '@/lib/wildshape-data';
 import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geometry';
 import {
   DEFAULT_TOKEN_KINDS,
@@ -439,7 +441,8 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
   const onRemove = useCallback((tid: string) => { if (id) removeToken(id, tid); }, [id, removeToken]);
 
   if (!id) return null;
-  const showAction = onEditCard || onDeleteCard;
+  // Beastform cards can't be edited or deleted (#279) — no fullscreen action for them.
+  const showAction = (onEditCard || onDeleteCard) && !isWildshapeId(catalogIdOf(id));
   const editable = editableIds?.has(id) ?? false;
   return (
     <Animated.View pointerEvents="box-none" style={[box(0, 0, 412, 892), { zIndex: 3600 }, fade]}>

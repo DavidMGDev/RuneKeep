@@ -165,6 +165,11 @@ export interface CharacterFile {
    *  INSTEAD of the card's code-defined effects. Lets players fix/add/remove modifiers on catalog cards
    *  (custom cards edit their own `effects`). Keyed by catalog id (so all copies share). Additive. */
   cardEffectOverrides?: Record<string, import('@/lib/modifiers').CardEffect[]>;
+  /** Beastform (#279): while transformed, weapon cards are auto-unequipped and stored here so they
+   *  re-equip when the form ends; `beastformDomainSnapshot` records the domain cards enabled at
+   *  transform time (re-equipping one is allowed mid-form; new domains are blocked). Additive. */
+  beastformUnequipped?: string[];
+  beastformDomainSnapshot?: string[];
   level: number;
 }
 
