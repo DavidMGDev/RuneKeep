@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, type SharedValue, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -19,6 +20,26 @@ import { CenterDialog, FullScreenPanel } from './full-screen-panel';
 
 const SCRIM = 'rgba(20,24,31,0.7)';
 const GOLD_BORDER = 'rgba(218,162,73,0.4)';
+
+/** Proper SVG icon buttons for the category row (#264 item 4) — no emoji. */
+function PencilIcon({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24">
+      <Path d="M4 20 L4.5 15.5 L15 5 L19 9 L8.5 19.5 Z" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M13 7 L17 11" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function TrashIcon({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24">
+      <Path d="M5 7 H19" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Path d="M9.5 7 V5.2 H14.5 V7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M6.5 7 L7.4 19.5 H16.6 L17.5 7" fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
+      <Path d="M10 10 V16.5 M14 10 V16.5" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
 const TILE_W = 92;
 const TILE_H = Math.round((TILE_W * 7) / 5);
 
@@ -304,8 +325,8 @@ function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCatego
             </View>
             {custom ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Pressable onPress={() => onEdit(custom)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Edit category" style={{ padding: 4 }}><Text style={{ color: Rune.goldText, fontSize: 14 }}>✎</Text></Pressable>
-                <Pressable onPress={() => onAskDelete(custom)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Delete category" style={{ padding: 4 }}><Text style={{ color: '#E2705A', fontSize: 14 }}>🗑</Text></Pressable>
+                <Pressable onPress={() => onEdit(custom)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Edit category" style={{ padding: 4 }}><PencilIcon color={Rune.goldText} /></Pressable>
+                <Pressable onPress={() => onAskDelete(custom)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Delete category" style={{ padding: 4 }}><TrashIcon color="#E2705A" /></Pressable>
               </View>
             ) : null}
             <Pressable onPress={() => { if (!locked) { playSfx(on ? 'categoryToggleOff' : 'categoryToggleOn'); onToggle(key); } }} disabled={locked} accessibilityRole="switch" accessibilityState={{ checked: on, disabled: locked }}><Switch on={on} /></Pressable>

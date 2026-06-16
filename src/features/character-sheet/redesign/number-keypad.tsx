@@ -44,7 +44,9 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onCl
     playSfx('numpadPress');
     setTyped('');
   }, []);
-  const submit = useCallback(() => { if (ok) onSubmit(val); }, [ok, onSubmit, val]);
+  // Clear after a successful OK (#264 item 1): the keypad instance is reused across consecutive rest
+  // prompts (HP then stress), so without this the prior value lingers ("2" → typing 2 makes "22").
+  const submit = useCallback(() => { if (ok) { onSubmit(val); setTyped(''); } }, [ok, onSubmit, val]);
 
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));
 
