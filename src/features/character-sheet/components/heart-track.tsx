@@ -9,7 +9,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { type HeartAction, heartBoundaries, type PipState, resolveHearts } from '@/lib/pips';
 import { playLoseHp, playRiser, playSfx, type RiserHandle } from '@/lib/sfx';
-import { STAT_SOUND_DELAY_MS } from '@/lib/sfx-config';
+import { RISER_START_DELAY_MS, RISER_VOLUME, STAT_SOUND_DELAY_MS } from '@/lib/sfx-config';
 import { Art } from '../art';
 import { ChargeMoteView, HEART_MOTES } from './charge-track';
 
@@ -290,7 +290,9 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
   // Audio (#255): one riser sounds while a hold charges, then fades out exactly at the visual climax
   // where the gain/loss impact lands. Double-tap and keypad damage skip the riser (instant paths).
   const riser = useRef<RiserHandle | null>(null);
+  const riserTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopRiser = useCallback((fadeMs?: number) => {
+    if (riserTimer.current) { clearTimeout(riserTimer.current); riserTimer.current = null; }
     riser.current?.stop(fadeMs);
     riser.current = null;
   }, []);
@@ -320,8 +322,9 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
         onHp(target);
         if (add.length) {
           setAnims((list) => [...list, ...add]);
-          // staggered per-heart loss hits (#255): each rolls its own 1/10 meme chance, ~110ms apart
-          add.forEach((_, k) => setTimeout(() => playLoseHp(), STAT_SOUND_DELAY_MS.hp.lose + k * 110));
+          // #258r2: the hearts burst together, so play ONE loss sound for the whole hit (one 1/10
+          // meme roll — meme takes priority; only OnLoseHP-Default if the roll misses).
+          setTimeout(() => playLoseHp(), STAT_SOUND_DELAY_MS.hp.lose);
         }
       },
       burst: (prevHp: number, nextHp: number) => {
@@ -365,7 +368,11 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
       const anim: Anim = { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'hold' };
       charging.current = anim;
       setAnims((list) => [...list, anim]);
-      riser.current = playRiser('riserHp'); // tension build for the duration of the hold
+      // #258r2: start the riser only AFTER the tap/double-tap window, so a quick tap never blips it
+      riserTimer.current = setTimeout(() => {
+        riserTimer.current = null;
+        riser.current = playRiser('riserHp', { volume: RISER_VOLUME.hp });
+      }, RISER_START_DELAY_MS);
     },
     [hp, slots, onHp, stopRiser, impact],
   );
@@ -377,7 +384,7 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
     onHp(hp + (GAINS[c.action] ? 1 : -1));
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as AnimPhase } : a)));
     // riser tapers to silence and the impact lands at the burst/fill — timing tunable in sfx-config (#258)
-    const ms = STAT_SOUND_DELAY_MS.hp[GAINS[c.action] ? 'gain' : 'lose'];
+    const ms = c.action === 'goldify' ? (STAT_SOUND_DELAY_MS.hp.goldGain ?? STAT_SOUND_DELAY_MS.hp.gain) : STAT_SOUND_DELAY_MS.hp[GAINS[c.action] ? 'gain' : 'lose'];
     stopRiser(Math.max(140, ms));
     setTimeout(() => impact(c.action), ms);
   }, [hp, onHp, stopRiser, impact]);

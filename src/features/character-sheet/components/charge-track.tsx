@@ -7,7 +7,7 @@ import { Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { playRiser, playSfx, type RiserHandle, type SfxId } from '@/lib/sfx';
-import { STAT_SOUND_DELAY_MS } from '@/lib/sfx-config';
+import { RISER_START_DELAY_MS, RISER_VOLUME, STAT_SOUND_DELAY_MS } from '@/lib/sfx-config';
 
 /**
  * The generic hold-to-charge ±1 track (#89) — the proven heart interaction (see heart-track.tsx,
@@ -418,7 +418,9 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
   // Audio (#255): a flavored riser sounds while a hold charges, fading out at the visual climax where
   // the gain/loss impact lands. Double-tap skips the riser; programmatic bursts (rest/cards) are silent.
   const riser = useRef<RiserHandle | null>(null);
+  const riserTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopRiser = useCallback((fadeMs?: number) => {
+    if (riserTimer.current) { clearTimeout(riserTimer.current); riserTimer.current = null; }
     riser.current?.stop(fadeMs);
     riser.current = null;
   }, []);
@@ -473,9 +475,13 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
       const anim: Anim = { id: nextId.current++, index, dir, phase: 'hold' };
       charging.current = anim;
       setAnims((list) => [...list, anim]);
-      riser.current = playRiser(riserId); // tension build for the duration of the hold
+      // #258r2: start the riser only AFTER the tap/double-tap window so a quick tap never blips it
+      riserTimer.current = setTimeout(() => {
+        riserTimer.current = null;
+        riser.current = playRiser(riserId, { volume: RISER_VOLUME[flavor] });
+      }, RISER_START_DELAY_MS);
     },
-    [stopRiser, impact, riserId],
+    [stopRiser, impact, riserId, flavor],
   );
 
   const trigger = useCallback(

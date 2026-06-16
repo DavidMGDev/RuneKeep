@@ -4,6 +4,7 @@ import { ArtImage } from '@/components/art-image';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
+import { playSfx } from '@/lib/sfx';
 import { Art } from '../art';
 import { type Character, formatModifier, TRAIT_ORDER } from '../character';
 import { SheetText } from './primitives';
@@ -29,7 +30,7 @@ interface TraitBannerProps {
 function TraitBanner({ x, groupTop, label, icon, value, modifierSize }: TraitBannerProps) {
   return (
     <View style={box(x, groupTop, GROUP_W, GROUP_H)}>
-      <PressableArt style={{ flex: 1 }} pressedScale={1.1}>
+      <PressableArt style={{ flex: 1 }} pressedScale={1.1} onPress={() => playSfx('numpadPress')} accessibilityLabel={`${label} ${formatModifier(value)}`}>
         {/* Hex shield background — a banner outline, so it fills its box (stretched 10px down,
             independent of the glyph above it, #48 H) */}
         <View style={box(0, 9.6, GROUP_W, 119.4)}>
