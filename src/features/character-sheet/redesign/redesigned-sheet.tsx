@@ -20,9 +20,9 @@ import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { lootById } from '@/lib/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
-import { tierForLevel } from '@/lib/modifiers';
+import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
-import { catalogIdOf, editableCardIds, effectsForCardId } from '@/features/cards/card-effects';
+import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -1110,6 +1110,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     onDeleteCards([id]);
     setEditCardId(null);
   }, [onDeleteCards]);
+  // Save effects edited in the Modifiers panel (#278): a custom card updates its OWN effects; a catalog
+  // card writes a per-card override (keyed by catalog id, so all copies share). Re-derives the sheet.
+  const onEditCardEffects = useCallback((id: string, effects: CardEffect[]) => {
+    if (!file) return;
+    if (findEditableCard(file, id)) {
+      commitFile({
+        ...file,
+        customCards: file.customCards?.map((c) => (c.id === id ? { ...c, effects } : c)),
+        inventoryCustom: file.inventoryCustom?.map((c) => (c.id === id ? { ...c, effects } : c)),
+        notes: file.notes?.map((c) => (c.id === id ? { ...c, effects } : c)),
+        experiences: file.experiences?.map((c) => (c.id === id ? { ...c, effects } : c)),
+      });
+    } else {
+      commitFile({ ...file, cardEffectOverrides: { ...(file.cardEffectOverrides ?? {}), [catalogIdOf(id)]: effects } });
+    }
+  }, [file, commitFile]);
   // Card types (#246): add / remove the player's custom middle-ribbon types.
   const customCardTypes = useMemo(() => file?.customCardTypes ?? [], [file]);
   const onAddCardType = useCallback((label: string) => {
@@ -1358,7 +1374,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           ) : null}
           {/* per-card modifier view (#175): opened by the focused card's "Modifiers" button */}
           {cardInfoId && file ? (
-            <CardModifiersSheet cardId={cardInfoId} file={file} character={character} enabled={enabledIds.has(cardInfoId)} onToggle={onToggleCard} onClose={() => setCardInfoId(null)} />
+            <CardModifiersSheet
+              cardId={cardInfoId}
+              file={file}
+              character={character}
+              enabled={enabledIds.has(cardInfoId)}
+              canEdit={!isWildshapeId(catalogIdOf(cardInfoId))}
+              onToggle={onToggleCard}
+              onSaveEffects={onEditCardEffects}
+              onClose={() => setCardInfoId(null)}
+            />
           ) : null}
           {/* origin card preview (#242 item 4): a standalone equippable copy, decoupled from the carousel */}
           {originPreview ? (
