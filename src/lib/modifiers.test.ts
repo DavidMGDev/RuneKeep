@@ -15,6 +15,22 @@ describe('tierForLevel', () => {
   });
 });
 
+describe('formula effects (#278)', () => {
+  const ev = (level: number, formula: CardEffect['formula'], base: BaseStats = ZERO) =>
+    computeSheet(base, level, [src('F', [{ target: 'evasion', dynamic: 'formula', formula }])]).evasion.total;
+  it('resolves level / tier / proficiency / trait (base evasion 10)', () => {
+    expect(ev(4, { variable: 'level' })).toBe(14); // 10 + 4
+    expect(ev(5, { variable: 'tier' })).toBe(13); // 10 + tier 3
+    expect(ev(1, { variable: 'proficiency', multiply: 2 }, { ...ZERO, proficiency: 3 })).toBe(16); // 10 + 6
+    expect(ev(1, { variable: 'agility' }, { ...ZERO, agility: 4 })).toBe(14); // 10 + 4
+  });
+  it('rounds UP (ceil), never down', () => {
+    expect(ev(5, { variable: 'level', divide: 2 })).toBe(13); // 10 + ceil(5/2)=3
+    expect(ev(3, { variable: 'level', divide: 2 })).toBe(12); // 10 + ceil(3/2)=2
+    expect(ev(1, { variable: 'level', divide: 2 })).toBe(11); // 10 + ceil(1/2)=1
+  });
+});
+
 describe('computeSheet', () => {
   it('returns base totals when nothing is enabled', () => {
     const s = computeSheet(ZERO, 1, []);

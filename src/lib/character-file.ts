@@ -161,6 +161,10 @@ export interface CharacterFile {
    *  SECOND trait. Both cards are added to the sheet; each card's inactive half is crossed out and its
    *  modifiers dropped. When set, the single `ancestryCardId` is unused. Additive; absent → single. */
   mixedAncestry?: { first: string; second: string };
+  /** Per-card EFFECT OVERRIDES (#278): catalog card id → the player's edited effect list, applied
+   *  INSTEAD of the card's code-defined effects. Lets players fix/add/remove modifiers on catalog cards
+   *  (custom cards edit their own `effects`). Keyed by catalog id (so all copies share). Additive. */
+  cardEffectOverrides?: Record<string, import('@/lib/modifiers').CardEffect[]>;
   level: number;
 }
 
