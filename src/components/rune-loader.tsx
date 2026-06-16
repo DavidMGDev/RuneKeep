@@ -5,6 +5,7 @@ import Svg, { Polygon } from 'react-native-svg';
 
 import { Body, Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { beginLoading, endLoading } from '@/lib/sfx';
 
 /**
  * Full-screen forge loader (#150): a slowly turning rune ring around a pulsing core that covers the
@@ -17,6 +18,12 @@ export function RuneLoader({ done, onHidden, caption }: { done: boolean; onHidde
   const pulse = useSharedValue(0.4);
   const spin = useSharedValue(0);
   const fade = useSharedValue(1);
+  // #258r3: this is a real loader (the sheet forges behind it) — hold any "enter" chime until it's
+  // gone, so the sheet-enter sound never plays while "Summoning the sheet" is on screen.
+  useEffect(() => {
+    beginLoading();
+    return endLoading;
+  }, []);
   useEffect(() => {
     if (reduced) {
       pulse.value = 0.85;
