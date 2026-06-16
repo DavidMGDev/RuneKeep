@@ -60,6 +60,10 @@ interface Props {
   onAddCardInCategory: (key: CardCategory) => void;
   onAddType: (label: string) => void;
   onDeleteType: (label: string) => void;
+  /** Edit the one selected card (#264 item 5) — only offered when a single editable (custom) card is selected. */
+  onEditCard?: (id: string) => void;
+  /** Ids of player-authored (editable) cards, so the gallery knows when to offer Edit. */
+  editableIds?: Set<string>;
   onClose: () => void;
 }
 
@@ -111,7 +115,7 @@ function GoldTile() {
  * LONG-PRESS to pick it up and drag it to reorder within a category or move it to another.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onClose } = props;
+  const { isDruid, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   const [view, setView] = useState<'categories' | 'cards' | 'types'>('categories');
 
@@ -239,6 +243,9 @@ export function CardManagementPanel(props: Props) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Pressable onPress={clearSelect} hitSlop={6} accessibilityRole="button" accessibilityLabel="Clear selection"><Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold, textTransform: 'uppercase' }}>Clear</Text></Pressable>
               <Text style={{ flex: 1, color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>{selected.size} selected</Text>
+              {selected.size === 1 && onEditCard && editableIds?.has([...selected][0]) ? (
+                <RuneButton label="Edit" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => onEditCard([...selected][0])} />
+              ) : null}
               <RuneButton label="Move" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => setMoveOpen(true)} />
               <RuneButton label="Delete" kind="primary" dense height={36} style={{ paddingHorizontal: 16 }} disabled={selected.size >= totalCards} onPress={() => setConfirmDel(true)} />
             </View>
