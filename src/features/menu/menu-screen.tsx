@@ -153,7 +153,7 @@ export function MenuScreen() {
 
         {/* actions */}
         <View style={{ flex: 1, justifyContent: 'flex-end', gap: 16, paddingBottom: 40 }}>
-          <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('buttonTap'); router.push('/characters'); }} />
+          <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
           <MenuAction label="Cards" sub="Browse the full card library" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} />
         </View>
       </View>

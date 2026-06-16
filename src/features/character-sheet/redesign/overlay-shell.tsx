@@ -61,7 +61,9 @@ export function OverlayShell({
           per-shell dark scrim would double-dim and pop on open/close. This still closes on outside tap. */}
       {/* A catching backdrop (#252): closes on a TRUE outside tap; the box (a real View) catches its
           OWN taps so nothing inside closes the panel or reaches the carousel beneath. No box-none. */}
-      <AnimatedPressable style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, scrimStyle]} onPress={dismissOnScrim ? close : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
+      {/* #258r3: occluding bg + collapsable so GH's hit-test stops here (a transparent scrim lets
+          gestures through to the sheet's stat tracks underneath). SheetDim still provides the visible dim. */}
+      <AnimatedPressable collapsable={false} style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.01)' }, scrimStyle]} onPress={dismissOnScrim ? close : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
       <Animated.View style={boxStyle}>
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>

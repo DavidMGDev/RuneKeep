@@ -131,7 +131,9 @@ export function RosterScreen() {
             contentContainerStyle={{ gap: 12, paddingTop: 4, paddingBottom: 16 }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => (
-              <CharacterRow file={item} onOpen={() => { playSfx('selectCharacter'); router.push({ pathname: '/sheet', params: { id: item.id } }); }} onLongPress={() => { playSfx('floatMenuOpen'); setActionsFor(item); }} />
+              // #258r3: NO sound on the row tap — it opens the sheet, whose sheet-enter chime is the
+              // feedback (selectCharacter belongs to the main-menu "Characters" button).
+              <CharacterRow file={item} onOpen={() => router.push({ pathname: '/sheet', params: { id: item.id } })} onLongPress={() => { playSfx('floatMenuOpen'); setActionsFor(item); }} />
             )}
           />
           <View style={{ flexDirection: 'row', gap: 10, paddingTop: 10, paddingBottom: 6 }}>

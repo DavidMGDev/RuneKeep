@@ -52,7 +52,8 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onCl
   // (zIndex 10001) so the keypad is never hidden behind a dim. Transparent tap-catcher closes it.
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
+      {/* #258r3: occluding bg so GH's hit-test can't reach the sheet's stat tracks underneath */}
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.01)' }]} collapsable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
       <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View style={panelStyle}>
         <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.4} style={{ width: 264, padding: 16, gap: 12 }}>

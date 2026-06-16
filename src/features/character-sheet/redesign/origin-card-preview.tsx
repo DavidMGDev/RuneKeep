@@ -74,8 +74,9 @@ export function OriginCardPreview({
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
-      {/* transparent tap-catcher (the shared SheetDim darkens the screen); tap outside to close */}
-      <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={close} accessibilityRole="button" accessibilityLabel="Close" />
+      {/* tap-catcher (SheetDim darkens the screen). #258r3: occluding bg + collapsable so GH's hit-test
+          can't reach the stat tracks underneath. tap outside to close. */}
+      <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.01)' }} collapsable={false} onPress={close} accessibilityRole="button" accessibilityLabel="Close" />
       <Animated.View style={[{ width: cardW, height: cardH }, cardStyle]} pointerEvents="none" onLayout={(e) => { const l = e.nativeEvent.layout; setCardRect({ left: l.x, top: l.y, width: l.width, height: l.height }); }}>
         <Image source={source} style={{ width: '100%', height: '100%', borderRadius: 10 }} contentFit="contain" transition={120} />
         {enabled ? <EnabledCorner width={cardW} height={cardH} /> : null}
