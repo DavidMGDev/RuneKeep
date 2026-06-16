@@ -165,6 +165,10 @@ export interface CharacterFile {
    *  INSTEAD of the card's code-defined effects. Lets players fix/add/remove modifiers on catalog cards
    *  (custom cards edit their own `effects`). Keyed by catalog id (so all copies share). Additive. */
   cardEffectOverrides?: Record<string, import('@/lib/modifiers').CardEffect[]>;
+  /** Card copies (#277): extra deck instances of an existing card. Each has its own unique instance
+   *  `id` (for position/category/tokens) but a `ref` to the underlying card (catalog id or custom-card
+   *  id) — copies SHARE enable state + apply their effect once (enable is keyed by ref). Additive. */
+  cardCopies?: { id: string; ref: string }[];
   /** Beastform (#279): while transformed, weapon cards are auto-unequipped and stored here so they
    *  re-equip when the form ends; `beastformDomainSnapshot` records the domain cards enabled at
    *  transform time (re-equipping one is allowed mid-form; new domains are blocked). Additive. */
@@ -265,7 +269,8 @@ export function toSheetCharacter(file: CharacterFile): Character {
   };
   const sources: EffectSource[] = [
     ...levelThresholdSources(file.level),
-    ...(file.enabledCardIds ?? [])
+    // #277: enabledCardIds holds REFS; dedupe so several copies of one card apply their effect once.
+    ...[...new Set(file.enabledCardIds ?? [])]
       .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
       .filter((s) => s.effects.length > 0),
   ];
@@ -332,7 +337,8 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
   };
   const sources: EffectSource[] = [
     ...levelThresholdSources(file.level),
-    ...(file.enabledCardIds ?? [])
+    // #277: enabledCardIds holds REFS; dedupe so several copies of one card apply their effect once.
+    ...[...new Set(file.enabledCardIds ?? [])]
       .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
       .filter((s) => s.effects.length > 0),
   ];

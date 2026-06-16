@@ -29,6 +29,14 @@ export function catalogIdOf(id: string): string {
   return id.replace(/#\d+$/, '');
 }
 
+/** The SYNC KEY for a deck-card instance (#277): an explicit copy points to its underlying card's id;
+ *  every other instance resolves to its catalog/custom id (suffix stripped). Enable state + effects are
+ *  keyed by this, so all copies of one card share an equip and apply their effect ONCE. */
+export function refOf(id: string, file?: CharacterFile): string {
+  const copy = file?.cardCopies?.find((c) => c.id === id);
+  return copy ? copy.ref : catalogIdOf(id);
+}
+
 /** The file collections that hold player-authored, editable cards (#264 item 5). */
 export type EditableCollection = 'customCards' | 'inventoryCustom' | 'notes' | 'experiences';
 
@@ -56,7 +64,7 @@ export function editableCardIds(file?: CharacterFile): Set<string> {
 
 /** The structured effects a card applies when enabled. Empty when the card has none. */
 export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffect[] {
-  const id = catalogIdOf(rawId); // resolve a duplicate copy (e.g. wpn-x#2) to its catalog content (#269)
+  const id = refOf(rawId, file); // resolve a copy (#277) or suffixed duplicate (#269) to its underlying card
   const custom = customCards(file).find((c) => c.id === id);
   if (custom?.effects?.length) return custom.effects;
   // #278: a player override replaces a CATALOG card's code-defined effects (custom cards edit their own
@@ -98,7 +106,7 @@ export function cardHasEffects(id: string, file?: CharacterFile): boolean {
 
 /** A human label for a card id — used as the modifier source in the Modifiers panel. */
 export function sourceLabelForCardId(rawId: string, file?: CharacterFile): string {
-  const id = catalogIdOf(rawId); // a duplicate copy shares its catalog card's label (#269)
+  const id = refOf(rawId, file); // a copy/duplicate shares its underlying card's label (#269/#277)
   const custom = customCards(file).find((c) => c.id === id);
   if (custom) return custom.title;
   return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? wildshapeById(id)?.name ?? id;

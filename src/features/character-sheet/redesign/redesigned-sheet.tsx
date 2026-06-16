@@ -22,7 +22,7 @@ import { lootById } from '@/lib/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
-import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard } from '@/features/cards/card-effects';
+import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
 import { GoldCard } from '@/features/create/gold-card';
@@ -741,13 +741,27 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     for (let i = 0; i < flat.length; i++) {
       const { cat, item } = flat[i];
       const iid = instanceIds[i];
-      const it = iid === item.id ? item : { ...item, id: iid };
+      const it: CardItem = { ...item, id: iid, ref: catalogIdOf(iid) }; // #277: ref = underlying card
       if (removed.has(it.id)) continue; // deleted from the gallery → filtered out of every deck
       const ov = override[it.id];
       // Beastform cards are locked to the wildshape deck (#279): ignore any category override that would
       // move a wildshape out, and never let a non-wildshape card override INTO the wildshape deck.
       const isWs = isWildshapeId(catalogIdOf(it.id));
       const target = isWs ? 'wildshape' : ov && validKeys.has(ov) && ov !== 'wildshape' ? ov : cat;
+      (decks[target] ??= []).push(it);
+    }
+    // Card copies (#277): extra instances of an existing card, built from a template primary so they
+    // render identically. Own id (position/tokens), shared ref (enable + effects apply once). Routed by
+    // their own category override, defaulting to the source card's category. Beastform can't be copied.
+    const templateByRef = new Map<string, { item: CardItem; cat: string }>();
+    for (const f of flat) { const r = catalogIdOf(f.item.id); if (!templateByRef.has(r)) templateByRef.set(r, { item: f.item, cat: f.cat }); }
+    for (const copy of file.cardCopies ?? []) {
+      if (removed.has(copy.id) || isWildshapeId(copy.ref)) continue;
+      const t = templateByRef.get(copy.ref);
+      if (!t) continue;
+      const it: CardItem = { ...t.item, id: copy.id, ref: copy.ref };
+      const ov = override[copy.id];
+      const target = ov && validKeys.has(ov) && ov !== 'wildshape' ? ov : t.cat;
       (decks[target] ??= []).push(it);
     }
     // Drag-drop order (#252): sort each category by the player's explicit card order; ids not listed
@@ -1065,28 +1079,54 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // exactly ONE matching copy from the multiset (not every copy); cards with no acquired entry
     // (equipped weapon/armor, domain, origin) are hidden by their instance id via removedCardIds.
     const acquired = [...(file.acquiredCardIds ?? [])];
+    const copyIds = new Set((file.cardCopies ?? []).map((c) => c.id));
     const hide: string[] = [];
     for (const iid of ids) {
+      if (copyIds.has(iid)) continue; // a copy (#277) → just removed from cardCopies below
       const cid = catalogIdOf(iid);
       const ai = acquired.indexOf(cid);
       if (ai >= 0) acquired.splice(ai, 1);
       else hide.push(iid);
     }
+    // #277: enabledCardIds holds REFS — keep a ref enabled only while some card with that ref survives
+    // (so deleting one of several copies keeps the shared equip; deleting the last drops it).
+    const remainingRefs = new Set(Object.values(carouselDecks ?? {}).flat().filter((c) => !del.has(c.id)).map((c) => c.ref ?? catalogIdOf(c.id)));
     const next: CharacterFile = {
       ...file,
       customCards: (file.customCards ?? []).filter((c) => !del.has(c.id)),
       inventoryCustom: (file.inventoryCustom ?? []).filter((c) => !del.has(c.id)),
       notes: (file.notes ?? []).filter((c) => !del.has(c.id)),
       experiences: (file.experiences ?? []).filter((c) => !del.has(c.id)),
+      cardCopies: (file.cardCopies ?? []).filter((c) => !del.has(c.id)),
       acquiredCardIds: acquired,
       domainCardIds: file.domainCardIds.filter((x) => !del.has(x)),
       activeDomainCardIds: file.activeDomainCardIds?.filter((x) => !del.has(x)),
-      enabledCardIds: (file.enabledCardIds ?? []).filter((x) => !del.has(x)),
+      enabledCardIds: (file.enabledCardIds ?? []).filter((r) => remainingRefs.has(r)),
       removedCardIds: [...new Set([...(file.removedCardIds ?? []), ...hide])],
       cardCategory,
       cardTokens,
     };
     commitFile(next);
+  }, [file, commitFile, carouselDecks]);
+  // Duplicate selected cards (#277): each copy is a new instance referencing the same underlying card
+  // (shared enable + single effect), placed in the source card's category. Beastform can't be copied.
+  const onDuplicateCards = useCallback((ids: string[]) => {
+    if (!file || !ids.length) return;
+    const decksNow = carouselDecks ?? {};
+    const copies = [...(file.cardCopies ?? [])];
+    const cardCategory = { ...(file.cardCategory ?? {}) };
+    let made = 0;
+    for (const id of ids) {
+      const ref = refOf(id, file);
+      if (isWildshapeId(ref)) continue; // #279: beastform cards aren't duplicatable
+      const newId = `cp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}-${made++}`;
+      copies.push({ id: newId, ref });
+      const srcCat = Object.keys(decksNow).find((k) => decksNow[k].some((c) => c.id === id));
+      if (srcCat) cardCategory[newId] = srcCat;
+    }
+    if (!made) { playSfx('floatMenuClose'); return; } // nothing copyable (e.g. only beastform selected)
+    playSfx('customCardCreate');
+    commitFile({ ...file, cardCopies: copies, cardCategory });
   }, [file, commitFile, carouselDecks]);
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
@@ -1154,21 +1194,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onToggleCard = useCallback(
     (id: string) => {
       if (!file) return;
-      const wasEnabled = (file.enabledCardIds ?? []).includes(id);
-      const isWs = isWildshapeId(id);
+      // #277: enable + effects key by the card's REF (its catalog/custom id), so all copies of a card
+      // share one equip and apply their effect once. `id` is the tapped instance; `ref` the underlying card.
+      const ref = refOf(id, file);
+      const wasEnabled = (file.enabledCardIds ?? []).includes(ref);
+      const isWs = isWildshapeId(ref);
       const cur = new Set(file.enabledCardIds ?? []);
       // Beastform state (#279): the one enabled wildshape (if any) = "transformed".
       const activeWs = [...cur].find((x) => isWildshapeId(x));
       const transformed = !!activeWs;
-      const cid = catalogIdOf(id);
-      const cidWeapon = !!weaponById(cid);
-      const cidDomain = cardById(cid)?.kind === 'domain';
+      const cidWeapon = !!weaponById(ref);
+      const cidDomain = cardById(ref)?.kind === 'domain';
       let beastformUnequipped = file.beastformUnequipped;
       let beastformDomainSnapshot = file.beastformDomainSnapshot;
       if (wasEnabled) {
         // Disabling is always allowed. Leaving the active form restores the auto-unequipped weapons.
-        cur.delete(id);
-        if (isWs && id === activeWs) {
+        cur.delete(ref);
+        if (isWs && ref === activeWs) {
           for (const w of file.beastformUnequipped ?? []) cur.add(w);
           beastformUnequipped = undefined;
           beastformDomainSnapshot = undefined;
@@ -1178,7 +1220,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
         if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
         if (transformed && cidWeapon) { playSfx('floatMenuClose'); return; } // no weapons while transformed
-        if (transformed && cidDomain && !(beastformDomainSnapshot ?? []).includes(id)) { playSfx('floatMenuClose'); return; } // no NEW domain cards
+        if (transformed && cidDomain && !(beastformDomainSnapshot ?? []).includes(ref)) { playSfx('floatMenuClose'); return; } // no NEW domain cards
         playSfx(isWs ? 'activateBeastform' : 'cardEnable');
         if (isWs) {
           // Transform: auto-unequip weapon cards (restored on exit); snapshot the enabled domain cards
@@ -1190,18 +1232,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         }
         // Threshold SET conflict (#242 item 9): a card that SETS Major (or Severe) disables any other
         // enabled card that sets the same threshold — two "set major" can't both apply. Bonuses stack.
-        const eff = effectsForCardId(id, file);
+        const eff = effectsForCardId(ref, file);
         const setsMajor = eff.some((e) => e.target === 'majorThreshold' && e.mode === 'set');
         const setsSevere = eff.some((e) => e.target === 'severeThreshold' && e.mode === 'set');
         if (setsMajor || setsSevere) {
           for (const x of [...cur]) {
-            if (x === id) continue;
+            if (x === ref) continue;
             const xe = effectsForCardId(x, file);
             if (setsMajor && xe.some((e) => e.target === 'majorThreshold' && e.mode === 'set')) cur.delete(x);
             if (setsSevere && xe.some((e) => e.target === 'severeThreshold' && e.mode === 'set')) cur.delete(x);
           }
         }
-        cur.add(id);
+        cur.add(ref);
       }
       const next = { ...file, enabledCardIds: [...cur], beastformUnequipped, beastformDomainSnapshot };
       setFile(next);
@@ -1414,6 +1456,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onAddType={onAddCardType}
               onDeleteType={onDeleteCardType}
               onEditCard={(id) => { setFloatKind(null); setEditCardId(id); }}
+              onDuplicate={onDuplicateCards}
               editableIds={editableIds}
               onClose={() => setFloatKind(null)}
             />
@@ -1433,7 +1476,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               cardId={cardInfoId}
               file={file}
               character={character}
-              enabled={enabledIds.has(cardInfoId)}
+              enabled={enabledIds.has(refOf(cardInfoId, file))}
               canEdit={!isWildshapeId(catalogIdOf(cardInfoId))}
               onToggle={onToggleCard}
               onSaveEffects={onEditCardEffects}

@@ -1,5 +1,5 @@
 import { type CharacterFile, sheetBreakdown, toSheetCharacter } from '@/lib/character-file';
-import { cardHasEffects, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, sourceLabelForCardId } from './card-effects';
+import { cardHasEffects, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, refOf, sourceLabelForCardId } from './card-effects';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
   return {
@@ -96,6 +96,25 @@ describe('mixed ancestry effect filtering (#265)', () => {
     const plain = toSheetCharacter(baseFile());
     expect(c.maxHp).toBe(plain.maxHp + 1); // Giant Endurance (trait 1) applies
     expect(c.stress.total).toBe(plain.stress.total); // Human High Stamina (trait 1) is crossed out → no +1 Stress
+  });
+});
+
+describe('card copies — synced references (#277)', () => {
+  it('refOf resolves a copy to its underlying card; others to their catalog id', () => {
+    const file = baseFile({ cardCopies: [{ id: 'cp-1', ref: 'wpn-greatsword' }] });
+    expect(refOf('cp-1', file)).toBe('wpn-greatsword');
+    expect(refOf('wpn-greatsword', file)).toBe('wpn-greatsword');
+    expect(refOf('wpn-greatsword#2', file)).toBe('wpn-greatsword');
+  });
+  it('a copy resolves its effects via the underlying card', () => {
+    const file = baseFile({ cardCopies: [{ id: 'cp-g', ref: 'ancestry-giant' }] });
+    expect(effectsForCardId('cp-g', file)[0]).toMatchObject({ target: 'maxHp', delta: 1 });
+  });
+  it('the effect applies ONCE no matter how many copies are enabled', () => {
+    const plain = toSheetCharacter(baseFile());
+    // enabledCardIds holds refs; even a duplicated ref dedupes to a single application.
+    const c = toSheetCharacter(baseFile({ cardCopies: [{ id: 'cp-g', ref: 'ancestry-giant' }], enabledCardIds: ['ancestry-giant', 'ancestry-giant'] }));
+    expect(c.maxHp).toBe(plain.maxHp + 1); // +1, not +2
   });
 });
 
