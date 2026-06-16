@@ -1,9 +1,15 @@
 import { useState } from 'react';
+import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
 import { useCarousel } from '../carousel-context';
+
+// #293: tap-to-dismiss only in the BOTTOM 40% of the 892-design-tall screen. The top 60% (where the
+// card, drawer and edit/delete buttons live) absorbs taps so a near-miss never closes the card.
+const SCREEN_H = 892;
+const SPLIT_Y = SCREEN_H * 0.6; // 535
 
 /**
  * The focus dim — a dark veil that fades in BETWEEN the focused card and the rest of the hand (#8c).
@@ -32,10 +38,16 @@ export function FocusOverlay() {
   if (!active) return null;
 
   return (
-    // Oversized past the (unclipped) stage so the dim reaches the physical screen edges — status
-    // bar and letterbox margins included (#30 B). Square corners; color matches ExpandVeil.
-    <GestureDetector gesture={tap}>
-      <Animated.View style={[box(-120, -160, 652, 1212), { backgroundColor: '#06080d', zIndex: 2000 }, dim]} />
-    </GestureDetector>
+    // Oversized past the (unclipped) stage so the dim reaches the physical screen edges — status bar and
+    // letterbox margins included (#30 B). The dim is visual-only (pointerEvents none); two catchers
+    // split the tap behaviour: the top 60% SWALLOWS taps (#293, no close), the bottom 40% closes. Swipe
+    // -down (card-carousel) still closes from anywhere.
+    <>
+      <Animated.View pointerEvents="none" style={[box(-120, -160, 652, 1212), { backgroundColor: '#06080d', zIndex: 2000 }, dim]} />
+      <View pointerEvents="auto" style={[box(-120, -160, 652, 160 + SPLIT_Y), { zIndex: 2001 }]} />
+      <GestureDetector gesture={tap}>
+        <Animated.View style={[box(-120, SPLIT_Y, 652, 1052 - SPLIT_Y), { zIndex: 2001 }]} />
+      </GestureDetector>
+    </>
   );
 }
