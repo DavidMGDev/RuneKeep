@@ -17,8 +17,16 @@ import Svg, { Polygon, Polyline } from 'react-native-svg';
 import { ArtImage } from '@/components/art-image';
 import { useScreenInsets } from '@/components/app-screen';
 import { Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
+import { GEAR_FAST_FLIP_PX, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
 import { FORGED_H, FORGED_W } from './forged-card';
+
+// Gear swoosh (#258): a random gear sound on each fast direction-reversal while grinding the gear —
+// matches the sheet carousel. Module-level + JS-only for safe runOnJS from the pan worklet.
+function playGearGrind() {
+  playSfx(Math.random() < 0.5 ? 'gearScroll1' : 'gearScroll2');
+}
 
 // The sheet's inner gear (U3) — here it IS the fast-scroll control, riding the bottom edge.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -279,6 +287,9 @@ export const StraightCarousel = forwardRef<
   const startPos = useSharedValue(0);
   const padTouch = useSharedValue(false);
   const scrolled = useSharedValue(false);
+  // #258: gear swoosh tracking (fast direction-reversal only)
+  const gearPrevTX = useSharedValue(0);
+  const gearDirX = useSharedValue(0);
   const lastCenter = useSharedValue(clampIdx(initialIndex, count));
   const [center, setCenter] = useState(() => Math.min(count - 1, Math.max(0, initialIndex)));
   const [fsOpen, setFsOpen] = useState(false);
@@ -292,6 +303,7 @@ export const StraightCarousel = forwardRef<
     (c: number) => {
       setCenter(c);
       setFaceIdx(0); // a NEW card centered → start at its face 0 (page persists through focus/close)
+      playSfx('carouselScroll'); // #258: scroll pip, like the sheet carousel
       onIndexChange?.(c);
     },
     [onIndexChange],
@@ -327,6 +339,7 @@ export const StraightCarousel = forwardRef<
       if (n <= 1) return;
       flipBusy.current = true;
       flipDir.current = delta;
+      playSfx('gearScroll2', { volume: PAGE_FLIP_VOLUME }); // #258: quiet gear swoosh on page flip
       setFaceIdx((i) => (i + delta + n) % n);
     },
     [items, center],
@@ -388,11 +401,27 @@ export const StraightCarousel = forwardRef<
           scrolled.value = false;
           // The gear is INERT while a card is focused (#104: fullscreen taps were grinding it).
           padTouch.value = fs.value < 0.5 && heightSV.value > 0 && e.y > heightSV.value - 72;
-          if (padTouch.value) grind.value = withTiming(1, { duration: 160 });
+          if (padTouch.value) {
+            grind.value = withTiming(1, { duration: 160 });
+            gearPrevTX.value = 0; // #258: reset swoosh tracking for the new grind
+            gearDirX.value = 0;
+          }
         })
         .onUpdate((e) => {
           if (fs.value > 0.5) return;
           scrolled.value = true;
+          if (padTouch.value) {
+            // #258: gear swoosh on a fast direction-reversal
+            const dtx = e.translationX - gearPrevTX.value;
+            gearPrevTX.value = e.translationX;
+            if (Math.abs(dtx) > GEAR_FAST_FLIP_PX) {
+              const d = dtx > 0 ? 1 : -1;
+              if (d !== gearDirX.value) {
+                gearDirX.value = d;
+                runOnJS(playGearGrind)();
+              }
+            }
+          }
           const ratio = padTouch.value ? gearRatio : SPACING;
           const raw = startPos.value - e.translationX / ratio;
           const max = count - 1;
@@ -421,7 +450,7 @@ export const StraightCarousel = forwardRef<
           if (grind.value !== 0 && !scrolled.value) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, closeFs, heightSV, flip],
+    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, closeFs, heightSV, flip],
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));

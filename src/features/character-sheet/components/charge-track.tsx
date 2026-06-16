@@ -7,6 +7,7 @@ import { Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { playRiser, playSfx, type RiserHandle, type SfxId } from '@/lib/sfx';
+import { STAT_SOUND_DELAY_MS } from '@/lib/sfx-config';
 
 /**
  * The generic hold-to-charge ±1 track (#89) — the proven heart interaction (see heart-track.tsx,
@@ -484,12 +485,12 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
       charging.current = null;
       step();
       setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as Phase } : a)));
-      // riser tapers to silence and the impact lands at the cross-fade
-      const ms = (c.dir === 'up' ? crossUpAt : crossDownAt) * FX_MS;
-      stopRiser(ms);
+      // riser tapers to silence and the impact lands at the burst/fill — timing tunable in sfx-config (#258)
+      const ms = STAT_SOUND_DELAY_MS[flavor][c.dir === 'up' ? 'gain' : 'lose'];
+      stopRiser(Math.max(140, ms));
       setTimeout(() => impact(c.dir), ms);
     },
-    [crossUpAt, crossDownAt, stopRiser, impact],
+    [flavor, stopRiser, impact],
   );
 
   const cancel = useCallback(() => {

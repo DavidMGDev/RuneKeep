@@ -71,11 +71,13 @@ import { FocusOverlay } from './focus-overlay';
 import { GearDecoration } from './gear-decoration';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
 import { playSfx } from '@/lib/sfx';
+import { GEAR_FAST_FLIP_PX, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 
 const flipPar = (t: number) => ((t % 2) + 2) % 2;
 
-// One of the two golden-gear grind sounds per grind gesture (#255), chosen at random so it doesn't
-// feel repetitive. Module-level + JS-only so it's safe to call via runOnJS from the pan worklet.
+// A golden-gear "swoosh" (#258): one of the two gear sounds at random (so it doesn't get repetitive),
+// played on each FAST direction-reversal while grinding — that swooshing-through-the-UI feel. Module-
+// level + JS-only so it's safe to call via runOnJS from the pan worklet.
 function playGearGrind() {
   playSfx(Math.random() < 0.5 ? 'gearScroll1' : 'gearScroll2');
 }
@@ -230,6 +232,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
       if (flipBusy.current || faceCount <= 1) return;
       flipBusy.current = true;
       flipDir.current = delta;
+      playSfx('gearScroll2', { volume: PAGE_FLIP_VOLUME }); // #258: quiet gear swoosh on page flip
       setPageIdx((p) => (p + delta + faceCount) % faceCount);
     },
     [faceCount],
@@ -550,6 +553,10 @@ export function CardCarousel() {
   const padTouch = useSharedValue(false);
   const padWasExpanded = useSharedValue(false);
   const grindProgress = useSharedValue(0);
+  // #258: gear swoosh — track finger travel + last fast direction so we only swoosh on a deliberate
+  // fast reversal, never on the gear TAP that closes the carousel.
+  const gearPrevTX = useSharedValue(0);
+  const gearDirX = useSharedValue(0);
   // Adaptive gear sensitivity (#67 C): one ~GEAR_SWIPE_PX swipe sweeps the WHOLE deck.
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
@@ -668,7 +675,8 @@ export function CardCarousel() {
           padWasExpanded.value = machineState.value === 'expanded';
           if (padTouch.value && padWasExpanded.value) {
             grindProgress.value = withTiming(1, { duration: 160 });
-            runOnJS(playGearGrind)(); // #255: one random gear-grind sound per grind gesture
+            gearPrevTX.value = 0; // #258: reset swoosh tracking — a plain tap-to-close makes no sound
+            gearDirX.value = 0;
           }
         })
         .onUpdate((e) => {
@@ -680,6 +688,16 @@ export function CardCarousel() {
           // (GEAR_SWIPE_PX) means one center->edge drag covers the whole deck AND this over-scroll.
           if (padTouch.value && padWasExpanded.value) {
             scrolled.value = true;
+            // #258: swoosh only on a FAST swipe that reverses direction (deliberate flicks)
+            const dtx = e.translationX - gearPrevTX.value;
+            gearPrevTX.value = e.translationX;
+            if (Math.abs(dtx) > GEAR_FAST_FLIP_PX) {
+              const d = dtx > 0 ? 1 : -1;
+              if (d !== gearDirX.value) {
+                gearDirX.value = d;
+                runOnJS(playGearGrind)();
+              }
+            }
             const raw = startRot.value - e.translationX / gearPanR;
             const max = maxRotation(count);
             if (raw < 0) {
@@ -848,7 +866,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch

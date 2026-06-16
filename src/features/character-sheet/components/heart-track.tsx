@@ -9,6 +9,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { type HeartAction, heartBoundaries, type PipState, resolveHearts } from '@/lib/pips';
 import { playLoseHp, playRiser, playSfx, type RiserHandle } from '@/lib/sfx';
+import { STAT_SOUND_DELAY_MS } from '@/lib/sfx-config';
 import { Art } from '../art';
 import { ChargeMoteView, HEART_MOTES } from './charge-track';
 
@@ -37,10 +38,6 @@ const CANCEL_MS = 180;
 const DOUBLE_MS = 320; // max gap between touch-DOWNs for the instant path
 const GROW = 2.9; // +20% (#93) — ~135px at the peak
 const REDUCED_GROW = 0.4;
-
-// Audio (#255): the impact lands when the heart visually crosses to its post state — a fill turns at
-// ~55% of the fx, goldify at ~15%, losses shatter at ~10% (mirrors `crossAt` below).
-const crossMsFor = (action: HeartAction) => (action === 'fill' ? 0.55 : action === 'goldify' ? 0.15 : 0.1) * FX_MS;
 
 const heartArt = (s: PipState) => (s === 'empty' ? Art.heartDepleted : Art.heart);
 const heartTint = (s: PipState, accent: string) => (s === 'golden' ? Rune.goldBright : s === 'active' ? accent : undefined);
@@ -324,7 +321,7 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
         if (add.length) {
           setAnims((list) => [...list, ...add]);
           // staggered per-heart loss hits (#255): each rolls its own 1/10 meme chance, ~110ms apart
-          add.forEach((_, k) => setTimeout(() => playLoseHp(), 0.1 * FX_MS + k * 110));
+          add.forEach((_, k) => setTimeout(() => playLoseHp(), STAT_SOUND_DELAY_MS.hp.lose + k * 110));
         }
       },
       burst: (prevHp: number, nextHp: number) => {
@@ -379,9 +376,9 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
     charging.current = null;
     onHp(hp + (GAINS[c.action] ? 1 : -1));
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'fx' as AnimPhase } : a)));
-    // riser tapers to silence and the impact lands at the cross-fade (heart fills / shatters)
-    const ms = crossMsFor(c.action);
-    stopRiser(ms);
+    // riser tapers to silence and the impact lands at the burst/fill — timing tunable in sfx-config (#258)
+    const ms = STAT_SOUND_DELAY_MS.hp[GAINS[c.action] ? 'gain' : 'lose'];
+    stopRiser(Math.max(140, ms));
     setTimeout(() => impact(c.action), ms);
   }, [hp, onHp, stopRiser, impact]);
 

@@ -18,6 +18,7 @@ import { Art } from '@/features/character-sheet/art';
 import { formatModifier, TRAIT_ORDER, type TraitKey } from '@/features/character-sheet/character';
 import { type ExperienceDef, newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
+import { beginLoading, endLoading, playSfx } from '@/lib/sfx';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { CLASS_CARDS } from './class-cards';
 import { featurePages } from './class-data';
@@ -380,6 +381,11 @@ function CreateLoader({ done, onHidden }: { done: boolean; onHidden: () => void 
   const pulse = useSharedValue(0.4);
   const spin = useSharedValue(0);
   const fade = useSharedValue(1);
+  // #258: hold any "enter" chime until this loader has gone, so nothing sounds behind it.
+  useEffect(() => {
+    beginLoading();
+    return endLoading;
+  }, []);
   useEffect(() => {
     if (reduced) {
       pulse.value = 0.85;
@@ -945,7 +951,14 @@ export function CreateScreen() {
             label={centerInvAdd ? 'Create item' : centerInvCustom ? 'Edit item' : centerSelected ? 'Deselect' : `Select ${noun}`}
             kind={centerSelected && !centerInvAdd && !centerInvCustom ? 'ghost' : 'primary'}
             height={40}
-            onPress={() => centerItem && onToggle(centerItem.id)}
+            muteSfx
+            onPress={() => {
+              if (!centerItem) return;
+              // #258: selecting a card uses the card-select/deselect chime, not the generic tap.
+              if (centerInvAdd || centerInvCustom) playSfx('buttonTap');
+              else playSfx(centerSelected ? 'cardDeselect' : 'cardSelect');
+              onToggle(centerItem.id);
+            }}
             accessibilityLabel={centerInvAdd ? 'Create a custom item' : centerInvCustom ? 'Edit item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
           {deck === 'class' ? (
@@ -986,14 +999,17 @@ function TraitsTab({ traits, onTraits }: { traits: Partial<Record<TraitKey, numb
   const assignedCount = assignedValues.length;
 
   const placeOn = (key: TraitKey) => {
+    playSfx('numpadPress'); // #258: the trait's tap animation
     const next = { ...traits };
     if (armed !== null) {
       next[key] = armed;
       setArmed(null);
+      playSfx('cardSelect'); // assigning the armed modifier
     } else if (next[key] !== undefined) {
       delete next[key];
+      playSfx('cardDeselect'); // clearing an assignment
     } else {
-      return;
+      return; // no-op tap — numpadPress already gave feedback
     }
     onTraits(next);
   };
@@ -1008,7 +1024,7 @@ function TraitsTab({ traits, onTraits }: { traits: Partial<Record<TraitKey, numb
             return (
               <Pressable
                 key={`${v}-${i}`}
-                onPress={() => setArmed(isArmed ? null : v)}
+                onPress={() => { playSfx(isArmed ? 'floatMenuClose' : 'buttonTap'); setArmed(isArmed ? null : v); }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isArmed }}
                 accessibilityLabel={`Modifier ${formatModifier(v)}${isArmed ? ', armed. Tap a trait to place it' : ''}`}>
@@ -1090,7 +1106,7 @@ function ExperiencesTab({ experiences, onEdit }: { experiences: ExperienceDef[];
                 </View>
                 {/* the lower-left EDIT control */}
                 <Pressable
-                  onPress={() => onEdit(slot)}
+                  onPress={() => { playSfx('buttonTap'); onEdit(slot); }}
                   hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel={`Edit ${exp.title}`}
@@ -1103,7 +1119,7 @@ function ExperiencesTab({ experiences, onEdit }: { experiences: ExperienceDef[];
                 </Pressable>
               </>
             ) : (
-              <Pressable onPress={() => onEdit(slot)} accessibilityRole="button" accessibilityLabel={`Add experience ${slot + 1}`} style={{ flex: 1 }}>
+              <Pressable onPress={() => { playSfx('buttonTap'); onEdit(slot); }} accessibilityRole="button" accessibilityLabel={`Add experience ${slot + 1}`} style={{ flex: 1 }}>
                 {({ pressed }) => (
                   <ChamferBox
                     chamfer={12}

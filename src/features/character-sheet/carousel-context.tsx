@@ -236,7 +236,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const closeFullscreen = useCallback(() => {
     machineState.value = 'expanded';
     fullscreenProgress.value = withSpring(0, FS_SPRING);
-    playSfx('cardFullscreenLeave'); // #255
+    playSfx('transitionIconFilled'); // #258: nicer leave sound than the old cardFullscreenLeave
   }, [machineState, fullscreenProgress]);
 
   const openOriginCard = useCallback(

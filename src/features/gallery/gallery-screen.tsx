@@ -12,6 +12,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { RuneChip } from '@/components/rune-chip';
 import { type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 import { CATALOG, type CatalogCard, type CatalogKind } from '@/features/cards/catalog';
 
 const KINDS: { key: CatalogKind; label: string }[] = [
@@ -130,7 +131,7 @@ export function GalleryScreen() {
       onBack={() => router.back()}
       headerRight={
         <Pressable
-          onPress={() => setDrawerOpen((o) => !o)}
+          onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}
           hitSlop={10}
           accessibilityRole="button"
           accessibilityState={{ expanded: drawerOpen }}

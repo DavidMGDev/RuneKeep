@@ -2,6 +2,7 @@ import { Pressable, Text } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 
 /**
  * A small chamfered filter/selection chip: red fill when active, gold hairline at rest
@@ -12,15 +13,23 @@ export function RuneChip({
   active,
   onPress,
   tint,
+  muteSfx,
 }: {
   label: string;
   active?: boolean;
   onPress?: () => void;
   /** Identity color for the active fill (domain/class deep tone); defaults to the red. */
   tint?: string;
+  /** Suppress the generic tap SFX (#258). */
+  muteSfx?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: !!active }} accessibilityLabel={label} hitSlop={6}>
+    <Pressable
+      onPress={onPress ? () => { if (!muteSfx) playSfx('buttonTap'); onPress(); } : undefined}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!active }}
+      accessibilityLabel={label}
+      hitSlop={6}>
       <ChamferBox
         chamfer={6}
         fill={active ? (tint ?? Rune.red) : 'transparent'}

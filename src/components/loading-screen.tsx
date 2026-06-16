@@ -5,6 +5,7 @@ import Svg, { Polygon } from 'react-native-svg';
 
 import { Body, Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { beginLoading, endLoading } from '@/lib/sfx';
 
 /**
  * The app's loading state (PRODUCT.md 5: loading is designed): ink ground, a chamfered gold
@@ -14,6 +15,11 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 export function LoadingScreen({ label = 'Preparing' }: { label?: string }) {
   const pulse = useSharedValue(0.35);
   const reduced = useReducedMotion();
+  // #258: suppress "enter" sounds while a loader is up; the chime fires when it clears.
+  useEffect(() => {
+    beginLoading();
+    return endLoading;
+  }, []);
   useEffect(() => {
     if (reduced) {
       pulse.value = 0.8;
