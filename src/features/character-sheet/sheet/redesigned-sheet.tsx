@@ -1432,11 +1432,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // Gaining Max HP fills the new heart(s) (#233 item 5): hp follows the gain so the added slot
       // animates filling; on a loss hp clamps down (the burst shows the heart breaking).
       const hpGain = Math.max(0, d.maxHp - c.maxHp);
+      // Gaining Armor Score fills the new slot(s) (#328) — armor.active follows the score gain exactly
+      // like hp follows maxHp above, so equipping flies the new shields IN and unequipping bursts them
+      // OUT via burstResources' armor burst (the same silent visual path HP uses — no extra sound).
+      const armorGain = Math.max(0, d.armorScore - c.armorScore);
       let result: Character = {
         ...d,
         hp: Math.min(d.maxHp, c.hp + hpGain),
         stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
-        armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
+        armor: { ...d.armor, active: Math.min(d.armorScore, c.armor.active + armorGain) },
         hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
         gold: c.gold,
         portraitUri: c.portraitUri,
