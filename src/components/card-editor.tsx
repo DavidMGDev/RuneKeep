@@ -141,7 +141,9 @@ export function CardEditor({
   }, []);
   const rollColor = useCallback(() => { playSfx('tokenCopyColor'); setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null })); }, []);
 
-  const canSave = draft.title.trim().length > 0;
+  // #318: a note/card can be saved with NO title as long as it has SOME content (a body). An experience
+  // still needs its phrase (the title IS the experience).
+  const canSave = experienceMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || draft.text.trim().length > 0;
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
   const [pickEffect, setPickEffect] = useState<number | null>(null);
@@ -215,9 +217,10 @@ export function CardEditor({
             the fields up so they sit above the keyboard */}
         <Animated.View style={[{ transformOrigin: 'top center' }, previewStyle]}>
           {experienceMode ? (
-            <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
+            <ForgedCard title={draft.title.trim() || 'Experience'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
           ) : (
-            <ForgedCard title={draft.title.trim() || 'Untitled'} kindLabel={plaqueLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+            // #318: no "Untitled" — an empty title previews as a titleless card (the body fills the space).
+            <ForgedCard title={draft.title.trim()} kindLabel={plaqueLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
           )}
           {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
               transparent hit-band over the divider seam (~40% down), so the player taps the chip on

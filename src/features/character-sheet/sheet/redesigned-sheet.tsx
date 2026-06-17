@@ -629,7 +629,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const notesJobs: Job[] = (file.notes ?? []).map((it) => ({
       key: `note-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13 + (it.typeLabel?.length ?? 0) * 17) % 99991}`,
       id: it.id,
-      node: <ForgedCard title={it.title || 'Note'} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
+      node: <ForgedCard title={it.title ?? ''} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
     }));
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
