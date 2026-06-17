@@ -13,6 +13,8 @@ export interface StatToast {
   id: number;
   label: string;
   delta: number;
+  /** #318: a plain NOTICE toast (no numeric delta) — e.g. "Maximum 5 Domain Cards". Amber-edged. */
+  notice?: boolean;
 }
 
 const TRAIT_KEYS = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'] as const;
@@ -57,9 +59,10 @@ function ToastPill({ toast, onExpire }: { toast: StatToast; onExpire: (id: numbe
   const gain = toast.delta >= 0;
   return (
     <Animated.View style={style}>
-      <ChamferBox chamfer={7} fill="rgba(12,15,20,0.96)" stroke={gain ? Rune.goldEdge : '#7A3A32'} strokeWidth={1.2} style={{ paddingHorizontal: 13, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={{ color: gain ? Rune.goldBright : '#E2705A', fontSize: 15, fontFamily: Display.black }}>{gain ? `+${toast.delta}` : `${toast.delta}`}</Text>
-        <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.3 }}>{toast.label}</Text>
+      <ChamferBox chamfer={7} fill="rgba(12,15,20,0.96)" stroke={toast.notice ? Rune.hopeAmber : gain ? Rune.goldEdge : '#7A3A32'} strokeWidth={1.2} style={{ paddingHorizontal: 13, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {/* #318: a notice toast shows just its message (no signed number). */}
+        {toast.notice ? null : <Text style={{ color: gain ? Rune.goldBright : '#E2705A', fontSize: 15, fontFamily: Display.black }}>{gain ? `+${toast.delta}` : `${toast.delta}`}</Text>}
+        <Text style={{ color: toast.notice ? Rune.goldText : Rune.sheet, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.3 }}>{toast.label}</Text>
       </ChamferBox>
     </Animated.View>
   );
