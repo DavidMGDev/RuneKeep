@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -40,7 +40,7 @@ const FACET_HINT: Record<CompanionFacet, string> = {
 const BORDER = '#5a6e3e';
 const INK = '#2c3a1c';
 
-function Padlock({ locked }: { locked: boolean }) {
+const Padlock = memo(function Padlock({ locked }: { locked: boolean }) {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24">
       <Rect x={5} y={11} width={14} height={9} rx={1.6} fill="#16200d" stroke={Rune.goldBright} strokeWidth={1.8} />
@@ -48,7 +48,7 @@ function Padlock({ locked }: { locked: boolean }) {
       <Rect x={11} y={14} width={2} height={3.4} rx={1} fill={Rune.goldBright} />
     </Svg>
   );
-}
+});
 
 function Step({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
   return (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polygon, Rect } from 'react-native-svg';
@@ -76,8 +76,9 @@ export function WildshapeIcon() {
   );
 }
 
-/** Companion (#311, Beastbound Ranger): a canine companion's head — distinct from the Beastform paw. */
-export function CompanionIcon() {
+/** Companion (#311, Beastbound Ranger): a canine companion's head — distinct from the Beastform paw.
+ *  Memoized (#328): zero props, so it renders once and never re-walks on parent re-renders. */
+export const CompanionIcon = memo(function CompanionIcon() {
   return (
     <Svg width={42} height={42} viewBox="0 0 48 48">
       {/* ears */}
@@ -92,7 +93,7 @@ export function CompanionIcon() {
       <Path d="M 21 34 Q 24 37 27 34" fill="none" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
-}
+});
 
 /** Archive (#306): a banker's archive box — flat lid + a front handle slot, distinct from the domed,
  *  banded Inventory chest. The stash you move cards into. */
