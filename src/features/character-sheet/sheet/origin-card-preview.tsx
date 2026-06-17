@@ -27,6 +27,9 @@ export interface OriginPage {
   custom?: ReactNode;
   catalogId?: string;
   crossTrait?: 1 | 2;
+  /** #320: the card id this PAGE equips. Each page equips independently (a mixed ancestry's two cards
+   *  enable separately); pages sharing an id (e.g. the class-feature pages) sync. Absent → not equippable. */
+  enableId?: string;
 }
 
 /**
@@ -35,12 +38,13 @@ export interface OriginPage {
  * (#297): the Subclass badge shows the subclass then the class card + every feature page; a mixed
  * ancestry shows both ancestry cards, each with the trait it loses struck through. Tap the left/right
  * half of the card to page; diamond dots sit between the card and the controls (so Equip/Close never
- * collide with them). No rounded card corners. Equip/unequip is bound to the primary origin card id.
+ * collide with them). No rounded card corners. Equip/unequip targets the CURRENT page's card id (#320),
+ * so each page (e.g. a mixed ancestry's two cards) equips independently.
  */
 export function OriginCardPreview({
   pages,
   label,
-  enabled,
+  enabledIds,
   onToggle,
   onClose,
   tokens,
@@ -52,8 +56,9 @@ export function OriginCardPreview({
 }: {
   pages: OriginPage[];
   label: string;
-  enabled: boolean;
-  onToggle: () => void;
+  /** #320: the set of enabled card ids — the preview reads/toggles the CURRENT page's `enableId`. */
+  enabledIds: Set<string>;
+  onToggle: (id: string) => void;
   onClose: () => void;
   /** Card tokens (#244): a screen-space board lets the player decorate the primary card too. */
   tokens?: PlacedToken[];
@@ -71,6 +76,9 @@ export function OriginCardPreview({
   const multi = pages.length > 1;
   const [pageIdx, setPageIdx] = useState(0);
   const page = pages[Math.min(pageIdx, pages.length - 1)] ?? pages[0];
+  // #320: equip targets THIS page's card — each page enables independently (or syncs when pages share an id).
+  const curEnableId = page?.enableId;
+  const enabled = !!curEnableId && enabledIds.has(curEnableId);
   const flip = useCallback((dir: number) => {
     if (!multi) return;
     // #306: match the carousel's QUIET multi-page flip (was full volume here, far too loud on the badges).
@@ -98,7 +106,7 @@ export function OriginCardPreview({
   // scan-fill, then the corner check). The Equip button stays as an explicit alternative. A quick tap
   // still turns the page on a multi-page preview.
   const holdProgress = useSharedValue(0);
-  const commitToggle = useCallback(() => { onToggle(); focusHaptic(); }, [onToggle]);
+  const commitToggle = useCallback(() => { if (curEnableId) { onToggle(curEnableId); focusHaptic(); } }, [onToggle, curEnableId]);
   const hold = useMemo(
     () =>
       Gesture.LongPress()
@@ -156,8 +164,8 @@ export function OriginCardPreview({
             {page?.crossTrait && page?.catalogId ? <TraitCrossOut width={cardW} height={cardH} catalogId={page.catalogId} crossedTrait={page.crossTrait} /> : null}
             {/* press-and-hold scan-fill (#318): a translucent gold sheet rising from the bottom. */}
             <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.45)', borderTopWidth: 2, borderTopColor: Rune.goldBright }, fillStyle]} />
-            {/* equipped mark on the PRIMARY card (page 0) — equip is bound to that card. */}
-            {enabled && pageIdx === 0 ? <EnabledCorner width={cardW} height={cardH} /> : null}
+            {/* equipped mark on whichever page's card is enabled (#320) — each page tracks its own card. */}
+            {enabled ? <EnabledCorner width={cardW} height={cardH} /> : null}
           </View>
         </GestureDetector>
       </Animated.View>
@@ -170,14 +178,16 @@ export function OriginCardPreview({
         </Animated.View>
       ) : null}
       <Animated.View style={[{ marginTop: multi ? 12 : 18, width: cardW, gap: 10 }, ctrlStyle]}>
-        <RuneButton
-          label={enabled ? 'Unequip' : 'Equip'}
-          kind={enabled ? 'secondary' : 'primary'}
-          height={46}
-          muteSfx
-          onPress={onToggle}
-          accessibilityLabel={`${enabled ? 'Unequip' : 'Equip'} ${label}`}
-        />
+        {curEnableId ? (
+          <RuneButton
+            label={enabled ? 'Unequip' : 'Equip'}
+            kind={enabled ? 'secondary' : 'primary'}
+            height={46}
+            muteSfx
+            onPress={() => onToggle(curEnableId)}
+            accessibilityLabel={`${enabled ? 'Unequip' : 'Equip'} ${label}`}
+          />
+        ) : null}
         <Pressable onPress={close} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close" style={{ alignSelf: 'center', padding: 6 }}>
           <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Close</Text>
         </Pressable>

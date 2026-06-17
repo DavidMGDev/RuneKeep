@@ -936,9 +936,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         // feature pages (reusing the faces already assembled for the carousel's class-feature card).
         const sc = cardById(file.subclassCardId);
         if (!sc) return;
-        const pages: OriginPage[] = [{ source: sc.source, catalogId: sc.id }];
-        const featuresItem = carouselDecks?.abilities?.find((c) => c.id === `features-${file.className}`);
-        for (const f of featuresItem?.faces ?? []) pages.push({ source: f.source, custom: f.custom });
+        // #320: page 0 equips the subclass card; the class-feature pages all equip the one class-feature
+        // card (they share an id → sync, like a flip card's faces).
+        const pages: OriginPage[] = [{ source: sc.source, catalogId: sc.id, enableId: sc.id }];
+        const featuresId = `features-${file.className}`;
+        const featuresItem = carouselDecks?.abilities?.find((c) => c.id === featuresId);
+        for (const f of featuresItem?.faces ?? []) pages.push({ source: f.source, custom: f.custom, enableId: featuresId });
         setOriginPreview({ id: sc.id, pages, label: sc.label });
         return;
       }
@@ -950,16 +953,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           const a1 = cardById(m.first);
           const a2 = cardById(m.second);
           const pages: OriginPage[] = [];
-          if (a1) pages.push({ source: a1.source, catalogId: a1.id, crossTrait: 2 });
-          if (a2) pages.push({ source: a2.source, catalogId: a2.id, crossTrait: 1 });
+          // #320: each ancestry page equips ITS OWN card — independent enable, independent corner check.
+          if (a1) pages.push({ source: a1.source, catalogId: a1.id, crossTrait: 2, enableId: a1.id });
+          if (a2) pages.push({ source: a2.source, catalogId: a2.id, crossTrait: 1, enableId: a2.id });
           if (pages.length) { setOriginPreview({ id: file.ancestryCardId, pages, label: a1?.label ?? 'Ancestry' }); return; }
         }
         const a = cardById(file.ancestryCardId);
-        if (a) setOriginPreview({ id: a.id, pages: [{ source: a.source, catalogId: a.id }], label: a.label });
+        if (a) setOriginPreview({ id: a.id, pages: [{ source: a.source, catalogId: a.id, enableId: a.id }], label: a.label });
         return;
       }
       const c = cardById(file.communityCardId);
-      if (c) setOriginPreview({ id: c.id, pages: [{ source: c.source, catalogId: c.id }], label: c.label });
+      if (c) setOriginPreview({ id: c.id, pages: [{ source: c.source, catalogId: c.id, enableId: c.id }], label: c.label });
     },
     [file, carouselDecks],
   );
@@ -1694,8 +1698,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               key={originPreview.id}
               pages={originPreview.pages}
               label={originPreview.label}
-              enabled={enabledIds.has(originPreview.id)}
-              onToggle={() => onToggleCard(originPreview.id)}
+              enabledIds={enabledIds}
+              onToggle={onToggleCard}
               onClose={() => setOriginPreview(null)}
               tokens={cardTokens[originPreview.id] ?? []}
               drawerColor={file?.tokenColor}
