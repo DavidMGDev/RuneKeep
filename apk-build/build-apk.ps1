@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.6'                             # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.7'                             # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.6 - token-drawer polish, bigger dice, smoother float menu, and multi-page origin cards. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThe fullscreen-card token drawer is tidier: the edit/delete button is a single clean outline with a centred icon, and the action + die panels are larger. Dice you drag onto a card are now twice as big and start at 1 (the source still shows the die's maximum). The float menu stays smooth after you decorate cards with tokens.`n`nArmor now follows the rules: a new character starts at armor score 0 (unarmored), and equipping armor or levelling raises your armor score and damage thresholds - every change shows in the Modifiers tab.`n`nThe device Back button no longer dumps you out by accident: it closes whatever panel is open, and only asks before leaving to character selection when nothing is open. The Cards menu opens on the Cards tab. Tapping Subclass now flips through your subclass and your whole class card; a mixed-ancestry character's Ancestry badge shows both ancestry cards with the right traits struck through.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.7 - a maintenance release. No gameplay changes: every feature works exactly as in v0.6, with a cleaner, better-organized codebase under the hood. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nUnder the hood: all static game data is centralized into one place, dead files and stale docs were removed, the oversized screens were split into smaller modules, and the build has a proper npm front-door. Purely internal quality work - the app you use is unchanged.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
