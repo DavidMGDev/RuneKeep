@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.9.2'                           # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.9.3'                           # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.9.2 - small fixes on top of v0.9.1. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis release:`n- MIXED ANCESTRY (and every multi-page origin card) now equips EACH PAGE independently - flip to your 2nd ancestry and equip it on its own (its own equip state + corner check), instead of mirroring the first.`n- GOLDEN GEAR is ~14% more sensitive: a single gear drag now carries from the last card straight into the next category, no extra scroll.`n`nv0.9.1 brought: origin cards equip by press-and-hold, titleless cards, the Beastbound companion reworked into one lockable card per facet, and a 5-active-domain-card cap. v0.9 brought full multiclassing (level 5+), the Ranger companion, and group card moves, plus the folded-in v0.8 polish.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.9.3 - a one-fix release on top of v0.9.2. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis release:`n- Editing the ONLY card in a category (e.g. the default note in Notes) no longer yanks you to a different category. You now stay put while the card re-renders.`n`nRecent history: v0.9.2 made multi-page origin cards equip per page (equip your 2nd ancestry on its own) and made the golden gear ~14% more sensitive. v0.9.1 added press-and-hold origin equip, titleless cards, the per-facet lockable Beastbound companion, and a 5-active-domain-card cap. v0.9 brought full multiclassing (level 5+), the Ranger companion, and group card moves.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
