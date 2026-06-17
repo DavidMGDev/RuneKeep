@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
+import { PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 
 import { EnabledCorner } from '../components/enabled-corner';
 import { TraitCrossOut } from '../components/trait-cross-out';
@@ -67,7 +68,8 @@ export function OriginCardPreview({
   const page = pages[Math.min(pageIdx, pages.length - 1)] ?? pages[0];
   const flip = (dir: number) => {
     if (!multi) return;
-    playSfx('gearScroll2');
+    // #306: match the carousel's QUIET multi-page flip (was full volume here, far too loud on the badges).
+    playSfx('gearScroll2', { volume: PAGE_FLIP_VOLUME });
     setPageIdx((p) => (p + dir + pages.length) % pages.length);
   };
 
