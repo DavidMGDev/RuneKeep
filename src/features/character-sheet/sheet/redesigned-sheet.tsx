@@ -887,6 +887,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     toastId.current += fresh.length;
     setToasts((list) => [...list, ...fresh].slice(-5));
   }, []);
+  // #318: a plain notice toast (no numeric delta), e.g. the domain-card cap warning.
+  const pushNotice = useCallback((label: string) => {
+    const id = toastId.current++;
+    setToasts((list) => [...list, { id, label, delta: 0, notice: true }].slice(-5));
+  }, []);
+  // #318: consecutive attempts to enable a 6th domain card without leaving fullscreen. 3 in a row
+  // overrides the cap (a debug escape hatch); reset on any other toggle or on leaving fullscreen.
+  const domainOverrideRef = useRef(0);
   // Level Up (#167): the domain cards available to gain (≤ the NEXT level, in this class's domains,
   // not already owned), the multiclass options, and the class-derived stat defaults.
   const levelData = useMemo(() => {
@@ -1364,12 +1372,27 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           beastformUnequipped = undefined;
           beastformDomainSnapshot = undefined;
         }
+        domainOverrideRef.current = 0; // #318: any non-blocked toggle ends an exceed streak
         playSfx(isWs ? 'disableBeastform' : 'cardDisable');
       } else {
         // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
         if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
         if (transformed && cidWeapon) { playSfx('floatMenuClose'); return; } // no weapons while transformed
         if (transformed && cidDomain && !(beastformDomainSnapshot ?? []).includes(ref)) { playSfx('floatMenuClose'); return; } // no NEW domain cards
+        // #318: at most 5 ENABLED domain cards (any domain). A 6th is blocked with a "Maximum 5 Domain
+        // Cards" notice; insisting 3× in a row (without leaving fullscreen) overrides it (debug).
+        if (cidDomain) {
+          const enabledDomains = [...cur].filter((x) => cardById(x)?.kind === 'domain').length;
+          if (enabledDomains >= 5) {
+            domainOverrideRef.current += 1;
+            if (domainOverrideRef.current < 3) { playSfx('floatMenuClose'); pushNotice('Maximum 5 Domain Cards'); return; }
+            domainOverrideRef.current = 0; // 3rd insistence → let it through
+          } else {
+            domainOverrideRef.current = 0;
+          }
+        } else {
+          domainOverrideRef.current = 0;
+        }
         playSfx(isWs ? 'activateBeastform' : 'cardEnable');
         if (isWs) {
           // Transform: auto-unequip weapon cards (restored on exit); snapshot the enabled domain cards
@@ -1429,7 +1452,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       burstResources(c, result);
       setCharacter(result);
     },
-    [file, burstResources, pushToasts],
+    [file, burstResources, pushToasts, pushNotice],
   );
   // Beastform auto-exit at 0 HP (#279): dropping to 0 ends the form — weapons re-equip, domain limits
   // lift. Reactive so it fires however HP reached 0 (damage panel, taps, etc.). Self-terminating: once
@@ -1531,7 +1554,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}

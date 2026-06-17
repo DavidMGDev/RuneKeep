@@ -87,7 +87,7 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
   // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
   // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
   // four built-in keys always exist (empty) even if a real map omits one.
@@ -242,7 +242,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     machineState.value = 'expanded';
     fullscreenProgress.value = withSpring(0, FS_SPRING);
     playSfx('transitionIconFilled'); // #258: nicer leave sound than the old cardFullscreenLeave
-  }, [machineState, fullscreenProgress]);
+    onLeaveFullscreen?.(); // #318: leaving fullscreen ends a domain-cap override streak
+  }, [machineState, fullscreenProgress, onLeaveFullscreen]);
 
   const openOriginCard = useCallback(
     (slot: 0 | 1 | 2) => {
