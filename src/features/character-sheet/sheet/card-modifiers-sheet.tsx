@@ -4,7 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
-import { EffectPicker, EffectsField, isThresholdTarget, matchOption } from '@/components/effects-editor';
+import { EffectPicker, EffectsField, FormulaVarPicker, isThresholdTarget, matchOption, toEditableEffects } from '@/components/effects-editor';
 import { Body, Display, Rune } from '@/constants/theme';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
@@ -25,7 +25,7 @@ function resolvedDelta(e: CardEffect, character: Character, level: number): numb
       : e.formula.variable === 'proficiency' ? character.proficiency
       : character.traits[e.formula.variable] ?? 0;
     const div = e.formula.divide && e.formula.divide !== 0 ? e.formula.divide : 1;
-    return Math.ceil((base * (e.formula.multiply ?? 1)) / div);
+    return Math.ceil((base * (e.formula.multiply ?? 1)) / div) + (e.formula.plus ?? 0); // #325: + flat constant
   }
   if (e.byTier) return e.byTier[tierForLevel(level) - 1] ?? 0;
   return e.delta ?? 0;
@@ -70,12 +70,16 @@ export function CardModifiersSheet({
   const effects = effectsForCardId(cardId, file);
   const label = sourceLabelForCardId(cardId, file);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<CardEffect[]>(effects);
+  // #325: load the card's effects as EDITABLE shapes (legacy dynamics → formulas) so complex cards like
+  // Bare Bones (Strength+3, per-tier thresholds) actually show + change in the editor.
+  const [draft, setDraft] = useState<CardEffect[]>(() => toEditableEffects(effects));
   const [pick, setPick] = useState<number | null>(null);
+  const [pickVar, setPickVar] = useState<number | null>(null);
 
-  const startEdit = () => { setDraft(effectsForCardId(cardId, file)); setEditing(true); };
+  const startEdit = () => { setDraft(toEditableEffects(effectsForCardId(cardId, file))); setEditing(true); };
   const save = () => { onSaveEffects?.(cardId, draft); setEditing(false); };
-  const previewFn = (e: CardEffect) => (e.dynamic === 'formula' ? resolvedDelta(e, character, character.level) : null);
+  // live "= N" preview for the dynamic shapes (formula / per-tier) at the current character.
+  const previewFn = (e: CardEffect) => (e.dynamic === 'formula' || e.byTier ? resolvedDelta(e, character, character.level) : null);
 
   return (
     <FullScreenPanel
@@ -94,7 +98,7 @@ export function CardModifiersSheet({
       }>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
         {editing ? (
-          <EffectsField effects={draft} onChange={setDraft} onRequestPick={setPick} preview={previewFn} />
+          <EffectsField effects={draft} onChange={setDraft} onRequestPick={setPick} onRequestPickVar={setPickVar} preview={previewFn} />
         ) : (
           <>
             {canEdit && onSaveEffects ? (
@@ -134,6 +138,16 @@ export function CardModifiersSheet({
             setPick(null);
           }}
           onClose={() => setPick(null)}
+        />
+      ) : null}
+      {pickVar != null && draft[pickVar] ? (
+        <FormulaVarPicker
+          current={draft[pickVar].formula?.variable}
+          onPick={(variable) => {
+            setDraft((d) => d.map((e, j) => (j === pickVar ? { ...e, formula: { ...(e.formula ?? { variable }), variable } } : e)));
+            setPickVar(null);
+          }}
+          onClose={() => setPickVar(null)}
         />
       ) : null}
     </FullScreenPanel>

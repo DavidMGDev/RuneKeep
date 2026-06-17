@@ -9,7 +9,7 @@ import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { FORGED_H, ForgedCard } from '@/features/create/components/forged-card';
 import { type CardEffect } from '@/lib/modifiers';
-import { EffectPicker, EffectsField, isThresholdTarget, matchOption } from '@/components/effects-editor';
+import { EffectPicker, EffectsField, FormulaVarPicker, isThresholdTarget, matchOption } from '@/components/effects-editor';
 import { playSfx } from '@/lib/sfx';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -147,6 +147,7 @@ export function CardEditor({
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
   const [pickEffect, setPickEffect] = useState<number | null>(null);
+  const [pickVar, setPickVar] = useState<number | null>(null); // #325: formula-variable picker
 
   // Entrance (#201): the scrim fades in and the card + fields rise/fade in instead of popping.
   const reduced = useReducedMotion();
@@ -274,7 +275,7 @@ export function CardEditor({
               />
             </ChamferBox>
           )}
-          {experienceMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} />}
+          {experienceMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} />}
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
@@ -295,6 +296,16 @@ export function CardEditor({
             setPickEffect(null);
           }}
           onClose={() => setPickEffect(null)}
+        />
+      ) : null}
+      {pickVar != null && draft.effects[pickVar] ? (
+        <FormulaVarPicker
+          current={draft.effects[pickVar].formula?.variable}
+          onPick={(variable) => {
+            setDraft((d) => ({ ...d, effects: d.effects.map((e, j) => (j === pickVar ? { ...e, formula: { ...(e.formula ?? { variable }), variable } } : e)) }));
+            setPickVar(null);
+          }}
+          onClose={() => setPickVar(null)}
         />
       ) : null}
       {pickType && typeGroups ? (
