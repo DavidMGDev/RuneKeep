@@ -1117,6 +1117,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
+  // Group drag-drop apply (#311): several cards land together in `toCat`; `orderedIds` is the target's
+  // full visible order with the moved group spliced in at the drop index. Same as onReorderCard but for
+  // a set: re-file each moved id and drop them all from every other category's explicit order.
+  const onReorderCards = useCallback((movedIds: string[], toCat: string, orderedIds: string[]) => {
+    setFile((f) => {
+      if (!f) return f;
+      const moved = new Set(movedIds);
+      const cardCategory = { ...(f.cardCategory ?? {}) };
+      for (const id of movedIds) cardCategory[id] = toCat;
+      const cardOrder = { ...(f.cardOrder ?? {}) };
+      for (const k of Object.keys(cardOrder)) if (k !== toCat) cardOrder[k] = cardOrder[k].filter((x) => !moved.has(x));
+      cardOrder[toCat] = orderedIds;
+      const next = { ...f, cardCategory, cardOrder };
+      void saveCharacter(next);
+      return next;
+    });
+  }, []);
   // Delete ANY cards (#248 item 5): strip authored/acquired/domain entries + enabled/override/tokens,
   // and add every id to `removedCardIds` so SYSTEM cards (origins, class feature, equipment, gold) drop
   // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
@@ -1547,6 +1564,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onReorder={onReorderCategories}
               onMoveCards={onMoveCards}
               onReorderCard={onReorderCard}
+              onReorderCards={onReorderCards}
               onDeleteCards={onDeleteCards}
               onAddCardInCategory={onAddCardInCategory}
               onAddType={onAddCardType}

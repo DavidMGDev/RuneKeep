@@ -21,6 +21,9 @@ import { CenterDialog, FullScreenPanel } from './full-screen-panel';
 
 const SCRIM = 'rgba(20,24,31,0.7)';
 const GOLD_BORDER = 'rgba(218,162,73,0.4)';
+/** Categories whose cards are LOCKED to them (#279/#311): Beastform cards can't be moved out, and
+ *  nothing can be moved in. Companion cards are NOT locked (they're movable, just not deletable). */
+const LOCKED_CATS = new Set<string>(['wildshape']);
 
 /** Proper SVG icon buttons for the category row (#264 item 4) — no emoji. */
 function PencilIcon({ color }: { color: string }) {
@@ -57,6 +60,8 @@ interface Props {
   onReorder: (order: string[]) => void;
   onMoveCards: (ids: string[], categoryKey: string) => void;
   onReorderCard: (movedId: string, toCat: string, orderedIds: string[]) => void;
+  /** Group move (#311): move several cards to a category at a position, preserving their order. */
+  onReorderCards: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
   onDeleteCards: (ids: string[]) => void;
   onAddCardInCategory: (key: CardCategory) => void;
   onAddType: (label: string) => void;
@@ -118,7 +123,7 @@ function GoldTile() {
  * LONG-PRESS to pick it up and drag it to reorder within a category or move it to another.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, editableIds, onClose } = props;
+  const { isDruid, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   const [view, setView] = useState<'categories' | 'cards' | 'types'>('cards'); // #297: open on Cards
 
@@ -143,7 +148,8 @@ export function CardManagementPanel(props: Props) {
   const clearSelect = () => setSelected(new Set());
 
   // drag-drop state
-  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null); // the primary (finger) card
+  const [dragGroup, setDragGroup] = useState<string[]>([]); // #311: all ids moving together (1 = single)
   const [hover, setHover] = useState<{ overId: string; before: boolean } | null>(null); // live drop preview
   const ghostX = useSharedValue(0);
   const ghostY = useSharedValue(0);
@@ -186,55 +192,68 @@ export function CardManagementPanel(props: Props) {
     for (const [tid, ref] of tileRefs.current) {
       ref.measureInWindow?.((x, y, w, h) => { if (w > 0) tileRects.current.set(tid, { x, y, w, h }); });
     }
+    // #311 group drag: dragging a SELECTED card while several are selected drags them all together,
+    // in DISPLAY order (so the moved group keeps its relative order regardless of click order). A
+    // single or unselected card drags alone.
+    const group = selected.has(id) && selected.size > 1
+      ? ordered.flatMap((k) => (decks[k] ?? []).filter((c) => selected.has(c.id)).map((c) => c.id))
+      : [id];
+    setDragGroup(group);
     setDragId(id);
-  }, []);
+  }, [selected, ordered, decks]);
+
+  const srcCatOf = useCallback((id: string) => tileCat.current.get(id) ?? Object.keys(decks).find((k) => (decks[k] ?? []).some((c) => c.id === id)) ?? '', [decks]);
 
   const endDrag = useCallback((absX: number, absY: number) => {
-    const moved = dragId;
+    const primary = dragId;
+    const group = dragGroup.length ? dragGroup : primary ? [primary] : [];
     setDragId(null);
+    setDragGroup([]);
     setHover(null);
     ghostOn.value = 0;
-    if (!moved) return;
+    if (!primary || group.length === 0) return;
     playSfx('cardDragEnd'); // #255: a card was picked up and dropped
     // find the tile under the finger
     let overId: string | null = null;
     for (const [tid, r] of tileRects.current) {
       if (absX >= r.x && absX <= r.x + r.w && absY >= r.y && absY <= r.y + r.h) { overId = tid; break; }
     }
-    let toCat: string | null = null;
-    let insertIndex = 0;
-    if (overId && overId !== moved) {
-      toCat = tileCat.current.get(overId) ?? null;
-      if (toCat) {
-        const ids = (decks[toCat] ?? []).map((c) => c.id).filter((x) => x !== moved);
-        const baseIdx = ids.indexOf(overId);
-        const r = tileRects.current.get(overId)!;
-        insertIndex = baseIdx + (absX > r.x + r.w / 2 ? 1 : 0);
-        const list = [...ids];
-        list.splice(Math.max(0, Math.min(insertIndex, list.length)), 0, moved);
-        onReorderCard(moved, toCat, list);
-      }
-    } else if (!overId) {
-      // dropped over a category's area but not on a tile → append to the nearest section by Y band
-      let best: string | null = null;
+    // a single card dropped on itself with no positional intent → no-op
+    if (group.length === 1 && overId === primary) return;
+    // resolve target category: the hovered tile's category, else the nearest section by Y band
+    let toCat: string | null = overId ? tileCat.current.get(overId) ?? null : null;
+    let afterOver = false;
+    if (overId) { const r = tileRects.current.get(overId)!; afterOver = absX > r.x + r.w / 2; }
+    if (!toCat) {
       let bestDist = Infinity;
-      for (const [tid, r] of tileRects.current) {
-        const cy = r.y + r.h / 2;
-        const d = Math.abs(absY - cy);
-        if (d < bestDist) { bestDist = d; best = tileCat.current.get(tid) ?? null; }
-      }
-      if (best) {
-        const ids = (decks[best] ?? []).map((c) => c.id).filter((x) => x !== moved);
-        onReorderCard(moved, best, [...ids, moved]);
-      }
+      for (const [tid, r] of tileRects.current) { const cy = r.y + r.h / 2; const d = Math.abs(absY - cy); if (d < bestDist) { bestDist = d; toCat = tileCat.current.get(tid) ?? null; } }
     }
-  }, [dragId, decks, onReorderCard, ghostOn]);
+    if (!toCat || LOCKED_CATS.has(toCat)) return; // can't drop into a locked (Beastform) category
+    // movable = the group minus cards locked to their own category (Beastform stays put)
+    const movable = group.filter((id) => !LOCKED_CATS.has(srcCatOf(id)));
+    if (movable.length === 0) return;
+    const movableSet = new Set(movable);
+    const groupSet = new Set(group);
+    // target order: existing cards (minus the movable group) with the group spliced at the drop index
+    const base = (decks[toCat] ?? []).map((c) => c.id).filter((id) => !movableSet.has(id));
+    let idx = base.length; // default = append
+    if (overId && !groupSet.has(overId)) { const b = base.indexOf(overId); if (b >= 0) idx = b + (afterOver ? 1 : 0); }
+    const list = [...base];
+    list.splice(Math.max(0, Math.min(idx, list.length)), 0, ...movable);
+    if (movable.length === 1) {
+      onReorderCard(movable[0], toCat, list);
+    } else {
+      onReorderCards(movable, toCat, list);
+      clearSelect(); // the group has been re-filed; clear the now-stale selection
+    }
+  }, [dragId, dragGroup, decks, srcCatOf, onReorderCard, onReorderCards, ghostOn]);
 
   const ghostStyle = useAnimatedStyle(() => ({
     opacity: ghostOn.value,
     transform: [{ translateX: ghostX.value - TILE_W / 2 }, { translateY: ghostY.value - TILE_H / 2 }, { scale: 1.08 }],
   }));
   const dragItem = dragId ? Object.values(decks).flat().find((c) => c.id === dragId) : null;
+  const dragSet = useMemo(() => new Set(dragGroup), [dragGroup]); // #311: every card lifted in this drag
 
   // Selection-footer derivations (#306): which actions apply, with the Gold card protected.
   const selArr = [...selected];
@@ -293,7 +312,7 @@ export function CardManagementPanel(props: Props) {
             decks={decks}
             customCategories={customCategories}
             selected={selected}
-            dragId={dragId}
+            dragSet={dragSet}
             hover={hover}
             onToggleSelect={toggleSelect}
             onAddCardInCategory={onAddCardInCategory}
@@ -312,10 +331,19 @@ export function CardManagementPanel(props: Props) {
       </ScrollView>
     </FullScreenPanel>
 
-      {/* floating drag ghost (screen-space, OUTSIDE the clipped panel so it isn't cut off) */}
+      {/* floating drag ghost (screen-space, OUTSIDE the clipped panel so it isn't cut off). For a group
+          drag (#311) a stacked backing card + a count badge show how many move together. */}
       {dragItem ? (
-        <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 2, borderColor: Rune.red, overflow: 'hidden', backgroundColor: '#0c0f14', zIndex: 10006 }, ghostStyle]}>
-          {dragItem.live ? <GoldTile /> : dragItem.thumb ? <Image source={dragItem.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" /> : null}
+        <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: TILE_W, height: TILE_H, zIndex: 10006 }, ghostStyle]}>
+          {dragGroup.length > 1 ? <View style={{ position: 'absolute', left: 6, top: 6, width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 2, borderColor: Rune.red, backgroundColor: '#0c0f14', opacity: 0.6 }} /> : null}
+          <View style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 2, borderColor: Rune.red, overflow: 'hidden', backgroundColor: '#0c0f14' }}>
+            {dragItem.live ? <GoldTile /> : dragItem.thumb ? <Image source={dragItem.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" /> : null}
+          </View>
+          {dragGroup.length > 1 ? (
+            <View style={{ position: 'absolute', top: -8, right: -8, minWidth: 26, height: 26, paddingHorizontal: 6, borderRadius: 13, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: Rune.ivory }}>
+              <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>{dragGroup.length}</Text>
+            </View>
+          ) : null}
         </Animated.View>
       ) : null}
 
@@ -418,8 +446,8 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
   );
 }
 
-function CardsView({ ordered, decks, customCategories, selected, dragId, hover, onToggleSelect, onAddCardInCategory, tileRefs, tileCat, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn }: {
-  ordered: string[]; decks: Record<string, CardItem[]>; customCategories: CustomCategory[]; selected: Set<string>; dragId: string | null; hover: { overId: string; before: boolean } | null;
+function CardsView({ ordered, decks, customCategories, selected, dragSet, hover, onToggleSelect, onAddCardInCategory, tileRefs, tileCat, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn }: {
+  ordered: string[]; decks: Record<string, CardItem[]>; customCategories: CustomCategory[]; selected: Set<string>; dragSet: Set<string>; hover: { overId: string; before: boolean } | null;
   onToggleSelect: (id: string) => void; onAddCardInCategory: (key: string) => void;
   tileRefs: Map<string, View>; tileCat: Map<string, string>; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void; onHover: (x: number, y: number) => void;
   ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
@@ -447,7 +475,7 @@ function CardsView({ ordered, decks, customCategories, selected, dragId, hover, 
             ) : (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {items.map((item) => (
-                  <CardTile key={item.id} item={item} cat={key} selected={selected.has(item.id)} dimmed={dragId === item.id} insertBar={hover?.overId === item.id ? (hover.before ? 'before' : 'after') : null} onToggleSelect={onToggleSelect} onBeginDrag={onBeginDrag} onEndDrag={onEndDrag} onHover={onHover} setRef={setRef} setCat={setCat} ghostX={ghostX} ghostY={ghostY} ghostOn={ghostOn} />
+                  <CardTile key={item.id} item={item} cat={key} selected={selected.has(item.id)} dimmed={dragSet.has(item.id)} insertBar={hover?.overId === item.id ? (hover.before ? 'before' : 'after') : null} onToggleSelect={onToggleSelect} onBeginDrag={onBeginDrag} onEndDrag={onEndDrag} onHover={onHover} setRef={setRef} setCat={setCat} ghostX={ghostX} ghostY={ghostY} ghostOn={ghostOn} />
                 ))}
               </View>
             )}
