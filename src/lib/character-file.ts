@@ -215,22 +215,43 @@ export function serializeCharacterFile(file: CharacterFile): string {
 }
 
 /**
- * Per-level +1/+1 damage-threshold bonus as MODIFIER sources (#282), one per level gained, so each
- * shows in the Modifiers breakdown as "Level N" and — crucially — STACKS on top of an armor's `set`
- * threshold (the threshold pass adds bonuses after a set). Base thresholds are now the level-1 floor
- * (1 / 2); the level scaling lives here instead of in the base so a `set` no longer wipes it.
+ * Per-level damage-threshold bonus as MODIFIER sources (#282/#320), one per level INCLUDING level 1,
+ * so the base thresholds are 0/0 and ALL of the value comes from these bonuses (the threshold pass adds
+ * bonuses after a `set`, so they stack on an armor/Bare-Bones set instead of being wiped).
+ *
+ * The Daggerheart rule (#320): you always ADD YOUR LEVEL to the thresholds of your armor or domain card.
+ * So when a card SETS the thresholds (`armored`), each level grants +1 major / +1 severe → set + level.
+ * An UNARMORED character (no set) instead scales 1×level major / 2×level severe (base 0/0) — the same
+ * 1 / 2 at level 1 as before, now treated as a per-level bonus rather than a baked-in base.
  */
-function levelThresholdSources(level: number): EffectSource[] {
+function levelThresholdSources(level: number, armored: boolean): EffectSource[] {
   const out: EffectSource[] = [];
-  for (let L = 2; L <= level; L++) {
+  const severeDelta = armored ? 1 : 2;
+  for (let L = 1; L <= level; L++) {
     // #297: the source is already "Level N"; the note must NOT repeat it (the panel renders
     // "{source} · {note}", so a "Level N:" note printed "Level 2 · Level 2: …").
     out.push({ source: `Level ${L}`, effects: [
-      { target: 'majorThreshold', mode: 'bonus', delta: 1, note: '+1 damage thresholds' },
-      { target: 'severeThreshold', mode: 'bonus', delta: 1, note: '+1 damage thresholds' },
+      { target: 'majorThreshold', mode: 'bonus', delta: 1, note: '+1 major threshold' },
+      { target: 'severeThreshold', mode: 'bonus', delta: severeDelta, note: `+${severeDelta} severe threshold` },
     ] });
   }
   return out;
+}
+
+/** The enabled cards' effect sources (#175), deduped by ref so several copies apply once. */
+function enabledCardSources(file: CharacterFile): EffectSource[] {
+  return [...new Set(file.enabledCardIds ?? [])]
+    .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
+    .filter((s) => s.effects.length > 0);
+}
+
+/** Full effect sources = the per-level threshold bonus (armored-aware, #320) + the enabled cards. */
+function allEffectSources(file: CharacterFile): EffectSource[] {
+  const cards = enabledCardSources(file);
+  // "Armored" = some enabled card SETS a threshold (armor card, or Bare Bones). Then the level bonus is
+  // +1/+1 (add-your-level on top of the set); otherwise the unarmored 1×/2× scaling applies.
+  const armored = cards.some((s) => s.effects.some((e) => (e.target === 'majorThreshold' || e.target === 'severeThreshold') && e.mode === 'set'));
+  return [...levelThresholdSources(file.level, armored), ...cards];
 }
 
 /**
@@ -269,19 +290,13 @@ export function toSheetCharacter(file: CharacterFile): Character {
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
-    // Base thresholds are the LEVEL-1 floor (#282): Major 1 / Severe 2. The per-level +1/+1 is added as
-    // bonus modifier sources (levelThresholdSources) so it stacks on an armor `set` instead of being
-    // wiped by it, and shows per level in the Modifiers breakdown.
-    majorThreshold: 1,
-    severeThreshold: 2,
+    // #320: base thresholds are 0/0 — ALL value is per-level bonuses (levelThresholdSources), so the
+    // character's level is always added to an armor/Bare-Bones `set`, and an unarmored character scales
+    // 1×level / 2×level (still 1 / 2 at level 1). Nothing is baked into the base for a `set` to wipe.
+    majorThreshold: 0,
+    severeThreshold: 0,
   };
-  const sources: EffectSource[] = [
-    ...levelThresholdSources(file.level),
-    // #277: enabledCardIds holds REFS; dedupe so several copies of one card apply their effect once.
-    ...[...new Set(file.enabledCardIds ?? [])]
-      .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
-      .filter((s) => s.effects.length > 0),
-  ];
+  const sources = allEffectSources(file);
   const sheet = computeSheet(base, file.level, sources);
   const maxHp = sheet.maxHp.total;
   const stressMax = sheet.stressMax.total;
@@ -338,15 +353,8 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0),
-    majorThreshold: 1,
-    severeThreshold: 2,
+    majorThreshold: 0, // #320: thresholds come entirely from per-level bonuses (see toSheetCharacter)
+    severeThreshold: 0,
   };
-  const sources: EffectSource[] = [
-    ...levelThresholdSources(file.level),
-    // #277: enabledCardIds holds REFS; dedupe so several copies of one card apply their effect once.
-    ...[...new Set(file.enabledCardIds ?? [])]
-      .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
-      .filter((s) => s.effects.length > 0),
-  ];
-  return computeSheet(base, file.level, sources);
+  return computeSheet(base, file.level, allEffectSources(file));
 }

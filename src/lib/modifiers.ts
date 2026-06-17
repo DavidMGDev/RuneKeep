@@ -162,9 +162,10 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
       b.total += d;
     }
   }
-  // Threshold pass (#242 item 9): base is level-based (Major = level, Severe = 2×level, supplied in
-  // `base`). A `set` effect overrides that base (last enabled wins — the toggle layer keeps it to one);
-  // `bonus` effects add on top. Contributions are recorded so the Modifiers panel shows provenance.
+  // Threshold pass (#242 item 9 / #320): base thresholds are 0; ALL value comes from sources — the
+  // per-level bonus (level scaling / add-your-level) plus armor/Bare-Bones. A `set` effect overrides the
+  // base (last enabled wins — the toggle layer keeps it to one); `bonus` effects add on top. Contributions
+  // are recorded so the Modifiers panel shows provenance.
   for (const t of THRESHOLD_TARGETS) {
     const b = out[t];
     let setVal: number | null = null;
