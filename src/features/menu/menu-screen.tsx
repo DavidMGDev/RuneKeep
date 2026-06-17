@@ -10,7 +10,7 @@ import { FitLine } from '@/components/fit-line';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { Body, Display, Rune } from '@/constants/theme';
-import { CATALOG } from '@/features/cards/catalog';
+import { CATALOG } from '@/data/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 

@@ -3,7 +3,7 @@
  * _pdfwork/codegen.py. Most are activated/temporary (effects: []); a few permanent passives (e.g.
  * the attribute Relics) carry structured `effects` the modifier engine applies when enabled.
  */
-import type { CardEffect } from './modifiers';
+import type { CardEffect } from '@/lib/modifiers';
 
 export interface LootDef {
   id: string;

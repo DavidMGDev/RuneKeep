@@ -7,7 +7,7 @@ import { CardMarkdownBody } from '@/components/card-markdown';
 import { DividerPlaque, getPlaqueTheme } from './card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
-import { type ArmorDef, type WeaponDef } from '../equipment-data';
+import { type ArmorDef, type WeaponDef } from '@/data/equipment-data';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;

@@ -1,4 +1,4 @@
-"""Generate src/features/cards/catalog.ts — static requires + metadata for every card.
+"""Generate src/data/catalog.ts — static requires + metadata for every card.
 
 Metro can only bundle literal require() paths, so the catalog must be generated, not globbed at
 runtime. Re-run whenever cards are added/renamed. Reads the asset tree, derives metadata from the
@@ -15,8 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CARDS = ROOT / "assets" / "extracted_cards"
-OUT = ROOT / "src" / "features" / "cards" / "catalog.ts"
-REL = "../../../assets/extracted_cards"
+OUT = ROOT / "src" / "data" / "catalog.ts"
+REL = "../../assets/extracted_cards"
 
 TIER_NAMES = {1: "Foundation", 2: "Specialization", 3: "Mastery"}
 

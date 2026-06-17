@@ -11,7 +11,7 @@ import SorcererBanner from '../../../../assets/art/classBanners/image-4.svg';
 import WarriorBanner from '../../../../assets/art/classBanners/image.svg';
 import WizardBanner from '../../../../assets/art/classBanners/image-2.svg';
 import { type ClassName } from '@/constants/identity';
-import { CLASS_DATA } from '../class-data';
+import { CLASS_DATA } from '@/data/class-data';
 
 /**
  * The nine class picks as FORGED (custom, code-rendered) cards. Banner art mapped by reading the
