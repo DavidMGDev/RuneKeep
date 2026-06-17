@@ -87,7 +87,7 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
   // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
   // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
   // four built-in keys always exist (empty) even if a real map omits one.
@@ -205,16 +205,17 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
 
   // The ring can change underfoot (#214/#227): hiding the current category in the Cards panel, or
   // loading a non-Druid, can leave `category` outside the active ring. Snap to a valid category and
-  // recenter. No machine-state guard (#227): category only ever leaves the ring via the Cards panel,
-  // where the carousel is unloaded — so the user is safely on an enabled category when it reloads.
+  // recenter. #320: guard on `validRing` (available − hidden, EMPTY INCLUDED), NOT the over-scroll
+  // `ring` (which drops empty categories) — otherwise editing the ONLY card in a category transiently
+  // empties its deck mid-reforge, drops it from `ring`, and yanks the player to another category.
   useEffect(() => {
-    if (ring.includes(category)) return;
+    if ((validRing ?? ring).includes(category)) return;
     const fallback = ring[0] ?? 'abilities';
     setCategoryState(fallback);
     const n = decksRef.current[fallback]?.length ?? 0;
     rotation.value = middleRotation(n);
     focusIndex.value = Math.round(middleRotation(n) / ANGLE_STEP);
-  }, [ring, category, rotation, focusIndex]);
+  }, [validRing, ring, category, rotation, focusIndex]);
 
   // Carousel loads CENTERED on create + load (#174): the initial rotation is computed from whatever
   // deck length is present at mount, but a real character's decks arrive async (file derivation +

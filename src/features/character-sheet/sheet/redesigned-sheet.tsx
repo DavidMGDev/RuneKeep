@@ -1086,16 +1086,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // The active category ring (#214/#227/#246/#250): available categories (built-in + custom) reordered
   // by `categoryOrder`, minus hidden, minus EMPTY ones — an over-scroll never lands on a category with
   // no cards (#250 item 3), so the player can't get trapped. Falls back to any non-empty category.
-  const ring = useMemo(() => {
+  // #320: the EMPTY-INCLUDED ring (available − hidden). The carousel uses this to decide whether the
+  // current category is still valid (so a transiently-empty category — e.g. its only card mid-reforge
+  // after an edit — doesn't yank the player away). The over-scroll `ring` below drops empty categories.
+  const validRing = useMemo(() => {
     const isDruid = file?.className === 'druid' || file?.multiclassName === 'druid'; // #311: incl. multiclass
     const companion = hasCompanion({ subclassCardId: file?.subclassCardId ?? '', multiclassSubclassCardId: file?.multiclassSubclassCardId }); // #311
-    const r = activeRing({ isDruid, hasCompanion: companion, hidden, custom: customCategories, order: file?.categoryOrder });
-    if (!carouselDecks) return r; // demo sheet (no file) — no per-deck counts, use the ring as-is
-    const nonEmpty = r.filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
-    if (nonEmpty.length) return nonEmpty;
-    const anyNonEmpty = availableCategories({ isDruid, hasCompanion: companion, custom: customCategories }).filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
-    return anyNonEmpty.length ? anyNonEmpty : ['abilities'];
-  }, [file?.className, file?.multiclassName, file?.subclassCardId, file?.multiclassSubclassCardId, hidden, customCategories, file?.categoryOrder, carouselDecks]);
+    return activeRing({ isDruid, hasCompanion: companion, hidden, custom: customCategories, order: file?.categoryOrder });
+  }, [file?.className, file?.multiclassName, file?.subclassCardId, file?.multiclassSubclassCardId, hidden, customCategories, file?.categoryOrder]);
+  const ring = useMemo(() => {
+    if (!carouselDecks) return validRing; // demo sheet (no file) — no per-deck counts, use the ring as-is
+    const nonEmpty = validRing.filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
+    return nonEmpty.length ? nonEmpty : ['abilities'];
+  }, [validRing, carouselDecks]);
   // Re-derive the runtime character from a new file, keeping in-play resource positions (clamped to the
   // new maxes). Used by edits that can change stats (e.g. deleting an enabled card).
   const commitFile = useCallback((next: CharacterFile) => {
@@ -1558,7 +1561,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
        <FloatMenuProvider onOpenInterface={setFloatKind}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}
