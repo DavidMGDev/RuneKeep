@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.9.5'                           # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.9.6'                           # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.9.5 - Armor Score now animates like HP. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis release:`n- GAINING ARMOR SCORE now fills the new armor slots all at once with the flying-in shield animation, exactly like gaining Max HP fills new hearts. Unequip the card and the lost Armor Score bursts back out, all at once. Sound is treated identically to HP. Stress and Hope are unchanged on purpose.`n`nRecent history: v0.9.4 = always add your level to set damage thresholds + editable complex card formulas in the Modifiers panel. v0.9.3 kept you in your category when editing its only card. v0.9.2 = per-page origin equip + a more sensitive golden gear. v0.9.1 = press-and-hold origin equip, titleless cards, the per-facet lockable companion, a 5-domain-card cap. v0.9 = multiclassing, the Ranger companion, group card moves.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.9.6 - big performance pass + two card fixes. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis release:`n- PERFORMANCE: the lag when several cards were equipped (the float menu and scrolling menus dropping to a crawl) is fixed. The equipped-card badge, the mixed-ancestry strike, the chamfered pips/panels, and the gold dividers are now drawn as cheap plain shapes instead of per-card vector canvases - identical look, far lighter to render. The float menu stays smooth with many cards enabled, and the cards still sit visible behind it (no flicker).`n- FIX: adding a card from the catalog now goes to the category you asked for - the current carousel category from the float menu, or the category whose Add button you pressed in the Cards panel - instead of always landing in Inventory or showing up in two places.`n- FIX: a Class card added from the catalog is now the full multi-page card (class + its feature pages), not a single page.`n`nRecent history: v0.9.5 = Armor Score animates like HP. v0.9.4 = level-aware damage thresholds + editable complex card formulas. v0.9.3 = stay-in-category on edit. v0.9.2 = per-page origin equip. v0.9.1 = companion rework + 5-domain cap. v0.9 = multiclassing, Ranger companion, group card moves.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
