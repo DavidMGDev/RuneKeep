@@ -76,6 +76,24 @@ export function WildshapeIcon() {
   );
 }
 
+/** Companion (#311, Beastbound Ranger): a canine companion's head — distinct from the Beastform paw. */
+export function CompanionIcon() {
+  return (
+    <Svg width={42} height={42} viewBox="0 0 48 48">
+      {/* ears */}
+      <Path d="M 12 9 L 19 19 L 11 21 Z" fill={FILL} stroke={GOLD} strokeWidth={2.2} strokeLinejoin="round" />
+      <Path d="M 36 9 L 29 19 L 37 21 Z" fill={FILL} stroke={GOLD} strokeWidth={2.2} strokeLinejoin="round" />
+      {/* head */}
+      <Path d="M 12 19 Q 12 15 24 15 Q 36 15 36 19 L 33 33 Q 30 41 24 41 Q 18 41 15 33 Z" fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      {/* eyes + snout */}
+      <Circle cx={19} cy={26} r={1.9} fill={GOLD} />
+      <Circle cx={29} cy={26} r={1.9} fill={GOLD} />
+      <Path d="M 24 30 L 24 34" stroke={GOLD} strokeWidth={2} strokeLinecap="round" />
+      <Path d="M 21 34 Q 24 37 27 34" fill="none" stroke={GOLD} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 /** Archive (#306): a banker's archive box — flat lid + a front handle slot, distinct from the domed,
  *  banded Inventory chest. The stash you move cards into. */
 export function ArchiveIcon() {
@@ -105,6 +123,8 @@ export function CategoryGlyph({ category }: { category: CardCategory }) {
       return <NotesIcon />;
     case 'wildshape':
       return <WildshapeIcon />;
+    case 'companion':
+      return <CompanionIcon />;
     case 'archive':
       return <ArchiveIcon />;
     default:

@@ -126,6 +126,23 @@ describe('multiclass (#311)', () => {
   });
 });
 
+describe('companion level-up (#311)', () => {
+  const ranger = (over: Partial<CharacterFile> = {}) => baseFile({ className: 'ranger', subclassCardId: 'subclass-beastbound-1-foundation', ...over });
+  it('folds chosen training options into the companion', () => {
+    const f = applyLevelUp(ranger({ level: 2 }), plan({ companionOptions: ['resilient', 'aware'] }), DEF);
+    expect(f.companion?.stressMax).toBe(4); // resilient +1 over the default 3
+    expect(f.companion?.evasion).toBe(12); // aware +2 over the default 10
+  });
+  it('grants the companion an Experience at a tier start', () => {
+    const f = applyLevelUp(ranger({ level: 1 }), plan({ experienceTitle: 'X' }), DEF); // L1 -> L2 is a tier start
+    expect(f.companion?.experiences.length).toBe(3); // 2 default + 1
+  });
+  it('leaves no companion for a non-Beastbound character', () => {
+    const f = applyLevelUp(baseFile({ level: 2 }), plan({ companionOptions: ['resilient'] }), DEF);
+    expect(f.companion).toBeUndefined();
+  });
+});
+
 describe('slot accounting', () => {
   it('picksUsed counts prof/multiclass as 2', () => {
     expect(picksUsed([{ key: 'prof' }])).toBe(2);
