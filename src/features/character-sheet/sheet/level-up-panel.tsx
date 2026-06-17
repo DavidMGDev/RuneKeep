@@ -10,6 +10,7 @@ import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
 import { advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, picksUsed, tierForLevel } from '@/lib/leveling';
 import type { CharacterFile } from '@/lib/character-file';
+import { type CompanionState, COMPANION_OPTIONS, companionOptionDef } from '@/lib/companion';
 import { playSfx } from '@/lib/sfx';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
 import { ForgedCard } from '@/features/create/components/forged-card';
@@ -17,7 +18,7 @@ import { ForgedCard } from '@/features/create/components/forged-card';
 import { TRAIT_ORDER } from '../character';
 import type { DomainCardInfo } from './domain-card-info';
 
-type StepKey = 'summary' | 'domain' | 'exp' | 'advance';
+type StepKey = 'summary' | 'domain' | 'exp' | 'advance' | 'companion';
 
 /** Step icons — the creation-screen visual language (icon tabs that reveal the next part, #233 item 4). */
 function StepGlyph({ step, color }: { step: StepKey; color: string }) {
@@ -48,6 +49,17 @@ function StepGlyph({ step, color }: { step: StepKey; color: string }) {
       return (
         <Svg width={20} height={20} viewBox="0 0 22 22">
           <Polygon points="11,2 13.4,8 19.5,8 14.5,12 16.5,18 11,14.5 5.5,18 7.5,12 2.5,8 8.6,8" {...s} />
+        </Svg>
+      );
+    case 'companion':
+      // a paw print (the Beastbound companion #311)
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Path d="M 11 19 C 7 19 6 15.5 8 13.5 C 9.4 12 12.6 12 14 13.5 C 16 15.5 15 19 11 19 Z" fill={color} stroke="none" />
+          <Polygon points="6,9 7.6,9 6.8,11.4" fill={color} />
+          <Polygon points="9.2,6.5 10.8,6.5 10,9" fill={color} />
+          <Polygon points="11.2,6.5 12.8,6.5 12,9" fill={color} />
+          <Polygon points="14.4,9 16,9 15.2,11.4" fill={color} />
         </Svg>
       );
   }
@@ -98,6 +110,8 @@ export function LevelUpPanel({
   defaults,
   domainOptions,
   classOptions,
+  companion,
+  companionPicks = 0,
   onApply,
   onClose,
 }: {
@@ -106,6 +120,10 @@ export function LevelUpPanel({
   domainOptions: DomainCardInfo[];
   /** #311: each multiclassable class with the domains + subclass foundation cards it offers. */
   classOptions: { key: string; label: string; domains: string[]; subclasses: { id: string; label: string }[] }[];
+  /** #311: the Beastbound companion (for the companion level-up step), and how many training options
+   *  this level-up grants (0 = no companion / no step). */
+  companion?: CompanionState;
+  companionPicks?: number;
   onApply: (next: CharacterFile) => void;
   onClose: () => void;
 }) {
@@ -125,6 +143,14 @@ export function LevelUpPanel({
   const [expText, setExpText] = useState('');
   const [editingExp, setEditingExp] = useState(false);
   const [takes, setTakes] = useState<ChosenAdv[]>([]);
+  // #311: companion training options chosen this level-up (a multiset of option keys, max = companionPicks).
+  const [companionTakes, setCompanionTakes] = useState<string[]>([]);
+  const hasCompanionStep = companionPicks > 0;
+  const compCountOf = (key: string) => companionTakes.filter((k) => k === key).length;
+  const compRemaining = (key: string) => { const def = companionOptionDef(key); if (!def) return 0; return def.max - (companion?.options[key] ?? 0) - compCountOf(key); };
+  const addCompanion = (key: string) => { if (companionTakes.length >= companionPicks || compRemaining(key) <= 0) return; playSfx('cardSelect'); setCompanionTakes((t) => [...t, key]); };
+  const removeCompanion = (key: string) => setCompanionTakes((t) => { const i = t.lastIndexOf(key); if (i < 0) return t; playSfx('cardDeselect'); return t.filter((_, j) => j !== i); });
+  const companionDone = companionTakes.length === companionPicks;
   const carRef = useRef<StraightCarouselHandle>(null);
 
   // The new tier Experience the player is writing now (#211): predict the id applyLevelUp will give
@@ -195,17 +221,18 @@ export function LevelUpPanel({
 
   const domainDone = selectedDomains.length >= 1 && (!hasDomainAdv || selectedDomains.length === 2);
   const advanceDone = picks === 2 && takes.every(takeComplete);
-  const stepDone = (k: StepKey) => (k === 'summary' ? true : k === 'domain' ? domainDone : k === 'exp' ? expReady : advanceDone);
+  const stepDone = (k: StepKey) => (k === 'summary' ? true : k === 'domain' ? domainDone : k === 'exp' ? expReady : k === 'companion' ? companionDone : advanceDone);
 
   const steps: { key: StepKey; label: string }[] = [
     { key: 'summary', label: 'Gains' },
     { key: 'domain', label: 'Domain' },
     ...(tierStart ? [{ key: 'exp' as StepKey, label: 'Exp' }] : []),
     { key: 'advance', label: 'Advance' },
+    ...(hasCompanionStep ? [{ key: 'companion' as StepKey, label: 'Companion' }] : []),
   ];
   const [step, setStep] = useState<StepKey>('summary');
 
-  const canConfirm = domainDone && expReady && advanceDone;
+  const canConfirm = domainDone && expReady && advanceDone && (!hasCompanionStep || companionDone);
   const confirm = () => {
     playSfx('levelUpComplete'); // #255
     const advs = takes.map((t) => (t.key === 'domain' ? { ...t, domainCardId: selectedDomains[1] } : t));
@@ -216,6 +243,7 @@ export function LevelUpPanel({
       experienceImageUri: tierStart ? expImage : undefined,
       experienceText: tierStart ? expText : undefined,
       advancements: advs,
+      companionOptions: hasCompanionStep ? companionTakes : undefined,
     };
     onApply(applyLevelUp(file, plan, defaults));
   };
@@ -412,6 +440,31 @@ export function LevelUpPanel({
                   ))}
                 </View>
               ) : null}
+            </ScrollView>
+          ) : null}
+
+          {step === 'companion' ? (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 6 }}>
+              <SectionLabel>{`Companion training · ${companionTakes.length}/${companionPicks}`}</SectionLabel>
+              <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 17 }}>Choose your Beastbound companion&apos;s level-up option{companionPicks > 1 ? 's' : ''}. Some can be taken more than once.</Text>
+              {COMPANION_OPTIONS.map((o) => {
+                const taken = compCountOf(o.key);
+                const remaining = compRemaining(o.key);
+                const canAdd = companionTakes.length < companionPicks && remaining > 0;
+                return (
+                  <ChamferBox key={o.key} chamfer={8} fill={taken > 0 ? 'rgba(123,160,91,0.14)' : 'rgba(20,24,31,0.6)'} stroke={taken > 0 ? '#7BA05B' : 'rgba(218,162,73,0.45)'} strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12, gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{o.label}{o.max > 1 ? `  ·  max ${o.max}` : ''}</Text>
+                      <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{o.desc}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Pressable onPress={() => removeCompanion(o.key)} disabled={taken === 0} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Remove ${o.label}`}><Text style={{ color: taken === 0 ? 'rgba(147,142,136,0.35)' : '#E2705A', fontSize: 20, fontFamily: Body.bold }}>–</Text></Pressable>
+                      <Text style={{ color: Rune.goldText, fontSize: 14, fontFamily: Body.bold, minWidth: 12, textAlign: 'center' }}>{taken}</Text>
+                      <Pressable onPress={() => addCompanion(o.key)} disabled={!canAdd} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Add ${o.label}`}><Text style={{ color: !canAdd ? 'rgba(147,142,136,0.35)' : Rune.goldBright, fontSize: 20, fontFamily: Body.bold }}>+</Text></Pressable>
+                    </View>
+                  </ChamferBox>
+                );
+              })}
             </ScrollView>
           ) : null}
         </Animated.View>

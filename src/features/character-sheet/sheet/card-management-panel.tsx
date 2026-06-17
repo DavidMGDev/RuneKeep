@@ -15,7 +15,7 @@ import { type CardCategory, type CardItem, isBuiltinCategory } from '../card-dat
 import { availableCategories, categoryLabel, type CustomCategory } from '../carousel-categories';
 import { BUILTIN_TYPE_GROUPS } from '../card-types';
 import { useCarousel } from '../carousel-context';
-import { CategoryGlyph } from './deck-toggle-icon';
+import { CategoryGlyph, CompanionIcon } from './deck-toggle-icon';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg, DEFAULT_CATEGORY_ICON } from './category-icons';
 import { CenterDialog, FullScreenPanel } from './full-screen-panel';
 
@@ -49,6 +49,8 @@ const TILE_H = Math.round((TILE_W * 7) / 5);
 
 interface Props {
   isDruid: boolean;
+  /** #311: the character has a Beastbound companion → the Companion category is available here. */
+  hasCompanion: boolean;
   hidden: CardCategory[];
   customCategories: CustomCategory[];
   customTypes: string[];
@@ -116,6 +118,21 @@ function GoldTile() {
   );
 }
 
+/** Placeholder tile for the live COMPANION card (#311) — green, paw glyph, never the app icon. */
+function CompanionTile() {
+  return (
+    <View style={{ width: '100%', height: '100%', backgroundColor: '#34431f', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+      <View style={{ transform: [{ scale: 0.62 }] }}><CompanionIcon /></View>
+      <Text style={{ color: '#cfe0b6', fontSize: 10, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Companion</Text>
+    </View>
+  );
+}
+
+/** The right placeholder for a LIVE card (#306/#311): companion vs gold. */
+function LiveTile({ item }: { item: CardItem }) {
+  return (item.ref ?? item.id) === 'companion' ? <CompanionTile /> : <GoldTile />;
+}
+
 /**
  * Card Management (#246/#250/#252) — now a FULL-SCREEN interface (the Level Up shell): opaque,
  * SVG-bordered, button-close only, the sheet carousel unloaded behind it. Two tabs (Categories /
@@ -123,19 +140,20 @@ function GoldTile() {
  * LONG-PRESS to pick it up and drag it to reorder within a category or move it to another.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, editableIds, onClose } = props;
+  const { isDruid, hasCompanion, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   const [view, setView] = useState<'categories' | 'cards' | 'types'>('cards'); // #297: open on Cards
 
   const hiddenSet = useMemo(() => new Set(hidden), [hidden]);
   const ordered = useMemo(() => {
-    const avail = availableCategories({ isDruid, custom: customCategories });
+    const avail = availableCategories({ isDruid, hasCompanion, custom: customCategories });
     return order && order.length ? [...order.filter((k) => avail.includes(k)), ...avail.filter((k) => !order.includes(k))] : avail;
-  }, [isDruid, customCategories, order]);
+  }, [isDruid, hasCompanion, customCategories, order]);
   const enabledCount = ordered.filter((k) => !hiddenSet.has(k) && (decks[k]?.length ?? 0) > 0).length;
   const totalCards = useMemo(() => Object.values(decks).reduce((s, a) => s + (a?.length ?? 0), 0), [decks]);
-  // The live GOLD card (#306): there is only ever one, so it can't be deleted or duplicated (only moved).
-  const liveIds = useMemo(() => new Set(Object.values(decks).flat().filter((c) => c.live).map((c) => c.id)), [decks]);
+  // The live GOLD card (#306): there is only ever one, so it can't be deleted or duplicated (only
+  // moved). NOTE: only the gold card — the companion card is also `live` but IS duplicatable/movable.
+  const liveIds = useMemo(() => new Set(Object.values(decks).flat().filter((c) => (c.ref ?? c.id) === 'gold').map((c) => c.id)), [decks]);
 
   // sub-dialogs / selection
   const [createOpen, setCreateOpen] = useState(false);
@@ -337,7 +355,7 @@ export function CardManagementPanel(props: Props) {
         <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: TILE_W, height: TILE_H, zIndex: 10006 }, ghostStyle]}>
           {dragGroup.length > 1 ? <View style={{ position: 'absolute', left: 6, top: 6, width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 2, borderColor: Rune.red, backgroundColor: '#0c0f14', opacity: 0.6 }} /> : null}
           <View style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 2, borderColor: Rune.red, overflow: 'hidden', backgroundColor: '#0c0f14' }}>
-            {dragItem.live ? <GoldTile /> : dragItem.thumb ? <Image source={dragItem.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" /> : null}
+            {dragItem.live ? <LiveTile item={dragItem} /> : dragItem.thumb ? <Image source={dragItem.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" /> : null}
           </View>
           {dragGroup.length > 1 ? (
             <View style={{ position: 'absolute', top: -8, right: -8, minWidth: 26, height: 26, paddingHorizontal: 6, borderRadius: 13, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: Rune.ivory }}>
@@ -438,7 +456,7 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
           accessibilityRole="button"
           accessibilityLabel="Card. Tap to select, hold to drag"
           style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: selected ? 2.5 : 1, borderColor: selected ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden', opacity: dimmed ? 0.4 : 1 }}>
-          {item.live ? <GoldTile /> : item.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>}
+          {item.live ? <LiveTile item={item} /> : item.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>}
           {selected ? <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text></View> : null}
         </View>
       </View>

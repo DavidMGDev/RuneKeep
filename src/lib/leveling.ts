@@ -13,6 +13,7 @@
 
 import type { TraitKey } from '@/features/character-sheet/character';
 import type { CharacterFile } from './character-file';
+import { addCompanionExperience, applyCompanionOption, companionOf, hasCompanion } from './companion';
 import { tierForLevel } from './rest';
 
 export { tierForLevel };
@@ -95,6 +96,8 @@ export interface LevelUpPlan {
   experienceImageUri?: string | null;
   experienceText?: string;
   advancements: ChosenAdv[];
+  /** Beastbound companion (#311): training option keys chosen this level-up (companion.ts keys). */
+  companionOptions?: string[];
 }
 export interface LevelDefaults {
   maxHp: number;
@@ -200,5 +203,15 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   next.multiclassName = multiclassName;
   next.multiclassSubclassCardId = multiclassSubclassCardId;
   next.multiclassDomain = multiclassDomain;
+
+  // Beastbound companion (#311): it gains an Experience whenever the character does (tier start), then
+  // folds in any training options chosen this level-up. `next` is used so a companion gained THIS
+  // level-up via multiclass also advances.
+  if (hasCompanion(next)) {
+    let companion = companionOf(next);
+    if (isTierStart(newLevel)) companion = addCompanionExperience(companion);
+    for (const key of plan.companionOptions ?? []) companion = applyCompanionOption(companion, key);
+    next.companion = companion;
+  }
   return next;
 }

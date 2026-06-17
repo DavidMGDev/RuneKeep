@@ -77,3 +77,17 @@ describe('custom categories (#246)', () => {
     expect(nextCategory(ring, 'cat-b', 1)).toBe('abilities');
   });
 });
+
+describe('subclass-gated categories (#311 companion)', () => {
+  it('companion is hidden by default and shown only for Beastbound', () => {
+    expect(activeRing({})).not.toContain('companion');
+    expect(activeRing({ hasCompanion: true })).toEqual(['abilities', 'inventory', 'companion', 'notes', 'archive']);
+  });
+  it('availableCategories includes companion only when hasCompanion', () => {
+    expect(availableCategories({})).not.toContain('companion');
+    expect(availableCategories({ hasCompanion: true })).toContain('companion');
+  });
+  it('a Druid Beastbound (multiclass) shows both wildshape and companion', () => {
+    expect(activeRing({ isDruid: true, hasCompanion: true })).toEqual(['abilities', 'inventory', 'wildshape', 'companion', 'notes', 'archive']);
+  });
+});

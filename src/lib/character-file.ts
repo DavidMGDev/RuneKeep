@@ -177,6 +177,10 @@ export interface CharacterFile {
    *  transform time (re-equipping one is allowed mid-form; new domains are blocked). Additive. */
   beastformUnequipped?: string[];
   beastformDomainSnapshot?: string[];
+  /** Ranger Beastbound companion (#311): the companion sheet's tracked state (Evasion, Stress, damage
+   *  die + range, Experiences, training options). Present only for a Beastbound character (primary or
+   *  via multiclass); absent → a fresh companion is used. Additive. */
+  companion?: import('@/lib/companion').CompanionState;
   level: number;
 }
 

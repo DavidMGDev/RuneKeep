@@ -30,6 +30,8 @@ import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
+import { CompanionCard } from '../components/companion-card';
+import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/companion';
 import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -788,10 +790,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const customCats = file.customCategories ?? [];
     const override = file.cardCategory ?? {};
     const removed = new Set(file.removedCardIds ?? []); // universal delete (#248 item 5)
-    const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, notes: notesCards };
+    // Companion (#311): the live Beastbound companion sheet card — only for a Beastbound character
+    // (primary OR via multiclass). Edits persist to file.companion; it's duplicatable (linked copies)
+    // and never fully deletable (guards below). Like the gold card, its source/thumb are never drawn.
+    const companionCards: CardItem[] = hasCompanion(file)
+      ? [{ id: 'companion', source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: <CompanionCard companion={companionOf(file)} onChange={(c) => mutateFile({ companion: c })} />, interactive: true }]
+      : [];
+    const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, companion: companionCards, notes: notesCards };
     const validKeys = new Set<string>([...BUILTIN_CATEGORIES, ...customCats.map((c) => c.id)]);
-    // #306: archive starts as an empty built-in deck (cards land here only via a category override).
-    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], notes: [], archive: [] };
+    // #306/#311: archive + companion start as empty target decks (cards land via category override).
+    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], companion: [], notes: [], archive: [] };
     for (const c of customCats) decks[c.id] = [];
     // Unique instance ids (#269): a catalog card the player holds twice (e.g. equipped AND acquired)
     // would otherwise share one id, so selecting/dragging/tokening one hit both. The first copy keeps
@@ -840,6 +848,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       abilities: { label: 'Arsenal', builtin: true },
       inventory: { label: 'Inventory', builtin: true },
       wildshape: { label: 'Beastform', builtin: true },
+      companion: { label: 'Companion', builtin: true },
       notes: { label: 'Notes', builtin: true },
       archive: { label: 'Archive', builtin: true },
     };
@@ -849,7 +858,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const fa = decks.abilities;
     const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
     return { decks, categoryMeta, originIndices };
-  }, [file, character.gold, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, featureSources]);
+  }, [file, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
@@ -1058,13 +1067,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // no cards (#250 item 3), so the player can't get trapped. Falls back to any non-empty category.
   const ring = useMemo(() => {
     const isDruid = file?.className === 'druid' || file?.multiclassName === 'druid'; // #311: incl. multiclass
-    const r = activeRing({ isDruid, hidden, custom: customCategories, order: file?.categoryOrder });
+    const companion = hasCompanion({ subclassCardId: file?.subclassCardId ?? '', multiclassSubclassCardId: file?.multiclassSubclassCardId }); // #311
+    const r = activeRing({ isDruid, hasCompanion: companion, hidden, custom: customCategories, order: file?.categoryOrder });
     if (!carouselDecks) return r; // demo sheet (no file) — no per-deck counts, use the ring as-is
     const nonEmpty = r.filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
     if (nonEmpty.length) return nonEmpty;
-    const anyNonEmpty = availableCategories({ isDruid, custom: customCategories }).filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
+    const anyNonEmpty = availableCategories({ isDruid, hasCompanion: companion, custom: customCategories }).filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
     return anyNonEmpty.length ? anyNonEmpty : ['abilities'];
-  }, [file?.className, file?.multiclassName, hidden, customCategories, file?.categoryOrder, carouselDecks]);
+  }, [file?.className, file?.multiclassName, file?.subclassCardId, file?.multiclassSubclassCardId, hidden, customCategories, file?.categoryOrder, carouselDecks]);
   // Re-derive the runtime character from a new file, keeping in-play resource positions (clamped to the
   // new maxes). Used by edits that can change stats (e.g. deleting an enabled card).
   const commitFile = useCallback((next: CharacterFile) => {
@@ -1088,7 +1098,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onToggleCategory = useCallback((c: CardCategory) => {
     setFile((f) => {
       if (!f) return f;
-      const available = availableCategories({ isDruid: hasBeastform(f), custom: f.customCategories ?? [] });
+      const available = availableCategories({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), custom: f.customCategories ?? [] });
       const cur = new Set<CardCategory>(f.hiddenCategories ?? (f.showNotes === false ? ['notes'] : []));
       if (cur.has(c)) cur.delete(c);
       else {
@@ -1106,7 +1116,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setFile((f) => {
       if (!f) return f;
       const cat = { id, label: label.trim() || 'New Category', icon };
-      const order = f.categoryOrder ?? activeRing({ isDruid: hasBeastform(f), custom: f.customCategories ?? [] });
+      const order = f.categoryOrder ?? activeRing({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), custom: f.customCategories ?? [] });
       const next = { ...f, customCategories: [...(f.customCategories ?? []), cat], categoryOrder: [...order, id] };
       void saveCharacter(next);
       return next;
@@ -1198,6 +1208,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     if (liveIds.size > 0 && present.length >= liveIds.size) {
       const keep = present[present.length - 1]; // keep the last selected so one card always remains
       ids = rawIds.filter((id) => id !== keep);
+    }
+    // #311: never delete the LAST companion card — always keep one copy (extras/copies may be removed).
+    // This holds even in a bulk selection that scoops up every companion instance.
+    const companionTotal = Object.values(carouselDecks ?? {}).flat().filter((c) => (c.ref ?? catalogIdOf(c.id)) === 'companion').length;
+    if (companionTotal > 0) {
+      const delCompanion = ids.filter((id) => refOf(id, file) === 'companion');
+      if (delCompanion.length >= companionTotal) ids = ids.filter((id) => id !== delCompanion[delCompanion.length - 1]);
     }
     if (ids.length === 0) return;
     const del = new Set(ids);
@@ -1599,6 +1616,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           ) : floatKind === 'cards' && file ? (
             <CardManagementPanel
               isDruid={hasBeastform(file)}
+              hasCompanion={hasCompanion(file)}
               hidden={hidden}
               order={file.categoryOrder}
               customCategories={customCategories}
@@ -1621,7 +1639,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onClose={() => setFloatKind(null)}
             />
           ) : floatKind === 'level' && file ? (
-            <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
+            <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} companion={companionOf(file)} companionPicks={companionPicksPerLevel(file)} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
           ) : null}
