@@ -25,7 +25,7 @@ import { box } from '@/lib/design';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
 import { playSfx } from '@/lib/sfx';
 import { useCarousel } from '../carousel-context';
-import { DeleteCardConfirm } from '../redesign/edit-card-flow';
+import { DeleteCardConfirm } from '../sheet/edit-card-flow';
 import { catalogIdOf } from '@/features/cards/card-effects';
 import { isWildshapeId } from '@/lib/wildshape-data';
 import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geometry';

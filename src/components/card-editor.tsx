@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { FORGED_H, ForgedCard } from '@/features/create/forged-card';
+import { FORGED_H, ForgedCard } from '@/features/create/components/forged-card';
 import { type CardEffect } from '@/lib/modifiers';
 import { EffectPicker, EffectsField, isThresholdTarget, matchOption } from '@/components/effects-editor';
 import { playSfx } from '@/lib/sfx';

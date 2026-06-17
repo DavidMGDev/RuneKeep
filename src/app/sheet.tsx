@@ -2,7 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 
 import { LoadingScreen } from '@/components/loading-screen';
-import { RedesignedSheet } from '@/features/character-sheet/redesign/redesigned-sheet';
+import { RedesignedSheet } from '@/features/character-sheet/sheet/redesigned-sheet';
 import { type CharacterFile } from '@/lib/character-file';
 import { getCharacter } from '@/lib/character-store';
 import { playSfx } from '@/lib/sfx';

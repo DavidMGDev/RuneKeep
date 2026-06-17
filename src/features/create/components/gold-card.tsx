@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { DividerPlaque, getPlaqueTheme } from '@/components/card-divider';
+import { DividerPlaque, getPlaqueTheme } from './card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
 import { FORGED_H, FORGED_W, PlaqueLabel } from './forged-card';
 

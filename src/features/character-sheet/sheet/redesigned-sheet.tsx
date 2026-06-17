@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AccentProvider, useAccentTint } from '@/components/accent';
+import { AccentProvider, useAccentTint } from '../components/accent';
 import { ArtImage } from '@/components/art-image';
 import { DesignStage } from '@/components/design-stage';
 import { PressableArt } from '@/components/pressable-art';
@@ -14,9 +14,9 @@ import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, type CustomCardDef, toSheetCharacter } from '@/lib/character-file';
 import { CATALOG, cardById } from '@/features/cards/catalog';
 import { CLASSES, classColor, classInfo } from '@/constants/identity';
-import { CLASS_CARDS, classBanner } from '@/features/create/class-cards';
+import { CLASS_CARDS, classBanner } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/features/create/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { armorById, weaponById } from '@/features/create/equipment-data';
 import { lootById } from '@/lib/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/lib/wildshape-data';
@@ -25,7 +25,7 @@ import { playSfx } from '@/lib/sfx';
 import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/features/create/class-inventory-data';
 import { itemColor } from '@/features/create/item-colors';
-import { GoldCard } from '@/features/create/gold-card';
+import { GoldCard } from '@/features/create/components/gold-card';
 import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -34,7 +34,7 @@ import { CenterDialog } from './full-screen-panel';
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
-import { useForgedSnapshots } from '@/features/create/forged-snapshots';
+import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
 import { Art } from '../art';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories } from '../carousel-categories';

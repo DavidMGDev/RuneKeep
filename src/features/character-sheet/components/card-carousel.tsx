@@ -23,7 +23,7 @@ import { Body, Rune } from '@/constants/theme';
 import { type CardCategory, type CardItem } from '../card-data';
 import { CATEGORY_LABEL, nextCategory } from '../carousel-categories';
 import { type ExpandState, useCarousel } from '../carousel-context';
-import { CategoryGlyph } from '../redesign/deck-toggle-icon';
+import { CategoryGlyph } from '../sheet/deck-toggle-icon';
 import {
   ANGLE_STEP,
   CARD_H,

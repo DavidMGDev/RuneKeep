@@ -9,7 +9,7 @@ import { AppScreen } from '@/components/app-screen';
 import { ArtImage } from '@/components/art-image';
 import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
-import { ChamferedImage } from '@/components/chamfered-image';
+import { ChamferedImage } from './components/chamfered-image';
 import { RuneButton } from '@/components/rune-button';
 import { type ClassName, classColor, classInfo } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -20,16 +20,16 @@ import { type ExperienceDef, newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { beginLoading, endLoading, playSfx } from '@/lib/sfx';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
-import { CLASS_CARDS } from './class-cards';
+import { CLASS_CARDS } from './components/class-cards';
 import { featurePages } from './class-data';
-import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard, FORGED_H, FORGED_W } from './forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard, FORGED_H, FORGED_W } from './components/forged-card';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from './equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from './class-inventory-data';
 import { itemColor } from './item-colors';
-import { type GoldAmount, GOLD_DEFAULT } from './gold-card';
+import { type GoldAmount, GOLD_DEFAULT } from './components/gold-card';
 
-import { useForgedSnapshots } from './forged-snapshots';
-import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './straight-carousel';
+import { useForgedSnapshots } from './components/forged-snapshots';
+import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
 
 // ---------- draft ----------
 

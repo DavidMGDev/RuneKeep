@@ -1,17 +1,17 @@
 import { type FC } from 'react';
 import { type SvgProps } from 'react-native-svg';
 
-import BardBanner from '../../../assets/art/classBanners/image-9.svg';
-import DruidBanner from '../../../assets/art/classBanners/image-8.svg';
-import GuardianBanner from '../../../assets/art/classBanners/image-6.svg';
-import RangerBanner from '../../../assets/art/classBanners/image-7.svg';
-import RogueBanner from '../../../assets/art/classBanners/image-3.svg';
-import SeraphBanner from '../../../assets/art/classBanners/image-5.svg';
-import SorcererBanner from '../../../assets/art/classBanners/image-4.svg';
-import WarriorBanner from '../../../assets/art/classBanners/image.svg';
-import WizardBanner from '../../../assets/art/classBanners/image-2.svg';
+import BardBanner from '../../../../assets/art/classBanners/image-9.svg';
+import DruidBanner from '../../../../assets/art/classBanners/image-8.svg';
+import GuardianBanner from '../../../../assets/art/classBanners/image-6.svg';
+import RangerBanner from '../../../../assets/art/classBanners/image-7.svg';
+import RogueBanner from '../../../../assets/art/classBanners/image-3.svg';
+import SeraphBanner from '../../../../assets/art/classBanners/image-5.svg';
+import SorcererBanner from '../../../../assets/art/classBanners/image-4.svg';
+import WarriorBanner from '../../../../assets/art/classBanners/image.svg';
+import WizardBanner from '../../../../assets/art/classBanners/image-2.svg';
 import { type ClassName } from '@/constants/identity';
-import { CLASS_DATA } from './class-data';
+import { CLASS_DATA } from '../class-data';
 
 /**
  * The nine class picks as FORGED (custom, code-rendered) cards. Banner art mapped by reading the
