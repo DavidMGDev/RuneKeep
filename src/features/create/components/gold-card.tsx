@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
@@ -54,6 +55,7 @@ export function subHandful(g: GoldAmount): GoldAmount {
 }
 const isMax = (g: GoldAmount) => g.handfuls === 9 && g.bags === 9 && g.chest === 1;
 const isEmpty = (g: GoldAmount) => g.handfuls === 0 && g.bags === 0 && g.chest === 0;
+const same = (a: GoldAmount, b: GoldAmount) => a.handfuls === b.handfuls && a.bags === b.bags && a.chest === b.chest;
 
 function Coin({ filled, size }: { filled: boolean; size: number }) {
   return <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 1.2, borderColor: '#9a7a2e', backgroundColor: filled ? GOLD : 'transparent' }} />;
@@ -74,9 +76,25 @@ function Row({ label, count, max, size }: { label: string; count: number; max: n
   );
 }
 
-function Step({ label, onPress, disabled }: { label: string; onPress: () => void; disabled: boolean }) {
+// Press-and-hold to bulk-adjust gold, accelerating the longer it's held (owner, v0.9.7). `onStep`
+// returns false at the ceiling/floor so the repeat stops. A quick tap fires exactly once.
+function Step({ label, onStep, disabled }: { label: string; onStep: () => boolean; disabled: boolean }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const delay = useRef(360);
+  const stop = useCallback(() => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } }, []);
+  const tick = useCallback(() => {
+    if (!onStep()) { stop(); return; }
+    delay.current = Math.max(60, delay.current * 0.8); // ponytail: accel curve tunable on device
+    timer.current = setTimeout(tick, delay.current);
+  }, [onStep, stop]);
+  const start = useCallback(() => {
+    if (disabled) return;
+    delay.current = 360;
+    if (!onStep()) return; // one step on press; repeat only while it keeps changing
+    timer.current = setTimeout(tick, delay.current);
+  }, [disabled, onStep, tick]);
   return (
-    <Pressable onPress={onPress} disabled={disabled} hitSlop={8} accessibilityRole="button" accessibilityLabel={label === '+' ? 'Add a handful of gold' : 'Remove a handful of gold'}>
+    <Pressable onPressIn={start} onPressOut={stop} disabled={disabled} hitSlop={8} accessibilityRole="button" accessibilityLabel={label === '+' ? 'Add gold (hold to add faster)' : 'Remove gold (hold to remove faster)'}>
       <View style={{ width: 34, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1.4, borderColor: disabled ? 'rgba(122,94,34,0.3)' : '#9a7a2e', backgroundColor: 'rgba(228,194,92,0.16)', opacity: disabled ? 0.4 : 1 }}>
         <Text style={{ color: '#5a4416', fontSize: 20, fontFamily: Display.bold, lineHeight: 22 }}>{label}</Text>
       </View>
@@ -86,6 +104,18 @@ function Step({ label, onPress, disabled }: { label: string; onPress: () => void
 
 export function GoldCard({ gold, onChange }: { gold: GoldAmount; onChange: (g: GoldAmount) => void }) {
   const theme = getPlaqueTheme('Currency');
+  // Hold-to-bulk (v0.9.7): the repeat must COMPOUND, so read the latest value from a ref (the `gold`
+  // prop is stale inside the timer until the parent re-renders) and advance it immediately each tick.
+  const goldRef = useRef(gold);
+  goldRef.current = gold;
+  const step = useCallback((dir: 1 | -1): boolean => {
+    const cur = goldRef.current;
+    const next = dir > 0 ? addHandful(cur) : subHandful(cur);
+    if (same(next, cur)) return false; // hit the 9/9/1 ceiling or the empty floor
+    goldRef.current = next;
+    onChange(next);
+    return true;
+  }, [onChange]);
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       {/* flat gold art band + coin emblem */}
@@ -109,8 +139,8 @@ export function GoldCard({ gold, onChange }: { gold: GoldAmount; onChange: (g: G
         <Row label="Chest" count={gold.chest} max={1} size={18} />
         {/* one central +/- — adds/removes a handful, carrying across the rows */}
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 'auto' }}>
-          <Step label="–" onPress={() => onChange(subHandful(gold))} disabled={isEmpty(gold)} />
-          <Step label="+" onPress={() => onChange(addHandful(gold))} disabled={isMax(gold)} />
+          <Step label="–" onStep={() => step(-1)} disabled={isEmpty(gold)} />
+          <Step label="+" onStep={() => step(1)} disabled={isMax(gold)} />
         </View>
       </View>
     </View>

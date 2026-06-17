@@ -3,7 +3,7 @@
 // helpers were extracted to sheet-utils.ts; splitting the orchestrator further fragments cohesion and
 // risks animation regressions needing on-device verification (see SPEC.md). A deliberate exception.
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
+import { AppState, BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,7 +44,7 @@ import { useForgedSnapshots } from '@/features/create/components/forged-snapshot
 import { Art } from '../art';
 import { chipWidth, trackBounds, wildshapeSummary } from './sheet-utils';
 import { CarouselProvider, useCarousel } from '../carousel-context';
-import { activeRing, availableCategories } from '../carousel-categories';
+import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
 import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
@@ -505,13 +505,40 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // re-derives the decks live and persists. Runtime resource state (`character`) stays separate so
   // in-play HP/Stress/Hope aren't reset by a file edit.
   const [file, setFile] = useState(characterFile);
+  const fileRef = useRef(file);
+  fileRef.current = file;
+  // In-play resource persistence (v0.9.7): HP/Stress/Hope/Armor + gold live in the runtime `character`
+  // and historically reset to full/default on every load. A ref holds the live values; EVERY disk write
+  // STAMPS them onto the file (kept OUT of `file` state so a pip change never re-derives the carousel).
+  const liveResRef = useRef<{ hp: number; stress: number; hope: number; armor: number; gold: Character['gold'] }>({ hp: 0, stress: 0, hope: 0, armor: 0, gold: { handfuls: 1, bags: 0, chest: 0 } });
+  liveResRef.current = { hp: character.hp, stress: character.stress.active, hope: character.hope.active, armor: character.armor.active, gold: character.gold };
+  // Held in a ref (not useCallback) so the many save call-sites don't each need it as a dependency —
+  // it only reads refs, so it's safe to treat as stable.
+  const saveFileRef = useRef<(next: CharacterFile) => void>(() => {});
+  saveFileRef.current = (next) => {
+    const r = liveResRef.current;
+    void saveCharacter({ ...next, resources: { hp: r.hp, stress: r.stress, hope: r.hope, armor: r.armor }, gold: r.gold });
+  };
   const mutateFile = useCallback((patch: Partial<CharacterFile>) => {
     setFile((f) => {
       if (!f) return f;
       const next = { ...f, ...patch };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
+  }, []);
+  // Persist resource-only changes (HP/Stress/Hope/Armor/Gold) on a debounce so a gold hold / rapid taps
+  // coalesce into ONE disk write; flush on app-background + unmount so nothing is lost (v0.9.7).
+  const resSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!fileRef.current) return;
+    if (resSaveTimer.current) clearTimeout(resSaveTimer.current);
+    resSaveTimer.current = setTimeout(() => { if (fileRef.current) saveFileRef.current(fileRef.current); }, 450);
+  }, [character.hp, character.stress.active, character.hope.active, character.armor.active, character.gold]);
+  useEffect(() => {
+    const flush = () => { if (resSaveTimer.current) { clearTimeout(resSaveTimer.current); resSaveTimer.current = null; } if (fileRef.current) saveFileRef.current(fileRef.current); };
+    const sub = AppState.addEventListener('change', (s) => { if (s !== 'active') flush(); });
+    return () => { sub.remove(); flush(); };
   }, []);
   // Default note (#248 item 4): a brand-new character (notes never touched) is seeded with ONE real,
   // deletable note with a random colour. Guarded on `notes === undefined`, so deleting it (→ []) never
@@ -851,7 +878,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const iid = instanceIds[i];
       const it: CardItem = { ...item, id: iid, ref: catalogIdOf(iid) }; // #277: ref = underlying card
       if (removed.has(it.id)) continue; // deleted from the gallery → filtered out of every deck
-      const ov = override[it.id];
+      // (v0.9.7) Fall back to the catalog-id (ref) override: a duplicate instance gets a `#2` id, but the
+      // acquire override is keyed by the catalog id — without this, the 2nd+ copy of an acquired weapon
+      // missed its override and stayed in the default deck. Instance overrides (a manual move) still win.
+      const ov = override[it.id] ?? override[catalogIdOf(it.id)];
       // Beastform cards are locked to the wildshape deck (#279): ignore any category override that would
       // move a wildshape out, and never let a non-wildshape card override INTO the wildshape deck.
       const isWs = isWildshapeId(catalogIdOf(it.id));
@@ -868,7 +898,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const t = templateByRef.get(copy.ref);
       if (!t) continue;
       const it: CardItem = { ...t.item, id: copy.id, ref: copy.ref };
-      const ov = override[copy.id];
+      const ov = override[copy.id] ?? override[copy.ref];
       const target = ov && validKeys.has(ov) && ov !== 'wildshape' ? ov : t.cat;
       (decks[target] ??= []).push(it);
     }
@@ -1019,7 +1049,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onApplyLevelUp = useCallback(
     (next: CharacterFile) => {
       setFile(next);
-      void saveCharacter(next);
+      saveFileRef.current(next);
       const c = characterRef.current;
       const d = toSheetCharacter(next);
       const hpGain = Math.max(0, d.maxHp - c.maxHp); // follow the gain so the new heart animates filling
@@ -1086,7 +1116,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       if (!isBuiltinCategory(categoryKey)) {
         next = { ...next, cardCategory: { ...(next.cardCategory ?? {}), [id]: categoryKey } };
       }
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
     setFloatKind(null);
@@ -1095,24 +1125,32 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Acquired system gear/loot (#180): adding an id forges it into the decks (re-derives from file).
   const acquiredIds = useMemo(() => new Set(file?.acquiredCardIds ?? []), [file]);
   const onAcquireCard = useCallback((id: string, category?: CardCategory) => {
-    setFile((f) => {
-      if (!f) return f;
-      // #269: allow MULTIPLE copies — acquiredCardIds is a multiset; each copy gets a unique instance
-      // id in the deck (catalogIdOf maps it back to content). The catalog browser offers "Add another".
-      // #328: route the new card to the category the player added it to (the Cards-panel per-category Add
-      // button, or the current carousel category from the float menu) by writing a cardCategory override
-      // on the catalog id — the deck builder's override pass then places it there instead of a hardcoded
-      // deck (which had domain/ancestry/community cards always land in inventory + weapons in BOTH decks).
-      // Beastform stays locked to its own deck, so never override INTO/OUT of wildshape.
-      const override =
-        category && category !== 'wildshape'
-          ? { cardCategory: { ...(f.cardCategory ?? {}), [id]: category } }
-          : {};
-      const next = { ...f, acquiredCardIds: [...(f.acquiredCardIds ?? []), id], ...override };
-      void saveCharacter(next);
+    const f = fileRef.current;
+    if (!f) return;
+    // (v0.9.7) Audit + error-handle the gear add. Validate the id resolves to a real card — an unknown
+    // id would forge to nothing and silently vanish. Tell the player via the toast system instead.
+    const known = !!cardById(id) || !!weaponById(id) || !!armorById(id) || !!lootById(id) || (id.startsWith('class-') && CLASS_CARDS.some((c) => c.key === id.slice(6)));
+    if (!known) { pushNotice("Couldn't add that card"); return; }
+    // A weapon/armor already held as STARTING equipment is dropped by the deck builder (it can't be
+    // forged twice), so it would never appear — say so rather than silently no-op.
+    const startEquip = new Set([f.weaponPrimaryId, f.weaponSecondaryId, f.armorId].filter(Boolean) as string[]);
+    if (startEquip.has(id)) { pushNotice('Already equipped — not added'); return; }
+    // Route the card to the category the player picked (the Cards-panel per-category Add button, or the
+    // current carousel category from the float menu) via a cardCategory override; the deck builder's
+    // override pass places it there (#328). Beastform is locked to its own deck — never override into it.
+    const valid = !!category && category !== 'wildshape' && (isBuiltinCategory(category) || (f.customCategories ?? []).some((c) => c.id === category));
+    setFile((cur) => {
+      if (!cur) return cur;
+      // #269: acquiredCardIds is a multiset — each copy becomes a unique deck instance (catalogIdOf maps back).
+      const override = valid ? { cardCategory: { ...(cur.cardCategory ?? {}), [id]: category! } } : {};
+      const next = { ...cur, acquiredCardIds: [...(cur.acquiredCardIds ?? []), id], ...override };
+      saveFileRef.current(next);
       return next;
     });
-  }, []);
+    // Confirm WHERE it landed so the player can see the routing worked (the reported "weapons sometimes
+    // go to the wrong category" pain — now it's visible).
+    pushNotice(valid ? `Added to ${categoryLabel(category!, f.customCategories ?? [])}` : 'Card added');
+  }, [pushNotice]);
   // Hidden categories (#227, Cards panel): which categories the player toggled off. Back-compat:
   // a legacy save with showNotes === false maps to notes hidden.
   const hidden = useMemo<CardCategory[]>(
@@ -1141,7 +1179,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // new maxes). Used by edits that can change stats (e.g. deleting an enabled card).
   const commitFile = useCallback((next: CharacterFile) => {
     setFile(next);
-    void saveCharacter(next);
+    saveFileRef.current(next);
     const c = characterRef.current;
     const d = toSheetCharacter(next);
     setCharacter({
@@ -1168,7 +1206,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         cur.add(c);
       }
       const next = { ...f, hiddenCategories: [...cur] };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1180,7 +1218,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const cat = { id, label: label.trim() || 'New Category', icon };
       const order = f.categoryOrder ?? activeRing({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), custom: f.customCategories ?? [] });
       const next = { ...f, customCategories: [...(f.customCategories ?? []), cat], categoryOrder: [...order, id] };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1202,7 +1240,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         hiddenCategories: (f.hiddenCategories ?? []).filter((k) => k !== id),
         cardCategory,
       };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1216,7 +1254,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const map = { ...(f.cardCategory ?? {}) };
       for (const id of ids) map[id] = categoryKey;
       const next = { ...f, cardCategory: map };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1231,7 +1269,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       for (const k of Object.keys(cardOrder)) if (k !== toCat) cardOrder[k] = cardOrder[k].filter((x) => x !== movedId);
       cardOrder[toCat] = orderedIds;
       const next = { ...f, cardCategory, cardOrder };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1248,7 +1286,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       for (const k of Object.keys(cardOrder)) if (k !== toCat) cardOrder[k] = cardOrder[k].filter((x) => !moved.has(x));
       cardOrder[toCat] = orderedIds;
       const next = { ...f, cardCategory, cardOrder };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1464,7 +1502,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       }
       const next = { ...file, enabledCardIds: [...cur], beastformUnequipped, beastformDomainSnapshot };
       setFile(next);
-      void saveCharacter(next);
+      saveFileRef.current(next);
       const c = characterRef.current;
       const d = toSheetCharacter(next);
       // Gaining Max HP fills the new heart(s) (#233 item 5): hp follows the gain so the added slot
@@ -1515,7 +1553,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     for (const w of file.beastformUnequipped ?? []) cur.add(w);
     const next = { ...file, enabledCardIds: [...cur], beastformUnequipped: undefined, beastformDomainSnapshot: undefined };
     setFile(next);
-    void saveCharacter(next);
+    saveFileRef.current(next);
     const d = toSheetCharacter(next);
     setCharacter((c) => ({
       ...d,
@@ -1541,7 +1579,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const map = { ...(f.cardTokens ?? {}) };
       map[cardId] = [...(map[cardId] ?? []), token];
       const next = { ...f, cardTokens: map };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1555,7 +1593,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       if (left.length) map[cardId] = left;
       else delete map[cardId];
       const next = { ...f, cardTokens: map };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
@@ -1568,7 +1606,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const map = { ...(f.cardTokens ?? {}) };
       map[cardId] = cur.map((t) => (t.id === tokenId ? { ...t, ...patch } : t));
       const next = { ...f, cardTokens: map };
-      void saveCharacter(next);
+      saveFileRef.current(next);
       return next;
     });
   }, []);
