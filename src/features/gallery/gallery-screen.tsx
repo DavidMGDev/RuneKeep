@@ -13,7 +13,7 @@ import { RuneChip } from './components/rune-chip';
 import { type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
-import { CATALOG, type CatalogCard, type CatalogKind } from '@/features/cards/catalog';
+import { CATALOG, type CatalogCard, type CatalogKind } from '@/data/catalog';
 
 const KINDS: { key: CatalogKind; label: string }[] = [
   { key: 'domain', label: 'Domains' },

@@ -6,11 +6,11 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 import { classColor } from '@/constants/identity';
-import { ALL_ARMOR, ALL_PRIMARY_WEAPONS, ALL_SECONDARY_WEAPONS } from '@/features/create/equipment-data';
+import { ALL_ARMOR, ALL_PRIMARY_WEAPONS, ALL_SECONDARY_WEAPONS } from '@/data/equipment-data';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { ForgedCard } from '@/features/create/components/forged-card';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
-import { CATALOG } from '@/features/cards/catalog';
+import { CATALOG } from '@/data/catalog';
 import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
 
 import { FullScreenPanel } from './full-screen-panel';

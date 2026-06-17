@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 
-import { STRIKE_X0, STRIKE_X1, strikeLines } from '@/features/cards/ancestry-trait-regions';
+import { STRIKE_X0, STRIKE_X1, strikeLines } from '@/data/ancestry-trait-regions';
 
 /**
  * The mixed-ancestry CROSS-OUT (#265/#276 item 3): a BLACK strikethrough on each line of the trait the

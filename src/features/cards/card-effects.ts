@@ -8,12 +8,12 @@
 
 import type { CardEffect } from '@/lib/modifiers';
 import type { CharacterFile, ExperienceDef } from '@/lib/character-file';
-import { armorById, weaponById } from '@/features/create/equipment-data';
-import { lootById } from '@/lib/loot-data';
-import { wildshapeById } from '@/lib/wildshape-data';
-import { cardById } from './catalog';
-import { CATALOG_EFFECTS } from './catalog-effects';
-import { isAncestryEffectDisabled } from './ancestry-traits';
+import { armorById, weaponById } from '@/data/equipment-data';
+import { lootById } from '@/data/loot-data';
+import { wildshapeById } from '@/data/wildshape-data';
+import { cardById } from '@/data/catalog';
+import { CATALOG_EFFECTS } from '@/data/catalog-effects';
+import { isAncestryEffectDisabled } from '@/data/ancestry-traits';
 
 /** All player-authored cards on a file (experiences, inventory items, sheet-made cards). */
 function customCards(file?: CharacterFile): ExperienceDef[] {

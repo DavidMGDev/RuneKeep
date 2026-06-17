@@ -8,7 +8,7 @@
  * GENERATED from _pdfwork/wildshape.json by gen_wildshape.py — edit the source + regenerate.
  */
 
-import type { CardEffect } from './modifiers';
+import type { CardEffect } from '@/lib/modifiers';
 
 export interface Wildshape {
   id: string;

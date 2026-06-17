@@ -107,9 +107,10 @@ no launch-time download. See [`apk-build/README.md`](./apk-build/README.md) for 
 
 ```
 src/app/            Expo Router routes & layouts only
-src/components/     shared components (card editor, effects editor, loaders, …)
-src/features/       feature areas + local components (character-sheet/, create/, cards/, …)
-src/lib/            pure logic: modifier engine, leveling, rest, wildshape, character file
+src/components/     shared UI kit (card editor, effects editor, loaders, chamfer box, …)
+src/features/       feature areas + their own components/ (character-sheet/, create/, cards/, …)
+src/data/           all static game data + typed accessors (catalog, equipment, loot, wildshape, …)
+src/lib/            pure logic: modifier engine, leveling, rest, character file, sfx
 src/constants/      theme (the Rune palette sampled from the art), identity
 assets/             card art (webp), images, sounds
 docs/               architecture notes (responsive strategy, carousel, perf rules)

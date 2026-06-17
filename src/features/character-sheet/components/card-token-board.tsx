@@ -27,7 +27,7 @@ import { playSfx } from '@/lib/sfx';
 import { useCarousel } from '../carousel-context';
 import { DeleteCardConfirm } from '../sheet/edit-card-flow';
 import { catalogIdOf } from '@/features/cards/card-effects';
-import { isWildshapeId } from '@/lib/wildshape-data';
+import { isWildshapeId } from '@/data/wildshape-data';
 import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geometry';
 import {
   DEFAULT_TOKEN_KINDS,

@@ -6,11 +6,11 @@
  */
 
 import { type ClassName, classInfo } from '@/constants/identity';
-import { cardById } from '@/features/cards/catalog';
+import { cardById } from '@/data/catalog';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
-import { CLASS_DATA } from '@/features/create/class-data';
-import { activeWildshapeName } from '@/lib/wildshape-data';
+import { CLASS_DATA } from '@/data/class-data';
+import { activeWildshapeName } from '@/data/wildshape-data';
 import { type BaseStats, type CardEffect, computeSheet, type EffectSource } from '@/lib/modifiers';
 
 /** Daggerheart proficiency by level (#128): tier 1 = 1, tier 2 (L2-4) = 2, tier 3 (L5-7) = 3, tier 4 = 4. */
