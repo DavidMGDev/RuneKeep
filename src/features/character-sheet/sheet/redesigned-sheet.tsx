@@ -1114,8 +1114,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
   const onDeleteCards = useCallback((rawIds0: string[]) => {
     if (!file || rawIds0.length === 0) return;
-    // Beastform cards can't be deleted (#279) — drop any wildshape ids from the request.
-    const rawIds = rawIds0.filter((id) => !isWildshapeId(catalogIdOf(id)));
+    // Beastform cards can't be deleted (#279); the live Gold card can't be deleted (#306, there is only
+    // ever one) — drop both from the request so no path can remove them.
+    const rawIds = rawIds0.filter((id) => { const cid = catalogIdOf(id); return !isWildshapeId(cid) && cid !== 'gold'; });
     if (rawIds.length === 0) return;
     // HARD safeguard (#252): never delete the last card overall. Count the cards actually in the live
     // decks; if this deletion would remove them all, keep one. This is the data-layer guard (the UI

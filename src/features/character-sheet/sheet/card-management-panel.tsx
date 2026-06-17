@@ -129,6 +129,8 @@ export function CardManagementPanel(props: Props) {
   }, [isDruid, customCategories, order]);
   const enabledCount = ordered.filter((k) => !hiddenSet.has(k) && (decks[k]?.length ?? 0) > 0).length;
   const totalCards = useMemo(() => Object.values(decks).reduce((s, a) => s + (a?.length ?? 0), 0), [decks]);
+  // The live GOLD card (#306): there is only ever one, so it can't be deleted or duplicated (only moved).
+  const liveIds = useMemo(() => new Set(Object.values(decks).flat().filter((c) => c.live).map((c) => c.id)), [decks]);
 
   // sub-dialogs / selection
   const [createOpen, setCreateOpen] = useState(false);
@@ -234,6 +236,13 @@ export function CardManagementPanel(props: Props) {
   }));
   const dragItem = dragId ? Object.values(decks).flat().find((c) => c.id === dragId) : null;
 
+  // Selection-footer derivations (#306): which actions apply, with the Gold card protected.
+  const selArr = [...selected];
+  const selectionHasGold = selArr.some((id) => liveIds.has(id));
+  const dupIds = selArr.filter((id) => !liveIds.has(id)); // never duplicate the Gold card
+  const canEdit = selected.size === 1 && !!onEditCard && !!editableIds?.has(selArr[0]);
+  const deleteBlocked = selectionHasGold || selected.size >= totalCards;
+
   return (
     <>
     <FullScreenPanel
@@ -242,20 +251,30 @@ export function CardManagementPanel(props: Props) {
       onClose={onClose}
       footer={
         view === 'cards' && selected.size > 0 ? (
-          <View style={{ gap: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          // #306: a COMPACT, wrapping control strip that stays inside the panel border (the old single
+          // non-wrapping row pushed the buttons off-screen). Edit is the familiar pencil icon.
+          <View style={{ gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Pressable onPress={clearSelect} hitSlop={6} accessibilityRole="button" accessibilityLabel="Clear selection"><Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold, textTransform: 'uppercase' }}>Clear</Text></Pressable>
               <Text style={{ flex: 1, color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>{selected.size} selected</Text>
-              {selected.size === 1 && onEditCard && editableIds?.has([...selected][0]) ? (
-                <RuneButton label="Edit" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => onEditCard([...selected][0])} />
+              {selectionHasGold ? (
+                <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular }}>Gold can&apos;t be deleted</Text>
+              ) : selected.size >= totalCards ? (
+                <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular }}>Keep at least one card</Text>
+              ) : null}
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {canEdit ? (
+                <Pressable onPress={() => onEditCard!(selArr[0])} accessibilityRole="button" accessibilityLabel="Edit card" style={{ width: 48, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 7, borderWidth: 1.4, borderColor: GOLD_BORDER }}>
+                  <PencilIcon color={Rune.goldText} />
+                </Pressable>
               ) : null}
               {onDuplicate ? (
-                <RuneButton label="Duplicate" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => { onDuplicate([...selected]); clearSelect(); }} />
+                <RuneButton label="Duplicate" kind="secondary" dense height={38} disabled={dupIds.length === 0} onPress={() => { onDuplicate(dupIds); clearSelect(); }} />
               ) : null}
-              <RuneButton label="Move" kind="secondary" dense height={36} style={{ paddingHorizontal: 16 }} onPress={() => setMoveOpen(true)} />
-              <RuneButton label="Delete" kind="primary" dense height={36} style={{ paddingHorizontal: 16 }} disabled={selected.size >= totalCards} onPress={() => setConfirmDel(true)} />
+              <RuneButton label="Move" kind="secondary" dense height={38} onPress={() => setMoveOpen(true)} />
+              <RuneButton label="Delete" kind="primary" dense height={38} disabled={deleteBlocked} onPress={() => setConfirmDel(true)} />
             </View>
-            {selected.size >= totalCards ? <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, textAlign: 'right' }}>Keep at least one card.</Text> : null}
           </View>
         ) : undefined
       }>
