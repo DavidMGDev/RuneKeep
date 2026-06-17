@@ -29,7 +29,7 @@ interface PressableArtProps {
  *
  * It owns a Reanimated `scale` shared value and springs on press, so press feedback exists today and
  * richer behavior (tap-to-grow, particle burst, float) is a localized change here — never bake a
- * bare <Image> in where touch behavior is expected (see docs/animation-stack.md).
+ * bare <Image> in where touch behavior is expected (see AGENTS.md › Animation conventions).
  */
 export function PressableArt({
   children,

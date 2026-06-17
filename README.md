@@ -72,7 +72,7 @@ with dice rolls.
 - **react-native-audio-api** — the SFX engine (native; silent in Expo Go, audible in the APK).
 - A pure, unit-tested **modifier engine** (`src/lib/modifiers.ts`) computes every derived stat.
 
-See [`docs/animation-stack.md`](./docs/animation-stack.md) for the version-verified library rationale.
+See [`docs/architecture.md`](./docs/architecture.md) for the responsive strategy, carousel design, and perf rules.
 
 ## Run from source
 
@@ -95,13 +95,13 @@ A self-contained build script provisions the Android toolchain (direct-download,
 produces a small arm64 release APK, then publishes a GitHub release:
 
 ```bash
-npx expo prebuild -p android --no-install
-git checkout -- package.json     # revert the prebuild script flip
-powershell -ExecutionPolicy Bypass -File ./apk-build/build-apk.ps1
+npm run prebuild:android         # first time only — generates the native android/ project
+git checkout -- package.json     # revert expo-prebuild's package.json flip
+npm run build:apk                # provisions the toolchain, assembles + publishes the APK
 ```
 
 The bundle stays under ~90 MB, so the whole rulebook's card data ships inside the app — no database,
-no launch-time download. See [`AGENTS.md`](./AGENTS.md) for the toolchain notes and gotchas.
+no launch-time download. See [`apk-build/README.md`](./apk-build/README.md) for the toolchain notes and gotchas.
 
 ## Project layout
 
@@ -112,14 +112,13 @@ src/features/       feature areas + local components (character-sheet/, create/,
 src/lib/            pure logic: modifier engine, leveling, rest, wildshape, character file
 src/constants/      theme (the Rune palette sampled from the art), identity
 assets/             card art (webp), images, sounds
-docs/               animation stack + architecture decisions (ADRs)
-design-reference/   the Ligma export — the ground-truth layout oracle (see AGENTS.md)
+docs/               architecture notes (responsive strategy, carousel, perf rules)
 ```
 
 ## Contributing
 
-Read [`AGENTS.md`](./AGENTS.md) first: it covers the `design-reference → screen` workflow and the
-uniformly-scaled `DesignStage` responsive strategy ([`docs/adr/0001`](./docs/adr/0001-responsive-design-stage.md)).
+Read [`AGENTS.md`](./AGENTS.md) first; for the uniformly-scaled `DesignStage` responsive strategy and the
+card-carousel design see [`docs/architecture.md`](./docs/architecture.md).
 Keep screens runnable in Expo Go during development; favour the `Rune` theme over raw hex; TypeScript and
 `StyleSheet.create` throughout (no Tailwind/NativeWind).
 

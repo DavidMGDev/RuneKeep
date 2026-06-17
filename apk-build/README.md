@@ -1,30 +1,38 @@
 # apk-build
 
-Builds a small **offline Android APK** from the asset-optimized `apk-optimize` branch and uploads it
-as a GitHub release. All card data is bundled (no server/DB).
+Builds a small **offline Android APK** (arm64-v8a) and publishes it as a GitHub release. All card data is
+bundled — no server, no database, no launch-time download.
 
 ## Run
 
-```powershell
-powershell -ExecutionPolicy Bypass -File ".\apk-build\build-apk.ps1"
+From the repo root:
+
+```bash
+npm run prebuild:android      # first time only — generates the native android/ project
+git checkout -- package.json  # revert expo-prebuild's package.json flip
+npm run build:apk             # == powershell -File apk-build/build-apk.ps1
 ```
 
-Stay on the `apk-optimize` branch (it holds the compressed assets; `main` keeps the originals).
+The script is idempotent: first run is ~15-25 min (Gradle + native C++ compile), re-runs are fast.
 
-## What it does
+## What `build-apk.ps1` does
 
-1. Cleans any half-installed NDK + `sdkmanager` staging.
-2. Installs the small SDK packages (platform-35, build-tools 35, platform-tools, cmake) via `sdkmanager`.
-3. Installs **NDK r27b** by **direct download + 7-Zip extract** — `sdkmanager`'s own NDK install stalls
-   badly on Windows (Defender scanning ~50k files), so it is bypassed.
-4. Builds a release APK for **arm64-v8a only** (covers modern phones incl. the Samsung A54; smaller and
-   far faster than a 4-ABI universal build). Minify + resource-shrink on; debug-signed so it installs.
-5. Uploads `gh release create v1.0.0-android`.
+1. Points `ANDROID_HOME`/`ANDROID_SDK_ROOT` at the local SDK and cleans `sdkmanager` staging dirs.
+2. Installs the SDK components (`platform-tools`, `build-tools;35.0.0`, `platforms;android-35`,
+   `ndk;27.1.12297006`) by **direct download + 7-Zip extract** — `sdkmanager`'s own downloader stalls on
+   this machine. `cmake;3.22.1` must already be present.
+3. Self-heals the `react-native-audio-api` native build: installs long-path-aware **ninja 1.12.1** and
+   pre-extracts the prebuilt opus/vorbis static libs (its gradle task needs `unzip`, absent in WSL here).
+4. Runs `gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` (minify + resource-shrink on,
+   debug-signed so it sideloads).
+5. Renames the APK to `Runekeep <ver>.apk` and uploads it via `gh release create <ver>`.
 
-First run is ~15-25 min (Gradle + native compile). Re-runs are fast (everything cached/idempotent).
+## Bumping the release version
+
+Edit `$ver` at the top of `build-apk.ps1` (drives the tag, the APK filename, and the release title), bump
+`expo.version` in `app.json`, and rewrite the `$notes` prose for the release. Requires `gh auth login`.
 
 ## Notes
 
-- Requires JDK 21 (present) + Android cmdline-tools (installed under `%LOCALAPPDATA%\Android\Sdk`).
-- The build output (`android/`) is gitignored; only this folder is committed.
-- To revert the image compression entirely: `git checkout main`.
+- Requires JDK 21 + Android cmdline-tools under `%LOCALAPPDATA%\Android\Sdk`.
+- The generated `android/` project is gitignored; only this `apk-build/` folder is committed.

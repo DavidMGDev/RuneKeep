@@ -52,7 +52,10 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "prebuild:android": "expo prebuild -p android --no-install",
+    "build:apk": "powershell -ExecutionPolicy Bypass -File apk-build/build-apk.ps1"
   },
   "private": true
 }
