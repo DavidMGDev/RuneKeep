@@ -1,3 +1,7 @@
+// ponytail: this screen stays large (~1.6k) on purpose — it's the sheet orchestrator, coupled by
+// design (refs-to-avoid-rerender, the beastform state machine, per-frame carousel wiring). Pure
+// helpers were extracted to sheet-utils.ts; splitting the orchestrator further fragments cohesion and
+// risks animation regressions needing on-device verification (see SPEC.md). A deliberate exception.
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -19,7 +23,7 @@ import { CLASS_DATA, featurePages } from '@/data/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
-import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById, type Wildshape } from '@/data/wildshape-data';
+import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
 import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
@@ -36,6 +40,7 @@ import { CenterDialog } from './full-screen-panel';
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
 import { Art } from '../art';
+import { chipWidth, trackBounds, wildshapeSummary } from './sheet-utils';
 import { CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories } from '../carousel-categories';
 import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory } from '../card-data';
@@ -75,21 +80,6 @@ const GOLDD = Rune.goldEdge;
 const IVORY = Rune.sheet;
 const BRONZE = Rune.bronze; // deep gold labels on parchment (AA at small sizes, L3)
 
-/** One-line stat summary for a Beastform's overview face (#227): "+2 Strength · +2 Evasion · …". */
-const WS_TRAIT_LABEL: Record<string, string> = { agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge' };
-function wildshapeSummary(w: Wildshape): string {
-  const parts: string[] = [];
-  for (const e of w.effects) {
-    const d = e.delta ?? 0;
-    const s = d >= 0 ? '+' : '';
-    if (e.target === 'evasion') parts.push(`${s}${d} Evasion`);
-    else if (e.target === 'majorThreshold') parts.push(`${s}${d} Thresholds`); // major+severe move together
-    else if (e.target === 'severeThreshold') continue;
-    else if (WS_TRAIT_LABEL[e.target]) parts.push(`${s}${d} ${WS_TRAIT_LABEL[e.target]}`);
-  }
-  return parts.join(' · ');
-}
-
 const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 'locked' ? Art.armorLocked : Art.armorIcon);
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
@@ -125,20 +115,6 @@ function HopeRule({ left, top, width, count, active, pip }: { left: number; top:
   const lineW = lastFilled * step;
   if (lineW <= 0) return null;
   return <GoldRule left={left + pip / 2} top={top + pip / 2 - 0.5} width={lineW} color="rgba(200,146,58,0.55)" thickness={1} />;
-}
-
-/** Boundary slots for a simple ±1 track (stress/hope/armor): first markable / last marked. */
-function trackBounds(t: { total: number; active: number; locked?: number }) {
-  return {
-    up: t.active < t.total - (t.locked ?? 0) ? t.active : -1,
-    down: t.active > 0 ? t.active - 1 : -1,
-  };
-}
-
-/** Width of a domain chip for its label — sized for the WIDER native glyph run plus real padding,
- *  so the chips no longer hug the text edge-to-edge on the phone (#43 D). */
-function chipWidth(label: string): number {
-  return Math.round(label.length * 7.6) + 18;
 }
 
 /** A domain name in its own small chamfered red chip (#37) — the project's flat, 45°-cut signature. */
