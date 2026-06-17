@@ -169,16 +169,21 @@ describe('toSheetCharacter with enabled cards', () => {
     expect(c.armorScore).toBe(0); // #297: unarmored = 0; armor adds its score only when equipped
   });
 
-  it('enabling armor SETS the thresholds; a bonus card stacks on top (#242)', () => {
-    const set = toSheetCharacter(baseFile({ enabledCardIds: ['arm-chainmail'] })); // 7 / 15
-    expect(set.damageThresholds).toEqual({ major: 7, severe: 15 });
+  it('an unarmored character scales Major = level, Severe = 2×level (#320)', () => {
+    expect(toSheetCharacter(baseFile({ level: 3 })).damageThresholds).toEqual({ major: 3, severe: 6 });
+    expect(toSheetCharacter(baseFile({ level: 5 })).damageThresholds).toEqual({ major: 5, severe: 10 });
+  });
+
+  it('enabling armor SETS the thresholds + adds your level; a bonus card stacks on top (#242/#320)', () => {
+    const set = toSheetCharacter(baseFile({ enabledCardIds: ['arm-chainmail'] })); // 7 / 15, level 1
+    expect(set.damageThresholds).toEqual({ major: 8, severe: 16 }); // #320: set 7/15 + level (1)
     const bonus = toSheetCharacter(
       baseFile({
         customCards: [{ id: 'cc-thr', title: 'Wardstone', text: '', imageUri: null, target: 'inventory', effects: [{ target: 'majorThreshold', mode: 'bonus', delta: 2 }] }],
         enabledCardIds: ['arm-chainmail', 'cc-thr'],
       }),
     );
-    expect(bonus.damageThresholds).toEqual({ major: 9, severe: 15 }); // set 7 + bonus 2
+    expect(bonus.damageThresholds).toEqual({ major: 10, severe: 16 }); // set 7 + level 1 + Wardstone 2
   });
 
   it('applies an enabled armor + shield + ancestry to the derived sheet', () => {
@@ -198,20 +203,20 @@ describe('toSheetCharacter with enabled cards', () => {
     expect(c.damageThresholds).toEqual({ major: 2, severe: 3 }); // base 1/2 + bonus +1/+1
   });
 
-  it('level-up +1/+1 thresholds stack on an armor set, per level (#282)', () => {
+  it('always adds your level to an armor set, per level from level 1 (#282/#320)', () => {
     const l1 = toSheetCharacter(baseFile({ enabledCardIds: ['arm-chainmail'] })); // L1, chainmail sets 7/15
-    expect(l1.damageThresholds).toEqual({ major: 7, severe: 15 }); // no level bonus at level 1
+    expect(l1.damageThresholds).toEqual({ major: 8, severe: 16 }); // #320: set 7/15 + level (1)
     const l2 = toSheetCharacter(baseFile({ level: 2, enabledCardIds: ['arm-chainmail'] }));
-    expect(l2.damageThresholds).toEqual({ major: 8, severe: 16 }); // set 7/15 + Level 2 (+1/+1)
+    expect(l2.damageThresholds).toEqual({ major: 9, severe: 17 }); // set 7/15 + level (2)
     const l3 = toSheetCharacter(baseFile({ level: 3, enabledCardIds: ['arm-chainmail'] }));
-    expect(l3.damageThresholds).toEqual({ major: 9, severe: 17 }); // + Level 3 (+1/+1)
+    expect(l3.damageThresholds).toEqual({ major: 10, severe: 18 }); // set 7/15 + level (3)
   });
-  it('the level threshold bonus appears in the breakdown attributed to each level (#282)', () => {
+  it('the level threshold bonus appears in the breakdown attributed to each level (#282/#320)', () => {
     const b = sheetBreakdown(baseFile({ level: 3, enabledCardIds: ['arm-chainmail'] }));
     const sources = b.majorThreshold.contributions.map((c) => c.source);
-    expect(sources).toContain('Level 2');
+    expect(sources).toContain('Level 1'); // #320: now from level 1
     expect(sources).toContain('Level 3');
-    expect(b.majorThreshold.total).toBe(9);
+    expect(b.majorThreshold.total).toBe(10); // set 7 + level (3)
   });
   it('never exceeds the HP cap of 12', () => {
     const file = baseFile({
