@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import { View } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
@@ -172,7 +172,10 @@ export function getPlaqueTheme(kindLabel: string, classKey?: ClassName): PlaqueT
 
 /** Vector plaque mask using inline SVG path and linear gradient fill support */
 function PlaqueMask({ width, height, gradientStops, fill }: { width: string | number; height: string | number; gradientStops?: { offset: string; color: string }[]; fill?: string }) {
-  const gradientId = `plaque-grad-${Math.round(Math.random() * 1000000)}`;
+  // #328: a stable per-instance id (was Math.random() every render, which recreated the SVG gradient
+  // <Defs> + url(#...) fill each render — wasteful churn on live cards). useId is internal-only, so
+  // output is pixel-identical; same proven pattern as card-tokens.tsx TokenButton/DieButton.
+  const gradientId = useId();
   return (
     <Svg viewBox="369.1956 476.1373 1321.3586 192.1075" width={width} height={height} preserveAspectRatio="none">
       {gradientStops ? (

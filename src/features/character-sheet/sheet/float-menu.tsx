@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, memo, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -250,7 +250,7 @@ export function FloatMenuTrigger() {
   );
 }
 
-function MenuIcon({ kind }: { kind: SlotKind }) {
+const MenuIcon = memo(function MenuIcon({ kind }: { kind: SlotKind }) {
   const g = Rune.goldText;
   const sw = 2.2;
   const common = { stroke: g, strokeWidth: sw, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -303,7 +303,7 @@ function MenuIcon({ kind }: { kind: SlotKind }) {
         </Svg>
       );
   }
-}
+});
 
 /** One annular-sector path (local SVG coords, centre at SVG_R,SVG_R). */
 function sectorPath(a0: number, a1: number, ri: number, ro: number): string {
@@ -319,7 +319,7 @@ function sectorPath(a0: number, a1: number, ri: number, ro: number): string {
   return `M${x0},${y0} A${ro},${ro} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${ri},${ri} 0 ${large} 0 ${x3},${y3} Z`;
 }
 
-function FloatPuck({ index }: { index: number }) {
+const FloatPuck = memo(function FloatPuck({ index }: { index: number }) {
   const { progress, highlight, pinned, select } = useFloatMenu();
   const slot = SLOTS[index];
   const pos = POS[index];
@@ -356,7 +356,7 @@ function FloatPuck({ index }: { index: number }) {
       </Pressable>
     </Animated.View>
   );
-}
+});
 
 /** The dim + wedge ring + connector line + finger dot + fanned labels. Wrapped in ONE high-zIndex
  *  layer so the whole sheet (stat icons AND cards) sits UNDER the dim and can't be touched (#161). */

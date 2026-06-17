@@ -21,7 +21,7 @@ export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
  * (middle ribbon) is chosen from a picker of built-in + custom types. Gear-bearing categories also
  * expose the system catalog browser. The save handler receives the resolved category KEY.
  */
-export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds, categoryOverride, customTypes = [] }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string) => void; acquiredIds?: Set<string>; categoryOverride?: CardCategory; customTypes?: string[] }) {
+export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds, categoryOverride, customTypes = [] }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; acquiredIds?: Set<string>; categoryOverride?: CardCategory; customTypes?: string[] }) {
   const { category: liveCategory } = useCarousel();
   const category = categoryOverride ?? liveCategory;
   const [mode, setMode] = useState<'author' | 'catalog'>('author');
@@ -36,7 +36,9 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds, category
     );
   }
   if (mode === 'catalog' && onAcquire) {
-    return <GearBrowser acquiredIds={acquiredIds ?? new Set()} onAdd={onAcquire} onBack={() => setMode('author')} onClose={onCancel} />;
+    // #328: route the catalog card to the category being added to (the Cards-panel per-category Add
+    // button, or the current carousel category from the float menu) — not a hardcoded deck.
+    return <GearBrowser acquiredIds={acquiredIds ?? new Set()} onAdd={(id) => onAcquire(id, category)} onBack={() => setMode('author')} onClose={onCancel} />;
   }
   const defaultType = defaultTypeForCategory(category);
   const typeGroups = typePickerGroups(customTypes);

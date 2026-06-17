@@ -598,12 +598,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .map((id) => lootById(id))
       .filter((l): l is NonNullable<typeof l> => !!l)
       .map((l) => ({ key: l.id, node: <ForgedCard title={l.name} kindLabel={l.kind === 'consumable' ? 'Consumable' : 'Loot'} body={l.text} accentDeep={Rune.panel} colorArt={itemColor(l.name)} multilineTitle /> }));
-    // Acquired CLASS cards (#250 item 4): a multiclass card forged from CLASS_CARDS, NO stat effects.
-    const acqClassJobs: Job[] = acquired
-      .filter((id) => id.startsWith('class-'))
-      .map((id) => ({ id, def: CLASS_CARDS.find((c) => c.key === id.slice(6)) }))
-      .filter((x): x is { id: string; def: NonNullable<(typeof CLASS_CARDS)[number]> } => !!x.def)
-      .map((x) => ({ key: x.id, id: x.id, node: <ForgedCard title={x.def.title} kindLabel="Class" body={x.def.body} accentDeep={classColor(x.def.key).deep} Banner={x.def.Banner} classKey={x.def.key} multilineTitle /> }));
+    // Acquired CLASS cards (#250 item 4 / #328): a MULTI-PAGE card (class card + each feature page),
+    // forged exactly like the primary/multiclass class-feature card — NOT a single page (the old bug:
+    // catalog/added class cards showed "1 of 4"). NO stat effects. Forged per UNIQUE acquired class
+    // (duplicates share the bitmaps; the deck builder makes one item per copy).
+    const acqClassKeys = [...new Set(acquired.filter((id) => id.startsWith('class-')).map((id) => id.slice(6)))]
+      .filter((k) => CLASS_CARDS.some((c) => c.key === k)) as (typeof cls)[];
+    const acqClassJobs: Job[] = acqClassKeys.flatMap((k) => {
+      const def = CLASS_CARDS.find((c) => c.key === k)!;
+      const fp = featurePages(k);
+      const tot = 1 + fp.length;
+      return [
+        { key: `acqclass-${k}`, node: <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={classColor(k).deep} Banner={def.Banner} pageMark={`1/${tot}`} classKey={k} /> },
+        ...fp.map((p) => ({ key: `acqfeat-${k}-${p.pageIndex}`, node: <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${tot}`} sections={p.sections} accentDeep={classColor(k).deep} Banner={classBanner(k)} classKey={k} /> })),
+      ];
+    });
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
     const cinv = CLASS_INVENTORY[cls];
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
@@ -741,7 +750,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const acqWeaponItems = forgedItems(acqWeaponJobs);
     const acqArmorItems = forgedItems(acqArmorJobs);
     const acqLootItems = forgedItems(acqLootJobs);
-    const acqClassItems = forgedItems(acqClassJobs); // acquired multiclass cards (#250 item 4)
+    // Acquired class cards (#328): one MULTI-PAGE item per acquired copy (class card + each feature
+    // page), assembled like the primary/multiclass class-feature card — not one card per page. Faces
+    // are the forged class face + each forged feature page (live node until forged). Duplicates share
+    // the forged bitmaps; dedupeIds gives each copy its own instance id below.
+    const acqClassItems: CardItem[] = (file.acquiredCardIds ?? [])
+      .filter((id) => id.startsWith('class-') && CLASS_CARDS.some((c) => c.key === id.slice(6)))
+      .map((id): CardItem | null => {
+        const k = id.slice(6);
+        const faceKeys = [`acqclass-${k}`, ...featurePages(k as typeof file.className).map((p) => `acqfeat-${k}-${p.pageIndex}`)];
+        const faces = faceKeys.map((key) => {
+          const src = featureSources[key];
+          return src ? { source: src.full, thumb: src.thumb } : { custom: acqClassJobs.find((j) => j.key === key)?.node };
+        });
+        const first = faces.find((f) => 'source' in f && f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
+        if (!first) return null;
+        return { id, source: first.source, thumb: first.thumb, faces: faces.length > 1 ? faces : undefined };
+      })
+      .filter((c): c is CardItem => c !== null);
     // Mixed ancestry (#306): the SECOND ancestry card sits RIGHT AFTER the first so the pair reads
     // together. It arrives via acquiredCardIds (with a cardCategory→abilities override), which the
     // acquired-catalog pass below appended at the very END — so the two cards landed far apart. Place
@@ -755,7 +781,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // the GOLD card is LIVE + interactive (#136): its +/- adjusts character.gold in place. dummy
     // source/thumb are never drawn (the live node renders instead).
     const goldItem = { id: 'gold', source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: <GoldCard gold={character.gold} onChange={(g) => setCharacter((c) => ({ ...c, gold: g }))} />, interactive: true };
-    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqWeaponItems, ...acqArmorItems, ...acqLootItems, ...invCustom];
+    // #328: STARTING weapons ride both abilities + inventory (by design). ACQUIRED weapons do NOT —
+    // they're placed in abilities (above) and routed to the player's chosen category by the override
+    // pass, so a catalog weapon no longer duplicates into both Arsenal and Inventory.
+    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqArmorItems, ...acqLootItems, ...invCustom];
     // Acquired CATALOG cards (#248 item 5): domain/ancestry/community/subclass picked from the catalog
     // browser, added as their real card image (no forging). Skip ids already in a deck (e.g. an owned
     // domain card) so there's never a duplicate id.
@@ -1065,12 +1094,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, []);
   // Acquired system gear/loot (#180): adding an id forges it into the decks (re-derives from file).
   const acquiredIds = useMemo(() => new Set(file?.acquiredCardIds ?? []), [file]);
-  const onAcquireCard = useCallback((id: string) => {
+  const onAcquireCard = useCallback((id: string, category?: CardCategory) => {
     setFile((f) => {
       if (!f) return f;
       // #269: allow MULTIPLE copies — acquiredCardIds is a multiset; each copy gets a unique instance
       // id in the deck (catalogIdOf maps it back to content). The catalog browser offers "Add another".
-      const next = { ...f, acquiredCardIds: [...(f.acquiredCardIds ?? []), id] };
+      // #328: route the new card to the category the player added it to (the Cards-panel per-category Add
+      // button, or the current carousel category from the float menu) by writing a cardCategory override
+      // on the catalog id — the deck builder's override pass then places it there instead of a hardcoded
+      // deck (which had domain/ancestry/community cards always land in inventory + weapons in BOTH decks).
+      // Beastform stays locked to its own deck, so never override INTO/OUT of wildshape.
+      const override =
+        category && category !== 'wildshape'
+          ? { cardCategory: { ...(f.cardCategory ?? {}), [id]: category } }
+          : {};
+      const next = { ...f, acquiredCardIds: [...(f.acquiredCardIds ?? []), id], ...override };
       void saveCharacter(next);
       return next;
     });
