@@ -70,11 +70,11 @@ export const OVERSCROLL_RESIST = 0.35; // drag past a deck end moves at 35% (sof
 // Dragging the inner gear is the power-scroll: ONE full swipe sweeps the whole deck (adaptive —
 // gearPanR = GEAR_SWIPE_PX / maxRotation(count)), a haptic ticks at every detent crossed, and the
 // fan keeps its tightened spacing while the cards shrink so more of the deck is visible at once.
-// 120 (was 200, #174): the gear must sweep the WHOLE deck AND leave finger room in the SAME
-// center->edge drag to over-scroll past the end and commit a category switch (~60px past the
-// end arms it). 120 deck-sweep + ~60 over-scroll ≈ one comfortable half-screen drag, with ~10px
-// of slack so a phone-case user who can't reach the very screen edge still passes the arm point.
-export const GEAR_SWIPE_PX = 120; // finger px that cover first card -> last card on the gear
+// 105 (was 120 → 200, #174/#320): ~14% MORE sensitive (owner) so a single center->edge gear drag
+// sweeps the WHOLE deck AND keeps enough finger room to over-scroll past the end and commit a
+// category switch — no extra manual scroll needed to cross from the last card to the next category.
+// Still adaptive (gearPanR = GEAR_SWIPE_PX / maxRotation(count)) so it scales with the deck size.
+export const GEAR_SWIPE_PX = 105; // finger px that cover first card -> last card on the gear
 
 // --- Gear over-scroll → category switch (#174) ---
 // Past a deck END, the gear grind stops feeding `rotation` (clamped) and instead pushes the WHOLE
