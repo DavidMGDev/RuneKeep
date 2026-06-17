@@ -30,7 +30,7 @@ import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
-import { CompanionCard } from '../components/companion-card';
+import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
 import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/companion';
 import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -790,11 +790,20 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const customCats = file.customCategories ?? [];
     const override = file.cardCategory ?? {};
     const removed = new Set(file.removedCardIds ?? []); // universal delete (#248 item 5)
-    // Companion (#311): the live Beastbound companion sheet card — only for a Beastbound character
-    // (primary OR via multiclass). Edits persist to file.companion; it's duplicatable (linked copies)
-    // and never fully deletable (guards below). Like the gold card, its source/thumb are never drawn.
+    // Companion (#311/#318): the Beastbound companion is a CARD CATEGORY — one live, lockable card per
+    // facet (name+image, Evasion, Damage, Range, Stress, one per Experience). Only for a Beastbound
+    // character (primary OR via multiclass). Edits persist to file.companion; cards are duplicatable +
+    // movable but never fully deletable (guards below). Like gold, the source/thumb are never drawn.
+    const companionState = companionOf(file);
+    const mkCompanion = (facet: CompanionFacet, expIndex?: number): CardItem => ({
+      id: companionCardId(facet, expIndex),
+      source: GENERIC_CARD_ART,
+      thumb: GENERIC_CARD_ART,
+      live: <CompanionFacetCard facet={facet} expIndex={expIndex} companion={companionState} onChange={(c) => mutateFile({ companion: c })} />,
+      interactive: true,
+    });
     const companionCards: CardItem[] = hasCompanion(file)
-      ? [{ id: 'companion', source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: <CompanionCard companion={companionOf(file)} onChange={(c) => mutateFile({ companion: c })} />, interactive: true }]
+      ? [mkCompanion('name'), mkCompanion('evasion'), mkCompanion('damage'), mkCompanion('range'), mkCompanion('stress'), ...companionState.experiences.map((_, i) => mkCompanion('exp', i))]
       : [];
     const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, companion: companionCards, notes: notesCards };
     const validKeys = new Set<string>([...BUILTIN_CATEGORIES, ...customCats.map((c) => c.id)]);
@@ -1195,9 +1204,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
   const onDeleteCards = useCallback((rawIds0: string[]) => {
     if (!file || rawIds0.length === 0) return;
-    // Beastform cards can't be deleted (#279); the live Gold card can't be deleted (#306, there is only
-    // ever one) — drop both from the request so no path can remove them.
-    const rawIds = rawIds0.filter((id) => { const cid = catalogIdOf(id); return !isWildshapeId(cid) && cid !== 'gold'; });
+    // Non-deletable cards: Beastform (#279), the live Gold card (#306), and the live Companion facet
+    // cards (#318 — name/evasion/damage/range/stress/exp; companion-* ids) are dropped from the request
+    // so no path (incl. a bulk delete) can ever remove them. Companion copies (cp-… ids) stay deletable.
+    const rawIds = rawIds0.filter((id) => { const cid = catalogIdOf(id); return !isWildshapeId(cid) && cid !== 'gold' && !cid.startsWith('companion'); });
     if (rawIds.length === 0) return;
     // HARD safeguard (#252): never delete the last card overall. Count the cards actually in the live
     // decks; if this deletion would remove them all, keep one. This is the data-layer guard (the UI
@@ -1208,13 +1218,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     if (liveIds.size > 0 && present.length >= liveIds.size) {
       const keep = present[present.length - 1]; // keep the last selected so one card always remains
       ids = rawIds.filter((id) => id !== keep);
-    }
-    // #311: never delete the LAST companion card — always keep one copy (extras/copies may be removed).
-    // This holds even in a bulk selection that scoops up every companion instance.
-    const companionTotal = Object.values(carouselDecks ?? {}).flat().filter((c) => (c.ref ?? catalogIdOf(c.id)) === 'companion').length;
-    if (companionTotal > 0) {
-      const delCompanion = ids.filter((id) => refOf(id, file) === 'companion');
-      if (delCompanion.length >= companionTotal) ids = ids.filter((id) => id !== delCompanion[delCompanion.length - 1]);
     }
     if (ids.length === 0) return;
     const del = new Set(ids);

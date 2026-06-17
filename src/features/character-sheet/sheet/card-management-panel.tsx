@@ -130,7 +130,7 @@ function CompanionTile() {
 
 /** The right placeholder for a LIVE card (#306/#311): companion vs gold. */
 function LiveTile({ item }: { item: CardItem }) {
-  return (item.ref ?? item.id) === 'companion' ? <CompanionTile /> : <GoldTile />;
+  return (item.ref ?? item.id).startsWith('companion') ? <CompanionTile /> : <GoldTile />;
 }
 
 /**
@@ -154,6 +154,9 @@ export function CardManagementPanel(props: Props) {
   // The live GOLD card (#306): there is only ever one, so it can't be deleted or duplicated (only
   // moved). NOTE: only the gold card — the companion card is also `live` but IS duplicatable/movable.
   const liveIds = useMemo(() => new Set(Object.values(decks).flat().filter((c) => (c.ref ?? c.id) === 'gold').map((c) => c.id)), [decks]);
+  // #318: companion facet cards can be duplicated + moved but NEVER deleted (their originals carry the
+  // companion sheet). Block Delete when any is selected; Duplicate stays allowed.
+  const companionIds = useMemo(() => new Set(Object.values(decks).flat().filter((c) => (c.ref ?? c.id).startsWith('companion')).map((c) => c.id)), [decks]);
 
   // sub-dialogs / selection
   const [createOpen, setCreateOpen] = useState(false);
@@ -276,9 +279,10 @@ export function CardManagementPanel(props: Props) {
   // Selection-footer derivations (#306): which actions apply, with the Gold card protected.
   const selArr = [...selected];
   const selectionHasGold = selArr.some((id) => liveIds.has(id));
-  const dupIds = selArr.filter((id) => !liveIds.has(id)); // never duplicate the Gold card
+  const selectionHasCompanion = selArr.some((id) => companionIds.has(id));
+  const dupIds = selArr.filter((id) => !liveIds.has(id)); // never duplicate the Gold card (companion ok)
   const canEdit = selected.size === 1 && !!onEditCard && !!editableIds?.has(selArr[0]);
-  const deleteBlocked = selectionHasGold || selected.size >= totalCards;
+  const deleteBlocked = selectionHasGold || selectionHasCompanion || selected.size >= totalCards;
 
   return (
     <>
@@ -296,6 +300,8 @@ export function CardManagementPanel(props: Props) {
               <Text style={{ flex: 1, color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>{selected.size} selected</Text>
               {selectionHasGold ? (
                 <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular }}>Gold can&apos;t be deleted</Text>
+              ) : selectionHasCompanion ? (
+                <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular }}>Companion cards can&apos;t be deleted</Text>
               ) : selected.size >= totalCards ? (
                 <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular }}>Keep at least one card</Text>
               ) : null}
