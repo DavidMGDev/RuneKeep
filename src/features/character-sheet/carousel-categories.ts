@@ -28,6 +28,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   inventory: 'Inventory',
   notes: 'Notes',
   wildshape: 'Beastform',
+  archive: 'Archive',
 };
 
 /** Resolve any category key to its label — built-in name, or a custom category's label. */
