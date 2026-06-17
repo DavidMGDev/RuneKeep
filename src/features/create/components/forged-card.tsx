@@ -127,22 +127,28 @@ export function ForgedCard({
         </View>
       ) : (
         <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 15, paddingBottom: 24 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
-            <Text
-              numberOfLines={multilineTitle ? 4 : 1}
-              adjustsFontSizeToFit={multilineTitle}
-              minimumFontScale={0.42}
-              style={{ flexShrink: 1, color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>
-              {title}
-            </Text>
-            {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
-          </View>
+          {/* #318: a titleless card (e.g. a note with only a body) drops the title row entirely and lets
+              the body fill from the top — no "Untitled"/"Note" placeholder. */}
+          {title.trim() ? (
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
+              <Text
+                numberOfLines={multilineTitle ? 4 : 1}
+                adjustsFontSizeToFit={multilineTitle}
+                minimumFontScale={0.42}
+                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>
+                {title}
+              </Text>
+              {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+            </View>
+          ) : pageMark ? (
+            <Text style={{ alignSelf: 'flex-end', color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text>
+          ) : null}
           <CardMarkdownBody
             body={body}
             numberOfLines={multilineTitle ? 9 : undefined}
             adjustsFontSizeToFit={multilineTitle}
             minimumFontScale={0.6}
-            style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: 7, flexShrink: 1 }}
+            style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: title.trim() ? 7 : 0, flexShrink: 1 }}
           />
         </View>
       )}
