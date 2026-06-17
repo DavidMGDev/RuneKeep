@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.9.4'                           # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.9.5'                           # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.9.4 - damage-threshold + modifier-editing fixes on top of v0.9.3. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis release:`n- DAMAGE THRESHOLDS now always add your character's LEVEL to a set threshold (your armor or a card like Bare Bones). A level-1 character in armor printed 7/15 now reads 8/16. Unarmored is unchanged: Major = level, Severe = 2×level (1/2 at level 1).`n- The MODIFIERS panel can now edit COMPLEX card formulas, not just flat +N. Open a card's Modifiers and you'll see the real formula (e.g. Bare Bones' Strength+3, per-tier thresholds, half-Agility) and can change it: pick the variable from a panel, set ×/÷/+ , or edit per-tier values.`n`nRecent history: v0.9.3 kept you in your category when editing its only card. v0.9.2 = per-page origin equip + a more sensitive golden gear. v0.9.1 = press-and-hold origin equip, titleless cards, the per-facet lockable companion, a 5-domain-card cap. v0.9 = multiclassing, the Ranger companion, group card moves.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.9.5 - Armor Score now animates like HP. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThis release:`n- GAINING ARMOR SCORE now fills the new armor slots all at once with the flying-in shield animation, exactly like gaining Max HP fills new hearts. Unequip the card and the lost Armor Score bursts back out, all at once. Sound is treated identically to HP. Stress and Hope are unchanged on purpose.`n`nRecent history: v0.9.4 = always add your level to set damage thresholds + editable complex card formulas in the Modifiers panel. v0.9.3 kept you in your category when editing its only card. v0.9.2 = per-page origin equip + a more sensitive golden gear. v0.9.1 = press-and-hold origin equip, titleless cards, the per-facet lockable companion, a 5-domain-card cap. v0.9 = multiclassing, the Ranger companion, group card moves.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
