@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.9'                             # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.9.1'                           # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.9 - multiclassing, group card moves, and the Ranger's companion. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nNew this release:`n- Full MULTICLASSING (level 5+): pick a second class, a subclass foundation card, and one of its domains (its cards then unlock at half your level); the new class feature joins your arsenal, subclass mastery is locked, and multiclassing into a Druid/Beastbound Ranger adds the Beastform/Companion category on demand.`n- RANGER BEAST-BOUND COMPANION: a Companion category with a live companion sheet card (name, Evasion, Stress, attack die + range, Experiences) and companion training picks at level-up. Companion cards can be duplicated and moved but never fully deleted.`n- GROUP CARD MOVE: select several cards in the Cards menu and drag them together, keeping their order.`n`nAlso folds in the unreleased v0.8 polish: compact Cards selection controls + a locked Gold card, a new Archive category, quieter ancestry/community/subclass page-flips, and mixed-ancestry cards placed side by side.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.9.1 - fixes + a companion rework on top of v0.9. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nFixes this release:`n- ORIGIN CARDS equip like the carousel: press-and-hold the ancestry/community/subclass preview to equip/unequip (scan-fill + corner check); the Equip button still works too.`n- TITLELESS cards: notes/cards save with no title (the body fills the space) - no more 'Untitled'/'Note' placeholder; the default note edits cleanly.`n- COMPANION rework: the Beastbound companion is now one card per facet (name+image, Evasion, Damage, Range, Stress, each Experience) in the ranger-green palette. Each card LOCKS by default (a padlock) so values don't change by accident; numbers grow at level-up. Companion cards duplicate/move but never delete.`n- DOMAIN CAP: at most 5 active domain cards at once - a 6th shows a 'Maximum 5 Domain Cards' notice.`n`nv0.9 brought full multiclassing (level 5+), the Ranger companion, and group card moves, plus the folded-in v0.8 polish (compact Cards controls, locked Gold card, Archive category, quieter origin page-flips, side-by-side mixed-ancestry cards).`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
