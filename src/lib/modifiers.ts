@@ -39,6 +39,8 @@ export interface EffectFormula {
   variable: 'level' | 'tier' | 'proficiency' | TraitKey;
   multiply?: number;
   divide?: number;
+  /** #325: a flat constant ADDED after the ×/÷ round-up (e.g. Bare Bones' Armor = Strength + 3). */
+  plus?: number;
 }
 
 export interface CardEffect {
@@ -137,7 +139,7 @@ function resolveFormula(f: EffectFormula | undefined, out: SheetBreakdown, level
     : f.variable === 'proficiency' ? out.proficiency?.total ?? 0
     : out[f.variable]?.total ?? 0; // a trait total (from pass 1)
   const div = f.divide && f.divide !== 0 ? f.divide : 1;
-  return Math.ceil((base * (f.multiply ?? 1)) / div);
+  return Math.ceil((base * (f.multiply ?? 1)) / div) + (f.plus ?? 0); // #325: + flat constant
 }
 
 /**

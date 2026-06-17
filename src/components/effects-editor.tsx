@@ -55,6 +55,45 @@ const VAR_LABEL: Record<EffectFormula['variable'], string> = {
   level: 'Level', tier: 'Tier', proficiency: 'Proficiency', agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
 };
 
+/**
+ * #325: convert a card's CODE-DEFINED effects into the editor's editable shapes — the legacy dynamics
+ * become the equivalent editable formula so the Modifiers panel can SHOW and EDIT them. `byTier` stays
+ * `byTier` (a per-tier editor handles it). Idempotent — a plain flat/formula/byTier effect is unchanged.
+ */
+export function toEditableEffects(effects: CardEffect[]): CardEffect[] {
+  return effects.map((e) => {
+    if (e.dynamic === 'proficiency') return { ...e, dynamic: 'formula', formula: { variable: 'proficiency', multiply: 1, divide: 1 } };
+    if (e.dynamic === 'halfAgility') return { ...e, dynamic: 'formula', formula: { variable: 'agility', multiply: 1, divide: 2 } };
+    if (e.dynamic === 'strengthPlus3') return { ...e, dynamic: 'formula', formula: { variable: 'strength', multiply: 1, divide: 1, plus: 3 } };
+    return e;
+  });
+}
+
+/** #325: a full-screen chooser for a formula's VARIABLE (Level / Tier / Proficiency / a trait) — same
+ *  shape as EffectPicker, so picking a starter is a tap in a list instead of cycling. Rendered at root. */
+export function FormulaVarPicker({ current, onPick, onClose }: { current?: EffectFormula['variable']; onPick: (v: EffectFormula['variable']) => void; onClose: () => void }) {
+  return (
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 300, maxHeight: '82%', paddingHorizontal: 16, paddingVertical: 16 }}>
+        <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Pick a variable</Text>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 7, paddingBottom: 4 }}>
+          {FORMULA_VARS.map((v) => {
+            const on = current === v;
+            return (
+              <Pressable key={v} onPress={() => onPick(v)} accessibilityRole="button" accessibilityState={{ selected: on }}>
+                <View style={{ minHeight: 40, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
+                  <Text style={{ color: on ? Rune.ivory : Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{VAR_LABEL[v]}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </ChamferBox>
+    </View>
+  );
+}
+
 export function EffectPicker({ current, onPick, onClose }: { current?: EffectOption; onPick: (o: EffectOption) => void; onClose: () => void }) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
@@ -102,11 +141,29 @@ function MiniStepper({ value, onBump, lo, hi, label }: { value: number; onBump: 
   );
 }
 
-export function EffectsField({ effects, onChange, onRequestPick, preview }: {
+/** A small mode toggle button for the flat / formula / by-tier selector (#325). */
+function ModeBtn({ label, on, onPress, a11y }: { label: string; on: boolean; onPress: () => void; a11y: string }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={3} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={a11y}>
+      <View style={{ width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
+        <Text style={{ color: on ? Rune.ivory : Rune.bronze, fontSize: 12, fontFamily: Display.bold }}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+type EffectMode = 'flat' | 'formula' | 'byTier';
+function modeOf(e: CardEffect): EffectMode {
+  return e.dynamic === 'formula' ? 'formula' : e.byTier ? 'byTier' : 'flat';
+}
+
+export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVar, preview }: {
   effects: CardEffect[];
   onChange: (e: CardEffect[]) => void;
   onRequestPick: (i: number) => void;
-  /** Optional resolver for the live "= N" formula preview (current character). */
+  /** #325: open the variable PICKER for the formula at index i (a panel, not a cycle). */
+  onRequestPickVar: (i: number) => void;
+  /** Optional resolver for the live "= N" value preview (current character) — formula/by-tier. */
   preview?: (e: CardEffect) => number | null;
 }) {
   const setAt = (i: number, patch: Partial<CardEffect>) => onChange(effects.map((e, j) => (j === i ? { ...e, ...patch } : e)));
@@ -115,60 +172,74 @@ export function EffectsField({ effects, onChange, onRequestPick, preview }: {
     const [lo, hi] = isSetEffect(e) ? [0, 40] : [-9, 12];
     setAt(i, { delta: Math.max(lo, Math.min(hi, (e.delta ?? 0) + d)) });
   };
-  const toggleFormula = (i: number) => {
+  // #325: three modes — a flat amount, a scaling formula, or a per-tier value. Switching seeds sensible
+  // defaults and clears the other shapes so the saved effect is unambiguous.
+  const setMode = (i: number, mode: EffectMode) => {
     const e = effects[i];
-    if (e.dynamic === 'formula') setAt(i, { dynamic: undefined, formula: undefined, delta: e.delta ?? 1 });
-    else setAt(i, { dynamic: 'formula', formula: e.formula ?? { variable: 'level', multiply: 1, divide: 1 }, delta: undefined });
-  };
-  const cycleVar = (i: number) => {
-    const f = effects[i].formula ?? { variable: 'level' as const };
-    const next = FORMULA_VARS[(FORMULA_VARS.indexOf(f.variable) + 1) % FORMULA_VARS.length];
-    setAt(i, { formula: { ...f, variable: next } });
+    if (mode === 'flat') setAt(i, { delta: e.delta ?? 1, dynamic: undefined, formula: undefined, byTier: undefined });
+    else if (mode === 'formula') setAt(i, { dynamic: 'formula', formula: e.formula ?? { variable: 'level', multiply: 1, divide: 1 }, delta: undefined, byTier: undefined });
+    else setAt(i, { byTier: e.byTier ?? [1, 1, 1, 1], delta: undefined, dynamic: undefined, formula: undefined });
   };
   const bumpFormula = (i: number, key: 'multiply' | 'divide', d: number) => {
     const f = effects[i].formula ?? { variable: 'level' as const };
     const cur = f[key] ?? 1;
     setAt(i, { formula: { ...f, [key]: Math.max(1, Math.min(9, cur + d)) } });
   };
+  const bumpPlus = (i: number, d: number) => {
+    const f = effects[i].formula ?? { variable: 'level' as const };
+    setAt(i, { formula: { ...f, plus: Math.max(-20, Math.min(40, (f.plus ?? 0) + d)) } });
+  };
+  const bumpTier = (i: number, t: number, d: number) => {
+    const bt = [...(effects[i].byTier ?? [1, 1, 1, 1])] as [number, number, number, number];
+    bt[t] = Math.max(-9, Math.min(40, (bt[t] ?? 0) + d));
+    setAt(i, { byTier: bt });
+  };
   return (
     <View style={{ gap: 7, marginTop: 2 }}>
       <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Effects when enabled</Text>
       {effects.length === 0 ? (
-        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>None. Add one for a buff or penalty (e.g. +3 Max HP, −1 Evasion, Set Major Threshold 8). Tap ƒ for a formula (e.g. ×Proficiency, ½ Level).</Text>
+        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>None. Add one for a buff or penalty (e.g. +3 Max HP, −1 Evasion, Set Major Threshold 8). Use ƒx for a formula (e.g. ×Proficiency, ½ Agility, Strength +3) or T for per-tier values.</Text>
       ) : null}
       {effects.map((e, i) => {
-        const isFormula = e.dynamic === 'formula';
+        const mode = modeOf(e);
         const set = isSetEffect(e);
         const v = e.delta ?? 0;
         const amount = set ? `${v}` : v >= 0 ? `+${v}` : `${v}`;
-        const pv = preview && isFormula ? preview(e) : null;
+        const pv = preview ? preview(e) : null;
         return (
           <View key={i} style={{ borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)', borderRadius: 6, backgroundColor: 'rgba(20,24,31,0.5)', padding: 7, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Pressable onPress={() => onRequestPick(i)} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Modifier ${effectLabel(e)}, tap to choose`}>
                 <View style={{ height: 34, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 5, backgroundColor: 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
                   <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>{effectLabel(e)}</Text>
                 </View>
               </Pressable>
-              <Pressable onPress={() => toggleFormula(i)} hitSlop={4} accessibilityRole="button" accessibilityLabel={isFormula ? 'Use a flat amount' : 'Use a formula'} accessibilityState={{ selected: isFormula }}>
-                <View style={{ width: 38, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 5, backgroundColor: isFormula ? Rune.red : 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: isFormula ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
-                  <Text style={{ color: isFormula ? Rune.ivory : Rune.bronze, fontSize: 13, fontFamily: Display.bold }}>{isFormula ? 'ƒx' : '123'}</Text>
-                </View>
-              </Pressable>
+              {/* #325: flat / formula / by-tier selector */}
+              <ModeBtn label="±N" on={mode === 'flat'} onPress={() => setMode(i, 'flat')} a11y="Flat amount" />
+              <ModeBtn label="ƒx" on={mode === 'formula'} onPress={() => setMode(i, 'formula')} a11y="Scaling formula" />
+              <ModeBtn label="T" on={mode === 'byTier'} onPress={() => setMode(i, 'byTier')} a11y="Per-tier value" />
               <Pressable onPress={() => onChange(effects.filter((_, j) => j !== i))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove effect" style={{ padding: 3 }}>
                 <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
               </Pressable>
             </View>
-            {isFormula ? (
+            {mode === 'formula' ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <Pressable onPress={() => cycleVar(i)} hitSlop={4} accessibilityRole="button" accessibilityLabel={`Variable ${VAR_LABEL[e.formula?.variable ?? 'level']}, tap to change`}>
+                <Pressable onPress={() => onRequestPickVar(i)} hitSlop={4} accessibilityRole="button" accessibilityLabel={`Variable ${VAR_LABEL[e.formula?.variable ?? 'level']}, tap to choose`}>
                   <View style={{ height: 30, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 5, backgroundColor: 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: Rune.goldEdge }}>
                     <Text style={{ color: Rune.goldBright, fontSize: 12, fontFamily: Body.bold }}>{VAR_LABEL[e.formula?.variable ?? 'level']}</Text>
                   </View>
                 </Pressable>
                 <MiniStepper label="×" value={e.formula?.multiply ?? 1} lo={1} hi={9} onBump={(d) => bumpFormula(i, 'multiply', d)} />
                 <MiniStepper label="÷" value={e.formula?.divide ?? 1} lo={1} hi={9} onBump={(d) => bumpFormula(i, 'divide', d)} />
+                <MiniStepper label="+" value={e.formula?.plus ?? 0} lo={-20} hi={40} onBump={(d) => bumpPlus(i, d)} />
                 {pv != null ? <Text style={{ color: Rune.goldBright, fontSize: 13, fontFamily: Display.black }}>{`= ${pv >= 0 ? '+' : ''}${pv}`}</Text> : null}
+              </View>
+            ) : mode === 'byTier' ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {[0, 1, 2, 3].map((t) => (
+                  <MiniStepper key={t} label={`T${t + 1}`} value={(e.byTier ?? [0, 0, 0, 0])[t] ?? 0} lo={-9} hi={40} onBump={(d) => bumpTier(i, t, d)} />
+                ))}
+                {pv != null ? <Text style={{ color: Rune.goldBright, fontSize: 13, fontFamily: Display.black }}>{`now ${pv >= 0 ? '+' : ''}${pv}`}</Text> : null}
               </View>
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>

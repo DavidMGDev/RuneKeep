@@ -81,6 +81,13 @@ describe('computeSheet', () => {
     expect(s.severeThreshold.total).toBe(2);
   });
 
+  it('a formula adds its flat +constant after the ×/÷ round-up (#325)', () => {
+    const base = { ...ZERO, strength: 2 };
+    // Bare Bones, made editable: armorScore = Strength + 3 (a bonus on a 0 base) = 5
+    const s = computeSheet(base, 1, [src('Bare Bones', [{ target: 'armorScore', dynamic: 'formula', formula: { variable: 'strength', plus: 3 } }])]);
+    expect(s.armorScore.total).toBe(5);
+  });
+
   it('resolves dynamic halfAgility AFTER flat agility modifiers', () => {
     const base = { ...ZERO, agility: 3 };
     const s = computeSheet(base, 1, [
