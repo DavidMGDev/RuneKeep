@@ -16,6 +16,8 @@ export interface CompanionExperience {
 
 export interface CompanionState {
   name: string;
+  /** Optional companion portrait (#318) shown on the name card. */
+  imageUri?: string | null;
   evasion: number; // starts at 10 (Aware adds +2)
   stress: number; // currently marked
   stressMax: number; // starts at 3 (Resilient adds +1 each)
@@ -32,6 +34,7 @@ export const RANGES = ['Melee', 'Close', 'Far', 'Very Far'];
 /** A brand-new companion (rulebook defaults): Evasion 10, d6 Melee, 3 Stress, two +2 Experiences. */
 export const DEFAULT_COMPANION: CompanionState = {
   name: '',
+  imageUri: null,
   evasion: 10,
   stress: 0,
   stressMax: 3,
