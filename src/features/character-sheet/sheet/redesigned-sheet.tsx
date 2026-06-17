@@ -713,7 +713,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const acqArmorItems = forgedItems(acqArmorJobs);
     const acqLootItems = forgedItems(acqLootJobs);
     const acqClassItems = forgedItems(acqClassJobs); // acquired multiclass cards (#250 item 4)
-    const abilities = [...domainItems, ancestryC, communityC, subclassC, ...featItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom];
+    // Mixed ancestry (#306): the SECOND ancestry card sits RIGHT AFTER the first so the pair reads
+    // together. It arrives via acquiredCardIds (with a cardCategory→abilities override), which the
+    // acquired-catalog pass below appended at the very END — so the two cards landed far apart. Place
+    // it explicitly here; the acquired pass skips ids already present, so it isn't double-added.
+    const secondAncestry = file.mixedAncestry ? cardById(file.mixedAncestry.second) : null;
+    const secondAncestryItem = secondAncestry && secondAncestry.id !== ancestryC.id ? [{ id: secondAncestry.id, source: secondAncestry.source, thumb: secondAncestry.thumb }] : [];
+    const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...featItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
