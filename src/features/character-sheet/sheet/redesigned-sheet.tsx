@@ -757,7 +757,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const removed = new Set(file.removedCardIds ?? []); // universal delete (#248 item 5)
     const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, notes: notesCards };
     const validKeys = new Set<string>([...BUILTIN_CATEGORIES, ...customCats.map((c) => c.id)]);
-    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], notes: [] };
+    // #306: archive starts as an empty built-in deck (cards land here only via a category override).
+    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], notes: [], archive: [] };
     for (const c of customCats) decks[c.id] = [];
     // Unique instance ids (#269): a catalog card the player holds twice (e.g. equipped AND acquired)
     // would otherwise share one id, so selecting/dragging/tokening one hit both. The first copy keeps
@@ -807,6 +808,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       inventory: { label: 'Inventory', builtin: true },
       wildshape: { label: 'Beastform', builtin: true },
       notes: { label: 'Notes', builtin: true },
+      archive: { label: 'Archive', builtin: true },
     };
     for (const c of customCats) categoryMeta[c.id] = { label: c.label, icon: c.icon, builtin: false };
     // Origin badges (#100) target the FINAL abilities deck (a card may have been moved out → -1, which

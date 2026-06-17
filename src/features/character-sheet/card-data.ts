@@ -18,8 +18,9 @@ export const CARD_ASPECT = 750 / 1050; // 5:7
  */
 export type CardCategory = string;
 
-/** The four immutable built-in categories (#246): always present, never deletable. */
-export const BUILTIN_CATEGORIES = ['abilities', 'inventory', 'wildshape', 'notes'] as const;
+/** The immutable built-in categories (#246): always present, never deletable. `archive` (#306) is a
+ *  stash that starts empty → disabled (an empty category is excluded from the ring + locked off). */
+export const BUILTIN_CATEGORIES = ['abilities', 'inventory', 'wildshape', 'notes', 'archive'] as const;
 export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 export const isBuiltinCategory = (k: string): k is BuiltinCategory => (BUILTIN_CATEGORIES as readonly string[]).includes(k);
 
@@ -122,7 +123,9 @@ export const CARD_DECKS: Record<CardCategory, CardItem[]> = {
     { id: 'i17', source: require('../../../assets/extracted_cards/Domains/Codex/codex-02-2.webp'), thumb: require('../../../assets/extracted_cards/Domains/Codex/codex-02-2_lod.webp') },
     { id: 'i18', source: require('../../../assets/extracted_cards/Domains/Grace/grace-02-1.webp'), thumb: require('../../../assets/extracted_cards/Domains/Grace/grace-02-1_lod.webp') },
   ],
-  // Notes (#214) + Wild Shape (#214, Druid) decks are character-supplied; the demo sheet has none.
+  // Notes (#214) + Wild Shape (#214, Druid) + Archive (#306) decks are character-supplied; the demo
+  // sheet has none. Archive starts empty for everyone.
   notes: [],
   wildshape: [],
+  archive: [],
 };

@@ -76,6 +76,21 @@ export function WildshapeIcon() {
   );
 }
 
+/** Archive (#306): a banker's archive box — flat lid + a front handle slot, distinct from the domed,
+ *  banded Inventory chest. The stash you move cards into. */
+export function ArchiveIcon() {
+  return (
+    <Svg width={44} height={44} viewBox="0 0 48 48">
+      {/* lid */}
+      <Rect x={8} y={11} width={32} height={9} rx={2} fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      {/* body */}
+      <Path d="M 11 20 H 37 V 36.5 Q 37 39 34.5 39 H 13.5 Q 11 39 11 36.5 Z" fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      {/* handle slot */}
+      <Rect x={18.5} y={26} width={11} height={3.6} rx={1.8} fill={GOLD} />
+    </Svg>
+  );
+}
+
 /** The right glyph for any category (#214/#246) — built-in glyph, or a custom category's chosen icon
  *  (resolved from the carousel's category meta). Used by the trigger + the over-scroll indicator. */
 export function CategoryGlyph({ category }: { category: CardCategory }) {
@@ -90,6 +105,8 @@ export function CategoryGlyph({ category }: { category: CardCategory }) {
       return <NotesIcon />;
     case 'wildshape':
       return <WildshapeIcon />;
+    case 'archive':
+      return <ArchiveIcon />;
     default:
       return <ArsenalIcon />;
   }
