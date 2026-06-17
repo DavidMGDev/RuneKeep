@@ -82,6 +82,10 @@ export interface CharacterFile {
   inventoryCustom?: ExperienceDef[];
   /** Gold (#128): handfuls/bags/chest counts (max 10/10/1). */
   gold?: { handfuls: number; bags: number; chest: number };
+  /** In-play resource state (v0.9.7): current HP, spent Stress, current Hope, available Armor slots —
+   *  persisted so they survive an app restart (the runtime Character used to reset to full/default on
+   *  every load). Gold lives in its own field above. Additive; absent on old saves → derived defaults. */
+  resources?: { hp: number; stress: number; hope: number; armor: number };
   /** Portrait position in its mask (#155): zoom + offset. */
   portraitTransform?: { scale: number; x: number; y: number };
   /** Player-authored cards made on the sheet (#164), each routed to inventory / arsenal / both. */
@@ -302,6 +306,9 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const stressMax = sheet.stressMax.total;
   const armorMax = sheet.armorScore.total;
   const traits = Object.fromEntries(TRAIT_KEYS.map((k) => [k, sheet[k].total])) as Record<TraitKey, number>;
+  // (v0.9.7) Rehydrate the in-play resource positions saved on the file, clamped to the current maxes.
+  const res = file.resources;
+  const clampRes = (n: number, max: number) => Math.max(0, Math.min(max, Math.round(n)));
   return {
     ...SAMPLE_CHARACTER,
     // Wild Shape (#214): while a Beastform is enabled, the sheet shows the FORM's name so the player
@@ -321,12 +328,12 @@ export function toSheetCharacter(file: CharacterFile): Character {
     damageThresholds: { major: sheet.majorThreshold.total, severe: sheet.severeThreshold.total },
     // Rulebook starting resources (#107): hearts full at the class's max (only that many hearts
     // are drawn; 7 hp = one golden + five red), 6 of 12 stress unlocked, hope starts at 2 of 6.
-    hp: maxHp,
+    hp: res ? clampRes(res.hp, maxHp) : maxHp,
     maxHp,
     // armor: the unlocked slots are enabled (filled), the rest disabled (#128)
-    armor: { active: armorMax, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - armorMax) },
-    stress: { active: 0, total: 12, locked: Math.max(0, 12 - stressMax) },
-    hope: { active: 2, total: sheet.hopeMax.total },
+    armor: { active: res ? clampRes(res.armor, armorMax) : armorMax, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - armorMax) },
+    stress: { active: res ? clampRes(res.stress, stressMax) : 0, total: 12, locked: Math.max(0, 12 - stressMax) },
+    hope: { active: res ? clampRes(res.hope, sheet.hopeMax.total) : 2, total: sheet.hopeMax.total },
     gold: file.gold ?? { handfuls: 1, bags: 0, chest: 0 }, // the kit's handful of gold (#136)
     traits,
   };

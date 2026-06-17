@@ -74,7 +74,11 @@ function pickWedge(fx: number, fy: number): number {
   'worklet';
   const dx = fx - T.x;
   const dy = fy - T.y;
-  if (Math.hypot(dx, dy) < DEAD) return -1;
+  // (v0.9.7) Gate by RADIUS, not just angle: a tap/release inside the dead-zone OR beyond the wedge
+  // ring's outer edge selects nothing → the menu closes. Previously any far tap snapped to the
+  // nearest sector by angle alone, so clicking off the menu still opened a panel.
+  const dist = Math.hypot(dx, dy);
+  if (dist < DEAD || dist > ROUT) return -1;
   const a = (Math.atan2(dy, dx) * 180) / Math.PI;
   if (a < ARC_MIN || a > ARC_MAX) return -1; // the open left half
   let i = Math.round((a + 90) / STEP);
