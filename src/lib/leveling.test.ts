@@ -99,6 +99,33 @@ describe('advancements', () => {
   });
 });
 
+describe('multiclass (#311)', () => {
+  it('records the new class, its subclass foundation card, and its domain', () => {
+    const g = applyLevelUp(
+      baseFile({ level: 4 }),
+      plan({ advancements: [{ key: 'multiclass', multiclass: 'ranger', multiclassSubclassCardId: 'subclass-beastbound-1-foundation', multiclassDomain: 'sage' }] }),
+      DEF,
+    );
+    expect(g.multiclassName).toBe('ranger');
+    expect(g.multiclassSubclassCardId).toBe('subclass-beastbound-1-foundation');
+    expect(g.multiclassDomain).toBe('sage');
+  });
+  it('removes the subclass-upgrade option once multiclassed (no path to mastery)', () => {
+    const before = availableAdvancements(baseFile({ level: 5 }), 6).map((o) => o.key);
+    expect(before).toContain('subclass');
+    const after = availableAdvancements(baseFile({ level: 5, multiclassName: 'wizard' }), 6).map((o) => o.key);
+    expect(after).not.toContain('subclass');
+  });
+  it('does not advance the subclass tier for a multiclassed character (defensive)', () => {
+    const f = applyLevelUp(baseFile({ level: 5, subclassTier: 'specialization', multiclassName: 'wizard' }), plan({ advancements: [{ key: 'subclass' }] }), DEF);
+    expect(f.subclassTier).toBe('specialization');
+  });
+  it('can only multiclass once (slots exhaust the option)', () => {
+    const after = availableAdvancements(baseFile({ level: 5, multiclassName: 'wizard', advancementMarks: { multiclass: 2 } }), 6).map((o) => o.key);
+    expect(after).not.toContain('multiclass');
+  });
+});
+
 describe('slot accounting', () => {
   it('picksUsed counts prof/multiclass as 2', () => {
     expect(picksUsed([{ key: 'prof' }])).toBe(2);

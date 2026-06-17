@@ -122,8 +122,12 @@ export interface CharacterFile {
   traitMarks?: TraitKey[];
   /** Subclass progression from the "upgrade subclass" advancement. */
   subclassTier?: 'foundation' | 'specialization' | 'mastery';
-  /** Multiclass chosen via the multiclass advancement. */
+  /** Multiclass (#311) chosen via the multiclass advancement: the additional class, a subclass
+   *  foundation card from it, and one domain from it. Domain cards from `multiclassDomain` become
+   *  selectable at half the character's level (rounded up) going forward. All additive. */
   multiclassName?: ClassName;
+  multiclassSubclassCardId?: string;
+  multiclassDomain?: string;
   /** Cards the player has ENABLED/equipped (#175): the modifier engine layers each enabled card's
    *  effects onto the base stats. Ids are stable deck-card ids (catalog / equipment / loot / custom).
    *  Additive + optional, so existing saves (undefined) compute exactly as before. */

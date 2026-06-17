@@ -57,7 +57,14 @@ export function advRemaining(file: CharacterFile, key: AdvKey): number {
 /** Options selectable at the given (new) level: in-tier and with slots left. */
 export function availableAdvancements(file: CharacterFile, newLevel: number): AdvancementOption[] {
   const tier = tierForLevel(newLevel);
-  return ADVANCEMENTS.filter((o) => o.minTier <= tier && advRemaining(file, o.key) > 0);
+  const multiclassed = !!file.multiclassName;
+  return ADVANCEMENTS.filter((o) => {
+    if (o.minTier > tier || advRemaining(file, o.key) <= 0) return false;
+    // #311: multiclassing crosses out a subclass-upgrade option, so a multiclassed character can no
+    // longer take "upgrade subclass" (and therefore can never reach a subclass mastery card).
+    if (multiclassed && o.key === 'subclass') return false;
+    return true;
+  });
 }
 export function isTierStart(newLevel: number): boolean {
   return newLevel === 2 || newLevel === 5 || newLevel === 8;
@@ -73,7 +80,9 @@ export interface ChosenAdv {
   traits?: TraitKey[]; // exactly 2 for 'trait'
   expIds?: string[]; // exactly 2 for 'exp'
   domainCardId?: string; // for 'domain'
-  multiclass?: string; // for 'multiclass'
+  multiclass?: string; // for 'multiclass' — the new class key
+  multiclassSubclassCardId?: string; // for 'multiclass' — a foundation card from the new class (#311)
+  multiclassDomain?: string; // for 'multiclass' — one domain from the new class (#311)
 }
 export interface LevelUpPlan {
   /** The automatic per-level domain card (≤ new level). */
@@ -130,6 +139,8 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   let proficiencyBonus = file.proficiencyBonus ?? 0;
   let subclassTier = file.subclassTier ?? 'foundation';
   let multiclassName = file.multiclassName;
+  let multiclassSubclassCardId = file.multiclassSubclassCardId;
+  let multiclassDomain = file.multiclassDomain;
 
   for (const a of plan.advancements) {
     const opt = advOption(a.key);
@@ -163,10 +174,14 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
         proficiencyBonus += 1;
         break;
       case 'subclass':
-        subclassTier = SUBCLASS_NEXT[subclassTier];
+        // #311: a multiclassed character can't gain a subclass mastery; never advance the tier for them
+        // (the option is also removed from availableAdvancements — this is a defensive backstop).
+        if (!file.multiclassName) subclassTier = SUBCLASS_NEXT[subclassTier];
         break;
       case 'multiclass':
         multiclassName = (a.multiclass as CharacterFile['multiclassName']) ?? multiclassName;
+        if (a.multiclassSubclassCardId) multiclassSubclassCardId = a.multiclassSubclassCardId;
+        if (a.multiclassDomain) multiclassDomain = a.multiclassDomain;
         break;
     }
   }
@@ -183,5 +198,7 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   next.proficiencyBonus = proficiencyBonus;
   next.subclassTier = subclassTier;
   next.multiclassName = multiclassName;
+  next.multiclassSubclassCardId = multiclassSubclassCardId;
+  next.multiclassDomain = multiclassDomain;
   return next;
 }

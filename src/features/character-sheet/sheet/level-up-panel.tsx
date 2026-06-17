@@ -104,7 +104,8 @@ export function LevelUpPanel({
   file: CharacterFile;
   defaults: LevelDefaults;
   domainOptions: DomainCardInfo[];
-  classOptions: { key: string; label: string }[];
+  /** #311: each multiclassable class with the domains + subclass foundation cards it offers. */
+  classOptions: { key: string; label: string; domains: string[]; subclasses: { id: string; label: string }[] }[];
   onApply: (next: CharacterFile) => void;
   onClose: () => void;
 }) {
@@ -182,7 +183,13 @@ export function LevelUpPanel({
     if (needs === 'traits') return (t.traits ?? []).length === 2;
     if (needs === 'exps') return (t.expIds ?? []).length === 2;
     if (needs === 'domain') return selectedDomains.length === 2;
-    if (needs === 'multiclass') return !!t.multiclass;
+    // #311: multiclass needs a class + a subclass foundation card, and a domain from that class unless
+    // the class offers no domain the character lacks (can't happen with real data, but don't soft-lock).
+    if (needs === 'multiclass') {
+      if (!t.multiclass || !t.multiclassSubclassCardId) return false;
+      const co = classOptions.find((c) => c.key === t.multiclass);
+      return co && co.domains.length > 0 ? !!t.multiclassDomain : true;
+    }
     return true;
   };
 
@@ -358,8 +365,32 @@ export function LevelUpPanel({
                       </View>
                     ) : null}
                     {opt.needs === 'multiclass' ? (
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {classOptions.map((c) => <Chip key={c.key} label={c.label} on={t.multiclass === c.key} onPress={() => setField(i, { multiclass: t.multiclass === c.key ? undefined : c.key })} />)}
+                      <View style={{ gap: 8 }}>
+                        <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>New class</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {/* choosing/clearing the class resets its dependent subclass + domain picks */}
+                          {classOptions.map((c) => <Chip key={c.key} label={c.label} on={t.multiclass === c.key} onPress={() => setField(i, t.multiclass === c.key ? { multiclass: undefined, multiclassSubclassCardId: undefined, multiclassDomain: undefined } : { multiclass: c.key, multiclassSubclassCardId: undefined, multiclassDomain: undefined })} />)}
+                        </View>
+                        {(() => {
+                          const co = classOptions.find((c) => c.key === t.multiclass);
+                          if (!co) return null;
+                          return (
+                            <>
+                              <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Subclass foundation</Text>
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                                {co.subclasses.map((s) => <Chip key={s.id} label={s.label} on={t.multiclassSubclassCardId === s.id} onPress={() => setField(i, { multiclassSubclassCardId: t.multiclassSubclassCardId === s.id ? undefined : s.id })} />)}
+                              </View>
+                              <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>New domain (half level onward)</Text>
+                              {co.domains.length ? (
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                                  {co.domains.map((d) => <Chip key={d} label={d.charAt(0).toUpperCase() + d.slice(1)} on={t.multiclassDomain === d} onPress={() => setField(i, { multiclassDomain: t.multiclassDomain === d ? undefined : d })} />)}
+                                </View>
+                              ) : (
+                                <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>This class shares both your domains — no new domain to add.</Text>
+                              )}
+                            </>
+                          );
+                        })()}
                       </View>
                     ) : null}
                   </ChamferBox>

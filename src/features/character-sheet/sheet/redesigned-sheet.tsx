@@ -84,6 +84,10 @@ const armorArt = (s: PipState) => (s === 'depleted' ? Art.armorDepleted : s === 
 // R3: push locked pips clearly grey so they read apart from the red 'depleted' art at the smallest size.
 const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
+/** #311: Beastform belongs to Druids AND anyone who multiclassed into Druid (they gain the class
+ *  feature). Used to gate the wildshape deck + the Beastform category for both. */
+const hasBeastform = (f: { className: string; multiclassName?: string }) => f.className === 'druid' || f.multiclassName === 'druid';
+
 /**
  * A stress pip (#70 C → #77): a 44x22 CHAMFERED shape (45° cuts like the domain chips — never
  * rounded), the SAME size for every state. The marked pip adds a FLAT thin under-line spanning
@@ -518,13 +522,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs } = useMemo(() => {
+  const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, mcClassJob: null as Job | null, mcFeatJobs: [] as Job[], expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -549,6 +553,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         />
       ),
     }));
+    // Multiclass (#311): the ADDITIONAL class's feature card, forged exactly like the primary's — a
+    // multi-page deck (class card + each feature page). Appears whenever multiclassName is set.
+    const mc = file.multiclassName;
+    const mcDef = mc ? CLASS_CARDS.find((c) => c.key === mc) : null;
+    const mcTitle = mcDef?.title ?? (mc ? mc.charAt(0).toUpperCase() + mc.slice(1) : '');
+    const mcFpages = mc ? featurePages(mc) : [];
+    const mcTotal = 1 + mcFpages.length;
+    const mcClassJob: Job | null = mc && mcDef
+      ? { key: `mcclass-${mc}`, node: <ForgedCard title={mcTitle} kindLabel="Class" body={mcDef.body} accentDeep={classColor(mc).deep} Banner={mcDef.Banner} pageMark={`1/${mcTotal}`} classKey={mc} /> }
+      : null;
+    const mcFeatJobs: Job[] = mc
+      ? mcFpages.map((p) => ({ key: `mcfeat-${mc}-${p.pageIndex}`, node: <ForgedTextCard title={mcTitle} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${mcTotal}`} sections={p.sections} accentDeep={classColor(mc).deep} Banner={classBanner(mc)} classKey={mc} /> }))
+      : [];
     const expJobs = (file.experiences ?? []).map((e) => ({
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0) + (e.color?.length ?? 0) * 13 + (e.modifier ?? 0) * 101) % 99991}`,
       id: e.id,
@@ -619,17 +636,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // face 1 = the form's features. Static content → stable keys; the deck appears only for Druids.
     // Beastform is tier-gated (#242 item 1): only forms of the player's current tier or lower.
     const wsTier = tierForLevel(file.level);
-    const wildshapeFaceJobs: Job[] = cls === 'druid'
+    const wildshapeFaceJobs: Job[] = hasBeastform(file)
       ? WILDSHAPES.filter((w) => w.tier <= wsTier).flatMap((w) => [
           { key: `ws-${w.id}-0`, node: <ForgedCard title={w.name} kindLabel="Beastform" body={`Tier ${w.tier} · ${w.stress} Stress\nAttack: ${w.attack}\n${wildshapeSummary(w)}\nExamples: ${w.examples}`} accentDeep={Rune.panel} colorArt={w.color} pageMark="1/2" multilineTitle /> },
           { key: `ws-${w.id}-1`, node: <ForgedCard title={w.name} kindLabel="Features" body={w.features} accentDeep={Rune.panel} colorArt={w.color} pageMark="2/2" multilineTitle /> },
         ])
       : [];
-    return { featJobs, classJob, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs };
+    return { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs };
   }, [file]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs],
-    [expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...(mcClassJob ? [mcClassJob] : []), ...mcFeatJobs, ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs],
+    [expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -695,6 +712,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       faces.length > 1 && firstForged
         ? [{ id: `features-${file.className}`, source: firstForged.source, thumb: firstForged.thumb, faces }]
         : [];
+    // Multiclass (#311): the additional class's feature card (multi-page), assembled exactly like the
+    // primary's, plus the chosen subclass FOUNDATION card. Both ride the arsenal next to the originals.
+    const mcFaceJobs = mcClassJob ? [mcClassJob, ...mcFeatJobs] : mcFeatJobs;
+    const mcFaces = mcFaceJobs.map((j) => { const src = featureSources[j.key]; return src ? { source: src.full, thumb: src.thumb } : { custom: j.node }; });
+    const mcFirstForged = mcFaces.find((f) => f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
+    const mcFeatItem = file.multiclassName && mcFaces.length > 1 && mcFirstForged
+      ? [{ id: `mc-features-${file.multiclassName}`, source: mcFirstForged.source, thumb: mcFirstForged.thumb, faces: mcFaces }]
+      : [];
+    const mcSubclass = file.multiclassSubclassCardId ? cardById(file.multiclassSubclassCardId) : null;
+    const mcSubclassItem = mcSubclass ? [{ id: mcSubclass.id, source: mcSubclass.source, thumb: mcSubclass.thumb }] : [];
     // Equipment (#121): weapons + armor appear once forged. Weapons ride BOTH the abilities hand and
     // inventory; armor is inventory only.
     const forgedItems = (jobs: { key: string; node: ReactNode; id?: string }[]) =>
@@ -719,7 +746,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // it explicitly here; the acquired pass skips ids already present, so it isn't double-added.
     const secondAncestry = file.mixedAncestry ? cardById(file.mixedAncestry.second) : null;
     const secondAncestryItem = secondAncestry && secondAncestry.id !== ancestryC.id ? [{ id: secondAncestry.id, source: secondAncestry.source, thumb: secondAncestry.thumb }] : [];
-    const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...featItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom];
+    const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
@@ -744,7 +771,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Beastform (#227): assemble each form's two forged faces into ONE multi-face flip card (id =
     // the form id, so enabling/toggling still targets it). Mirrors the class-feature card assembly.
     const wsTier = tierForLevel(file.level);
-    const wildshapeCards: CardItem[] = file.className === 'druid'
+    const wildshapeCards: CardItem[] = hasBeastform(file)
       ? WILDSHAPES.filter((w) => w.tier <= wsTier).map((w): CardItem | null => {
           const faces = [`ws-${w.id}-0`, `ws-${w.id}-1`].map((k) => {
             const src = featureSources[k];
@@ -822,7 +849,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const fa = decks.abilities;
     const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
     return { decks, categoryMeta, originIndices };
-  }, [file, character.gold, expJobs, classJob, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, featureSources]);
+  }, [file, character.gold, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
@@ -845,13 +872,31 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Level Up (#167): the domain cards available to gain (≤ the NEXT level, in this class's domains,
   // not already owned), the multiclass options, and the class-derived stat defaults.
   const levelData = useMemo(() => {
-    if (!file) return { domainOptions: [] as DomainCardInfo[], classOptions: [] as { key: string; label: string }[], defaults: { maxHp: 6, stressMax: 6, evasion: 10 } };
+    type ClassOpt = { key: string; label: string; domains: string[]; subclasses: { id: string; label: string }[] };
+    if (!file) return { domainOptions: [] as DomainCardInfo[], classOptions: [] as ClassOpt[], defaults: { maxHp: 6, stressMax: 6, evasion: 10 } };
     const cls = classInfo(file.className);
     const owned = new Set(file.domainCardIds);
     const targetLevel = file.level + 1;
-    const domainOptions: DomainCardInfo[] = CATALOG.filter((c) => c.kind === 'domain' && !!c.domain && cls.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel && !owned.has(c.id)).map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], source: c.source as DomainCardInfo['source'], domain: c.domain, level: c.level }));
+    // #311: multiclass domain access — cards from the additional domain unlock at HALF the (target)
+    // level, rounded up. Original domains stay at full level. Owned domains are excluded from the picker.
+    const ownedDomains = new Set<string>([...cls.domains, ...(file.multiclassDomain ? [file.multiclassDomain] : [])]);
+    const halfLevel = Math.ceil(targetLevel / 2);
+    const mcDomain = file.multiclassDomain;
+    const domainOptions: DomainCardInfo[] = CATALOG.filter((c) => {
+      if (c.kind !== 'domain' || !c.domain || owned.has(c.id)) return false;
+      if (cls.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel) return true;
+      if (mcDomain && c.domain === mcDomain && (c.level ?? 0) <= halfLevel) return true; // #311
+      return false;
+    }).map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], source: c.source as DomainCardInfo['source'], domain: c.domain, level: c.level }));
     const data = CLASS_DATA[file.className];
-    const classOptions = CLASSES.filter((c) => c.key !== file.className).map((c) => ({ key: c.key, label: c.label }));
+    // #311: each multiclassable class with the domains it can grant (those the character lacks) + its
+    // subclass FOUNDATION cards (one of which the player picks to gain that subclass's foundation feature).
+    const classOptions: ClassOpt[] = CLASSES.filter((c) => c.key !== file.className).map((c) => ({
+      key: c.key,
+      label: c.label,
+      domains: classInfo(c.key).domains.filter((d) => !ownedDomains.has(d)),
+      subclasses: CATALOG.filter((s) => s.kind === 'subclass' && s.tier === 1 && s.className === c.key).map((s) => ({ id: s.id, label: s.label.replace(/ Foundation$/, '') })),
+    }));
     return { domainOptions, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
   }, [file]);
   const onInfo = useCallback(() => setDamageOpen(true), []);
@@ -1012,13 +1057,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // by `categoryOrder`, minus hidden, minus EMPTY ones — an over-scroll never lands on a category with
   // no cards (#250 item 3), so the player can't get trapped. Falls back to any non-empty category.
   const ring = useMemo(() => {
-    const r = activeRing({ isDruid: file?.className === 'druid', hidden, custom: customCategories, order: file?.categoryOrder });
+    const isDruid = file?.className === 'druid' || file?.multiclassName === 'druid'; // #311: incl. multiclass
+    const r = activeRing({ isDruid, hidden, custom: customCategories, order: file?.categoryOrder });
     if (!carouselDecks) return r; // demo sheet (no file) — no per-deck counts, use the ring as-is
     const nonEmpty = r.filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
     if (nonEmpty.length) return nonEmpty;
-    const anyNonEmpty = availableCategories({ isDruid: file?.className === 'druid', custom: customCategories }).filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
+    const anyNonEmpty = availableCategories({ isDruid, custom: customCategories }).filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
     return anyNonEmpty.length ? anyNonEmpty : ['abilities'];
-  }, [file?.className, hidden, customCategories, file?.categoryOrder, carouselDecks]);
+  }, [file?.className, file?.multiclassName, hidden, customCategories, file?.categoryOrder, carouselDecks]);
   // Re-derive the runtime character from a new file, keeping in-play resource positions (clamped to the
   // new maxes). Used by edits that can change stats (e.g. deleting an enabled card).
   const commitFile = useCallback((next: CharacterFile) => {
@@ -1042,7 +1088,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onToggleCategory = useCallback((c: CardCategory) => {
     setFile((f) => {
       if (!f) return f;
-      const available = availableCategories({ isDruid: f.className === 'druid', custom: f.customCategories ?? [] });
+      const available = availableCategories({ isDruid: hasBeastform(f), custom: f.customCategories ?? [] });
       const cur = new Set<CardCategory>(f.hiddenCategories ?? (f.showNotes === false ? ['notes'] : []));
       if (cur.has(c)) cur.delete(c);
       else {
@@ -1060,7 +1106,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setFile((f) => {
       if (!f) return f;
       const cat = { id, label: label.trim() || 'New Category', icon };
-      const order = f.categoryOrder ?? activeRing({ isDruid: f.className === 'druid', custom: f.customCategories ?? [] });
+      const order = f.categoryOrder ?? activeRing({ isDruid: hasBeastform(f), custom: f.customCategories ?? [] });
       const next = { ...f, customCategories: [...(f.customCategories ?? []), cat], categoryOrder: [...order, id] };
       void saveCharacter(next);
       return next;
@@ -1552,7 +1598,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <ModifiersPanel file={file} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (
             <CardManagementPanel
-              isDruid={file.className === 'druid'}
+              isDruid={hasBeastform(file)}
               hidden={hidden}
               order={file.categoryOrder}
               customCategories={customCategories}
