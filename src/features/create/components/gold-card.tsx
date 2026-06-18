@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
@@ -76,23 +76,35 @@ function Row({ label, count, max, size }: { label: string; count: number; max: n
   );
 }
 
-// Press-and-hold to bulk-adjust gold, accelerating the longer it's held (owner, v0.9.7). `onStep`
-// returns false at the ceiling/floor so the repeat stops. A quick tap fires exactly once.
+// Press-and-hold to bulk-adjust gold, ramping up gently the longer it's held. v0.9.7 was broken: a
+// single timer ref couldn't track overlapping presses, so fast taps leaked self-perpetuating timers
+// that kept adding after release, and parent re-renders churned the loop closures so a hold died after
+// a few steps. Fix: ONE timer per press, cleared before any (re)schedule and on release/unmount; the
+// step fn is read through a ref so a parent re-render never restarts the loop; `onStep` returns false
+// at the 9/9/1 ceiling or empty floor so the repeat self-stops there regardless of the disabled prop.
+const HOLD_START_MS = 300; // first repeat after the immediate press-step — "decently fast, nothing crazy" (owner)
+const HOLD_MIN_MS = 110; // fastest repeat (~9/s) — gold is precious, never a runaway
+const HOLD_DECAY = 0.88; // ponytail: gentle ramp (reaches max speed after ~1.3s of holding), tunable on device
+const nextDelay = (d: number) => Math.max(HOLD_MIN_MS, d * HOLD_DECAY);
 function Step({ label, onStep, disabled }: { label: string; onStep: () => boolean; disabled: boolean }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const delay = useRef(360);
+  const delay = useRef(HOLD_START_MS);
+  const stepRef = useRef(onStep);
+  stepRef.current = onStep; // always call the latest closure — the loop itself never re-subscribes
   const stop = useCallback(() => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } }, []);
-  const tick = useCallback(() => {
-    if (!onStep()) { stop(); return; }
-    delay.current = Math.max(60, delay.current * 0.8); // ponytail: accel curve tunable on device
-    timer.current = setTimeout(tick, delay.current);
-  }, [onStep, stop]);
   const start = useCallback(() => {
     if (disabled) return;
-    delay.current = 360;
-    if (!onStep()) return; // one step on press; repeat only while it keeps changing
+    stop(); // never overlap presses — the v0.9.7 runaway came from skipping this
+    delay.current = HOLD_START_MS;
+    if (!stepRef.current()) return; // one immediate step; repeat only while it keeps changing something
+    const tick = () => {
+      if (!stepRef.current()) { stop(); return; }
+      delay.current = nextDelay(delay.current);
+      timer.current = setTimeout(tick, delay.current);
+    };
     timer.current = setTimeout(tick, delay.current);
-  }, [disabled, onStep, tick]);
+  }, [disabled, stop]);
+  useEffect(() => stop, [stop]); // a timer must never outlive the card
   return (
     <Pressable onPressIn={start} onPressOut={stop} disabled={disabled} hitSlop={8} accessibilityRole="button" accessibilityLabel={label === '+' ? 'Add gold (hold to add faster)' : 'Remove gold (hold to remove faster)'}>
       <View style={{ width: 34, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1.4, borderColor: disabled ? 'rgba(122,94,34,0.3)' : '#9a7a2e', backgroundColor: 'rgba(228,194,92,0.16)', opacity: disabled ? 0.4 : 1 }}>

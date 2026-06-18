@@ -470,6 +470,9 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
   const deck = decks[category];
   const card = st.active ? deck[Math.min(deck.length - 1, Math.max(0, st.idx))] : null;
   const id = card?.id ?? null;
+  // v0.9.8: tokens are keyed by the card's REF so every copy (incl. favorites) shares one board. The
+  // first instance has ref === id, so single cards are unchanged.
+  const tokenKey = card?.ref ?? id;
 
   const cardRect = useMemo<Rect>(() => {
     const w = CARD_W * FS_FOCUS_SCALE;
@@ -477,9 +480,9 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
     return { left: OX - w / 2, top: FS_CENTER_Y - h / 2, width: w, height: h };
   }, []);
 
-  const onPlace = useCallback((t: PlacedToken) => { if (id) placeToken(id, t); }, [id, placeToken]);
-  const onRemove = useCallback((tid: string) => { if (id) removeToken(id, tid); }, [id, removeToken]);
-  const onUpdate = useCallback((tid: string, patch: Partial<PlacedToken>) => { if (id) updateToken(id, tid, patch); }, [id, updateToken]);
+  const onPlace = useCallback((t: PlacedToken) => { if (tokenKey) placeToken(tokenKey, t); }, [tokenKey, placeToken]);
+  const onRemove = useCallback((tid: string) => { if (tokenKey) removeToken(tokenKey, tid); }, [tokenKey, removeToken]);
+  const onUpdate = useCallback((tid: string, patch: Partial<PlacedToken>) => { if (tokenKey) updateToken(tokenKey, tid, patch); }, [tokenKey, updateToken]);
 
   if (!id) return null;
   // Beastform cards can't be edited or deleted (#279) — no fullscreen action shown in the drawer.
@@ -491,7 +494,7 @@ export function CarouselTokenBoard({ onEditCard, onDeleteCard, editableIds }: { 
         cardRect={cardRect}
         width={412}
         height={892}
-        tokens={cardTokens[id] ?? []}
+        tokens={cardTokens[tokenKey ?? id] ?? cardTokens[id] ?? []}
         drawerColor={tokenColor || TOKEN_COLORS[0]}
         scale={scale}
         onPlace={onPlace}

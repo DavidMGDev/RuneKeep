@@ -61,6 +61,29 @@ interface CarouselContextValue {
    * the new hand has faded in (#100 owner spec). No-op when no origin cards are pinned.
    */
   openOriginCard: (slot: 0 | 1 | 2) => void;
+  /** Open the Favorites category from the Favorites button (v0.9.8). When Favorites is enabled it's a
+   *  normal ring member; when disabled it's a transient detour — both over-scroll sides return to the
+   *  origin category. No-op when there are no favorites. */
+  openFavorites: () => void;
+  /** While button-opening a DISABLED Favorites, the origin category to return to on EITHER over-scroll
+   *  side (v0.9.8). null when Favorites is a normal ring member or not open via the detour. */
+  favDetour: CardCategory | null;
+  // --- Golden Gear Edit (v0.9.8): hold the gear still to flatten the deck into an editable row. ---
+  /** 0 = normal curved hand, 1 = flat edit row. Drives the slot straighten + forced-thumbnail LOD. */
+  editMode: SharedValue<number>;
+  /** Whether Golden Gear Edit is active (JS) — gates card taps to raise/select and shows the controls bar. */
+  editing: boolean;
+  /** The selected (raised) card ids in edit mode. */
+  raisedIds: Set<string>;
+  /** Enter edit mode (gear held still): flatten + shrink the deck to lowest LOD. */
+  enterEdit: () => void;
+  /** Leave edit mode: restore the arc and clear the selection. */
+  exitEdit: () => void;
+  /** Toggle a card's raised/selected state in edit mode. */
+  toggleRaise: (id: string) => void;
+  /** Persist an in-edit drag-reorder (v0.9.8): move cards to a category at an explicit order. Same
+   *  signature as the Cards panel's group reorder, so it inherits the override + order persistence. */
+  onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
   /** Ids of cards the player has enabled/equipped (#175) — drives the corner check + toggle state. */
   enabledIds: Set<string>;
   /** Mixed ancestry (#265): deck-card id → which trait (1 = first, 2 = second) is crossed out. Drives
@@ -87,7 +110,7 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void }) {
   // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
   // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
   // four built-in keys always exist (empty) even if a real map omits one.
@@ -105,6 +128,10 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const machineState = useSharedValue<ExpandState>('compact');
   const focusIndex = useSharedValue(Math.round(startMiddle / ANGLE_STEP));
   const [category, setCategoryState] = useState<CardCategory>('abilities');
+  const [favDetour, setFavDetour] = useState<CardCategory | null>(null); // v0.9.8: disabled-Favorites detour origin
+  const editMode = useSharedValue(0); // v0.9.8: Golden Gear Edit straighten progress (0 arc → 1 flat)
+  const [editing, setEditing] = useState(false);
+  const [raisedIds, setRaisedIds] = useState<Set<string>>(() => new Set());
   const switching = useSharedValue(0);
   // Rise reveal (#242 item 3): 1 = deck at rest; 0 = mounted BELOW-screen + hidden (pre-rise). The new
   // deck rises (translateY + fade) from 0→1 once it's ready, as the live interactive deck — no ghost.
@@ -117,6 +144,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   decksRef.current = decks;
   const categoryRef = useRef(category);
   categoryRef.current = category;
+  const favDetourRef = useRef<CardCategory | null>(null);
+  favDetourRef.current = favDetour;
 
   const openCardAt = useCallback(
     (index: number) => {
@@ -150,6 +179,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const setCategory = useCallback(
     (c: CardCategory, arrival: ArrivalEnd = 'end') => {
       if (c === categoryRef.current || switchingRef.current) return; // ignore re-entrancy mid-switch
+      if (c !== 'favorites') setFavDetour(null); // any navigation away from Favorites ends the detour
+      setRaisedIds((s) => (s.size ? new Set() : s)); // v0.9.8: a deck switch clears the edit selection
       switchingRef.current = true;
       playSfx('transitionStart'); // #255: the deck-switch begins
       arrivalRef.current = arrival;
@@ -198,6 +229,11 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
 
   const cycleCategory = useCallback(
     (dir: number, arrival: ArrivalEnd = 'end') => {
+      // v0.9.8: a button-opened (disabled) Favorites is a detour — EITHER over-scroll side returns to origin.
+      if (categoryRef.current === 'favorites' && favDetourRef.current) {
+        setCategory(favDetourRef.current, arrival);
+        return;
+      }
       setCategory(nextCategory(ringRef.current, categoryRef.current, dir), arrival);
     },
     [setCategory],
@@ -209,7 +245,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   // `ring` (which drops empty categories) — otherwise editing the ONLY card in a category transiently
   // empties its deck mid-reforge, drops it from `ring`, and yanks the player to another category.
   useEffect(() => {
-    if ((validRing ?? ring).includes(category)) return;
+    // v0.9.8: don't snap out of a button-opened (disabled) Favorites — the detour keeps it valid.
+    if ((validRing ?? ring).includes(category) || (category === 'favorites' && favDetourRef.current != null)) return;
     const fallback = ring[0] ?? 'abilities';
     setCategoryState(fallback);
     const n = decksRef.current[fallback]?.length ?? 0;
@@ -263,6 +300,38 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     [originIndices, openCardAt, setCategory],
   );
 
+  // v0.9.8: open Favorites from the star button. Enabled → normal ring member; disabled → a transient
+  // detour back to the current category. No-op (negative sound) when there are no favorites to show.
+  const openFavorites = useCallback(() => {
+    if (categoryRef.current === 'favorites') return;
+    if (!(decksRef.current.favorites?.length)) { playSfx('floatMenuClose'); return; }
+    setFavDetour(ringRef.current.includes('favorites') ? null : categoryRef.current);
+    setCategory('favorites', 'start');
+  }, [setCategory]);
+
+  // v0.9.8 Golden Gear Edit: flatten the (expanded) hand into an editable row. No-op from fullscreen.
+  const enterEdit = useCallback(() => {
+    if (machineState.value === 'fullscreen' || switchingRef.current) return;
+    machineState.value = 'expanded';
+    expandProgress.value = withSpring(1, EXPAND_SPRING);
+    editMode.value = withTiming(1, { duration: 440, easing: Easing.inOut(Easing.cubic) });
+    setEditing(true);
+    playSfx('transitionStart');
+  }, [editMode, machineState, expandProgress]);
+  const exitEdit = useCallback(() => {
+    editMode.value = withTiming(0, { duration: 360, easing: Easing.inOut(Easing.cubic) });
+    setEditing(false);
+    setRaisedIds(new Set());
+    playSfx('transitionIconFilled');
+  }, [editMode]);
+  const toggleRaise = useCallback((id: string) => {
+    setRaisedIds((s) => {
+      const n = new Set(s);
+      if (n.has(id)) { n.delete(id); playSfx('cardDeselect'); } else { n.add(id); playSfx('cardSelect'); }
+      return n;
+    });
+  }, []);
+
   const emptyEnabled = useMemo(() => new Set<string>(), []);
   const emptyCrossOuts = useMemo<Record<string, 1 | 2>>(() => ({}), []);
   const noopToggle = useCallback((_id: string) => {}, []);
@@ -294,6 +363,15 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       openCardAt,
       closeFullscreen,
       openOriginCard,
+      openFavorites,
+      favDetour,
+      editMode,
+      editing,
+      raisedIds,
+      enterEdit,
+      exitEdit,
+      toggleRaise,
+      onReorderCards,
       enabledIds: enabledIds ?? emptyEnabled,
       crossOuts: crossOuts ?? emptyCrossOuts,
       toggleCard: onToggleCard ?? noopToggle,
@@ -307,7 +385,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, toggleRaise, onReorderCards, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

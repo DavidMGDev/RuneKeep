@@ -21,10 +21,12 @@ export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
  * (middle ribbon) is chosen from a picker of built-in + custom types. Gear-bearing categories also
  * expose the system catalog browser. The save handler receives the resolved category KEY.
  */
-export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds, categoryOverride, customTypes = [] }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; acquiredIds?: Set<string>; categoryOverride?: CardCategory; customTypes?: string[] }) {
+export function NewCardFlow({ onSave, onCancel, onAcquire, acquiredIds, categoryOverride, customTypes = [], initialMode = 'author' }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; acquiredIds?: Set<string>; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog' }) {
   const { category: liveCategory } = useCarousel();
   const category = categoryOverride ?? liveCategory;
-  const [mode, setMode] = useState<'author' | 'catalog'>('author');
+  // v0.9.8: the sheet's "Add Gear" badge opens straight in catalog mode; "Add Card" omits onAcquire so
+  // the catalog option is hidden entirely (pure author flow).
+  const [mode, setMode] = useState<'author' | 'catalog'>(initialMode);
   // Beastform is Druid-only and not player-authored (#242 item 5): block New Card here.
   if (category === 'wildshape') {
     return (

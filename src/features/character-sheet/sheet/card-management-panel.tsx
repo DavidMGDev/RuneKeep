@@ -21,9 +21,10 @@ import { CenterDialog, FullScreenPanel } from './full-screen-panel';
 
 const SCRIM = 'rgba(20,24,31,0.7)';
 const GOLD_BORDER = 'rgba(218,162,73,0.4)';
-/** Categories whose cards are LOCKED to them (#279/#311): Beastform cards can't be moved out, and
- *  nothing can be moved in. Companion cards are NOT locked (they're movable, just not deletable). */
-const LOCKED_CATS = new Set<string>(['wildshape']);
+/** Categories whose cards are LOCKED to them (#279/#311/v0.9.8): Beastform cards can't be moved out, and
+ *  nothing can be moved in. Favorites is locked too — favoriting is the star action (creates a copy), not
+ *  a drag/move. Companion cards are NOT locked (they're movable, just not deletable). */
+const LOCKED_CATS = new Set<string>(['wildshape', 'favorites']);
 
 /** Proper SVG icon buttons for the category row (#264 item 4) — no emoji. */
 function PencilIcon({ color }: { color: string }) {
@@ -72,6 +73,8 @@ interface Props {
   onEditCard?: (id: string) => void;
   /** Duplicate the selected cards (#277): each becomes an individual copy sharing the source's equip + effect. */
   onDuplicate?: (ids: string[]) => void;
+  /** Favorite the selected cards (v0.9.8): add a favorite duplicate of each eligible source. */
+  onFavorite?: (ids: string[]) => void;
   /** Ids of player-authored (editable) cards, so the gallery knows when to offer Edit. */
   editableIds?: Set<string>;
   onClose: () => void;
@@ -140,15 +143,17 @@ function LiveTile({ item }: { item: CardItem }) {
  * LONG-PRESS to pick it up and drag it to reorder within a category or move it to another.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hasCompanion, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, editableIds, onClose } = props;
+  const { isDruid, hasCompanion, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onFavorite, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   const [view, setView] = useState<'categories' | 'cards' | 'types'>('cards'); // #297: open on Cards
 
   const hiddenSet = useMemo(() => new Set(hidden), [hidden]);
+  // v0.9.8: surface the Favorites section once it has cards (it's not a normal available category).
+  const hasFav = (decks.favorites?.length ?? 0) > 0;
   const ordered = useMemo(() => {
-    const avail = availableCategories({ isDruid, hasCompanion, custom: customCategories });
+    const avail = availableCategories({ isDruid, hasCompanion, hasFavorites: hasFav, custom: customCategories });
     return order && order.length ? [...order.filter((k) => avail.includes(k)), ...avail.filter((k) => !order.includes(k))] : avail;
-  }, [isDruid, hasCompanion, customCategories, order]);
+  }, [isDruid, hasCompanion, hasFav, customCategories, order]);
   const enabledCount = ordered.filter((k) => !hiddenSet.has(k) && (decks[k]?.length ?? 0) > 0).length;
   const totalCards = useMemo(() => Object.values(decks).reduce((s, a) => s + (a?.length ?? 0), 0), [decks]);
   // The live GOLD card (#306): there is only ever one, so it can't be deleted or duplicated (only
@@ -281,6 +286,9 @@ export function CardManagementPanel(props: Props) {
   const selectionHasGold = selArr.some((id) => liveIds.has(id));
   const selectionHasCompanion = selArr.some((id) => companionIds.has(id));
   const dupIds = selArr.filter((id) => !liveIds.has(id)); // never duplicate the Gold card (companion ok)
+  // v0.9.8: favoritable = not the live Gold and not already a favorite copy itself.
+  const favCopyIds = useMemo(() => new Set((decks.favorites ?? []).map((c) => c.id)), [decks.favorites]);
+  const favIds = selArr.filter((id) => !liveIds.has(id) && !favCopyIds.has(id));
   const canEdit = selected.size === 1 && !!onEditCard && !!editableIds?.has(selArr[0]);
   const deleteBlocked = selectionHasGold || selectionHasCompanion || selected.size >= totalCards;
 
@@ -314,6 +322,9 @@ export function CardManagementPanel(props: Props) {
               ) : null}
               {onDuplicate ? (
                 <RuneButton label="Duplicate" kind="secondary" dense height={38} disabled={dupIds.length === 0} onPress={() => { onDuplicate(dupIds); clearSelect(); }} />
+              ) : null}
+              {onFavorite ? (
+                <RuneButton label="★ Favorite" kind="secondary" dense height={38} disabled={favIds.length === 0} onPress={() => { onFavorite(favIds); clearSelect(); }} />
               ) : null}
               <RuneButton label="Move" kind="secondary" dense height={38} onPress={() => setMoveOpen(true)} />
               <RuneButton label="Delete" kind="primary" dense height={38} disabled={deleteBlocked} onPress={() => setConfirmDel(true)} />
@@ -586,14 +597,14 @@ function CategoryForm({ title, initialLabel = '', initialIcon = DEFAULT_CATEGORY
   );
 }
 
-function MoveSheet({ count, ordered, customCategories, onMove, onClose }: { count: number; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onClose: () => void }) {
+export function MoveSheet({ count, ordered, customCategories, onMove, onClose }: { count: number; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onClose: () => void }) {
   return (
     <CenterDialog onClose={onClose} zIndex={10004}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase' }}>{`Move ${count} card${count > 1 ? 's' : ''}`}</Text>
         <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>Choose a category to move into.</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-          {ordered.map((key) => (
+          {ordered.filter((key) => key !== 'favorites').map((key) => (
             <Pressable key={key} onPress={() => onMove(key)} accessibilityRole="button" accessibilityLabel={`Move to ${categoryLabel(key, customCategories)}`}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 36, borderRadius: 5, backgroundColor: SCRIM, borderWidth: 1, borderColor: GOLD_BORDER }}>
                 <CatTile categoryKey={key} size={22} />
@@ -608,7 +619,7 @@ function MoveSheet({ count, ordered, customCategories, onMove, onClose }: { coun
   );
 }
 
-function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: string; body: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void }) {
+export function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: string; body: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void }) {
   return (
     <CenterDialog onClose={onCancel} zIndex={10005}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>

@@ -115,6 +115,7 @@ export function ArchiveIcon() {
 export function CategoryGlyph({ category }: { category: CardCategory }) {
   const { categoryMeta } = useCarousel();
   const m = categoryMeta[category];
+  if (category === 'favorites') return <CategoryIconSvg iconKey="star" size={42} />; // v0.9.8: special built-in, star glyph
   if (m && !m.builtin) return <CategoryIconSvg iconKey={m.icon} size={42} />;
   if (!isBuiltinCategory(category)) return <CategoryIconSvg iconKey={m?.icon} size={42} />;
   switch (category) {

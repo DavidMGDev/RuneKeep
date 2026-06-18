@@ -30,6 +30,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   wildshape: 'Beastform',
   companion: 'Companion',
   archive: 'Archive',
+  favorites: 'Favorites', // v0.9.8: a special category of duplicates, gated by `hasFavorites`
 };
 
 /** Resolve any category key to its label — built-in name, or a custom category's label. */
@@ -43,6 +44,8 @@ export interface RingOptions {
   isDruid?: boolean;
   /** The character is a Beastbound Ranger (#311) → the Companion category is available. */
   hasCompanion?: boolean;
+  /** The character has ≥1 favorite (v0.9.8) → the Favorites category is available. */
+  hasFavorites?: boolean;
   /** Categories the player has toggled OFF in the Cards panel (#227). At least one always stays on. */
   hidden?: CardCategory[];
   /** Player-created categories (#246). */
@@ -52,11 +55,13 @@ export interface RingOptions {
 }
 
 /** Every category that COULD be in the ring (before hide), in canonical-then-custom order. The
- *  subclass-gated categories appear only when their feature is present (#311). */
-export function availableCategories({ isDruid, hasCompanion, custom = [] }: Pick<RingOptions, 'isDruid' | 'hasCompanion' | 'custom'>): CardCategory[] {
+ *  feature-gated categories appear only when their feature is present (#311 / v0.9.8 Favorites). */
+export function availableCategories({ isDruid, hasCompanion, hasFavorites, custom = [] }: Pick<RingOptions, 'isDruid' | 'hasCompanion' | 'hasFavorites' | 'custom'>): CardCategory[] {
   return [
     ...CATEGORY_ORDER.filter((c) => (c === 'wildshape' ? !!isDruid : c === 'companion' ? !!hasCompanion : true)),
     ...custom.map((c) => c.id),
+    // Favorites (v0.9.8) sits at the end of the ring; only available once there's at least one favorite.
+    ...(hasFavorites ? ['favorites'] : []),
   ];
 }
 
@@ -64,8 +69,8 @@ export function availableCategories({ isDruid, hasCompanion, custom = [] }: Pick
  * The ordered list of ACTIVE categories (#227/#246): everything available, reordered by `order`, minus
  * the ones toggled off. Never empty — falls back to abilities so the ring always has a category.
  */
-export function activeRing({ isDruid, hasCompanion, hidden = [], custom = [], order }: RingOptions): CardCategory[] {
-  const available = availableCategories({ isDruid, hasCompanion, custom });
+export function activeRing({ isDruid, hasCompanion, hasFavorites, hidden = [], custom = [], order }: RingOptions): CardCategory[] {
+  const available = availableCategories({ isDruid, hasCompanion, hasFavorites, custom });
   const ordered = order && order.length
     ? [...order.filter((k) => available.includes(k)), ...available.filter((k) => !order.includes(k))]
     : available;
