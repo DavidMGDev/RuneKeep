@@ -98,6 +98,16 @@ export const DECK_ENTER_RISE = 90; // design px the incoming hand rises from as 
 // ~83px vs ~97px card width ≈ 14% overlap, ~7 cards visible at once while skimming.
 export const GRIND_TIGHTEN = 0.58; // fan step shrinks to 42% while grinding
 export const GRIND_SHRINK = 0.55; // cards at 45% size while grinding
+// Golden Gear Edit (v0.9.8): hold the gear still to flatten the arc into an editable horizontal row.
+// All tunable on device (motion is owner-verified). The flat row keeps the small "gear-held" size so
+// many cards stay in view; selected cards rise; the card center sits a little above the resting center
+// so the raised cards + the top-center controls bar have room.
+export const EDIT_DWELL_MS = 500; // hold-still time before the deck straightens (easy, not finicky)
+export const EDIT_DWELL_TOL = 4; // px of finger drift allowed before the dwell re-arms (slow-scroll never triggers)
+export const EDIT_SCALE = 0.44; // flat-row card size (~the gear-held size), ~4 cards across
+export const EDIT_GAP = 112; // design px between flat-row card centers
+export const EDIT_ROW_Y = 560; // flat-row card-center Y (resting center is ~631; sit higher for the bar)
+export const EDIT_RAISE = 48; // design px a selected card lifts (~30% of a flat-row card's height)
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;

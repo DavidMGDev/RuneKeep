@@ -72,6 +72,7 @@ import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
 import { ModifiersPanel } from './modifiers-panel';
 import { CardManagementPanel } from './card-management-panel';
+import { EditControls } from './edit-controls';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { PortraitImage, PortraitTapButton, type PortraitTransform } from './portrait-image';
@@ -1164,6 +1165,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const nonEmpty = validRing.filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
     return nonEmpty.length ? nonEmpty : ['abilities'];
   }, [validRing, carouselDecks]);
+  // v0.9.8 Golden Gear Edit — categories the Move control can target: every real category except the
+  // locked Beastform deck and Favorites (favoriting is the star action, never a move).
+  const moveTargets = useMemo(
+    () => (file ? availableCategories({ isDruid: hasBeastform(file), hasCompanion: hasCompanion(file), hasFavorites: fileHasFavorites(file), custom: customCategories }).filter((k) => k !== 'favorites' && k !== 'wildshape') : []),
+    [file, customCategories],
+  );
   // Re-derive the runtime character from a new file, keeping in-play resource positions (clamped to the
   // new maxes). Used by edits that can change stats (e.g. deleting an enabled card).
   const commitFile = useCallback((next: CharacterFile) => {
@@ -1721,6 +1728,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* Stat-change toasts (#233): pinned at the top, UNDER the gold border (rendered before
                 SheetFrame) so the border overlays them — layer + position per owner. */}
             <StatToastHost toasts={toasts} onExpire={(id) => setToasts((list) => list.filter((t) => t.id !== id))} />
+            {/* Golden Gear Edit controls (#v0.9.8): top-center, toast-style; reuses the Cards-panel
+                handlers so every safeguard is inherited. Outside DesignStage like the stat toasts. */}
+            <EditControls
+              moveTargets={moveTargets}
+              customCategories={customCategories}
+              onDuplicate={onDuplicateCards}
+              onFavorite={onFavoriteCards}
+              onMove={onMoveCards}
+              onDelete={onDeleteCards}
+              onOpenCardsPanel={() => setFloatKind('cards')}
+              topInset={topInset}
+            />
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />

@@ -44,6 +44,12 @@ import {
   GEAR_SWIPE_PX,
   GRIND_SHRINK,
   GRIND_TIGHTEN,
+  EDIT_DWELL_MS,
+  EDIT_DWELL_TOL,
+  EDIT_SCALE,
+  EDIT_GAP,
+  EDIT_ROW_Y,
+  EDIT_RAISE,
   imageOpacityAt,
   IMG_MOUNT_HALF,
   MAX_FLING_VEL,
@@ -164,9 +170,18 @@ interface SlotProps {
   onToggle: (id: string) => void;
   /** Cosmetic tokens stuck on this card (#244): drawn as a cheap baked LOD that rides the slot. */
   tokens?: PlacedToken[];
+  /** v0.9.8 Golden Gear Edit: straighten progress (0 arc → 1 flat row), shared across the hand. */
+  editMode: SharedValue<number>;
+  /** This card is raised/selected in edit mode. */
+  raised: boolean;
+  /** Tap in edit mode toggles this card's raised state instead of opening it. */
+  onRaise: (id: string) => void;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, onRaise }: SlotProps) {
+  // v0.9.8: animate the raised/selected lift (no highlight — the lift itself is the selection cue).
+  const raiseSV = useSharedValue(raised ? 1 : 0);
+  useEffect(() => { raiseSV.value = withTiming(raised ? 1 : 0, { duration: 220, easing: Easing.out(Easing.cubic) }); }, [raised, raiseSV]);
   const style = useAnimatedStyle(() => {
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
@@ -186,6 +201,19 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     // COMPACT hand draws a wider window — up to ~13 thumbs (#95 D).
     let opacity = slotOpacityAt(dist, p);
     let z = Math.round(1000 - dist * 10);
+
+    // v0.9.8 Golden Gear Edit: lerp the curved fan toward a FLAT row of small cards (0° tilt, even
+    // linear spacing, constant small scale), and lift the selected cards. editMode is 0 at rest so
+    // this is fully inert outside edit mode. A raised card also gets a higher z so it reads as lifted.
+    const e = editMode.value;
+    if (e > 0) {
+      const flatX = OX + (index - centerPos) * EDIT_GAP + overscrollX.value;
+      x += (flatX - x) * e;
+      y += (EDIT_ROW_Y - y) * e - raiseSV.value * EDIT_RAISE * e;
+      scale += (EDIT_SCALE - scale) * e;
+      tilt *= 1 - e;
+      z += Math.round(raiseSV.value * 50 * e);
+    }
 
     // Focus: the SAME card grows in place toward screen centre over the dim veil (#8c) — no second
     // object. It lifts above the veil (z 3000); the others stay below it and are dimmed.
@@ -221,7 +249,8 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   // to ZERO while the gear runs — a grind composites nothing but tiny thumbs (#78).
   const imgFade = useAnimatedStyle(() => {
     const d = Math.abs(index - rotation.value / ANGLE_STEP);
-    return { opacity: imageOpacityAt(d) * (1 - grindProgress.value) };
+    // v0.9.8: Golden Gear Edit forces the lowest LOD (thumbnails only) — never composite full-res art.
+    return { opacity: imageOpacityAt(d) * (1 - grindProgress.value) * (1 - editMode.value) };
   });
 
   // Multi-FACE cards (#110: the class-feature card): the slot tracks the page and persists it. The
@@ -291,6 +320,8 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         .maxDuration(260)
         .onEnd((e) => {
           if (switching.value === 1) return; // deck is mid-switch — not grabbable yet (#239 item 3)
+          // v0.9.8 Golden Gear Edit: a tap RAISES/selects this card instead of opening it (no fullscreen).
+          if (editMode.value > 0.5) { runOnJS(onRaise)(item.id); return; }
           if (machineState.value === 'fullscreen') {
             if (item.interactive) return; // live card (#136 gold) keeps its taps; close via swipe/gear
             if (hasFaces) runOnJS(pageBy)(e.x < CARD_W / 2 ? -1 : 1);
@@ -308,7 +339,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             runOnJS(playSfx)('cardFullscreenEnter'); // #255: tap a centered card to focus it
           }
         }),
-    [index, count, hasFaces, item.interactive, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen, switching],
+    [index, count, hasFaces, item.interactive, item.id, pageBy, machineState, expandProgress, fullscreenProgress, rotation, focusIndex, closeFullscreen, switching, editMode, onRaise],
   );
 
   // Press-and-hold to enable/disable a card (#175): only the CENTERED card (expanded) or the FOCUSED
@@ -339,6 +370,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         .onBegin(() => {
           'worklet';
           if (switching.value === 1) return; // don't arm a hold on a mid-switch deck (#239 item 3)
+          if (editMode.value > 0.5) { holdArmed.value = 0; return; } // v0.9.8: no enable-toggle in edit mode
           const centered = Math.round(rotation.value / ANGLE_STEP) === index;
           const focused = Math.round(focusIndex.value) === index;
           const ms = machineState.value;
@@ -368,7 +400,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           armSignal.value = 0;
           holdArmed.value = 0;
         }),
-    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed, armSignal, armHapticDone, switching],
+    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed, armSignal, armHapticDone, switching, editMode],
   );
   const slotGesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
   // The scan-fill overlay: a translucent gold sheet rising from the bottom with a bright leading edge.
@@ -539,7 +571,7 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, raisedIds, enterEdit, toggleRaise } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   const ringLen = ring.length; // #233 item 6: no over-scroll switch when ≤1 category is enabled
@@ -553,6 +585,12 @@ export function CardCarousel() {
   const osHold = useSharedValue(0); // 0..1 = radial fill while held AT the cap (over OVERSCROLL_HOLD_MS)
   const osHolding = useSharedValue(0); // 1 while the hold timer is running (so it only starts once)
   const osArmed = useSharedValue(0); // 1 once osHold reached 1 — release here fires the switch
+  // v0.9.8 Golden Gear Edit: hold the gear STILL (≤ EDIT_DWELL_TOL drift) for EDIT_DWELL_MS to flatten
+  // the deck. Movement re-anchors + restarts the timer, so a slow scroll never trips it but a paused
+  // finger arms it. Purely additive to the gear scroll below.
+  const gearDwell = useSharedValue(0);
+  const dwellAX = useSharedValue(0);
+  const dwellAY = useSharedValue(0);
 
   const startRot = useSharedValue(0);
   const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
@@ -692,6 +730,13 @@ export function CardCarousel() {
             gearPrevTX.value = 0; // #258: reset swoosh tracking — a plain tap-to-close makes no sound
             gearDirX.value = 0;
             gearPipIdx.value = Math.round(rotation.value / ANGLE_STEP);
+            // v0.9.8: arm the dwell-to-edit timer (skip if already editing — the gear then just scrolls).
+            if (editMode.value < 0.5) {
+              dwellAX.value = 0; dwellAY.value = 0;
+              cancelAnimation(gearDwell);
+              gearDwell.value = 0;
+              gearDwell.value = withTiming(1, { duration: EDIT_DWELL_MS }, (fin) => { if (fin) runOnJS(enterEdit)(); });
+            }
           }
         })
         .onUpdate((e) => {
@@ -703,6 +748,14 @@ export function CardCarousel() {
           // (GEAR_SWIPE_PX) means one center->edge drag covers the whole deck AND this over-scroll.
           if (padTouch.value && padWasExpanded.value) {
             scrolled.value = true;
+            // v0.9.8: any real drift re-anchors + restarts the dwell, so only a STILL finger flattens
+            // the deck (a slow scroll keeps moving past the tolerance and never trips it).
+            if (editMode.value < 0.5 && (Math.abs(e.translationX - dwellAX.value) > EDIT_DWELL_TOL || Math.abs(e.translationY - dwellAY.value) > EDIT_DWELL_TOL)) {
+              dwellAX.value = e.translationX; dwellAY.value = e.translationY;
+              cancelAnimation(gearDwell);
+              gearDwell.value = 0;
+              gearDwell.value = withTiming(1, { duration: EDIT_DWELL_MS }, (fin) => { if (fin) runOnJS(enterEdit)(); });
+            }
             // #258: swoosh only on a FAST swipe that reverses direction (deliberate flicks)
             const dtx = e.translationX - gearPrevTX.value;
             gearPrevTX.value = e.translationX;
@@ -787,6 +840,7 @@ export function CardCarousel() {
         })
         .onEnd((e) => {
           if (switching.value === 1) return; // a switch owns the deck right now (#239 item 3)
+          cancelAnimation(gearDwell); gearDwell.value = 0; // v0.9.8: a release ends any pending dwell
           const stillTap = Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8;
           // Focused: a tap on the gear closes the card AND collapses the whole hand (#62 D);
           // a downward swipe (or flick) returns the card; otherwise settle it back open.
@@ -807,8 +861,10 @@ export function CardCarousel() {
           }
           if (!scrolled.value) {
             // A still tap on the gear pad toggles the hand (#62 D). padWasExpanded (captured at
-            // touch-down) keeps this idempotent with a card's own tap on the overlap zone.
-            if (padTouch.value && stillTap) {
+            // touch-down) keeps this idempotent with a card's own tap on the overlap zone. v0.9.8: NOT
+            // while editing — entering Golden Gear Edit ends with the finger still down, and a gear tap
+            // in edit mode must not collapse the flattened deck (exit is the Done control).
+            if (padTouch.value && stillTap && editMode.value < 0.5) {
               if (padWasExpanded.value) {
                 machineState.value = 'compact';
                 expandProgress.value = withSpring(0, EXPAND_SPRING);
@@ -860,7 +916,10 @@ export function CardCarousel() {
         // A clean tap never activates the pan (minDistance) — onEnd doesn't run, onFinalize does.
         .onFinalize((e, success) => {
           if (switching.value === 1) return; // don't settle/spring a deck that's mid-switch (#239)
-          if (!success && padTouch.value && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
+          cancelAnimation(gearDwell); gearDwell.value = 0; // v0.9.8: a clean release ends any pending dwell
+          // v0.9.8: a still gear tap that never activated the pan toggles the hand — but NOT in edit mode
+          // (the dwell-enter ends with the finger still down; a tap must not collapse the flattened deck).
+          if (!success && padTouch.value && editMode.value < 0.5 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
             if (machineState.value === 'fullscreen') {
               runOnJS(closeFullscreen)();
               runOnJS(collapse)();
@@ -887,7 +946,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, gearDwell, dwellAX, dwellAY],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -920,6 +979,9 @@ export function CardCarousel() {
         // v0.9.8: tokens are keyed by the card's ref so all copies (incl. favorites) share one board;
         // fall back to a legacy instance-keyed entry from older saves.
         tokens={cardTokens[deck[i].ref ?? deck[i].id] ?? cardTokens[deck[i].id]}
+        editMode={editMode}
+        raised={raisedIds.has(deck[i].id)}
+        onRaise={toggleRaise}
       />,
     );
   }

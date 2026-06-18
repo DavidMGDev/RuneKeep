@@ -597,7 +597,7 @@ function CategoryForm({ title, initialLabel = '', initialIcon = DEFAULT_CATEGORY
   );
 }
 
-function MoveSheet({ count, ordered, customCategories, onMove, onClose }: { count: number; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onClose: () => void }) {
+export function MoveSheet({ count, ordered, customCategories, onMove, onClose }: { count: number; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onClose: () => void }) {
   return (
     <CenterDialog onClose={onClose} zIndex={10004}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
@@ -619,7 +619,7 @@ function MoveSheet({ count, ordered, customCategories, onMove, onClose }: { coun
   );
 }
 
-function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: string; body: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void }) {
+export function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: string; body: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void }) {
   return (
     <CenterDialog onClose={onCancel} zIndex={10005}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>
