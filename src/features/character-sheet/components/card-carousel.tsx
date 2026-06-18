@@ -476,7 +476,7 @@ const RING_C = 2 * Math.PI * RING_R;
  *  (osProgress), then its ring fills over the 1s hold (osHold); brightens to red + "RELEASE" when
  *  armed (the hold completed → release switches). */
 function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }: { osProgress: SharedValue<number>; osDir: SharedValue<number>; osArmed: SharedValue<number>; osHold: SharedValue<number>; overscrollX: SharedValue<number> }) {
-  const { category, ring, categoryMeta } = useCarousel();
+  const { category, ring, categoryMeta, favDetour } = useCarousel();
   // The target depends on the pull direction (#214): osDir > 0 (first card pulled right) walks the
   // ring BACKWARD (-1), osDir < 0 (last card pulled left) walks it FORWARD (+1). Sync the live dir to
   // JS so the right glyph/label renders; the indicator is hidden whenever osDir is 0.
@@ -487,7 +487,8 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
       if (v !== prev && v !== 0) runOnJS(setDir)(v);
     },
   );
-  const target: CardCategory = nextCategory(ring, category, dir > 0 ? -1 : 1);
+  // v0.9.8: in a disabled-Favorites detour, BOTH over-scroll sides return to (and label) the origin.
+  const target: CardCategory = category === 'favorites' && favDetour ? favDetour : nextCategory(ring, category, dir > 0 ? -1 : 1);
   const wrap = useAnimatedStyle(() => {
     // Phantom card slot one step beyond the pushed edge (left of first / right of last), riding the
     // push. It enters from ~4 card-steps further out, sliding + fading toward the slot as the

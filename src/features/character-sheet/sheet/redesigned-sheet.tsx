@@ -37,6 +37,8 @@ import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
+import Svg, { Path } from 'react-native-svg';
+import { CategoryIconSvg } from './category-icons';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -72,7 +74,6 @@ import { ModifiersPanel } from './modifiers-panel';
 import { CardManagementPanel } from './card-management-panel';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
-import { OriginCardPreview, type OriginPage } from './origin-card-preview';
 import { PortraitImage, PortraitTapButton, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
@@ -139,14 +140,15 @@ function DomainChip({ left, top, label }: { left: number; top: number; label: st
 
 /** An octagon badge (image-6), stretched a touch wider than tall so the origin strip reads as a
  *  deliberate band next to the big bio text (#48 D): tappable → opens the associated card (D4). */
-function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; top: number; w: number; h: number; icon: number; label: string; onPress?: () => void }) {
+function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y }: { left: number; top: number; w: number; h: number; icon?: number; glyph?: React.ReactNode; label: string; onPress?: () => void; a11y?: string }) {
   return (
     <>
-      <PressableArt style={box(left, top, w, h)} pressedScale={1.12} onPress={onPress} accessibilityLabel={`${label}, open card`}>
+      <PressableArt style={box(left, top, w, h)} pressedScale={1.12} onPress={onPress} accessibilityLabel={a11y ?? `${label}, open card`}>
         <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={w} h={h} />
-        {/* Icon fills more of the frame (#62 A) — frame + label sizing unchanged. */}
+        {/* Icon fills more of the frame (#62 A) — frame + label sizing unchanged. An SVG glyph (v0.9.8
+            action badges) renders centered in the same inset, else the Art icon. */}
         <View style={box(w * 0.2, h * 0.16, w * 0.6, h * 0.64)} pointerEvents="none">
-          <ArtImage source={icon} fit="contain" />
+          {glyph ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>{glyph}</View> : icon != null ? <ArtImage source={icon} fit="contain" /> : null}
         </View>
       </PressableArt>
       {/* Wide box + no tracking: labels render at FIXED size on both platforms (#43 B). 8px — one
@@ -159,9 +161,36 @@ function OctaBadge({ left, top, w, h, icon, label, onPress }: { left: number; to
   );
 }
 
+// v0.9.8 action-badge glyphs (replace the origin badges): a card-with-plus and a shield-with-plus.
+function AddCardGlyph() {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24">
+      <Path d="M7.5 3.5 H14 L17 6.5 V20.5 H7.5 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
+      <Path d="M14 3.5 V6.5 H17" fill="none" stroke={BRONZE} strokeWidth={1.4} strokeLinejoin="round" />
+      <Path d="M12.25 10 V16 M9.25 13 H15.25" stroke={BRONZE} strokeWidth={1.8} strokeLinecap="round" />
+    </Svg>
+  );
+}
+function AddGearGlyph() {
+  return (
+    <Svg width={26} height={26} viewBox="0 0 24 24">
+      <Path d="M12 3.5 L18 6 V11 C18 16 15 19 12 20.5 C9 19 6 16 6 11 V6 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
+      <Path d="M12 8.5 V14.5 M9 11.5 H15" stroke={BRONZE} strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** The Favorites star badge (v0.9.8): opens the Favorites category via the carousel context (a normal
+ *  ring member when enabled, a transient detour when disabled). Lives in the slot freed by removing the
+ *  Community origin badge. */
+function FavoritesBadge({ left, top, w, h }: { left: number; top: number; w: number; h: number }) {
+  const { openFavorites } = useCarousel();
+  return <OctaBadge left={left} top={top} w={w} h={h} glyph={<CategoryIconSvg iconKey="star" size={30} />} label="Favorites" onPress={openFavorites} a11y="Favorites" />;
+}
+
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onOpenOrigin }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onOpenOrigin: (slot: 0 | 1 | 2) => void }) {
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onAddCard, onAddGear }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onAddCard: () => void; onAddGear: () => void }) {
   const tint = useAccentTint();
 
   // Every resource now uses the boundary-only ±1 hold/double-tap model (#81 hearts, #89 the rest).
@@ -245,9 +274,12 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
           Inventory deck is up, the switch animation plays first, then the card flies up. */}
       {/* taller, squarer badges (#128): they rise into the space the proficiency line used to take */}
       {/* #248 item 10: badges + their dividers nudged 4px DOWN for clear air under the level/prof line. */}
-      <OctaBadge left={176} top={124} w={48} h={52} icon={Art.subclassIcon} label="Subclass" onPress={() => onOpenOrigin(0)} />
-      <OctaBadge left={254} top={124} w={48} h={52} icon={Art.ancestryIcon} label="Ancestry" onPress={() => onOpenOrigin(1)} />
-      <OctaBadge left={332} top={124} w={48} h={52} icon={Art.communityIcon} label="Community" onPress={() => onOpenOrigin(2)} />
+      {/* v0.9.8: the Ancestry/Community/Subclass origin badges are replaced — same three slots — by the
+          card-management actions: Add Card (author for the current category), Add Gear (catalog), and
+          Favorites (star). The two dividers stay so the trio still reads as one banded group. */}
+      <OctaBadge left={176} top={124} w={48} h={52} glyph={<AddCardGlyph />} label="Add Card" onPress={onAddCard} a11y="Add a card to the current category" />
+      <OctaBadge left={254} top={124} w={48} h={52} glyph={<AddGearGlyph />} label="Add Gear" onPress={onAddGear} a11y="Add gear from the catalog" />
+      <FavoritesBadge left={332} top={124} w={48} h={52} />
       <GoldRuleV left={239} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
       <GoldRuleV left={317} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
@@ -386,13 +418,11 @@ interface BackGuardState {
   editCardId: string | null;
   cardInfoId: string | null;
   damageOpen: boolean;
-  originPreview: boolean;
   floatKind: PlaceholderKind | null;
   onCloseLeave: () => void;
   onCloseEdit: () => void;
   onCloseCardInfo: () => void;
   onCloseDamage: () => void;
-  onCloseOrigin: () => void;
   onCloseFloat: () => void;
   onLeave: () => void;
 }
@@ -420,7 +450,6 @@ function SheetBackGuard(props: BackGuardState) {
         if (p.editCardId) { p.onCloseEdit(); return true; }
         if (p.cardInfoId) { p.onCloseCardInfo(); return true; }
         if (p.damageOpen) { p.onCloseDamage(); return true; }
-        if (p.originPreview) { p.onCloseOrigin(); return true; }
         if (p.floatKind) { p.onCloseFloat(); return true; }
         if (menuOpenRef.current) { closeMenu(); return true; }
         if (machineState.value === 'fullscreen') { closeFullscreen(); return true; }
@@ -934,9 +963,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
-  // Origin-card preview (#242 item 4 / #297): a standalone copy of subclass/ancestry/community — now a
-  // multi-page card (subclass→class, mixed-ancestry pair). Not the carousel.
-  const [originPreview, setOriginPreview] = useState<{ id: string; pages: OriginPage[]; label: string } | null>(null);
   const [leaveConfirm, setLeaveConfirm] = useState(false); // #297: device-back leave confirmation
   const router = useRouter();
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
@@ -988,47 +1014,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     return { domainOptions, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
   }, [file]);
   const onInfo = useCallback(() => setDamageOpen(true), []);
-  // Origin badge → standalone card preview (#242 item 4): show a copy of the picked card; never touch
-  // the carousel/category. The preview equips/unequips the SAME id, so it stays in sync.
-  const onOpenOrigin = useCallback(
-    (slot: 0 | 1 | 2) => {
-      if (!file) return;
-      if (slot === 0) {
-        // Subclass → multi-page (#297): the subclass card, then the chosen CLASS card and all its
-        // feature pages (reusing the faces already assembled for the carousel's class-feature card).
-        const sc = cardById(file.subclassCardId);
-        if (!sc) return;
-        // #320: page 0 equips the subclass card; the class-feature pages all equip the one class-feature
-        // card (they share an id → sync, like a flip card's faces).
-        const pages: OriginPage[] = [{ source: sc.source, catalogId: sc.id, enableId: sc.id }];
-        const featuresId = `features-${file.className}`;
-        const featuresItem = carouselDecks?.abilities?.find((c) => c.id === featuresId);
-        for (const f of featuresItem?.faces ?? []) pages.push({ source: f.source, custom: f.custom, enableId: featuresId });
-        setOriginPreview({ id: sc.id, pages, label: sc.label });
-        return;
-      }
-      if (slot === 1) {
-        // Ancestry → a mixed ancestry shows BOTH cards, each with its per-line strike-through (#265/#297:
-        // the FIRST card keeps trait 1 → its trait 2 is struck; the SECOND keeps trait 2 → trait 1 struck).
-        const m = file.mixedAncestry;
-        if (m) {
-          const a1 = cardById(m.first);
-          const a2 = cardById(m.second);
-          const pages: OriginPage[] = [];
-          // #320: each ancestry page equips ITS OWN card — independent enable, independent corner check.
-          if (a1) pages.push({ source: a1.source, catalogId: a1.id, crossTrait: 2, enableId: a1.id });
-          if (a2) pages.push({ source: a2.source, catalogId: a2.id, crossTrait: 1, enableId: a2.id });
-          if (pages.length) { setOriginPreview({ id: file.ancestryCardId, pages, label: a1?.label ?? 'Ancestry' }); return; }
-        }
-        const a = cardById(file.ancestryCardId);
-        if (a) setOriginPreview({ id: a.id, pages: [{ source: a.source, catalogId: a.id, enableId: a.id }], label: a.label });
-        return;
-      }
-      const c = cardById(file.communityCardId);
-      if (c) setOriginPreview({ id: c.id, pages: [{ source: c.source, catalogId: c.id, enableId: c.id }], label: c.label });
-    },
-    [file, carouselDecks],
-  );
   const heartRef = useRef<HeartTrackHandle>(null);
   const stressRef = useRef<ChargeTrackHandle>(null);
   const armorRef = useRef<ChargeTrackHandle>(null);
@@ -1455,10 +1440,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [file, mutateFile]);
   // Add a card targeted at a specific category (#246): open New Card with that category preselected.
   const [newCardCat, setNewCardCat] = useState<CardCategory | null>(null);
+  // v0.9.8: how the New Card overlay was opened — 'menu' (float-menu / per-category, with the catalog
+  // option), 'card' (sheet Add Card badge: author only, no catalog), 'gear' (sheet Add Gear badge:
+  // straight into the catalog). Drives onAcquire + initialMode below.
+  const [newCardEntry, setNewCardEntry] = useState<'menu' | 'card' | 'gear'>('menu');
   const onAddCardInCategory = useCallback((key: CardCategory) => {
     setNewCardCat(key);
+    setNewCardEntry('menu');
     setFloatKind('custom');
   }, []);
+  // The sheet's Add Card / Add Gear badges (v0.9.8) — both target the CURRENT carousel category
+  // (categoryOverride left null → NewCardFlow uses the live category).
+  const onAddCard = useCallback(() => { setNewCardCat(null); setNewCardEntry('card'); setFloatKind('custom'); }, []);
+  const onAddGear = useCallback(() => { setNewCardCat(null); setNewCardEntry('gear'); setFloatKind('custom'); }, []);
   // Enabled/equipped cards (#175): the set drives the corner check; toggling re-derives the build
   // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
   const enabledIds = useMemo(() => new Set(file?.enabledCardIds ?? []), [file]);
@@ -1673,19 +1667,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   return (
     <AccentProvider>
       <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
-       <FloatMenuProvider onOpenInterface={setFloatKind}>
+       <FloatMenuProvider onOpenInterface={(k) => { if (k === 'custom') setNewCardEntry('menu'); setFloatKind(k); }}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}
           editCardId={editCardId}
           cardInfoId={cardInfoId}
           damageOpen={damageOpen}
-          originPreview={originPreview !== null}
           floatKind={floatKind}
           onCloseLeave={() => setLeaveConfirm(false)}
           onCloseEdit={() => setEditCardId(null)}
           onCloseCardInfo={() => setCardInfoId(null)}
           onCloseDamage={() => setDamageOpen(false)}
-          onCloseOrigin={() => setOriginPreview(null)}
           onCloseFloat={() => { setFloatKind(null); setNewCardCat(null); }}
           onLeave={() => setLeaveConfirm(true)}
         />
@@ -1707,7 +1699,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenOrigin={onOpenOrigin} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onAddCard={onAddCard} onAddGear={onAddGear} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
@@ -1741,7 +1733,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottomInset, backgroundColor: Rune.ink }} />
           {/* Unified overlay dim (#239 item 9): one fading scrim shared by the float-menu panels +
               the per-card modifier sheet, so transitions never flashbang the bright sheet. */}
-          <SheetDim up={floatKind !== null || cardInfoId !== null || originPreview !== null || damageOpen || editCardId !== null} />
+          <SheetDim up={floatKind !== null || cardInfoId !== null || damageOpen || editCardId !== null} />
           {/* damage-threshold keypad (#128): full-screen overlay above everything; on confirm it
               animates out, then bursts the lost hearts via the HeartTrack handle */}
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}
@@ -1752,7 +1744,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} acquiredIds={acquiredIds} />
+            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={newCardEntry === 'card' ? undefined : onAcquireCard} acquiredIds={acquiredIds} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
@@ -1804,24 +1796,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onToggle={onToggleCard}
               onSaveEffects={onEditCardEffects}
               onClose={() => setCardInfoId(null)}
-            />
-          ) : null}
-          {/* origin card preview (#242 item 4 / #297): a standalone equippable copy, decoupled from the
-              carousel — now multi-page (subclass→class, mixed-ancestry pair with strikes) */}
-          {originPreview ? (
-            <OriginCardPreview
-              key={originPreview.id}
-              pages={originPreview.pages}
-              label={originPreview.label}
-              enabledIds={enabledIds}
-              onToggle={onToggleCard}
-              onClose={() => setOriginPreview(null)}
-              tokens={cardTokens[originPreview.id] ?? []}
-              drawerColor={file?.tokenColor}
-              onPlaceToken={(t) => placeToken(originPreview.id, t)}
-              onRemoveToken={(tid) => removeToken(originPreview.id, tid)}
-              onUpdateToken={(tid, patch) => updateToken(originPreview.id, tid, patch)}
-              onSetTokenColor={setTokenColor}
             />
           ) : null}
           {/* leave-to-character-selection confirmation (#297): device back on the bare sheet */}
