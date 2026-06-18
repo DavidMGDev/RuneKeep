@@ -81,6 +81,9 @@ interface CarouselContextValue {
   exitEdit: () => void;
   /** Toggle a card's raised/selected state in edit mode. */
   toggleRaise: (id: string) => void;
+  /** Persist an in-edit drag-reorder (v0.9.8): move cards to a category at an explicit order. Same
+   *  signature as the Cards panel's group reorder, so it inherits the override + order persistence. */
+  onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
   /** Ids of cards the player has enabled/equipped (#175) — drives the corner check + toggle state. */
   enabledIds: Set<string>;
   /** Mixed ancestry (#265): deck-card id → which trait (1 = first, 2 = second) is crossed out. Drives
@@ -107,7 +110,7 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void }) {
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void }) {
   // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
   // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
   // four built-in keys always exist (empty) even if a real map omits one.
@@ -368,6 +371,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       enterEdit,
       exitEdit,
       toggleRaise,
+      onReorderCards,
       enabledIds: enabledIds ?? emptyEnabled,
       crossOuts: crossOuts ?? emptyCrossOuts,
       toggleCard: onToggleCard ?? noopToggle,
@@ -381,7 +385,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, toggleRaise, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, toggleRaise, onReorderCards, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

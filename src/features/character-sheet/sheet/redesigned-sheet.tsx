@@ -1673,7 +1673,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards}>
        <FloatMenuProvider onOpenInterface={(k) => { if (k === 'custom') setNewCardEntry('menu'); setFloatKind(k); }}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}
