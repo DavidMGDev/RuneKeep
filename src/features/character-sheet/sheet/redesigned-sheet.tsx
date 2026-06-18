@@ -32,6 +32,7 @@ import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
 import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/companion';
+import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, orphanedFavoriteIds } from '@/lib/favorites';
 import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -862,9 +863,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       ? [mkCompanion('name'), mkCompanion('evasion'), mkCompanion('damage'), mkCompanion('range'), mkCompanion('stress'), ...companionState.experiences.map((_, i) => mkCompanion('exp', i))]
       : [];
     const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, companion: companionCards, notes: notesCards };
-    const validKeys = new Set<string>([...BUILTIN_CATEGORIES, ...customCats.map((c) => c.id)]);
+    const validKeys = new Set<string>([...BUILTIN_CATEGORIES, FAVORITES_CATEGORY, ...customCats.map((c) => c.id)]);
     // #306/#311: archive + companion start as empty target decks (cards land via category override).
-    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], companion: [], notes: [], archive: [] };
+    // v0.9.8: favorites is a target deck too (favorite copies route here via their override).
+    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], companion: [], notes: [], archive: [], favorites: [] };
     for (const c of customCats) decks[c.id] = [];
     // Unique instance ids (#269): a catalog card the player holds twice (e.g. equipped AND acquired)
     // would otherwise share one id, so selecting/dragging/tokening one hit both. The first copy keeps
@@ -919,6 +921,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       companion: { label: 'Companion', builtin: true },
       notes: { label: 'Notes', builtin: true },
       archive: { label: 'Archive', builtin: true },
+      favorites: { label: 'Favorites', icon: 'star', builtin: true }, // v0.9.8: special, un-deletable; star glyph
     };
     for (const c of customCats) categoryMeta[c.id] = { label: c.label, icon: c.icon, builtin: false };
     // Origin badges (#100) target the FINAL abilities deck (a card may have been moved out → -1, which
@@ -1168,8 +1171,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const validRing = useMemo(() => {
     const isDruid = file?.className === 'druid' || file?.multiclassName === 'druid'; // #311: incl. multiclass
     const companion = hasCompanion({ subclassCardId: file?.subclassCardId ?? '', multiclassSubclassCardId: file?.multiclassSubclassCardId }); // #311
-    return activeRing({ isDruid, hasCompanion: companion, hidden, custom: customCategories, order: file?.categoryOrder });
-  }, [file?.className, file?.multiclassName, file?.subclassCardId, file?.multiclassSubclassCardId, hidden, customCategories, file?.categoryOrder]);
+    const favorites = !!file && fileHasFavorites(file); // v0.9.8: in the ring only once there's a favorite
+    return activeRing({ isDruid, hasCompanion: companion, hasFavorites: favorites, hidden, custom: customCategories, order: file?.categoryOrder });
+  }, [file, hidden, customCategories]);
   const ring = useMemo(() => {
     if (!carouselDecks) return validRing; // demo sheet (no file) — no per-deck counts, use the ring as-is
     const nonEmpty = validRing.filter((k) => (carouselDecks?.[k]?.length ?? 0) > 0);
@@ -1198,7 +1202,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onToggleCategory = useCallback((c: CardCategory) => {
     setFile((f) => {
       if (!f) return f;
-      const available = availableCategories({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), custom: f.customCategories ?? [] });
+      const available = availableCategories({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), hasFavorites: fileHasFavorites(f), custom: f.customCategories ?? [] });
       const cur = new Set<CardCategory>(f.hiddenCategories ?? (f.showNotes === false ? ['notes'] : []));
       if (cur.has(c)) cur.delete(c);
       else {
@@ -1312,9 +1316,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     }
     if (ids.length === 0) return;
     const del = new Set(ids);
+    // v0.9.8: cascade — deleting the last real (non-favorite) source of a card also removes its
+    // favorite duplicate(s), so the Favorites category never shows dead cards.
+    const deckCardsAll = Object.values(carouselDecks ?? {}).flat();
+    for (const fid of orphanedFavoriteIds(file, deckCardsAll, del)) del.add(fid);
     const cardCategory = { ...(file.cardCategory ?? {}) };
     const cardTokens = { ...(file.cardTokens ?? {}) };
-    for (const id of ids) { delete cardCategory[id]; delete cardTokens[id]; }
+    for (const id of del) { delete cardCategory[id]; delete cardTokens[id]; }
     // #269 duplicate-aware: an instance id may be a suffixed copy. For an ACQUIRED catalog card, drop
     // exactly ONE matching copy from the multiset (not every copy); cards with no acquired entry
     // (equipped weapon/armor, domain, origin) are hidden by their instance id via removedCardIds.
@@ -1330,7 +1338,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     }
     // #277: enabledCardIds holds REFS — keep a ref enabled only while some card with that ref survives
     // (so deleting one of several copies keeps the shared equip; deleting the last drops it).
-    const remainingRefs = new Set(Object.values(carouselDecks ?? {}).flat().filter((c) => !del.has(c.id)).map((c) => c.ref ?? catalogIdOf(c.id)));
+    const remainingRefs = new Set(deckCardsAll.filter((c) => !del.has(c.id)).map((c) => c.ref ?? catalogIdOf(c.id)));
+    // ref-keyed tokens (v0.9.8): a card's token board lives under its ref now (shared across copies), so
+    // drop it only when NO instance of that ref survives the delete.
+    for (const r of new Set(deckCardsAll.filter((c) => del.has(c.id)).map((c) => c.ref ?? catalogIdOf(c.id)))) {
+      if (!remainingRefs.has(r)) delete cardTokens[r];
+    }
     const next: CharacterFile = {
       ...file,
       customCards: (file.customCards ?? []).filter((c) => !del.has(c.id)),
@@ -1368,6 +1381,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     playSfx('customCardCreate');
     commitFile({ ...file, cardCopies: copies, cardCategory });
   }, [file, commitFile, carouselDecks]);
+  // Favorite selected cards (v0.9.8): add a favorite DUPLICATE for each eligible source. Skips cards that
+  // are already a favorite copy or already favorited. Un-favoriting is just deleting the copy in Favorites.
+  const onFavoriteCards = useCallback((ids: string[]) => {
+    if (!file || !ids.length) return;
+    const favCat = file.cardCategory ?? {};
+    let f = file;
+    let added = 0;
+    for (const id of ids) {
+      if (favCat[id] === FAVORITES_CATEGORY) continue; // never favorite a favorite
+      const before = f;
+      f = addFavorite(f, id);
+      if (f !== before) added++;
+    }
+    if (!added) { playSfx('floatMenuClose'); pushNotice('Already in Favorites'); return; }
+    playSfx('customCardCreate');
+    commitFile(f);
+    pushNotice(added === 1 ? 'Added to Favorites' : `Added ${added} to Favorites`);
+  }, [file, commitFile, pushNotice]);
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
   const editableIds = useMemo(() => editableCardIds(file), [file]);
@@ -1748,6 +1779,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onDeleteType={onDeleteCardType}
               onEditCard={(id) => { setFloatKind(null); setEditCardId(id); }}
               onDuplicate={onDuplicateCards}
+              onFavorite={onFavoriteCards}
               editableIds={editableIds}
               onClose={() => setFloatKind(null)}
             />

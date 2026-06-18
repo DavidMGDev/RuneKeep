@@ -916,7 +916,9 @@ export function CardCarousel() {
         enabled={enabledIds.has(deck[i].ref ?? deck[i].id)}
         crossTrait={crossOuts[deck[i].id]}
         onToggle={toggleCard}
-        tokens={cardTokens[deck[i].id]}
+        // v0.9.8: tokens are keyed by the card's ref so all copies (incl. favorites) share one board;
+        // fall back to a legacy instance-keyed entry from older saves.
+        tokens={cardTokens[deck[i].ref ?? deck[i].id] ?? cardTokens[deck[i].id]}
       />,
     );
   }
