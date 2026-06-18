@@ -72,7 +72,7 @@ import { CardManagementPanel } from './card-management-panel';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { OriginCardPreview, type OriginPage } from './origin-card-preview';
-import { PortraitImage, type PortraitTransform } from './portrait-image';
+import { PortraitImage, PortraitTapButton, type PortraitTransform } from './portrait-image';
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
 const SHEET = Rune.sheet;
@@ -198,9 +198,9 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
             <PortraitImage uri={character.portraitUri} width={148} height={222} transform={character.portraitTransform} onTransform={onPortraitTransform} onReplace={onPortraitReplace} />
           </View>
         ) : (
-          <Pressable style={StyleSheet.absoluteFill} onPress={onPortraitReplace} accessibilityRole="button" accessibilityLabel="Character portrait. Add a photo">
+          <PortraitTapButton style={StyleSheet.absoluteFill} onPress={onPortraitReplace} accessibilityLabel="Character portrait. Add a photo">
             <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
-          </Pressable>
+          </PortraitTapButton>
         )}
         {/* gold frame ON TOP, but pointer-events none so the photo's drag/pinch gestures pass through */}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
