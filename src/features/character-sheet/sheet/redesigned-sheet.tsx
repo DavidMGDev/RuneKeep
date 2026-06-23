@@ -39,6 +39,10 @@ import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
+import { type LibraryCard } from '@/lib/library';
+import { nfcModulesPresent } from '@/lib/nfc';
+import type { RkpContent } from '@/lib/rkp';
+import { NfcSendModal } from '@/features/share/nfc-modal';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -962,6 +966,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [file, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
+  const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
   const [leaveConfirm, setLeaveConfirm] = useState(false); // #297: device-back leave confirmation
@@ -1373,6 +1378,33 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     playSfx('customCardCreate');
     commitFile({ ...file, cardCopies: copies, cardCategory });
   }, [file, commitFile, carouselDecks]);
+  // Send selected cards over NFC (v0.10.1): convert each sheet card to a portable LibraryCard — authored
+  // cards keep their title/body/effects/art; a catalog card sends as a generic card titled by its label.
+  // One card → a `card` .rkp; several → an ad-hoc `expansion`. The actual tap is handled by NfcSendModal.
+  const onSendNfc = useCallback((ids: string[]) => {
+    if (!file || !ids.length) return;
+    const toLib = (id: string): LibraryCard => {
+      const ref = refOf(id, file);
+      const authored = (findEditableCard(file, ref) ?? findEditableCard(file, id))?.card;
+      const cat = cardById(catalogIdOf(id));
+      return {
+        id: `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${id.slice(-4)}`,
+        contentType: 'generic',
+        title: authored?.title || cat?.label || 'Card',
+        text: authored?.text ?? '',
+        imageUri: authored?.imageUri ?? null,
+        color: authored?.color ?? null,
+        effects: effectsForCardId(ref, file),
+      };
+    };
+    const cards = ids.map(toLib);
+    const content: RkpContent =
+      cards.length === 1
+        ? { kind: 'card', payload: cards[0] }
+        : { kind: 'expansion', payload: { id: `exp-${Date.now().toString(36)}`, name: 'Shared cards', author: '', description: 'Cards shared from a character sheet.', version: 1, createdAt: new Date().toISOString(), cards } };
+    playSfx('buttonTap');
+    setNfcSend({ content, label: cards.length === 1 ? cards[0].title || 'card' : `${cards.length} cards` });
+  }, [file]);
   // Favorite selected cards (v0.9.8): add a favorite DUPLICATE for each eligible source. Skips cards that
   // are already a favorite copy or already favorited. Un-favoriting is just deleting the copy in Favorites.
   const onFavoriteCards = useCallback((ids: string[]) => {
@@ -1738,8 +1770,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onMove={onMoveCards}
               onDelete={onDeleteCards}
               onOpenCardsPanel={() => setFloatKind('cards')}
+              onSendNfc={nfcModulesPresent() ? onSendNfc : undefined}
               topInset={topInset}
             />
+            {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />

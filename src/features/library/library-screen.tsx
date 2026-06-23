@@ -25,8 +25,12 @@ import {
   type LibraryCard,
   type LibraryContentType,
   expansionSummary,
+  mergeDecision,
 } from '@/lib/library';
-import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
+import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
+import { nfcModulesPresent } from '@/lib/nfc';
+import type { RkpContent } from '@/lib/rkp';
+import { NfcReceiveModal, NfcSendModal } from '@/features/share/nfc-modal';
 
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 const CONTENT_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'generic'];
@@ -155,6 +159,9 @@ export function LibraryScreen() {
   const [confirmDeleteExp, setConfirmDeleteExp] = useState<Expansion | null>(null);
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<number | null>(null);
   const [message, setMessage] = useState<{ title: string; body: string } | null>(null);
+  const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null);
+  const [nfcReceive, setNfcReceive] = useState(false);
+  const nfcOn = nfcModulesPresent();
 
   const reload = useCallback(() => {
     let live = true;
@@ -179,6 +186,32 @@ export function LibraryScreen() {
       setMessage({ title: res.expansion.name, body: `Expansion ${verb}.` });
     } catch (e) {
       setMessage({ title: 'Import failed', body: e instanceof Error ? e.message : 'Could not read that file.' });
+    }
+  }, [reload]);
+
+  const onNfcReceived = useCallback(async (content: RkpContent) => {
+    setNfcReceive(false);
+    try {
+      if (content.kind === 'expansion') {
+        const incoming = content.payload;
+        const existing = (await getExpansion(incoming.id)) ?? undefined;
+        const decision = mergeDecision(existing, incoming);
+        if (decision === 'skip') { setMessage({ title: incoming.name, body: 'You already have a newer version — skipped.' }); return; }
+        await saveExpansion(incoming);
+        reload();
+        setMessage({ title: incoming.name, body: decision === 'update' ? 'Expansion updated to the received version.' : 'Expansion received.' });
+      } else if (content.kind === 'card') {
+        // a single received card lands in a shared "Received cards" expansion in the library
+        const id = 'exp-received';
+        const exp = (await getExpansion(id)) ?? { id, name: 'Received cards', author: '', description: 'Cards received over NFC or file.', version: 1, createdAt: new Date().toISOString(), cards: [] };
+        await saveExpansion({ ...exp, cards: [...exp.cards, content.payload] });
+        reload();
+        setMessage({ title: content.payload.title || 'Card', body: 'Added to your "Received cards" expansion.' });
+      } else {
+        setMessage({ title: 'That was a character', body: 'Receive heroes from the Characters screen instead.' });
+      }
+    } catch (e) {
+      setMessage({ title: 'Receive failed', body: e instanceof Error ? e.message : 'Could not read that.' });
     }
   }, [reload]);
 
@@ -234,6 +267,7 @@ export function LibraryScreen() {
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
               <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name); }} />
+              {nfcOn ? <RuneButton label="NFC" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'expansion', payload: selected }, label: selected.name }); }} /> : null}
             </View>
           </ChamferBox>
 
@@ -276,6 +310,8 @@ export function LibraryScreen() {
             onConfirm={() => { const id = confirmDeleteExp.id; setConfirmDeleteExp(null); setSelectedId(null); void deleteExpansion(id).then(reload); }}
             onCancel={() => setConfirmDeleteExp(null)} />
         ) : null}
+        {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
+        {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
       </AppScreen>
     );
   }
@@ -328,6 +364,7 @@ export function LibraryScreen() {
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
         <RuneButton label="Import .rkp" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
+        {nfcOn ? <RuneButton label="Receive NFC" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); setNfcReceive(true); }} /> : null}
         <RuneButton label="New expansion" kind="primary" height={46} style={{ flex: 1.4 }} onPress={() => setMetaForm('new')} />
       </View>
 
@@ -341,6 +378,7 @@ export function LibraryScreen() {
           }}
         />
       ) : null}
+      {nfcReceive ? <NfcReceiveModal onReceived={onNfcReceived} onClose={() => setNfcReceive(false)} /> : null}
       {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
     </AppScreen>
   );

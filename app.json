@@ -63,7 +63,14 @@
           "androidPermissions": [],
           "disableFFmpeg": true
         }
-      ]
+      ],
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "RuneKeep uses NFC to share cards and expansions by tapping phones together."
+        }
+      ],
+      "./plugins/withNfcHce"
     ],
     "experiments": {
       "typedRoutes": true,
