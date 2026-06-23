@@ -24,6 +24,7 @@ export function EditControls({
   onMove,
   onDelete,
   onOpenCardsPanel,
+  onSendNfc,
   topInset,
 }: {
   moveTargets: string[];
@@ -33,6 +34,8 @@ export function EditControls({
   onMove: (ids: string[], categoryKey: string) => void;
   onDelete: (ids: string[]) => void;
   onOpenCardsPanel: () => void;
+  /** v0.10.1: share the selected cards over NFC (Android/APK only — undefined hides the button). */
+  onSendNfc?: (ids: string[]) => void;
   topInset: number;
 }) {
   const { editing, raisedIds, exitEdit, decks } = useCarousel();
@@ -71,6 +74,7 @@ export function EditControls({
             <RuneButton label="★ Favorite" kind="secondary" dense height={34} disabled={!favIds.length} onPress={() => onFavorite(favIds)} />
             <RuneButton label="Move" kind="secondary" dense height={34} disabled={!has} onPress={() => setMoveOpen(true)} />
             <RuneButton label="Delete" kind="secondary" dense height={34} disabled={deleteBlocked} onPress={() => setConfirmDel(true)} />
+            {onSendNfc ? <RuneButton label="Send NFC" kind="secondary" dense height={34} disabled={!has} onPress={() => onSendNfc(ids)} /> : null}
             <RuneButton label="Cards panel" kind="ghost" dense height={34} onPress={() => { exitEdit(); onOpenCardsPanel(); }} />
           </View>
           {!has ? (
