@@ -757,10 +757,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     if (cards.some((c) => !c)) return none;
     // the actual cards the player PICKED at creation (#121: no more sample/placeholder cards) — the
     // two domain cards lead the abilities hand.
-    // Vault (#166): only the ≤5 ACTIVE domain cards ride the deck; the rest sit in the vault.
-    const activeDomainSet = file.activeDomainCardIds ?? file.domainCardIds.slice(0, 5);
+    // EVERY owned domain card rides the deck (owner, v0.10.0): the ≤5 cap governs only which are
+    // ENABLED/equipped (see the enabledCardIds cap below), never which are visible. Earlier the deck
+    // was filtered to the active set (#166 vault), which silently dropped cards gained from level 3+.
     const domainItems = file.domainCardIds
-      .filter((id) => activeDomainSet.includes(id))
       .map(cardById)
       .filter((c): c is NonNullable<typeof c> => !!c)
       .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || (a.domain ?? '').localeCompare(b.domain ?? '')) // by level (then domain) (#157)

@@ -14,32 +14,81 @@ import { type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 import { CATALOG, type CatalogCard, type CatalogKind } from '@/data/catalog';
+import { ALL_ARMOR, ALL_WEAPONS, type ArmorDef, type WeaponDef } from '@/data/equipment-data';
+import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 
-const KINDS: { key: CatalogKind; label: string }[] = [
+// The archive browses catalog cards AND equipment. Weapons/armor have no image assets — they render
+// live via the forged components — so the grid item is a union (v0.10.0, owner: "all weapons and armor
+// for all tiers" were missing because the gallery only ever read CATALOG).
+type GalleryKind = CatalogKind | 'weapon' | 'armor';
+type GalleryItem =
+  | { type: 'card'; id: string; label: string; card: CatalogCard }
+  | { type: 'weapon'; id: string; label: string; weapon: WeaponDef }
+  | { type: 'armor'; id: string; label: string; armor: ArmorDef };
+
+const KINDS: { key: GalleryKind; label: string }[] = [
   { key: 'domain', label: 'Domains' },
   { key: 'ancestry', label: 'Ancestry' },
   { key: 'community', label: 'Community' },
   { key: 'subclass', label: 'Subclass' },
+  { key: 'weapon', label: 'Weapons' },
+  { key: 'armor', label: 'Armor' },
 ];
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const TIERS = [1, 2, 3, 4];
 
 interface Filters {
-  kinds: Set<CatalogKind>;
+  kinds: Set<GalleryKind>;
   domains: Set<DomainName>;
   levels: Set<number>;
+  tiers: Set<number>; // tier 1–4, equipment only
 }
 
-function applyFilters(f: Filters): CatalogCard[] {
-  return CATALOG.filter((c) => {
-    if (f.kinds.size && !f.kinds.has(c.kind)) return false;
-    if (f.domains.size && (c.kind !== 'domain' || !f.domains.has(c.domain!))) return false;
-    if (f.levels.size && (c.kind !== 'domain' || !f.levels.has(c.level!))) return false;
-    return true;
-  });
+function applyFilters(f: Filters): GalleryItem[] {
+  const wantKind = (k: GalleryKind) => !f.kinds.size || f.kinds.has(k);
+  // domains/levels are catalog-domain dimensions; tiers is an equipment dimension. Selecting one set
+  // narrows to that family (mirrors the existing level→domain behavior).
+  const catalogDim = f.domains.size > 0 || f.levels.size > 0;
+  const equipDim = f.tiers.size > 0;
+  const out: GalleryItem[] = [];
+  if (!equipDim) {
+    for (const c of CATALOG) {
+      if (!wantKind(c.kind)) continue;
+      if (f.domains.size && (c.kind !== 'domain' || !f.domains.has(c.domain!))) continue;
+      if (f.levels.size && (c.kind !== 'domain' || !f.levels.has(c.level!))) continue;
+      out.push({ type: 'card', id: c.id, label: c.label, card: c });
+    }
+  }
+  if (!catalogDim && wantKind('weapon')) {
+    for (const w of ALL_WEAPONS) {
+      if (f.tiers.size && !f.tiers.has(w.tier)) continue;
+      out.push({ type: 'weapon', id: w.id, label: w.name, weapon: w });
+    }
+  }
+  if (!catalogDim && wantKind('armor')) {
+    for (const a of ALL_ARMOR) {
+      if (f.tiers.size && !f.tiers.has(a.tier)) continue;
+      out.push({ type: 'armor', id: a.id, label: a.name, armor: a });
+    }
+  }
+  return out;
+}
+
+/** A forged equipment card (no image asset) scaled to fill `width`, clipped to the 5:7 cell. */
+function ScaledForged({ item, width }: { item: Extract<GalleryItem, { type: 'weapon' | 'armor' }>; width: number }) {
+  const s = width / FORGED_W;
+  const h = FORGED_H * s;
+  return (
+    <View style={{ width, height: h, overflow: 'hidden' }}>
+      <View style={{ position: 'absolute', left: (width - FORGED_W) / 2, top: (h - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: s }] }}>
+        {item.type === 'weapon' ? <ForgedWeaponCard weapon={item.weapon} /> : <ForgedArmorCard armor={item.armor} />}
+      </View>
+    </View>
+  );
 }
 
 /** Fullscreen reader: full-res card over a dim veil; tap or swipe-down closes (the sheet's focus feel). */
-function CardReader({ card, onClose }: { card: CatalogCard; onClose: () => void }) {
+function CardReader({ card, onClose }: { card: GalleryItem; onClose: () => void }) {
   const p = useSharedValue(0);
   const dragY = useSharedValue(0);
   useEffect(() => {
@@ -80,7 +129,7 @@ function CardReader({ card, onClose }: { card: CatalogCard; onClose: () => void 
           pointerEvents="box-only"
           style={[{ position: 'absolute', alignSelf: 'center', top: '50%', marginTop: -(w * 1.4) / 2, width: w, height: w * 1.4 }, cardStyle]}>
           <Pressable style={{ flex: 1 }} onPress={close}>
-            <ArtImage source={card.source} fit="contain" />
+            {card.type === 'card' ? <ArtImage source={card.card.source} fit="contain" /> : <ScaledForged item={card} width={w} />}
           </Pressable>
         </Animated.View>
       </GestureDetector>
@@ -98,11 +147,12 @@ export function GalleryScreen() {
   const params = useLocalSearchParams<{ kinds?: string; levels?: string; domains?: string }>();
   const [ready, setReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [reading, setReading] = useState<CatalogCard | null>(null);
+  const [reading, setReading] = useState<GalleryItem | null>(null);
   const [filters, setFilters] = useState<Filters>(() => ({
-    kinds: new Set((params.kinds?.split(',').filter(Boolean) as CatalogKind[]) ?? []),
+    kinds: new Set((params.kinds?.split(',').filter(Boolean) as GalleryKind[]) ?? []),
     domains: new Set((params.domains?.split(',').filter(Boolean) as DomainName[]) ?? []),
     levels: new Set(params.levels?.split(',').filter(Boolean).map(Number) ?? []),
+    tiers: new Set<number>(),
   }));
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 250);
@@ -117,7 +167,7 @@ export function GalleryScreen() {
     return next;
   }, []);
 
-  const activeCount = filters.kinds.size + filters.domains.size + filters.levels.size;
+  const activeCount = filters.kinds.size + filters.domains.size + filters.levels.size + filters.tiers.size;
   const { width } = Dimensions.get('window');
   const cols = 3;
   const cellW = Math.floor((width - 36 - (cols - 1) * 10) / cols);
@@ -173,6 +223,17 @@ export function GalleryScreen() {
               <RuneChip key={l} label={`L${l}`} active={filters.levels.has(l)} onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('domain'), levels: toggle(f.levels, l) }))} />
             ))}
           </View>
+          {/* tier chips narrow weapons/armor (equipment only); tapping one switches the grid to equipment */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {TIERS.map((t) => (
+              <RuneChip
+                key={`tier-${t}`}
+                label={`Tier ${t}`}
+                active={filters.tiers.has(t)}
+                onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('weapon').add('armor'), tiers: toggle(f.tiers, t) }))}
+              />
+            ))}
+          </View>
         </ChamferBox>
       ) : null}
 
@@ -197,7 +258,7 @@ export function GalleryScreen() {
         renderItem={({ item }) => (
           <Pressable onPress={() => setReading(item)} accessibilityRole="button" accessibilityLabel={`${item.label}, open card`} style={{ width: cellW }}>
             <View style={{ width: cellW, height: cellH }}>
-              <ArtImage source={item.thumb} fit="contain" recyclingKey={item.id} />
+              {item.type === 'card' ? <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} /> : <ScaledForged item={item} width={cellW} />}
             </View>
             <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
               {item.label}

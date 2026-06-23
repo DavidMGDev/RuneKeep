@@ -283,7 +283,7 @@ export function CreateScreen() {
       return id ? [id] : [];
     }
     if (deck === 'armor') return draft.armorId ? [draft.armorId] : [];
-    if (deck === 'inventory') return [...draft.inventoryItemIds, ...draft.inventoryCustom.map((i) => i.id)]; // auto-owned start items + gold are NOT counted/selected (#128)
+    if (deck === 'inventory') return [...draft.inventoryItemIds, ...draft.inventoryCustomSelected]; // suggested picks + SELECTED custom cards (v0.10.0); gold/start kit are not counted (#128)
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -346,12 +346,15 @@ export function CreateScreen() {
       }
       if (deck === 'inventory') {
         if (id === 'item-add') {
-          setEditingItem('new');
+          setEditingItem('new'); // the "Create card" button-card — always creates a NEW card (never edits)
           return;
         }
         const ci = draft.inventoryCustom.findIndex((i) => i.id === id);
         if (ci >= 0) {
-          setEditingItem(ci); // tap a custom item to edit it
+          // A custom card is a normal SELECTABLE card now (v0.10.0): toggle ownership. (Editing is the
+          // separate "Edit item" control.) No cap — these are the player's own homebrew items.
+          const sel = draft.inventoryCustomSelected.includes(id);
+          set({ inventoryCustomSelected: sel ? draft.inventoryCustomSelected.filter((x) => x !== id) : [...draft.inventoryCustomSelected, id] });
           return;
         }
         // optional items: pick up to TWO (#136), replacing the oldest like domains
@@ -431,7 +434,7 @@ export function CreateScreen() {
       weaponSecondaryId: draft.weaponSecondaryId,
       armorId: draft.armorId!,
       inventoryItemIds: draft.inventoryItemIds,
-      inventoryCustom: draft.inventoryCustom,
+      inventoryCustom: draft.inventoryCustom.filter((i) => draft.inventoryCustomSelected.includes(i.id)), // only SELECTED customs are forged (v0.10.0)
       gold: draft.gold,
       level: 1,
     });
@@ -599,9 +602,14 @@ export function CreateScreen() {
           onCancel={() => setEditingItem(null)}
           onSave={(d) => {
             const next = [...draft.inventoryCustom];
-            if (editingItem === 'new') next.push({ id: `itm-${Date.now().toString(36)}`, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects });
-            else next[editingItem] = { ...next[editingItem], title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects };
-            set({ inventoryCustom: next });
+            if (editingItem === 'new') {
+              const id = `itm-${Date.now().toString(36)}`;
+              next.push({ id, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects });
+              set({ inventoryCustom: next, inventoryCustomSelected: [...draft.inventoryCustomSelected, id] }); // a new card starts selected
+            } else {
+              next[editingItem] = { ...next[editingItem], title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects };
+              set({ inventoryCustom: next });
+            }
             setEditingItem(null);
           }}
         />
@@ -612,19 +620,34 @@ export function CreateScreen() {
       {isCarouselDeck(deck) ? (
         <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
-            label={centerInvAdd ? 'Create item' : centerInvCustom ? 'Edit item' : centerSelected ? 'Deselect' : `Select ${noun}`}
-            kind={centerSelected && !centerInvAdd && !centerInvCustom ? 'ghost' : 'primary'}
+            label={centerInvAdd ? 'Create item' : centerSelected ? 'Deselect' : `Select ${noun}`}
+            kind={centerSelected && !centerInvAdd ? 'ghost' : 'primary'}
             height={40}
             muteSfx
             onPress={() => {
               if (!centerItem) return;
               // #258: selecting a card uses the card-select/deselect chime, not the generic tap.
-              if (centerInvAdd || centerInvCustom) playSfx('buttonTap');
+              if (centerInvAdd) playSfx('buttonTap'); // the "Create card" button-card opens the editor
               else playSfx(centerSelected ? 'cardDeselect' : 'cardSelect');
               onToggle(centerItem.id);
             }}
-            accessibilityLabel={centerInvAdd ? 'Create a custom item' : centerInvCustom ? 'Edit item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+            accessibilityLabel={centerInvAdd ? 'Create a custom item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
+          {/* A created custom card edits via its OWN control — the create button-card never doubles as edit (v0.10.0). */}
+          {centerInvCustom ? (
+            <RuneButton
+              label="Edit item"
+              kind="ghost"
+              dense
+              height={30}
+              onPress={() => {
+                playSfx('buttonTap');
+                const ci = draft.inventoryCustom.findIndex((i) => i.id === centerItem?.id);
+                if (ci >= 0) setEditingItem(ci);
+              }}
+              accessibilityLabel={`Edit ${centerItem?.label ?? 'item'}`}
+            />
+          ) : null}
           {deck === 'class' ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4 }}>Tap the card to flip through its features</Text>
           ) : null}

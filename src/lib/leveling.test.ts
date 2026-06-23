@@ -52,9 +52,12 @@ describe('tier achievements', () => {
     );
     expect(f.experiences?.at(-1)).toMatchObject({ title: 'Trail Sense', color: '#3A6E4F', imageUri: 'file:///exp.jpg', text: 'Years in the wild.', modifier: 2 });
   });
-  it('clears trait marks at level 5', () => {
-    const f = applyLevelUp(baseFile({ level: 4, traitMarks: ['agility', 'finesse'] }), plan(), DEF);
-    expect(f.traitMarks).toEqual([]);
+  it('clears trait marks at every tier start (2, 5, 8)', () => {
+    // v0.10.0: marks reset at the START of each tier — previously only 5 & 8, which soft-locked level-up.
+    for (const fromLevel of [1, 4, 7]) {
+      const f = applyLevelUp(baseFile({ level: fromLevel, traitMarks: ['agility', 'finesse'] }), plan(), DEF);
+      expect(f.traitMarks).toEqual([]); // entering level fromLevel+1 (2, 5, 8)
+    }
   });
   it('keeps trait marks at non-tier levels (3 -> 4)', () => {
     const f = applyLevelUp(baseFile({ level: 3, traitMarks: ['agility'] }), plan(), DEF);
@@ -90,6 +93,25 @@ describe('advancements', () => {
     expect(f.advancementMarks?.prof).toBe(2);
     const g = applyLevelUp(baseFile({ level: 4 }), plan({ advancements: [{ key: 'multiclass', multiclass: 'wizard' }] }), DEF);
     expect(g.multiclassName).toBe('wizard');
+  });
+  it('never upgrades the same trait twice in one level-up (across two trait takes)', () => {
+    const f = applyLevelUp(
+      baseFile({ level: 3 }),
+      plan({ advancements: [{ key: 'trait', traits: ['agility', 'strength'] }, { key: 'trait', traits: ['agility', 'finesse'] }] }),
+      DEF,
+    );
+    expect(f.traitBonuses?.agility).toBe(1); // not 2 — the duplicate is dropped
+    expect(f.traitBonuses).toMatchObject({ agility: 1, strength: 1, finesse: 1 });
+  });
+  it('always adds a chosen domain card to the owned list at level 3+, even when 5 are already active', () => {
+    const f = applyLevelUp(
+      baseFile({ level: 2, domainCardIds: ['a', 'b', 'c', 'd', 'e'], activeDomainCardIds: ['a', 'b', 'c', 'd', 'e'] }),
+      plan({ domainCardId: 'lvl3-card' }),
+      DEF,
+    );
+    expect(f.level).toBe(3);
+    expect(f.domainCardIds).toContain('lvl3-card'); // owned/carousel never gated by the 5-active cap
+    expect(f.activeDomainCardIds).not.toContain('lvl3-card'); // but not auto-activated past 5
   });
   it('subclass advances foundation -> specialization -> mastery', () => {
     const f1 = applyLevelUp(baseFile({ level: 4 }), plan({ advancements: [{ key: 'subclass' }] }), DEF);
