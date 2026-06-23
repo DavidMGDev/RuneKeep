@@ -21,6 +21,7 @@ export const EMPTY: Draft = {
   armorId: null,
   inventoryItemIds: [],
   inventoryCustom: [],
+  inventoryCustomSelected: [],
   gold: GOLD_DEFAULT,
 };
 

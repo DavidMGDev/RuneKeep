@@ -71,7 +71,10 @@ export function isTierStart(newLevel: number): boolean {
   return newLevel === 2 || newLevel === 5 || newLevel === 8;
 }
 export function clearsTraitMarks(newLevel: number): boolean {
-  return newLevel === 5 || newLevel === 8;
+  // Trait marks reset at the start of EVERY tier (2, 5, 8), not just 5 & 8 (owner, v0.10.0). Before,
+  // marks accumulated through tier 2 and never cleared at level 2, so by the upper levels every trait
+  // could be marked at once and the trait advancement could never be completed — soft-locking level-up.
+  return isTierStart(newLevel);
 }
 
 const SUBCLASS_NEXT: Record<string, 'foundation' | 'specialization' | 'mastery'> = { foundation: 'specialization', specialization: 'mastery', mastery: 'mastery' };
@@ -145,14 +148,17 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   let multiclassSubclassCardId = file.multiclassSubclassCardId;
   let multiclassDomain = file.multiclassDomain;
 
+  const traitsUpgradedThisLevel = new Set<TraitKey>(); // a trait can't be raised twice in one level-up
   for (const a of plan.advancements) {
     const opt = advOption(a.key);
     marks[a.key] = (marks[a.key] ?? 0) + opt.picks;
     switch (a.key) {
       case 'trait':
         for (const t of a.traits ?? []) {
+          if (traitsUpgradedThisLevel.has(t) || traitMarks.includes(t)) continue; // never double-upgrade
+          traitsUpgradedThisLevel.add(t);
           traitBonuses[t] = (traitBonuses[t] ?? 0) + 1;
-          if (!traitMarks.includes(t)) traitMarks.push(t);
+          traitMarks.push(t);
         }
         break;
       case 'hp':

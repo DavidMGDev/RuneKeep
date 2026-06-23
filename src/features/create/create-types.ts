@@ -32,5 +32,8 @@ export interface Draft {
    *  custom item cards. */
   inventoryItemIds: string[];
   inventoryCustom: ExperienceDef[];
+  /** Which authored custom item cards are currently SELECTED (owned) (v0.10.0). A created card starts
+   *  selected; deselecting keeps the card around to re-select. Only selected customs are forged. */
+  inventoryCustomSelected: string[];
   gold: GoldAmount;
 }

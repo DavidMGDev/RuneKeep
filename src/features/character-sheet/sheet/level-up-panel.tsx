@@ -377,11 +377,16 @@ export function LevelUpPanel({
                     ) : null}
                     {opt.needs === 'traits' ? (
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {TRAIT_ORDER.map((tr) => {
-                          const sel = (t.traits ?? []).includes(tr.key);
-                          const lockMarked = marked.includes(tr.key);
-                          return <Chip key={tr.key} label={tr.label} on={sel} disabled={lockMarked || (!sel && (t.traits ?? []).length >= 2)} onPress={() => toggleIn(i, 'traits', tr.key, 2)} />;
-                        })}
+                        {(() => {
+                          // A trait can't be picked twice in one level-up: lock traits chosen in any OTHER
+                          // trait take this level (in addition to traits already marked from prior levels).
+                          const chosenElsewhere = new Set(takes.flatMap((x, j) => (j !== i && x.key === 'trait' ? (x.traits ?? []) : [])));
+                          return TRAIT_ORDER.map((tr) => {
+                            const sel = (t.traits ?? []).includes(tr.key);
+                            const locked = marked.includes(tr.key) || chosenElsewhere.has(tr.key);
+                            return <Chip key={tr.key} label={tr.label} on={sel} disabled={locked || (!sel && (t.traits ?? []).length >= 2)} onPress={() => toggleIn(i, 'traits', tr.key, 2)} />;
+                          });
+                        })()}
                       </View>
                     ) : null}
                     {opt.needs === 'exps' ? (
