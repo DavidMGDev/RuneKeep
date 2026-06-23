@@ -8,6 +8,7 @@
 import { Platform } from 'react-native';
 
 import { type CharacterFile, parseCharacterFile, serializeCharacterFile } from './character-file';
+import { parseRkp, serializeRkp } from './rkp';
 
 const WEB_KEY = 'runekeep.characters';
 
@@ -81,27 +82,41 @@ export async function deleteCharacter(id: string): Promise<void> {
   if (f.exists) f.delete();
 }
 
-/** Share the character JSON through the OS share sheet (the export path). */
+/** Share the character as a `.rkp` file through the OS share sheet (the export path, v0.10.0). */
 export async function exportCharacter(file: CharacterFile): Promise<void> {
   if (Platform.OS === 'web') return; // no share target in the verify pipeline
   const { File, Paths } = fs();
   const safe = file.name.replace(/[^\w-]+/g, '_').slice(0, 40) || 'character';
-  const out = new File(Paths.cache, `${safe}.runekeep.json`);
+  const out = new File(Paths.cache, `${safe}.rkp`);
   if (out.exists) out.delete();
-  out.write(serializeCharacterFile(file));
+  out.write(serializeRkp({ kind: 'character', payload: file }));
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Sharing = require('expo-sharing') as typeof import('expo-sharing');
-  await Sharing.shareAsync(out.uri, { mimeType: 'application/json', dialogTitle: `Share ${file.name}` });
+  await Sharing.shareAsync(out.uri, { mimeType: 'application/octet-stream', dialogTitle: `Share ${file.name}` });
 }
 
-/** Pick a .json, validate it, save it into the roster. Returns the imported character or null if cancelled. */
+/** Read a character from text — accepts both the new `.rkp` envelope and a legacy bare CharacterFile JSON. */
+export function readCharacterText(text: string): CharacterFile {
+  try {
+    const content = parseRkp(text);
+    if (content.kind === 'character') return content.payload;
+    throw new Error(`That .rkp is a ${content.kind}, not a character.`);
+  } catch (e) {
+    // Not an rkp envelope — fall back to the legacy `.runekeep.json` (bare CharacterFile) format.
+    if (e instanceof Error && /not a character/i.test(e.message)) throw e;
+    return parseCharacterFile(text);
+  }
+}
+
+/** Pick a .rkp/.json, validate it, save it into the roster. Returns the imported character or null if cancelled. */
 export async function importCharacter(): Promise<CharacterFile | null> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const DocumentPicker = require('expo-document-picker') as typeof import('expo-document-picker');
-  const res = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
+  // accept any file (.rkp has no registered MIME) and validate by content
+  const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
   if (res.canceled || !res.assets[0]) return null;
   if (Platform.OS === 'web') return null; // import is a device flow; the web shim has no picker file API
-  const file = parseCharacterFile(new (fs().File)(res.assets[0].uri).textSync());
+  const file = readCharacterText(new (fs().File)(res.assets[0].uri).textSync());
   await saveCharacter(file);
   return file;
 }
