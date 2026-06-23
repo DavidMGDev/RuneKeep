@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Dimensions, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
@@ -154,7 +154,7 @@ export function MenuScreen() {
         {/* actions */}
         <View style={{ flex: 1, justifyContent: 'flex-end', gap: 16, paddingBottom: 40 }}>
           <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
-          <MenuAction label="Cards" sub="Browse the full card library" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} />
+          <MenuAction label="Cards" sub="Archive, homebrew & expansions" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
         </View>
       </View>
     </AppScreen>
