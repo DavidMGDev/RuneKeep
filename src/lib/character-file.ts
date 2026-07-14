@@ -6,7 +6,7 @@
  */
 
 import { type ClassName, classInfo } from '@/constants/identity';
-import { cardById } from '@/data/catalog';
+import { CATALOG, cardById } from '@/data/catalog';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/data/class-data';
@@ -120,8 +120,13 @@ export interface CharacterFile {
   // --- level-up (#167) ---
   /** +1 to both damage thresholds per level (added to the armor card's base thresholds). */
   thresholdBonus?: number;
-  /** Advancement slots marked per option key, persisted across the campaign. */
+  /** Advancement slots marked per option key. v0.10.2: PER-TIER — `advancementMarksTier` stamps which
+   *  tier these marks belong to; leveling ignores (and resets) marks from a different tier. */
   advancementMarks?: Record<string, number>;
+  /** The tier `advancementMarks` were stamped in (v0.10.2). Absent on pre-0.10.2 saves → their marks read
+   *  as stale and the current tier's menu opens fresh (self-heals characters soft-locked by the old
+   *  campaign-wide accounting). */
+  advancementMarksTier?: number;
   /** Traits marked by the trait advancement (can't raise again until cleared at level 5/8). */
   traitMarks?: TraitKey[];
   /** Subclass progression from the "upgrade subclass" advancement. */
@@ -211,6 +216,21 @@ export function parseCharacterFile(raw: string): CharacterFile {
   }
   if (!Array.isArray(f.domainCardIds) || f.domainCardIds.some((id) => !cardById(id))) throw new Error('Unknown domain card');
   if (typeof f.className !== 'string' || !classInfo(f.className as ClassName)) throw new Error('Unknown class');
+  // v0.10.2 (Bug 3 backfill): older saves advanced `subclassTier` without ever gaining the matching
+  // specialization/mastery card. Ensure every sibling up to the current tier is present so the deck shows
+  // it. Idempotent (guarded by includes) and only touches non-multiclassed subclass upgraders.
+  if ((f.subclassTier === 'specialization' || f.subclassTier === 'mastery') && !f.multiclassName) {
+    const slug = cardById(f.subclassCardId!)?.subclass;
+    if (slug) {
+      const acquired = [...(f.acquiredCardIds ?? [])];
+      const targets = f.subclassTier === 'mastery' ? [2, 3] : [2];
+      for (const t of targets) {
+        const id = CATALOG.find((c) => c.kind === 'subclass' && c.subclass === slug && c.tier === t)?.id;
+        if (id && !acquired.includes(id)) acquired.push(id);
+      }
+      if (acquired.length !== (f.acquiredCardIds?.length ?? 0)) f.acquiredCardIds = acquired;
+    }
+  }
   return f as CharacterFile;
 }
 

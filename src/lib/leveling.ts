@@ -12,6 +12,7 @@
  */
 
 import type { TraitKey } from '@/features/character-sheet/character';
+import { CATALOG, cardById } from '@/data/catalog';
 import type { CharacterFile } from './character-file';
 import { addCompanionExperience, applyCompanionOption, companionOf, hasCompanion } from './companion';
 import { tierForLevel } from './rest';
@@ -24,7 +25,8 @@ export interface AdvancementOption {
   key: AdvKey;
   label: string;
   desc: string;
-  /** Total slots across the whole campaign. */
+  /** Slots available PER TIER (v0.10.2): the menu resets at each tier start, so e.g. `trait: 3` means
+   *  up to three +1-to-two-traits takes within a tier, then again in the next tier. */
   slots: number;
   /** How many of the level's 2 choices a single take consumes (prof/multiclass = 2). */
   picks: number;
@@ -49,21 +51,29 @@ export const ADVANCEMENTS: AdvancementOption[] = [
 export function advOption(key: AdvKey): AdvancementOption {
   return ADVANCEMENTS.find((o) => o.key === key)!;
 }
-export function advMarksUsed(file: CharacterFile, key: AdvKey): number {
+export function advMarksUsed(file: CharacterFile, key: AdvKey, tier: number = tierForLevel(file.level)): number {
+  // v0.10.2: advancement slots are PER-TIER. A mark counts only when it was stamped in the tier being
+  // evaluated; a stamp from a prior tier (or an old save with no `advancementMarksTier`) reads as 0. This
+  // both resets the menu at each new tier AND self-heals characters soft-locked under the old
+  // campaign-wide accounting (where marks accumulated forever and options ran out by the upper levels).
+  if (file.advancementMarksTier !== tier) return 0;
   return file.advancementMarks?.[key] ?? 0;
 }
-export function advRemaining(file: CharacterFile, key: AdvKey): number {
-  return advOption(key).slots - advMarksUsed(file, key);
+export function advRemaining(file: CharacterFile, key: AdvKey, tier: number = tierForLevel(file.level)): number {
+  return advOption(key).slots - advMarksUsed(file, key, tier);
 }
 /** Options selectable at the given (new) level: in-tier and with slots left. */
 export function availableAdvancements(file: CharacterFile, newLevel: number): AdvancementOption[] {
   const tier = tierForLevel(newLevel);
   const multiclassed = !!file.multiclassName;
   return ADVANCEMENTS.filter((o) => {
-    if (o.minTier > tier || advRemaining(file, o.key) <= 0) return false;
+    if (o.minTier > tier || advRemaining(file, o.key, tier) <= 0) return false;
     // #311: multiclassing crosses out a subclass-upgrade option, so a multiclassed character can no
     // longer take "upgrade subclass" (and therefore can never reach a subclass mastery card).
     if (multiclassed && o.key === 'subclass') return false;
+    // v0.10.2: the per-tier reset would otherwise re-offer multiclass every tier, but the file holds a
+    // single `multiclassName` — a second take would silently overwrite the first. Cap it at once ever.
+    if (multiclassed && o.key === 'multiclass') return false;
     return true;
   });
 }
@@ -78,6 +88,15 @@ export function clearsTraitMarks(newLevel: number): boolean {
 }
 
 const SUBCLASS_NEXT: Record<string, 'foundation' | 'specialization' | 'mastery'> = { foundation: 'specialization', specialization: 'mastery', mastery: 'mastery' };
+
+/** The subclass card at a target progression tier (2 = specialization, 3 = mastery) in the same family
+ *  as a foundation card. Derives the family from the foundation card's `subclass` slug (catalog ids like
+ *  `subclass-stalwart-1-foundation`). Used to auto-add the card on a subclass upgrade (Bug 3) and to
+ *  backfill saves that advanced the tier before this shipped. Returns undefined for non-catalog ids. */
+export function nextSubclassCardId(foundationCardId: string, targetTier: 2 | 3): string | undefined {
+  const slug = cardById(foundationCardId)?.subclass;
+  return slug ? CATALOG.find((c) => c.kind === 'subclass' && c.subclass === slug && c.tier === targetTier)?.id : undefined;
+}
 
 export interface ChosenAdv {
   key: AdvKey;
@@ -137,7 +156,12 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   }
   let traitMarks = clearsTraitMarks(newLevel) ? [] : [...(file.traitMarks ?? [])];
 
-  const marks = { ...(file.advancementMarks ?? {}) };
+  // v0.10.2: advancement marks are per-tier — carry them only within the same tier, else start the new
+  // tier's menu fresh. `curTier` stamps the result so advMarksUsed can tell a live tier from a stale one.
+  const curTier = tierForLevel(newLevel);
+  const marks = file.advancementMarksTier === curTier ? { ...(file.advancementMarks ?? {}) } : {};
+  let acquired = file.acquiredCardIds ?? [];
+  let acquiredChanged = false;
   const traitBonuses = { ...(file.traitBonuses ?? {}) };
   let maxHp = file.maxHp ?? def.maxHp;
   let stressMax = file.stressMax ?? def.stressMax;
@@ -185,7 +209,17 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
       case 'subclass':
         // #311: a multiclassed character can't gain a subclass mastery; never advance the tier for them
         // (the option is also removed from availableAdvancements — this is a defensive backstop).
-        if (!file.multiclassName) subclassTier = SUBCLASS_NEXT[subclassTier];
+        if (!file.multiclassName) {
+          subclassTier = SUBCLASS_NEXT[subclassTier];
+          // v0.10.2 (Bug 3): actually ADD the next subclass card so it lands in the loadout and applies
+          // its effects, instead of only bumping the tier enum. subclassCardId stays the tier-1 foundation,
+          // so the target tier comes from the just-advanced enum (specialization → 2, mastery → 3).
+          const nextId = nextSubclassCardId(file.subclassCardId, subclassTier === 'mastery' ? 3 : 2);
+          if (nextId && !acquired.includes(nextId)) {
+            acquired = [...acquired, nextId];
+            acquiredChanged = true;
+          }
+        }
         break;
       case 'multiclass':
         multiclassName = (a.multiclass as CharacterFile['multiclassName']) ?? multiclassName;
@@ -200,6 +234,8 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   next.experiences = experiences;
   next.traitMarks = traitMarks;
   next.advancementMarks = marks;
+  next.advancementMarksTier = curTier;
+  if (acquiredChanged) next.acquiredCardIds = acquired;
   next.traitBonuses = traitBonuses;
   next.maxHp = maxHp;
   next.stressMax = stressMax;
