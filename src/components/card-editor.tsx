@@ -8,6 +8,8 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { FORGED_H, ForgedCard } from '@/features/create/components/forged-card';
+import { composeSections } from '@/lib/card-markdown';
+import { type CardSection } from '@/lib/library';
 import { type CardEffect } from '@/lib/modifiers';
 import { EffectPicker, EffectsField, FormulaVarPicker, isThresholdTarget, matchOption } from '@/components/effects-editor';
 import { playSfx } from '@/lib/sfx';
@@ -24,6 +26,90 @@ export interface CardDraft {
   effects: CardEffect[];
   /** The player-chosen card type shown on the plaque (#214), cycled by tapping the card's chip. */
   typeLabel?: string;
+  /** v0.10.2: the multi-field body (library cards). When set, the body renders per-section and `text`
+   *  is a composed-markdown fallback derived from these on save. */
+  sections?: CardSection[];
+}
+
+/** A tiny markdown-toolbar button (Bold / Italic / bullet / reorder). */
+function MarkBtn({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={5} accessibilityRole="button" accessibilityLabel={label} style={{ width: 30, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 4, backgroundColor: 'rgba(20,24,31,0.85)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+      <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * The multi-field card body (Feature 8): add/delete/reorder titled sections, each with a Bold/Italic/
+ * bullet toolbar that wraps the current selection (only the syntax card-markdown renders). `minRows`
+ * fixed slots (e.g. an ancestry's two mandatory features) always show; more can be added or removed.
+ */
+function SectionsField({ sections, onChange, minRows = 1, fixedLabels }: { sections: CardSection[]; onChange: (s: CardSection[]) => void; minRows?: number; fixedLabels?: string[] }) {
+  const [sel, setSel] = useState<{ row: number; start: number; end: number }>({ row: -1, start: 0, end: 0 });
+  const rows: CardSection[] = sections.length >= minRows ? sections : [...sections, ...Array.from({ length: minRows - sections.length }, () => ({ body: '' }))];
+  const commit = (next: CardSection[]) => onChange(next);
+  const update = (i: number, patch: Partial<CardSection>) => commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = () => { playSfx('buttonTap'); commit([...rows, { body: '' }]); };
+  const removeRow = (i: number) => { if (rows.length <= minRows) return; playSfx('cardDeselect'); commit(rows.filter((_, j) => j !== i)); };
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= rows.length) return;
+    playSfx('buttonTap');
+    const next = [...rows];
+    [next[i], next[j]] = [next[j], next[i]];
+    commit(next);
+  };
+  const applyMark = (i: number, mark: '**' | '*' | 'bullet') => {
+    if (sel.row !== i) return;
+    const body = rows[i].body;
+    if (mark === 'bullet') {
+      const ls = body.lastIndexOf('\n', Math.max(0, sel.start - 1)) + 1;
+      update(i, { body: `${body.slice(0, ls)}- ${body.slice(ls)}` });
+      return;
+    }
+    const mid = body.slice(sel.start, sel.end);
+    update(i, { body: `${body.slice(0, sel.start)}${mark}${mid}${mark}${body.slice(sel.end)}` });
+  };
+  return (
+    <View style={{ gap: 8 }}>
+      {rows.map((r, i) => (
+        <ChamferBox key={i} chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
+          <TextInput
+            value={r.name ?? ''}
+            onChangeText={(name) => update(i, { name })}
+            placeholder={fixedLabels?.[i] ?? 'Section name (optional)'}
+            placeholderTextColor={Rune.muted}
+            selectionColor={Rune.goldBright}
+            maxLength={60}
+            style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold, padding: 0 }}
+            accessibilityLabel={`Section ${i + 1} name`}
+          />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <MarkBtn label="B" onPress={() => applyMark(i, '**')} />
+            <MarkBtn label="I" onPress={() => applyMark(i, '*')} />
+            <MarkBtn label="•" onPress={() => applyMark(i, 'bullet')} />
+            <View style={{ flex: 1 }} />
+            <MarkBtn label="↑" onPress={() => move(i, -1)} />
+            <MarkBtn label="↓" onPress={() => move(i, 1)} />
+            {rows.length > minRows ? <MarkBtn label="✕" onPress={() => removeRow(i)} /> : null}
+          </View>
+          <TextInput
+            value={r.body}
+            onChangeText={(body) => update(i, { body })}
+            onSelectionChange={(e) => setSel({ row: i, start: e.nativeEvent.selection.start, end: e.nativeEvent.selection.end })}
+            placeholder="Describe it — select text, then tap B / I / • to format."
+            placeholderTextColor={Rune.muted}
+            selectionColor={Rune.goldBright}
+            multiline
+            style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, minHeight: 48, textAlignVertical: 'top' }}
+            accessibilityLabel={`Section ${i + 1} text`}
+          />
+        </ChamferBox>
+      ))}
+      <RuneButton label="+ Add section" kind="ghost" dense height={32} muteSfx onPress={addRow} />
+    </View>
+  );
 }
 
 /**
@@ -105,12 +191,18 @@ export function CardEditor({
   modifier,
   typeGroups,
   scrimless = false,
+  sectioned = false,
+  sectionsConfig,
 }: {
   kindLabel: string;
   initial?: CardDraft;
   onSave: (draft: CardDraft) => void;
   onCancel: () => void;
   saveLabel?: string;
+  /** v0.10.2: use the multi-field sections body (library cards) instead of the single text box. */
+  sectioned?: boolean;
+  /** v0.10.2: fixed minimum rows + their placeholder names (e.g. an ancestry's two features). */
+  sectionsConfig?: { minRows?: number; fixedLabels?: string[] };
   /** Drop the editor's own dark scrim (#239 item 9): used inside the sheet, where the shared SheetDim
    *  already darkens the screen — keeping a second scrim caused a double-dim that popped on open/close.
    *  A transparent tap-catcher still closes on outside tap. Standalone (creation) keeps its dark scrim. */
@@ -143,7 +235,8 @@ export function CardEditor({
 
   // #318: a note/card can be saved with NO title as long as it has SOME content (a body). An experience
   // still needs its phrase (the title IS the experience).
-  const canSave = experienceMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || draft.text.trim().length > 0;
+  const hasSectionContent = (draft.sections ?? []).some((s) => s.body.trim() || (s.name ?? '').trim());
+  const canSave = experienceMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || (sectioned ? hasSectionContent : draft.text.trim().length > 0);
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
   const [pickEffect, setPickEffect] = useState<number | null>(null);
@@ -221,7 +314,7 @@ export function CardEditor({
             <ForgedCard title={draft.title.trim() || 'Experience'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
           ) : (
             // #318: no "Untitled" — an empty title previews as a titleless card (the body fills the space).
-            <ForgedCard title={draft.title.trim()} kindLabel={plaqueLabel} body={draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+            <ForgedCard title={draft.title.trim()} kindLabel={plaqueLabel} body={sectioned ? composeSections(draft.sections) : draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
           )}
           {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
               transparent hit-band over the divider seam (~40% down), so the player taps the chip on
@@ -259,7 +352,9 @@ export function CardEditor({
               accessibilityLabel={experienceMode ? 'Experience' : 'Card title'}
             />
           </ChamferBox>
-          {experienceMode ? null : (
+          {experienceMode ? null : sectioned ? (
+            <SectionsField sections={draft.sections ?? []} onChange={(sections) => setDraft((d) => ({ ...d, sections }))} minRows={sectionsConfig?.minRows} fixedLabels={sectionsConfig?.fixedLabels} />
+          ) : (
             <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
               <TextInput
                 value={draft.text}
@@ -279,7 +374,7 @@ export function CardEditor({
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
-            <RuneButton label={saveLabel} kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={() => onSave({ ...draft, title: draft.title.trim() })} />
+            <RuneButton label={saveLabel} kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={() => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text })} />
           </View>
           <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>Same format as every RuneKeep card.</Text>
         </View>

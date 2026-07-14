@@ -8,6 +8,8 @@
  * ever needs those, swap in `react-native-markdown-display`.
  */
 
+import type { CardSection } from './library';
+
 export interface MdSpan {
   text: string;
   bold?: boolean;
@@ -17,6 +19,22 @@ export type MdBlock =
   | { kind: 'p'; spans: MdSpan[] }
   | { kind: 'ul'; items: MdSpan[][] }
   | { kind: 'ol'; items: { n: number; spans: MdSpan[] }[] };
+
+/** Compose structured card sections (Feature 8) into the single markdown string a ForgedCard renders:
+ *  `**Name.** body`, sections separated by a blank line. Empty sections drop out. */
+export function composeSections(sections?: CardSection[]): string {
+  if (!sections?.length) return '';
+  return sections
+    .map((s) => {
+      const body = s.body.trim();
+      const name = (s.name ?? '').trim();
+      if (name && body) return `**${name}.** ${body}`;
+      if (name) return `**${name}.**`;
+      return body;
+    })
+    .filter((x) => x)
+    .join('\n\n');
+}
 
 // A bullet/ordered marker must be followed by whitespace, so `*italic*` / `**bold**` (no space) at the
 // start of a line are NOT mistaken for list markers.
