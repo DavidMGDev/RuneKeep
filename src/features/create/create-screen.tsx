@@ -29,7 +29,7 @@ import { itemColor } from '@/data/item-colors';
 
 import { useForgedSnapshots } from './components/forged-snapshots';
 import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
-import { type DeckKey, type Draft, isCardDeck, isCarouselDeck } from './create-types';
+import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } from './create-types';
 import { DECKS, deckDone, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
@@ -191,6 +191,9 @@ export function CreateScreen() {
     if (weaponSlot === 'secondary' && !secondaryAllowed) setWeaponSlot('primary');
   }, [weaponSlot, secondaryAllowed]);
   const carouselRef = useRef<StraightCarouselHandle>(null);
+  // v0.10.6 (Feature 3): when BOTH mixed-ancestry slots are full, Random alternates which one it
+  // re-rolls (first, then second, then first…). Empty slots always fill first, so a deselect just works.
+  const mixRollNext = useRef<'first' | 'second'>('first');
 
   // Device back must CLOSE an open overlay before it navigates (#108: backing out of a fullscreen
   // card used to leave a leaked veil that froze the next screen). Priority: editor → features →
@@ -499,17 +502,39 @@ export function CreateScreen() {
     const pick = <T,>(a: T[]): T | undefined => (a.length ? a[Math.floor(Math.random() * a.length)] : undefined);
     const two = <T,>(a: T[]): T[] => { const p = [...a]; const o: T[] = []; while (p.length && o.length < 2) o.push(p.splice(Math.floor(Math.random() * p.length), 1)[0]); return o; };
     playSfx('cardSelect');
+    let focusId: string | undefined; // the picked card to recenter the carousel on (Feature 2)
     switch (deck) {
-      case 'class': { const k = pick(CLASS_CARDS.map((c) => c.key)); if (k) set({ className: k, subclassCardId: null, domainCardIds: [] }); break; }
-      case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => c.id)); if (id) set({ subclassCardId: id }); break; }
-      case 'ancestry': { const id = pick(CATALOG.filter((c) => c.kind === 'ancestry').map((c) => c.id)); if (id) set({ ancestryCardId: id, mixedAncestry: null }); break; }
-      case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community').map((c) => c.id)); if (id) set({ communityCardId: id }); break; }
-      case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => c.id); set({ domainCardIds: two(pool) }); break; }
-      case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind)); if (w) set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); break; }
-      case 'armor': { const id = pick(TIER1_ARMOR.map((a) => a.id)); if (id) set({ armorId: id, armorSkipped: false }); break; }
-      case 'inventory': { if (!draft.className) break; const opts = (CLASS_INVENTORY[draft.className]?.choices.flat() ?? []).map(itemOptionId); set({ inventoryItemIds: two(opts), inventorySkipped: false }); break; }
+      case 'class': { const k = pick(CLASS_CARDS.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
+      case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => c.id)); if (id) { set({ subclassCardId: id }); focusId = id; } break; }
+      case 'ancestry': {
+        const anc = CATALOG.filter((c) => c.kind === 'ancestry').map((c) => c.id);
+        if (draft.mixedAncestry) {
+          // Feature 3: fill the first EMPTY slot in order; if both are full, alternate which one re-rolls.
+          // Re-rolling avoids the other slot's card AND its own current card so the pick visibly changes.
+          const { first, second } = draft.mixedAncestry;
+          const { slot, alt } = nextMixSlot(first, second, mixRollNext.current);
+          mixRollNext.current = alt;
+          const other = slot === 'first' ? second : first;
+          const current = slot === 'first' ? first : second;
+          const fresh = anc.filter((id) => id !== other && id !== current);
+          const id = pick(fresh.length ? fresh : anc.filter((x) => x !== other));
+          if (id) { set({ mixedAncestry: { ...draft.mixedAncestry, [slot]: id } }); focusId = id; }
+          break;
+        }
+        const id = pick(anc); if (id) { set({ ancestryCardId: id, mixedAncestry: null }); focusId = id; }
+        break;
+      }
+      case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community').map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
+      case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
+      case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind)); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
+      case 'armor': { const id = pick(TIER1_ARMOR.map((a) => a.id)); if (id) { set({ armorId: id, armorSkipped: false }); focusId = id; } break; }
+      case 'inventory': { if (!draft.className) break; const opts = (CLASS_INVENTORY[draft.className]?.choices.flat() ?? []).map(itemOptionId); const picks = two(opts); set({ inventoryItemIds: picks, inventorySkipped: false }); focusId = picks[picks.length - 1]; break; }
     }
-  }, [deck, draft.className, weaponKind, set]);
+    if (focusId) {
+      const idx = items.findIndex((it) => it.id === focusId);
+      if (idx >= 0) carouselRef.current?.scrollTo(idx);
+    }
+  }, [deck, draft.className, draft.mixedAncestry, weaponKind, items, set]);
 
   return (
     <AppScreen
@@ -655,7 +680,9 @@ export function CreateScreen() {
           the features reader, never dimmed, always tappable, one spot. Card decks only. Hierarchy
           top-to-bottom (#108): SELECT (primary, biggest) → CLASS FEATURES → the n/n counter. */}
       {isCarouselDeck(deck) ? (
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
+        // Weapons sits its cluster lower (the filter toggles push its carousel down, so the cards
+        // reach further into this band) — the buttons must never overlap the carousel (owner).
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: deck === 'weapons' ? 40 : 56, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
             label={centerSelected ? 'Deselect' : `Select ${noun}`}
             kind={centerSelected ? 'ghost' : 'primary'}
@@ -671,14 +698,8 @@ export function CreateScreen() {
           />
           {/* v0.10.2 (Feature 2): roll a random valid choice for this section. */}
           <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
-          {deck === 'class' ? (
-            <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4 }}>Tap the card to flip through its features</Text>
-          ) : null}
-          {deck === 'weapons' ? (
-            <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center' }}>
-              {primaryWeapon ? (secondaryAllowed ? 'One-handed primary — a secondary is optional' : 'Two-handed primary — no secondary') : 'Pick a primary weapon'}
-            </Text>
-          ) : null}
+          {/* v0.10.6: the class/weapons hint tooltips were removed — they pushed these buttons up into
+              the card carousel (owner). */}
           <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
             {deck === 'inventory' ? `${draft.inventoryItemIds.length}/2` : `${selectedIds.length}/${maxSelect}`}
           </Text>

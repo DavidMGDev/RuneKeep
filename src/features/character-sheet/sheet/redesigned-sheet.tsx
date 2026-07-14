@@ -104,13 +104,16 @@ const hasBeastform = (f: { className: string; multiclassName?: string }) => f.cl
  * only the straight middle of the bottom edge — the chamfered corner spans are excluded.
  */
 function StressPip({ state, red }: { state: PipState; red: string }) {
+  // The FILLED shapes give the chamfer polygon a SAME-COLOUR stroke so it renders as one seamless SVG
+  // shape. The plain-View chamfer (#328) left hairline seams where its corner triangles abut the body
+  // (owner) — and the outlined pips below are already SVG, so this adds no worst-case canvas.
   if (state === 'locked') {
-    return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={Rune.muted} stroke="transparent" strokeWidth={0} />;
+    return <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={Rune.muted} stroke={Rune.muted} strokeWidth={2} />;
   }
   if (state === 'active') {
     return (
       <>
-        <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={red} stroke="transparent" strokeWidth={0} />
+        <ChamferFrame left={0} top={0} width={44} height={22} chamfer={5} fill={red} stroke={red} strokeWidth={2} />
         {/* flat thin under-line — center span only, corners excluded */}
         <View style={[box(5, 25, 34, 1), { backgroundColor: red }]} pointerEvents="none" />
       </>
