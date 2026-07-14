@@ -20,8 +20,6 @@ export const EMPTY: Draft = {
   weaponSecondaryId: null,
   armorId: null,
   inventoryItemIds: [],
-  inventoryCustom: [],
-  inventoryCustomSelected: [],
   gold: GOLD_DEFAULT,
 };
 
@@ -46,11 +44,11 @@ export function deckDone(deck: DeckKey, d: Draft): boolean {
     case 'experiences':
       return d.experiences.length === 2;
     case 'weapons':
-      return !!d.weaponPrimaryId; // a primary is required; a secondary is optional (1H primary only)
+      return d.weaponsSkipped || !!d.weaponPrimaryId; // primary required, or explicitly skipped (v0.10.2)
     case 'armor':
-      return !!d.armorId;
+      return d.armorSkipped || !!d.armorId;
     case 'inventory':
-      return d.inventoryItemIds.length === 2; // MANDATORY (#136): pick two optional items
+      return d.inventorySkipped || d.inventoryItemIds.length === 2; // pick two (#136), or skip (v0.10.2)
   }
 }
 

@@ -74,7 +74,7 @@ export function EditControls({
             <RuneButton label="★ Favorite" kind="secondary" dense height={34} disabled={!favIds.length} onPress={() => onFavorite(favIds)} />
             <RuneButton label="Move" kind="secondary" dense height={34} disabled={!has} onPress={() => setMoveOpen(true)} />
             <RuneButton label="Delete" kind="secondary" dense height={34} disabled={deleteBlocked} onPress={() => setConfirmDel(true)} />
-            {onSendNfc ? <RuneButton label="Send NFC" kind="secondary" dense height={34} disabled={!has} onPress={() => onSendNfc(ids)} /> : null}
+            {onSendNfc ? <RuneButton label="Send NFC" kind="secondary" dense height={34} disabled={ids.length !== 1} onPress={() => onSendNfc(ids)} /> : null}
             <RuneButton label="Cards panel" kind="ghost" dense height={34} onPress={() => { exitEdit(); onOpenCardsPanel(); }} />
           </View>
           {!has ? (

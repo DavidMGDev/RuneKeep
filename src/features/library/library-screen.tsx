@@ -25,7 +25,6 @@ import {
   type LibraryCard,
   type LibraryContentType,
   expansionSummary,
-  mergeDecision,
 } from '@/lib/library';
 import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { nfcModulesPresent } from '@/lib/nfc';
@@ -192,24 +191,17 @@ export function LibraryScreen() {
   const onNfcReceived = useCallback(async (content: RkpContent) => {
     setNfcReceive(false);
     try {
-      if (content.kind === 'expansion') {
-        const incoming = content.payload;
-        const existing = (await getExpansion(incoming.id)) ?? undefined;
-        const decision = mergeDecision(existing, incoming);
-        if (decision === 'skip') { setMessage({ title: incoming.name, body: 'You already have a newer version — skipped.' }); return; }
-        await saveExpansion(incoming);
-        reload();
-        setMessage({ title: incoming.name, body: decision === 'update' ? 'Expansion updated to the received version.' : 'Expansion received.' });
-      } else if (content.kind === 'card') {
-        // a single received card lands in a shared "Received cards" expansion in the library
-        const id = 'exp-received';
-        const exp = (await getExpansion(id)) ?? { id, name: 'Received cards', author: '', description: 'Cards received over NFC or file.', version: 1, createdAt: new Date().toISOString(), cards: [] };
-        await saveExpansion({ ...exp, cards: [...exp.cards, content.payload] });
-        reload();
-        setMessage({ title: content.payload.title || 'Card', body: 'Added to your "Received cards" expansion.' });
-      } else {
-        setMessage({ title: 'That was a character', body: 'Receive heroes from the Characters screen instead.' });
+      // v0.10.2 (Feature 9): NFC shares ONE card at a time. Expansions/heroes go over file import/export.
+      if (content.kind !== 'card') {
+        setMessage({ title: 'Single cards only', body: 'NFC shares one card at a time — use file import/export for whole expansions and heroes.' });
+        return;
       }
+      // a single received card lands in a shared "Received cards" expansion in the library
+      const id = 'exp-received';
+      const exp = (await getExpansion(id)) ?? { id, name: 'Received cards', author: '', description: 'Cards received over NFC or file.', version: 1, createdAt: new Date().toISOString(), cards: [] };
+      await saveExpansion({ ...exp, cards: [...exp.cards, content.payload] });
+      reload();
+      setMessage({ title: content.payload.title || 'Card', body: 'Added to your "Received cards" expansion.' });
     } catch (e) {
       setMessage({ title: 'Receive failed', body: e instanceof Error ? e.message : 'Could not read that.' });
     }
@@ -267,7 +259,6 @@ export function LibraryScreen() {
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
               <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name); }} />
-              {nfcOn ? <RuneButton label="NFC" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'expansion', payload: selected }, label: selected.name }); }} /> : null}
             </View>
           </ChamferBox>
 
@@ -283,6 +274,11 @@ export function LibraryScreen() {
                       <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>{c.title || 'Untitled'}</Text>
                       <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2 }}>{cardSummary(c)}</Text>
                     </View>
+                    {nfcOn ? (
+                      <Pressable onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'card', payload: c }, label: c.title || 'card' }); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+                      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>NFC</Text>
+                    </Pressable>
+                    ) : null}
                     <Pressable onPress={() => setConfirmDeleteCard(i)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${c.title || 'card'}`} style={{ padding: 4 }}>
                       <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
                     </Pressable>
