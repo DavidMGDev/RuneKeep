@@ -1,4 +1,5 @@
-import { armorSpecEffects, libraryCardBody, libraryCardEffects } from './library-embed';
+import { armorSpecEffects, libraryCardBody, libraryCardEffects, mixedCrossedTrait } from './library-embed';
+import type { CharacterFile } from './character-file';
 import type { LibraryCard } from './library';
 
 const lc = (over: Partial<LibraryCard>): LibraryCard => ({ id: 'x', contentType: 'generic', title: 'T', text: '', imageUri: null, ...over });
@@ -40,5 +41,21 @@ describe('libraryCardBody', () => {
   });
   it('composes sections for a text card', () => {
     expect(libraryCardBody(lc({ sections: [{ name: 'Tough', body: 'hardy' }] }))).toBe('**Tough.** hardy');
+  });
+  it('strikes the given section index (mixed-ancestry cross-out)', () => {
+    const anc = lc({ sections: [{ name: 'One', body: 'x' }, { name: 'Two', body: 'y' }] });
+    expect(libraryCardBody(anc, 1)).toBe('**One.** x\n\n~~**Two.** y~~');
+    expect(libraryCardBody(anc, 0)).toBe('~~**One.** x~~\n\n**Two.** y');
+    expect(libraryCardBody(anc)).toBe('**One.** x\n\n**Two.** y');
+  });
+});
+
+describe('mixedCrossedTrait', () => {
+  const file = (m?: { first: string; second: string }) => ({ mixedAncestry: m } as CharacterFile);
+  it('first-picked crosses feature 2, second crosses feature 1', () => {
+    expect(mixedCrossedTrait(file({ first: 'a', second: 'b' }), 'a')).toBe(2);
+    expect(mixedCrossedTrait(file({ first: 'a', second: 'b' }), 'b')).toBe(1);
+    expect(mixedCrossedTrait(file({ first: 'a', second: 'b' }), 'c')).toBe(0);
+    expect(mixedCrossedTrait(file(), 'a')).toBe(0);
   });
 });

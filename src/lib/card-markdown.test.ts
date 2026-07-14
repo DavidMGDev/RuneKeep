@@ -27,6 +27,10 @@ describe('parseInline', () => {
   it('combines bold + italic', () => {
     expect(parseInline('**_z_**')).toEqual([{ text: 'z', bold: true, italic: true }]);
   });
+  it('parses ~~strike~~ (mixed-ancestry cross-out)', () => {
+    expect(parseInline('a ~~b~~ c')).toEqual([{ text: 'a ' }, { text: 'b', strike: true }, { text: ' c' }]);
+    expect(hasMarkdown('~~crossed~~')).toBe(true);
+  });
   it('degrades unbalanced markers without throwing', () => {
     expect(parseInline('a **b')).toEqual([{ text: 'a ' }, { text: 'b', bold: true }]);
   });

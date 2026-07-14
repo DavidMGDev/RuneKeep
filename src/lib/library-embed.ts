@@ -7,7 +7,6 @@
  * Pure + additive: a file with no `libraryCards` behaves exactly as before — every helper here short-
  * circuits on an empty/absent store. This is the ONE module the sheet resolver + creation forge share.
  */
-import { composeSections } from './card-markdown';
 import type { CharacterFile } from './character-file';
 import { CONTENT_TYPE_LABEL, type ArmorSpec, type LibraryCard } from './library';
 import type { CardEffect } from './modifiers';
@@ -21,17 +20,41 @@ export function libraryCardKindLabel(lc: LibraryCard): string {
   return lc.typeLabel || CONTENT_TYPE_LABEL[lc.contentType];
 }
 
-/** The card body as markdown: a bold stat line for weapon/armor, then the composed sections (or flat text). */
-export function libraryCardBody(lc: LibraryCard): string {
+/** The card body as markdown: a bold stat line for weapon/armor, then the sections (or flat text).
+ *  `struckIndex` wraps that section in `~~…~~` — the mixed-ancestry crossed-out feature (Feature 4). */
+export function libraryCardBody(lc: LibraryCard, struckIndex?: number): string {
   const parts: string[] = [];
   if (lc.contentType === 'weapon' && lc.weapon) {
     const w = lc.weapon;
     parts.push(`**${w.trait} · ${w.range} · ${w.damage} ${w.damageType} · ${w.burden}**`);
   }
   if (lc.contentType === 'armor' && lc.armor) parts.push(`**Score ${lc.armor.baseScore} · Thresholds ${lc.armor.thresholds}**`);
-  const body = composeSections(lc.sections) || lc.text;
+  let body: string;
+  if (lc.sections?.length) {
+    body = lc.sections
+      .map((s, i) => {
+        const b = s.body.trim();
+        const name = (s.name ?? '').trim();
+        let line = name && b ? `**${name}.** ${b}` : name ? `**${name}.**` : b;
+        if (i === struckIndex && line) line = `~~${line}~~`; // crossed-out feature in a mix
+        return line;
+      })
+      .filter((x) => x)
+      .join('\n\n');
+  } else {
+    body = lc.text;
+  }
   if (body) parts.push(body);
   return parts.join('\n\n');
+}
+
+/** For a custom ancestry used in a MIXED ancestry, which feature (1 or 2) is crossed out on THIS card:
+ *  the first-picked keeps feature 1 (feature 2 is struck), the second keeps feature 2 (feature 1 is
+ *  struck) — mirrors the built-in ancestryCrossOuts. 0 = not in a mix / not this card. */
+export function mixedCrossedTrait(file: CharacterFile | undefined, id: string): 0 | 1 | 2 {
+  const m = file?.mixedAncestry;
+  if (!m) return 0;
+  return m.first === id ? 2 : m.second === id ? 1 : 0;
 }
 
 /** Armor's mechanical effects when equipped: its score (slots) + SET thresholds (parsed from "major/severe").
