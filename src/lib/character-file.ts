@@ -7,6 +7,7 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { CATALOG, cardById } from '@/data/catalog';
+import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/data/class-data';
@@ -190,6 +191,11 @@ export interface CharacterFile {
    *  die + range, Experiences, training options). Present only for a Beastbound character (primary or
    *  via multiclass); absent → a fresh companion is used. Additive. */
   companion?: import('@/lib/companion').CompanionState;
+  /** v0.10.3: embedded homebrew (library) cards this character USES — a self-contained COPY of each
+   *  picked LibraryCard, so it renders + resolves effects with no expansion installed and survives the
+   *  expansion being disabled/deleted (Bug 4). Structural slot ids (ancestry/subclass/community/domain/
+   *  armor) may reference these ids. Additive; absent on old saves = unchanged behavior. */
+  libraryCards?: LibraryCard[];
   level: number;
 }
 
@@ -210,11 +216,18 @@ export function parseCharacterFile(raw: string): CharacterFile {
   if (typeof f !== 'object' || f === null) throw new Error('Not a character file');
   if (f.schemaVersion !== CHARACTER_SCHEMA_VERSION) throw new Error(`Unsupported version ${f.schemaVersion}`);
   if (typeof f.id !== 'string' || typeof f.name !== 'string' || !f.name.trim()) throw new Error('Missing name');
-  for (const key of ['subclassCardId', 'ancestryCardId', 'communityCardId'] as const) {
-    const id = f[key];
-    if (typeof id !== 'string' || !cardById(id)) throw new Error(`Unknown card: ${String(f[key])}`);
+  // v0.10.3: normalize embedded homebrew cards (trust boundary for imported characters), then let the
+  // structural/domain ids resolve against them as well as the catalog. No `libraryCards` = old behavior.
+  if (f.libraryCards !== undefined) {
+    if (!Array.isArray(f.libraryCards)) throw new Error('libraryCards must be an array');
+    f.libraryCards = f.libraryCards.map((c, i) => normalizeLibraryCard(c, i));
   }
-  if (!Array.isArray(f.domainCardIds) || f.domainCardIds.some((id) => !cardById(id))) throw new Error('Unknown domain card');
+  const libIds = new Set((f.libraryCards ?? []).map((c) => c.id));
+  const known = (id: unknown): boolean => typeof id === 'string' && (!!cardById(id) || libIds.has(id));
+  for (const key of ['subclassCardId', 'ancestryCardId', 'communityCardId'] as const) {
+    if (!known(f[key])) throw new Error(`Unknown card: ${String(f[key])}`);
+  }
+  if (!Array.isArray(f.domainCardIds) || f.domainCardIds.some((id) => !known(id))) throw new Error('Unknown domain card');
   if (typeof f.className !== 'string' || !classInfo(f.className as ClassName)) throw new Error('Unknown class');
   // v0.10.2 (Bug 3 backfill): older saves advanced `subclassTier` without ever gaining the matching
   // specialization/mastery card. Ensure every sibling up to the current tier is present so the deck shows
@@ -289,6 +302,8 @@ export function toSheetCharacter(file: CharacterFile): Character {
   const subclass = cardById(file.subclassCardId);
   const ancestry = cardById(file.ancestryCardId);
   const community = cardById(file.communityCardId);
+  // v0.10.3: an embedded homebrew card's title labels the slot when it isn't a catalog card.
+  const libTitle = (id: string) => file.libraryCards?.find((c) => c.id === id)?.title;
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   // Armor (#128/#242/#297): an UNARMORED character has armor score 0 — the base is 0, never the chosen
   // card's score. Equipping an armor card contributes its base score (and SETS the damage thresholds)
@@ -336,9 +351,9 @@ export function toSheetCharacter(file: CharacterFile): Character {
     name: activeWildshapeName(file) ?? file.name,
     level: file.level,
     className: cls.label,
-    subclass: subclass?.label.replace(/ Foundation$/, '') ?? '',
-    ancestry: ancestry?.label ?? '',
-    community: community?.label ?? '',
+    subclass: subclass?.label.replace(/ Foundation$/, '') ?? libTitle(file.subclassCardId) ?? '',
+    ancestry: ancestry?.label ?? libTitle(file.ancestryCardId) ?? '',
+    community: community?.label ?? libTitle(file.communityCardId) ?? '',
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
     portraitUri: file.portraitUri,
     portraitTransform: file.portraitTransform ?? { scale: 1, x: 0, y: 0 },

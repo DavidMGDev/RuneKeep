@@ -149,6 +149,37 @@ export function contentForCreation(enabled: Expansion[]): CreationContent {
 
 const CONTENT_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'weapon', 'armor', 'inventory', 'generic'];
 
+/** Validate + normalize ONE raw card into a LibraryCard. Throws on a malformed/id-less card. Shared by
+ *  `validateExpansion` and `parseCharacterFile` (embedded `libraryCards`) — one trust boundary. */
+export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
+  if (!raw || typeof raw !== 'object') throw new Error(`Card ${i} malformed`);
+  const c = raw as Record<string, unknown>;
+  if (typeof c.id !== 'string' || !c.id) throw new Error(`Card ${i} missing id`);
+  const contentType = (CONTENT_TYPES.includes(c.contentType as LibraryContentType) ? c.contentType : 'generic') as LibraryContentType;
+  return {
+    id: c.id,
+    contentType,
+    title: typeof c.title === 'string' ? c.title : '',
+    text: typeof c.text === 'string' ? c.text : '',
+    imageUri: typeof c.imageUri === 'string' ? c.imageUri : null,
+    color: typeof c.color === 'string' ? c.color : null,
+    effects: Array.isArray(c.effects) ? (c.effects as CardEffect[]) : undefined,
+    typeLabel: typeof c.typeLabel === 'string' ? c.typeLabel : undefined,
+    domain: typeof c.domain === 'string' ? c.domain : undefined,
+    level: typeof c.level === 'number' ? c.level : undefined,
+    className: typeof c.className === 'string' ? c.className : undefined,
+    ancestryEffectTrait: c.ancestryEffectTrait === 1 || c.ancestryEffectTrait === 2 ? c.ancestryEffectTrait : undefined,
+    sections: Array.isArray(c.sections)
+      ? (c.sections as unknown[]).map((s) => {
+          const o = (s ?? {}) as Record<string, unknown>;
+          return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '' };
+        })
+      : undefined,
+    weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,
+    armor: c.armor && typeof c.armor === 'object' ? (c.armor as ArmorSpec) : undefined,
+  };
+}
+
 /** Validate + normalize a parsed object into an Expansion. Throws on anything that isn't one — the
  *  single trust boundary for imported `.rkp` expansion payloads. */
 export function validateExpansion(o: unknown): Expansion {
@@ -157,34 +188,7 @@ export function validateExpansion(o: unknown): Expansion {
   if (typeof e.id !== 'string' || !e.id) throw new Error('Expansion missing id');
   if (typeof e.name !== 'string') throw new Error('Expansion missing name');
   if (!Array.isArray(e.cards)) throw new Error('Expansion missing cards');
-  const cards: LibraryCard[] = (e.cards as unknown[]).map((raw, i) => {
-    if (!raw || typeof raw !== 'object') throw new Error(`Card ${i} malformed`);
-    const c = raw as Record<string, unknown>;
-    if (typeof c.id !== 'string' || !c.id) throw new Error(`Card ${i} missing id`);
-    const contentType = (CONTENT_TYPES.includes(c.contentType as LibraryContentType) ? c.contentType : 'generic') as LibraryContentType;
-    return {
-      id: c.id,
-      contentType,
-      title: typeof c.title === 'string' ? c.title : '',
-      text: typeof c.text === 'string' ? c.text : '',
-      imageUri: typeof c.imageUri === 'string' ? c.imageUri : null,
-      color: typeof c.color === 'string' ? c.color : null,
-      effects: Array.isArray(c.effects) ? (c.effects as CardEffect[]) : undefined,
-      typeLabel: typeof c.typeLabel === 'string' ? c.typeLabel : undefined,
-      domain: typeof c.domain === 'string' ? c.domain : undefined,
-      level: typeof c.level === 'number' ? c.level : undefined,
-      className: typeof c.className === 'string' ? c.className : undefined,
-      ancestryEffectTrait: c.ancestryEffectTrait === 1 || c.ancestryEffectTrait === 2 ? c.ancestryEffectTrait : undefined,
-      sections: Array.isArray(c.sections)
-        ? (c.sections as unknown[]).map((s) => {
-            const o = (s ?? {}) as Record<string, unknown>;
-            return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '' };
-          })
-        : undefined,
-      weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,
-      armor: c.armor && typeof c.armor === 'object' ? (c.armor as ArmorSpec) : undefined,
-    };
-  });
+  const cards: LibraryCard[] = (e.cards as unknown[]).map((raw, i) => normalizeLibraryCard(raw, i));
   return {
     id: e.id,
     name: e.name,
