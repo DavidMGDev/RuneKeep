@@ -14,6 +14,7 @@ import { wildshapeById } from '@/data/wildshape-data';
 import { cardById } from '@/data/catalog';
 import { CATALOG_EFFECTS } from '@/data/catalog-effects';
 import { isAncestryEffectDisabled } from '@/data/ancestry-traits';
+import { libraryCardById, libraryCardEffects } from '@/lib/library-embed';
 
 /** All player-authored cards on a file (experiences, inventory items, sheet-made cards). */
 function customCards(file?: CharacterFile): ExperienceDef[] {
@@ -67,6 +68,10 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
   const id = refOf(rawId, file); // resolve a copy (#277) or suffixed duplicate (#269) to its underlying card
   const custom = customCards(file).find((c) => c.id === id);
   if (custom?.effects?.length) return custom.effects;
+  // v0.10.3: an embedded homebrew (library) card resolves its effects here — armor bakes in its score +
+  // thresholds so custom armor works exactly like equipment.
+  const lib = libraryCardById(file, id);
+  if (lib) return libraryCardEffects(lib);
   // #278: a player override replaces a CATALOG card's code-defined effects (custom cards edit their own
   // `effects` above). Override wins so the Modifiers panel + card editor share one source of truth.
   const override = file?.cardEffectOverrides?.[id];
@@ -111,5 +116,7 @@ export function sourceLabelForCardId(rawId: string, file?: CharacterFile): strin
   const id = refOf(rawId, file); // a copy/duplicate shares its underlying card's label (#269/#277)
   const custom = customCards(file).find((c) => c.id === id);
   if (custom) return custom.title;
+  const lib = libraryCardById(file, id);
+  if (lib) return lib.title || id;
   return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? wildshapeById(id)?.name ?? id;
 }

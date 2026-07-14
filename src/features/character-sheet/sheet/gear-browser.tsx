@@ -1,4 +1,4 @@
-import { type FC, useMemo, useRef, useState } from 'react';
+import { type FC, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { type SvgProps } from 'react-native-svg';
 
@@ -11,13 +11,16 @@ import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { ForgedCard } from '@/features/create/components/forged-card';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
 import { CATALOG } from '@/data/catalog';
+import { isExpansionEnabled, type LibraryCard } from '@/lib/library';
+import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
+import { listExpansions } from '@/lib/library-store';
 import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
 
 import { FullScreenPanel } from './full-screen-panel';
 
 // #252: character cards (domain/ancestry/community/subclass/class) browsed as the creation carousel
 // (card ART, no names); weapons/armor stay a list. The Loot/Items tabs are gone.
-type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'weapon' | 'armor';
+type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'weapon' | 'armor' | 'homebrew';
 const CARD_KINDS: Cat[] = ['domain', 'ancestry', 'community', 'subclass', 'class'];
 const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -34,21 +37,32 @@ function classCardNode(key: string, title: string, Banner: FC<SvgProps>, body: s
   return <ForgedCard title={title} kindLabel="Class" body={body} accentDeep={classColor(key as never).deep} Banner={Banner} classKey={key as never} multilineTitle />;
 }
 
-export function GearBrowser({ acquiredIds, onAdd, onBack, onClose }: { acquiredIds: Set<string>; onAdd: (id: string) => void; onBack: () => void; onClose: () => void }) {
+export function GearBrowser({ acquiredIds, onAdd, onAddCustom, onBack, onClose }: { acquiredIds: Set<string>; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onBack: () => void; onClose: () => void }) {
   const [cat, setCat] = useState<Cat>('domain');
   const [tier, setTier] = useState<1 | 2 | 3 | 4>(1);
   const [domain, setDomain] = useState(DOMAINS[0]);
   const [centerIdx, setCenterIdx] = useState(0);
   const carRef = useRef<StraightCarouselHandle>(null);
-  const isCardKind = (CARD_KINDS as string[]).includes(cat);
+  // v0.10.3 (B4): loose homebrew cards (generic/inventory/weapon/armor) from ENABLED expansions.
+  const [homebrew, setHomebrew] = useState<LibraryCard[]>([]);
+  useEffect(() => {
+    let live = true;
+    void listExpansions().then((exps) => {
+      if (!live) return;
+      setHomebrew(exps.filter(isExpansionEnabled).flatMap((e) => e.cards).filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'));
+    });
+    return () => { live = false; };
+  }, []);
+  const isCardKind = (CARD_KINDS as string[]).includes(cat) || cat === 'homebrew';
 
   // carousel items (character-card kinds) — card ART only, NO names rendered by StraightCarousel
   const items: StraightItem[] = useMemo(() => {
     if (cat === 'class') return CLASS_CARDS.map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) }));
     if (cat === 'domain') return CATALOG.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
     if (cat === 'ancestry' || cat === 'community' || cat === 'subclass') return CATALOG.filter((c) => c.kind === cat).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
+    if (cat === 'homebrew') return homebrew.map((lc) => ({ id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> }));
     return [];
-  }, [cat, domain]);
+  }, [cat, domain, homebrew]);
   const centerId = items[Math.min(centerIdx, items.length - 1)]?.id;
   const centerAcquired = !!centerId && acquiredIds.has(centerId);
 
@@ -62,6 +76,7 @@ export function GearBrowser({ acquiredIds, onAdd, onBack, onClose }: { acquiredI
   const TABS: { key: Cat; label: string }[] = [
     { key: 'domain', label: 'Domains' }, { key: 'ancestry', label: 'Ancestry' }, { key: 'community', label: 'Community' },
     { key: 'subclass', label: 'Subclass' }, { key: 'class', label: 'Class' }, { key: 'weapon', label: 'Weapons' }, { key: 'armor', label: 'Armor' },
+    ...(homebrew.length ? [{ key: 'homebrew' as Cat, label: 'Homebrew' }] : []),
   ];
 
   return (
@@ -73,7 +88,7 @@ export function GearBrowser({ acquiredIds, onAdd, onBack, onClose }: { acquiredI
         <View style={{ gap: 8 }}>
           {isCardKind && items.length > 0 ? (
             // #269: a card can be added more than once — each copy becomes an individual card.
-            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (centerId) onAdd(centerId); }} />
+            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (!centerId) return; if (cat === 'homebrew') { const lc = homebrew.find((c) => c.id === centerId); if (lc) onAddCustom?.(lc); } else onAdd(centerId); }} />
           ) : null}
           <RuneButton label="← Author a custom card instead" kind="ghost" dense height={36} onPress={onBack} />
         </View>

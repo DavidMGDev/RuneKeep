@@ -31,6 +31,9 @@ export interface Draft {
   /** Inventory (#128): selected suggested-item ids. Custom in-creation items were removed in v0.10.2
    *  (homebrew items now come from Library expansions). */
   inventoryItemIds: string[];
+  /** v0.10.3 (B4): custom homebrew INVENTORY cards (from enabled expansions) selected this creation.
+   *  Loose items — they ride the inventory deck. Structural/armor customs are held by their slot ids. */
+  inventoryLibIds: string[];
   /** v0.10.2 (Feature 3): explicitly skip a step that's otherwise required — start with no weapon / no
    *  armor / no inventory picks. Selecting a real item clears the matching flag. */
   weaponsSkipped?: boolean;

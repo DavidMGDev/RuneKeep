@@ -40,6 +40,7 @@ import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type LibraryCard } from '@/lib/library';
+import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -586,13 +587,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs } = useMemo(() => {
+  const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, mcClassJob: null as Job | null, mcFeatJobs: [] as Job[], expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, mcClassJob: null as Job | null, mcFeatJobs: [] as Job[], expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], libJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -703,6 +704,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       node: <ForgedCard title={it.title ?? ''} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
     }));
+    // Embedded homebrew cards (v0.10.3): each picked LibraryCard forges to a card the carousel treats
+    // like any scanned card. Structural/domain ones slot into their positions below; loose ones (weapon/
+    // armor/inventory/generic added via ADD GEAR) ride the inventory deck.
+    const libJobs: Job[] = (file.libraryCards ?? []).map((lc) => ({
+      key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + (lc.sections?.length ?? 0) * 41) % 99991}`,
+      id: lc.id,
+      node: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
+      raster: !!lc.imageUri,
+    }));
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
     // deck like the class-feature card (#227 item 8) so the title stays a normal size and the rules
     // text isn't crammed tiny: face 0 = overview (tier · stress · attack · stat deltas · examples),
@@ -715,7 +725,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           { key: `ws-${w.id}-1`, node: <ForgedCard title={w.name} kindLabel="Features" body={w.features} accentDeep={Rune.panel} colorArt={w.color} pageMark="2/2" multilineTitle /> },
         ])
       : [];
-    return { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs };
+    return { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs };
   }, [file]);
   const allJobs = useMemo(
     () => [...expJobs, ...(classJob ? [classJob] : []), ...(mcClassJob ? [mcClassJob] : []), ...mcFeatJobs, ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs],
@@ -756,19 +766,39 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const { decks: carouselDecks, categoryMeta, originIndices } = useMemo(() => {
     const none = { decks: undefined as Record<string, CardItem[]> | undefined, categoryMeta: undefined as Record<string, { label: string; icon?: string; builtin: boolean }> | undefined, originIndices: undefined as [number, number, number] | undefined };
     if (!file) return none;
+    // v0.10.3: an embedded homebrew card forges into a CardItem in its own structural slot (so origin
+    // badges + ordering keep working). `libItem` returns the forged image once ready, else a live node so
+    // the card is never momentarily missing. A file with no libraryCards never calls it — identical to before.
+    const libItem = (id: string): CardItem | undefined => {
+      const j = libJobs.find((x) => x.id === id);
+      if (!j) return undefined;
+      const src = featureSources[j.key];
+      return src ? { id, source: src.full, thumb: src.thumb } : { id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: j.node };
+    };
+    const catItem = (id: string): CardItem | undefined => {
+      const c = cardById(id);
+      return c ? { id: c.id, source: c.source, thumb: c.thumb } : undefined;
+    };
     const ids = [file.subclassCardId, file.ancestryCardId, file.communityCardId];
-    const cards = ids.map(cardById);
-    if (cards.some((c) => !c)) return none;
+    const structItems = ids.map((id) => catItem(id) ?? libItem(id));
+    if (structItems.some((c) => !c)) return none; // a structural id in neither catalog nor libraryCards → bail (as before)
     // the actual cards the player PICKED at creation (#121: no more sample/placeholder cards) — the
     // two domain cards lead the abilities hand.
     // EVERY owned domain card rides the deck (owner, v0.10.0): the ≤5 cap governs only which are
     // ENABLED/equipped (see the enabledCardIds cap below), never which are visible. Earlier the deck
     // was filtered to the active set (#166 vault), which silently dropped cards gained from level 3+.
     const domainItems = file.domainCardIds
-      .map(cardById)
-      .filter((c): c is NonNullable<typeof c> => !!c)
-      .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || (a.domain ?? '').localeCompare(b.domain ?? '')) // by level (then domain) (#157)
-      .map((c) => ({ id: c.id, source: c.source, thumb: c.thumb }));
+      .map((id) => {
+        const c = cardById(id);
+        if (c) return { level: c.level ?? 0, domain: c.domain ?? '', item: { id: c.id, source: c.source, thumb: c.thumb } as CardItem };
+        const it = libItem(id); // v0.10.3: a custom domain card resolves + sorts by its authored level/domain
+        if (!it) return null;
+        const lc = file.libraryCards?.find((x) => x.id === id);
+        return { level: lc?.level ?? 0, domain: lc?.domain ?? '', item: it };
+      })
+      .filter((x): x is { level: number; domain: string; item: CardItem } => !!x)
+      .sort((a, b) => a.level - b.level || a.domain.localeCompare(b.domain)) // by level (then domain) (#157)
+      .map((x) => x.item);
     const expItems = expJobs
       .map((j) => ({ key: j.key, id: j.id ?? j.key, src: featureSources[j.key] }))
       .filter((x) => x.src)
@@ -801,7 +831,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       jobs.map((j) => ({ j, src: featureSources[j.key] })).filter((x) => x.src).map((x) => ({ id: x.j.id ?? x.j.key, source: x.src!.full, thumb: x.src!.thumb }));
     const weaponItems = forgedItems(weaponJobs);
     const armorItems = armorJob ? forgedItems([armorJob]) : [];
-    const [subclassC, ancestryC, communityC] = cards.map((c) => ({ id: c!.id, source: c!.source, thumb: c!.thumb }));
+    const [subclassC, ancestryC, communityC] = structItems as [CardItem, CardItem, CardItem];
     // Arsenal order (#157, owner): domains (by level) → ancestry → community → subclass → class
     // feature card → weapons → experiences. The origin badges target subclass/ancestry/community by
     // their actual index (no longer the contiguous last three).
@@ -834,8 +864,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // together. It arrives via acquiredCardIds (with a cardCategory→abilities override), which the
     // acquired-catalog pass below appended at the very END — so the two cards landed far apart. Place
     // it explicitly here; the acquired pass skips ids already present, so it isn't double-added.
-    const secondAncestry = file.mixedAncestry ? cardById(file.mixedAncestry.second) : null;
-    const secondAncestryItem = secondAncestry && secondAncestry.id !== ancestryC.id ? [{ id: secondAncestry.id, source: secondAncestry.source, thumb: secondAncestry.thumb }] : [];
+    const secondAncestryC = file.mixedAncestry ? (catItem(file.mixedAncestry.second) ?? libItem(file.mixedAncestry.second)) : undefined;
+    const secondAncestryItem = secondAncestryC && secondAncestryC.id !== ancestryC.id ? [secondAncestryC] : [];
     const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
@@ -846,7 +876,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // #328: STARTING weapons ride both abilities + inventory (by design). ACQUIRED weapons do NOT —
     // they're placed in abilities (above) and routed to the player's chosen category by the override
     // pass, so a catalog weapon no longer duplicates into both Arsenal and Inventory.
-    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqArmorItems, ...acqLootItems, ...invCustom];
+    // v0.10.3: embedded homebrew cards NOT bound to a structural/domain slot (weapon/armor/inventory/
+    // generic added via ADD GEAR) ride the inventory deck.
+    const structuralLibIds = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...file.domainCardIds]);
+    const looseLibItems = (file.libraryCards ?? []).filter((lc) => !structuralLibIds.has(lc.id)).map((lc) => libItem(lc.id)).filter((x): x is CardItem => !!x);
+    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqArmorItems, ...acqLootItems, ...invCustom, ...looseLibItems];
     // Acquired CATALOG cards (#248 item 5): domain/ancestry/community/subclass picked from the catalog
     // browser, added as their real card image (no forging). Skip ids already in a deck (e.g. an owned
     // domain card) so there's never a duplicate id.
@@ -963,7 +997,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const fa = decks.abilities;
     const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
     return { decks, categoryMeta, originIndices };
-  }, [file, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, featureSources]);
+  }, [file, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null); // v0.10.1 NFC tap-to-share
@@ -1144,6 +1178,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Confirm WHERE it landed so the player can see the routing worked (the reported "weapons sometimes
     // go to the wrong category" pain — now it's visible).
     pushNotice(valid ? `Added to ${categoryLabel(category!, f.customCategories ?? [])}` : 'Card added');
+  }, [pushNotice]);
+  // v0.10.3 (B4): add a LOOSE homebrew card from ADD GEAR → embed a self-contained copy on the file (so
+  // it survives the expansion being disabled/deleted) with a fresh instance id, enabling armor/effect
+  // cards so their stats apply. The deck builder places it in inventory (looseLibItems).
+  const onAcquireCustom = useCallback((card: LibraryCard, category?: CardCategory) => {
+    const f = fileRef.current;
+    if (!f) return;
+    const inst: LibraryCard = { ...card, id: `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` };
+    const enable = (inst.effects?.length ?? 0) > 0 || inst.contentType === 'armor';
+    const valid = !!category && category !== 'wildshape' && (isBuiltinCategory(category) || (f.customCategories ?? []).some((c) => c.id === category));
+    setFile((cur) => {
+      if (!cur) return cur;
+      const override = valid ? { cardCategory: { ...(cur.cardCategory ?? {}), [inst.id]: category! } } : {};
+      const next = { ...cur, libraryCards: [...(cur.libraryCards ?? []), inst], ...(enable ? { enabledCardIds: [...(cur.enabledCardIds ?? []), inst.id] } : {}), ...override };
+      saveFileRef.current(next);
+      return next;
+    });
+    pushNotice(`Added ${inst.title || 'card'}`);
   }, [pushNotice]);
   // Hidden categories (#227, Cards panel): which categories the player toggled off. Back-compat:
   // a legacy save with showNotes === false maps to notes hidden.
@@ -1791,7 +1843,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={newCardEntry === 'card' ? undefined : onAcquireCard} acquiredIds={acquiredIds} />
+            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={newCardEntry === 'card' ? undefined : onAcquireCard} onAcquireCustom={newCardEntry === 'card' ? undefined : onAcquireCustom} acquiredIds={acquiredIds} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (

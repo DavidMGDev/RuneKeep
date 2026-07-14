@@ -1,4 +1,4 @@
-import { type CharacterFile, modSum, type StatModifier, toSheetCharacter } from './character-file';
+import { type CharacterFile, modSum, parseCharacterFile, serializeCharacterFile, type StatModifier, toSheetCharacter } from './character-file';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
   return {
@@ -16,6 +16,29 @@ function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
     ...over,
   };
 }
+
+describe('embedded library cards (v0.10.3)', () => {
+  const withLib = (over: Partial<CharacterFile> = {}) =>
+    baseFile({
+      subclassCardId: 'lc-custom-sub',
+      libraryCards: [{ id: 'lc-custom-sub', contentType: 'subclass', title: 'Custom Sub', text: 'body', imageUri: null, className: 'guardian' }],
+      ...over,
+    });
+  it('parseCharacterFile accepts a structural id backed by libraryCards', () => {
+    const f = parseCharacterFile(serializeCharacterFile(withLib()));
+    expect(f.subclassCardId).toBe('lc-custom-sub');
+    expect(f.libraryCards?.[0].title).toBe('Custom Sub');
+  });
+  it('rejects a structural id in neither the catalog nor libraryCards', () => {
+    expect(() => parseCharacterFile(serializeCharacterFile(baseFile({ subclassCardId: 'nope' })))).toThrow();
+  });
+  it('toSheetCharacter labels the slot from the embedded card', () => {
+    expect(toSheetCharacter(withLib()).subclass).toBe('Custom Sub');
+  });
+  it('a character with no libraryCards round-trips unchanged', () => {
+    expect(parseCharacterFile(serializeCharacterFile(baseFile())).libraryCards).toBeUndefined();
+  });
+});
 
 describe('toSheetCharacter resource persistence (v0.9.7)', () => {
   const armorUnlocked = (c: ReturnType<typeof toSheetCharacter>) => c.armor.total - (c.armor.locked ?? 0);

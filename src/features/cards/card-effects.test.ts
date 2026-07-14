@@ -19,6 +19,21 @@ function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
   };
 }
 
+describe('embedded library cards (v0.10.3)', () => {
+  it('resolves a custom armor library card to score + threshold effects', () => {
+    const f = baseFile({ libraryCards: [{ id: 'lc-arm', contentType: 'armor', title: 'Hide', text: '', imageUri: null, armor: { baseScore: 5, thresholds: '8/16', tier: 1 } }] });
+    expect(effectsForCardId('lc-arm', f)).toEqual([
+      { target: 'armorScore', mode: 'bonus', delta: 5 },
+      { target: 'majorThreshold', mode: 'set', delta: 8 },
+      { target: 'severeThreshold', mode: 'set', delta: 16 },
+    ]);
+  });
+  it('labels a custom card by its title', () => {
+    const f = baseFile({ libraryCards: [{ id: 'lc-x', contentType: 'generic', title: 'Relic', text: '', imageUri: null }] });
+    expect(sourceLabelForCardId('lc-x', f)).toBe('Relic');
+  });
+});
+
 describe('effectsForCardId', () => {
   it('resolves a weapon feature to its effects', () => {
     expect(effectsForCardId('wpn-greatsword')).toEqual([{ target: 'evasion', delta: -1 }]);
