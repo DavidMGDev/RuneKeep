@@ -268,6 +268,9 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
 export interface StraightCarouselHandle {
   /** Close the focused card if one is open; returns whether it was (so a device-back can consume). */
   closeIfFullscreen: () => boolean;
+  /** Spring the deck to center on `index` (e.g. after the Random button picks a card). Closes a
+   *  focused card first so the recenter reads. */
+  scrollTo: (index: number) => void;
 }
 
 export const StraightCarousel = forwardRef<
@@ -371,8 +374,12 @@ export const StraightCarousel = forwardRef<
         }
         return false;
       },
+      scrollTo: (index: number) => {
+        if (fsOpen) closeFs();
+        pos.value = withSpring(clampIdx(index, count), SNAP_SPRING);
+      },
     }),
-    [fsOpen, closeFs],
+    [fsOpen, closeFs, pos, count],
   );
 
   const onTapCard = useCallback(

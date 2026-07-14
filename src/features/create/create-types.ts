@@ -12,6 +12,22 @@ export const isCardDeck = (k: DeckKey): k is CardDeckKey => k === 'class' || k =
 /** Decks that drive the STRAIGHT carousel (card scans + forged cards), incl. weapons/armor/inventory. */
 export const isCarouselDeck = (k: DeckKey): boolean => isCardDeck(k) || k === 'weapons' || k === 'armor' || k === 'inventory';
 
+/**
+ * v0.10.6 (Feature 3): which mixed-ancestry slot the Random button fills next, and the alternation
+ * state to carry forward. Empty slots fill in order (first, then second) so a deselect always refills
+ * that slot; once both are full, Random alternates re-rolling first ↔ second. `alt` is the tie-breaker
+ * used only when both are full. Pure so the exact Random-press sequence is unit-testable.
+ */
+export function nextMixSlot(
+  first: string | null,
+  second: string | null,
+  alt: 'first' | 'second',
+): { slot: 'first' | 'second'; alt: 'first' | 'second' } {
+  if (!first) return { slot: 'first', alt };
+  if (!second) return { slot: 'second', alt };
+  return { slot: alt, alt: alt === 'first' ? 'second' : 'first' };
+}
+
 export interface Draft {
   name: string;
   portraitUri: string | null;

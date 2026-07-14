@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.10.5'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.10.6'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.10.5 - subclass upgrade cards + level cap + custom 3-tier subclasses. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nFixes:`n- FIX - taking 'Upgrade subclass' on level-up now puts the next card (Specialization, then Mastery) in your ARSENAL next to your subclass - not buried in Inventory. Existing characters are backfilled on load.`n- FIX - leveling now stops at level 10 (it was letting you reach 11). Opening level-up at max level shows a clear message.`n`nHomebrew:`n- NEW - custom Subclasses now support all THREE tiers. In the Card Library a Subclass card has a Foundation / Specialization / Mastery selector + a subclass name - make all three with the same class + name. Pick the Foundation in creation; the Specialization and Mastery are added automatically when you upgrade the subclass on level-up.`n`nOn top of v0.10.4: mixed-ancestry cross-out for homebrew + level-up Confirm guidance; and (v0.10.3) homebrew content in creation + ADD GEAR.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.10.6 - character-creation polish + stress-pip fix. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nCharacter creation:`n- FIX - the Select / Random buttons no longer overlap the card carousel. Removed the 'tap to flip'/weapon hint tooltips (they pushed the buttons up into the cards) and dropped the weapons cluster lower so it clears the deck.`n- NEW - pressing Random now animates the carousel recentering on the card it picked, so you can see what was chosen.`n- NEW - Random works with Mixed Ancestry: press it to fill the first slot, again for the second, then it re-rolls the two in turn - keep tapping until you like the pair. Deselecting a slot makes the next Random refill exactly that slot, so the trait cross-out order stays correct.`n`nCharacter sheet:`n- FIX - the Stress pips no longer show tiny white seams at their chamfered corners; the filled and empty shapes are seamless.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
