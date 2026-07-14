@@ -16,6 +16,9 @@ import { CATALOG } from '@/data/catalog';
 import { type TraitKey } from '@/features/character-sheet/character';
 import { newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
+import { contentForCreation, type CreationContent, isExpansionEnabled, type LibraryCard } from '@/lib/library';
+import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
+import { listExpansions } from '@/lib/library-store';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
 import { featurePages } from '@/data/class-data';
@@ -50,10 +53,25 @@ const SKIP_WEAPONS: StraightItem = { id: 'weapons-skip', label: 'Skip weapons', 
 const SKIP_ARMOR: StraightItem = { id: 'armor-skip', label: 'Skip armor', custom: <ForgedCard title="No armor" kindLabel="Armor" body="Skip — start with no armor equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
 const SKIP_INVENTORY: StraightItem = { id: 'inventory-skip', label: 'Skip inventory', custom: <ForgedCard title="No items" kindLabel="Item" body="Skip — start with no chosen inventory items." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
 
+// v0.10.3 (B4): a homebrew library card as a creation carousel item — rendered live (no webp) like the
+// other forged cards. Stats for weapon/armor are folded into the body.
+const libCardItem = (lc: LibraryCard): StraightItem => ({
+  id: lc.id,
+  label: lc.title || 'Card',
+  custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
+});
+
 export function CreateScreen() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [deck, setDeck] = useState<DeckKey>('class');
+  // v0.10.3 (B4): homebrew content from ENABLED expansions, offered in the matching decks.
+  const [libContent, setLibContent] = useState<CreationContent | null>(null);
+  useEffect(() => {
+    let live = true;
+    void listExpansions().then((exps) => { if (live) setLibContent(contentForCreation(exps.filter(isExpansionEnabled))); });
+    return () => { live = false; };
+  }, []);
   const [pendingDeck, setPendingDeck] = useState<DeckKey | null>(null);
   const [unlockPulse, setUnlockPulse] = useState(0);
   const hadClass = useRef(false);
@@ -208,7 +226,7 @@ export function CreateScreen() {
       return weaponSlot === 'primary' ? [...cards, SKIP_WEAPONS] : cards;
     }
     if (deck === 'armor') {
-      return [...TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), SKIP_ARMOR];
+      return [...TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), ...(libContent?.armor ?? []).map(libCardItem), SKIP_ARMOR];
     }
     if (deck === 'inventory') {
       // Creation inventory shows ONLY the player's per-class CHOICES (#136): pick two of four, or Skip
@@ -221,7 +239,7 @@ export function CreateScreen() {
         label: name,
         custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
       }));
-      return [...optionCards, SKIP_INVENTORY];
+      return [...optionCards, ...(libContent?.inventory ?? []).map(libCardItem), SKIP_INVENTORY];
     }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
@@ -256,24 +274,30 @@ export function CreateScreen() {
           return { id: `class-${c.key}`, label: c.title, thumb: classFace.thumb, source: classFace.source, custom: classFace.custom, faces };
         });
       case 'subclass':
-        return CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+        return [
+          ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
+          ...(libContent?.subclasses ?? []).filter((c) => !c.className || c.className === draft.className).map(libCardItem),
+        ];
       case 'ancestry': {
         const base = CATALOG.filter((c) => c.kind === 'ancestry').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
         // #265: the last card flips the mode — "Mixed Ancestry" enters mixed mode, "Single Ancestry" leaves it.
         const toggle: StraightItem = draft.mixedAncestry
           ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
           : { id: MIXED_ANCESTRY_ID, label: 'Mixed Ancestry', custom: <ForgedCard title="Mixed Ancestry" kindLabel="Ancestry" body="Combine two ancestries: take the first trait of one and the second trait of the other. Pick two — order decides which trait you keep." accentDeep={Rune.panel} colorArt="#3A2A4A" multilineTitle /> };
-        return [...base, toggle];
+        return [...base, ...(libContent?.ancestries ?? []).map(libCardItem), toggle];
       }
       case 'community':
-        return CATALOG.filter((c) => c.kind === 'community').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+        return [...CATALOG.filter((c) => c.kind === 'community').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
       case 'domains': {
         if (!draft.className) return [];
         const pair = classInfo(draft.className).domains;
-        return pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+        return [
+          ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
+          ...(libContent?.domains ?? []).map(libCardItem),
+        ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem, libContent]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
@@ -282,7 +306,7 @@ export function CreateScreen() {
       return id ? [id] : [];
     }
     if (deck === 'armor') return draft.armorSkipped ? ['armor-skip'] : draft.armorId ? [draft.armorId] : [];
-    if (deck === 'inventory') return draft.inventorySkipped ? ['inventory-skip'] : draft.inventoryItemIds; // gold/start kit are not counted (#128)
+    if (deck === 'inventory') return draft.inventorySkipped ? ['inventory-skip'] : [...draft.inventoryItemIds, ...draft.inventoryLibIds]; // gold/start kit are not counted (#128)
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -347,6 +371,12 @@ export function CreateScreen() {
       }
       if (deck === 'inventory') {
         if (id === 'inventory-skip') { set({ inventorySkipped: !draft.inventorySkipped, inventoryItemIds: [] }); return; }
+        // v0.10.3: a homebrew inventory card toggles into the loose picks (no 2-item cap; clears skip).
+        if ((libContent?.inventory ?? []).some((c) => c.id === id)) {
+          const had = draft.inventoryLibIds.includes(id);
+          set({ inventoryLibIds: had ? draft.inventoryLibIds.filter((x) => x !== id) : [...draft.inventoryLibIds, id], inventorySkipped: false });
+          return;
+        }
         // optional items: pick up to TWO (#136), replacing the oldest like domains. Any pick clears skip.
         const has = draft.inventoryItemIds.includes(id);
         if (has) set({ inventoryItemIds: draft.inventoryItemIds.filter((x) => x !== id) });
@@ -394,7 +424,7 @@ export function CreateScreen() {
         }
       }
     },
-    [deck, draft, set, weaponSlot, secondaryAllowed],
+    [deck, draft, set, weaponSlot, secondaryAllowed, libContent],
   );
 
   const complete = DECKS.every((d) => deckDone(d.key, draft)) && draft.name.trim().length > 0;
@@ -402,6 +432,15 @@ export function CreateScreen() {
   const forge = useCallback(async () => {
     if (!complete || !draft.className) return;
     const id = newCharacterId();
+    // v0.10.3 (B4): embed a self-contained COPY of every picked homebrew card so the character renders +
+    // resolves effects with no expansion installed and survives it being disabled/deleted. Derived from
+    // the slot ids + loose inventory picks. A creation with no homebrew picks leaves this undefined.
+    const libById = new Map<string, LibraryCard>();
+    if (libContent) for (const arr of [libContent.ancestries, libContent.communities, libContent.subclasses, libContent.domains, libContent.armor, libContent.inventory]) for (const c of arr) libById.set(c.id, c);
+    const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, ...draft.domainCardIds, ...draft.inventoryLibIds].filter((x): x is string => !!x);
+    const libraryCards = [...new Set(pickedIds)].map((pid) => libById.get(pid)).filter((c): c is LibraryCard => !!c);
+    // enable custom origin/armor cards so their effects apply (armor score/thresholds, ancestry passive).
+    const enabledCustom = libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id);
     await saveCharacter({
       schemaVersion: 1,
       id,
@@ -425,11 +464,13 @@ export function CreateScreen() {
       weaponSecondaryId: draft.weaponSecondaryId,
       armorId: draft.armorId ?? undefined,
       inventoryItemIds: draft.inventoryItemIds,
+      ...(libraryCards.length ? { libraryCards } : {}),
+      ...(enabledCustom.length ? { enabledCardIds: enabledCustom } : {}),
       gold: draft.gold,
       level: 1,
     });
     router.replace({ pathname: '/sheet', params: { id } });
-  }, [complete, draft, router]);
+  }, [complete, draft, router, libContent]);
 
   const pickPortrait = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead

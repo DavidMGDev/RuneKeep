@@ -88,7 +88,14 @@ export interface Expansion {
   version: number;
   createdAt: string; // ISO
   cards: LibraryCard[];
+  /** v0.10.3: when false, the expansion's content is HIDDEN from character creation + ADD GEAR (but
+   *  never deleted — characters already using its cards keep them, since those are embedded). Default
+   *  (undefined) = enabled. */
+  enabled?: boolean;
 }
+
+/** Whether an installed expansion is offered in creation / ADD GEAR (default: yes). v0.10.3. */
+export const isExpansionEnabled = (e: Expansion): boolean => e.enabled !== false;
 
 export const LIBRARY_SCHEMA_VERSION = 1;
 
@@ -197,5 +204,6 @@ export function validateExpansion(o: unknown): Expansion {
     version: typeof e.version === 'number' && e.version > 0 ? Math.floor(e.version) : 1,
     createdAt: typeof e.createdAt === 'string' ? e.createdAt : new Date(0).toISOString(),
     cards,
+    enabled: typeof e.enabled === 'boolean' ? e.enabled : undefined,
   };
 }

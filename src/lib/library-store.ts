@@ -69,6 +69,13 @@ export async function getExpansion(id: string): Promise<Expansion | null> {
   }
 }
 
+/** Enable/disable an installed expansion (v0.10.3): non-destructive — only hides its content from
+ *  creation + ADD GEAR. Characters already using its cards keep them (they're embedded on the file). */
+export async function setExpansionEnabled(id: string, enabled: boolean): Promise<void> {
+  const exp = await getExpansion(id);
+  if (exp) await saveExpansion({ ...exp, enabled });
+}
+
 export async function deleteExpansion(id: string): Promise<void> {
   if (Platform.OS === 'web') {
     webWrite(webList().filter((e) => e.id !== id));

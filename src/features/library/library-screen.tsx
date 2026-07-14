@@ -27,6 +27,7 @@ import {
   type LibraryContentType,
   type WeaponSpec,
   expansionSummary,
+  isExpansionEnabled,
 } from '@/lib/library';
 import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { nfcModulesPresent } from '@/lib/nfc';
@@ -351,6 +352,14 @@ export function LibraryScreen() {
           <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ padding: 12, gap: 4 }}>
             <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}</Text>
             {selected.description ? <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
+            {/* v0.10.3: enable/disable — non-destructive, only hides content from creation + ADD GEAR. */}
+            <RuneButton
+              label={isExpansionEnabled(selected) ? 'Enabled for creation — tap to disable' : 'Disabled — tap to enable'}
+              kind={isExpansionEnabled(selected) ? 'secondary' : 'ghost'}
+              dense
+              height={34}
+              onPress={() => { playSfx('buttonTap'); void persist({ ...selected, enabled: !isExpansionEnabled(selected) }); }}
+            />
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
               <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name); }} />

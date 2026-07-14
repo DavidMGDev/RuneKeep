@@ -20,6 +20,7 @@ export const EMPTY: Draft = {
   weaponSecondaryId: null,
   armorId: null,
   inventoryItemIds: [],
+  inventoryLibIds: [],
   gold: GOLD_DEFAULT,
 };
 
@@ -48,7 +49,7 @@ export function deckDone(deck: DeckKey, d: Draft): boolean {
     case 'armor':
       return d.armorSkipped || !!d.armorId;
     case 'inventory':
-      return d.inventorySkipped || d.inventoryItemIds.length === 2; // pick two (#136), or skip (v0.10.2)
+      return d.inventorySkipped || d.inventoryItemIds.length === 2 || (d.inventoryLibIds?.length ?? 0) > 0; // pick two (#136), a homebrew item, or skip
   }
 }
 
