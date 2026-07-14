@@ -8,7 +8,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
-import { advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, picksUsed, tierForLevel } from '@/lib/leveling';
+import { advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, MAX_LEVEL, picksUsed, tierForLevel } from '@/lib/leveling';
 import type { CharacterFile } from '@/lib/character-file';
 import { type CompanionState, COMPANION_OPTIONS, companionOptionDef } from '@/lib/companion';
 import { playSfx } from '@/lib/sfx';
@@ -282,6 +282,21 @@ export function LevelUpPanel({
     cfade.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
   }, [step, cfade, reduced]);
   const contentStyle = useAnimatedStyle(() => ({ opacity: cfade.value }));
+
+  // v0.10.5: level 10 is the cap — never advance past it. (The float-menu entry stays; this is the
+  // explanation if it's opened at max level.)
+  if (file.level >= MAX_LEVEL) {
+    return (
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+        <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 20, paddingVertical: 22, gap: 14, alignItems: 'center' }}>
+          <Text style={{ color: Rune.goldText, fontSize: 20, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Max level</Text>
+          <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19, textAlign: 'center' }}>This hero is level {MAX_LEVEL} — the highest level in Daggerheart. There&apos;s nothing left to advance.</Text>
+          <RuneButton label="Close" kind="primary" height={44} style={{ alignSelf: 'stretch' }} onPress={onClose} />
+        </ChamferBox>
+      </View>
+    );
+  }
 
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>

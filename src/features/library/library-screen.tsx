@@ -48,6 +48,9 @@ interface CardConfig {
   domain?: string;
   level?: number;
   className?: string;
+  /** subclass content (v0.10.5): the family name shared by its 3 tier cards + which tier this one is. */
+  subclass?: string;
+  tier?: 1 | 2 | 3;
   ancestryEffectTrait?: 1 | 2;
   weapon?: WeaponSpec;
   armor?: ArmorSpec;
@@ -59,6 +62,7 @@ interface CardConfig {
 function defaultConfigFor(t: LibraryContentType): CardConfig {
   if (t === 'domain') return { contentType: t, domain: '', level: 1 };
   if (t === 'ancestry') return { contentType: t, ancestryEffectTrait: 1 };
+  if (t === 'subclass') return { contentType: t, tier: 1 };
   if (t === 'weapon') return { contentType: t, weapon: { ...DEFAULT_WEAPON } };
   if (t === 'armor') return { contentType: t, armor: { ...DEFAULT_ARMOR } };
   return { contentType: t };
@@ -122,7 +126,19 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
           <Text style={smallLabel}>Class it belongs to</Text>
           <View style={chipRow}>{BUILTIN_CLASSES.map((c) => <Chip key={c} label={c} on={config.className === c} onPress={() => set({ className: c })} />)}</View>
           <LibInput label="…or a custom class name" value={config.className ?? ''} onChangeText={(className) => set({ className })} placeholder="e.g. Warden" />
-          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>The character creator groups this under that class. (Custom standalone classes come later.)</Text>
+          {t === 'class' ? <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>The character creator groups this under that class. (Custom standalone classes come later.)</Text> : null}
+        </View>
+      ) : null}
+      {t === 'subclass' ? (
+        <View style={{ gap: 4 }}>
+          <LibInput label="Subclass name (its family)" value={config.subclass ?? ''} onChangeText={(subclass) => set({ subclass })} placeholder="e.g. Stalwart" />
+          <Text style={smallLabel}>Progression tier</Text>
+          <View style={chipRow}>
+            <Chip label="Foundation" on={(config.tier ?? 1) === 1} onPress={() => set({ tier: 1 })} />
+            <Chip label="Specialization" on={config.tier === 2} onPress={() => set({ tier: 2 })} />
+            <Chip label="Mastery" on={config.tier === 3} onPress={() => set({ tier: 3 })} />
+          </View>
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Make ALL THREE — a Foundation, a Specialization, and a Mastery — with the SAME class + subclass name. Foundation is chosen in creation; the other two are added automatically when you upgrade the subclass on level-up.</Text>
         </View>
       ) : null}
       {t === 'ancestry' ? (
@@ -330,6 +346,8 @@ export function LibraryScreen() {
             domain: cfg.contentType === 'domain' ? cfg.domain : undefined,
             level: cfg.contentType === 'domain' ? cfg.level ?? 1 : undefined,
             className: cfg.contentType === 'subclass' || cfg.contentType === 'class' ? cfg.className : undefined,
+            subclass: cfg.contentType === 'subclass' ? cfg.subclass : undefined,
+            tier: cfg.contentType === 'subclass' ? cfg.tier ?? 1 : undefined,
             ancestryEffectTrait: cfg.contentType === 'ancestry' ? cfg.ancestryEffectTrait : undefined,
             weapon: cfg.contentType === 'weapon' ? cfg.weapon : undefined,
             armor: cfg.contentType === 'armor' ? cfg.armor : undefined,
@@ -370,7 +388,7 @@ export function LibraryScreen() {
             <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 18 }}>No cards yet. Add your first homebrew card.</Text>
           ) : (
             selected.cards.map((c, i) => (
-              <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
+              <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, subclass: c.subclass, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
                 {({ pressed }) => (
                   <ChamferBox chamfer={8} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 11 }}>
                     <View style={{ width: 10, height: 10, backgroundColor: c.color ?? Rune.bronze, transform: [{ rotate: '45deg' }] }} />

@@ -884,7 +884,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // v0.10.3: embedded homebrew cards NOT bound to a structural/domain slot (weapon/armor/inventory/
     // generic added via ADD GEAR) ride the inventory deck.
     const structuralLibIds = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...file.domainCardIds]);
-    const looseLibItems = (file.libraryCards ?? []).filter((lc) => !structuralLibIds.has(lc.id)).map((lc) => libItem(lc.id)).filter((x): x is CardItem => !!x);
+    const acquiredSet = new Set(file.acquiredCardIds ?? []);
+    const looseLibItems = (file.libraryCards ?? [])
+      .filter((lc) => {
+        if (structuralLibIds.has(lc.id)) return false;
+        // v0.10.5: a custom subclass specialization/mastery card is embedded at creation but only shows
+        // once the subclass-upgrade advancement acquires it.
+        if (lc.contentType === 'subclass' && (lc.tier ?? 1) > 1) return acquiredSet.has(lc.id);
+        return true;
+      })
+      .map((lc) => libItem(lc.id))
+      .filter((x): x is CardItem => !!x);
     const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqArmorItems, ...acqLootItems, ...invCustom, ...looseLibItems];
     // Acquired CATALOG cards (#248 item 5): domain/ancestry/community/subclass picked from the catalog
     // browser, added as their real card image (no forging). Skip ids already in a deck (e.g. an owned

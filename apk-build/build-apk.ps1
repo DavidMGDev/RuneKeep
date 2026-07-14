@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.10.4'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.10.5'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.10.4 - level-up fix + mixed-ancestry cross-out for homebrew. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nFixes:`n- FIX - the 'Confirm level' button no longer sits silently disabled. It now tells you exactly what's left (choose your domain card, write your Experience, pick 2 advancements) and tapping it jumps straight to that step. Leveling any character - new or existing - works.`n- NEW - a custom Ancestry used in a MIXED ancestry now shows its crossed-out feature struck through, and that feature's passive is dropped - exactly like the built-in ancestries.`n`nOn top of v0.10.3: homebrew ancestry/community/subclass/domain/armor/item cards in character creation + ADD GEAR, per-expansion enable/disable, and embedded (self-contained) heroes that work with no expansion installed.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.10.5 - subclass upgrade cards + level cap + custom 3-tier subclasses. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nFixes:`n- FIX - taking 'Upgrade subclass' on level-up now puts the next card (Specialization, then Mastery) in your ARSENAL next to your subclass - not buried in Inventory. Existing characters are backfilled on load.`n- FIX - leveling now stops at level 10 (it was letting you reach 11). Opening level-up at max level shows a clear message.`n`nHomebrew:`n- NEW - custom Subclasses now support all THREE tiers. In the Card Library a Subclass card has a Foundation / Specialization / Mastery selector + a subclass name - make all three with the same class + name. Pick the Foundation in creation; the Specialization and Mastery are added automatically when you upgrade the subclass on level-up.`n`nOn top of v0.10.4: mixed-ancestry cross-out for homebrew + level-up Confirm guidance; and (v0.10.3) homebrew content in creation + ADD GEAR.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

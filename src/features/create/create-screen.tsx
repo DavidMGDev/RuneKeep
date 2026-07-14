@@ -276,7 +276,7 @@ export function CreateScreen() {
       case 'subclass':
         return [
           ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
-          ...(libContent?.subclasses ?? []).filter((c) => !c.className || c.className === draft.className).map(libCardItem),
+          ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (!c.className || c.className === draft.className)).map(libCardItem),
         ];
       case 'ancestry': {
         const base = CATALOG.filter((c) => c.kind === 'ancestry').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
@@ -439,6 +439,15 @@ export function CreateScreen() {
     if (libContent) for (const arr of [libContent.ancestries, libContent.communities, libContent.subclasses, libContent.domains, libContent.armor, libContent.inventory]) for (const c of arr) libById.set(c.id, c);
     const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, ...draft.domainCardIds, ...draft.inventoryLibIds].filter((x): x is string => !!x);
     const libraryCards = [...new Set(pickedIds)].map((pid) => libById.get(pid)).filter((c): c is LibraryCard => !!c);
+    // v0.10.5: a custom subclass FOUNDATION drags its specialization + mastery siblings along (same family
+    // + class) so the subclass-upgrade advancement can add them on level-up. They stay hidden on the sheet
+    // until acquired.
+    const subFoundation = draft.subclassCardId ? libById.get(draft.subclassCardId) : undefined;
+    if (subFoundation?.contentType === 'subclass' && subFoundation.subclass) {
+      for (const sib of libContent?.subclasses ?? []) {
+        if (sib.subclass === subFoundation.subclass && sib.className === subFoundation.className && (sib.tier ?? 1) !== 1 && !libraryCards.some((c) => c.id === sib.id)) libraryCards.push(sib);
+      }
+    }
     // enable custom origin/armor cards so their effects apply (armor score/thresholds, ancestry passive).
     const enabledCustom = libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id);
     await saveCharacter({
