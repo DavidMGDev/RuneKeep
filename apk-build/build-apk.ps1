@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.10.3'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.10.4'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.10.3 - your homebrew content now works INSIDE character creation + ADD GEAR (finishes the Card Library). Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nUse your homebrew:`n- NEW - custom Ancestry, Community, Subclass, Domain, Armor, and Item cards from your ENABLED expansions now appear as choices in CHARACTER CREATION, right alongside the built-ins.`n- NEW - ADD GEAR on a character sheet has a Homebrew tab to drop a custom card onto an existing hero.`n- NEW - each expansion has an Enabled/Disabled toggle in the Card Library. Disabling hides its content from creation + ADD GEAR but NEVER deletes anything - characters keep every card they already have.`n- Cards are EMBEDDED on the character: a hero works (and shares) with no expansion installed, and stays intact if you disable or delete the expansion. Custom armor grants its score + thresholds like real armor.`n`nStill built-in only (coming later): custom EQUIPPED weapons and custom standalone CLASSES.`n`nOn top of v0.10.2: per-tier level-up reset (levels 9-10 reachable, stuck saves auto-heal), subclass upgrade auto-adds the next card, class cards in the archive, per-section Random + Skip cards, the sections/weapon/armor card editor, and single-card NFC.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.10.4 - level-up fix + mixed-ancestry cross-out for homebrew. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nFixes:`n- FIX - the 'Confirm level' button no longer sits silently disabled. It now tells you exactly what's left (choose your domain card, write your Experience, pick 2 advancements) and tapping it jumps straight to that step. Leveling any character - new or existing - works.`n- NEW - a custom Ancestry used in a MIXED ancestry now shows its crossed-out feature struck through, and that feature's passive is dropped - exactly like the built-in ancestries.`n`nOn top of v0.10.3: homebrew ancestry/community/subclass/domain/armor/item cards in character creation + ADD GEAR, per-expansion enable/disable, and embedded (self-contained) heroes that work with no expansion installed.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

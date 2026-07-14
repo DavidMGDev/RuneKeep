@@ -234,6 +234,18 @@ export function LevelUpPanel({
   const [step, setStep] = useState<StepKey>('summary');
 
   const canConfirm = domainDone && expReady && advanceDone && (!hasCompanionStep || companionDone);
+  // v0.10.4: the FIRST unmet requirement — so a not-yet-ready "Confirm level" tap jumps to that step and
+  // a hint says exactly what's left, instead of a silent, unexplained disabled button (owner: "the Confirm
+  // Level button always remains unable to be pressed — I can't level up any character").
+  const missing: { step: StepKey; text: string } | null = !domainDone
+    ? { step: 'domain', text: 'Choose your new domain card' }
+    : tierStart && !expReady
+      ? { step: 'exp', text: 'Write your new Experience' }
+      : !advanceDone
+        ? { step: 'advance', text: `Choose 2 advancements — ${picks}/2 chosen` }
+        : hasCompanionStep && !companionDone
+          ? { step: 'companion', text: 'Choose your companion training' }
+          : null;
   const confirm = () => {
     playSfx('levelUpComplete'); // #255
     const advs = takes.map((t) => (t.key === 'domain' ? { ...t, domainCardId: selectedDomains[1] } : t));
@@ -476,9 +488,13 @@ export function LevelUpPanel({
         </Animated.View>
 
         {/* footer */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+        {missing ? (
+          <Text style={{ color: Rune.bronze, fontSize: 11.5, fontFamily: Body.bold, textAlign: 'center', marginTop: 8, letterSpacing: 0.2 }}>{missing.text} →</Text>
+        ) : null}
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
           <RuneButton label="Cancel" kind="ghost" height={44} style={{ flex: 1 }} onPress={onClose} />
-          <RuneButton label="Confirm level" kind="primary" height={44} style={{ flex: 1.6 }} disabled={!canConfirm} onPress={confirm} muteSfx />
+          {/* Always pressable: if something's missing, jump to that step; otherwise confirm. */}
+          <RuneButton label="Confirm level" kind="primary" height={44} style={{ flex: 1.6 }} onPress={() => { if (canConfirm) confirm(); else if (missing) { playSfx('buttonTap'); setStep(missing.step); } }} muteSfx />
         </View>
        </ChamferBox>
       </Animated.View>

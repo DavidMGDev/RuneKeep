@@ -16,8 +16,9 @@ function spanNodes(spans: MdSpan[]) {
     const style: TextStyle = {};
     if (s.bold) style.fontFamily = Body.bold;
     if (s.italic) style.fontStyle = 'italic';
+    if (s.strike) { style.textDecorationLine = 'line-through'; style.opacity = 0.5; } // mixed-ancestry cross-out
     return (
-      <Text key={i} style={s.bold || s.italic ? style : undefined}>
+      <Text key={i} style={s.bold || s.italic || s.strike ? style : undefined}>
         {s.text}
       </Text>
     );

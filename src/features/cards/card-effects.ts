@@ -14,7 +14,7 @@ import { wildshapeById } from '@/data/wildshape-data';
 import { cardById } from '@/data/catalog';
 import { CATALOG_EFFECTS } from '@/data/catalog-effects';
 import { isAncestryEffectDisabled } from '@/data/ancestry-traits';
-import { libraryCardById, libraryCardEffects } from '@/lib/library-embed';
+import { libraryCardById, libraryCardEffects, mixedCrossedTrait } from '@/lib/library-embed';
 
 /** All player-authored cards on a file (experiences, inventory items, sheet-made cards). */
 function customCards(file?: CharacterFile): ExperienceDef[] {
@@ -71,7 +71,11 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
   // v0.10.3: an embedded homebrew (library) card resolves its effects here — armor bakes in its score +
   // thresholds so custom armor works exactly like equipment.
   const lib = libraryCardById(file, id);
-  if (lib) return libraryCardEffects(lib);
+  if (lib) {
+    // v0.10.4: a custom ancestry in a MIX drops its passive when that feature is the crossed-out one.
+    if (lib.contentType === 'ancestry' && lib.ancestryEffectTrait && mixedCrossedTrait(file, id) === lib.ancestryEffectTrait) return [];
+    return libraryCardEffects(lib);
+  }
   // #278: a player override replaces a CATALOG card's code-defined effects (custom cards edit their own
   // `effects` above). Override wins so the Modifiers panel + card editor share one source of truth.
   const override = file?.cardEffectOverrides?.[id];

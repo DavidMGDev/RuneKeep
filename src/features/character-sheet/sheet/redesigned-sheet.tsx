@@ -40,7 +40,7 @@ import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type LibraryCard } from '@/lib/library';
-import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
+import { libraryCardBody, libraryCardKindLabel, mixedCrossedTrait } from '@/lib/library-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -707,12 +707,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Embedded homebrew cards (v0.10.3): each picked LibraryCard forges to a card the carousel treats
     // like any scanned card. Structural/domain ones slot into their positions below; loose ones (weapon/
     // armor/inventory/generic added via ADD GEAR) ride the inventory deck.
-    const libJobs: Job[] = (file.libraryCards ?? []).map((lc) => ({
-      key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + (lc.sections?.length ?? 0) * 41) % 99991}`,
-      id: lc.id,
-      node: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
-      raster: !!lc.imageUri,
-    }));
+    const libJobs: Job[] = (file.libraryCards ?? []).map((lc) => {
+      // mixed-ancestry cross-out (v0.10.4): strike the feature the mix crosses out on THIS ancestry card.
+      const crossed = lc.contentType === 'ancestry' ? mixedCrossedTrait(file, lc.id) : 0;
+      const struckIndex = crossed ? crossed - 1 : undefined; // trait 1|2 → section index 0|1
+      return {
+        key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + (lc.sections?.length ?? 0) * 41 + crossed * 7919) % 99991}`,
+        id: lc.id,
+        node: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc, struckIndex)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
+        raster: !!lc.imageUri,
+      };
+    });
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
     // deck like the class-feature card (#227 item 8) so the title stays a normal size and the rules
     // text isn't crammed tiny: face 0 = overview (tier · stress · attack · stat deltas · examples),

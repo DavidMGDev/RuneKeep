@@ -14,6 +14,8 @@ export interface MdSpan {
   text: string;
   bold?: boolean;
   italic?: boolean;
+  /** v0.10.4: `~~strike~~` — used for the mixed-ancestry crossed-out feature on custom ancestry cards. */
+  strike?: boolean;
 }
 export type MdBlock =
   | { kind: 'p'; spans: MdSpan[] }
@@ -46,10 +48,11 @@ export function parseInline(src: string): MdSpan[] {
   const spans: MdSpan[] = [];
   let bold = false;
   let italic = false;
+  let strike = false;
   let buf = '';
   const flush = () => {
     if (buf) {
-      spans.push({ text: buf, ...(bold ? { bold: true } : {}), ...(italic ? { italic: true } : {}) });
+      spans.push({ text: buf, ...(bold ? { bold: true } : {}), ...(italic ? { italic: true } : {}), ...(strike ? { strike: true } : {}) });
       buf = '';
     }
   };
@@ -59,6 +62,12 @@ export function parseInline(src: string): MdSpan[] {
     if (two === '**' || two === '__') {
       flush();
       bold = !bold;
+      i += 2;
+      continue;
+    }
+    if (two === '~~') {
+      flush();
+      strike = !strike;
       i += 2;
       continue;
     }
@@ -135,5 +144,5 @@ export function parseCardMarkdown(src: string): MdBlock[] {
  *  text path unchanged (#264 story 28: plain descriptions look exactly as before). */
 export function hasMarkdown(src: string | null | undefined): boolean {
   if (!src) return false;
-  return /\*\*[\s\S]*?\*\*|__[\s\S]*?__|[*_][^*_\n]+[*_]|(^|\n)[ \t]*[-*][ \t]+\S|(^|\n)[ \t]*\d+\.[ \t]+\S/.test(src);
+  return /\*\*[\s\S]*?\*\*|__[\s\S]*?__|~~[\s\S]*?~~|[*_][^*_\n]+[*_]|(^|\n)[ \t]*[-*][ \t]+\S|(^|\n)[ \t]*\d+\.[ \t]+\S/.test(src);
 }
