@@ -91,16 +91,3 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
     </View>
   );
 }
-
-/** The "create a custom item" card that lives at the end of the inventory deck (#128). */
-export function AddItemCard() {
-  return (
-    <ChamferBox chamfer={14} fill="rgba(14,17,22,0.92)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.4} style={{ width: FORGED_W, height: FORGED_H, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-      <Svg width={40} height={40} viewBox="0 0 40 40">
-        <Line x1={20} y1={8} x2={20} y2={32} stroke={Rune.goldEdge} strokeWidth={2.6} />
-        <Line x1={8} y1={20} x2={32} y2={20} stroke={Rune.goldEdge} strokeWidth={2.6} />
-      </Svg>
-      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Custom item</Text>
-    </ChamferBox>
-  );
-}

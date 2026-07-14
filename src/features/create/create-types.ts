@@ -28,12 +28,13 @@ export interface Draft {
   weaponPrimaryId: string | null;
   weaponSecondaryId: string | null;
   armorId: string | null;
-  /** Inventory (#128): selected suggested-item ids (+ a synthetic 'item-gold'), and user-authored
-   *  custom item cards. */
+  /** Inventory (#128): selected suggested-item ids. Custom in-creation items were removed in v0.10.2
+   *  (homebrew items now come from Library expansions). */
   inventoryItemIds: string[];
-  inventoryCustom: ExperienceDef[];
-  /** Which authored custom item cards are currently SELECTED (owned) (v0.10.0). A created card starts
-   *  selected; deselecting keeps the card around to re-select. Only selected customs are forged. */
-  inventoryCustomSelected: string[];
+  /** v0.10.2 (Feature 3): explicitly skip a step that's otherwise required — start with no weapon / no
+   *  armor / no inventory picks. Selecting a real item clears the matching flag. */
+  weaponsSkipped?: boolean;
+  armorSkipped?: boolean;
+  inventorySkipped?: boolean;
   gold: GoldAmount;
 }

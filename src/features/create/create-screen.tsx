@@ -30,7 +30,7 @@ import { type DeckKey, type Draft, isCardDeck, isCarouselDeck } from './create-t
 import { DECKS, deckDone, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
-import { AddItemCard, DeckTab, SectionDivider, Segmented } from './create-ui';
+import { DeckTab, SectionDivider, Segmented } from './create-ui';
 import { ExperiencesTab } from './experiences-tab';
 import { TraitsTab } from './traits-tab';
 
@@ -43,6 +43,13 @@ import { TraitsTab } from './traits-tab';
  * Class picks are FORGED cards; deck swaps fade out → load → fade all back in (no travel);
  * selections per deck are remembered, FORGE arms when all five are set.
  */
+// v0.10.2 (Feature 3): inline "Skip" cards that end the weapons/armor/inventory carousels. Selecting one
+// sets the matching skip flag so the step counts as done with nothing equipped. Module-scope so the
+// `items` memo keeps a stable reference.
+const SKIP_WEAPONS: StraightItem = { id: 'weapons-skip', label: 'Skip weapons', custom: <ForgedCard title="No weapon" kindLabel="Weapon" body="Skip — start with no weapon equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
+const SKIP_ARMOR: StraightItem = { id: 'armor-skip', label: 'Skip armor', custom: <ForgedCard title="No armor" kindLabel="Armor" body="Skip — start with no armor equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
+const SKIP_INVENTORY: StraightItem = { id: 'inventory-skip', label: 'Skip inventory', custom: <ForgedCard title="No items" kindLabel="Item" body="Skip — start with no chosen inventory items." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
+
 export function CreateScreen() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -155,7 +162,6 @@ export function CreateScreen() {
 
   const [centerIdx, setCenterIdx] = useState(0);
   const [editingExperience, setEditingExperience] = useState<number | null>(null);
-  const [editingItem, setEditingItem] = useState<number | 'new' | null>(null); // inventory custom item (#128)
   // Weapons deck UI (#121): which kind of primary to browse, and whether we're picking the primary
   // or the (optional, 1H-only) secondary.
   const [weaponKind, setWeaponKind] = useState<WeaponKind>('physical');
@@ -178,15 +184,11 @@ export function CreateScreen() {
           setEditingExperience(null);
           return true;
         }
-        if (editingItem != null) {
-          setEditingItem(null);
-          return true;
-        }
         if (carouselRef.current?.closeIfFullscreen()) return true;
         return false;
       });
       return () => sub.remove();
-    }, [editingExperience, editingItem]),
+    }, [editingExperience]),
   );
 
   // A forged equipment card item: the bitmap pair once captured, the live card meanwhile (#121).
@@ -201,15 +203,17 @@ export function CreateScreen() {
   const items: StraightItem[] = useMemo(() => {
     if (deck === 'weapons') {
       const list = weaponSlot === 'secondary' ? SECONDARY_WEAPONS : PRIMARY_WEAPONS.filter((w) => w.kind === weaponKind);
-      return list.map((w) => forgedItem(w.id, w.name, <ForgedWeaponCard weapon={w} />));
+      const cards = list.map((w) => forgedItem(w.id, w.name, <ForgedWeaponCard weapon={w} />));
+      // Skip only on the primary slot — a secondary is already optional (v0.10.2).
+      return weaponSlot === 'primary' ? [...cards, SKIP_WEAPONS] : cards;
     }
     if (deck === 'armor') {
-      return TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />));
+      return [...TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), SKIP_ARMOR];
     }
     if (deck === 'inventory') {
-      // Creation inventory is MANDATORY and shows ONLY the player's CHOICES (#136): the per-class
-      // optional items (pick two of the four) + custom items + the "add" card. The default kit
-      // (torch/rope/supplies) and gold are NOT shown here — they belong to the sheet.
+      // Creation inventory shows ONLY the player's per-class CHOICES (#136): pick two of four, or Skip
+      // (v0.10.2). Custom in-creation items were removed — homebrew items come from Library expansions.
+      // The default kit (torch/rope/supplies) and gold are NOT shown here — they belong to the sheet.
       const cinv = draft.className ? CLASS_INVENTORY[draft.className] : null;
       const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
       const optionCards: StraightItem[] = (cinv?.choices.flat() ?? []).map((name) => ({
@@ -217,13 +221,7 @@ export function CreateScreen() {
         label: name,
         custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
       }));
-      const customs: StraightItem[] = draft.inventoryCustom.map((it) => ({
-        id: it.id,
-        label: it.title || 'Item',
-        custom: <ForgedCard title={it.title || 'Item'} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
-      }));
-      const add: StraightItem = { id: 'item-add', label: 'Add item', custom: <AddItemCard /> };
-      return [...optionCards, ...customs, add];
+      return [...optionCards, SKIP_INVENTORY];
     }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
@@ -275,15 +273,16 @@ export function CreateScreen() {
         return pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
       }
     }
-  }, [deck, draft.className, draft.inventoryCustom, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
+      if (weaponSlot === 'primary' && draft.weaponsSkipped) return ['weapons-skip'];
       const id = weaponSlot === 'secondary' ? draft.weaponSecondaryId : draft.weaponPrimaryId;
       return id ? [id] : [];
     }
-    if (deck === 'armor') return draft.armorId ? [draft.armorId] : [];
-    if (deck === 'inventory') return [...draft.inventoryItemIds, ...draft.inventoryCustomSelected]; // suggested picks + SELECTED custom cards (v0.10.0); gold/start kit are not counted (#128)
+    if (deck === 'armor') return draft.armorSkipped ? ['armor-skip'] : draft.armorId ? [draft.armorId] : [];
+    if (deck === 'inventory') return draft.inventorySkipped ? ['inventory-skip'] : draft.inventoryItemIds; // gold/start kit are not counted (#128)
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -326,6 +325,7 @@ export function CreateScreen() {
   const onToggle = useCallback(
     (id: string) => {
       if (deck === 'weapons') {
+        if (id === 'weapons-skip') { set({ weaponsSkipped: !draft.weaponsSkipped, weaponPrimaryId: null, weaponSecondaryId: null }); return; }
         if (weaponSlot === 'secondary') {
           if (!secondaryAllowed) return; // only a 1H primary may carry a secondary
           set({ weaponSecondaryId: draft.weaponSecondaryId === id ? null : id });
@@ -334,34 +334,24 @@ export function CreateScreen() {
             set({ weaponPrimaryId: null, weaponSecondaryId: null });
           } else {
             const w = weaponById(id);
-            // a Two-Handed primary leaves no hand for a secondary → clear it
-            set({ weaponPrimaryId: id, ...(w?.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) });
+            // a Two-Handed primary leaves no hand for a secondary → clear it. Selecting a weapon clears skip.
+            set({ weaponPrimaryId: id, weaponsSkipped: false, ...(w?.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) });
           }
         }
         return;
       }
       if (deck === 'armor') {
-        set({ armorId: draft.armorId === id ? null : id });
+        if (id === 'armor-skip') { set({ armorSkipped: !draft.armorSkipped, armorId: null }); return; }
+        set({ armorId: draft.armorId === id ? null : id, armorSkipped: false });
         return;
       }
       if (deck === 'inventory') {
-        if (id === 'item-add') {
-          setEditingItem('new'); // the "Create card" button-card — always creates a NEW card (never edits)
-          return;
-        }
-        const ci = draft.inventoryCustom.findIndex((i) => i.id === id);
-        if (ci >= 0) {
-          // A custom card is a normal SELECTABLE card now (v0.10.0): toggle ownership. (Editing is the
-          // separate "Edit item" control.) No cap — these are the player's own homebrew items.
-          const sel = draft.inventoryCustomSelected.includes(id);
-          set({ inventoryCustomSelected: sel ? draft.inventoryCustomSelected.filter((x) => x !== id) : [...draft.inventoryCustomSelected, id] });
-          return;
-        }
-        // optional items: pick up to TWO (#136), replacing the oldest like domains
+        if (id === 'inventory-skip') { set({ inventorySkipped: !draft.inventorySkipped, inventoryItemIds: [] }); return; }
+        // optional items: pick up to TWO (#136), replacing the oldest like domains. Any pick clears skip.
         const has = draft.inventoryItemIds.includes(id);
         if (has) set({ inventoryItemIds: draft.inventoryItemIds.filter((x) => x !== id) });
-        else if (draft.inventoryItemIds.length < 2) set({ inventoryItemIds: [...draft.inventoryItemIds, id] });
-        else set({ inventoryItemIds: [draft.inventoryItemIds[1], id] });
+        else if (draft.inventoryItemIds.length < 2) set({ inventoryItemIds: [...draft.inventoryItemIds, id], inventorySkipped: false });
+        else set({ inventoryItemIds: [draft.inventoryItemIds[1], id], inventorySkipped: false });
         return;
       }
       if (!isCardDeck(deck)) return;
@@ -430,11 +420,11 @@ export function CreateScreen() {
       domainCardIds: draft.domainCardIds,
       traits: draft.traits as Record<TraitKey, number>, // complete ⇒ all six assigned
       experiences: draft.experiences,
-      weaponPrimaryId: draft.weaponPrimaryId!,
+      // v0.10.2: weapon/armor may be skipped → left undefined (the fields are optional on CharacterFile).
+      weaponPrimaryId: draft.weaponPrimaryId ?? undefined,
       weaponSecondaryId: draft.weaponSecondaryId,
-      armorId: draft.armorId!,
+      armorId: draft.armorId ?? undefined,
       inventoryItemIds: draft.inventoryItemIds,
-      inventoryCustom: draft.inventoryCustom.filter((i) => draft.inventoryCustomSelected.includes(i.id)), // only SELECTED customs are forged (v0.10.0)
       gold: draft.gold,
       level: 1,
     });
@@ -452,8 +442,24 @@ export function CreateScreen() {
   const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
-  const centerInvAdd = deck === 'inventory' && centerItem?.id === 'item-add';
-  const centerInvCustom = deck === 'inventory' && draft.inventoryCustom.some((i) => i.id === centerItem?.id);
+
+  // v0.10.2 (Feature 2): a per-section Random button. Picks a valid random choice for the CURRENT deck,
+  // honoring dependencies (subclass/domains follow the class). Experiences stay manual (freeform text).
+  const randomize = useCallback(() => {
+    const pick = <T,>(a: T[]): T | undefined => (a.length ? a[Math.floor(Math.random() * a.length)] : undefined);
+    const two = <T,>(a: T[]): T[] => { const p = [...a]; const o: T[] = []; while (p.length && o.length < 2) o.push(p.splice(Math.floor(Math.random() * p.length), 1)[0]); return o; };
+    playSfx('cardSelect');
+    switch (deck) {
+      case 'class': { const k = pick(CLASS_CARDS.map((c) => c.key)); if (k) set({ className: k, subclassCardId: null, domainCardIds: [] }); break; }
+      case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => c.id)); if (id) set({ subclassCardId: id }); break; }
+      case 'ancestry': { const id = pick(CATALOG.filter((c) => c.kind === 'ancestry').map((c) => c.id)); if (id) set({ ancestryCardId: id, mixedAncestry: null }); break; }
+      case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community').map((c) => c.id)); if (id) set({ communityCardId: id }); break; }
+      case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => c.id); set({ domainCardIds: two(pool) }); break; }
+      case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind)); if (w) set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); break; }
+      case 'armor': { const id = pick(TIER1_ARMOR.map((a) => a.id)); if (id) set({ armorId: id, armorSkipped: false }); break; }
+      case 'inventory': { if (!draft.className) break; const opts = (CLASS_INVENTORY[draft.className]?.choices.flat() ?? []).map(itemOptionId); set({ inventoryItemIds: two(opts), inventorySkipped: false }); break; }
+    }
+  }, [deck, draft.className, weaponKind, set]);
 
   return (
     <AppScreen
@@ -595,59 +601,26 @@ export function CreateScreen() {
           }}
         />
       ) : null}
-      {editingItem != null ? (
-        <CardEditor
-          kindLabel="Item"
-          initial={typeof editingItem === 'number' && draft.inventoryCustom[editingItem] ? { title: draft.inventoryCustom[editingItem].title, text: draft.inventoryCustom[editingItem].text, imageUri: draft.inventoryCustom[editingItem].imageUri, color: draft.inventoryCustom[editingItem].color ?? null, effects: draft.inventoryCustom[editingItem].effects ?? [] } : undefined}
-          onCancel={() => setEditingItem(null)}
-          onSave={(d) => {
-            const next = [...draft.inventoryCustom];
-            if (editingItem === 'new') {
-              const id = `itm-${Date.now().toString(36)}`;
-              next.push({ id, title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects });
-              set({ inventoryCustom: next, inventoryCustomSelected: [...draft.inventoryCustomSelected, id] }); // a new card starts selected
-            } else {
-              next[editingItem] = { ...next[editingItem], title: d.title, text: d.text, imageUri: d.imageUri, color: d.color, effects: d.effects };
-              set({ inventoryCustom: next });
-            }
-            setEditingItem(null);
-          }}
-        />
-      ) : null}
       {/* ---- THE select controls: the screen's TOP layer (#106) — above the carousel veil AND
           the features reader, never dimmed, always tappable, one spot. Card decks only. Hierarchy
           top-to-bottom (#108): SELECT (primary, biggest) → CLASS FEATURES → the n/n counter. */}
       {isCarouselDeck(deck) ? (
         <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 56, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
-            label={centerInvAdd ? 'Create item' : centerSelected ? 'Deselect' : `Select ${noun}`}
-            kind={centerSelected && !centerInvAdd ? 'ghost' : 'primary'}
+            label={centerSelected ? 'Deselect' : `Select ${noun}`}
+            kind={centerSelected ? 'ghost' : 'primary'}
             height={40}
             muteSfx
             onPress={() => {
               if (!centerItem) return;
               // #258: selecting a card uses the card-select/deselect chime, not the generic tap.
-              if (centerInvAdd) playSfx('buttonTap'); // the "Create card" button-card opens the editor
-              else playSfx(centerSelected ? 'cardDeselect' : 'cardSelect');
+              playSfx(centerSelected ? 'cardDeselect' : 'cardSelect');
               onToggle(centerItem.id);
             }}
-            accessibilityLabel={centerInvAdd ? 'Create a custom item' : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+            accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
-          {/* A created custom card edits via its OWN control — the create button-card never doubles as edit (v0.10.0). */}
-          {centerInvCustom ? (
-            <RuneButton
-              label="Edit item"
-              kind="ghost"
-              dense
-              height={30}
-              onPress={() => {
-                playSfx('buttonTap');
-                const ci = draft.inventoryCustom.findIndex((i) => i.id === centerItem?.id);
-                if (ci >= 0) setEditingItem(ci);
-              }}
-              accessibilityLabel={`Edit ${centerItem?.label ?? 'item'}`}
-            />
-          ) : null}
+          {/* v0.10.2 (Feature 2): roll a random valid choice for this section. */}
+          <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
           {deck === 'class' ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 0.4 }}>Tap the card to flip through its features</Text>
           ) : null}

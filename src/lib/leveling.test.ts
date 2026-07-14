@@ -175,8 +175,51 @@ describe('slot accounting', () => {
     expect(availableAdvancements(baseFile(), 2).map((o) => o.key)).not.toContain('prof');
     expect(availableAdvancements(baseFile(), 5).map((o) => o.key)).toContain('prof');
   });
-  it('an exhausted option drops out', () => {
-    expect(availableAdvancements(baseFile({ advancementMarks: { evasion: 1 } }), 2).map((o) => o.key)).not.toContain('evasion');
+  it('an exhausted option drops out (within the same tier)', () => {
+    // v0.10.2: marks only count when stamped for the tier being evaluated — level 2 (tier 2) marks gate
+    // the level-3 (still tier 2) menu.
+    expect(availableAdvancements(baseFile({ level: 2, advancementMarks: { evasion: 1 }, advancementMarksTier: 2 }), 3).map((o) => o.key)).not.toContain('evasion');
+  });
+});
+
+describe('per-tier advancement reset (v0.10.2, Bug 2)', () => {
+  it('reopens exhausted options at the next tier', () => {
+    // trait slots spent in tier 2 are available again in tier 3.
+    const f = baseFile({ level: 4, advancementMarks: { trait: 3, hp: 2 }, advancementMarksTier: 2 });
+    const keys = availableAdvancements(f, 5).map((o) => o.key); // level 5 = tier 3
+    expect(keys).toEqual(expect.arrayContaining(['trait', 'hp']));
+  });
+  it('applyLevelUp resets the marks and re-stamps the tier when crossing a boundary', () => {
+    const f = applyLevelUp(baseFile({ level: 4, advancementMarks: { trait: 3 }, advancementMarksTier: 2 }), plan({ advancements: [{ key: 'trait', traits: ['agility', 'strength'] }] }), DEF);
+    expect(f.advancementMarksTier).toBe(3); // now tier 3
+    expect(f.advancementMarks?.trait).toBe(1); // reset, then this take
+  });
+  it('self-heals a pre-0.10.2 soft-locked save (stale marks, no stamp)', () => {
+    const stuck = baseFile({ level: 8, advancementMarks: { trait: 3, hp: 2, stress: 2, evasion: 1 } }); // no advancementMarksTier
+    const keys = availableAdvancements(stuck, 9).map((o) => o.key); // level 9 = tier 4
+    expect(keys).toEqual(expect.arrayContaining(['trait', 'hp', 'stress', 'evasion']));
+  });
+  it('caps multiclass at once ever even though the tier resets', () => {
+    const keys = availableAdvancements(baseFile({ level: 8, multiclassName: 'wizard' }), 9).map((o) => o.key);
+    expect(keys).not.toContain('multiclass');
+  });
+});
+
+describe('subclass upgrade adds the next card (v0.10.2, Bug 3)', () => {
+  const guardian = (over: Partial<CharacterFile> = {}) => baseFile({ className: 'guardian' as CharacterFile['className'], subclassCardId: 'subclass-stalwart-1-foundation', ...over });
+  it('foundation → specialization pushes the specialization card', () => {
+    const f = applyLevelUp(guardian({ level: 4 }), plan({ advancements: [{ key: 'subclass' }] }), DEF);
+    expect(f.subclassTier).toBe('specialization');
+    expect(f.acquiredCardIds).toContain('subclass-stalwart-2-specialization');
+  });
+  it('specialization → mastery pushes the mastery card', () => {
+    const f = applyLevelUp(guardian({ level: 7, subclassTier: 'specialization', acquiredCardIds: ['subclass-stalwart-2-specialization'] }), plan({ advancements: [{ key: 'subclass' }] }), DEF);
+    expect(f.subclassTier).toBe('mastery');
+    expect(f.acquiredCardIds).toEqual(expect.arrayContaining(['subclass-stalwart-2-specialization', 'subclass-stalwart-3-mastery']));
+  });
+  it('a multiclassed character gains no subclass card (defensive)', () => {
+    const f = applyLevelUp(guardian({ level: 7, subclassTier: 'specialization', multiclassName: 'wizard' }), plan({ advancements: [{ key: 'subclass' }] }), DEF);
+    expect(f.acquiredCardIds ?? []).not.toContain('subclass-stalwart-3-mastery');
   });
 });
 

@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Dimensions, FlatList, Pressable, Text, View } from 'react-native';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { Dimensions, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Polyline } from 'react-native-svg';
@@ -10,26 +10,30 @@ import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RuneChip } from './components/rune-chip';
-import { type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
+import { type ClassName, classColor, type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 import { CATALOG, type CatalogCard, type CatalogKind } from '@/data/catalog';
+import { featurePages } from '@/data/class-data';
 import { ALL_ARMOR, ALL_WEAPONS, type ArmorDef, type WeaponDef } from '@/data/equipment-data';
-import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
+import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
+import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/class-cards';
 
 // The archive browses catalog cards AND equipment. Weapons/armor have no image assets — they render
 // live via the forged components — so the grid item is a union (v0.10.0, owner: "all weapons and armor
 // for all tiers" were missing because the gallery only ever read CATALOG).
-type GalleryKind = CatalogKind | 'weapon' | 'armor';
+type GalleryKind = CatalogKind | 'weapon' | 'armor' | 'class';
 type GalleryItem =
   | { type: 'card'; id: string; label: string; card: CatalogCard }
   | { type: 'weapon'; id: string; label: string; weapon: WeaponDef }
-  | { type: 'armor'; id: string; label: string; armor: ArmorDef };
+  | { type: 'armor'; id: string; label: string; armor: ArmorDef }
+  | { type: 'class'; id: string; label: string; def: ClassCardDef };
 
 const KINDS: { key: GalleryKind; label: string }[] = [
   { key: 'domain', label: 'Domains' },
   { key: 'ancestry', label: 'Ancestry' },
   { key: 'community', label: 'Community' },
+  { key: 'class', label: 'Class' },
   { key: 'subclass', label: 'Subclass' },
   { key: 'weapon', label: 'Weapons' },
   { key: 'armor', label: 'Armor' },
@@ -59,6 +63,11 @@ function applyFilters(f: Filters): GalleryItem[] {
       out.push({ type: 'card', id: c.id, label: c.label, card: c });
     }
   }
+  // Class cards (v0.10.2): forged multi-page cards, not in CATALOG. They're neither a catalog-domain nor
+  // an equipment dimension, so they show only when no domain/level/tier filter is narrowing the grid.
+  if (!catalogDim && !equipDim && wantKind('class')) {
+    for (const c of CLASS_CARDS) out.push({ type: 'class', id: `class-${c.key}`, label: c.title, def: c });
+  }
   if (!catalogDim && wantKind('weapon')) {
     for (const w of ALL_WEAPONS) {
       if (f.tiers.size && !f.tiers.has(w.tier)) continue;
@@ -87,8 +96,69 @@ function ScaledForged({ item, width }: { item: Extract<GalleryItem, { type: 'wea
   );
 }
 
+/** Scale an arbitrary forged card node to fill `width`, clipped to the 5:7 cell (class-card thumbnails). */
+function ScaledCard({ width, children }: { width: number; children: ReactNode }) {
+  const s = width / FORGED_W;
+  const h = FORGED_H * s;
+  return (
+    <View style={{ width, height: h, overflow: 'hidden' }}>
+      <View style={{ position: 'absolute', left: (width - FORGED_W) / 2, top: (h - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: s }] }}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Fullscreen reader for a multi-page CLASS card (v0.10.2): a horizontal pager over [class face, ...feature
+ * pages], reusing the same ForgedCard/ForgedTextCard the creator forges. Tap anywhere (veil or a face) to
+ * close; swipe left/right to page through the class's rules.
+ */
+function ClassReader({ def, onClose }: { def: ClassCardDef; onClose: () => void }) {
+  const p = useSharedValue(0);
+  useEffect(() => {
+    p.value = withSpring(1, { damping: 18, stiffness: 120, mass: 0.9 });
+  }, [p]);
+  const close = useCallback(() => {
+    p.value = withTiming(0, { duration: 160 }, (fin) => {
+      if (fin) runOnJS(onClose)();
+    });
+  }, [p, onClose]);
+  const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.9 }));
+  const pagerStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 40 }] }));
+  const { width, height } = Dimensions.get('window');
+  const w = Math.min(width - 36, (height - 160) * (5 / 7));
+  const h = w * 1.4;
+  const s = w / FORGED_W;
+  const pages = featurePages(def.key);
+  const total = 1 + pages.length;
+  const deep = classColor(def.key).deep;
+  const faces: ReactNode[] = [
+    <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={deep} Banner={def.Banner} pageMark={`1/${total}`} classKey={def.key} />,
+    ...pages.map((pg) => <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${pg.pageIndex + 2}/${total}`} sections={pg.sections} accentDeep={deep} Banner={def.Banner} classKey={def.key} />),
+  ];
+  return (
+    <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 100 }}>
+      <Pressable style={{ flex: 1 }} onPress={close} accessibilityRole="button" accessibilityLabel="Close card">
+        <Animated.View style={[{ flex: 1, backgroundColor: '#06080d' }, veil]} />
+      </Pressable>
+      <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', top: '50%', left: 0, right: 0, marginTop: -h / 2, height: h }, pagerStyle]}>
+        <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: 'center' }}>
+          {faces.map((face, i) => (
+            <Pressable key={i} onPress={close} style={{ width, height: h, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: w, height: h, overflow: 'hidden' }}>
+                <View style={{ position: 'absolute', left: (w - FORGED_W) / 2, top: (h - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: s }] }}>{face}</View>
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </Animated.View>
+    </View>
+  );
+}
+
 /** Fullscreen reader: full-res card over a dim veil; tap or swipe-down closes (the sheet's focus feel). */
-function CardReader({ card, onClose }: { card: GalleryItem; onClose: () => void }) {
+function CardReader({ card, onClose }: { card: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' }>; onClose: () => void }) {
   const p = useSharedValue(0);
   const dragY = useSharedValue(0);
   useEffect(() => {
@@ -258,7 +328,15 @@ export function GalleryScreen() {
         renderItem={({ item }) => (
           <Pressable onPress={() => setReading(item)} accessibilityRole="button" accessibilityLabel={`${item.label}, open card`} style={{ width: cellW }}>
             <View style={{ width: cellW, height: cellH }}>
-              {item.type === 'card' ? <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} /> : <ScaledForged item={item} width={cellW} />}
+              {item.type === 'card' ? (
+                <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
+              ) : item.type === 'class' ? (
+                <ScaledCard width={cellW}>
+                  <ForgedCard title={item.def.title} kindLabel="Class" body={item.def.body} accentDeep={classColor(item.def.key).deep} Banner={item.def.Banner} classKey={item.def.key} />
+                </ScaledCard>
+              ) : (
+                <ScaledForged item={item} width={cellW} />
+              )}
             </View>
             <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
               {item.label}
@@ -267,7 +345,13 @@ export function GalleryScreen() {
         )}
       />
 
-      {reading ? <CardReader card={reading} onClose={() => setReading(null)} /> : null}
+      {reading ? (
+        reading.type === 'class' ? (
+          <ClassReader def={reading.def} onClose={() => setReading(null)} />
+        ) : (
+          <CardReader card={reading} onClose={() => setReading(null)} />
+        )
+      ) : null}
     </AppScreen>
   );
 }

@@ -181,7 +181,8 @@ export function LevelUpPanel({
     const opt = advOption(key);
     if (opt.needs === 'exps' && expChoices.length < 2) return false;
     if (remainingPicks < opt.picks) return false;
-    return advRemaining(file, key) - takesOfKey(key) * opt.picks >= opt.picks;
+    // v0.10.2: evaluate slots against the NEW level's tier so a tier-crossing level-up sees the reset.
+    return advRemaining(file, key, tier) - takesOfKey(key) * opt.picks >= opt.picks;
   };
   const addTake = (key: ChosenAdv['key']) => { playSfx('cardSelect'); setTakes((t) => [...t, { key, traits: [], expIds: [] }]); };
   const removeTake = (i: number) => {

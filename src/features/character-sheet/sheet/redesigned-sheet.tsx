@@ -1378,32 +1378,26 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     playSfx('customCardCreate');
     commitFile({ ...file, cardCopies: copies, cardCategory });
   }, [file, commitFile, carouselDecks]);
-  // Send selected cards over NFC (v0.10.1): convert each sheet card to a portable LibraryCard — authored
-  // cards keep their title/body/effects/art; a catalog card sends as a generic card titled by its label.
-  // One card → a `card` .rkp; several → an ad-hoc `expansion`. The actual tap is handled by NfcSendModal.
+  // Send ONE selected card over NFC (v0.10.2, Feature 9 — individual cards only): convert the sheet card
+  // to a portable LibraryCard. Authored cards keep their title/body/effects/art; a catalog card sends as
+  // a generic card titled by its label. The button is disabled unless exactly one card is selected.
   const onSendNfc = useCallback((ids: string[]) => {
-    if (!file || !ids.length) return;
-    const toLib = (id: string): LibraryCard => {
-      const ref = refOf(id, file);
-      const authored = (findEditableCard(file, ref) ?? findEditableCard(file, id))?.card;
-      const cat = cardById(catalogIdOf(id));
-      return {
-        id: `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${id.slice(-4)}`,
-        contentType: 'generic',
-        title: authored?.title || cat?.label || 'Card',
-        text: authored?.text ?? '',
-        imageUri: authored?.imageUri ?? null,
-        color: authored?.color ?? null,
-        effects: effectsForCardId(ref, file),
-      };
+    if (!file || ids.length !== 1) return;
+    const id = ids[0];
+    const ref = refOf(id, file);
+    const authored = (findEditableCard(file, ref) ?? findEditableCard(file, id))?.card;
+    const cat = cardById(catalogIdOf(id));
+    const card: LibraryCard = {
+      id: `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${id.slice(-4)}`,
+      contentType: 'generic',
+      title: authored?.title || cat?.label || 'Card',
+      text: authored?.text ?? '',
+      imageUri: authored?.imageUri ?? null,
+      color: authored?.color ?? null,
+      effects: effectsForCardId(ref, file),
     };
-    const cards = ids.map(toLib);
-    const content: RkpContent =
-      cards.length === 1
-        ? { kind: 'card', payload: cards[0] }
-        : { kind: 'expansion', payload: { id: `exp-${Date.now().toString(36)}`, name: 'Shared cards', author: '', description: 'Cards shared from a character sheet.', version: 1, createdAt: new Date().toISOString(), cards } };
     playSfx('buttonTap');
-    setNfcSend({ content, label: cards.length === 1 ? cards[0].title || 'card' : `${cards.length} cards` });
+    setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
   }, [file]);
   // Favorite selected cards (v0.9.8): add a favorite DUPLICATE for each eligible source. Skips cards that
   // are already a favorite copy or already favorited. Un-favoriting is just deleting the copy in Favorites.

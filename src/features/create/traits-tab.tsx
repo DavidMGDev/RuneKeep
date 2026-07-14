@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
 import { ChamferBox } from '@/components/chamfer-box';
+import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { Art } from '@/features/character-sheet/art';
 import { formatModifier, TRAIT_ORDER, type TraitKey } from '@/features/character-sheet/character';
@@ -42,6 +43,16 @@ export function TraitsTab({ traits, onTraits }: { traits: Partial<Record<TraitKe
     onTraits(next);
   };
 
+  // v0.10.2 (Feature 2): roll the whole spread — shuffle the fixed pool (+2,+1,+1,0,0,−1) onto the traits.
+  const randomize = () => {
+    const p = [...TRAIT_POOL];
+    const next: Partial<Record<TraitKey, number>> = {};
+    for (const t of TRAIT_ORDER) next[t.key] = p.splice(Math.floor(Math.random() * p.length), 1)[0];
+    setArmed(null);
+    playSfx('cardSelect');
+    onTraits(next);
+  };
+
   return (
     <View style={{ flex: 1, paddingTop: 8 }}>
       {/* the pool */}
@@ -74,6 +85,9 @@ export function TraitsTab({ traits, onTraits }: { traits: Partial<Record<TraitKe
       <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center', marginTop: 2 }}>
         {armed !== null ? `Tap a trait to place ${formatModifier(armed)}` : pool.length ? 'Tap a modifier, then a trait — tap a trait to clear it' : `${assignedCount}/6 set`}
       </Text>
+      <View style={{ alignItems: 'center', marginTop: 6 }}>
+        <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel="Random traits" />
+      </View>
       {/* the banners — the sheet's own art */}
       <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'center', columnGap: 14, rowGap: 6 }}>
         {TRAIT_ORDER.map((t) => {

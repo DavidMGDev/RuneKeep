@@ -20,12 +20,13 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { DOMAINS } from '@/constants/identity';
 import { playSfx } from '@/lib/sfx';
 import {
+  type ArmorSpec,
   CONTENT_TYPE_LABEL,
   type Expansion,
   type LibraryCard,
   type LibraryContentType,
+  type WeaponSpec,
   expansionSummary,
-  mergeDecision,
 } from '@/lib/library';
 import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { nfcModulesPresent } from '@/lib/nfc';
@@ -33,7 +34,12 @@ import type { RkpContent } from '@/lib/rkp';
 import { NfcReceiveModal, NfcSendModal } from '@/features/share/nfc-modal';
 
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-const CONTENT_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'generic'];
+/** Content types the New-card chooser offers (Feature 5/6), in display order. */
+const CHOOSABLE_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'weapon', 'armor', 'inventory', 'generic'];
+const WEAPON_TRAITS = ['Agility', 'Strength', 'Finesse', 'Instinct', 'Presence', 'Knowledge'];
+const WEAPON_RANGES = ['Melee', 'Very Close', 'Close', 'Far', 'Very Far'];
+const DEFAULT_WEAPON: WeaponSpec = { trait: 'Agility', range: 'Melee', damage: 'd6', damageType: 'phy', burden: 'One-Handed', kind: 'physical', slot: 'primary', tier: 1 };
+const DEFAULT_ARMOR: ArmorSpec = { baseScore: 3, thresholds: '7/15', tier: 1 };
 
 /** Type the content-config block writes (the non-visual parts of a LibraryCard). */
 interface CardConfig {
@@ -42,6 +48,19 @@ interface CardConfig {
   level?: number;
   className?: string;
   ancestryEffectTrait?: 1 | 2;
+  weapon?: WeaponSpec;
+  armor?: ArmorSpec;
+  /** generic 'Card': an optional custom plaque label typed by the user (Feature 6). */
+  typeLabel?: string;
+}
+
+/** Fresh config for a newly-chosen content type (Feature 5). */
+function defaultConfigFor(t: LibraryContentType): CardConfig {
+  if (t === 'domain') return { contentType: t, domain: '', level: 1 };
+  if (t === 'ancestry') return { contentType: t, ancestryEffectTrait: 1 };
+  if (t === 'weapon') return { contentType: t, weapon: { ...DEFAULT_WEAPON } };
+  if (t === 'armor') return { contentType: t, armor: { ...DEFAULT_ARMOR } };
+  return { contentType: t };
 }
 
 function LibInput({ label, value, onChangeText, placeholder, keyboardType }: { label: string; value: string; onChangeText: (s: string) => void; placeholder?: string; keyboardType?: 'default' | 'number-pad' }) {
@@ -74,39 +93,98 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
   );
 }
 
-/** The content-type + per-type fields shown inside the card editor (its `extraField`). */
+const BUILTIN_CLASSES = ['bard', 'druid', 'guardian', 'ranger', 'rogue', 'seraph', 'sorcerer', 'warrior', 'wizard'];
+const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
+const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6 };
+
+/** The per-type mechanical/config fields shown inside the card editor (its `extraField`). The content
+ *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
 function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c: CardConfig) => void }) {
   const set = (patch: Partial<CardConfig>) => onChange({ ...config, ...patch });
+  const setW = (patch: Partial<WeaponSpec>) => onChange({ ...config, weapon: { ...(config.weapon ?? DEFAULT_WEAPON), ...patch } });
+  const setA = (patch: Partial<ArmorSpec>) => onChange({ ...config, armor: { ...(config.armor ?? DEFAULT_ARMOR), ...patch } });
+  const t = config.contentType;
+  const w = config.weapon ?? DEFAULT_WEAPON;
+  const a = config.armor ?? DEFAULT_ARMOR;
   return (
     <View style={{ gap: 8 }}>
-      <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Content type</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-        {CONTENT_TYPES.map((t) => (
-          <Chip key={t} label={CONTENT_TYPE_LABEL[t]} on={config.contentType === t} onPress={() => { playSfx('buttonTap'); set({ contentType: t }); }} />
-        ))}
-      </View>
-      {config.contentType === 'domain' ? (
+      <Text style={smallLabel}>{CONTENT_TYPE_LABEL[t]} details</Text>
+      {t === 'domain' ? (
         <>
           <LibInput label="Domain" value={config.domain ?? ''} onChangeText={(domain) => set({ domain })} placeholder="e.g. Pyre (custom) or arcana" />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
-            {DOMAINS.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}
-          </View>
+          <View style={chipRow}>{DOMAINS.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
           <LibInput label="Level (1–10)" value={config.level ? String(config.level) : ''} onChangeText={(s) => set({ level: Math.max(1, Math.min(10, parseInt(s || '1', 10) || 1)) })} placeholder="1" keyboardType="number-pad" />
         </>
       ) : null}
-      {config.contentType === 'subclass' || config.contentType === 'class' ? (
-        <LibInput label="Class" value={config.className ?? ''} onChangeText={(className) => set({ className })} placeholder="e.g. Warden (custom) or guardian" />
-      ) : null}
-      {config.contentType === 'ancestry' ? (
+      {t === 'subclass' || t === 'class' ? (
         <View style={{ gap: 4 }}>
-          <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Passive on feature line</Text>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <Chip label="Line 1" on={config.ancestryEffectTrait === 1} onPress={() => set({ ancestryEffectTrait: 1 })} />
-            <Chip label="Line 2" on={config.ancestryEffectTrait === 2} onPress={() => set({ ancestryEffectTrait: 2 })} />
-          </View>
-          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Which line stays active when mixed with another ancestry.</Text>
+          <Text style={smallLabel}>Class it belongs to</Text>
+          <View style={chipRow}>{BUILTIN_CLASSES.map((c) => <Chip key={c} label={c} on={config.className === c} onPress={() => set({ className: c })} />)}</View>
+          <LibInput label="…or a custom class name" value={config.className ?? ''} onChangeText={(className) => set({ className })} placeholder="e.g. Warden" />
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>The character creator groups this under that class. (Custom standalone classes come later.)</Text>
         </View>
       ) : null}
+      {t === 'ancestry' ? (
+        <View style={{ gap: 4 }}>
+          <Text style={smallLabel}>Passive on feature line</Text>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <Chip label="Feature 1" on={config.ancestryEffectTrait === 1} onPress={() => set({ ancestryEffectTrait: 1 })} />
+            <Chip label="Feature 2" on={config.ancestryEffectTrait === 2} onPress={() => set({ ancestryEffectTrait: 2 })} />
+          </View>
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Which of the two features stays active when mixed with another ancestry (the other is crossed out).</Text>
+        </View>
+      ) : null}
+      {t === 'weapon' ? (
+        <View style={{ gap: 6 }}>
+          <Text style={smallLabel}>Trait</Text><View style={chipRow}>{WEAPON_TRAITS.map((x) => <Chip key={x} label={x} on={w.trait === x} onPress={() => setW({ trait: x })} />)}</View>
+          <Text style={smallLabel}>Range</Text><View style={chipRow}>{WEAPON_RANGES.map((x) => <Chip key={x} label={x} on={w.range === x} onPress={() => setW({ range: x })} />)}</View>
+          <LibInput label="Damage (e.g. d8+2)" value={w.damage} onChangeText={(damage) => setW({ damage })} placeholder="d6" />
+          <View style={chipRow}>
+            <Chip label="Physical" on={w.damageType === 'phy'} onPress={() => setW({ damageType: 'phy', kind: 'physical' })} />
+            <Chip label="Magic" on={w.damageType === 'mag'} onPress={() => setW({ damageType: 'mag', kind: 'magic' })} />
+          </View>
+          <View style={chipRow}>
+            <Chip label="One-Handed" on={w.burden === 'One-Handed'} onPress={() => setW({ burden: 'One-Handed' })} />
+            <Chip label="Two-Handed" on={w.burden === 'Two-Handed'} onPress={() => setW({ burden: 'Two-Handed' })} />
+          </View>
+          <View style={chipRow}>
+            <Chip label="Primary" on={w.slot === 'primary'} onPress={() => setW({ slot: 'primary' })} />
+            <Chip label="Secondary" on={w.slot === 'secondary'} onPress={() => setW({ slot: 'secondary' })} />
+          </View>
+          <Text style={smallLabel}>Tier</Text><View style={chipRow}>{[1, 2, 3, 4].map((n) => <Chip key={n} label={`T${n}`} on={w.tier === n} onPress={() => setW({ tier: n as 1 | 2 | 3 | 4 })} />)}</View>
+        </View>
+      ) : null}
+      {t === 'armor' ? (
+        <View style={{ gap: 6 }}>
+          <LibInput label="Base armor score" value={String(a.baseScore)} onChangeText={(s) => setA({ baseScore: Math.max(0, parseInt(s || '0', 10) || 0) })} placeholder="3" keyboardType="number-pad" />
+          <LibInput label="Thresholds (major/severe)" value={a.thresholds} onChangeText={(thresholds) => setA({ thresholds })} placeholder="7/15" />
+          <Text style={smallLabel}>Tier</Text><View style={chipRow}>{[1, 2, 3, 4].map((n) => <Chip key={n} label={`T${n}`} on={a.tier === n} onPress={() => setA({ tier: n as 1 | 2 | 3 | 4 })} />)}</View>
+        </View>
+      ) : null}
+      {t === 'generic' ? (
+        <LibInput label="Type label (optional)" value={config.typeLabel ?? ''} onChangeText={(typeLabel) => set({ typeLabel })} placeholder="e.g. Consumable, Relic — shows on the plaque" />
+      ) : null}
+    </View>
+  );
+}
+
+/** New-card type chooser (Feature 5): pick the content type BEFORE authoring. */
+function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => void; onClose: () => void }) {
+  return (
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 12 }}>
+        <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What are you making?</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {CHOOSABLE_TYPES.map((t) => (
+            <Pressable key={t} onPress={() => { playSfx('buttonTap'); onPick(t); }} accessibilityRole="button" accessibilityLabel={CONTENT_TYPE_LABEL[t]}>
+              <View style={{ paddingHorizontal: 13, paddingVertical: 9, borderRadius: 6, backgroundColor: 'rgba(20,24,31,0.8)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.45)' }}>
+                <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{CONTENT_TYPE_LABEL[t]}</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      </ChamferBox>
     </View>
   );
 }
@@ -155,6 +233,7 @@ export function LibraryScreen() {
   const [expansions, setExpansions] = useState<Expansion[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<{ index: number | 'new'; config: CardConfig; draft?: CardDraft } | null>(null);
+  const [choosingType, setChoosingType] = useState(false);
   const [metaForm, setMetaForm] = useState<'new' | 'edit' | null>(null);
   const [confirmDeleteExp, setConfirmDeleteExp] = useState<Expansion | null>(null);
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<number | null>(null);
@@ -192,24 +271,17 @@ export function LibraryScreen() {
   const onNfcReceived = useCallback(async (content: RkpContent) => {
     setNfcReceive(false);
     try {
-      if (content.kind === 'expansion') {
-        const incoming = content.payload;
-        const existing = (await getExpansion(incoming.id)) ?? undefined;
-        const decision = mergeDecision(existing, incoming);
-        if (decision === 'skip') { setMessage({ title: incoming.name, body: 'You already have a newer version — skipped.' }); return; }
-        await saveExpansion(incoming);
-        reload();
-        setMessage({ title: incoming.name, body: decision === 'update' ? 'Expansion updated to the received version.' : 'Expansion received.' });
-      } else if (content.kind === 'card') {
-        // a single received card lands in a shared "Received cards" expansion in the library
-        const id = 'exp-received';
-        const exp = (await getExpansion(id)) ?? { id, name: 'Received cards', author: '', description: 'Cards received over NFC or file.', version: 1, createdAt: new Date().toISOString(), cards: [] };
-        await saveExpansion({ ...exp, cards: [...exp.cards, content.payload] });
-        reload();
-        setMessage({ title: content.payload.title || 'Card', body: 'Added to your "Received cards" expansion.' });
-      } else {
-        setMessage({ title: 'That was a character', body: 'Receive heroes from the Characters screen instead.' });
+      // v0.10.2 (Feature 9): NFC shares ONE card at a time. Expansions/heroes go over file import/export.
+      if (content.kind !== 'card') {
+        setMessage({ title: 'Single cards only', body: 'NFC shares one card at a time — use file import/export for whole expansions and heroes.' });
+        return;
       }
+      // a single received card lands in a shared "Received cards" expansion in the library
+      const id = 'exp-received';
+      const exp = (await getExpansion(id)) ?? { id, name: 'Received cards', author: '', description: 'Cards received over NFC or file.', version: 1, createdAt: new Date().toISOString(), cards: [] };
+      await saveExpansion({ ...exp, cards: [...exp.cards, content.payload] });
+      reload();
+      setMessage({ title: content.payload.title || 'Card', body: 'Added to your "Received cards" expansion.' });
     } catch (e) {
       setMessage({ title: 'Receive failed', body: e instanceof Error ? e.message : 'Could not read that.' });
     }
@@ -220,17 +292,29 @@ export function LibraryScreen() {
   // ---- card editor overlay (author/edit a card inside the selected expansion) ----
   if (editingCard && selected) {
     const existing = typeof editingCard.index === 'number' ? selected.cards[editingCard.index] : undefined;
+    const cfg = editingCard.config;
     const initial: CardDraft | undefined = existing
-      ? { title: existing.title, text: existing.text, imageUri: existing.imageUri, color: existing.color ?? null, effects: existing.effects ?? [], typeLabel: existing.typeLabel }
+      ? {
+          title: existing.title,
+          text: existing.text,
+          imageUri: existing.imageUri,
+          color: existing.color ?? null,
+          effects: existing.effects ?? [],
+          typeLabel: existing.typeLabel,
+          // migrate legacy single-body cards into one section so editing keeps their text
+          sections: existing.sections ?? (existing.text ? [{ body: existing.text }] : undefined),
+        }
       : undefined;
+    const isAncestry = cfg.contentType === 'ancestry';
     return (
       <CardEditor
-        kindLabel={CONTENT_TYPE_LABEL[editingCard.config.contentType]}
+        kindLabel={cfg.typeLabel || CONTENT_TYPE_LABEL[cfg.contentType]}
         initial={initial}
-        extraField={<ContentConfig config={editingCard.config} onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))} />}
+        sectioned
+        sectionsConfig={isAncestry ? { minRows: 2, fixedLabels: ['Feature 1', 'Feature 2'] } : undefined}
+        extraField={<ContentConfig config={cfg} onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))} />}
         onCancel={() => setEditingCard(null)}
         onSave={(d) => {
-          const cfg = editingCard.config;
           const cards = [...selected.cards];
           const base: LibraryCard = {
             id: existing?.id ?? newId('lc'),
@@ -240,11 +324,14 @@ export function LibraryScreen() {
             imageUri: d.imageUri,
             color: d.color,
             effects: d.effects,
-            typeLabel: d.typeLabel,
+            typeLabel: cfg.contentType === 'generic' ? cfg.typeLabel : d.typeLabel,
+            sections: d.sections,
             domain: cfg.contentType === 'domain' ? cfg.domain : undefined,
             level: cfg.contentType === 'domain' ? cfg.level ?? 1 : undefined,
             className: cfg.contentType === 'subclass' || cfg.contentType === 'class' ? cfg.className : undefined,
             ancestryEffectTrait: cfg.contentType === 'ancestry' ? cfg.ancestryEffectTrait : undefined,
+            weapon: cfg.contentType === 'weapon' ? cfg.weapon : undefined,
+            armor: cfg.contentType === 'armor' ? cfg.armor : undefined,
           };
           if (typeof editingCard.index === 'number') cards[editingCard.index] = base;
           else cards.push(base);
@@ -267,7 +354,6 @@ export function LibraryScreen() {
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
               <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name); }} />
-              {nfcOn ? <RuneButton label="NFC" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'expansion', payload: selected }, label: selected.name }); }} /> : null}
             </View>
           </ChamferBox>
 
@@ -275,7 +361,7 @@ export function LibraryScreen() {
             <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 18 }}>No cards yet. Add your first homebrew card.</Text>
           ) : (
             selected.cards.map((c, i) => (
-              <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, ancestryEffectTrait: c.ancestryEffectTrait } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
+              <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
                 {({ pressed }) => (
                   <ChamferBox chamfer={8} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 11 }}>
                     <View style={{ width: 10, height: 10, backgroundColor: c.color ?? Rune.bronze, transform: [{ rotate: '45deg' }] }} />
@@ -283,6 +369,11 @@ export function LibraryScreen() {
                       <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>{c.title || 'Untitled'}</Text>
                       <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2 }}>{cardSummary(c)}</Text>
                     </View>
+                    {nfcOn ? (
+                      <Pressable onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'card', payload: c }, label: c.title || 'card' }); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+                      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>NFC</Text>
+                    </Pressable>
+                    ) : null}
                     <Pressable onPress={() => setConfirmDeleteCard(i)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${c.title || 'card'}`} style={{ padding: 4 }}>
                       <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
                     </Pressable>
@@ -294,11 +385,14 @@ export function LibraryScreen() {
         </ScrollView>
         <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
           <RuneButton label="Delete expansion" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => setConfirmDeleteExp(selected)} />
-          <RuneButton label="Add card" kind="primary" height={46} style={{ flex: 1.4 }} onPress={() => setEditingCard({ index: 'new', config: { contentType: 'generic', ancestryEffectTrait: 1, level: 1 } })} />
+          <RuneButton label="Add card" kind="primary" height={46} style={{ flex: 1.4 }} onPress={() => setChoosingType(true)} />
         </View>
 
         {metaForm === 'edit' ? (
           <MetaForm initial={selected} onCancel={() => setMetaForm(null)} onSave={(m) => { void persist({ ...selected, ...m }); setMetaForm(null); }} />
+        ) : null}
+        {choosingType ? (
+          <TypeChooser onPick={(t) => { setChoosingType(false); setEditingCard({ index: 'new', config: defaultConfigFor(t) }); }} onClose={() => setChoosingType(false)} />
         ) : null}
         {confirmDeleteCard != null ? (
           <PopupDialog title="Delete card?" body={`"${selected.cards[confirmDeleteCard]?.title || 'Untitled'}" will be removed from this expansion.`} confirmLabel="Delete" destructive

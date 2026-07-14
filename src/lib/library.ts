@@ -10,7 +10,7 @@
  */
 import type { CardEffect } from '@/lib/modifiers';
 
-export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'subclass' | 'class' | 'generic';
+export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'subclass' | 'class' | 'weapon' | 'armor' | 'inventory' | 'generic';
 
 export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
   ancestry: 'Ancestry',
@@ -18,8 +18,39 @@ export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
   domain: 'Domain card',
   subclass: 'Subclass',
   class: 'Class',
+  weapon: 'Weapon',
+  armor: 'Armor',
+  inventory: 'Item',
   generic: 'Card',
 };
+
+/** A titled body block (v0.10.2): the multi-field card body. `name` is an optional bold lead-in (e.g. a
+ *  feature name); `body` is markdown. Composed to a single `text` for simple rendering, kept structured
+ *  so mixed-ancestry cross-out can strike a specific feature (Feature 4/8). */
+export interface CardSection {
+  name?: string;
+  body: string;
+}
+
+/** Mechanical fields for a custom WEAPON (v0.10.2) — mirrors data/equipment WeaponDef so a custom weapon
+ *  can act as a real weapon in creation/on the sheet (damage roll, trait, slot). */
+export interface WeaponSpec {
+  trait: string;
+  range: string;
+  damage: string;
+  damageType: 'phy' | 'mag';
+  burden: 'One-Handed' | 'Two-Handed';
+  kind: 'physical' | 'magic';
+  slot: 'primary' | 'secondary';
+  tier: 1 | 2 | 3 | 4;
+}
+
+/** Mechanical fields for custom ARMOR (v0.10.2) — mirrors data/equipment ArmorDef ("major/severe"). */
+export interface ArmorSpec {
+  baseScore: number;
+  thresholds: string;
+  tier: 1 | 2 | 3 | 4;
+}
 
 export interface LibraryCard {
   /** Stable id, immutable across expansion versions (so existing characters keep resolving). */
@@ -39,6 +70,12 @@ export interface LibraryCard {
   /** ancestry content: which feature line (1 or 2) carries the passive effect — for mixed-ancestry
    *  cross-out (mirrors data/ancestry-traits ANCESTRY_EFFECT_TRAIT). */
   ancestryEffectTrait?: 1 | 2;
+  /** v0.10.2: the multi-field body (add/del/reorder). When present, the card renders per-section; `text`
+   *  stays as a composed-markdown fallback for simple renderers. */
+  sections?: CardSection[];
+  /** v0.10.2: mechanical data for weapon/armor content so it works in creation + on the sheet. */
+  weapon?: WeaponSpec;
+  armor?: ArmorSpec;
 }
 
 export interface Expansion {
@@ -88,10 +125,13 @@ export interface CreationContent {
   domains: LibraryCard[];
   subclasses: LibraryCard[];
   classes: LibraryCard[];
+  weapons: LibraryCard[];
+  armor: LibraryCard[];
+  inventory: LibraryCard[];
 }
 
 export function contentForCreation(enabled: Expansion[]): CreationContent {
-  const out: CreationContent = { ancestries: [], communities: [], domains: [], subclasses: [], classes: [] };
+  const out: CreationContent = { ancestries: [], communities: [], domains: [], subclasses: [], classes: [], weapons: [], armor: [], inventory: [] };
   for (const exp of enabled) {
     for (const c of exp.cards) {
       if (c.contentType === 'ancestry') out.ancestries.push(c);
@@ -99,12 +139,15 @@ export function contentForCreation(enabled: Expansion[]): CreationContent {
       else if (c.contentType === 'domain') out.domains.push(c);
       else if (c.contentType === 'subclass') out.subclasses.push(c);
       else if (c.contentType === 'class') out.classes.push(c);
+      else if (c.contentType === 'weapon') out.weapons.push(c);
+      else if (c.contentType === 'armor') out.armor.push(c);
+      else if (c.contentType === 'inventory') out.inventory.push(c);
     }
   }
   return out;
 }
 
-const CONTENT_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'generic'];
+const CONTENT_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'weapon', 'armor', 'inventory', 'generic'];
 
 /** Validate + normalize a parsed object into an Expansion. Throws on anything that isn't one — the
  *  single trust boundary for imported `.rkp` expansion payloads. */
@@ -132,6 +175,14 @@ export function validateExpansion(o: unknown): Expansion {
       level: typeof c.level === 'number' ? c.level : undefined,
       className: typeof c.className === 'string' ? c.className : undefined,
       ancestryEffectTrait: c.ancestryEffectTrait === 1 || c.ancestryEffectTrait === 2 ? c.ancestryEffectTrait : undefined,
+      sections: Array.isArray(c.sections)
+        ? (c.sections as unknown[]).map((s) => {
+            const o = (s ?? {}) as Record<string, unknown>;
+            return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '' };
+          })
+        : undefined,
+      weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,
+      armor: c.armor && typeof c.armor === 'object' ? (c.armor as ArmorSpec) : undefined,
     };
   });
   return {
