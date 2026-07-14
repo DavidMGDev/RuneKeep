@@ -19,6 +19,9 @@ import { tierForLevel } from './rest';
 
 export { tierForLevel };
 
+/** Daggerheart tops out at level 10 (tier 4 = 8-10). No character advances past it. */
+export const MAX_LEVEL = 10;
+
 export type AdvKey = 'trait' | 'hp' | 'stress' | 'exp' | 'domain' | 'evasion' | 'prof' | 'subclass' | 'multiclass';
 
 export interface AdvancementOption {
@@ -89,13 +92,18 @@ export function clearsTraitMarks(newLevel: number): boolean {
 
 const SUBCLASS_NEXT: Record<string, 'foundation' | 'specialization' | 'mastery'> = { foundation: 'specialization', specialization: 'mastery', mastery: 'mastery' };
 
-/** The subclass card at a target progression tier (2 = specialization, 3 = mastery) in the same family
- *  as a foundation card. Derives the family from the foundation card's `subclass` slug (catalog ids like
- *  `subclass-stalwart-1-foundation`). Used to auto-add the card on a subclass upgrade (Bug 3) and to
- *  backfill saves that advanced the tier before this shipped. Returns undefined for non-catalog ids. */
-export function nextSubclassCardId(foundationCardId: string, targetTier: 2 | 3): string | undefined {
+/** The subclass card at a target progression tier (2 = specialization, 3 = mastery) in the same family as
+ *  a foundation card. Catalog families derive from the `subclass` slug (ids like `subclass-stalwart-1-
+ *  foundation`); custom (homebrew) subclasses match by the embedded cards' shared `subclass` family +
+ *  `className` (v0.10.5). Used to auto-add the card on a subclass upgrade (Bug 3). */
+export function nextSubclassCardId(file: CharacterFile, foundationCardId: string, targetTier: 2 | 3): string | undefined {
   const slug = cardById(foundationCardId)?.subclass;
-  return slug ? CATALOG.find((c) => c.kind === 'subclass' && c.subclass === slug && c.tier === targetTier)?.id : undefined;
+  if (slug) return CATALOG.find((c) => c.kind === 'subclass' && c.subclass === slug && c.tier === targetTier)?.id;
+  const found = file.libraryCards?.find((c) => c.id === foundationCardId);
+  if (found?.contentType === 'subclass' && found.subclass) {
+    return file.libraryCards?.find((c) => c.contentType === 'subclass' && c.subclass === found.subclass && c.tier === targetTier)?.id;
+  }
+  return undefined;
 }
 
 export interface ChosenAdv {
@@ -134,6 +142,7 @@ export function picksUsed(advs: ChosenAdv[]): number {
 
 /** Fold a level-up plan into a new CharacterFile. Pure — deterministic ids, no Date/Math.random. */
 export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelDefaults): CharacterFile {
+  if (file.level >= MAX_LEVEL) return file; // level 10 is the cap — never advance past it
   const newLevel = file.level + 1;
   const next: CharacterFile = { ...file, level: newLevel };
   // Thresholds are level-based now (#242 item 9): Major = level, Severe = 2×level, derived in
@@ -162,6 +171,7 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   const marks = file.advancementMarksTier === curTier ? { ...(file.advancementMarks ?? {}) } : {};
   let acquired = file.acquiredCardIds ?? [];
   let acquiredChanged = false;
+  let cardCategory = file.cardCategory;
   const traitBonuses = { ...(file.traitBonuses ?? {}) };
   let maxHp = file.maxHp ?? def.maxHp;
   let stressMax = file.stressMax ?? def.stressMax;
@@ -213,11 +223,14 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
           subclassTier = SUBCLASS_NEXT[subclassTier];
           // v0.10.2 (Bug 3): actually ADD the next subclass card so it lands in the loadout and applies
           // its effects, instead of only bumping the tier enum. subclassCardId stays the tier-1 foundation,
-          // so the target tier comes from the just-advanced enum (specialization → 2, mastery → 3).
-          const nextId = nextSubclassCardId(file.subclassCardId, subclassTier === 'mastery' ? 3 : 2);
+          // so the target tier comes from the just-advanced enum (specialization → 2, mastery → 3). Resolves
+          // catalog subclasses AND custom (homebrew) ones embedded on the file (v0.10.5).
+          const nextId = nextSubclassCardId(file, file.subclassCardId, subclassTier === 'mastery' ? 3 : 2);
           if (nextId && !acquired.includes(nextId)) {
             acquired = [...acquired, nextId];
             acquiredChanged = true;
+            // v0.10.5: ride the Arsenal next to the foundation subclass card, not off in Inventory.
+            cardCategory = { ...(cardCategory ?? {}), [nextId]: 'abilities' };
           }
         }
         break;
@@ -235,7 +248,10 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   next.traitMarks = traitMarks;
   next.advancementMarks = marks;
   next.advancementMarksTier = curTier;
-  if (acquiredChanged) next.acquiredCardIds = acquired;
+  if (acquiredChanged) {
+    next.acquiredCardIds = acquired;
+    next.cardCategory = cardCategory;
+  }
   next.traitBonuses = traitBonuses;
   next.maxHp = maxHp;
   next.stressMax = stressMax;

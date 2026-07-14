@@ -236,12 +236,13 @@ export function parseCharacterFile(raw: string): CharacterFile {
     const slug = cardById(f.subclassCardId!)?.subclass;
     if (slug) {
       const acquired = [...(f.acquiredCardIds ?? [])];
+      const cardCategory = { ...(f.cardCategory ?? {}) };
       const targets = f.subclassTier === 'mastery' ? [2, 3] : [2];
       for (const t of targets) {
         const id = CATALOG.find((c) => c.kind === 'subclass' && c.subclass === slug && c.tier === t)?.id;
-        if (id && !acquired.includes(id)) acquired.push(id);
+        if (id && !acquired.includes(id)) { acquired.push(id); cardCategory[id] = 'abilities'; } // v0.10.5: ride the Arsenal
       }
-      if (acquired.length !== (f.acquiredCardIds?.length ?? 0)) f.acquiredCardIds = acquired;
+      if (acquired.length !== (f.acquiredCardIds?.length ?? 0)) { f.acquiredCardIds = acquired; f.cardCategory = cardCategory; }
     }
   }
   return f as CharacterFile;

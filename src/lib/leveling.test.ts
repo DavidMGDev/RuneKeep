@@ -223,6 +223,36 @@ describe('subclass upgrade adds the next card (v0.10.2, Bug 3)', () => {
   });
 });
 
+describe('level cap + subclass placement (v0.10.5)', () => {
+  const guardian = (over: Partial<CharacterFile> = {}) => baseFile({ className: 'guardian' as CharacterFile['className'], subclassCardId: 'subclass-stalwart-1-foundation', ...over });
+  it('never advances past level 10', () => {
+    expect(applyLevelUp(baseFile({ level: 10 }), plan(), DEF).level).toBe(10);
+  });
+  it('routes the added subclass card to the Arsenal (abilities)', () => {
+    const f = applyLevelUp(guardian({ level: 4 }), plan({ advancements: [{ key: 'subclass' }] }), DEF);
+    expect(f.acquiredCardIds).toContain('subclass-stalwart-2-specialization');
+    expect(f.cardCategory?.['subclass-stalwart-2-specialization']).toBe('abilities');
+  });
+  it('upgrades a CUSTOM subclass from its embedded tier siblings', () => {
+    const f = applyLevelUp(
+      baseFile({
+        level: 4,
+        subclassCardId: 'lc-sub-1',
+        libraryCards: [
+          { id: 'lc-sub-1', contentType: 'subclass', title: 'Warden F', text: '', imageUri: null, className: 'guardian', subclass: 'warden', tier: 1 },
+          { id: 'lc-sub-2', contentType: 'subclass', title: 'Warden S', text: '', imageUri: null, className: 'guardian', subclass: 'warden', tier: 2 },
+          { id: 'lc-sub-3', contentType: 'subclass', title: 'Warden M', text: '', imageUri: null, className: 'guardian', subclass: 'warden', tier: 3 },
+        ],
+      }),
+      plan({ advancements: [{ key: 'subclass' }] }),
+      DEF,
+    );
+    expect(f.subclassTier).toBe('specialization');
+    expect(f.acquiredCardIds).toContain('lc-sub-2');
+    expect(f.cardCategory?.['lc-sub-2']).toBe('abilities');
+  });
+});
+
 describe('tierForLevel re-export', () => {
   it('matches the rest module', () => {
     expect([1, 2, 5, 8].map(tierForLevel)).toEqual([1, 2, 3, 4]);

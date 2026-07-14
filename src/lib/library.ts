@@ -67,6 +67,11 @@ export interface LibraryCard {
   level?: number;
   /** subclass/class content: the class this belongs to (built-in key or a custom class id). */
   className?: string;
+  /** subclass content (v0.10.5): the family slug shared by a custom subclass's 3 tier cards, and which
+   *  tier this card is (1 = foundation, 2 = specialization, 3 = mastery). The foundation is picked at
+   *  creation; the upgrade advancement adds the matching specialization then mastery. */
+  subclass?: string;
+  tier?: 1 | 2 | 3;
   /** ancestry content: which feature line (1 or 2) carries the passive effect — for mixed-ancestry
    *  cross-out (mirrors data/ancestry-traits ANCESTRY_EFFECT_TRAIT). */
   ancestryEffectTrait?: 1 | 2;
@@ -175,6 +180,8 @@ export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
     domain: typeof c.domain === 'string' ? c.domain : undefined,
     level: typeof c.level === 'number' ? c.level : undefined,
     className: typeof c.className === 'string' ? c.className : undefined,
+    subclass: typeof c.subclass === 'string' ? c.subclass : undefined,
+    tier: c.tier === 1 || c.tier === 2 || c.tier === 3 ? c.tier : undefined,
     ancestryEffectTrait: c.ancestryEffectTrait === 1 || c.ancestryEffectTrait === 2 ? c.ancestryEffectTrait : undefined,
     sections: Array.isArray(c.sections)
       ? (c.sections as unknown[]).map((s) => {
