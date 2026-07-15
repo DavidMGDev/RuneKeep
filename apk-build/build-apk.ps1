@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.10.6'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.10.7'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.10.6 - character-creation polish + stress-pip fix. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nCharacter creation:`n- FIX - the Select / Random buttons no longer overlap the card carousel. Removed the 'tap to flip'/weapon hint tooltips (they pushed the buttons up into the cards) and dropped the weapons cluster lower so it clears the deck.`n- NEW - pressing Random now animates the carousel recentering on the card it picked, so you can see what was chosen.`n- NEW - Random works with Mixed Ancestry: press it to fill the first slot, again for the second, then it re-rolls the two in turn - keep tapping until you like the pair. Deselecting a slot makes the next Random refill exactly that slot, so the trait cross-out order stays correct.`n`nCharacter sheet:`n- FIX - the Stress pips no longer show tiny white seams at their chamfered corners; the filled and empty shapes are seamless.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.10.7 - Golden Gear Edit rework + Favorites rework. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nGolden Gear Edit (hold the carousel gear to enter):`n- NEW - built for MULTIPLE cards. Select cards (they breathe a soft white glow), then drag them together as one neat pile to rearrange - leftmost on top, the rest fan behind, and the row opens a gap to preview where they'll land.`n- NEW - hold a selected card to bloom a radial action wheel around it (like the sheet's float menu, but all the way around): Duplicate, Favorite, Move, Delete, Send NFC. Drag to an option and release; release in the middle to cancel. The old always-on button bar is gone.`n- FIX - the mode feels right now: tap the gear ONCE to close it (no more twitchy tap-off), gear-scroll is off in edit mode, and the card scroll carries real momentum instead of a stiff snap. The backdrop dims a touch more, and dragged cards give a subtle iOS-style wobble.`n`nNFC:`n- NEW - send ONE card or SEVERAL at once over NFC (a multi-send arrives as a 'Received cards' bundle on the other phone). A card's image travels with it when it's small enough to fit.`n`nFavorites (reworked):`n- Favorites is now a HIDDEN mirror - it's not a swipeable category anymore. Reach it ONLY with the star button, which lights up while it's showing and toggles you back. Swiping either way returns to where you were.`n- Favorited cards mirror their originals exactly (enable, tokens, dice) and only count once. You can't add cards into Favorites (you'll get a heads-up), and the only action there is Unfavorite - so nothing here can delete your real cards.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

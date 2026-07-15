@@ -6,7 +6,9 @@ import { playSfx } from '@/lib/sfx';
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
 import type { PlacedToken } from './components/card-tokens';
 import { nextCategory } from './carousel-categories';
-import { ANGLE_STEP, EXPAND_SPRING, FS_SPRING, maxRotation, middleRotation, snapRot } from './carousel-geometry';
+import { cardMenuOptions, type CardMenuKind } from './card-menu';
+import { ANGLE_STEP, clampMenuAnchor, EXPAND_SPRING, FS_SPRING, maxRotation, middleRotation, snapRot } from './carousel-geometry';
+import { FAVORITES_CATEGORY } from '@/lib/favorites';
 
 /** Which end of the incoming deck a switch lands on (#188): a switch begun from the FIRST card
  *  arrives at the LAST card of the new deck (and vice-versa), so it reads as one continuous deck. */
@@ -84,6 +86,25 @@ interface CarouselContextValue {
   /** Persist an in-edit drag-reorder (v0.9.8): move cards to a category at an explicit order. Same
    *  signature as the Cards panel's group reorder, so it inherits the override + order persistence. */
   onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
+  // --- Golden Gear Edit card-hold RADIAL menu (v0.10.7): hold a selected card to spray-select an action. ---
+  /** 0 = closed .. 1 = open (fade). */
+  cardMenuOpen: SharedValue<number>;
+  /** The wheel centre (design px), clamped inside the screen. */
+  cardMenuAnchorX: SharedValue<number>;
+  cardMenuAnchorY: SharedValue<number>;
+  /** The live finger (design px) while spray-selecting. */
+  cardMenuFingerX: SharedValue<number>;
+  cardMenuFingerY: SharedValue<number>;
+  /** The option the finger points at (−1 = none/cancel). */
+  cardMenuHighlight: SharedValue<number>;
+  /** Whether NFC send is offered (Android/APK) — drives the option list AND the wheel. */
+  nfcAvailable: boolean;
+  /** Open the card-hold menu centred at (x,y) design px (clamped to the screen). */
+  openCardMenu: (x: number, y: number) => void;
+  /** Close it with no action. */
+  closeCardMenu: () => void;
+  /** Fire option `index` (from the current option list) on the raised selection, then close. */
+  selectCardMenu: (index: number) => void;
   /** Ids of cards the player has enabled/equipped (#175) — drives the corner check + toggle state. */
   enabledIds: Set<string>;
   /** Mixed ancestry (#265): deck-card id → which trait (1 = first, 2 = second) is crossed out. Drives
@@ -110,7 +131,7 @@ interface CarouselContextValue {
 
 const CarouselContext = createContext<CarouselContextValue | null>(null);
 
-export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void }) {
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards, onCardAction, nfcAvailable = false }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void; onCardAction?: (kind: CardMenuKind, ids: string[]) => void; nfcAvailable?: boolean }) {
   // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
   // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
   // four built-in keys always exist (empty) even if a real map omits one.
@@ -132,6 +153,15 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const editMode = useSharedValue(0); // v0.9.8: Golden Gear Edit straighten progress (0 arc → 1 flat)
   const [editing, setEditing] = useState(false);
   const [raisedIds, setRaisedIds] = useState<Set<string>>(() => new Set());
+  const raisedIdsRef = useRef(raisedIds);
+  raisedIdsRef.current = raisedIds;
+  // v0.10.7 card-hold radial menu shared values (driven by the carousel pan, rendered by CardRadialMenu).
+  const cardMenuOpen = useSharedValue(0);
+  const cardMenuAnchorX = useSharedValue(206);
+  const cardMenuAnchorY = useSharedValue(446);
+  const cardMenuFingerX = useSharedValue(206);
+  const cardMenuFingerY = useSharedValue(446);
+  const cardMenuHighlight = useSharedValue(-1);
   const switching = useSharedValue(0);
   // Rise reveal (#242 item 3): 1 = deck at rest; 0 = mounted BELOW-screen + hidden (pre-rise). The new
   // deck rises (translateY + fade) from 0→1 once it's ready, as the live interactive deck — no ghost.
@@ -300,14 +330,45 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     [originIndices, openCardAt, setCategory],
   );
 
-  // v0.9.8: open Favorites from the star button. Enabled → normal ring member; disabled → a transient
-  // detour back to the current category. No-op (negative sound) when there are no favorites to show.
+  // v0.10.7: the Favorites star is now a TOGGLE. Favorites is a hidden mirror (never in the ring), so
+  // opening it always remembers the origin category as a detour, and pressing the star again (while in
+  // Favorites) returns there. No-op (negative sound) when there are no favorites to show.
   const openFavorites = useCallback(() => {
-    if (categoryRef.current === 'favorites') return;
+    if (categoryRef.current === 'favorites') {
+      if (favDetourRef.current) setCategory(favDetourRef.current, 'start'); // toggle back to where we came from
+      return;
+    }
     if (!(decksRef.current.favorites?.length)) { playSfx('floatMenuClose'); return; }
-    setFavDetour(ringRef.current.includes('favorites') ? null : categoryRef.current);
+    setFavDetour(categoryRef.current); // remember the origin — every exit path returns here
     setCategory('favorites', 'start');
   }, [setCategory]);
+
+  // v0.10.7 card-hold radial menu. Open blooms the wheel at a clamped anchor; select maps the chosen
+  // option to an action on the raised selection (the sheet owns the action handlers via onCardAction).
+  const openCardMenu = useCallback((x: number, y: number) => {
+    const a = clampMenuAnchor(x, y);
+    cardMenuAnchorX.value = a.x;
+    cardMenuAnchorY.value = a.y;
+    cardMenuFingerX.value = a.x;
+    cardMenuFingerY.value = a.y;
+    cardMenuHighlight.value = -1;
+    cardMenuOpen.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
+    playSfx('floatMenuOpen');
+  }, [cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, cardMenuOpen]);
+  const closeCardMenu = useCallback(() => {
+    cardMenuOpen.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.cubic) });
+    cardMenuHighlight.value = -1;
+    playSfx('floatMenuClose');
+  }, [cardMenuOpen, cardMenuHighlight]);
+  const selectCardMenu = useCallback((index: number) => {
+    const opts = cardMenuOptions(categoryRef.current === FAVORITES_CATEGORY, nfcAvailable);
+    const opt = opts[index];
+    const ids = [...raisedIdsRef.current];
+    cardMenuOpen.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.cubic) });
+    cardMenuHighlight.value = -1;
+    if (opt && ids.length) onCardAction?.(opt.kind, ids);
+    else playSfx('floatMenuClose');
+  }, [nfcAvailable, onCardAction, cardMenuOpen, cardMenuHighlight]);
 
   // v0.9.8 Golden Gear Edit: flatten the (expanded) hand into an editable row. No-op from fullscreen.
   const enterEdit = useCallback(() => {
@@ -372,6 +433,16 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       exitEdit,
       toggleRaise,
       onReorderCards,
+      cardMenuOpen,
+      cardMenuAnchorX,
+      cardMenuAnchorY,
+      cardMenuFingerX,
+      cardMenuFingerY,
+      cardMenuHighlight,
+      nfcAvailable,
+      openCardMenu,
+      closeCardMenu,
+      selectCardMenu,
       enabledIds: enabledIds ?? emptyEnabled,
       crossOuts: crossOuts ?? emptyCrossOuts,
       toggleCard: onToggleCard ?? noopToggle,
@@ -385,7 +456,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, toggleRaise, onReorderCards, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, toggleRaise, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

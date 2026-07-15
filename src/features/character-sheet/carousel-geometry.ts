@@ -188,3 +188,44 @@ export function snapRot(value: number, count: number): number {
   'worklet';
   return clampRot(Math.round(value / ANGLE_STEP) * ANGLE_STEP, count);
 }
+
+// --- Golden Gear Edit card-hold RADIAL menu (v0.10.7) — a full-CIRCLE spray wheel around the held
+// card (the float menu's cousin, but options all the way around, compact, and border-aware). ---
+export const CARD_MENU_DEAD = 26; // dead-zone radius (design px): release inside cancels the menu
+export const CARD_MENU_RIN = 32; // wedge inner radius
+export const CARD_MENU_ROUT = 116; // wedge outer radius
+export const CARD_MENU_RLABEL = 82; // label-puck ring radius
+export const CARD_MENU_PW = 74; // label puck width
+export const CARD_MENU_PH = 44; // label puck height
+export const CARD_MENU_MARGIN = 10; // keep the whole wheel this far inside the 412×892 design edges
+
+/** Centre angle (deg, screen coords: -90 = up, 0 = right) of option `i` of `n`, evenly spaced around
+ *  the full circle starting due-north. */
+export function cardMenuAngle(i: number, n: number): number {
+  return -90 + i * (360 / Math.max(1, n));
+}
+
+/** Which full-circle option the finger points at (−1 = none/cancel). Pure nearest-centre angular
+ *  hit-test past a dead-zone — the whole ring is covered, no gaps (the spray-wheel feel). */
+export function pickWedgeFull(ax: number, ay: number, fx: number, fy: number, n: number, dead: number = CARD_MENU_DEAD): number {
+  'worklet';
+  if (n <= 0) return -1;
+  const dx = fx - ax;
+  const dy = fy - ay;
+  if (Math.hypot(dx, dy) < dead) return -1;
+  const step = 360 / n;
+  const a = (Math.atan2(dy, dx) * 180) / Math.PI;
+  let i = Math.round((a + 90) / step); // centres are -90 + i*step
+  i = ((i % n) + n) % n;
+  return i;
+}
+
+/** Clamp a menu anchor so the whole wheel (out to its labels) stays inside the design box. */
+export function clampMenuAnchor(x: number, y: number): { x: number; y: number } {
+  const m = CARD_MENU_MARGIN + CARD_MENU_RLABEL + CARD_MENU_PW / 2;
+  const my = CARD_MENU_MARGIN + CARD_MENU_RLABEL + CARD_MENU_PH / 2;
+  return {
+    x: Math.min(412 - m, Math.max(m, x)),
+    y: Math.min(892 - my, Math.max(my, y)),
+  };
+}

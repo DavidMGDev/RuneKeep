@@ -56,12 +56,13 @@ export interface RingOptions {
 
 /** Every category that COULD be in the ring (before hide), in canonical-then-custom order. The
  *  feature-gated categories appear only when their feature is present (#311 / v0.9.8 Favorites). */
-export function availableCategories({ isDruid, hasCompanion, hasFavorites, custom = [] }: Pick<RingOptions, 'isDruid' | 'hasCompanion' | 'hasFavorites' | 'custom'>): CardCategory[] {
+export function availableCategories({ isDruid, hasCompanion, custom = [] }: Pick<RingOptions, 'isDruid' | 'hasCompanion' | 'hasFavorites' | 'custom'>): CardCategory[] {
+  // v0.10.7: Favorites is a HIDDEN mirror category — it is NEVER in the ring or the category menu (it
+  // holds only copies of favorited cards). It's reachable ONLY via the sheet's Favorites button, which
+  // opens it as a transient detour (see carousel-context `openFavorites`). So it's not appended here.
   return [
     ...CATEGORY_ORDER.filter((c) => (c === 'wildshape' ? !!isDruid : c === 'companion' ? !!hasCompanion : true)),
     ...custom.map((c) => c.id),
-    // Favorites (v0.9.8) sits at the end of the ring; only available once there's at least one favorite.
-    ...(hasFavorites ? ['favorites'] : []),
   ];
 }
 

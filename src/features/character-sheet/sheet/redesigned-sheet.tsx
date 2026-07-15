@@ -26,22 +26,22 @@ import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
-import { catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
+import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
 import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/companion';
-import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, orphanedFavoriteIds } from '@/lib/favorites';
+import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, orphanedFavoriteIds, removeFavoriteCopies } from '@/lib/favorites';
 import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
-import { type LibraryCard } from '@/lib/library';
+import { type Expansion, type LibraryCard } from '@/lib/library';
 import { libraryCardBody, libraryCardKindLabel, mixedCrossedTrait } from '@/lib/library-embed';
-import { nfcModulesPresent } from '@/lib/nfc';
+import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 
@@ -76,8 +76,8 @@ import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
 import { ModifiersPanel } from './modifiers-panel';
-import { CardManagementPanel } from './card-management-panel';
-import { EditControls } from './edit-controls';
+import { CardManagementPanel, Confirm, MoveSheet } from './card-management-panel';
+import { type CardMenuKind } from '../card-menu';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { PortraitImage, PortraitTapButton, type PortraitTransform } from './portrait-image';
@@ -149,11 +149,14 @@ function DomainChip({ left, top, label }: { left: number; top: number; label: st
 
 /** An octagon badge (image-6), stretched a touch wider than tall so the origin strip reads as a
  *  deliberate band next to the big bio text (#48 D): tappable → opens the associated card (D4). */
-function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y }: { left: number; top: number; w: number; h: number; icon?: number; glyph?: React.ReactNode; label: string; onPress?: () => void; a11y?: string }) {
+function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active }: { left: number; top: number; w: number; h: number; icon?: number; glyph?: React.ReactNode; label: string; onPress?: () => void; a11y?: string; active?: boolean }) {
   return (
     <>
       <PressableArt style={box(left, top, w, h)} pressedScale={1.12} onPress={onPress} accessibilityLabel={a11y ?? `${label}, open card`}>
         <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={w} h={h} />
+        {/* v0.10.7: a lit gold backing when this badge is TOGGLED ON (the Favorites star while its hidden
+            category is showing) — reads as filled/selected. */}
+        {active ? <View style={[box(w * 0.14, h * 0.12, w * 0.72, h * 0.76), { borderRadius: 6, backgroundColor: 'rgba(218,162,73,0.3)', borderWidth: 1.2, borderColor: Rune.goldBright }]} pointerEvents="none" /> : null}
         {/* Icon fills more of the frame (#62 A) — frame + label sizing unchanged. An SVG glyph (v0.9.8
             action badges) renders centered in the same inset, else the Art icon. */}
         <View style={box(w * 0.2, h * 0.16, w * 0.6, h * 0.64)} pointerEvents="none">
@@ -193,14 +196,19 @@ function AddGearGlyph() {
  *  ring member when enabled, a transient detour when disabled). Lives in the slot freed by removing the
  *  Community origin badge. */
 function FavoritesBadge({ left, top, w, h }: { left: number; top: number; w: number; h: number }) {
-  const { openFavorites } = useCarousel();
-  return <OctaBadge left={left} top={top} w={w} h={h} glyph={<CategoryIconSvg iconKey="star" size={30} />} label="Favorites" onPress={openFavorites} a11y="Favorites" />;
+  const { openFavorites, category } = useCarousel();
+  const active = category === 'favorites'; // v0.10.7: the star shows TOGGLED while the hidden mirror is up
+  return <OctaBadge left={left} top={top} w={w} h={h} active={active} glyph={<CategoryIconSvg iconKey="star" size={30} />} label="Favorites" onPress={openFavorites} a11y={active ? 'Favorites showing. Return to your cards' : 'Show favorites'} />;
 }
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onAddCard, onAddGear }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onAddCard: () => void; onAddGear: () => void }) {
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onAddCard, onAddGear, onFavoritesBlocked }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onAddCard: () => void; onAddGear: () => void; onFavoritesBlocked: () => void }) {
   const tint = useAccentTint();
+  // v0.10.7: the hidden Favorites mirror can't take new cards — Add Card / Add Gear toast instead of
+  // authoring a copy into the mirror. `category` comes from the carousel (this body is inside it).
+  const { category: liveCategory } = useCarousel();
+  const guardFav = (fn: () => void) => () => { if (liveCategory === 'favorites') { onFavoritesBlocked(); return; } fn(); };
 
   // Every resource now uses the boundary-only ±1 hold/double-tap model (#81 hearts, #89 the rest).
   // Only the hearts the character can ever fill are drawn (#107): maxHp 4 → four hearts, no
@@ -286,8 +294,8 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* v0.9.8: the Ancestry/Community/Subclass origin badges are replaced — same three slots — by the
           card-management actions: Add Card (author for the current category), Add Gear (catalog), and
           Favorites (star). The two dividers stay so the trio still reads as one banded group. */}
-      <OctaBadge left={176} top={124} w={48} h={52} glyph={<AddCardGlyph />} label="Add Card" onPress={onAddCard} a11y="Add a card to the current category" />
-      <OctaBadge left={254} top={124} w={48} h={52} glyph={<AddGearGlyph />} label="Add Gear" onPress={onAddGear} a11y="Add gear from the catalog" />
+      <OctaBadge left={176} top={124} w={48} h={52} glyph={<AddCardGlyph />} label="Add Card" onPress={guardFav(onAddCard)} a11y="Add a card to the current category" />
+      <OctaBadge left={254} top={124} w={48} h={52} glyph={<AddGearGlyph />} label="Add Gear" onPress={guardFav(onAddGear)} a11y="Add gear from the catalog" />
       <FavoritesBadge left={332} top={124} w={48} h={52} />
       <GoldRuleV left={239} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
       <GoldRuleV left={317} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
@@ -491,7 +499,7 @@ function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel
 }
 
 function ExpandVeil() {
-  const { expandProgress, collapse } = useCarousel();
+  const { expandProgress, collapse, editMode, editing } = useCarousel();
   const [blocking, setBlocking] = useState(false);
   const wasBlocking = useSharedValue(false);
   useDerivedValue(() => {
@@ -501,14 +509,17 @@ function ExpandVeil() {
       runOnJS(setBlocking)(b);
     }
   });
-  const style = useAnimatedStyle(() => ({ opacity: expandProgress.value * 0.62 }));
+  // v0.10.7: Golden Gear Edit darkens the backdrop a further ~12% (0.62 → ~0.74) so the flat row + the
+  // breathing selection read against a deeper dim.
+  const style = useAnimatedStyle(() => ({ opacity: Math.min(0.9, expandProgress.value * 0.62 + editMode.value * 0.12) }));
   // When expanded the veil swallows taps on the dimmed sheet (AC2.8) and a tap dismisses the hand;
   // when compact it is inert so the controls underneath stay live. The box is oversized far past the
   // stage (which no longer clips) so the dim reaches the physical screen edges — status-bar area and
-  // letterbox margins included — with square corners (#30 B).
+  // letterbox margins included — with square corners (#30 B). v0.10.7: in EDIT mode a tap-off must NOT
+  // close (owner found it too twitchy) — only a gear tap exits — but the veil still blocks sheet taps.
   return (
     // zIndex 20: above the hearts layer (10), below the carousel (30) — see #87 stacking.
-    <Pressable style={[box(-120, -160, 652, 1212), { zIndex: 20 }]} pointerEvents={blocking ? 'auto' : 'none'} onPress={collapse}>
+    <Pressable style={[box(-120, -160, 652, 1212), { zIndex: 20 }]} pointerEvents={blocking ? 'auto' : 'none'} onPress={editing ? undefined : collapse}>
       <Animated.View style={[box(0, 0, 652, 1212), { backgroundColor: '#06080d' }, style]} pointerEvents="none" />
     </Pressable>
   );
@@ -1448,26 +1459,30 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     playSfx('customCardCreate');
     commitFile({ ...file, cardCopies: copies, cardCategory });
   }, [file, commitFile, carouselDecks]);
-  // Send ONE selected card over NFC (v0.10.2, Feature 9 — individual cards only): convert the sheet card
-  // to a portable LibraryCard. Authored cards keep their title/body/effects/art; a catalog card sends as
-  // a generic card titled by its label. The button is disabled unless exactly one card is selected.
+  // Send the selected card(s) over NFC (v0.10.7 — single OR multiple). One card → a `card` payload with
+  // its image inlined (best-effort, if it fits the NFC ceiling); several → an ephemeral one-off
+  // Expansion bundling them (images skipped — N photos won't fit). Each card is converted to a portable
+  // LibraryCard (homebrew cards travel whole; authored keep title/body/art/effects; catalog → generic).
   const onSendNfc = useCallback((ids: string[]) => {
-    if (!file || ids.length !== 1) return;
-    const id = ids[0];
-    const ref = refOf(id, file);
-    const authored = (findEditableCard(file, ref) ?? findEditableCard(file, id))?.card;
-    const cat = cardById(catalogIdOf(id));
-    const card: LibraryCard = {
-      id: `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${id.slice(-4)}`,
-      contentType: 'generic',
-      title: authored?.title || cat?.label || 'Card',
-      text: authored?.text ?? '',
-      imageUri: authored?.imageUri ?? null,
-      color: authored?.color ?? null,
-      effects: effectsForCardId(ref, file),
-    };
+    if (!file || !ids.length) return;
+    const makeId = (srcId: string) => `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}-${srcId.slice(-4)}`;
     playSfx('buttonTap');
-    setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
+    if (ids.length === 1) {
+      const card = inlineCardImage(cardToLibraryCard(file, ids[0], makeId), SAFE_NFC_BYTES - 2000);
+      setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
+      return;
+    }
+    const cards = ids.map((id) => cardToLibraryCard(file, id, makeId));
+    const exp: Expansion = {
+      id: `nfc-${Date.now().toString(36)}`,
+      name: `${file.name || 'Hero'}'s cards`,
+      author: file.name || '',
+      description: `${cards.length} cards shared over NFC`,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      cards,
+    };
+    setNfcSend({ content: { kind: 'expansion', payload: exp }, label: `${cards.length} cards` });
   }, [file]);
   // Favorite selected cards (v0.9.8): add a favorite DUPLICATE for each eligible source. Skips cards that
   // are already a favorite copy or already favorited. Un-favoriting is just deleting the copy in Favorites.
@@ -1487,6 +1502,32 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     commitFile(f);
     pushNotice(added === 1 ? 'Added to Favorites' : `Added ${added} to Favorites`);
   }, [file, commitFile, pushNotice]);
+  // v0.10.7: un-favorite from the hidden mirror (the only card-menu action there). Drops the copies by
+  // their own ids — never touches the source (tokens/enable are ref-keyed + shared).
+  const onUnfavorite = useCallback((ids: string[]) => {
+    if (!file || !ids.length) return;
+    const next = removeFavoriteCopies(file, ids);
+    if (next === file) { playSfx('floatMenuClose'); return; }
+    playSfx('cardDeselect');
+    commitFile(next);
+    pushNotice(ids.length === 1 ? 'Removed from Favorites' : `Removed ${ids.length} from Favorites`);
+  }, [file, commitFile, pushNotice]);
+  const onFavoritesBlocked = useCallback(() => { playSfx('floatMenuClose'); pushNotice("Can't add cards to favorites"); }, [pushNotice]);
+  // v0.10.7 Golden Gear Edit card-hold radial → action. Move/Delete open their confirm sheets; the rest
+  // fire immediately (the handlers already guard gold/companion/beastform + keep-one). Operates on the
+  // raised selection the carousel passes in.
+  const [moveReq, setMoveReq] = useState<string[] | null>(null);
+  const [deleteReq, setDeleteReq] = useState<string[] | null>(null);
+  const onCardAction = useCallback((kind: CardMenuKind, ids: string[]) => {
+    switch (kind) {
+      case 'duplicate': onDuplicateCards(ids); break;
+      case 'favorite': onFavoriteCards(ids); break;
+      case 'move': setMoveReq(ids); break;
+      case 'delete': setDeleteReq(ids); break;
+      case 'nfc': onSendNfc(ids); break;
+      case 'unfavorite': onUnfavorite(ids); break;
+    }
+  }, [onDuplicateCards, onFavoriteCards, onSendNfc, onUnfavorite]);
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
   const editableIds = useMemo(() => editableCardIds(file), [file]);
@@ -1769,7 +1810,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()}>
        <FloatMenuProvider onOpenInterface={(k) => { if (k === 'custom') setNewCardEntry('menu'); setFloatKind(k); }}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}
@@ -1802,7 +1843,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onAddCard={onAddCard} onAddGear={onAddGear} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
@@ -1824,19 +1865,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* Stat-change toasts (#233): pinned at the top, UNDER the gold border (rendered before
                 SheetFrame) so the border overlays them — layer + position per owner. */}
             <StatToastHost toasts={toasts} onExpire={(id) => setToasts((list) => list.filter((t) => t.id !== id))} />
-            {/* Golden Gear Edit controls (#v0.9.8): top-center, toast-style; reuses the Cards-panel
-                handlers so every safeguard is inherited. Outside DesignStage like the stat toasts. */}
-            <EditControls
-              moveTargets={moveTargets}
-              customCategories={customCategories}
-              onDuplicate={onDuplicateCards}
-              onFavorite={onFavoriteCards}
-              onMove={onMoveCards}
-              onDelete={onDeleteCards}
-              onOpenCardsPanel={() => setFloatKind('cards')}
-              onSendNfc={nfcModulesPresent() ? onSendNfc : undefined}
-              topInset={topInset}
-            />
+            {/* v0.10.7 Golden Gear Edit: the ever-present controls bar is gone — actions live on the
+                card-hold radial (tap the gear to exit). Move/Delete still confirm through their sheets. */}
+            {moveReq ? (
+              <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
+            ) : null}
+            {deleteReq ? (
+              <Confirm title={deleteReq.length > 1 ? `Delete ${deleteReq.length} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setDeleteReq(null)} onConfirm={() => { onDeleteCards(deleteReq); setDeleteReq(null); }} />
+            ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}

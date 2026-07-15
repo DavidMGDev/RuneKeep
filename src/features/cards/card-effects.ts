@@ -8,6 +8,7 @@
 
 import type { CardEffect } from '@/lib/modifiers';
 import type { CharacterFile, ExperienceDef } from '@/lib/character-file';
+import type { LibraryCard } from '@/lib/library';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { wildshapeById } from '@/data/wildshape-data';
@@ -113,6 +114,28 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
 /** Whether a card has any stat effect at all (so the UI can decide if it is "equippable for stats"). */
 export function cardHasEffects(id: string, file?: CharacterFile): boolean {
   return effectsForCardId(id, file).length > 0;
+}
+
+/** Convert a sheet deck-card id into a portable `LibraryCard` for NFC / `.rkp` sharing (v0.10.7 — now
+ *  used for single- AND multi-card sends). An embedded homebrew card is sent WHOLE (its sections /
+ *  weapon / armor / effects), with a fresh id; a player-authored custom keeps its title/body/art/
+ *  effects; a catalog card sends as a generic card labelled by the catalog + its resolved effects. The
+ *  image is a URI reference — the caller inlines the bytes (async/platform) when it wants them to travel. */
+export function cardToLibraryCard(file: CharacterFile | undefined, id: string, makeId: (srcId: string) => string): LibraryCard {
+  const ref = refOf(id, file);
+  const lib = libraryCardById(file, ref);
+  if (lib) return { ...lib, id: makeId(id) }; // homebrew: full data survives the trip
+  const authored = (findEditableCard(file, ref) ?? findEditableCard(file, id))?.card;
+  const cat = cardById(catalogIdOf(id));
+  return {
+    id: makeId(id),
+    contentType: 'generic',
+    title: authored?.title || cat?.label || 'Card',
+    text: authored?.text ?? '',
+    imageUri: authored?.imageUri ?? null,
+    color: authored?.color ?? null,
+    effects: effectsForCardId(ref, file),
+  };
 }
 
 /** A human label for a card id — used as the modifier source in the Modifiers panel. */
