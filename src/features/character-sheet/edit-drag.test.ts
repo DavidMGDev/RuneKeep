@@ -1,5 +1,5 @@
 import { reorderBlock } from './edit-drag';
-import { pickWedgeFull, cardMenuAngle, clampMenuAnchor, CARD_MENU_DEAD } from './carousel-geometry';
+import { cardMenuAngle, clampMenuAnchor } from './carousel-geometry';
 
 describe('reorderBlock — multi-select drag (v0.10.7)', () => {
   const ids = ['a', 'b', 'c', 'd', 'e'];
@@ -21,29 +21,18 @@ describe('reorderBlock — multi-select drag (v0.10.7)', () => {
   });
 });
 
-describe('pickWedgeFull — full-circle radial hit-test', () => {
-  it('due-north is option 0', () => {
-    expect(pickWedgeFull(200, 400, 200, 400 - 50, 5)).toBe(0);
+describe('cardMenuAngle — even full-circle spacing from due-north', () => {
+  it('option 0 is straight up (-90°)', () => {
+    expect(cardMenuAngle(0, 5)).toBe(-90);
+    expect(cardMenuAngle(0, 1)).toBe(-90);
   });
-  it('cancels inside the dead-zone', () => {
-    expect(pickWedgeFull(200, 400, 200, 400, 5, CARD_MENU_DEAD)).toBe(-1);
-    expect(pickWedgeFull(200, 400, 205, 400, 5, CARD_MENU_DEAD)).toBe(-1);
-  });
-  it('resolves each of the five directions to a distinct option', () => {
-    const got = new Set<number>();
-    for (let i = 0; i < 5; i++) {
-      const a = (cardMenuAngle(i, 5) * Math.PI) / 180;
-      got.add(pickWedgeFull(200, 400, 200 + 60 * Math.cos(a), 400 + 60 * Math.sin(a), 5));
-    }
-    expect(got).toEqual(new Set([0, 1, 2, 3, 4]));
-  });
-  it('a single-option menu selects it from any direction past the dead-zone', () => {
-    expect(pickWedgeFull(200, 400, 200 + 50, 400, 1)).toBe(0);
-    expect(pickWedgeFull(200, 400, 200, 400 + 50, 1)).toBe(0);
+  it('steps by 360/n', () => {
+    expect(cardMenuAngle(1, 4)).toBe(0);
+    expect(cardMenuAngle(2, 4)).toBe(90);
   });
 });
 
-describe('clampMenuAnchor — keep the wheel on screen', () => {
+describe('clampMenuAnchor — keep the (bigger, v0.11.0) wheel on screen', () => {
   it('pushes an edge anchor inward on both axes', () => {
     const c = clampMenuAnchor(4, 850);
     expect(c.x).toBeGreaterThan(4);
