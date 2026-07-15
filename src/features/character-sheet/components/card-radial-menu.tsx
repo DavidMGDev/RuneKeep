@@ -1,93 +1,136 @@
 import { memo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { runOnJS, useAnimatedReaction, useAnimatedStyle } from 'react-native-reanimated';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
-import { Rune } from '@/constants/theme';
+import { playSfx } from '@/lib/sfx';
 
 import { useCarousel } from '../carousel-context';
 import { cardMenuOptions, type CardMenuKind } from '../card-menu';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
-import { cardMenuAngle, CARD_MENU_BTN, CARD_MENU_HUB, CARD_MENU_RING } from '../carousel-geometry';
+import { cardMenuAngle, CARD_MENU_ICON, CARD_MENU_RICON, CARD_MENU_RIN, CARD_MENU_ROUT } from '../carousel-geometry';
 
 /**
- * The Golden Gear Edit card-hold radial (v0.11.0 rework) — a MODAL wheel of round icon buttons that
- * blooms around the held card. Hold a card to open it; it stays open (finger stillness never closes it),
- * tap an icon to fire the action, or tap the dim backdrop to cancel. No rectangular panels, no text —
- * just icons (items 7 + 10). The carousel pan freezes while it's open, so cards can't be selected behind
- * it. Rendered INSIDE the carousel's DesignStage container, so all coords are design px.
+ * The Golden Gear Edit card-hold radial (v0.11.1) — a SPRAY wheel, worked exactly like the sheet float
+ * menu: hold a card → the wheel blooms → drag the finger to a wedge → release to fire (release in the
+ * center/off the ring cancels). The carousel pan drives the finger + highlight shared values; this only
+ * renders (wedges + connector + dot) and dispatches on the highlight the pan reports. Differences from
+ * the float menu: options go ALL the way around, they're ICON-only, the icons are bigger, and the whole
+ * thing is desaturated (light gray) to match the Edit Mode chrome. Rendered inside the carousel's
+ * DesignStage container, so all coords are design px.
  */
+
+// Desaturated (Edit Mode) palette.
+const GRAY = '#C4C8D0';
+const GRAY_LIT = '#F0F1F4';
+const WEDGE = 'rgba(28,32,40,0.62)';
+const WEDGE_LIT = 'rgba(74,82,92,0.82)';
+const R = CARD_MENU_ROUT; // local SVG canvas is 2R×2R, centre at (R,R)
+
+function sector(a0: number, a1: number, ri: number, ro: number): string {
+  const p = (r: number, aDeg: number) => {
+    const a = (aDeg * Math.PI) / 180;
+    return [R + r * Math.cos(a), R + r * Math.sin(a)];
+  };
+  const [x0, y0] = p(ro, a0);
+  const [x1, y1] = p(ro, a1);
+  const [x2, y2] = p(ri, a1);
+  const [x3, y3] = p(ri, a0);
+  const large = a1 - a0 > 180 ? 1 : 0;
+  return `M${x0},${y0} A${ro},${ro} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${ri},${ri} 0 ${large} 0 ${x3},${y3} Z`;
+}
+
 export function CardRadialMenu() {
-  const { cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, category, nfcAvailable, selectionAllFavorited, selectCardMenu, closeCardMenu } = useCarousel();
+  const { cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, category, nfcAvailable, selectionAllFavorited } = useCarousel();
   const options = cardMenuOptions(category === FAVORITES_CATEGORY, nfcAvailable, selectionAllFavorited);
   const n = options.length;
 
-  // Mount only while the wheel is animating open/closed (mirrors the sheet dims): a JS flag lit by the
-  // shared open value, so a closed menu costs nothing and there's no per-frame SVG under the edit dim.
   const [visible, setVisible] = useState(false);
   useAnimatedReaction(
     () => cardMenuOpen.value > 0.001,
     (v, prev) => { if (v !== prev) runOnJS(setVisible)(v); },
   );
+  const [hl, setHl] = useState(-1);
+  useAnimatedReaction(
+    () => cardMenuHighlight.value,
+    (v, prev) => {
+      if (v !== prev) {
+        runOnJS(setHl)(v);
+        if (v >= 0) runOnJS(playSfx)('floatMenuHighlight'); // a tick each time a wedge is entered
+      }
+    },
+  );
 
-  // Backdrop dim (fades with the wheel) + the wheel itself (rides the anchor, blooms scale 0.7→1).
-  const dim = useAnimatedStyle(() => ({ opacity: cardMenuOpen.value * 0.5 }));
+  // A soft extra dim under the wheel (the edit veil is already dark), + the wheel riding the anchor.
+  const dim = useAnimatedStyle(() => ({ opacity: cardMenuOpen.value * 0.28 }));
   const wheel = useAnimatedStyle(() => {
     const p = cardMenuOpen.value;
     return { opacity: p, transform: [{ translateX: cardMenuAnchorX.value }, { translateY: cardMenuAnchorY.value }, { scale: 0.7 + 0.3 * p }] };
   });
+  // Connector line (anchor → finger) + finger dot — the drag feedback (like the float menu).
+  const line = useAnimatedStyle(() => {
+    const ax = cardMenuAnchorX.value;
+    const ay = cardMenuAnchorY.value;
+    const dx = cardMenuFingerX.value - ax;
+    const dy = cardMenuFingerY.value - ay;
+    return { width: Math.hypot(dx, dy), opacity: cardMenuOpen.value, transform: [{ translateX: ax }, { translateY: ay - 1.5 }, { rotateZ: `${Math.atan2(dy, dx)}rad` }] };
+  });
+  const dot = useAnimatedStyle(() => ({ opacity: cardMenuOpen.value, transform: [{ translateX: cardMenuFingerX.value - 7 }, { translateY: cardMenuFingerY.value - 7 }] }));
 
   if (!visible || n === 0) return null;
+  const half = 360 / n / 2;
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 6000 }]} pointerEvents="box-none">
-      {/* backdrop: darkens the busy edit row AND catches a tap-outside to cancel (item 3 + item 7). */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={closeCardMenu} accessibilityRole="button" accessibilityLabel="Close menu">
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, dim]} />
-      </Pressable>
-      {/* the wheel: a decorative hub + a ring of round icon buttons, translated to the anchor. */}
-      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: 0, height: 0 }, wheel]} pointerEvents="box-none">
-        <View style={{ position: 'absolute', left: -CARD_MENU_HUB, top: -CARD_MENU_HUB, width: 2 * CARD_MENU_HUB, height: 2 * CARD_MENU_HUB, borderRadius: CARD_MENU_HUB, backgroundColor: 'rgba(12,14,19,0.92)', borderWidth: 1.4, borderColor: Rune.goldEdge }} pointerEvents="none" />
-        {options.map((o, i) => (
-          <MenuButton key={o.kind} kind={o.kind} allFav={selectionAllFavorited} label={o.label} angle={cardMenuAngle(i, n)} onPress={() => selectCardMenu(i)} />
-        ))}
+    <View style={[StyleSheet.absoluteFill, { zIndex: 6000 }]} pointerEvents="none">
+      <Animated.View style={[{ position: 'absolute', top: -400, bottom: -400, left: -400, right: -400, backgroundColor: '#06080d' }, dim]} />
+      {/* the wheel: wedge ring + icons, translated to the anchor */}
+      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: 0, height: 0 }, wheel]}>
+        <View style={{ position: 'absolute', left: -R, top: -R, width: 2 * R, height: 2 * R }}>
+          <Svg width={2 * R} height={2 * R}>
+            {options.map((o, i) => {
+              const c = cardMenuAngle(i, n);
+              const sel = hl === i;
+              return (
+                <Path
+                  key={o.kind}
+                  d={sector(c - half + 1.4, c + half - 1.4, CARD_MENU_RIN, R)}
+                  fill={sel ? WEDGE_LIT : WEDGE}
+                  stroke={sel ? GRAY_LIT : 'rgba(196,200,208,0.5)'}
+                  strokeWidth={sel ? 2 : 1.2}
+                  strokeLinejoin="round"
+                />
+              );
+            })}
+          </Svg>
+        </View>
+        {options.map((o, i) => {
+          const a = (cardMenuAngle(i, n) * Math.PI) / 180;
+          const x = CARD_MENU_RICON * Math.cos(a);
+          const y = CARD_MENU_RICON * Math.sin(a);
+          return (
+            <View key={o.kind} style={{ position: 'absolute', left: x - CARD_MENU_ICON / 2, top: y - CARD_MENU_ICON / 2, width: CARD_MENU_ICON, height: CARD_MENU_ICON, alignItems: 'center', justifyContent: 'center' }}>
+              <CardMenuIcon kind={o.kind} allFav={selectionAllFavorited} size={CARD_MENU_ICON} color={hl === i ? GRAY_LIT : GRAY} />
+            </View>
+          );
+        })}
       </Animated.View>
+      {/* connector + dot live in the design box (anchor/finger are design px) */}
+      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, height: 3, backgroundColor: GRAY, transformOrigin: 'left center' }, line]} />
+      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: GRAY }, dot]} />
     </View>
   );
 }
 
-const MenuButton = memo(function MenuButton({ kind, allFav, label, angle, onPress }: { kind: CardMenuKind; allFav: boolean; label: string; angle: number; onPress: () => void }) {
-  const a = (angle * Math.PI) / 180;
-  const x = CARD_MENU_RING * Math.cos(a);
-  const y = CARD_MENU_RING * Math.sin(a);
-  const danger = kind === 'delete';
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      hitSlop={6}
-      style={({ pressed }) => ({
-        position: 'absolute',
-        left: x - CARD_MENU_BTN / 2,
-        top: y - CARD_MENU_BTN / 2,
-        width: CARD_MENU_BTN,
-        height: CARD_MENU_BTN,
-        borderRadius: CARD_MENU_BTN / 2,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: pressed ? (danger ? 'rgba(120,20,18,0.98)' : 'rgba(46,34,14,0.98)') : 'rgba(12,14,19,0.96)',
-        borderWidth: 1.6,
-        borderColor: pressed ? Rune.goldBright : danger ? 'rgba(200,60,50,0.75)' : Rune.goldEdge,
-        transform: [{ scale: pressed ? 1.12 : 1 }],
-      })}>
-      <CardMenuIcon kind={kind} allFav={allFav} size={28} color={danger ? '#e8837a' : Rune.goldText} />
-    </Pressable>
-  );
-});
-
-/** SVG glyph per option (item 10: icons, not text). 24×24 viewBox, stroked in the button's colour. */
-function CardMenuIcon({ kind, allFav, size, color }: { kind: CardMenuKind; allFav: boolean; size: number; color: string }) {
-  const sw = 1.7;
+/** SVG glyph per option (item 10: icons, not text). Bigger than the float menu's. */
+const CardMenuIcon = memo(function CardMenuIcon({ kind, allFav, size, color }: { kind: CardMenuKind; allFav: boolean; size: number; color: string }) {
+  const sw = 1.9;
+  if (kind === 'nfc') {
+    // Reuse the NFC send-panel symbol (broadcast waves) — clear at this size (item 6).
+    return (
+      <Svg width={size} height={size} viewBox="0 0 48 48">
+        <Path d="M12 16c8-6 16-6 24 0M14 23c6-4 14-4 20 0M16 30c4-3 12-3 16 0" fill="none" stroke={color} strokeWidth={2.6} strokeLinecap="round" />
+      </Svg>
+    );
+  }
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {kind === 'duplicate' ? (
@@ -105,20 +148,13 @@ function CardMenuIcon({ kind, allFav, size, color }: { kind: CardMenuKind; allFa
           <Path d="M5 7 H19 M9 7 V5 H15 V7 M7 7 L8 20 H16 L17 7" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
           <Path d="M10 10 V17 M14 10 V17" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />
         </>
-      ) : kind === 'nfc' ? (
-        <>
-          <Path d="M7 15 C5.5 13.5 5.5 10.5 7 9" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />
-          <Path d="M10 17.5 C7 15 7 9 10 6.5" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />
-          <Path d="M13 19 C8.5 15.5 8.5 8.5 13 5" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />
-          <Circle cx={17} cy={12} r={1.6} fill={color} />
-        </>
       ) : (
-        // favorite / unfavorite — a star; a "minus" bar overlays it when the selection is all-favorited.
+        // favorite / unfavorite — a star; unfavorite adds a DIAGONAL crossout (item 6).
         <>
           <Path d="M12 4 L14.3 9 L19.6 9.6 L15.6 13.2 L16.7 18.5 L12 15.8 L7.3 18.5 L8.4 13.2 L4.4 9.6 L9.7 9 Z" fill={allFav ? color : 'none'} stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-          {allFav ? <Path d="M8.5 12 H15.5" stroke={Rune.ink} strokeWidth={2.2} strokeLinecap="round" /> : null}
+          {allFav ? <Path d="M4.5 19.5 L19.5 4.5" stroke={color} strokeWidth={2.4} strokeLinecap="round" /> : null}
         </>
       )}
     </Svg>
   );
-}
+});

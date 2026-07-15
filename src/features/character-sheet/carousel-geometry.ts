@@ -104,14 +104,13 @@ export const GRIND_SHRINK = 0.55; // cards at 45% size while grinding
 // so the raised cards + the top-center controls bar have room.
 export const EDIT_DWELL_MS = 500; // hold-still time before the deck straightens (easy, not finicky)
 export const EDIT_DWELL_TOL = 4; // px of finger drift allowed before the dwell re-arms (slow-scroll never triggers)
-export const EDIT_ARM_SHOW = 0.3; // gearDwell fraction past which the arming ring appears (item 1)
-// v0.11.0 rework: smaller, tighter, gently-CURVED row so ≥5 cards sit fully on-screen (+2 cut off).
-export const EDIT_SCALE = 0.35; // ~80px card → 5 full across 412 with a 2px gap
-export const EDIT_GAP = 82; // design px between row card centers (~80px card + 2px)
-export const EDIT_ROW_Y = 505; // row card-center Y (room above for the "Edit Mode" title)
-export const EDIT_RAISE = 46; // design px a selected card lifts
-export const EDIT_CURVE = 3; // px of downward droop per slot² → a gentle Balatro-style arc (edges lower)
-export const EDIT_TILT = 0.045; // radians of fan tilt per slot from center
+export const EDIT_SCROLL_CANCEL = 1.5; // scrolled this many cards → a still hold no longer enters edit (item 9)
+// v0.11.1: the edit row matches the GOLDEN-GEAR-SCROLL (grind) size/height exactly — same scale, same Y
+// — and only STRAIGHTENS with a 3px gap (no overlap, no curve).
+export const EDIT_SCALE = 0.45; // == grind center-card scale (SCALE_MAX * (1 - GRIND_SHRINK) = 0.45)
+export const EDIT_GAP = 106; // grind-size card (~103.5px) + a 3px gap
+export const EDIT_ROW_Y = 631; // == the expanded/grind center-card Y (OY - R): the row sits where grind cards do
+export const EDIT_RAISE = 40; // design px a selected card lifts
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;
@@ -193,11 +192,14 @@ export function snapRot(value: number, count: number): number {
   return clampRot(Math.round(value / ANGLE_STEP) * ANGLE_STEP, count);
 }
 
-// --- Golden Gear Edit card-hold RADIAL menu (v0.11.0 rework) — a bigger, MODAL wheel of round icon
-// buttons around the held card (no rectangular panels; tap an icon to fire, tap outside to cancel). ---
-export const CARD_MENU_RING = 118; // icon-button center ring radius (~80% bigger than the old wheel)
-export const CARD_MENU_BTN = 62; // round icon-button diameter
-export const CARD_MENU_HUB = 42; // center hub radius (decorative + cancel target)
+// --- Golden Gear Edit card-hold RADIAL menu (v0.11.1) — a full-CIRCLE spray wheel, modelled on the
+// sheet float menu (hold → wheel blooms → drag to a wedge → release to fire), but options all the way
+// around, ICON-only, and bigger. The carousel pan drives the finger + highlight; the menu renders. ---
+export const CARD_MENU_DEAD = 34; // center dead-zone radius (design px): release inside = cancel
+export const CARD_MENU_RIN = 44; // wedge inner radius
+export const CARD_MENU_ROUT = 152; // wedge outer radius (release beyond = cancel, like the float menu)
+export const CARD_MENU_RICON = 100; // icon-placement ring radius
+export const CARD_MENU_ICON = 34; // wedge icon size (bigger than the float menu's 24)
 export const CARD_MENU_MARGIN = 8; // keep the whole wheel this far inside the 412×892 design edges
 
 /** Centre angle (deg, screen coords: -90 = up, 0 = right) of option `i` of `n`, evenly spaced around
@@ -206,9 +208,25 @@ export function cardMenuAngle(i: number, n: number): number {
   return -90 + i * (360 / Math.max(1, n));
 }
 
-/** Clamp a menu anchor so the whole wheel (out to its icon buttons) stays inside the design box. */
+/** Which full-circle option the finger points at (−1 = none/cancel). Nearest-centre angular hit-test,
+ *  gated by radius like the float menu: inside the dead-zone OR beyond the ring cancels. */
+export function pickWedgeFull(ax: number, ay: number, fx: number, fy: number, n: number, dead: number = CARD_MENU_DEAD, rout: number = CARD_MENU_ROUT): number {
+  'worklet';
+  if (n <= 0) return -1;
+  const dx = fx - ax;
+  const dy = fy - ay;
+  const dist = Math.hypot(dx, dy);
+  if (dist < dead || dist > rout) return -1;
+  const step = 360 / n;
+  const a = (Math.atan2(dy, dx) * 180) / Math.PI;
+  let i = Math.round((a + 90) / step); // centres are -90 + i*step
+  i = ((i % n) + n) % n;
+  return i;
+}
+
+/** Clamp a menu anchor so the whole wheel (out to its outer ring) stays inside the design box. */
 export function clampMenuAnchor(x: number, y: number): { x: number; y: number } {
-  const m = CARD_MENU_MARGIN + CARD_MENU_RING + CARD_MENU_BTN / 2;
+  const m = CARD_MENU_MARGIN + CARD_MENU_ROUT;
   return {
     x: Math.min(412 - m, Math.max(m, x)),
     y: Math.min(892 - m, Math.max(m, y)),
