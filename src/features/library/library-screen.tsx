@@ -288,17 +288,20 @@ export function LibraryScreen() {
   const onNfcReceived = useCallback(async (content: RkpContent) => {
     setNfcReceive(false);
     try {
-      // v0.10.2 (Feature 9): NFC shares ONE card at a time. Expansions/heroes go over file import/export.
-      if (content.kind !== 'card') {
-        setMessage({ title: 'Single cards only', body: 'NFC shares one card at a time — use file import/export for whole expansions and heroes.' });
+      // v0.10.7: NFC now shares one card OR several (a multi-card send arrives as a one-off expansion).
+      // Heroes still go over file import/export on the character screen.
+      if (content.kind === 'character') {
+        setMessage({ title: 'That was a hero', body: 'NFC here receives cards — import a hero from a file on the character screen.' });
         return;
       }
-      // a single received card lands in a shared "Received cards" expansion in the library
+      const cards = content.kind === 'card' ? [content.payload] : content.payload.cards;
+      if (!cards.length) { setMessage({ title: 'Nothing to add', body: 'That tap had no cards on it.' }); return; }
+      // received cards land in a shared "Received cards" expansion in the library
       const id = 'exp-received';
       const exp = (await getExpansion(id)) ?? { id, name: 'Received cards', author: '', description: 'Cards received over NFC or file.', version: 1, createdAt: new Date().toISOString(), cards: [] };
-      await saveExpansion({ ...exp, cards: [...exp.cards, content.payload] });
+      await saveExpansion({ ...exp, cards: [...exp.cards, ...cards] });
       reload();
-      setMessage({ title: content.payload.title || 'Card', body: 'Added to your "Received cards" expansion.' });
+      setMessage({ title: cards.length === 1 ? cards[0].title || 'Card' : `${cards.length} cards`, body: 'Added to your "Received cards" expansion.' });
     } catch (e) {
       setMessage({ title: 'Receive failed', body: e instanceof Error ? e.message : 'Could not read that.' });
     }
