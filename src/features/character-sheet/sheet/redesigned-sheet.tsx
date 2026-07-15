@@ -32,7 +32,7 @@ import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
 import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/companion';
-import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, orphanedFavoriteIds, removeFavoriteCopies } from '@/lib/favorites';
+import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, isFavorited, orphanedFavoriteIds, removeFavoriteByRef, removeFavoriteCopies } from '@/lib/favorites';
 import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -51,7 +51,7 @@ const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
 import { Art } from '../art';
 import { chipWidth, trackBounds, wildshapeSummary } from './sheet-utils';
-import { CarouselProvider, useCarousel } from '../carousel-context';
+import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
 import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
@@ -498,6 +498,29 @@ function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel
   );
 }
 
+/** v0.11.0 items 3 + 6: the Golden Gear Edit heading, sitting in the empty top band above the row —
+ *  "Edit Mode", a live "X Cards" (→ "X/Y Cards" once a selection exists), and a subtle Deselect All. */
+function EditHud() {
+  const { editing, editMode, raisedIds, decks, category, deselectAll } = useCarousel();
+  const total = decks[category]?.length ?? 0;
+  const sel = raisedIds.size;
+  const fade = useAnimatedStyle(() => ({ opacity: editMode.value }));
+  if (!editing) return null;
+  return (
+    <Animated.View pointerEvents="box-none" style={[box(0, 60, 412, 130), { zIndex: 40, alignItems: 'center' }, fade]}>
+      <Text style={{ color: Rune.goldBright, fontSize: 23, fontFamily: Body.bold, letterSpacing: 3, textTransform: 'uppercase' }}>Edit Mode</Text>
+      <Text style={{ marginTop: 6, color: BRONZE, fontSize: 13, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+        {sel > 0 ? `${sel}/${total} Cards` : `${total} Cards`}
+      </Text>
+      {sel > 0 ? (
+        <Pressable onPress={deselectAll} accessibilityRole="button" accessibilityLabel="Deselect all cards" hitSlop={8} style={({ pressed }) => ({ marginTop: 10, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? Rune.goldBright : 'rgba(218,162,73,0.5)', backgroundColor: pressed ? 'rgba(46,34,14,0.9)' : 'rgba(12,14,19,0.7)' })}>
+          <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Deselect All</Text>
+        </Pressable>
+      ) : null}
+    </Animated.View>
+  );
+}
+
 function ExpandVeil() {
   const { expandProgress, collapse, editMode, editing } = useCarousel();
   const [blocking, setBlocking] = useState(false);
@@ -509,9 +532,9 @@ function ExpandVeil() {
       runOnJS(setBlocking)(b);
     }
   });
-  // v0.10.7: Golden Gear Edit darkens the backdrop a further ~12% (0.62 → ~0.74) so the flat row + the
-  // breathing selection read against a deeper dim.
-  const style = useAnimatedStyle(() => ({ opacity: Math.min(0.9, expandProgress.value * 0.62 + editMode.value * 0.12) }));
+  // v0.11.0 item 3: Golden Gear Edit darkens the backdrop ~40% more than before (0.62 → ~0.92) so the
+  // curved row + the breathing selection read against a deep dim.
+  const style = useAnimatedStyle(() => ({ opacity: Math.min(0.94, expandProgress.value * 0.62 + editMode.value * 0.3) }));
   // When expanded the veil swallows taps on the dimmed sheet (AC2.8) and a tap dismisses the hand;
   // when compact it is inert so the controls underneath stay live. The box is oversized far past the
   // stage (which no longer clips) so the dim reaches the physical screen edges — status-bar area and
@@ -1358,6 +1381,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Group drag-drop apply (#311): several cards land together in `toCat`; `orderedIds` is the target's
   // full visible order with the moved group spliced in at the drop index. Same as onReorderCard but for
   // a set: re-file each moved id and drop them all from every other category's explicit order.
+  // v0.11.0: imperative handle into the carousel (it's a CHILD of CarouselProvider — the sheet can't read
+  // context). Used after a Duplicate to deselect + scroll the row onto the fresh copies.
+  const carouselApiRef = useRef<CarouselApi | null>(null);
   const onReorderCards = useCallback((movedIds: string[], toCat: string, orderedIds: string[]) => {
     setFile((f) => {
       if (!f) return f;
@@ -1444,20 +1470,36 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onDuplicateCards = useCallback((ids: string[]) => {
     if (!file || !ids.length) return;
     const decksNow = carouselDecks ?? {};
+    // The edit selection lives in ONE category — copies go there, right after the last selected card.
+    const cat = Object.keys(decksNow).find((k) => decksNow[k].some((c) => ids.includes(c.id)));
     const copies = [...(file.cardCopies ?? [])];
     const cardCategory = { ...(file.cardCategory ?? {}) };
+    const newIds: string[] = [];
     let made = 0;
     for (const id of ids) {
       const ref = refOf(id, file);
       if (isWildshapeId(ref)) continue; // #279: beastform cards aren't duplicatable
       const newId = `cp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}-${made++}`;
       copies.push({ id: newId, ref });
-      const srcCat = Object.keys(decksNow).find((k) => decksNow[k].some((c) => c.id === id));
+      const srcCat = cat ?? Object.keys(decksNow).find((k) => decksNow[k].some((c) => c.id === id));
       if (srcCat) cardCategory[newId] = srcCat;
+      newIds.push(newId);
     }
-    if (!made) { playSfx('floatMenuClose'); return; } // nothing copyable (e.g. only beastform selected)
+    if (!newIds.length) { playSfx('floatMenuClose'); return; } // nothing copyable (e.g. only beastform selected)
+    // Order the copies right after the LAST selected card so they land beside their originals (item 7).
+    let cardOrder = file.cardOrder;
+    if (cat) {
+      const deckIds = (decksNow[cat] ?? []).map((c) => c.id);
+      const positions = ids.map((id) => deckIds.indexOf(id)).filter((i) => i >= 0);
+      const at = positions.length ? Math.max(...positions) + 1 : deckIds.length;
+      cardOrder = { ...(file.cardOrder ?? {}), [cat]: [...deckIds.slice(0, at), ...newIds, ...deckIds.slice(at)] };
+    }
     playSfx('customCardCreate');
-    commitFile({ ...file, cardCopies: copies, cardCategory });
+    commitFile({ ...file, cardCopies: copies, cardCategory, ...(cardOrder ? { cardOrder } : {}) });
+    // Deselect + reveal the fresh copies once the deck re-derives (item 7: "scrolling to the copies").
+    const lastNew = newIds[newIds.length - 1];
+    carouselApiRef.current?.deselectAll();
+    setTimeout(() => carouselApiRef.current?.scrollToId(lastNew), 0);
   }, [file, commitFile, carouselDecks]);
   // Send the selected card(s) over NFC (v0.10.7 — single OR multiple). One card → a `card` payload with
   // its image inlined (best-effort, if it fits the NFC ceiling); several → an ephemeral one-off
@@ -1489,10 +1531,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onFavoriteCards = useCallback((ids: string[]) => {
     if (!file || !ids.length) return;
     const favCat = file.cardCategory ?? {};
+    const sources = ids.filter((id) => favCat[id] !== FAVORITES_CATEGORY); // never act on a favorite copy here
+    if (!sources.length) { playSfx('floatMenuClose'); return; }
+    // item 9: if EVERY selected card is already favorited, this button un-favorites them all; a PARTIAL
+    // selection favorites only the ones that aren't yet favorited.
+    if (sources.every((id) => isFavorited(file, id))) {
+      let f = file;
+      for (const id of sources) f = removeFavoriteByRef(f, id);
+      if (f === file) { playSfx('floatMenuClose'); return; }
+      playSfx('cardDeselect');
+      commitFile(f);
+      pushNotice(sources.length === 1 ? 'Removed from Favorites' : `Removed ${sources.length} from Favorites`);
+      return;
+    }
     let f = file;
     let added = 0;
-    for (const id of ids) {
-      if (favCat[id] === FAVORITES_CATEGORY) continue; // never favorite a favorite
+    for (const id of sources) {
       const before = f;
       f = addFavorite(f, id);
       if (f !== before) added++;
@@ -1513,6 +1567,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     pushNotice(ids.length === 1 ? 'Removed from Favorites' : `Removed ${ids.length} from Favorites`);
   }, [file, commitFile, pushNotice]);
   const onFavoritesBlocked = useCallback(() => { playSfx('floatMenuClose'); pushNotice("Can't add cards to favorites"); }, [pushNotice]);
+  // item 9: resolver the carousel uses to know if the whole selection is already favorited (→ Unfavorite).
+  const isCardFavoritedFn = useCallback((id: string) => (file ? isFavorited(file, id) : false), [file]);
   // v0.10.7 Golden Gear Edit card-hold radial → action. Move/Delete open their confirm sheets; the rest
   // fire immediately (the handlers already guard gold/companion/beastform + keep-one). Operates on the
   // raised selection the carousel passes in.
@@ -1810,7 +1866,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} apiRef={carouselApiRef}>
        <FloatMenuProvider onOpenInterface={(k) => { if (k === 'custom') setNewCardEntry('menu'); setFloatKind(k); }}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}
@@ -1846,6 +1902,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
+              <EditHud />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
               {/* Unload the sheet carousel while Level-Up (#203) or the Cards panel (#227) is open —

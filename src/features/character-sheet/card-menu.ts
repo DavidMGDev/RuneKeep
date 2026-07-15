@@ -10,11 +10,17 @@ export interface CardMenuOption {
   label: string;
 }
 
-export function cardMenuOptions(isFavorites: boolean, nfcAvailable: boolean): CardMenuOption[] {
+/**
+ * The wheel options. `allFavorited` (item 9): when EVERY selected card is already favorited the
+ * Favorite slot flips to "Unfavorite" (its kind stays `favorite`; the handler toggles). A partial
+ * selection keeps "Favorite" — firing it favorites only the ones that aren't yet. Option COUNT and
+ * ORDER never depend on `allFavorited`, so the index→kind mapping stays stable for the dispatcher.
+ */
+export function cardMenuOptions(isFavorites: boolean, nfcAvailable: boolean, allFavorited = false): CardMenuOption[] {
   if (isFavorites) return [{ kind: 'unfavorite', label: 'Unfavorite' }];
   const opts: CardMenuOption[] = [
     { kind: 'duplicate', label: 'Duplicate' },
-    { kind: 'favorite', label: 'Favorite' },
+    { kind: 'favorite', label: allFavorited ? 'Unfavorite' : 'Favorite' },
     { kind: 'move', label: 'Move' },
     { kind: 'delete', label: 'Delete' },
   ];

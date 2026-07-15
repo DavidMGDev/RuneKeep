@@ -104,10 +104,14 @@ export const GRIND_SHRINK = 0.55; // cards at 45% size while grinding
 // so the raised cards + the top-center controls bar have room.
 export const EDIT_DWELL_MS = 500; // hold-still time before the deck straightens (easy, not finicky)
 export const EDIT_DWELL_TOL = 4; // px of finger drift allowed before the dwell re-arms (slow-scroll never triggers)
-export const EDIT_SCALE = 0.44; // flat-row card size (~the gear-held size), ~4 cards across
-export const EDIT_GAP = 112; // design px between flat-row card centers
-export const EDIT_ROW_Y = 560; // flat-row card-center Y (resting center is ~631; sit higher for the bar)
-export const EDIT_RAISE = 48; // design px a selected card lifts (~30% of a flat-row card's height)
+export const EDIT_ARM_SHOW = 0.3; // gearDwell fraction past which the arming ring appears (item 1)
+// v0.11.0 rework: smaller, tighter, gently-CURVED row so ≥5 cards sit fully on-screen (+2 cut off).
+export const EDIT_SCALE = 0.35; // ~80px card → 5 full across 412 with a 2px gap
+export const EDIT_GAP = 82; // design px between row card centers (~80px card + 2px)
+export const EDIT_ROW_Y = 505; // row card-center Y (room above for the "Edit Mode" title)
+export const EDIT_RAISE = 46; // design px a selected card lifts
+export const EDIT_CURVE = 3; // px of downward droop per slot² → a gentle Balatro-style arc (edges lower)
+export const EDIT_TILT = 0.045; // radians of fan tilt per slot from center
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;
@@ -189,15 +193,12 @@ export function snapRot(value: number, count: number): number {
   return clampRot(Math.round(value / ANGLE_STEP) * ANGLE_STEP, count);
 }
 
-// --- Golden Gear Edit card-hold RADIAL menu (v0.10.7) — a full-CIRCLE spray wheel around the held
-// card (the float menu's cousin, but options all the way around, compact, and border-aware). ---
-export const CARD_MENU_DEAD = 26; // dead-zone radius (design px): release inside cancels the menu
-export const CARD_MENU_RIN = 32; // wedge inner radius
-export const CARD_MENU_ROUT = 116; // wedge outer radius
-export const CARD_MENU_RLABEL = 82; // label-puck ring radius
-export const CARD_MENU_PW = 74; // label puck width
-export const CARD_MENU_PH = 44; // label puck height
-export const CARD_MENU_MARGIN = 10; // keep the whole wheel this far inside the 412×892 design edges
+// --- Golden Gear Edit card-hold RADIAL menu (v0.11.0 rework) — a bigger, MODAL wheel of round icon
+// buttons around the held card (no rectangular panels; tap an icon to fire, tap outside to cancel). ---
+export const CARD_MENU_RING = 118; // icon-button center ring radius (~80% bigger than the old wheel)
+export const CARD_MENU_BTN = 62; // round icon-button diameter
+export const CARD_MENU_HUB = 42; // center hub radius (decorative + cancel target)
+export const CARD_MENU_MARGIN = 8; // keep the whole wheel this far inside the 412×892 design edges
 
 /** Centre angle (deg, screen coords: -90 = up, 0 = right) of option `i` of `n`, evenly spaced around
  *  the full circle starting due-north. */
@@ -205,27 +206,11 @@ export function cardMenuAngle(i: number, n: number): number {
   return -90 + i * (360 / Math.max(1, n));
 }
 
-/** Which full-circle option the finger points at (−1 = none/cancel). Pure nearest-centre angular
- *  hit-test past a dead-zone — the whole ring is covered, no gaps (the spray-wheel feel). */
-export function pickWedgeFull(ax: number, ay: number, fx: number, fy: number, n: number, dead: number = CARD_MENU_DEAD): number {
-  'worklet';
-  if (n <= 0) return -1;
-  const dx = fx - ax;
-  const dy = fy - ay;
-  if (Math.hypot(dx, dy) < dead) return -1;
-  const step = 360 / n;
-  const a = (Math.atan2(dy, dx) * 180) / Math.PI;
-  let i = Math.round((a + 90) / step); // centres are -90 + i*step
-  i = ((i % n) + n) % n;
-  return i;
-}
-
-/** Clamp a menu anchor so the whole wheel (out to its labels) stays inside the design box. */
+/** Clamp a menu anchor so the whole wheel (out to its icon buttons) stays inside the design box. */
 export function clampMenuAnchor(x: number, y: number): { x: number; y: number } {
-  const m = CARD_MENU_MARGIN + CARD_MENU_RLABEL + CARD_MENU_PW / 2;
-  const my = CARD_MENU_MARGIN + CARD_MENU_RLABEL + CARD_MENU_PH / 2;
+  const m = CARD_MENU_MARGIN + CARD_MENU_RING + CARD_MENU_BTN / 2;
   return {
     x: Math.min(412 - m, Math.max(m, x)),
-    y: Math.min(892 - my, Math.max(my, y)),
+    y: Math.min(892 - m, Math.max(m, y)),
   };
 }
