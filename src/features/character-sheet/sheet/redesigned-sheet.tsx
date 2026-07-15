@@ -153,19 +153,20 @@ function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active 
   return (
     <>
       <PressableArt style={box(left, top, w, h)} pressedScale={1.12} onPress={onPress} accessibilityLabel={a11y ?? `${label}, open card`}>
-        <ProvidedFrame Svg={FrameSvg.Octagon} left={0} top={0} w={w} h={h} />
-        {/* v0.10.7: a lit gold backing when this badge is TOGGLED ON (the Favorites star while its hidden
-            category is showing) — reads as filled/selected. */}
-        {active ? <View style={[box(w * 0.14, h * 0.12, w * 0.72, h * 0.76), { borderRadius: 6, backgroundColor: 'rgba(218,162,73,0.3)', borderWidth: 1.2, borderColor: Rune.goldBright }]} pointerEvents="none" /> : null}
-        {/* Icon fills more of the frame (#62 A) — frame + label sizing unchanged. An SVG glyph (v0.9.8
-            action badges) renders centered in the same inset, else the Art icon. */}
-        <View style={box(w * 0.2, h * 0.16, w * 0.6, h * 0.64)} pointerEvents="none">
-          {glyph ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>{glyph}</View> : icon != null ? <ArtImage source={icon} fit="contain" /> : null}
-        </View>
+        {/* v0.11.1 item 8: a proper CHAMFERED-RECTANGLE frame (not the octagon) with a thin gold outline.
+            Its fill IS the button, so the TOGGLED-ON state (Favorites showing) fills the whole shape —
+            no more small inner rectangle. */}
+        <ChamferBox
+          chamfer={9}
+          stroke={active ? Rune.goldBright : Rune.goldEdge}
+          strokeWidth={1.4}
+          fill={active ? 'rgba(218,162,73,0.32)' : 'rgba(14,17,22,0.5)'}
+          style={{ width: w, height: h, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: w * 0.62, height: h * 0.62, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
+            {glyph ? glyph : icon != null ? <ArtImage source={icon} fit="contain" /> : null}
+          </View>
+        </ChamferBox>
       </PressableArt>
-      {/* Wide box + no tracking: labels render at FIXED size on both platforms (#43 B). 8px — one
-          size smaller per owner (#54 E, "too big for how often you use them") — and tucked 2px
-          closer to the octagon it names. */}
       <SheetText left={left - 12} top={top + h + 2} width={w + 24} height={12} color={BRONZE} size={8} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
       </SheetText>
@@ -175,11 +176,11 @@ function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active 
 
 // v0.9.8 action-badge glyphs (replace the origin badges): a card-with-plus and a shield-with-plus.
 function AddCardGlyph() {
+  // v0.11.1 item 8: a plain, WIDER card (no folded top-right corner → no "add document" read) + a plus.
   return (
-    <Svg width={26} height={26} viewBox="0 0 24 24">
-      <Path d="M7.5 3.5 H14 L17 6.5 V20.5 H7.5 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
-      <Path d="M14 3.5 V6.5 H17" fill="none" stroke={BRONZE} strokeWidth={1.4} strokeLinejoin="round" />
-      <Path d="M12.25 10 V16 M9.25 13 H15.25" stroke={BRONZE} strokeWidth={1.8} strokeLinecap="round" />
+    <Svg width={28} height={26} viewBox="0 0 26 24">
+      <Path d="M6 3.5 H20 V20.5 H6 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
+      <Path d="M13 8 V16 M9 12 H17" stroke={BRONZE} strokeWidth={1.9} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -498,8 +499,11 @@ function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel
   );
 }
 
-/** v0.11.0 items 3 + 6: the Golden Gear Edit heading, sitting in the empty top band above the row —
- *  "Edit Mode", a live "X Cards" (→ "X/Y Cards" once a selection exists), and a subtle Deselect All. */
+/** v0.11.1 items 3 + 6: the Golden Gear Edit heading — a full-bleed DESATURATED banner (only top + bottom
+ *  rules; the left/right edges run under the screen border) holding "Edit Mode" + a live "X / Y Cards"
+ *  count, with a subtle Deselect All below. Sits mid-screen (the row now rides low at the grind height). */
+const EDIT_GRAY = '#C4C8D0';
+const EDIT_GRAY_DIM = '#9AA0AA';
 function EditHud() {
   const { editing, editMode, raisedIds, decks, category, deselectAll } = useCarousel();
   const total = decks[category]?.length ?? 0;
@@ -507,14 +511,17 @@ function EditHud() {
   const fade = useAnimatedStyle(() => ({ opacity: editMode.value }));
   if (!editing) return null;
   return (
-    <Animated.View pointerEvents="box-none" style={[box(0, 60, 412, 130), { zIndex: 40, alignItems: 'center' }, fade]}>
-      <Text style={{ color: Rune.goldBright, fontSize: 23, fontFamily: Body.bold, letterSpacing: 3, textTransform: 'uppercase' }}>Edit Mode</Text>
-      <Text style={{ marginTop: 6, color: BRONZE, fontSize: 13, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>
-        {sel > 0 ? `${sel}/${total} Cards` : `${total} Cards`}
-      </Text>
+    <Animated.View pointerEvents="box-none" style={[box(0, 350, 412, 150), { zIndex: 40, alignItems: 'center' }, fade]}>
+      {/* full-bleed banner: fill + top/bottom rules only (the side edges sit off-screen under the border) */}
+      <View style={{ width: 452, height: 84, backgroundColor: 'rgba(24,28,35,0.9)', borderTopWidth: 1.4, borderBottomWidth: 1.4, borderColor: EDIT_GRAY_DIM, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
+        <Text style={{ color: EDIT_GRAY, fontSize: 23, fontFamily: Body.bold, letterSpacing: 4, textTransform: 'uppercase' }}>Edit Mode</Text>
+        <Text style={{ marginTop: 5, color: EDIT_GRAY_DIM, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 1.6, textTransform: 'uppercase' }}>
+          {sel > 0 ? `${sel} / ${total} Cards` : `${total} Cards`}
+        </Text>
+      </View>
       {sel > 0 ? (
-        <Pressable onPress={deselectAll} accessibilityRole="button" accessibilityLabel="Deselect all cards" hitSlop={8} style={({ pressed }) => ({ marginTop: 10, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? Rune.goldBright : 'rgba(218,162,73,0.5)', backgroundColor: pressed ? 'rgba(46,34,14,0.9)' : 'rgba(12,14,19,0.7)' })}>
-          <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Deselect All</Text>
+        <Pressable onPress={deselectAll} accessibilityRole="button" accessibilityLabel="Deselect all cards" hitSlop={8} style={({ pressed }) => ({ marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)' })}>
+          <Text style={{ color: EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Deselect All</Text>
         </Pressable>
       ) : null}
     </Animated.View>

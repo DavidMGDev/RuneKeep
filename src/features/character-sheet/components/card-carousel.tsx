@@ -14,6 +14,7 @@ import Animated, {
   useDerivedValue,
   useFrameCallback,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withSpring,
@@ -47,16 +48,15 @@ import {
   GEAR_SWIPE_PX,
   GRIND_SHRINK,
   GRIND_TIGHTEN,
-  EDIT_ARM_SHOW,
   EDIT_DWELL_MS,
   EDIT_DWELL_TOL,
+  EDIT_SCROLL_CANCEL,
   EDIT_SCALE,
   EDIT_GAP,
   EDIT_ROW_Y,
   EDIT_RAISE,
-  EDIT_CURVE,
-  EDIT_TILT,
   clampRot,
+  pickWedgeFull,
   imageOpacityAt,
   IMG_MOUNT_HALF,
   MAX_FLING_VEL,
@@ -79,6 +79,7 @@ import {
   SNAP_SPRING,
 } from '../carousel-geometry';
 import { reorderBlock } from '../edit-drag';
+import { cardMenuOptions } from '../card-menu';
 import { CardRadialMenu } from './card-radial-menu';
 import { Card, CardThumb } from './card';
 import { BakedTokenLayer, type PlacedToken } from './card-tokens';
@@ -189,12 +190,22 @@ interface SlotProps {
   // --- in-row drag-reorder (v0.9.8) — all carousel-level shared values, read in the slot transform. ---
   /** Index of the card physically grabbed (−1 = none). In a group drag the whole selection follows. */
   grabIndex: SharedValue<number>;
-  /** The grabbed finger's live center, in design px (the pile's leader tracks it). */
+  /** The grabbed finger's live center, in design px (raw). */
   grabX: SharedValue<number>;
   grabY: SharedValue<number>;
+  /** SMOOTHED pile position (v0.11.1 item 5): the pile eases toward the finger instead of snapping. */
+  grabXAnim: SharedValue<number>;
+  grabYAnim: SharedValue<number>;
   /** Smoothed landing position (springs) in REMAINING-card terms — the row reflows the gap toward it so
    *  cards GLIDE into place instead of teleporting (v0.11.0 item 4). */
   hoverAnim: SharedValue<number>;
+  /** Reflow gap WIDTH (v0.11.1 item 5): 1 while dragging (a single ghost slot), animating to dragCount
+   *  on release so the row opens room for the block THEN the pile drops in (staged, no blink). */
+  gapWidth: SharedValue<number>;
+  /** 0 while dragging → 1 as the pile spreads from the finger into its landed columns (commit glide). */
+  dropSpread: SharedValue<number>;
+  /** The insertion index the pile spreads to (in remaining-card terms). */
+  dropTo: SharedValue<number>;
   // --- v0.10.7 multi-select pile drag + breathing highlight ---
   /** 1 while a drag is in flight. */
   editGrabbed: SharedValue<number>;
@@ -213,7 +224,7 @@ interface SlotProps {
   menuBounce: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, onRaise, grabIndex, grabX, grabY, hoverAnim, editGrabbed, grabIsGroup, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, editGrabbed, grabIsGroup, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
   // v0.9.8: animate the raised/selected lift (no highlight — the lift itself is the selection cue).
   const raiseSV = useSharedValue(raised ? 1 : 0);
   useEffect(() => { raiseSV.value = withTiming(raised ? 1 : 0, { duration: 220, easing: Easing.out(Easing.cubic) }); }, [raised, raiseSV]);
@@ -248,39 +259,41 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
       const myOrder = ord == null ? -1 : ord; // rank among raised, or −1
       const inDrag = grabbing && (isGroup ? myOrder >= 0 : index === grabIndex.value);
       if (inDrag) {
-        // The pile: leftmost-selected on top at the finger, each next +3px right / +2px down.
+        // The pile floats at the SMOOTHED finger (item 5: it eases toward the finger, not a snap),
+        // leftmost-selected on top, each next +3px right / +2px down. On release it SPREADS from the
+        // finger into its landed columns (dropSpread 0→1) so the drop reads as a placement, not a jump.
         const pileOrder = isGroup ? myOrder : 0;
-        const px = grabX.value + pileOrder * 3;
-        const py = grabY.value - EDIT_RAISE + pileOrder * 2;
+        const fingerX = grabXAnim.value + pileOrder * 3;
+        const fingerY = grabYAnim.value - EDIT_RAISE + pileOrder * 2;
+        const gapColX = OX + (dropTo.value + pileOrder - centerPos) * EDIT_GAP + overscrollX.value;
+        const sp = dropSpread.value;
+        const px = fingerX + (gapColX - fingerX) * sp;
+        const py = fingerY + (EDIT_ROW_Y - EDIT_RAISE - fingerY) * sp;
         x += (px - x) * e;
         y += (py - y) * e;
         scale += (EDIT_SCALE * 1.06 - scale) * e;
-        // iOS-app-style wobble while rearranging (shake is 0.5 when still).
-        tilt = tilt * (1 - e) + (shake.value - 0.5) * 0.06 * e;
+        // iOS-app-style wobble while rearranging (shake is 0.5 when still); it settles as the pile lands.
+        tilt = tilt * (1 - e) + (shake.value - 0.5) * 0.06 * e * (1 - sp);
         z = 5000 - pileOrder;
       } else {
-        // Reflow: close the gap the dragged cards left, and open one at the landing slot. The gap point
-        // (hoverAnim) SPRINGS, and the shift ramps smoothly across it, so cards glide — never teleport.
+        // Reflow: the remaining cards close the gap the pile left and open ONE (ghost) slot at the
+        // landing point while dragging; on release the gap widens to the block width (gapWidth 1→N) so
+        // the row makes room before the pile drops in. The gap point (hoverAnim) springs → smooth glide.
         let displaySlot = index;
         if (grabbing) {
-          const dragCount = isGroup ? raiseCountSV.value : 1;
           const rb = raisedBeforeSV.value[index];
           const removedBefore = isGroup ? (rb == null ? 0 : rb) : (index > grabIndex.value ? 1 : 0);
           const rrank = index - removedBefore; // rank among the remaining cards
-          // shift ramps 0→1 as the (springing) gap point passes this card. At REST (hoverAnim integer)
-          // it's exactly the discrete post-commit layout — cards at rrank ≥ hover shift right by the
-          // block width — so the drop never teleports; mid-spring it's a smooth glide.
           const shift = Math.max(0, Math.min(1, rrank - hoverAnim.value + 1));
-          displaySlot = rrank + dragCount * shift;
+          displaySlot = rrank + gapWidth.value * shift;
         }
-        // Gentle Balatro-style arc: edges droop (curve) and fan-tilt outward, instead of a dead-flat row.
+        // v0.11.1 item 1: a dead-STRAIGHT row at the grind size/height — no curve, no fan tilt.
         const slotOff = displaySlot - centerPos;
         const flatX = OX + slotOff * EDIT_GAP + overscrollX.value;
-        const curveY = EDIT_ROW_Y + EDIT_CURVE * slotOff * slotOff;
         x += (flatX - x) * e;
-        y += (curveY - y) * e - raiseSV.value * EDIT_RAISE * e;
+        y += (EDIT_ROW_Y - raiseSV.value * EDIT_RAISE - y) * e;
         scale += (EDIT_SCALE - scale) * e;
-        tilt = tilt * (1 - e) + slotOff * EDIT_TILT * e;
+        tilt = tilt * (1 - e);
         z += Math.round(raiseSV.value * 50 * e);
         // Open-bounce feedback: the card the radial menu blooms on gives a small scale pop.
         if (Math.round(menuCardIdx.value) === index) scale *= 1 + 0.09 * menuBounce.value;
@@ -642,30 +655,21 @@ function DeckSwitchIndicator({ osProgress, osDir, osArmed, osHold, overscrollX }
   );
 }
 
-const ARM_R = 40; // edit-arming ring radius (design px), centered on the gear
-const ARM_C = 2 * Math.PI * ARM_R;
-
-/** v0.11.0 item 1: a progress ring over the gear that fills as the hold-to-enter-edit dwell advances.
- *  Only appears past EDIT_ARM_SHOW (30%) — so a plain gear scroll / category transition shows nothing —
- *  and vanishes once edit mode is active. */
-function EditArmRing({ gearDwell, editMode }: { gearDwell: SharedValue<number>; editMode: SharedValue<number> }) {
-  const prog = (v: number) => {
-    'worklet';
-    return Math.max(0, Math.min(1, (v - EDIT_ARM_SHOW) / (1 - EDIT_ARM_SHOW)));
-  };
-  const wrap = useAnimatedStyle(() => {
-    const vis = editMode.value > 0.5 ? 0 : prog(gearDwell.value);
-    return { opacity: vis, transform: [{ scale: 0.86 + 0.14 * vis }] };
+/** v0.11.1 item 5: the drag insertion GHOST — a single breathing white outline (no fill) that marks
+ *  where the pile will land, so a multi-card drag previews a ONE-slot gap (never the full expanded
+ *  result pushed off-screen). Sits at the gap column; fades in while dragging, out as the pile lands. */
+const GHOST_W = CARD_W * EDIT_SCALE;
+const GHOST_H = CARD_H * EDIT_SCALE;
+function GhostCard({ editMode, editGrabbed, rotation, hoverAnim, overscrollX, dropSpread, breathe }: { editMode: SharedValue<number>; editGrabbed: SharedValue<number>; rotation: SharedValue<number>; hoverAnim: SharedValue<number>; overscrollX: SharedValue<number>; dropSpread: SharedValue<number>; breathe: SharedValue<number> }) {
+  const style = useAnimatedStyle(() => {
+    const on = editGrabbed.value * (1 - dropSpread.value) * editMode.value;
+    const x = OX + (hoverAnim.value - rotation.value / ANGLE_STEP) * EDIT_GAP + overscrollX.value;
+    return {
+      opacity: on * (0.1 + 0.5 * breathe.value), // breathes 10% → 60% white while placing
+      transform: [{ translateX: x - GHOST_W / 2 }, { translateY: EDIT_ROW_Y - GHOST_H / 2 }],
+    };
   });
-  const ringProps = useAnimatedProps(() => ({ strokeDashoffset: ARM_C * (1 - prog(gearDwell.value)) }));
-  return (
-    <Animated.View pointerEvents="none" style={[box(206 - ARM_R - 4, 852 - ARM_R - 4, (ARM_R + 4) * 2, (ARM_R + 4) * 2), { zIndex: 2650 }, wrap]}>
-      <Svg width={(ARM_R + 4) * 2} height={(ARM_R + 4) * 2}>
-        <Circle cx={ARM_R + 4} cy={ARM_R + 4} r={ARM_R} stroke="rgba(218,162,73,0.24)" strokeWidth={3} fill="none" />
-        <AnimatedCircle cx={ARM_R + 4} cy={ARM_R + 4} r={ARM_R} stroke={Rune.goldBright} strokeWidth={4.2} fill="none" strokeLinecap="round" strokeDasharray={ARM_C} animatedProps={ringProps} transform={`rotate(-90 ${ARM_R + 4} ${ARM_R + 4})`} />
-      </Svg>
-    </Animated.View>
-  );
+  return <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: GHOST_W, height: GHOST_H, borderRadius: 7, borderWidth: 2, borderColor: '#ffffff', zIndex: 4800 }, style]} />;
 }
 
 /**
@@ -675,9 +679,12 @@ function EditArmRing({ gearDwell, editMode }: { gearDwell: SharedValue<number>; 
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, toggleRaise, onReorderCards, cardMenuOpen, openCardMenu } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
+  // v0.11.1: the card-hold wheel is spray-select (like the float menu) again — the pan needs the option
+  // count to hit-test the wheel; re-memoizes when the category / NFC availability change.
+  const menuOptCount = cardMenuOptions(category === 'favorites', nfcAvailable).length;
   const ringLen = ring.length; // #233 item 6: no over-scroll switch when ≤1 category is enabled
   const middle = Math.round((count - 1) / 2);
 
@@ -695,13 +702,20 @@ export function CardCarousel() {
   const gearDwell = useSharedValue(0);
   const dwellAX = useSharedValue(0);
   const dwellAY = useSharedValue(0);
+  const gearScrolled = useSharedValue(0); // item 9: 1 once the gesture scrolled ≥1.5 cards (suppresses enter)
+  const enteringEdit = useSharedValue(0); // 1 = the dwell just fired enterEdit (this gesture's release must not collapse)
   // v0.9.8 in-row drag-reorder (edit mode only): swipe a card UP to grab it, drag, drop to reposition.
   // v0.10.7: the RAISED selection drags together as one pile; a lone (unselected) card still drags solo.
   const grabIndex = useSharedValue(-1); // the physically-grabbed card (−1 = not dragging)
   const grabX = useSharedValue(0);
   const grabY = useSharedValue(0);
+  const grabXAnim = useSharedValue(0); // v0.11.1 item 5: smoothed pile position (eases toward the finger)
+  const grabYAnim = useSharedValue(0);
   const hoverIndex = useSharedValue(0); // landing target, in REMAINING-card terms (0..count-dragCount)
-  const hoverAnim = useSharedValue(0); // SMOOTHED landing point the reflow reads (springs toward hoverIndex)
+  const hoverAnim = useSharedValue(0); // SMOOTHED landing point the reflow reads (glides toward hoverIndex)
+  const gapWidth = useSharedValue(1); // reflow gap width: 1 (ghost) while dragging → dragCount on commit
+  const dropSpread = useSharedValue(0); // 0 dragging → 1 as the pile spreads into the gap on release
+  const dropTo = useSharedValue(0); // the insertion index the pile spreads to
   const autoScroll = useSharedValue(0); // edge-drag autoscroll speed (cards/sec, signed) while dragging
   const countSV = useSharedValue(count); // deck length, readable from the frame-callback worklet
   const editStartIdx = useSharedValue(-1); // card under the touch at edit-drag begin
@@ -737,27 +751,42 @@ export function CardCarousel() {
   // fades into it via its own raiseSV envelope), and winds down to 0 when the selection empties.
   const anyRaised = raisedIds.size > 0;
   useEffect(() => {
-    // v0.11.0 item 2: ~60% faster breath (1500 → 940ms).
-    if (anyRaised) breathe.value = withRepeat(withTiming(1, { duration: 940, easing: Easing.inOut(Easing.sin) }), -1, true);
+    // v0.11.1 item 4: the breath is 80% faster than v0.11.0 (940 → 522ms).
+    if (anyRaised) breathe.value = withRepeat(withTiming(1, { duration: 522, easing: Easing.inOut(Easing.sin) }), -1, true);
     else { cancelAnimation(breathe); breathe.value = withTiming(0, { duration: 300 }); }
   }, [anyRaised, breathe]);
   useEffect(() => { countSV.value = count; }, [count, countSV]);
-  // v0.11.0 item 4: edge-drag autoscroll. While a card/pile is dragged near a screen edge the row scrolls
-  // itself (speed ramps from the center 40% dead-zone out, faster with more cards), and the landing gap
-  // tracks the still finger as content slides beneath it. A frame callback (not the pan) drives it so a
-  // finger held motionless at the edge keeps scrolling. Active only while editing.
+  // v0.11.1 item 5: one per-frame worklet drives the whole drag feel while editing —
+  //  (a) the pile EASES toward the finger (no snap),
+  //  (b) the landing gap GLIDES toward its target (no pop, even under autoscroll),
+  //  (c) near a screen edge the row autoscrolls, ramping harder over the outer 30% (up to +30%).
   const editFrame = useFrameCallback((info) => {
     'worklet';
-    if (editGrabbed.value !== 1 || autoScroll.value === 0) return;
+    if (editGrabbed.value !== 1 || dropSpread.value > 0.001) return; // inert during the release/drop glide
     const cnt = countSV.value;
     const dt = Math.min(50, info.timeSincePreviousFrame ?? 16) / 1000;
-    const next = clampRot(rotation.value + autoScroll.value * ANGLE_STEP * dt, cnt);
-    rotation.value = next;
+    const k = Math.min(1, dt * 18); // exponential-smoothing factor (frame-rate independent)
+    // (a) pile follows the finger with a little lag.
+    grabXAnim.value += (grabX.value - grabXAnim.value) * k;
+    grabYAnim.value += (grabY.value - grabYAnim.value) * k;
+    // (c) edge autoscroll: dead-zone in the center 40%, ramp out, and an extra kick over the outer 30%.
+    const dxc = grabX.value - OX;
+    const ax = Math.abs(dxc);
+    let cps = 0;
+    if (ax > 82) {
+      let t = Math.min(1, (ax - 82) / (170 - 82));
+      const edge = Math.min(1, ax / 206);
+      if (edge > 0.7) t *= 1 + 0.3 * ((edge - 0.7) / 0.3); // up to +30% over the last 30% of the screen
+      cps = Math.sign(dxc) * t * (2 + Math.min(9, cnt * 0.4));
+    }
+    autoScroll.value = cps;
+    if (cps !== 0) rotation.value = clampRot(rotation.value + cps * ANGLE_STEP * dt, cnt);
+    // (b) landing gap glides toward the finger's current slot (springs even as content scrolls beneath).
     const dragCount = grabIsGroup.value === 1 ? raiseCountSV.value : 1;
     const rem = Math.max(0, cnt - dragCount);
-    const t = Math.max(0, Math.min(rem, Math.round(next / ANGLE_STEP + (grabX.value - OX) / EDIT_GAP)));
-    hoverIndex.value = t;
-    hoverAnim.value = t; // during autoscroll keep the gap glued to the finger (spring would lag)
+    const target = Math.max(0, Math.min(rem, Math.round(rotation.value / ANGLE_STEP + (grabX.value - OX) / EDIT_GAP)));
+    hoverIndex.value = target;
+    hoverAnim.value += (target - hoverAnim.value) * k;
   }, false);
   useEffect(() => { editFrame.setActive(editing); return () => editFrame.setActive(false); }, [editing, editFrame]);
   // Auto-select the held card when the menu opens on an UNSELECTED card with an empty selection (item 8),
@@ -765,20 +794,39 @@ export function CardCarousel() {
   const selectIfEmpty = useCallback((idx: number) => {
     if (raisedIds.size === 0 && deck[idx]) toggleRaise(deck[idx].id);
   }, [raisedIds, deck, toggleRaise]);
-  // Commit a drag-drop (v0.10.7): move the dragged BLOCK (the selection, or a lone card) to `insertAt`
-  // among the cards left behind, and persist the new order (reuses the group-reorder handler).
-  const commitDrag = useCallback((isGroup: number, grabIdx: number, insertAt: number) => {
-    if (!onReorderCards) return;
-    const dragSet = isGroup === 1
-      ? new Set(deck.filter((c) => raisedIds.has(c.id)).map((c) => c.id))
-      : new Set(grabIdx >= 0 && grabIdx < deck.length ? [deck[grabIdx].id] : []);
-    if (!dragSet.size) return;
+  // v0.11.1 item 5: finish a drop with NO 1-frame blink. By the time this runs the pile has already
+  // spread into the (dragCount-wide) gap, so the on-screen layout already equals the post-commit order.
+  // We persist the reorder and let a deck-change effect flip `editGrabbed` off only once the new order is
+  // live — so the transform never briefly renders the OLD positions. All drags go through the group path.
+  const dropPendingRef = useRef(false);
+  const finishDrop = useCallback((to: number) => {
+    const dragSet = new Set(deck.filter((c) => raisedIds.has(c.id)).map((c) => c.id));
     const ids = deck.map((c) => c.id);
-    const ordered = reorderBlock(ids, dragSet, insertAt);
-    if (ordered.every((id, i) => id === ids[i])) return; // unchanged → no write
-    onReorderCards([...dragSet], category, ordered);
-    playSfx('cardDragEnd');
-  }, [deck, category, raisedIds, onReorderCards]);
+    const ordered = dragSet.size ? reorderBlock(ids, dragSet, to) : ids;
+    const changed = dragSet.size > 0 && !ordered.every((id, i) => id === ids[i]);
+    if (changed && onReorderCards) {
+      // Pre-write the raiseOrder ranks for the NEW order so the bridge frame (new deck, editGrabbed still
+      // 1) reads consistent ranks — the reflow/pile already match the post-commit layout (no 1-frame jump).
+      const orders: number[] = []; const before: number[] = []; let cnt = 0;
+      for (let i = 0; i < ordered.length; i++) { before[i] = cnt; if (raisedIds.has(ordered[i])) { orders[i] = cnt; cnt++; } else orders[i] = -1; }
+      raiseOrderSV.value = orders; raisedBeforeSV.value = before; raiseCountSV.value = cnt;
+      dropPendingRef.current = true; // cleared by the effect when the reordered deck lands
+      onReorderCards([...dragSet], category, ordered);
+      playSfx('cardDragEnd');
+    } else {
+      // nothing moved → reset the drag state immediately (no new deck coming)
+      editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0;
+    }
+  }, [deck, raisedIds, category, onReorderCards, editGrabbed, grabIndex, grabIsGroup, gapWidth, dropSpread, raiseOrderSV, raisedBeforeSV, raiseCountSV]);
+  useEffect(() => {
+    if (!dropPendingRef.current) return;
+    dropPendingRef.current = false;
+    editGrabbed.value = 0;
+    grabIndex.value = -1;
+    grabIsGroup.value = 0;
+    gapWidth.value = 1;
+    dropSpread.value = 0;
+  }, [deck, editGrabbed, grabIndex, grabIsGroup, gapWidth, dropSpread]);
 
   const startRot = useSharedValue(0);
   const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
@@ -903,7 +951,6 @@ export function CardCarousel() {
         .minDistance(2)
         .onBegin((e) => {
           if (switching.value === 1) return; // a switch is in flight — deck isn't grabbable yet (#239)
-          if (cardMenuOpen.value > 0.5) return; // v0.11.0: the modal card menu owns all input while open
           // v0.9.8 Golden Gear Edit: a fully separate path — prep a card grab / row scroll, and NONE of
           // the normal gear/grind/dwell logic runs (so normal scrolling is byte-for-byte unaffected).
           if (editMode.value > 0.5) {
@@ -921,22 +968,33 @@ export function CardCarousel() {
             grabIsGroup.value = 0;
             editHandledSV.value = 0;
             grabIndex.value = -1;
-            // v0.11.0: hold a card still (no upward drag) to bloom the MODAL radial menu. item 8: a
-            // SELECTED card always arms it; an UNSELECTED card arms it only when nothing is selected
-            // (that card then becomes the target).
+            // item 7: hold the gear IN edit mode → drop back to the EXPANDED arc (a tap → compact, in onEnd).
+            // The gear gives the white press-flash the same as entering.
+            cancelAnimation(gearDwell);
+            gearDwell.value = 0;
+            if (editPadTouch.value === 1) {
+              gearFlash.value = withTiming(1, { duration: 130 });
+              gearDwell.value = withTiming(1, { duration: EDIT_DWELL_MS }, (fin) => {
+                'worklet';
+                if (fin) {
+                  editPadTouch.value = 0; // consumed by the hold — don't ALSO tap-exit to compact on release
+                  runOnJS(exitEdit)(false); // hold → expanded arc
+                }
+              });
+            }
+            // item 6/8: hold a card still → the SPRAY radial wheel (finger tracks a wedge, release fires).
+            // A SELECTED card always arms it; an UNSELECTED card arms it only when nothing is selected.
             cancelAnimation(menuDwell);
             menuDwell.value = 0;
             const canMenu = editStartIdx.value >= 0 && (editStartRaised.value === 1 || raiseCountSV.value === 0);
             if (canMenu) {
-              menuDwell.value = withTiming(1, { duration: 300 }, (fin) => {
+              menuDwell.value = withTiming(1, { duration: 260 }, (fin) => {
                 'worklet';
                 if (fin && editDecided.value === 0) {
                   editDecided.value = 3;
                   const cp2 = rotation.value / ANGLE_STEP;
-                  const off = editStartIdx.value - cp2;
-                  const ax = OX + off * EDIT_GAP;
-                  const ay = EDIT_ROW_Y + EDIT_CURVE * off * off - EDIT_RAISE;
-                  // Feedback: the held card gives a small scale bounce as the wheel blooms (+ a haptic).
+                  const ax = OX + (editStartIdx.value - cp2) * EDIT_GAP;
+                  const ay = EDIT_ROW_Y - EDIT_RAISE; // straight row
                   menuCardIdx.value = editStartIdx.value;
                   menuBounce.value = withSequence(withTiming(1, { duration: 90 }), withTiming(0, { duration: 160 }));
                   runOnJS(focusHaptic)();
@@ -969,13 +1027,17 @@ export function CardCarousel() {
             // v0.9.8: arm the dwell-to-edit timer (skip if already editing — the gear then just scrolls).
             if (editMode.value < 0.5) {
               dwellAX.value = 0; dwellAY.value = 0;
+              gearScrolled.value = 0; // item 9: once ≥1.5 cards are scrolled, a still hold won't enter edit
+              enteringEdit.value = 0;
+              gearFlash.value = withTiming(1, { duration: 130 }); // item 2: white press feedback on the gear
               cancelAnimation(gearDwell);
               gearDwell.value = 0;
               gearDwell.value = withTiming(1, { duration: EDIT_DWELL_MS }, (fin) => {
                 'worklet';
                 // item 1: don't enter over a category transition. item 5: clear the grind-shrink so
                 // EXITING edit returns cards to their normal expanded size (not the small gear-scroll size).
-                if (fin && osDir.value === 0 && switching.value !== 1) {
+                if (fin && osDir.value === 0 && switching.value !== 1 && gearScrolled.value === 0) {
+                  enteringEdit.value = 1; // this gesture's eventual release must NOT collapse the hand
                   grindProgress.value = withTiming(0, { duration: 300 });
                   runOnJS(enterEdit)();
                 }
@@ -985,42 +1047,42 @@ export function CardCarousel() {
         })
         .onUpdate((e) => {
           if (switching.value === 1) return; // ignore drags while the deck is switching (#239 item 3)
-          if (cardMenuOpen.value > 0.5) return; // v0.11.0: modal card menu owns input while open
           if (machineState.value === 'fullscreen') return;
           // v0.9.8 Golden Gear Edit: horizontal drag scrolls the flat row; an upward swipe on a card
           // grabs it (a deliberate, scroll-distinct gesture) and then the card follows the finger.
           if (editMode.value > 0.5) {
-            // Radial menu opening/open (v0.11.0): it's modal — ignore all pan movement; taps go to the wheel.
-            if (editDecided.value === 3) return;
+            // item 6: the radial is a SPRAY wheel (like the float menu) — track the finger + highlight.
+            if (editDecided.value === 3) {
+              cardMenuFingerX.value = e.x;
+              cardMenuFingerY.value = e.y;
+              cardMenuHighlight.value = pickWedgeFull(cardMenuAnchorX.value, cardMenuAnchorY.value, e.x, e.y, menuOptCount);
+              return;
+            }
             if (editGrabbed.value === 1) {
+              // Just feed the raw finger; the frame callback smooths the pile + gap + autoscroll (item 5).
               grabX.value = e.x;
               grabY.value = e.y;
-              const dragCount = grabIsGroup.value === 1 ? raiseCountSV.value : 1;
-              const rem = Math.max(0, count - dragCount);
-              const t = Math.max(0, Math.min(rem, Math.round(rotation.value / ANGLE_STEP + (e.x - OX) / EDIT_GAP)));
-              if (t !== hoverIndex.value) { hoverIndex.value = t; hoverAnim.value = withSpring(t, SNAP_SPRING); } // glide the gap
-              // Edge autoscroll (item 4): center 40% is a dead-zone; past it the speed ramps to a max that's
-              // reached BEFORE the very edge (finger girth) and scales with the deck size.
-              const dxc = e.x - OX;
-              const ax = Math.abs(dxc);
-              if (ax > 82) {
-                const tt = Math.min(1, (ax - 82) / (170 - 82));
-                autoScroll.value = Math.sign(dxc) * tt * (2 + Math.min(9, count * 0.4));
-              } else autoScroll.value = 0;
               return;
             }
             if (editDecided.value === 0) {
-              // Upward swipe → GRAB (pile-drag the selection, or this lone card). Cancels the menu dwell.
+              // Upward swipe → GRAB the selection as a pile. The grabbed card is ADDED to the selection so
+              // ALL drags go through the group path (item 5: a clean, blink-free commit).
               if (editStartIdx.value >= 0 && e.translationY < -26 && Math.abs(e.translationY) > Math.abs(e.translationX) * 1.1) {
                 cancelAnimation(menuDwell);
                 menuDwell.value = 0;
                 editDecided.value = 1;
                 editGrabbed.value = 1;
-                grabIsGroup.value = editStartRaised.value; // drag the whole selection iff the grabbed card is in it
+                grabIsGroup.value = 1;
                 grabIndex.value = editStartIdx.value;
+                if (editStartRaised.value === 0) runOnJS(selectIfEmpty)(editStartIdx.value); // grab selects it
                 grabX.value = e.x;
                 grabY.value = e.y;
-                const dragCount = grabIsGroup.value === 1 ? raiseCountSV.value : 1;
+                // Seed the smoothed pile at the grabbed card's row slot so it EASES up to the finger.
+                grabXAnim.value = OX + (editStartIdx.value - rotation.value / ANGLE_STEP) * EDIT_GAP;
+                grabYAnim.value = EDIT_ROW_Y;
+                gapWidth.value = 1;
+                dropSpread.value = 0;
+                const dragCount = Math.max(1, raiseCountSV.value + (editStartRaised.value === 0 ? 1 : 0));
                 const h0 = Math.max(0, Math.min(Math.max(0, count - dragCount), editStartIdx.value));
                 hoverIndex.value = h0;
                 hoverAnim.value = h0; // start the gap where the block was (no opening jump)
@@ -1045,17 +1107,28 @@ export function CardCarousel() {
           // (GEAR_SWIPE_PX) means one center->edge drag covers the whole deck AND this over-scroll.
           if (padTouch.value && padWasExpanded.value) {
             scrolled.value = true;
+            // item 9: once the gesture has scrolled ≥ EDIT_SCROLL_CANCEL cards, a STILL hold no longer
+            // enters edit — you're clearly scrolling, and the white press-flash fades back to gold.
+            const scrolledCards = Math.abs(e.translationX / (gearPanR * ANGLE_STEP));
+            if (editMode.value < 0.5 && scrolledCards >= EDIT_SCROLL_CANCEL && gearScrolled.value === 0) {
+              gearScrolled.value = 1;
+              cancelAnimation(gearDwell);
+              gearDwell.value = 0;
+              gearFlash.value = withTiming(0, { duration: 200 });
+            }
             // v0.9.8: any real drift re-anchors + restarts the dwell, so only a STILL finger flattens
-            // the deck (a slow scroll keeps moving past the tolerance and never trips it).
-            if (editMode.value < 0.5 && (Math.abs(e.translationX - dwellAX.value) > EDIT_DWELL_TOL || Math.abs(e.translationY - dwellAY.value) > EDIT_DWELL_TOL)) {
+            // the deck (a slow scroll keeps moving past the tolerance and never trips it) — unless the
+            // gesture has already crossed the scroll threshold (item 9), then it's inert.
+            if (editMode.value < 0.5 && gearScrolled.value === 0 && (Math.abs(e.translationX - dwellAX.value) > EDIT_DWELL_TOL || Math.abs(e.translationY - dwellAY.value) > EDIT_DWELL_TOL)) {
               dwellAX.value = e.translationX; dwellAY.value = e.translationY;
+              gearFlash.value = withTiming(0, { duration: 200 }); // scrolling → the press-white fades to gold
               cancelAnimation(gearDwell);
               gearDwell.value = 0;
               gearDwell.value = withTiming(1, { duration: EDIT_DWELL_MS }, (fin) => {
                 'worklet';
                 // item 1: don't enter over a category transition. item 5: clear the grind-shrink so
                 // EXITING edit returns cards to their normal expanded size (not the small gear-scroll size).
-                if (fin && osDir.value === 0 && switching.value !== 1) {
+                if (fin && osDir.value === 0 && switching.value !== 1 && gearScrolled.value === 0) {
                   grindProgress.value = withTiming(0, { duration: 300 });
                   runOnJS(enterEdit)();
                 }
@@ -1145,39 +1218,43 @@ export function CardCarousel() {
         })
         .onEnd((e) => {
           if (switching.value === 1) return; // a switch owns the deck right now (#239 item 3)
-          if (cardMenuOpen.value > 0.5) return; // modal menu is up — its own taps handle it
           // v0.9.8 Golden Gear Edit: drop a grabbed card at the hovered slot (persist), else snap the row.
           if (editMode.value > 0.5) {
             cancelAnimation(menuDwell);
             menuDwell.value = 0;
+            cancelAnimation(gearDwell); // release ends any pending hold-to-exit-expanded
+            gearDwell.value = 0;
             if (editDecided.value === 3) {
-              // v0.11.0: the menu is modal — releasing the opening hold does NOT close it (item 7). Just
-              // drop the drag state; the wheel stays up until a wedge or the backdrop is tapped.
+              // item 6 spray-select: release on a wedge fires it; release in the dead-zone/beyond cancels.
               editHandledSV.value = 1;
+              if (cardMenuHighlight.value >= 0) runOnJS(selectCardMenu)(cardMenuHighlight.value);
+              else runOnJS(closeCardMenu)();
               editDecided.value = 0;
               editStartIdx.value = -1;
               return;
             }
             if (editGrabbed.value === 1) {
-              const isGroup = grabIsGroup.value;
-              const grabIdx = grabIndex.value;
+              // Staged commit (item 5): make ROOM (gap 1→dragCount), THEN the pile spreads into it, THEN
+              // persist — and only flip editGrabbed off once the reordered deck is live (no blink).
               const to = hoverIndex.value;
-              editGrabbed.value = 0;
-              grabIndex.value = -1;
+              const dragCount = Math.max(1, raiseCountSV.value);
               autoScroll.value = 0;
               cancelAnimation(shake);
               shake.value = withTiming(0.5, { duration: 120 });
-              // Commit at the finger's landing slot. The remaining cards were already reflowed to their
-              // final columns (the springing gap), so only the pile settles the short hop to the gap.
-              runOnJS(commitDrag)(isGroup, grabIdx, to);
+              dropTo.value = to;
+              gapWidth.value = withTiming(dragCount, { duration: 180, easing: Easing.out(Easing.cubic) });
+              dropSpread.value = withDelay(90, withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) }, (fin) => {
+                'worklet';
+                if (fin) runOnJS(finishDrop)(to);
+              }));
               editDecided.value = 0;
               editStartIdx.value = -1;
               return;
             }
-            // v0.10.7: a still TAP on the gear pad exits edit mode (the gear no longer scrolls here).
+            // item 7: a still TAP on the gear pad exits edit mode → close the whole hand to COMPACT.
             if (editPadTouch.value === 1 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
               editPadTouch.value = 0;
-              runOnJS(exitEdit)();
+              runOnJS(exitEdit)(true);
               editDecided.value = 0;
               editStartIdx.value = -1;
               return;
@@ -1194,6 +1271,10 @@ export function CardCarousel() {
             return;
           }
           cancelAnimation(gearDwell); gearDwell.value = 0; // v0.9.8: a release ends any pending dwell
+          // The dwell just ENTERED edit (editMode may still be animating up): don't run the gear-tap
+          // collapse — that would compact the hand while edit mode is turning on.
+          if (enteringEdit.value === 1) { enteringEdit.value = 0; padTouch.value = false; return; }
+          gearFlash.value = withTiming(0, { duration: 220 }); // item 2: didn't enter edit → white fades to gold
           const stillTap = Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8;
           // Focused: a tap on the gear closes the card AND collapses the whole hand (#62 D);
           // a downward swipe (or flick) returns the card; otherwise settle it back open.
@@ -1269,18 +1350,23 @@ export function CardCarousel() {
         // A clean tap never activates the pan (minDistance) — onEnd doesn't run, onFinalize does.
         .onFinalize((e, success) => {
           if (switching.value === 1) return; // don't settle/spring a deck that's mid-switch (#239)
-          if (cardMenuOpen.value > 0.5) return; // modal menu is up — its taps own dismissal, don't reset here
-          // v0.9.8/v0.11.0 Golden Gear Edit finalize: handle the cases where the pan never ACTIVATED
+          // v0.9.8/v0.11.1 Golden Gear Edit finalize: handle the cases where the pan never ACTIVATED
           // (a still hold/tap fires onFinalize only, not onEnd) and reset drag bookkeeping.
           if (editMode.value > 0.5) {
             cancelAnimation(menuDwell);
             menuDwell.value = 0;
-            // v0.11.0: the menu is modal — a still hold that opened it must NOT auto-close on release
-            // (item 7). Leave the wheel up; its wedges/backdrop dismiss it. editDecided===3 just resets.
-            if (editGrabbed.value === 1) { editGrabbed.value = 0; grabIndex.value = -1; autoScroll.value = 0; cancelAnimation(shake); shake.value = 0.5; }
-            // Still gear tap that never activated the pan → exit edit (only when no menu is opening).
+            cancelAnimation(gearDwell);
+            gearDwell.value = 0;
+            // Spray wheel open but onEnd didn't run (a still hold released without dragging) → fire the
+            // pointed wedge, or cancel in the dead-zone (item 6).
+            if (editDecided.value === 3 && editHandledSV.value === 0) {
+              if (cardMenuHighlight.value >= 0) runOnJS(selectCardMenu)(cardMenuHighlight.value);
+              else runOnJS(closeCardMenu)();
+            }
+            if (editGrabbed.value === 1) { editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0; autoScroll.value = 0; cancelAnimation(shake); shake.value = 0.5; }
+            // Still gear tap that never activated the pan → exit edit to COMPACT (item 7).
             if (editDecided.value === 0 && editPadTouch.value === 1 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
-              runOnJS(exitEdit)();
+              runOnJS(exitEdit)(true);
             }
             editPadTouch.value = 0;
             editHandledSV.value = 0;
@@ -1289,6 +1375,8 @@ export function CardCarousel() {
             return;
           }
           cancelAnimation(gearDwell); gearDwell.value = 0; // v0.9.8: a clean release ends any pending dwell
+          if (enteringEdit.value === 1) { enteringEdit.value = 0; padTouch.value = false; return; } // just entered edit
+          gearFlash.value = withTiming(0, { duration: 220 }); // item 2: didn't enter edit → white fades to gold
           // v0.9.8: a still gear tap that never activated the pan toggles the hand — but NOT in edit mode
           // (the dwell-enter ends with the finger still down; a tap must not collapse the flattened deck).
           if (!success && padTouch.value && editMode.value < 0.5 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
@@ -1318,7 +1406,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, dwellAX, dwellAY, commitDrag, grabIndex, grabX, grabY, hoverIndex, hoverAnim, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, raiseOrderSV, raiseCountSV, cardMenuOpen, openCardMenu, selectIfEmpty],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -1357,7 +1445,12 @@ export function CardCarousel() {
         grabIndex={grabIndex}
         grabX={grabX}
         grabY={grabY}
+        grabXAnim={grabXAnim}
+        grabYAnim={grabYAnim}
         hoverAnim={hoverAnim}
+        gapWidth={gapWidth}
+        dropSpread={dropSpread}
+        dropTo={dropTo}
         editGrabbed={editGrabbed}
         grabIsGroup={grabIsGroup}
         raiseOrderSV={raiseOrderSV}
@@ -1405,9 +1498,9 @@ export function CardCarousel() {
         </Animated.View>
         {/* Gear over-scroll indicator (#174): progress ring + target deck SVG in the opened gap. */}
         <DeckSwitchIndicator osProgress={osProgress} osDir={osDir} osArmed={osArmed} osHold={osHold} overscrollX={overscrollX} />
-        {/* v0.11.0 item 1: the hold-to-enter-edit arming ring over the gear. */}
-        <EditArmRing gearDwell={gearDwell} editMode={editMode} />
-        {/* v0.11.0 card-hold radial action menu (Golden Gear Edit): modal icon wheel around a held card. */}
+        {/* v0.11.1 item 5: the drag insertion ghost (single breathing outline). */}
+        <GhostCard editMode={editMode} editGrabbed={editGrabbed} rotation={rotation} hoverAnim={hoverAnim} overscrollX={overscrollX} dropSpread={dropSpread} breathe={breathe} />
+        {/* v0.11.1 card-hold radial action menu (Golden Gear Edit): full-circle icon spray wheel. */}
         <CardRadialMenu />
         {/* The inner gear's touchable pad: a transparent hit-target child, so the container pan
             receives gear touches instead of the ExpandVeil swallowing them. Above the dim (2600)

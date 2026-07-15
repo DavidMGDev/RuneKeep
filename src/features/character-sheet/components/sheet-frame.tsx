@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
@@ -6,6 +7,9 @@ import { box } from '@/lib/design';
 import { ArtImage } from '@/components/art-image';
 import { Art } from '../art';
 import { useCarousel } from '../carousel-context';
+
+// v0.11.1: grayscale twin of the gold border, crossfaded in for the Edit Mode desaturation (item 2).
+const BORDER_GRAY = require('../../../../assets/art/longborder-gray.webp');
 
 /** The parchment sheet behind everything (rounded so the gold frame's corners read). */
 export function SheetBackground() {
@@ -25,11 +29,16 @@ export function SheetBackground() {
  * frame is a single image leaf, so the transient fractional alpha never forces a saveLayer.
  */
 export function SheetFrame() {
-  const { fullscreenProgress } = useCarousel();
+  const { fullscreenProgress, desat } = useCarousel();
   const dim = useAnimatedStyle(() => ({ opacity: 1 - fullscreenProgress.value * 0.82 }));
+  // v0.11.1 item 2: the gold border fades to its desaturated (light-gray) twin while editing.
+  const gray = useAnimatedStyle(() => ({ opacity: desat.value }));
   return (
     <Animated.View style={[StyleSheet.absoluteFill, dim]} pointerEvents="none">
       <ArtImage source={Art.longBorder} fit="fill" style={StyleSheet.absoluteFill} />
+      <Animated.View style={[StyleSheet.absoluteFill, gray]} pointerEvents="none">
+        <Image source={BORDER_GRAY} style={StyleSheet.absoluteFill} contentFit="fill" cachePolicy="memory-disk" transition={0} />
+      </Animated.View>
     </Animated.View>
   );
 }

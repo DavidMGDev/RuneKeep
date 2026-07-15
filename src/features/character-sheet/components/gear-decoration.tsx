@@ -20,7 +20,7 @@ const GEAR_TOP = 714; // the half-point stays well below the design bottom (892)
  * layer, never on top of a card.
  */
 export function GearDecoration() {
-  const { rotation, gearRotation, switching, expandProgress, fullscreenProgress } = useCarousel();
+  const { rotation, gearRotation, switching, expandProgress, fullscreenProgress, desat, gearFlash } = useCarousel();
   // The gear runs off its OWN rotation (#239 item 4): normally it tracks the card rotation 1:1, but on
   // a category switch commitSwitch eases gearRotation to the landed angle while the cards snap — so the
   // cogs glide to their new rotation instead of snapping (or freezing) with the hard card jump.
@@ -33,7 +33,7 @@ export function GearDecoration() {
   const layer = useAnimatedStyle(() => ({ zIndex: fullscreenProgress.value > 0.02 ? 2500 : 0 }));
   return (
     <Animated.View style={[box(GEAR_LEFT, GEAR_TOP, GEAR_W, GEAR_W), layer]} pointerEvents="none">
-      <GearStack rotation={gearRotation} expandProgress={expandProgress} size={GEAR_W} />
+      <GearStack rotation={gearRotation} expandProgress={expandProgress} desat={desat} gearFlash={gearFlash} size={GEAR_W} />
     </Animated.View>
   );
 }

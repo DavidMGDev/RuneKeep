@@ -1,5 +1,5 @@
 import { createContext, type MutableRefObject, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { cancelAnimation, Easing, runOnJS, type SharedValue, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { cancelAnimation, Easing, runOnJS, type SharedValue, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
 import { playSfx } from '@/lib/sfx';
 
@@ -79,8 +79,14 @@ interface CarouselContextValue {
   raisedIds: Set<string>;
   /** Enter edit mode (gear held still): flatten + shrink the deck to lowest LOD. */
   enterEdit: () => void;
-  /** Leave edit mode: restore the arc and clear the selection. */
-  exitEdit: () => void;
+  /** Leave edit mode (v0.11.1): `toCompact` true = tap-gear → close the whole hand to compact; false =
+   *  hold-gear → drop back to the expanded arc. Both play the reverse desaturation (gears flash → gold). */
+  exitEdit: (toCompact?: boolean) => void;
+  /** 0 = normal gold chrome, 1 = fully desaturated (light-gray) edit chrome. Drives the border + gears +
+   *  edit UI palette (item 2). */
+  desat: SharedValue<number>;
+  /** 0..1 white pulse over the gears — the press feedback + the exit flash (item 2 / item 7). */
+  gearFlash: SharedValue<number>;
   /** Toggle a card's raised/selected state in edit mode. */
   toggleRaise: (id: string) => void;
   /** Clear the whole edit selection (the "Deselect All" control + after a Duplicate). */
@@ -92,11 +98,16 @@ interface CarouselContextValue {
    *  signature as the Cards panel's group reorder, so it inherits the override + order persistence. */
   onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
   // --- Golden Gear Edit card-hold RADIAL menu (v0.11.0 rework): hold a card to open a MODAL icon wheel. ---
-  /** 0 = closed .. 1 = open (fade). While open the carousel pan is frozen (can't select cards). */
+  /** 0 = closed .. 1 = open (fade). */
   cardMenuOpen: SharedValue<number>;
   /** The wheel centre (design px), clamped inside the screen. */
   cardMenuAnchorX: SharedValue<number>;
   cardMenuAnchorY: SharedValue<number>;
+  /** The live finger (design px) while spray-selecting (v0.11.1 — like the float menu). */
+  cardMenuFingerX: SharedValue<number>;
+  cardMenuFingerY: SharedValue<number>;
+  /** The wedge the finger points at (−1 = none/cancel). */
+  cardMenuHighlight: SharedValue<number>;
   /** Whether NFC send is offered (Android/APK) — drives the option list AND the wheel. */
   nfcAvailable: boolean;
   /** Whether EVERY selected card is already favorited (item 9): flips the Favorite option to Unfavorite. */
@@ -164,11 +175,16 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const [raisedIds, setRaisedIds] = useState<Set<string>>(() => new Set());
   const raisedIdsRef = useRef(raisedIds);
   raisedIdsRef.current = raisedIds;
-  // v0.11.0 card-hold radial menu shared values. The wheel is now MODAL (tap an icon; no spray-select),
-  // so only the open state + anchor live here — the pan opens it, CardRadialMenu renders + dispatches.
+  // v0.11.1 card-hold radial menu shared values — spray-select (the pan drives the finger + highlight).
   const cardMenuOpen = useSharedValue(0);
   const cardMenuAnchorX = useSharedValue(206);
   const cardMenuAnchorY = useSharedValue(446);
+  const cardMenuFingerX = useSharedValue(206);
+  const cardMenuFingerY = useSharedValue(446);
+  const cardMenuHighlight = useSharedValue(-1);
+  // v0.11.1 desaturation (item 2): the whole edit chrome (border, gears, edit UI) fades gold → light gray.
+  const desat = useSharedValue(0);
+  const gearFlash = useSharedValue(0);
   const switching = useSharedValue(0);
   // Rise reveal (#242 item 3): 1 = deck at rest; 0 = mounted BELOW-screen + hidden (pre-rise). The new
   // deck rises (translateY + fade) from 0→1 once it's ready, as the live interactive deck — no ghost.
@@ -357,37 +373,57 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     const a = clampMenuAnchor(x, y);
     cardMenuAnchorX.value = a.x;
     cardMenuAnchorY.value = a.y;
+    cardMenuFingerX.value = a.x;
+    cardMenuFingerY.value = a.y;
+    cardMenuHighlight.value = -1;
     cardMenuOpen.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
     playSfx('floatMenuOpen');
-  }, [cardMenuAnchorX, cardMenuAnchorY, cardMenuOpen]);
+  }, [cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, cardMenuOpen]);
   const closeCardMenu = useCallback(() => {
     cardMenuOpen.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.cubic) });
+    cardMenuHighlight.value = -1;
     playSfx('floatMenuClose');
-  }, [cardMenuOpen]);
+  }, [cardMenuOpen, cardMenuHighlight]);
   const selectCardMenu = useCallback((index: number) => {
     const opts = cardMenuOptions(categoryRef.current === FAVORITES_CATEGORY, nfcAvailable);
     const opt = opts[index];
     const ids = [...raisedIdsRef.current];
     cardMenuOpen.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.cubic) });
+    cardMenuHighlight.value = -1;
     if (opt && ids.length) onCardAction?.(opt.kind, ids);
     else playSfx('floatMenuClose');
-  }, [nfcAvailable, onCardAction, cardMenuOpen]);
+  }, [nfcAvailable, onCardAction, cardMenuOpen, cardMenuHighlight]);
 
   // v0.9.8 Golden Gear Edit: flatten the (expanded) hand into an editable row. No-op from fullscreen.
+  // v0.11.1: the whole chrome desaturates to light gray (item 2) — the gear's press-white settles into
+  // the gray as we enter (so gearFlash relaxes as desat rises).
   const enterEdit = useCallback(() => {
     if (machineState.value === 'fullscreen' || switchingRef.current) return;
     machineState.value = 'expanded';
     expandProgress.value = withSpring(1, EXPAND_SPRING);
     editMode.value = withTiming(1, { duration: 440, easing: Easing.inOut(Easing.cubic) });
+    desat.value = withTiming(1, { duration: 440, easing: Easing.inOut(Easing.cubic) });
+    gearFlash.value = withTiming(0, { duration: 440, easing: Easing.out(Easing.cubic) }); // the press-white melts into gray
     setEditing(true);
     playSfx('transitionStart');
-  }, [editMode, machineState, expandProgress]);
-  const exitEdit = useCallback(() => {
+  }, [editMode, desat, gearFlash, machineState, expandProgress]);
+  // v0.11.1 item 7: exit either to COMPACT (tap gear → close the hand) or the EXPANDED arc (hold gear).
+  // Both run the REVERSE desaturation: the gears flash white then fade back to gold as desat → 0.
+  const exitEdit = useCallback((toCompact = false) => {
     editMode.value = withTiming(0, { duration: 360, easing: Easing.inOut(Easing.cubic) });
+    desat.value = withTiming(0, { duration: 420, easing: Easing.inOut(Easing.cubic) });
+    gearFlash.value = withSequence(
+      withTiming(1, { duration: 110, easing: Easing.out(Easing.cubic) }),
+      withTiming(0, { duration: 380, easing: Easing.in(Easing.cubic) }),
+    );
+    if (toCompact) {
+      machineState.value = 'compact';
+      expandProgress.value = withSpring(0, EXPAND_SPRING);
+    }
     setEditing(false);
     setRaisedIds(new Set());
     playSfx('transitionIconFilled');
-  }, [editMode]);
+  }, [editMode, desat, gearFlash, machineState, expandProgress]);
   const toggleRaise = useCallback((id: string) => {
     setRaisedIds((s) => {
       const n = new Set(s);
@@ -461,6 +497,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       raisedIds,
       enterEdit,
       exitEdit,
+      desat,
+      gearFlash,
       toggleRaise,
       deselectAll,
       scrollToId,
@@ -468,6 +506,9 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       cardMenuOpen,
       cardMenuAnchorX,
       cardMenuAnchorY,
+      cardMenuFingerX,
+      cardMenuFingerY,
+      cardMenuHighlight,
       nfcAvailable,
       selectionAllFavorited,
       openCardMenu,
@@ -486,7 +527,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, toggleRaise, deselectAll, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
