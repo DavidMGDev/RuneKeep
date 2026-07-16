@@ -40,6 +40,29 @@ describe('embedded library cards (v0.10.3)', () => {
   });
 });
 
+describe('scars (v0.13.0)', () => {
+  const scarCard = (id: string) => ({ id, title: 'Scarred Relic', text: '', imageUri: null, target: 'inventory' as const, effects: [{ target: 'scar' as const, delta: 1 }] });
+  it('each enabled scar card kills one hope slot from the right; hope clamps below them', () => {
+    const cards = [scarCard('sc1'), scarCard('sc2')];
+    const c = toSheetCharacter(baseFile({ customCards: cards, enabledCardIds: ['sc1', 'sc2'], resources: { hp: 2, stress: 0, hope: 6, armor: 0 } }));
+    expect(c.scars).toBe(2);
+    expect(c.hope.total).toBe(6); // slots still drawn — the last 2 render scarred
+    expect(c.hope.active).toBe(4); // saved hope 6 clamps to the 4 usable slots
+  });
+  it('scar count clamps at the hope total; fully scarred = zero usable hope', () => {
+    const cards = Array.from({ length: 8 }, (_, i) => scarCard(`s${i}`));
+    const c = toSheetCharacter(baseFile({ customCards: cards, enabledCardIds: cards.map((x) => x.id), resources: { hp: 2, stress: 0, hope: 3, armor: 0 } }));
+    expect(c.scars).toBe(6);
+    expect(c.hope.active).toBe(0);
+  });
+  it('unequipping any scar card frees one slot (flat count, order-independent)', () => {
+    const cards = [scarCard('a'), scarCard('b'), scarCard('c')];
+    const c = toSheetCharacter(baseFile({ customCards: cards, enabledCardIds: ['a', 'c'], resources: { hp: 2, stress: 0, hope: 6, armor: 0 } }));
+    expect(c.scars).toBe(2);
+    expect(c.hope.active).toBe(4);
+  });
+});
+
 describe('toSheetCharacter resource persistence (v0.9.7)', () => {
   const armorUnlocked = (c: ReturnType<typeof toSheetCharacter>) => c.armor.total - (c.armor.locked ?? 0);
   it('starts full/default when the file has no saved resources', () => {

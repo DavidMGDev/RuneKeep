@@ -339,9 +339,14 @@ export function toSheetCharacter(file: CharacterFile): Character {
     // 1×level / 2×level (still 1 / 2 at level 1). Nothing is baked into the base for a `set` to wipe.
     majorThreshold: 0,
     severeThreshold: 0,
+    scar: 0, // v0.13.0: scars come only from enabled "Add Scar" cards
   };
   const sources = allEffectSources(file);
   const sheet = computeSheet(base, file.level, sources);
+  // v0.13.0 SCARS: each enabled scar card disables one Hope slot from the RIGHT. Flat count — freeing
+  // any scar card always releases the leftmost scarred slot. Hope in play can never sit on a scarred slot.
+  const scars = Math.max(0, Math.min(sheet.hopeMax.total, sheet.scar.total));
+  const usableHope = sheet.hopeMax.total - scars;
   const maxHp = sheet.maxHp.total;
   const stressMax = sheet.stressMax.total;
   const armorMax = sheet.armorScore.total;
@@ -373,7 +378,9 @@ export function toSheetCharacter(file: CharacterFile): Character {
     // armor: the unlocked slots are enabled (filled), the rest disabled (#128)
     armor: { active: res ? clampRes(res.armor, armorMax) : armorMax, total: ARMOR_SLOTS, locked: Math.max(0, ARMOR_SLOTS - armorMax) },
     stress: { active: res ? clampRes(res.stress, stressMax) : 0, total: 12, locked: Math.max(0, 12 - stressMax) },
-    hope: { active: res ? clampRes(res.hope, sheet.hopeMax.total) : 2, total: sheet.hopeMax.total },
+    // Scarred slots ride the Track's `locked` convention, so every ±1/rest path caps at the usable slots.
+    hope: { active: res ? clampRes(res.hope, usableHope) : Math.min(2, usableHope), total: sheet.hopeMax.total, locked: scars || undefined },
+    scars,
     gold: file.gold ?? { handfuls: 1, bags: 0, chest: 0 }, // the kit's handful of gold (#136)
     traits,
   };
@@ -402,6 +409,7 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0),
     majorThreshold: 0, // #320: thresholds come entirely from per-level bonuses (see toSheetCharacter)
     severeThreshold: 0,
+    scar: 0, // v0.13.0
   };
   return computeSheet(base, file.level, allEffectSources(file));
 }

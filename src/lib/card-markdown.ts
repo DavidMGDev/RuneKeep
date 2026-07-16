@@ -23,15 +23,16 @@ export type MdBlock =
   | { kind: 'ol'; items: { n: number; spans: MdSpan[] }[] };
 
 /** Compose structured card sections (Feature 8) into the single markdown string a ForgedCard renders:
- *  `**Name.** body`, sections separated by a blank line. Empty sections drop out. */
+ *  `**Name:** body` (colon leads, like the printed cards — v0.13.0 typeset), sections separated by a
+ *  blank line. Empty sections drop out. */
 export function composeSections(sections?: CardSection[]): string {
   if (!sections?.length) return '';
   return sections
     .map((s) => {
       const body = s.body.trim();
       const name = (s.name ?? '').trim();
-      if (name && body) return `**${name}.** ${body}`;
-      if (name) return `**${name}.**`;
+      if (name && body) return `**${name}:** ${body}`;
+      if (name) return `**${name}:**`;
       return body;
     })
     .filter((x) => x)

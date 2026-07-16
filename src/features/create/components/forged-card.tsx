@@ -135,7 +135,7 @@ export function ForgedCard({
                 numberOfLines={multilineTitle ? 4 : 1}
                 adjustsFontSizeToFit={multilineTitle}
                 minimumFontScale={0.42}
-                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>
+                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>
                 {title}
               </Text>
               {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
@@ -148,7 +148,9 @@ export function ForgedCard({
             numberOfLines={multilineTitle ? 9 : undefined}
             adjustsFontSizeToFit={multilineTitle}
             minimumFontScale={0.6}
-            style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'justify', alignSelf: 'stretch', marginTop: title.trim() ? 7 : 0, flexShrink: 1 }}
+            // v0.13.0 typeset vs the DH scans: bigger body (10.5/14), LEFT aligned like the prints
+            // (justify opened rivers at this measure), black-weight title above.
+            style={{ color: Rune.inkText, fontSize: 10.5, lineHeight: 14, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: title.trim() ? 6 : 0, flexShrink: 1 }}
           />
         </View>
       )}
@@ -209,14 +211,16 @@ export function ForgedTextCard({
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 14, paddingBottom: 24 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5 }}>
-          <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 14, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+          <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>
             {title}
           </Text>
           {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
         </View>
+        {/* v0.13.0 typeset: left-aligned like the prints; size bumped only to 9.5 — the feature
+            pagination (featurePages) is fit-tuned and this container CLIPS overflow. */}
         <View style={{ marginTop: 5, gap: 5, overflow: 'hidden', flex: 1 }}>
           {sections.map((s) => (
-            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13, fontFamily: Body.regular, textAlign: 'justify' }}>
+            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13.2, fontFamily: Body.regular, textAlign: 'left' }}>
               <Text style={{ fontFamily: Body.bold }}>{s.name}: </Text>
               {s.text}
             </Text>
@@ -283,7 +287,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
+        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Trait" value={weapon.trait} />
           <StatRow label="Range" value={weapon.range} />
@@ -336,7 +340,7 @@ export function ForgedGoldCard({ amount }: { amount?: number }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>Gold</Text>
+        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>Gold</Text>
         {amount != null ? <Text style={{ color: Rune.inkText, fontSize: 22, fontFamily: Display.black, marginTop: 4 }}>{amount}</Text> : null}
         <Text style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'center', marginTop: 7 }}>Coin for trade, bribes, and the finer things. Track it here as you spend and earn.</Text>
       </View>
@@ -359,7 +363,7 @@ export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
+        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Thresholds" value={armor.thresholds} />
           <StatRow label="Base Score" value={String(armor.baseScore)} />

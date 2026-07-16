@@ -11,10 +11,8 @@ import { FORGED_H, ForgedCard } from '@/features/create/components/forged-card';
 import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
 import { type CardEffect } from '@/lib/modifiers';
-import { EffectPicker, EffectsField, FormulaVarPicker, isThresholdTarget, matchOption } from '@/components/effects-editor';
+import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchOption } from '@/components/effects-editor';
 import { playSfx } from '@/lib/sfx';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface CardDraft {
   title: string;
@@ -40,18 +38,36 @@ function MarkBtn({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
+/** v0.13.0 ancestry mode: guarantee the two mandatory feature rows. No flags yet (a NEW card, or a
+ *  legacy one saved before flags existed) → seed/adopt: new = description first then two features
+ *  (owner default); legacy = its first two sections BECOME the features (same positions as before). */
+function ensureAncestryRows(sections: CardSection[]): CardSection[] {
+  const flagged = sections.filter((s) => s.feature).length;
+  if (flagged >= 2) return sections;
+  if (sections.length === 0) return [{ body: '' }, { body: '', feature: true }, { body: '', feature: true }];
+  const out = sections.map((s, i) => (i < 2 ? { ...s, feature: true } : s));
+  while (out.filter((s) => s.feature).length < 2) out.push({ body: '', feature: true });
+  return out;
+}
+
 /**
  * The multi-field card body (Feature 8): add/delete/reorder titled sections, each with a Bold/Italic/
  * bullet toolbar that wraps the current selection (only the syntax card-markdown renders). `minRows`
- * fixed slots (e.g. an ancestry's two mandatory features) always show; more can be added or removed.
+ * fixed slots always show; more can be added or removed. `ancestryFeatures` (v0.13.0): two mandatory
+ * feature-flagged rows that can be MOVED anywhere but never deleted — their "Feature 1/2" identity is
+ * their relative order (the upper flagged row is always Feature 1), re-labelled live on every move.
  */
-function SectionsField({ sections, onChange, minRows = 1, fixedLabels }: { sections: CardSection[]; onChange: (s: CardSection[]) => void; minRows?: number; fixedLabels?: string[] }) {
+function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryFeatures = false }: { sections: CardSection[]; onChange: (s: CardSection[]) => void; minRows?: number; fixedLabels?: string[]; ancestryFeatures?: boolean }) {
   const [sel, setSel] = useState<{ row: number; start: number; end: number }>({ row: -1, start: 0, end: 0 });
-  const rows: CardSection[] = sections.length >= minRows ? sections : [...sections, ...Array.from({ length: minRows - sections.length }, () => ({ body: '' }))];
+  const rows: CardSection[] = ancestryFeatures
+    ? ensureAncestryRows(sections)
+    : sections.length >= minRows ? sections : [...sections, ...Array.from({ length: minRows - sections.length }, () => ({ body: '' }))];
+  let featureRank = 0; // running 1/2 label for flagged rows, assigned in render order
   const commit = (next: CardSection[]) => onChange(next);
   const update = (i: number, patch: Partial<CardSection>) => commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const addRow = () => { playSfx('buttonTap'); commit([...rows, { body: '' }]); };
-  const removeRow = (i: number) => { if (rows.length <= minRows) return; playSfx('cardDeselect'); commit(rows.filter((_, j) => j !== i)); };
+  const canRemove = (i: number) => (ancestryFeatures ? !rows[i].feature : rows.length > minRows);
+  const removeRow = (i: number) => { if (!canRemove(i)) return; playSfx('cardDeselect'); commit(rows.filter((_, j) => j !== i)); };
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= rows.length) return;
@@ -73,17 +89,22 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels }: { secti
   };
   return (
     <View style={{ gap: 8 }}>
-      {rows.map((r, i) => (
-        <ChamferBox key={i} chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
+      {rows.map((r, i) => {
+        const rank = ancestryFeatures && r.feature ? ++featureRank : 0; // Feature 1/2 by vertical order
+        return (
+        <ChamferBox key={i} chamfer={8} fill="rgba(14,17,22,0.96)" stroke={rank ? Rune.goldEdge : 'rgba(218,162,73,0.5)'} strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
+          {rank ? (
+            <Text style={{ color: Rune.bronze, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{`Feature ${rank} · always on the card`}</Text>
+          ) : null}
           <TextInput
             value={r.name ?? ''}
             onChangeText={(name) => update(i, { name })}
-            placeholder={fixedLabels?.[i] ?? 'Section name (optional)'}
+            placeholder={rank ? `Feature ${rank} name` : fixedLabels?.[i] ?? 'Section name (optional)'}
             placeholderTextColor={Rune.muted}
             selectionColor={Rune.goldBright}
             maxLength={60}
             style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold, padding: 0 }}
-            accessibilityLabel={`Section ${i + 1} name`}
+            accessibilityLabel={rank ? `Feature ${rank} name` : `Section ${i + 1} name`}
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <MarkBtn label="B" onPress={() => applyMark(i, '**')} />
@@ -92,7 +113,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels }: { secti
             <View style={{ flex: 1 }} />
             <MarkBtn label="↑" onPress={() => move(i, -1)} />
             <MarkBtn label="↓" onPress={() => move(i, 1)} />
-            {rows.length > minRows ? <MarkBtn label="✕" onPress={() => removeRow(i)} /> : null}
+            {canRemove(i) ? <MarkBtn label="✕" onPress={() => removeRow(i)} /> : null}
           </View>
           <TextInput
             value={r.body}
@@ -106,7 +127,8 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels }: { secti
             accessibilityLabel={`Section ${i + 1} text`}
           />
         </ChamferBox>
-      ))}
+        );
+      })}
       <RuneButton label="+ Add section" kind="ghost" dense height={32} muteSfx onPress={addRow} />
     </View>
   );
@@ -201,8 +223,9 @@ export function CardEditor({
   saveLabel?: string;
   /** v0.10.2: use the multi-field sections body (library cards) instead of the single text box. */
   sectioned?: boolean;
-  /** v0.10.2: fixed minimum rows + their placeholder names (e.g. an ancestry's two features). */
-  sectionsConfig?: { minRows?: number; fixedLabels?: string[] };
+  /** v0.10.2: fixed minimum rows + their placeholder names. v0.13.0: `ancestryFeatures` = two mandatory
+   *  movable feature rows (Feature 1/2 identity = relative order), description-first default. */
+  sectionsConfig?: { minRows?: number; fixedLabels?: string[]; ancestryFeatures?: boolean };
   /** Drop the editor's own dark scrim (#239 item 9): used inside the sheet, where the shared SheetDim
    *  already darkens the screen — keeping a second scrim caused a double-dim that popped on open/close.
    *  A transparent tap-catcher still closes on outside tap. Standalone (creation) keeps its dark scrim. */
@@ -301,7 +324,9 @@ export function CardEditor({
         // pointerEvents=none) or they'd reach the focused card and close it.
         <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, scrimStyle]} />
       ) : (
-        <AnimatedPressable style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Discard and close" />
+        // v0.13.0: standalone scrim no longer dismisses — a stray outside tap must never discard a
+        // draft. The editor closes ONLY via its Cancel/Save buttons (same contract as scrimless).
+        <Animated.View style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} />
       )}
       <EditorFrame framed={scrimless} insetTop={insets.top} insetBottom={insets.bottom} animStyle={contentStyle}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -353,7 +378,7 @@ export function CardEditor({
             />
           </ChamferBox>
           {experienceMode ? null : sectioned ? (
-            <SectionsField sections={draft.sections ?? []} onChange={(sections) => setDraft((d) => ({ ...d, sections }))} minRows={sectionsConfig?.minRows} fixedLabels={sectionsConfig?.fixedLabels} />
+            <SectionsField sections={draft.sections ?? []} onChange={(sections) => setDraft((d) => ({ ...d, sections }))} minRows={sectionsConfig?.minRows} fixedLabels={sectionsConfig?.fixedLabels} ancestryFeatures={sectionsConfig?.ancestryFeatures} />
           ) : (
             <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
               <TextInput
@@ -386,7 +411,7 @@ export function CardEditor({
           onPick={(o) => {
             setDraft((d) => ({
               ...d,
-              effects: d.effects.map((e, j) => (j === pickEffect ? { ...e, target: o.target, mode: isThresholdTarget(o.target) ? o.mode : undefined } : e)),
+              effects: d.effects.map((e, j) => (j === pickEffect ? applyPickedOption(e, o) : e)),
             }));
             setPickEffect(null);
           }}

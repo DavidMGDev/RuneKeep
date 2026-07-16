@@ -2,9 +2,23 @@ import { type BaseStats, type CardEffect, computeSheet, type EffectSource, STAT_
 
 const ZERO: BaseStats = {
   agility: 0, strength: 0, finesse: 0, instinct: 0, presence: 0, knowledge: 0,
-  evasion: 10, armorScore: 0, maxHp: 6, stressMax: 6, hopeMax: 6, proficiency: 1, majorThreshold: 0, severeThreshold: 0,
+  evasion: 10, armorScore: 0, maxHp: 6, stressMax: 6, hopeMax: 6, proficiency: 1, majorThreshold: 0, severeThreshold: 0, scar: 0,
 };
 const src = (source: string, effects: CardEffect[]): EffectSource => ({ source, effects });
+
+describe('scar target (v0.13.0)', () => {
+  it('sums one scar per enabled scar card, base 0, uncapped by the engine', () => {
+    const s = computeSheet(ZERO, 1, [
+      src('Cursed Blade', [{ target: 'scar', delta: 1 }]),
+      src('Old Wound', [{ target: 'scar', delta: 1 }]),
+    ]);
+    expect(s.scar.total).toBe(2);
+    expect(s.hopeMax.total).toBe(6); // scars never change hope MAX — only usable slots (sheet layer)
+  });
+  it('no scar cards → zero scars', () => {
+    expect(computeSheet(ZERO, 1, []).scar.total).toBe(0);
+  });
+});
 
 describe('tierForLevel', () => {
   it('maps levels to tiers at the boundaries', () => {

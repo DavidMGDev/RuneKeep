@@ -17,7 +17,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { Body, Display, Rune } from '@/constants/theme';
-import { DOMAINS } from '@/constants/identity';
+import { ALL_DOMAINS, CLASSES } from '@/constants/identity';
 import { playSfx } from '@/lib/sfx';
 import {
   type ArmorSpec,
@@ -135,7 +135,8 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
   );
 }
 
-const BUILTIN_CLASSES = ['bard', 'druid', 'guardian', 'ranger', 'rogue', 'seraph', 'sorcerer', 'warrior', 'wizard'];
+// v0.13.0: all 15 class keys (base + Void) so Void subclasses/classes can be authored.
+const BUILTIN_CLASSES = CLASSES.map((c) => c.key);
 const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6 };
 
@@ -154,7 +155,7 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
       {t === 'domain' ? (
         <>
           <LibInput label="Domain" value={config.domain ?? ''} onChangeText={(domain) => set({ domain })} placeholder="e.g. Pyre (custom) or arcana" />
-          <View style={chipRow}>{DOMAINS.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
+          <View style={chipRow}>{ALL_DOMAINS.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
           <LibInput label="Level (1–10)" value={config.level ? String(config.level) : ''} onChangeText={(s) => set({ level: Math.max(1, Math.min(10, parseInt(s || '1', 10) || 1)) })} placeholder="1" keyboardType="number-pad" />
         </>
       ) : null}
@@ -226,7 +227,8 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
 function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => void; onClose: () => void }) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
-      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      {/* v0.13.0: non-dismissing backdrop — closing is deliberate (the Cancel button), never a stray tap. */}
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 12 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What are you making?</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -238,6 +240,7 @@ function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => v
             </Pressable>
           ))}
         </View>
+        <RuneButton label="Cancel" kind="ghost" height={40} onPress={onClose} />
       </ChamferBox>
     </View>
   );
@@ -251,7 +254,9 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
   const [version, setVersion] = useState(initial?.version ?? 1);
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
-      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close" />
+      {/* v0.13.0: non-dismissing backdrop — a stray tap between fields must never destroy typed input.
+          The form closes ONLY via its Cancel/Save buttons. */}
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 10 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{initial ? 'Edit expansion' : 'New expansion'}</Text>
         <LibInput label="Name" value={name} onChangeText={setName} placeholder="My homebrew" />
@@ -373,7 +378,7 @@ export function LibraryScreen() {
         kindLabel={cfg.typeLabel || CONTENT_TYPE_LABEL[cfg.contentType]}
         initial={initial}
         sectioned
-        sectionsConfig={isAncestry ? { minRows: 2, fixedLabels: ['Feature 1', 'Feature 2'] } : undefined}
+        sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
         extraField={<ContentConfig config={cfg} onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))} />}
         onCancel={() => setEditingCard(null)}
         onSave={(d) => {

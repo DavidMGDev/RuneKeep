@@ -40,13 +40,13 @@ describe('libraryCardBody', () => {
     expect(libraryCardBody(lc({ contentType: 'armor', armor: { baseScore: 3, thresholds: '6/12', tier: 1 }, text: 'Sturdy.' }))).toBe('**Score 3 · Thresholds 6/12**\n\nSturdy.');
   });
   it('composes sections for a text card', () => {
-    expect(libraryCardBody(lc({ sections: [{ name: 'Tough', body: 'hardy' }] }))).toBe('**Tough.** hardy');
+    expect(libraryCardBody(lc({ sections: [{ name: 'Tough', body: 'hardy' }] }))).toBe('**Tough:** hardy');
   });
   it('strikes the given section index (mixed-ancestry cross-out)', () => {
     const anc = lc({ sections: [{ name: 'One', body: 'x' }, { name: 'Two', body: 'y' }] });
-    expect(libraryCardBody(anc, 1)).toBe('**One.** x\n\n~~**Two.** y~~');
-    expect(libraryCardBody(anc, 0)).toBe('~~**One.** x~~\n\n**Two.** y');
-    expect(libraryCardBody(anc)).toBe('**One.** x\n\n**Two.** y');
+    expect(libraryCardBody(anc, 1)).toBe('**One:** x\n\n~~**Two:** y~~');
+    expect(libraryCardBody(anc, 0)).toBe('~~**One:** x~~\n\n**Two:** y');
+    expect(libraryCardBody(anc)).toBe('**One:** x\n\n**Two:** y');
   });
 });
 

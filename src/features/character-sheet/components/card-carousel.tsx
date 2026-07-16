@@ -726,7 +726,7 @@ function GhostCard({ editMode, editGrabbed, rotation, hoverAnim, overscrollX, dr
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, onEmptyOpen } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   // v0.11.1: the card-hold wheel is spray-select (like the float menu) again — the pan needs the option
@@ -1429,8 +1429,12 @@ export function CardCarousel() {
                 machineState.value = 'compact';
                 expandProgress.value = withSpring(0, EXPAND_SPRING);
               } else if (machineState.value === 'compact') {
-                machineState.value = 'expanded';
-                expandProgress.value = withSpring(1, EXPAND_SPRING);
+                // v0.13.0: an empty deck never fans — show the "There is nothing here" panel instead.
+                if (count === 0) runOnJS(onEmptyOpen)();
+                else {
+                  machineState.value = 'expanded';
+                  expandProgress.value = withSpring(1, EXPAND_SPRING);
+                }
               }
             }
             padTouch.value = false;
@@ -1515,8 +1519,12 @@ export function CardCarousel() {
               machineState.value = 'compact';
               expandProgress.value = withSpring(0, EXPAND_SPRING);
             } else if (machineState.value === 'compact') {
-              machineState.value = 'expanded';
-              expandProgress.value = withSpring(1, EXPAND_SPRING);
+              // v0.13.0: an empty deck never fans — show the "There is nothing here" panel instead.
+              if (count === 0) runOnJS(onEmptyOpen)();
+              else {
+                machineState.value = 'expanded';
+                expandProgress.value = withSpring(1, EXPAND_SPRING);
+              }
             }
           }
           // Safety (#174): a gear over-scroll cancelled mid-drag (onEnd never ran) must not leave the
@@ -1534,7 +1542,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGearScroll, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, pendingOrderSV, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, onEmptyOpen, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGearScroll, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, pendingOrderSV, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch

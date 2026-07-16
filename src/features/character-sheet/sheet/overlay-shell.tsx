@@ -22,6 +22,7 @@ export function OverlayShell({
   width = 348,
   scroll = true,
   dismissOnScrim = true,
+  mute = false,
 }: {
   title: string;
   subtitle?: string;
@@ -32,6 +33,8 @@ export function OverlayShell({
   scroll?: boolean;
   /** When false, tapping the dim does NOT close — the user must press the ✕ (#168, owner). */
   dismissOnScrim?: boolean;
+  /** v0.13.0: no open/close sounds (the empty-category panel must appear silently, owner item 10). */
+  mute?: boolean;
 }) {
   // The body ScrollView is capped to a real pixel height (#233): a flex-shrink ScrollView inside a
   // content-sized ChamferBox collapsed to ~nothing (it has no intrinsic main-axis height), which
@@ -47,10 +50,12 @@ export function OverlayShell({
   }, [p, reduced]);
   // Audio (#255): panel-open on mount, panel-close on the ✕ or an outside-tap dismiss.
   useEffect(() => {
-    playSfx('panelOpen');
+    if (!mute) playSfx('panelOpen');
+    // ponytail: mute is fixed for a given mount — no need to react to changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const close = () => {
-    playSfx('panelClose');
+    if (!mute) playSfx('panelClose');
     onClose();
   };
   const scrimStyle = useAnimatedStyle(() => ({ opacity: p.value }));

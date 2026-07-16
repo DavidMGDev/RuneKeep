@@ -9,11 +9,12 @@
 import { CATALOG, type CatalogCard } from '@/data/catalog';
 import { VOID_EXPANSION_ID, VOID_CLASSES, type ClassName } from '@/constants/identity';
 import { VOID_ANCESTRIES } from '@/data/void-ancestries';
-import type { Expansion } from './library';
-import { getExpansion, saveExpansion } from './library-store';
+import { type Expansion, isEnabledForCreation } from './library';
+import { getExpansion, listExpansions, saveExpansion } from './library-store';
 
 /** Bump when bundled Void content (VOID_ANCESTRIES, …) changes so already-installed copies refresh in place. */
-export const VOID_BUNDLE_VERSION = 2;
+// v3: colon section leads in the composed text fallback (v0.13.0 typeset).
+export const VOID_BUNDLE_VERSION = 3;
 
 /** Metadata for the bundled Void record (its CARDS live in the catalog; this holds the name + global toggle). */
 export const VOID_META = {
@@ -38,6 +39,14 @@ export function classExpansion(key: ClassName): string | undefined {
 export function catalogFor(ids: string[] | Set<string> | undefined): CatalogCard[] {
   const set = ids instanceof Set ? ids : new Set(ids ?? []);
   return CATALOG.filter((c) => !c.expansion || set.has(c.expansion));
+}
+
+/** The ids of GLOBALLY-enabled expansions (v0.13.0): official packs opt IN (Card Library toggle),
+ *  custom packs opt OUT. Seeds the bundled records first so a fresh install resolves The Void. */
+export async function globallyEnabledExpansionIds(): Promise<Set<string>> {
+  await seedOfficialExpansions().catch(() => {});
+  const all = await listExpansions();
+  return new Set(all.filter(isEnabledForCreation).map((e) => e.id));
 }
 
 /** Total cards a user sees for an expansion: its record `cards` PLUS any catalog cards tagged to it.

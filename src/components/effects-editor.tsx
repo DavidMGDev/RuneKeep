@@ -38,6 +38,10 @@ export const EFFECT_GROUPS: { label: string; options: EffectOption[] }[] = [
     { key: 'presence', label: 'Presence', target: 'presence' },
     { key: 'knowledge', label: 'Knowledge', target: 'knowledge' },
   ] },
+  // v0.13.0 SCARS: no amount, no formula — equipping the card scars one Hope slot, full stop.
+  { label: 'Misc', options: [
+    { key: 'scar', label: 'Add Scar', target: 'scar' },
+  ] },
 ];
 const ALL_EFFECT_OPTIONS = EFFECT_GROUPS.flatMap((g) => g.options);
 export const isThresholdTarget = (t: EffectTarget) => t === 'majorThreshold' || t === 'severeThreshold';
@@ -47,6 +51,13 @@ export function matchOption(e: CardEffect): EffectOption | undefined {
 }
 export function effectLabel(e: CardEffect): string {
   return matchOption(e)?.label ?? TARGET_LABEL[e.target];
+}
+
+/** Rewrite an effect for a freshly-picked option — shared by every EffectPicker call site. A scar is
+ *  always exactly `{ target: 'scar', delta: 1 }` (no amount/formula/tier shapes survive the switch). */
+export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
+  if (o.target === 'scar') return { target: 'scar', delta: 1, note: e.note };
+  return { ...e, target: o.target, mode: isThresholdTarget(o.target) ? o.mode : undefined };
 }
 
 /** Formula variables a player can scale (#278). */
@@ -214,15 +225,22 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
                   <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>{effectLabel(e)}</Text>
                 </View>
               </Pressable>
-              {/* #325: flat / formula / by-tier selector */}
-              <ModeBtn label="±N" on={mode === 'flat'} onPress={() => setMode(i, 'flat')} a11y="Flat amount" />
-              <ModeBtn label="ƒx" on={mode === 'formula'} onPress={() => setMode(i, 'formula')} a11y="Scaling formula" />
-              <ModeBtn label="T" on={mode === 'byTier'} onPress={() => setMode(i, 'byTier')} a11y="Per-tier value" />
+              {/* #325: flat / formula / by-tier selector. v0.13.0: a SCAR has no amount or formula —
+                  the row is just the pick + remove. */}
+              {e.target !== 'scar' ? (
+                <>
+                  <ModeBtn label="±N" on={mode === 'flat'} onPress={() => setMode(i, 'flat')} a11y="Flat amount" />
+                  <ModeBtn label="ƒx" on={mode === 'formula'} onPress={() => setMode(i, 'formula')} a11y="Scaling formula" />
+                  <ModeBtn label="T" on={mode === 'byTier'} onPress={() => setMode(i, 'byTier')} a11y="Per-tier value" />
+                </>
+              ) : null}
               <Pressable onPress={() => onChange(effects.filter((_, j) => j !== i))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove effect" style={{ padding: 3 }}>
                 <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
               </Pressable>
             </View>
-            {mode === 'formula' ? (
+            {e.target === 'scar' ? (
+              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular }}>While this card is equipped, the character&apos;s rightmost open Hope slot is scarred and can&apos;t be used.</Text>
+            ) : mode === 'formula' ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <Pressable onPress={() => onRequestPickVar(i)} hitSlop={4} accessibilityRole="button" accessibilityLabel={`Variable ${VAR_LABEL[e.formula?.variable ?? 'level']}, tap to choose`}>
                   <View style={{ height: 30, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 5, backgroundColor: 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: Rune.goldEdge }}>

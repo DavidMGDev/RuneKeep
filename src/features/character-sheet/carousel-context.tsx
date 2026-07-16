@@ -52,6 +52,9 @@ interface CarouselContextValue {
   /** Step `dir` (+1 forward / -1 backward) around the ring with wraparound (#214). Replaces the old
    *  inv↔arsenal binary toggle so 3- and 4-category rings (Notes / Druid Wild Shape) loop. */
   cycleCategory: (dir: number, arrival?: ArrivalEnd) => void;
+  /** v0.13.0: an open/expand/edit was attempted while the current category's deck is EMPTY — the
+   *  sheet shows the "There is nothing here" panel instead (no dim, no expand sfx, no gear grow). */
+  onEmptyOpen: () => void;
   /** JS actions (call from React handlers). They drive the shared values directly. */
   expand: () => void;
   collapse: () => void;
@@ -149,9 +152,11 @@ export interface CarouselApi {
   scrollToId: (id: string) => void;
   /** Clear the edit selection. */
   deselectAll: () => void;
+  /** v0.13.0: switch category from the sheet (the empty-panel "Change category" chooser). */
+  setCategory: (c: CardCategory, arrival?: ArrivalEnd) => void;
 }
 
-export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards, onCardAction, nfcAvailable = false, isCardFavorited, apiRef }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void; onCardAction?: (kind: CardMenuKind, ids: string[]) => void; nfcAvailable?: boolean; isCardFavorited?: (id: string) => boolean; apiRef?: MutableRefObject<CarouselApi | null> }) {
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards, onCardAction, nfcAvailable = false, isCardFavorited, onEmptyFavorites, onEmptyOpen, apiRef }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void; onCardAction?: (kind: CardMenuKind, ids: string[]) => void; nfcAvailable?: boolean; isCardFavorited?: (id: string) => boolean; onEmptyFavorites?: () => void; onEmptyOpen?: () => void; apiRef?: MutableRefObject<CarouselApi | null> }) {
   // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
   // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
   // four built-in keys always exist (empty) even if a real map omits one.
@@ -210,6 +215,15 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   categoryRef.current = category;
   const favDetourRef = useRef<CardCategory | null>(null);
   favDetourRef.current = favDetour;
+  // v0.13.0: latest-callback refs so worklet/JS entry paths always fire the CURRENT handlers without
+  // threading them through every dep array.
+  const onEmptyFavoritesRef = useRef(onEmptyFavorites);
+  onEmptyFavoritesRef.current = onEmptyFavorites;
+  const onEmptyOpenRef = useRef(onEmptyOpen);
+  onEmptyOpenRef.current = onEmptyOpen;
+  /** True when the CURRENT category's deck has no cards (v0.13.0 empty-state gate). */
+  const deckEmpty = useCallback(() => !(decksRef.current[categoryRef.current]?.length), []);
+  const emptyOpen = useCallback(() => { onEmptyOpenRef.current?.(); }, []);
 
   const openCardAt = useCallback(
     (index: number) => {
@@ -331,9 +345,10 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   }, [liveCount, category, rotation, focusIndex, machineState]);
 
   const expand = useCallback(() => {
+    if (deckEmpty()) { emptyOpen(); return; } // v0.13.0: nothing to fan — show the empty panel instead
     machineState.value = 'expanded';
     expandProgress.value = withSpring(1, EXPAND_SPRING);
-  }, [machineState, expandProgress]);
+  }, [machineState, expandProgress, deckEmpty, emptyOpen]);
 
   const collapse = useCallback(() => {
     machineState.value = 'compact';
@@ -372,7 +387,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       if (favDetourRef.current) setCategory(favDetourRef.current, 'start'); // toggle back to where we came from
       return;
     }
-    if (!(decksRef.current.favorites?.length)) { playSfx('floatMenuClose'); return; }
+    if (!(decksRef.current.favorites?.length)) { playSfx('floatMenuClose'); onEmptyFavoritesRef.current?.(); return; }
     setFavDetour(categoryRef.current); // remember the origin — every exit path returns here
     setCategory('favorites', 'start');
   }, [setCategory]);
@@ -410,6 +425,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   // the gray as we enter (so gearFlash relaxes as desat rises).
   const enterEdit = useCallback(() => {
     if (machineState.value === 'fullscreen' || switchingRef.current) return;
+    if (deckEmpty()) { emptyOpen(); return; } // v0.13.0: nothing to edit — show the empty panel instead
     machineState.value = 'expanded';
     expandProgress.value = withSpring(1, EXPAND_SPRING);
     editMode.value = withTiming(1, { duration: 440, easing: Easing.inOut(Easing.cubic) });
@@ -419,7 +435,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     gearFlash.value = withTiming(0, { duration: 440, easing: Easing.out(Easing.cubic) });
     setEditing(true);
     playSfx('transitionStart');
-  }, [editMode, desat, gearFlash, machineState, expandProgress]);
+  }, [editMode, desat, gearFlash, machineState, expandProgress, deckEmpty, emptyOpen]);
   // v0.11.1 item 7: exit either to COMPACT (tap gear → close the hand) or the EXPANDED arc (hold gear).
   // Both run the REVERSE desaturation: the gears flash white then fade back to gold as desat → 0.
   const exitEdit = useCallback((toCompact = false) => {
@@ -468,9 +484,9 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   // can deselect + scroll after mutating the file (the Duplicate "reveal the copies" flow).
   useEffect(() => {
     if (!apiRef) return;
-    apiRef.current = { scrollToId, deselectAll };
+    apiRef.current = { scrollToId, deselectAll, setCategory };
     return () => { apiRef.current = null; };
-  }, [apiRef, scrollToId, deselectAll]);
+  }, [apiRef, scrollToId, deselectAll, setCategory]);
 
   const emptyEnabled = useMemo(() => new Set<string>(), []);
   const emptyCrossOuts = useMemo<Record<string, 1 | 2>>(() => ({}), []);
@@ -498,6 +514,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       ring,
       setCategory,
       cycleCategory,
+      onEmptyOpen: emptyOpen,
       expand,
       collapse,
       openCardAt,
@@ -540,7 +557,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

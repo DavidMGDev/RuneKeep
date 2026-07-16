@@ -35,7 +35,7 @@ export function libraryCardBody(lc: LibraryCard, struckIndex?: number): string {
       .map((s, i) => {
         const b = s.body.trim();
         const name = (s.name ?? '').trim();
-        let line = name && b ? `**${name}.** ${b}` : name ? `**${name}.**` : b;
+        let line = name && b ? `**${name}:** ${b}` : name ? `**${name}:**` : b; // colon lead (v0.13.0 typeset)
         if (i === struckIndex && line) line = `~~${line}~~`; // crossed-out feature in a mix
         return line;
       })
