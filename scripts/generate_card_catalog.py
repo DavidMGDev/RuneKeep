@@ -29,54 +29,79 @@ def title(slug: str) -> str:
 
 entries: list[str] = []
 
-for dom_dir in sorted((CARDS / "Domains").iterdir()):
-    if not dom_dir.is_dir():
-        continue
-    for f in sorted(dom_dir.glob("*.webp")):
-        if f.stem.endswith("_lod"):
-            continue
-        m = re.fullmatch(r"([a-z]+)-(\d\d)-(\d)", f.stem)
-        assert m, f.name
-        dom, level, n = m.group(1), int(m.group(2)), m.group(3)
-        rel = f"{REL}/Domains/{dom_dir.name}/{f.stem}"
-        entries.append(
-            f"  {{ id: '{f.stem}', kind: 'domain', label: '{dom_dir.name} {level}', domain: '{dom}', level: {level},"
-            f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
-        )
 
-for f in sorted((CARDS / "Ancestry").glob("*.webp")):
-    if f.stem.endswith("_lod"):
-        continue
-    rel = f"{REL}/Ancestry/{f.stem}"
-    entries.append(
-        f"  {{ id: 'ancestry-{f.stem}', kind: 'ancestry', label: '{title(f.stem)}',"
-        f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
-    )
+def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
+    """Emit catalog entries for the domain/ancestry/community/subclass/transformation trees under `base`.
+    `exp` (e.g. 'void') tags the card with its expansion; base-game cards pass '' (no expansion field)."""
+    tag = f" expansion: '{exp}'," if exp else ""
 
-for f in sorted((CARDS / "Community").glob("*.webp")):
-    if f.stem.endswith("_lod"):
-        continue
-    rel = f"{REL}/Community/{f.stem}"
-    entries.append(
-        f"  {{ id: 'community-{f.stem}', kind: 'community', label: '{title(f.stem)}',"
-        f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
-    )
+    dom_root = base / "Domains"
+    if dom_root.is_dir():
+        for dom_dir in sorted(p for p in dom_root.iterdir() if p.is_dir()):
+            for f in sorted(dom_dir.glob("*.webp")):
+                if f.stem.endswith("_lod"):
+                    continue
+                m = re.fullmatch(r"([a-z]+)-(\d\d)-(\d)", f.stem)
+                assert m, f.name
+                dom, level = m.group(1), int(m.group(2))
+                rel = f"{rel_prefix}/Domains/{dom_dir.name}/{f.stem}"
+                entries.append(
+                    f"  {{ id: '{f.stem}', kind: 'domain', label: '{dom_dir.name} {level}', domain: '{dom}', level: {level},{tag}"
+                    f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
+                )
 
-for cls_dir in sorted((CARDS / "Subclass").iterdir()):
-    if not cls_dir.is_dir():
-        continue
-    for f in sorted(cls_dir.glob("*.webp")):
-        if f.stem.endswith("_lod"):
-            continue
-        m = re.fullmatch(r"(.+)-([123])-(foundation|specialization|mastery)", f.stem)
-        assert m, f.name
-        sub, tier = m.group(1), int(m.group(2))
-        rel = f"{REL}/Subclass/{cls_dir.name}/{f.stem}"
-        entries.append(
-            f"  {{ id: 'subclass-{f.stem}', kind: 'subclass', label: '{title(sub)} {TIER_NAMES[tier]}',"
-            f" className: '{cls_dir.name.lower()}', subclass: '{sub}', tier: {tier},"
-            f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
-        )
+    anc = base / "Ancestry"
+    if anc.is_dir():
+        for f in sorted(anc.glob("*.webp")):
+            if f.stem.endswith("_lod"):
+                continue
+            rel = f"{rel_prefix}/Ancestry/{f.stem}"
+            entries.append(
+                f"  {{ id: 'ancestry-{f.stem}', kind: 'ancestry', label: '{title(f.stem)}',{tag}"
+                f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
+            )
+
+    com = base / "Community"
+    if com.is_dir():
+        for f in sorted(com.glob("*.webp")):
+            if f.stem.endswith("_lod"):
+                continue
+            rel = f"{rel_prefix}/Community/{f.stem}"
+            entries.append(
+                f"  {{ id: 'community-{f.stem}', kind: 'community', label: '{title(f.stem)}',{tag}"
+                f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
+            )
+
+    sub_root = base / "Subclass"
+    if sub_root.is_dir():
+        for cls_dir in sorted(p for p in sub_root.iterdir() if p.is_dir()):
+            for f in sorted(cls_dir.glob("*.webp")):
+                if f.stem.endswith("_lod"):
+                    continue
+                m = re.fullmatch(r"(.+)-([123])-(foundation|specialization|mastery)", f.stem)
+                assert m, f.name
+                sub, tier = m.group(1), int(m.group(2))
+                rel = f"{rel_prefix}/Subclass/{cls_dir.name}/{f.stem}"
+                entries.append(
+                    f"  {{ id: 'subclass-{f.stem}', kind: 'subclass', label: '{title(sub)} {TIER_NAMES[tier]}',"
+                    f" className: '{cls_dir.name.lower()}', subclass: '{sub}', tier: {tier},{tag}"
+                    f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
+                )
+
+    tr = base / "Transformations"
+    if tr.is_dir():
+        for f in sorted(tr.glob("*.webp")):
+            if f.stem.endswith("_lod"):
+                continue
+            rel = f"{rel_prefix}/Transformations/{f.stem}"
+            entries.append(
+                f"  {{ id: 'transformation-{f.stem}', kind: 'transformation', label: '{title(f.stem)}',{tag}"
+                f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
+            )
+
+# base-game cards (no expansion tag), then "The Void" official expansion (tagged expansion: 'void').
+scan(CARDS, REL)
+scan(CARDS / "Void", REL + "/Void", "void")
 
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text(
@@ -87,7 +112,7 @@ OUT.write_text(
     " * or Metro fails to resolve the `thumb` requires.\n"
     " */\n"
     "import type { DomainName, ClassName } from '@/constants/identity';\n\n"
-    "export type CatalogKind = 'domain' | 'ancestry' | 'community' | 'subclass';\n\n"
+    "export type CatalogKind = 'domain' | 'ancestry' | 'community' | 'subclass' | 'transformation';\n\n"
     "export interface CatalogCard {\n"
     "  id: string;\n"
     "  kind: CatalogKind;\n"
@@ -100,6 +125,8 @@ OUT.write_text(
     "  className?: ClassName;\n"
     "  subclass?: string;\n"
     "  tier?: 1 | 2 | 3;\n"
+    "  /** Expansion this card belongs to (e.g. 'void'); undefined = base game. Gated by callers. */\n"
+    "  expansion?: string;\n"
     "}\n\n"
     "export const CATALOG: CatalogCard[] = [\n" + "\n".join(entries) + "\n];\n\n"
     "const byId = new Map(CATALOG.map((c) => [c.id, c]));\n\n"

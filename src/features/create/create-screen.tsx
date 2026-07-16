@@ -286,7 +286,7 @@ export function CreateScreen() {
           ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (!c.className || c.className === draft.className)).map(libCardItem),
         ];
       case 'ancestry': {
-        const base = CATALOG.filter((c) => c.kind === 'ancestry').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+        const base = CATALOG.filter((c) => c.kind === 'ancestry' && !c.expansion).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
         // #265: the last card flips the mode — "Mixed Ancestry" enters mixed mode, "Single Ancestry" leaves it.
         const toggle: StraightItem = draft.mixedAncestry
           ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
@@ -294,7 +294,7 @@ export function CreateScreen() {
         return [...base, ...(libContent?.ancestries ?? []).map(libCardItem), toggle];
       }
       case 'community':
-        return [...CATALOG.filter((c) => c.kind === 'community').map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
+        return [...CATALOG.filter((c) => c.kind === 'community' && !c.expansion).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
       case 'domains': {
         if (!draft.className) return [];
         const pair = classInfo(draft.className).domains;
@@ -511,7 +511,7 @@ export function CreateScreen() {
       case 'class': { const k = pick(CREATION_CLASS_CARDS.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
       case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => c.id)); if (id) { set({ subclassCardId: id }); focusId = id; } break; }
       case 'ancestry': {
-        const anc = CATALOG.filter((c) => c.kind === 'ancestry').map((c) => c.id);
+        const anc = CATALOG.filter((c) => c.kind === 'ancestry' && !c.expansion).map((c) => c.id);
         if (draft.mixedAncestry) {
           // Feature 3: fill the first EMPTY slot in order; if both are full, alternate which one re-rolls.
           // Re-rolling avoids the other slot's card AND its own current card so the pick visibly changes.
@@ -528,7 +528,7 @@ export function CreateScreen() {
         const id = pick(anc); if (id) { set({ ancestryCardId: id, mixedAncestry: null }); focusId = id; }
         break;
       }
-      case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community').map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
+      case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community' && !c.expansion).map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
       case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
       case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind)); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
       case 'armor': { const id = pick(TIER1_ARMOR.map((a) => a.id)); if (id) { set({ armorId: id, armorSkipped: false }); focusId = id; } break; }
