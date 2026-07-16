@@ -8,7 +8,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import Svg, { Line, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -85,6 +85,22 @@ function LibInput({ label, value, onChangeText, placeholder, keyboardType }: { l
         />
       </ChamferBox>
     </View>
+  );
+}
+
+/** v0.12.0: an enable/disable toggle shown on the RIGHT of each expansion row, so expansions can be
+ *  turned on/off from the hub without opening them (the in-detail button is gone). */
+function ExpansionToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <Pressable
+      onPress={onToggle}
+      hitSlop={12}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: on }}
+      accessibilityLabel={on ? 'Enabled for creation. Tap to disable' : 'Disabled. Tap to enable'}
+      style={{ width: 46, height: 26, borderRadius: 13, padding: 3, justifyContent: 'center', backgroundColor: on ? Rune.goldEdge : 'rgba(70,72,78,0.6)', borderWidth: 1, borderColor: on ? Rune.goldBright : 'rgba(147,142,136,0.5)' }}>
+      <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: on ? Rune.ivory : '#B7BBC3', alignSelf: on ? 'flex-end' : 'flex-start' }} />
+    </Pressable>
   );
 }
 
@@ -373,14 +389,7 @@ export function LibraryScreen() {
           <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ padding: 12, gap: 4 }}>
             <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}</Text>
             {selected.description ? <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
-            {/* v0.10.3: enable/disable — non-destructive, only hides content from creation + ADD GEAR. */}
-            <RuneButton
-              label={isExpansionEnabled(selected) ? 'Enabled for creation — tap to disable' : 'Disabled — tap to enable'}
-              kind={isExpansionEnabled(selected) ? 'secondary' : 'ghost'}
-              dense
-              height={34}
-              onPress={() => { playSfx('buttonTap'); void persist({ ...selected, enabled: !isExpansionEnabled(selected) }); }}
-            />
+            {/* v0.12.0: the enable/disable button moved OUT to the hub row toggle — no in-detail button. */}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
               <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name); }} />
@@ -470,15 +479,17 @@ export function LibraryScreen() {
         ) : (
           expansions.map((e) => {
             const s = expansionSummary(e);
+            const on = isExpansionEnabled(e);
             return (
               <Pressable key={e.id} onPress={() => setSelectedId(e.id)} accessibilityRole="button" accessibilityLabel={`Open ${e.name}`}>
                 {({ pressed }) => (
                   <ChamferBox chamfer={10} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, paddingVertical: 12 }}>
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flex: 1, opacity: on ? 1 : 0.5 }}>
                       <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{e.name}</Text>
                       <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.medium, letterSpacing: 0.3, marginTop: 3 }}>v{e.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}{e.author ? ` · ${e.author}` : ''}</Text>
                     </View>
-                    <Svg width={13} height={13} viewBox="0 0 16 16"><Line x1={4} y1={2} x2={12} y2={8} stroke={Rune.goldEdge} strokeWidth={2} /><Line x1={12} y1={8} x2={4} y2={14} stroke={Rune.goldEdge} strokeWidth={2} /></Svg>
+                    {/* v0.12.0: toggle enable/disable right here, no need to open the expansion. */}
+                    <ExpansionToggle on={on} onToggle={() => { playSfx('buttonTap'); void persist({ ...e, enabled: !on }); }} />
                   </ChamferBox>
                 )}
               </Pressable>

@@ -1546,11 +1546,15 @@ export function CardCarousel() {
         <GhostCard editMode={editMode} editGrabbed={editGrabbed} rotation={rotation} hoverAnim={hoverAnim} overscrollX={overscrollX} dropSpread={dropSpread} breathe={breathe} />
         {/* v0.11.1 card-hold radial action menu (Golden Gear Edit): full-circle icon spray wheel. */}
         <CardRadialMenu />
-        {/* The inner gear's touchable pad: a transparent hit-target child, so the container pan
-            receives gear touches instead of the ExpandVeil swallowing them. Above the dim (2600)
-            so the gear stays usable while a card is focused. */}
+        {/* The inner gear's touchable pad: a hit-target child, so the container pan receives gear touches
+            instead of the ExpandVeil swallowing them. Above the dim (2600) so the gear stays usable while
+            a card is focused. v0.12.0 device fix: `collapsable={false}` + a hairline background force
+            Android to keep this as a REAL, hit-testable drawing layer — some OEM ROMs (Motorola G-series,
+            several Xiaomi) flatten a transparent layout-only View under the New Architecture renderer, so
+            the pan never received gear touches there while it worked fine on Samsung. */}
         <View
-          style={[box(PAD_X, PAD_Y, PAD_W, PAD_H), { zIndex: 2600 }]}
+          collapsable={false}
+          style={[box(PAD_X, PAD_Y, PAD_W, PAD_H), { zIndex: 2600, backgroundColor: 'rgba(0,0,0,0.012)' }]}
           accessible
           accessibilityRole="adjustable"
           accessibilityLabel="Card scroll gear. Drag to skim cards, tap to toggle the hand"

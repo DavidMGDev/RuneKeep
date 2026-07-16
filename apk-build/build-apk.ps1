@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.11.2'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.12.0'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.11.2 - Golden Gear Edit fixes. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nA repair pass on Edit Mode, from on-device testing:`n- REARRANGING NOW WORKS - dragging cards to reorder actually commits again (it used to freeze in mid-air and wedge the mode). The cards you drag glide up to your finger and the row eases open to make room, and a successful move deselects the cards.`n- Dragged cards no longer vanish when you move them a few slots away.`n- ENTERING is one smooth motion now - the gear-scroll fan just straightens into the edit row (no more growing, jumping, or flashing back to gold before it settles).`n- The action wheel stays open while you hold it - it only closes (no action) if you release outside an option.`n- The device BACK button fully exits Edit Mode in one press (no more half-open mode).`n- Selected cards now show an upward swipe hint and lift only slightly; the wheel icons are bigger and its panels less see-through.`n- Edit scrolling feels floatier; the bottom gear scrolls the row 2x faster.`n- The 'Edit Mode' banner moved up, away from the cards.`n- Cleaner Add Card / Add Gear / Favorites buttons: transparent backgrounds, square frames, a taller card icon, and tidier text spacing.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.12.0 - Golden Gear device fix + expansion toggles (The Void groundwork). Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`n- DEVICE FIX (important): the golden gear at the bottom of the character sheet was completely dead on some phones (Motorola G-series, several Xiaomi) while working on Samsung. Root cause found + fixed: some Android skins were dropping the gear's invisible touch layer. It's now forced to stay a real touch target and lifted slightly off the very bottom edge (clear of the system gesture strip). Please test the gear on the affected phones - if it's still dead, tell me and I'll add the deeper native fix.`n- EXPANSIONS: you can now enable/disable an expansion with a toggle right on its row in the Card Library - no need to open it. The old in-expansion button is gone.`n`nBehind the scenes: I pulled and transcribed ALL of 'The Void' expansion (6 classes, 6 ancestries, 6 communities, 6 transformations, 2 new domains). Because the official PDFs still ship placeholder art and several classes need bespoke systems, the full playable integration is the next phase - there's a plan + a few questions waiting for you in the RuneKeep temp folder.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
