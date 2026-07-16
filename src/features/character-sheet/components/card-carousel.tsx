@@ -264,16 +264,21 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
       const myOrder = ord == null ? -1 : ord; // rank among raised, or −1
       const inDrag = grabbing && (isGroup ? myOrder >= 0 : index === grabIndex.value);
       if (inDrag) {
-        // The pile floats at the SMOOTHED finger (item 5: it eases toward the finger, not a snap),
-        // leftmost-selected on top, each next +3px right / +2px down. On release it SPREADS from the
-        // finger into its landed columns (dropSpread 0→1) so the drop reads as a placement, not a jump.
+        // The pile RISES from the card's own row slot up to the finger (grabAnim 0→1, item 5), FOLLOWS the
+        // finger during the drag, then SPREADS from the finger into its landed columns (dropSpread 0→1) on
+        // release — both ends animate, symmetric, no snap.
         const pileOrder = isGroup ? myOrder : 0;
+        const restX = OX + (index - centerPos) * EDIT_GAP + overscrollX.value; // where the card sat before the grab
+        const restY = EDIT_ROW_Y - raiseSV.value * EDIT_RAISE;
         const fingerX = grabXAnim.value + pileOrder * 3;
         const fingerY = grabYAnim.value - EDIT_RAISE + pileOrder * 2;
         const gapColX = OX + (dropTo.value + pileOrder - centerPos) * EDIT_GAP + overscrollX.value;
+        const ga = grabAnim.value;
         const sp = dropSpread.value;
-        const px = fingerX + (gapColX - fingerX) * sp;
-        const py = fingerY + (EDIT_ROW_Y - EDIT_RAISE - fingerY) * sp;
+        const baseX = restX + (fingerX - restX) * ga; // slot → finger (grab)
+        const baseY = restY + (fingerY - restY) * ga;
+        const px = baseX + (gapColX - baseX) * sp; // finger → landed column (commit)
+        const py = baseY + (EDIT_ROW_Y - EDIT_RAISE - baseY) * sp;
         x += (px - x) * e;
         y += (py - y) * e;
         scale += (EDIT_SCALE * 1.06 - scale) * e;
@@ -598,10 +603,11 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           ) : null}
           {/* v0.10.7 selection breathing (Golden Gear Edit): a synced white pulse on the raised cards. */}
           {raised ? <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 2, top: 2, right: 2, bottom: 2, borderRadius: 7, backgroundColor: '#ffffff' }, breatheStyle]} /> : null}
-          {/* v0.11.2 item 8e: upward swipe hint (three chevrons) on each selected card, synced to `breathe`. */}
+          {/* v0.12.1 item 3: upward swipe hint (three chevrons) sits ABOVE each selected card (was inside),
+              synced to `breathe`. Negative top places it just over the card's top edge. */}
           {raised ? (
-            <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: CARD_W / 2 - 20, top: 12, width: 40, height: 40 }, hintStyle]}>
-              <Svg width={40} height={40} viewBox="0 0 24 24">
+            <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: CARD_W / 2 - 22, top: -50, width: 44, height: 44 }, hintStyle]}>
+              <Svg width={44} height={44} viewBox="0 0 24 24">
                 <Path d="M5 10 L12 4.5 L19 10 M5 15 L12 9.5 L19 15 M5 20 L12 14.5 L19 20" fill="none" stroke="#ffffff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
               </Svg>
             </Animated.View>
@@ -795,10 +801,10 @@ export function CardCarousel() {
     const cnt = countSV.value;
     const dt = Math.min(50, info.timeSincePreviousFrame ?? 16) / 1000;
     const k = Math.min(1, dt * 9); // exponential-smoothing factor (v0.11.2: ~20% slower, clearly animated)
-    // (a) pile eases toward the finger; the row eases into the reflow (grabAnim 0→1) — both animate, no snap.
+    // (a) the pile FOLLOWS the finger with a little lag; grabAnim (a timed 0→1, set on grab) is the RISE
+    // envelope so cards animate from their row slot up to the finger (item 5) — no snap.
     grabXAnim.value += (grabX.value - grabXAnim.value) * k;
     grabYAnim.value += (grabY.value - grabYAnim.value) * k;
-    grabAnim.value += (1 - grabAnim.value) * k;
     // (c) edge autoscroll: dead-zone in the center 40%, ramp out, and an extra kick over the outer 30%.
     const dxc = grabX.value - OX;
     const ax = Math.abs(dxc);
@@ -828,10 +834,13 @@ export function CardCarousel() {
   // spread into the (dragCount-wide) gap, so the on-screen layout already equals the post-commit order.
   // We persist the reorder and let a deck-change effect flip `editGrabbed` off only once the new order is
   // live — so the transform never briefly renders the OLD positions. All drags go through the group path.
-  // v0.11.2 item 8c: finish a drop RELIABLY — always clear the drag state (edit mode must never wedge),
-  // then persist the reorder if it actually moved, and deselect only on a real move (item 8d). No fragile
-  // deck-change bridge (that was why it froze); the reset is unconditional and synchronous.
+  // Finish a drop. v0.12.1 item 6: NO flicker — keep the drag state up until the reordered deck is LIVE
+  // (a deck-change effect flips it), and pre-write the raiseOrder ranks for the new order so the bridge
+  // frame already renders the cards in their final spots. v0.11.2 item 8c reliability is preserved via a
+  // safety timeout: if the reordered deck never actually lands (a data-layer no-op), the mode still resets.
+  const dropPendingRef = useRef(false);
   const resetDrag = useCallback(() => {
+    dropPendingRef.current = false;
     editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0;
     gapWidth.value = 1; dropSpread.value = 0; grabAnim.value = 0; editHandledSV.value = 0;
   }, [editGrabbed, grabIndex, grabIsGroup, gapWidth, dropSpread, grabAnim, editHandledSV]);
@@ -840,13 +849,23 @@ export function CardCarousel() {
     const ids = deck.map((c) => c.id);
     const ordered = dragSet.size ? reorderBlock(ids, dragSet, to) : ids;
     const changed = dragSet.size > 0 && !ordered.every((id, i) => id === ids[i]);
-    resetDrag();
     if (changed && onReorderCards) {
+      const orders: number[] = []; const before: number[] = []; let cnt = 0;
+      for (let i = 0; i < ordered.length; i++) { before[i] = cnt; if (raisedIds.has(ordered[i])) { orders[i] = cnt; cnt++; } else orders[i] = -1; }
+      raiseOrderSV.value = orders; raisedBeforeSV.value = before; raiseCountSV.value = cnt;
+      dropPendingRef.current = true;
       onReorderCards([...dragSet], category, ordered);
       playSfx('cardDragEnd');
-      deselectAll(); // item 8d: a real move deselects; a no-op (unchanged order) keeps the selection
+      deselectAll(); // item 8d: a real move deselects
+      setTimeout(() => { if (dropPendingRef.current) resetDrag(); }, 500); // safety net (never wedge)
+    } else {
+      resetDrag(); // no-op → keep the selection, just clear the drag
     }
-  }, [deck, raisedIds, category, onReorderCards, deselectAll, resetDrag]);
+  }, [deck, raisedIds, category, onReorderCards, deselectAll, resetDrag, raiseOrderSV, raisedBeforeSV, raiseCountSV]);
+  // Flip the drag state off only once the reordered deck has landed (seamless — item 6).
+  useEffect(() => {
+    if (dropPendingRef.current) resetDrag();
+  }, [deck, resetDrag]);
 
   const startRot = useSharedValue(0);
   const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
@@ -877,6 +896,18 @@ export function CardCarousel() {
     setCenter(Math.min(count - 1, Math.max(0, Math.round(rotation.value / ANGLE_STEP))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, count]);
+  // v0.12.1 item 7: when the deck SHRINKS (e.g. deleting the on-screen cards in edit mode) and the view is
+  // now past the last card, spring back to the last remaining card so the screen never sits empty.
+  useEffect(() => {
+    if (count <= 0) return;
+    const max = maxRotation(count);
+    if (rotation.value > max + 0.001) {
+      cancelAnimation(rotation);
+      rotation.value = withSpring(snapRot(max, count), SNAP_SPRING);
+      focusIndex.value = count - 1;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count]);
 
   // The "Modifiers" button (#175) fades in on focus and reveals what the focused card applies.
   const [focused, setFocused] = useState(false);
@@ -1105,7 +1136,9 @@ export function CardCarousel() {
                 grabYAnim.value = EDIT_ROW_Y;
                 gapWidth.value = 1;
                 dropSpread.value = 0;
-                grabAnim.value = 0; // ease the row into the reflow (item 8a)
+                // item 5: a timed rise envelope — the pile (and the row reflow) animate up over 250ms.
+                grabAnim.value = 0;
+                grabAnim.value = withTiming(1, { duration: 250, easing: Easing.out(Easing.cubic) });
                 const dragCount = Math.max(1, raiseCountSV.value + (editStartRaised.value === 0 ? 1 : 0));
                 const h0 = Math.max(0, Math.min(Math.max(0, count - dragCount), editStartIdx.value));
                 hoverIndex.value = h0;

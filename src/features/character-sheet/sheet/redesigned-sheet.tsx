@@ -5,7 +5,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import Animated, { Easing, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccentTint } from '../components/accent';
@@ -1938,11 +1938,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <StatToastHost toasts={toasts} onExpire={(id) => setToasts((list) => list.filter((t) => t.id !== id))} />
             {/* v0.10.7 Golden Gear Edit: the ever-present controls bar is gone — actions live on the
                 card-hold radial (tap the gear to exit). Move/Delete still confirm through their sheets. */}
+            {/* v0.12.1 item 10: the radial-menu pop-ups fade in (they used to POP). */}
             {moveReq ? (
-              <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
+              <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
+                <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
+              </Animated.View>
             ) : null}
             {deleteReq ? (
-              <Confirm title={deleteReq.length > 1 ? `Delete ${deleteReq.length} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setDeleteReq(null)} onConfirm={() => { onDeleteCards(deleteReq); setDeleteReq(null); }} />
+              <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
+                <Confirm title={deleteReq.length > 1 ? `Delete ${deleteReq.length} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setDeleteReq(null)} onConfirm={() => { onDeleteCards(deleteReq); setDeleteReq(null); }} />
+              </Animated.View>
             ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
