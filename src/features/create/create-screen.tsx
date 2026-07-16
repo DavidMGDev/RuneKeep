@@ -57,10 +57,12 @@ const SKIP_INVENTORY: StraightItem = { id: 'inventory-skip', label: 'Skip invent
 
 // v0.10.3 (B4): a homebrew library card as a creation carousel item — rendered live (no webp) like the
 // other forged cards. Stats for weapon/armor are folded into the body.
-const libCardItem = (lc: LibraryCard): StraightItem => ({
+// `struckIndex` (v0.12.4): strike a section's text (mixed-ancestry crossed-out feature) live in the
+// creation carousel — structured ancestries have no webp to overlay, so the cross-out rides the markdown.
+const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => ({
   id: lc.id,
   label: lc.title || 'Card',
-  custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
+  custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc, struckIndex)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
 });
 
 export function CreateScreen() {
@@ -309,7 +311,11 @@ export function CreateScreen() {
         const toggle: StraightItem = draft.mixedAncestry
           ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
           : { id: MIXED_ANCESTRY_ID, label: 'Mixed Ancestry', custom: <ForgedCard title="Mixed Ancestry" kindLabel="Ancestry" body="Combine two ancestries: take the first trait of one and the second trait of the other. Pick two — order decides which trait you keep." accentDeep={Rune.panel} colorArt="#3A2A4A" multilineTitle /> };
-        return [...base, ...(libContent?.ancestries ?? []).map(libCardItem), toggle];
+        // mixed-ancestry cross-out for STRUCTURED ancestries: first-picked keeps trait 1 (strike section 1),
+        // second-picked keeps trait 2 (strike section 0) — mirrors ancestryCrossOuts for the image cards.
+        const mix = draft.mixedAncestry;
+        const struckIdx = (id: string): number | undefined => (mix?.first === id ? 1 : mix?.second === id ? 0 : undefined);
+        return [...base, ...(libContent?.ancestries ?? []).map((lc) => libCardItem(lc, struckIdx(lc.id))), toggle];
       }
       case 'community':
         return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
