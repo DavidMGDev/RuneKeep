@@ -160,7 +160,7 @@ function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active 
           chamfer={9}
           stroke={active ? Rune.goldBright : Rune.goldEdge}
           strokeWidth={1.4}
-          fill={active ? 'rgba(218,162,73,0.32)' : 'rgba(14,17,22,0.5)'}
+          fill={active ? 'rgba(218,162,73,0.32)' : 'transparent'}
           style={{ width: w, height: h, alignItems: 'center', justifyContent: 'center' }}>
           <View style={{ width: w * 0.62, height: h * 0.62, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
             {glyph ? glyph : icon != null ? <ArtImage source={icon} fit="contain" /> : null}
@@ -176,19 +176,20 @@ function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active 
 
 // v0.9.8 action-badge glyphs (replace the origin badges): a card-with-plus and a shield-with-plus.
 function AddCardGlyph() {
-  // v0.11.1 item 8: a plain, WIDER card (no folded top-right corner → no "add document" read) + a plus.
+  // v0.11.2 item 2: a plain, wider card that's a touch TALLER (was reading too square) + a centered plus.
   return (
-    <Svg width={28} height={26} viewBox="0 0 26 24">
-      <Path d="M6 3.5 H20 V20.5 H6 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
-      <Path d="M13 8 V16 M9 12 H17" stroke={BRONZE} strokeWidth={1.9} strokeLinecap="round" />
+    <Svg width={26} height={30} viewBox="0 0 24 28">
+      <Path d="M5 3 H19 V25 H5 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
+      <Path d="M12 9 V19 M8 14 H16" stroke={BRONZE} strokeWidth={1.9} strokeLinecap="round" />
     </Svg>
   );
 }
 function AddGearGlyph() {
+  // v0.11.2 item 2: scaled to match the (taller) Add Card glyph.
   return (
-    <Svg width={26} height={26} viewBox="0 0 24 24">
-      <Path d="M12 3.5 L18 6 V11 C18 16 15 19 12 20.5 C9 19 6 16 6 11 V6 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
-      <Path d="M12 8.5 V14.5 M9 11.5 H15" stroke={BRONZE} strokeWidth={1.7} strokeLinecap="round" />
+    <Svg width={26} height={30} viewBox="0 0 24 28">
+      <Path d="M12 3.5 L19 6.5 V13 C19 19 15.5 22.5 12 24.5 C8.5 22.5 5 19 5 13 V6.5 Z" fill="none" stroke={BRONZE} strokeWidth={1.6} strokeLinejoin="round" />
+      <Path d="M12 10 V17 M8.5 13.5 H15.5" stroke={BRONZE} strokeWidth={1.8} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -271,16 +272,17 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
             sized, never stretched; a touch of letter-spacing for openness. */}
         <FillText left={176} top={12} width={220} height={58} color={INK} family={Display.black} align="left" vAlign="center" uppercase letterSpacing={0.3} maxLines={2} minSize={15} maxSize={60}>{character.name}</FillText>
       </View>
-      {/* Domains as two separate chamfered chips (no ×) under the name (#37). */}
-      <DomainChip left={176} top={74} label={character.domains[0]} />
-      <DomainChip left={176 + chipWidth(character.domains[0]) + 8} top={74} label={character.domains[1]} />
+      {/* Domains as two separate chamfered chips (no ×) under the name (#37). v0.11.2: pulled up toward
+          the name so name → domains → lvl read as one tight group, freeing negative space before the badges. */}
+      <DomainChip left={176} top={71} label={character.domains[0]} />
+      <DomainChip left={176 + chipWidth(character.domains[0]) + 8} top={71} label={character.domains[1]} />
       {/* Level/class + proficiency lines between the chips and the badges — nudged 3px up for
           clear air above the origin strip (#54 E). */}
       {/* One size smaller + a taller box than the glyphs need (#95 B): native line metrics ran
           taller than web's and the 17px box clipped the descender band off "LVL 4 SORCERER". */}
       {/* level/class + proficiency on ONE line now (#128): "Prof" abbreviation, no arrow, middot
           separator — the freed vertical space goes to the (taller, squarer) origin badges below. */}
-      <SheetText left={176} top={100} width={224} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>
+      <SheetText left={176} top={95} width={224} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>
         Lvl {character.level} {character.className} · Prof {character.proficiency}
       </SheetText>
 
@@ -295,11 +297,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* v0.9.8: the Ancestry/Community/Subclass origin badges are replaced — same three slots — by the
           card-management actions: Add Card (author for the current category), Add Gear (catalog), and
           Favorites (star). The two dividers stay so the trio still reads as one banded group. */}
-      <OctaBadge left={176} top={124} w={48} h={52} glyph={<AddCardGlyph />} label="Add Card" onPress={guardFav(onAddCard)} a11y="Add a card to the current category" />
-      <OctaBadge left={254} top={124} w={48} h={52} glyph={<AddGearGlyph />} label="Add Gear" onPress={guardFav(onAddGear)} a11y="Add gear from the catalog" />
-      <FavoritesBadge left={332} top={124} w={48} h={52} />
-      <GoldRuleV left={239} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
-      <GoldRuleV left={317} top={134} height={34} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <OctaBadge left={176} top={126} w={48} h={48} glyph={<AddCardGlyph />} label="Add Card" onPress={guardFav(onAddCard)} a11y="Add a card to the current category" />
+      <OctaBadge left={254} top={126} w={48} h={48} glyph={<AddGearGlyph />} label="Add Gear" onPress={guardFav(onAddGear)} a11y="Add gear from the catalog" />
+      <FavoritesBadge left={332} top={126} w={48} h={48} />
+      <GoldRuleV left={239} top={134} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <GoldRuleV left={317} top={134} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
@@ -453,12 +455,14 @@ interface BackGuardState {
  * subscribes once (no churn from inline closers).
  */
 function SheetBackGuard(props: BackGuardState) {
-  const { machineState, closeFullscreen, collapse } = useCarousel();
+  const { machineState, closeFullscreen, collapse, editing, exitEdit } = useCarousel();
   const { open: menuOpen, closeMenu } = useFloatMenu();
   const ref = useRef(props);
   ref.current = props;
   const menuOpenRef = useRef(menuOpen);
   menuOpenRef.current = menuOpen;
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   useFocusEffect(
     useCallback(() => {
       const onBack = () => {
@@ -470,6 +474,9 @@ function SheetBackGuard(props: BackGuardState) {
         if (p.damageOpen) { p.onCloseDamage(); return true; }
         if (p.floatKind) { p.onCloseFloat(); return true; }
         if (menuOpenRef.current) { closeMenu(); return true; }
+        // v0.11.2 item 5: Golden Gear Edit is ONE cohesive mode — Back exits ALL of it (dim + banner + row
+        // + selection) in a single press, before the plain expanded/collapse states.
+        if (editingRef.current) { exitEdit(true); return true; }
         if (machineState.value === 'fullscreen') { closeFullscreen(); return true; }
         if (machineState.value === 'expanded') { collapse(); return true; }
         p.onLeave(); // nothing open → confirm before leaving (never an accidental exit)
@@ -477,7 +484,7 @@ function SheetBackGuard(props: BackGuardState) {
       };
       const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
       return () => sub.remove();
-    }, [machineState, closeFullscreen, collapse, closeMenu]),
+    }, [machineState, closeFullscreen, collapse, closeMenu, exitEdit]),
   );
   return null;
 }
@@ -511,7 +518,7 @@ function EditHud() {
   const fade = useAnimatedStyle(() => ({ opacity: editMode.value }));
   if (!editing) return null;
   return (
-    <Animated.View pointerEvents="box-none" style={[box(0, 350, 412, 150), { zIndex: 40, alignItems: 'center' }, fade]}>
+    <Animated.View pointerEvents="box-none" style={[box(0, 224, 412, 150), { zIndex: 40, alignItems: 'center' }, fade]}>
       {/* full-bleed banner: fill + top/bottom rules only (the side edges sit off-screen under the border) */}
       <View style={{ width: 452, height: 84, backgroundColor: 'rgba(24,28,35,0.9)', borderTopWidth: 1.4, borderBottomWidth: 1.4, borderColor: EDIT_GRAY_DIM, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
         <Text style={{ color: EDIT_GRAY, fontSize: 23, fontFamily: Body.bold, letterSpacing: 4, textTransform: 'uppercase' }}>Edit Mode</Text>

@@ -19,6 +19,12 @@ describe('reorderBlock — multi-select drag (v0.10.7)', () => {
     expect(reorderBlock(ids, new Set(['a', 'b']), 99)).toEqual(['c', 'd', 'e', 'a', 'b']);
     expect(reorderBlock(ids, new Set(['a', 'b']), -5)).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
+  it('dropping a block back at its own position returns the IDENTICAL order (a no-op → no commit)', () => {
+    // v0.11.2 item 8d: the drag commit deselects only on a REAL move. Dropping {b,c} right after `a`
+    // (their own spot) must equal the original — the signal that nothing changed.
+    expect(reorderBlock(ids, new Set(['b', 'c']), 1)).toEqual(ids);
+    expect(reorderBlock(ids, new Set(['a']), 0)).toEqual(ids); // first card back to the front
+  });
 });
 
 describe('cardMenuAngle — even full-circle spacing from due-north', () => {

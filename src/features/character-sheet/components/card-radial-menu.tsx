@@ -23,8 +23,8 @@ import { cardMenuAngle, CARD_MENU_ICON, CARD_MENU_RICON, CARD_MENU_RIN, CARD_MEN
 // Desaturated (Edit Mode) palette.
 const GRAY = '#C4C8D0';
 const GRAY_LIT = '#F0F1F4';
-const WEDGE = 'rgba(28,32,40,0.62)';
-const WEDGE_LIT = 'rgba(74,82,92,0.82)';
+const WEDGE = 'rgba(28,32,40,0.85)'; // v0.11.2: only ~15% transparent (was too see-through)
+const WEDGE_LIT = 'rgba(74,82,92,0.92)';
 const R = CARD_MENU_ROUT; // local SVG canvas is 2R×2R, centre at (R,R)
 
 function sector(a0: number, a1: number, ri: number, ro: number): string {

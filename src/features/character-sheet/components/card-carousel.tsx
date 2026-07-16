@@ -20,7 +20,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { box } from '@/lib/design';
 import { Body, Rune } from '@/constants/theme';
@@ -185,6 +185,9 @@ interface SlotProps {
   editMode: SharedValue<number>;
   /** This card is raised/selected in edit mode. */
   raised: boolean;
+  /** Whether Golden Gear Edit is active (JS): disables this slot's long-press so it can't cancel the
+   *  master pan and close the card-hold wheel (item 3). */
+  editing: boolean;
   /** Tap in edit mode toggles this card's raised state instead of opening it. */
   onRaise: (id: string) => void;
   // --- in-row drag-reorder (v0.9.8) — all carousel-level shared values, read in the slot transform. ---
@@ -206,6 +209,8 @@ interface SlotProps {
   dropSpread: SharedValue<number>;
   /** The insertion index the pile spreads to (in remaining-card terms). */
   dropTo: SharedValue<number>;
+  /** 0→1 on grab: eases the row from its resting layout into the reflow so it never snaps (item 8a). */
+  grabAnim: SharedValue<number>;
   // --- v0.10.7 multi-select pile drag + breathing highlight ---
   /** 1 while a drag is in flight. */
   editGrabbed: SharedValue<number>;
@@ -224,7 +229,7 @@ interface SlotProps {
   menuBounce: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, editGrabbed, grabIsGroup, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
   // v0.9.8: animate the raised/selected lift (no highlight — the lift itself is the selection cue).
   const raiseSV = useSharedValue(raised ? 1 : 0);
   useEffect(() => { raiseSV.value = withTiming(raised ? 1 : 0, { duration: 220, easing: Easing.out(Easing.cubic) }); }, [raised, raiseSV]);
@@ -275,6 +280,9 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         // iOS-app-style wobble while rearranging (shake is 0.5 when still); it settles as the pile lands.
         tilt = tilt * (1 - e) + (shake.value - 0.5) * 0.06 * e * (1 - sp);
         z = 5000 - pileOrder;
+        // item 8b: a dragged card rides the FINGER, not its old deck slot — force it visible so it never
+        // fades out when dragged several slots from where it started.
+        opacity = opacity * (1 - e) + 1 * e;
       } else {
         // Reflow: the remaining cards close the gap the pile left and open ONE (ghost) slot at the
         // landing point while dragging; on release the gap widens to the block width (gapWidth 1→N) so
@@ -285,7 +293,10 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           const removedBefore = isGroup ? (rb == null ? 0 : rb) : (index > grabIndex.value ? 1 : 0);
           const rrank = index - removedBefore; // rank among the remaining cards
           const shift = Math.max(0, Math.min(1, rrank - hoverAnim.value + 1));
-          displaySlot = rrank + gapWidth.value * shift;
+          const grabbedSlot = rrank + gapWidth.value * shift;
+          // item 8a: ease from the resting slot (index) into the reflow, so lifting a block out doesn't
+          // snap the neighbours closed — they slide in over grabAnim.
+          displaySlot = index + (grabbedSlot - index) * grabAnim.value;
         }
         // v0.11.1 item 1: a dead-STRAIGHT row at the grind size/height — no curve, no fan tilt.
         const slotOff = displaySlot - centerPos;
@@ -295,6 +306,9 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         scale += (EDIT_SCALE - scale) * e;
         tilt = tilt * (1 - e);
         z += Math.round(raiseSV.value * 50 * e);
+        // item 8b: visibility follows the DISPLAYED slot, not the frozen deck index (a card whose gap-
+        // shifted slot scrolls off the row fades; one still on the row stays solid).
+        opacity = opacity * (1 - e) + slotOpacityAt(Math.abs(slotOff), 1) * e;
         // Open-bounce feedback: the card the radial menu blooms on gives a small scale pop.
         if (Math.round(menuCardIdx.value) === index) scale *= 1 + 0.09 * menuBounce.value;
       }
@@ -450,6 +464,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   const hold = useMemo(
     () =>
       Gesture.LongPress()
+        .enabled(!editing) // item 3: OFF in edit mode — its activation cancels the master pan + closes the card-hold wheel
         .minDuration(HOLD_MS)
         .maxDistance(12) // any real movement (a scroll) cancels — only a stationary hold equips
         .onBegin(() => {
@@ -485,7 +500,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           armSignal.value = 0;
           holdArmed.value = 0;
         }),
-    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed, armSignal, armHapticDone, switching, editMode],
+    [index, item.interactive, commitToggle, machineState, rotation, focusIndex, holdProgress, holdArmed, armSignal, armHapticDone, switching, editMode, editing],
   );
   const slotGesture = useMemo(() => Gesture.Race(hold, tap), [hold, tap]);
   // The scan-fill overlay: a translucent gold sheet rising from the bottom with a bright leading edge.
@@ -495,6 +510,10 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
   // raiseSV envelope means a card that JOINS the selection fades into the shared breath instead of
   // snapping to its current peak. A plain View (no SVG) keeps it cheap under the edit dim.
   const breatheStyle = useAnimatedStyle(() => ({ opacity: breathe.value * 0.24 * raiseSV.value }));
+  // v0.11.2 item 8e: an upward swipe hint (three chevrons) on every selected card, its opacity driven by
+  // the SAME `breathe` value so all selected cards pulse in sync, and by `raiseSV` so a newly-selected
+  // card fades into the shared pulse. Hidden while this card is being dragged (breathe carries on).
+  const hintStyle = useAnimatedStyle(() => ({ opacity: raiseSV.value * (0.28 + 0.55 * breathe.value) }));
 
   // A live interactive card (#136 gold) only accepts touches when FOCUSED; otherwise its controls
   // would swallow the compact-hand expand tap. Gate pointerEvents on a JS focused flag.
@@ -579,6 +598,14 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           ) : null}
           {/* v0.10.7 selection breathing (Golden Gear Edit): a synced white pulse on the raised cards. */}
           {raised ? <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 2, top: 2, right: 2, bottom: 2, borderRadius: 7, backgroundColor: '#ffffff' }, breatheStyle]} /> : null}
+          {/* v0.11.2 item 8e: upward swipe hint (three chevrons) on each selected card, synced to `breathe`. */}
+          {raised ? (
+            <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: CARD_W / 2 - 20, top: 12, width: 40, height: 40 }, hintStyle]}>
+              <Svg width={40} height={40} viewBox="0 0 24 24">
+                <Path d="M5 10 L12 4.5 L19 10 M5 15 L12 9.5 L19 15 M5 20 L12 14.5 L19 20" fill="none" stroke="#ffffff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+            </Animated.View>
+          ) : null}
           {/* enabled corner check (#175): overlay on any equipped card, in both LOD and focused states */}
           {enabled ? <EnabledCorner width={CARD_W} height={CARD_H} /> : null}
           {/* mixed-ancestry cross-out (#265): strikes the trait not taken; rides the slot like the corner */}
@@ -679,7 +706,7 @@ function GhostCard({ editMode, editGrabbed, rotation, hoverAnim, overscrollX, dr
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
   // v0.11.1: the card-hold wheel is spray-select (like the float menu) again — the pan needs the option
@@ -716,6 +743,8 @@ export function CardCarousel() {
   const gapWidth = useSharedValue(1); // reflow gap width: 1 (ghost) while dragging → dragCount on commit
   const dropSpread = useSharedValue(0); // 0 dragging → 1 as the pile spreads into the gap on release
   const dropTo = useSharedValue(0); // the insertion index the pile spreads to
+  const grabAnim = useSharedValue(0); // 0→1 on grab: eases the row from its resting layout into the reflow (item 8a)
+  const editGearScroll = useSharedValue(0); // item 8g: 1 = this edit row-scroll came from the GEAR pad (2× speed)
   const autoScroll = useSharedValue(0); // edge-drag autoscroll speed (cards/sec, signed) while dragging
   const countSV = useSharedValue(count); // deck length, readable from the frame-callback worklet
   const editStartIdx = useSharedValue(-1); // card under the touch at edit-drag begin
@@ -765,10 +794,11 @@ export function CardCarousel() {
     if (editGrabbed.value !== 1 || dropSpread.value > 0.001) return; // inert during the release/drop glide
     const cnt = countSV.value;
     const dt = Math.min(50, info.timeSincePreviousFrame ?? 16) / 1000;
-    const k = Math.min(1, dt * 18); // exponential-smoothing factor (frame-rate independent)
-    // (a) pile follows the finger with a little lag.
+    const k = Math.min(1, dt * 9); // exponential-smoothing factor (v0.11.2: ~20% slower, clearly animated)
+    // (a) pile eases toward the finger; the row eases into the reflow (grabAnim 0→1) — both animate, no snap.
     grabXAnim.value += (grabX.value - grabXAnim.value) * k;
     grabYAnim.value += (grabY.value - grabYAnim.value) * k;
+    grabAnim.value += (1 - grabAnim.value) * k;
     // (c) edge autoscroll: dead-zone in the center 40%, ramp out, and an extra kick over the outer 30%.
     const dxc = grabX.value - OX;
     const ax = Math.abs(dxc);
@@ -798,35 +828,25 @@ export function CardCarousel() {
   // spread into the (dragCount-wide) gap, so the on-screen layout already equals the post-commit order.
   // We persist the reorder and let a deck-change effect flip `editGrabbed` off only once the new order is
   // live — so the transform never briefly renders the OLD positions. All drags go through the group path.
-  const dropPendingRef = useRef(false);
+  // v0.11.2 item 8c: finish a drop RELIABLY — always clear the drag state (edit mode must never wedge),
+  // then persist the reorder if it actually moved, and deselect only on a real move (item 8d). No fragile
+  // deck-change bridge (that was why it froze); the reset is unconditional and synchronous.
+  const resetDrag = useCallback(() => {
+    editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0;
+    gapWidth.value = 1; dropSpread.value = 0; grabAnim.value = 0; editHandledSV.value = 0;
+  }, [editGrabbed, grabIndex, grabIsGroup, gapWidth, dropSpread, grabAnim, editHandledSV]);
   const finishDrop = useCallback((to: number) => {
     const dragSet = new Set(deck.filter((c) => raisedIds.has(c.id)).map((c) => c.id));
     const ids = deck.map((c) => c.id);
     const ordered = dragSet.size ? reorderBlock(ids, dragSet, to) : ids;
     const changed = dragSet.size > 0 && !ordered.every((id, i) => id === ids[i]);
+    resetDrag();
     if (changed && onReorderCards) {
-      // Pre-write the raiseOrder ranks for the NEW order so the bridge frame (new deck, editGrabbed still
-      // 1) reads consistent ranks — the reflow/pile already match the post-commit layout (no 1-frame jump).
-      const orders: number[] = []; const before: number[] = []; let cnt = 0;
-      for (let i = 0; i < ordered.length; i++) { before[i] = cnt; if (raisedIds.has(ordered[i])) { orders[i] = cnt; cnt++; } else orders[i] = -1; }
-      raiseOrderSV.value = orders; raisedBeforeSV.value = before; raiseCountSV.value = cnt;
-      dropPendingRef.current = true; // cleared by the effect when the reordered deck lands
       onReorderCards([...dragSet], category, ordered);
       playSfx('cardDragEnd');
-    } else {
-      // nothing moved → reset the drag state immediately (no new deck coming)
-      editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0;
+      deselectAll(); // item 8d: a real move deselects; a no-op (unchanged order) keeps the selection
     }
-  }, [deck, raisedIds, category, onReorderCards, editGrabbed, grabIndex, grabIsGroup, gapWidth, dropSpread, raiseOrderSV, raisedBeforeSV, raiseCountSV]);
-  useEffect(() => {
-    if (!dropPendingRef.current) return;
-    dropPendingRef.current = false;
-    editGrabbed.value = 0;
-    grabIndex.value = -1;
-    grabIsGroup.value = 0;
-    gapWidth.value = 1;
-    dropSpread.value = 0;
-  }, [deck, editGrabbed, grabIndex, grabIsGroup, gapWidth, dropSpread]);
+  }, [deck, raisedIds, category, onReorderCards, deselectAll, resetDrag]);
 
   const startRot = useSharedValue(0);
   const anchorY = useSharedValue(0); // translationY at the last horizontal-dominant frame
@@ -1038,7 +1058,10 @@ export function CardCarousel() {
                 // EXITING edit returns cards to their normal expanded size (not the small gear-scroll size).
                 if (fin && osDir.value === 0 && switching.value !== 1 && gearScrolled.value === 0) {
                   enteringEdit.value = 1; // this gesture's eventual release must NOT collapse the hand
-                  grindProgress.value = withTiming(0, { duration: 300 });
+                  // item 4: KEEP the grind size while editMode straightens the fan (one seamless motion —
+                  // no grow-then-shrink). Drop grindProgress only after editMode≈1 (invisible then), so
+                  // EXIT still returns to the full expanded arc.
+                  grindProgress.value = withDelay(460, withTiming(0, { duration: 80 }));
                   runOnJS(enterEdit)();
                 }
               });
@@ -1082,6 +1105,7 @@ export function CardCarousel() {
                 grabYAnim.value = EDIT_ROW_Y;
                 gapWidth.value = 1;
                 dropSpread.value = 0;
+                grabAnim.value = 0; // ease the row into the reflow (item 8a)
                 const dragCount = Math.max(1, raiseCountSV.value + (editStartRaised.value === 0 ? 1 : 0));
                 const h0 = Math.max(0, Math.min(Math.max(0, count - dragCount), editStartIdx.value));
                 hoverIndex.value = h0;
@@ -1091,11 +1115,21 @@ export function CardCarousel() {
                 runOnJS(playSfx)('cardDragStart');
                 return;
               }
-              if (Math.abs(e.translationX) > 6) { cancelAnimation(menuDwell); menuDwell.value = 0; editDecided.value = 2; }
+              if (Math.abs(e.translationX) > 6) {
+                cancelAnimation(menuDwell); menuDwell.value = 0; editDecided.value = 2;
+                // item 8g: a drag that began on the GEAR pad scrolls the row at 2× (and cancels the
+                // hold-to-exit dwell / press-white). A drag on the cards scrolls at 1×.
+                if (editPadTouch.value === 1) {
+                  editGearScroll.value = 1;
+                  cancelAnimation(gearDwell); gearDwell.value = 0;
+                  gearFlash.value = withTiming(0, { duration: 160 });
+                } else editGearScroll.value = 0;
+              }
             }
             if (editDecided.value === 2) {
-              // Row scroll with soft rubber at the ends (matches the normal carousel feel).
-              const raw = startRot.value - (e.translationX / EDIT_GAP) * ANGLE_STEP;
+              // Row scroll with soft rubber at the ends. The gear scrolls 2× the finger rate (item 8g).
+              const div = editGearScroll.value === 1 ? EDIT_GAP / 2 : EDIT_GAP;
+              const raw = startRot.value - (e.translationX / div) * ANGLE_STEP;
               const max = maxRotation(count);
               rotation.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
             }
@@ -1129,7 +1163,8 @@ export function CardCarousel() {
                 // item 1: don't enter over a category transition. item 5: clear the grind-shrink so
                 // EXITING edit returns cards to their normal expanded size (not the small gear-scroll size).
                 if (fin && osDir.value === 0 && switching.value !== 1 && gearScrolled.value === 0) {
-                  grindProgress.value = withTiming(0, { duration: 300 });
+                  enteringEdit.value = 1;
+                  grindProgress.value = withDelay(460, withTiming(0, { duration: 80 })); // item 4: seamless straighten
                   runOnJS(enterEdit)();
                 }
               });
@@ -1234,16 +1269,19 @@ export function CardCarousel() {
               return;
             }
             if (editGrabbed.value === 1) {
-              // Staged commit (item 5): make ROOM (gap 1→dragCount), THEN the pile spreads into it, THEN
-              // persist — and only flip editGrabbed off once the reordered deck is live (no blink).
+              // item 8c: mark the drop HANDLED so onFinalize (which fires right after onEnd) does NOT tear
+              // it down before finishDrop runs — that torn-down drop was why re-arrange never committed.
+              editHandledSV.value = 1;
+              // Staged commit (item 5): make ROOM (gap 1→dragCount), THEN the pile spreads into it (~20%
+              // slower per item 8), THEN persist via finishDrop.
               const to = hoverIndex.value;
               const dragCount = Math.max(1, raiseCountSV.value);
               autoScroll.value = 0;
               cancelAnimation(shake);
               shake.value = withTiming(0.5, { duration: 120 });
               dropTo.value = to;
-              gapWidth.value = withTiming(dragCount, { duration: 180, easing: Easing.out(Easing.cubic) });
-              dropSpread.value = withDelay(90, withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) }, (fin) => {
+              gapWidth.value = withTiming(dragCount, { duration: 220, easing: Easing.out(Easing.cubic) });
+              dropSpread.value = withDelay(110, withTiming(1, { duration: 250, easing: Easing.out(Easing.cubic) }, (fin) => {
                 'worklet';
                 if (fin) runOnJS(finishDrop)(to);
               }));
@@ -1260,12 +1298,14 @@ export function CardCarousel() {
               return;
             }
             if (editDecided.value === 2) {
-              // Momentum: carry the release velocity into the snap spring (was a dead snap — "square").
-              const editPanR = EDIT_GAP / ANGLE_STEP;
+              // item 8f: floatier momentum — carry MORE velocity (longer throw) into a softer spring that
+              // only snaps as it slows. The gear scroll (2×) carries proportionally more.
+              const editPanR = (editGearScroll.value === 1 ? EDIT_GAP / 2 : EDIT_GAP) / ANGLE_STEP;
               const v = Math.max(-MAX_FLING_VEL, Math.min(MAX_FLING_VEL, -e.velocityX / editPanR));
-              const target = snapRot(rotation.value + v * FLING_TIME, count);
-              rotation.value = withSpring(target, { ...SNAP_SPRING, velocity: v });
+              const target = snapRot(rotation.value + v * FLING_TIME * 2.4, count);
+              rotation.value = withSpring(target, { damping: 15, stiffness: 92, mass: 0.95, velocity: v });
             }
+            editGearScroll.value = 0;
             editDecided.value = 0;
             editStartIdx.value = -1;
             return;
@@ -1363,7 +1403,9 @@ export function CardCarousel() {
               if (cardMenuHighlight.value >= 0) runOnJS(selectCardMenu)(cardMenuHighlight.value);
               else runOnJS(closeCardMenu)();
             }
-            if (editGrabbed.value === 1) { editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0; autoScroll.value = 0; cancelAnimation(shake); shake.value = 0.5; }
+            // item 8c: only tear down a grab that onEnd did NOT already hand to the staged drop
+            // (editHandledSV===1). Otherwise onFinalize would kill the in-flight drop → never commits.
+            if (editGrabbed.value === 1 && editHandledSV.value === 0) { editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0; grabAnim.value = 0; autoScroll.value = 0; cancelAnimation(shake); shake.value = 0.5; }
             // Still gear tap that never activated the pan → exit edit to COMPACT (item 7).
             if (editDecided.value === 0 && editPadTouch.value === 1 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
               runOnJS(exitEdit)(true);
@@ -1406,7 +1448,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGearScroll, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -1441,6 +1483,7 @@ export function CardCarousel() {
         tokens={cardTokens[deck[i].ref ?? deck[i].id] ?? cardTokens[deck[i].id]}
         editMode={editMode}
         raised={raisedIds.has(deck[i].id)}
+        editing={editing}
         onRaise={toggleRaise}
         grabIndex={grabIndex}
         grabX={grabX}
@@ -1451,6 +1494,7 @@ export function CardCarousel() {
         gapWidth={gapWidth}
         dropSpread={dropSpread}
         dropTo={dropTo}
+        grabAnim={grabAnim}
         editGrabbed={editGrabbed}
         grabIsGroup={grabIsGroup}
         raiseOrderSV={raiseOrderSV}
