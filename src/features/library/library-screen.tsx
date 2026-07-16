@@ -18,7 +18,6 @@ import { RuneButton } from '@/components/rune-button';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DOMAINS } from '@/constants/identity';
-import { CATALOG } from '@/data/catalog';
 import { playSfx } from '@/lib/sfx';
 import {
   type ArmorSpec,
@@ -31,7 +30,7 @@ import {
   isEnabledForCreation,
   isExpansionEnabled,
 } from '@/lib/library';
-import { isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
+import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
@@ -106,10 +105,6 @@ function ExpansionToggle({ on, onToggle }: { on: boolean; onToggle: () => void }
     </Pressable>
   );
 }
-
-/** v0.12.2: an official expansion's real cards live in the bundled catalog (its stored record's `cards`
- *  is empty), so its count comes from there, keyed by expansion id. */
-const officialCardCount = (id: string): number => CATALOG.filter((c) => c.expansion === id).length;
 
 /** A single expansion row on the hub — name + version/count/author, with the enable toggle on the right.
  *  Shared by the "Official Expansions" and "My expansions" sections (identical layout). */
@@ -416,7 +411,7 @@ export function LibraryScreen() {
   // global enable toggle only. No edit/share/add/delete, no editable card list. Their cards live in the
   // catalog (the record's own `cards` is empty), so the count comes from there.
   if (selected && (selected.official || isOfficialExpansion(selected.id))) {
-    const cardCount = officialCardCount(selected.id);
+    const cardCount = expansionCardCount(selected);
     const on = isEnabledForCreation(selected);
     return (
       <AppScreen title={selected.name} onBack={() => setSelectedId(null)}>
@@ -539,7 +534,7 @@ export function LibraryScreen() {
                 key={e.id}
                 e={e}
                 on={isEnabledForCreation(e)}
-                cardCount={officialCardCount(e.id)}
+                cardCount={expansionCardCount(e)}
                 onOpen={() => setSelectedId(e.id)}
                 onToggle={() => { playSfx('buttonTap'); void persist({ ...e, enabled: !isEnabledForCreation(e) }); }}
               />

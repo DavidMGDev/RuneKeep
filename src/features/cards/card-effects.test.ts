@@ -1,4 +1,5 @@
 import { type CharacterFile, sheetBreakdown, toSheetCharacter } from '@/lib/character-file';
+import { VOID_ANCESTRIES } from '@/data/void-ancestries';
 import { cardHasEffects, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, refOf, sourceLabelForCardId } from './card-effects';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
@@ -113,6 +114,29 @@ describe('mixed ancestry effect filtering (#265)', () => {
     const plain = toSheetCharacter(baseFile());
     expect(c.maxHp).toBe(plain.maxHp + 1); // Giant Endurance (trait 1) applies
     expect(c.stress.total).toBe(plain.stress.total); // Human High Stamina (trait 1) is crossed out → no +1 Stress
+  });
+});
+
+describe('Void structured ancestries (v0.12.3)', () => {
+  const earthkin = VOID_ANCESTRIES.find((a) => a.id === 'ancestry-earthkin')!;
+  it('Earthkin carries the Stoneskin passive on trait 1; the other 5 carry none', () => {
+    expect(earthkin.ancestryEffectTrait).toBe(1);
+    expect(earthkin.effects).toEqual([
+      { target: 'armorScore', mode: 'bonus', delta: 1, note: expect.any(String) },
+      { target: 'majorThreshold', mode: 'bonus', delta: 1, note: expect.any(String) },
+      { target: 'severeThreshold', mode: 'bonus', delta: 1, note: expect.any(String) },
+    ]);
+    for (const a of VOID_ANCESTRIES) if (a.id !== 'ancestry-earthkin') expect(a.effects ?? []).toEqual([]);
+  });
+  it('applies Stoneskin as a single ancestry, drops it only when its trait is crossed out in a mix', () => {
+    const single = baseFile({ ancestryCardId: 'ancestry-earthkin', libraryCards: [earthkin] });
+    expect(effectsForCardId('ancestry-earthkin', single)).toEqual(earthkin.effects);
+    // Earthkin picked SECOND keeps trait 2 → Stoneskin (trait 1) is crossed out → dropped.
+    const drop = baseFile({ mixedAncestry: { first: 'ancestry-giant', second: 'ancestry-earthkin' }, libraryCards: [earthkin] });
+    expect(effectsForCardId('ancestry-earthkin', drop)).toEqual([]);
+    // Earthkin picked FIRST keeps trait 1 → Stoneskin stays.
+    const keep = baseFile({ mixedAncestry: { first: 'ancestry-earthkin', second: 'ancestry-giant' }, libraryCards: [earthkin] });
+    expect(effectsForCardId('ancestry-earthkin', keep)).toEqual(earthkin.effects);
   });
 });
 

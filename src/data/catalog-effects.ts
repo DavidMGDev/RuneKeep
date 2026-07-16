@@ -15,6 +15,7 @@ export const CATALOG_EFFECTS: Record<string, CardEffect[]> = {
   "blade-07-1": [{ target: "severeThreshold", delta: 4, note: "Blade-Touched: +4 Severe damage threshold while 4+ loadout cards are Blade-domain" }],
   "bone-01-3": [{ target: "evasion", dynamic: "halfAgility", note: "Untouchable: +half Agility to Evasion" }],
   "splendor-07-2": [{ target: "severeThreshold", delta: 3, note: "+3 Severe damage threshold while 4+ loadout cards are Splendor domain" }],
+  "subclass-juggernaut-2-specialization": [{ target: "severeThreshold", delta: 3, note: "Rugged: 'Gain a permanent +3 bonus to your Severe damage threshold.' (Void)" }],
   "subclass-nightwalker-3-mastery": [{ target: "evasion", delta: 1, note: "Fleeting Shadow: permanent +1 bonus to Evasion" }],
   "subclass-school-of-war-1-foundation": [{ target: "maxHp", delta: 1, note: "Battlemage: Gain an additional Hit Point slot (permanent)." }],
   "subclass-stalwart-1-foundation": [{ target: "majorThreshold", delta: 1, note: "Unwavering: permanent +1 to damage thresholds" }, { target: "severeThreshold", delta: 1, note: "Unwavering: permanent +1 to damage thresholds" }],
