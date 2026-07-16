@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.12.5'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.13.0'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.12.5 - Void banners & the drop-flash: the real root causes, fixed. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`n- VOID CLASS BANNERS: the broken sliver was a STALE CACHED bitmap - class cards are pre-rendered once and cached on device, and that cache was never invalidated, so the earlier banner fixes never reached the screen. The cache version is bumped (all forged cards regenerate once) and Void banner captures now wait for the pennant art to decode. The six Void classes finally show your real red-and-gold pennants.`n- DROP FLASH: the 1-frame flash back to the old order after a re-arrange is gone at the source. Cards now resolve their position through an id-to-new-index bridge written at the moment of the drop, so the old and new layouts are pixel-identical during the handoff - the flash is impossible by construction, not timed around.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.13.0 - ten quality-of-life features and fixes, plus SCARS. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`n- SCARS: a new Misc > Add Scar card effect. Each equipped scar card kills your rightmost Hope slot (grey, disconnected, unusable); stack up to 6 and the whole sheet loses its color until a scar card is unequipped.`n- CARD TYPESET: custom cards re-set against the official prints - black titles, bigger left-aligned body text, tight section gaps, bold colon feature leads. All forged cards regenerate once on first launch.`n- ANCESTRY SECTIONS: custom ancestries now start with a description section and two mandatory Feature sections you can re-arrange anywhere - the upper one is always Feature 1.`n- EXPANSION PICKER moved to the character-select screen (creation loads only after Continue); Base Game reads as locked; order is Base > The Void > yours.`n- ARCHIVE: Blood/Dread filter chips + Void cards appear when The Void is globally enabled (hidden when off).`n- VOID SUBCLASSES: the subclass/class creator now offers all 15 classes.`n- NO MORE LOST INPUT: expansion/card creation popups close only via Cancel - stray taps between fields no longer destroy your typing.`n- EMPTY CAROUSEL: opening an empty category now shows a quiet 'There is nothing here' panel (change category / add from catalogue / create card) instead of a dim blank fan.`n- LEVEL 5/8 TRAITS: trait marks clear inside the level-up dialog at tier starts, so your tier trait increases are pickable.`n- Empty Favorites star press now explains itself with a toast.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
