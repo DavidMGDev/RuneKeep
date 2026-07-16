@@ -1,0 +1,797 @@
+[
+  {
+    "outPath": "Void/Subclass/Assassin/executioners-guild-1-foundation.webp",
+    "category": "subclass",
+    "class": "Assassin",
+    "subclass": "Executioners Guild",
+    "tier": 1,
+    "slug": "executioners-guild-1-foundation",
+    "cardTitle": "Executioners Guild — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Assassin/executioners-guild-2-specialization.webp",
+    "category": "subclass",
+    "class": "Assassin",
+    "subclass": "Executioners Guild",
+    "tier": 2,
+    "slug": "executioners-guild-2-specialization",
+    "cardTitle": "Executioners Guild — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Assassin/executioners-guild-3-mastery.webp",
+    "category": "subclass",
+    "class": "Assassin",
+    "subclass": "Executioners Guild",
+    "tier": 3,
+    "slug": "executioners-guild-3-mastery",
+    "cardTitle": "Executioners Guild — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/Assassin/poisoners-guild-1-foundation.webp",
+    "category": "subclass",
+    "class": "Assassin",
+    "subclass": "Poisoners Guild",
+    "tier": 1,
+    "slug": "poisoners-guild-1-foundation",
+    "cardTitle": "Poisoners Guild — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Assassin/poisoners-guild-2-specialization.webp",
+    "category": "subclass",
+    "class": "Assassin",
+    "subclass": "Poisoners Guild",
+    "tier": 2,
+    "slug": "poisoners-guild-2-specialization",
+    "cardTitle": "Poisoners Guild — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Assassin/poisoners-guild-3-mastery.webp",
+    "category": "subclass",
+    "class": "Assassin",
+    "subclass": "Poisoners Guild",
+    "tier": 3,
+    "slug": "poisoners-guild-3-mastery",
+    "cardTitle": "Poisoners Guild — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/Witch/hedge-1-foundation.webp",
+    "category": "subclass",
+    "class": "Witch",
+    "subclass": "Hedge",
+    "tier": 1,
+    "slug": "hedge-1-foundation",
+    "cardTitle": "Hedge — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Witch/hedge-2-specialization.webp",
+    "category": "subclass",
+    "class": "Witch",
+    "subclass": "Hedge",
+    "tier": 2,
+    "slug": "hedge-2-specialization",
+    "cardTitle": "Hedge — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Witch/hedge-3-mastery.webp",
+    "category": "subclass",
+    "class": "Witch",
+    "subclass": "Hedge",
+    "tier": 3,
+    "slug": "hedge-3-mastery",
+    "cardTitle": "Hedge — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/Witch/moon-1-foundation.webp",
+    "category": "subclass",
+    "class": "Witch",
+    "subclass": "Moon",
+    "tier": 1,
+    "slug": "moon-1-foundation",
+    "cardTitle": "Moon — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Witch/moon-2-specialization.webp",
+    "category": "subclass",
+    "class": "Witch",
+    "subclass": "Moon",
+    "tier": 2,
+    "slug": "moon-2-specialization",
+    "cardTitle": "Moon — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Witch/moon-3-mastery.webp",
+    "category": "subclass",
+    "class": "Witch",
+    "subclass": "Moon",
+    "tier": 3,
+    "slug": "moon-3-mastery",
+    "cardTitle": "Moon — Mastery"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-01-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 1,
+    "slug": "dread-01-1",
+    "cardTitle": "Blighting Strike"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-01-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 1,
+    "slug": "dread-01-2",
+    "cardTitle": "Voice of Dread"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-01-3.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 1,
+    "slug": "dread-01-3",
+    "cardTitle": "Umbral Veil"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-02-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 2,
+    "slug": "dread-02-1",
+    "cardTitle": "Hideous Retribution"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-02-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 2,
+    "slug": "dread-02-2",
+    "cardTitle": "Siphon Essence"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-03-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 3,
+    "slug": "dread-03-1",
+    "cardTitle": "Terrify"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-03-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 3,
+    "slug": "dread-03-2",
+    "cardTitle": "Shared Trauma"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-04-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 4,
+    "slug": "dread-04-1",
+    "cardTitle": "Chains of Affliction"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-04-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 4,
+    "slug": "dread-04-2",
+    "cardTitle": "Summon Horror"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-05-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 5,
+    "slug": "dread-05-1",
+    "cardTitle": "Spectral Mist"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-05-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 5,
+    "slug": "dread-05-2",
+    "cardTitle": "Dire Strike"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-06-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 6,
+    "slug": "dread-06-1",
+    "cardTitle": "Darkfire"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-06-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 6,
+    "slug": "dread-06-2",
+    "cardTitle": "Jump Scare"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-07-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 7,
+    "slug": "dread-07-1",
+    "cardTitle": "Dread-Touched"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-07-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 7,
+    "slug": "dread-07-2",
+    "cardTitle": "Wall of Hunger"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-08-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 8,
+    "slug": "dread-08-1",
+    "cardTitle": "Dark Army"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-08-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 8,
+    "slug": "dread-08-2",
+    "cardTitle": "Eldritch Flesh"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-09-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 9,
+    "slug": "dread-09-1",
+    "cardTitle": "Damnation"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-09-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 9,
+    "slug": "dread-09-2",
+    "cardTitle": "Savor the Anguish"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-10-1.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 10,
+    "slug": "dread-10-1",
+    "cardTitle": "Invoke Torment"
+  },
+  {
+    "outPath": "Void/Domains/Dread/dread-10-2.webp",
+    "category": "domain",
+    "domain": "dread",
+    "level": 10,
+    "slug": "dread-10-2",
+    "cardTitle": "Avatar of Terror"
+  },
+  {
+    "outPath": "Void/Subclass/Warlock/pact-of-the-endless-1-foundation.webp",
+    "category": "subclass",
+    "class": "Warlock",
+    "subclass": "Pact of the Endless",
+    "tier": 1,
+    "slug": "pact-of-the-endless-1-foundation",
+    "cardTitle": "Pact of the Endless — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Warlock/pact-of-the-endless-2-specialization.webp",
+    "category": "subclass",
+    "class": "Warlock",
+    "subclass": "Pact of the Endless",
+    "tier": 2,
+    "slug": "pact-of-the-endless-2-specialization",
+    "cardTitle": "Pact of the Endless — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Warlock/pact-of-the-endless-3-mastery.webp",
+    "category": "subclass",
+    "class": "Warlock",
+    "subclass": "Pact of the Endless",
+    "tier": 3,
+    "slug": "pact-of-the-endless-3-mastery",
+    "cardTitle": "Pact of the Endless — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/Warlock/pact-of-the-wrathful-1-foundation.webp",
+    "category": "subclass",
+    "class": "Warlock",
+    "subclass": "Pact of the Wrathful",
+    "tier": 1,
+    "slug": "pact-of-the-wrathful-1-foundation",
+    "cardTitle": "Pact of the Wrathful — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Warlock/pact-of-the-wrathful-2-specialization.webp",
+    "category": "subclass",
+    "class": "Warlock",
+    "subclass": "Pact of the Wrathful",
+    "tier": 2,
+    "slug": "pact-of-the-wrathful-2-specialization",
+    "cardTitle": "Pact of the Wrathful — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Warlock/pact-of-the-wrathful-3-mastery.webp",
+    "category": "subclass",
+    "class": "Warlock",
+    "subclass": "Pact of the Wrathful",
+    "tier": 3,
+    "slug": "pact-of-the-wrathful-3-mastery",
+    "cardTitle": "Pact of the Wrathful — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-specter-1-foundation.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Specter",
+    "tier": 1,
+    "slug": "order-of-the-specter-1-foundation",
+    "cardTitle": "Order of the Specter — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-specter-2-specialization.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Specter",
+    "tier": 2,
+    "slug": "order-of-the-specter-2-specialization",
+    "cardTitle": "Order of the Specter — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-specter-3-mastery.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Specter",
+    "tier": 3,
+    "slug": "order-of-the-specter-3-mastery",
+    "cardTitle": "Order of the Specter — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-mutant-1-foundation.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Mutant",
+    "tier": 1,
+    "slug": "order-of-the-mutant-1-foundation",
+    "cardTitle": "Order of the Mutant — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-mutant-2-specialization.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Mutant",
+    "tier": 2,
+    "slug": "order-of-the-mutant-2-specialization",
+    "cardTitle": "Order of the Mutant — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-mutant-3-mastery.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Mutant",
+    "tier": 3,
+    "slug": "order-of-the-mutant-3-mastery",
+    "cardTitle": "Order of the Mutant — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-lycan-1-foundation.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Lycan",
+    "tier": 1,
+    "slug": "order-of-the-lycan-1-foundation",
+    "cardTitle": "Order of the Lycan — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-lycan-2-specialization.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Lycan",
+    "tier": 2,
+    "slug": "order-of-the-lycan-2-specialization",
+    "cardTitle": "Order of the Lycan — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/BloodHunter/order-of-the-lycan-3-mastery.webp",
+    "category": "subclass",
+    "class": "BloodHunter",
+    "subclass": "Order of the Lycan",
+    "tier": 3,
+    "slug": "order-of-the-lycan-3-mastery",
+    "cardTitle": "Order of the Lycan — Mastery"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-01-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 1,
+    "slug": "blood-01-1",
+    "cardTitle": "Blood Spike"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-01-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 1,
+    "slug": "blood-01-2",
+    "cardTitle": "Lifeblood Talisman"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-01-3.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 1,
+    "slug": "blood-01-3",
+    "cardTitle": "Power Through Pain"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-02-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 2,
+    "slug": "blood-02-1",
+    "cardTitle": "Brand of Castigation"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-02-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 2,
+    "slug": "blood-02-2",
+    "cardTitle": "Palpitations"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-03-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 3,
+    "slug": "blood-03-1",
+    "cardTitle": "Blood Puppet"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-03-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 3,
+    "slug": "blood-03-2",
+    "cardTitle": "Burning Gore"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-04-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 4,
+    "slug": "blood-04-1",
+    "cardTitle": "Grisly Harpoon"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-04-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 4,
+    "slug": "blood-04-2",
+    "cardTitle": "Weave the Flesh"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-05-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 5,
+    "slug": "blood-05-1",
+    "cardTitle": "Viscous Form"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-05-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 5,
+    "slug": "blood-05-2",
+    "cardTitle": "Parasite of the Will"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-06-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 6,
+    "slug": "blood-06-1",
+    "cardTitle": "Blood Bind"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-06-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 6,
+    "slug": "blood-06-2",
+    "cardTitle": "Life Link"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-07-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 7,
+    "slug": "blood-07-1",
+    "cardTitle": "Blood-Touched"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-07-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 7,
+    "slug": "blood-07-2",
+    "cardTitle": "Vampiric Strike"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-08-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 8,
+    "slug": "blood-08-1",
+    "cardTitle": "Vital Ward"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-08-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 8,
+    "slug": "blood-08-2",
+    "cardTitle": "Bleeding Tree"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-09-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 9,
+    "slug": "blood-09-1",
+    "cardTitle": "Ichor Wave"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-09-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 9,
+    "slug": "blood-09-2",
+    "cardTitle": "Glyph of Hemorrhaging"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-10-1.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 10,
+    "slug": "blood-10-1",
+    "cardTitle": "Scabrous Adamance"
+  },
+  {
+    "outPath": "Void/Domains/Blood/blood-10-2.webp",
+    "category": "domain",
+    "domain": "blood",
+    "level": 10,
+    "slug": "blood-10-2",
+    "cardTitle": "Sanguine Feast"
+  },
+  {
+    "outPath": "Void/Subclass/Summoner/necromancy-1-foundation.webp",
+    "category": "subclass",
+    "class": "Summoner",
+    "subclass": "Necromancy",
+    "tier": 1,
+    "slug": "necromancy-1-foundation",
+    "cardTitle": "Necromancy — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Summoner/necromancy-2-specialization.webp",
+    "category": "subclass",
+    "class": "Summoner",
+    "subclass": "Necromancy",
+    "tier": 2,
+    "slug": "necromancy-2-specialization",
+    "cardTitle": "Necromancy — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Summoner/necromancy-3-mastery.webp",
+    "category": "subclass",
+    "class": "Summoner",
+    "subclass": "Necromancy",
+    "tier": 3,
+    "slug": "necromancy-3-mastery",
+    "cardTitle": "Necromancy — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/Summoner/theurgy-1-foundation.webp",
+    "category": "subclass",
+    "class": "Summoner",
+    "subclass": "Theurgy",
+    "tier": 1,
+    "slug": "theurgy-1-foundation",
+    "cardTitle": "Theurgy — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Summoner/theurgy-2-specialization.webp",
+    "category": "subclass",
+    "class": "Summoner",
+    "subclass": "Theurgy",
+    "tier": 2,
+    "slug": "theurgy-2-specialization",
+    "cardTitle": "Theurgy — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Summoner/theurgy-3-mastery.webp",
+    "category": "subclass",
+    "class": "Summoner",
+    "subclass": "Theurgy",
+    "tier": 3,
+    "slug": "theurgy-3-mastery",
+    "cardTitle": "Theurgy — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/Brawler/juggernaut-1-foundation.webp",
+    "category": "subclass",
+    "class": "Brawler",
+    "subclass": "Juggernaut",
+    "tier": 1,
+    "slug": "juggernaut-1-foundation",
+    "cardTitle": "Juggernaut — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Brawler/juggernaut-2-specialization.webp",
+    "category": "subclass",
+    "class": "Brawler",
+    "subclass": "Juggernaut",
+    "tier": 2,
+    "slug": "juggernaut-2-specialization",
+    "cardTitle": "Juggernaut — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Brawler/juggernaut-3-mastery.webp",
+    "category": "subclass",
+    "class": "Brawler",
+    "subclass": "Juggernaut",
+    "tier": 3,
+    "slug": "juggernaut-3-mastery",
+    "cardTitle": "Juggernaut — Mastery"
+  },
+  {
+    "outPath": "Void/Subclass/Brawler/martial-artist-1-foundation.webp",
+    "category": "subclass",
+    "class": "Brawler",
+    "subclass": "Martial Artist",
+    "tier": 1,
+    "slug": "martial-artist-1-foundation",
+    "cardTitle": "Martial Artist — Foundation"
+  },
+  {
+    "outPath": "Void/Subclass/Brawler/martial-artist-2-specialization.webp",
+    "category": "subclass",
+    "class": "Brawler",
+    "subclass": "Martial Artist",
+    "tier": 2,
+    "slug": "martial-artist-2-specialization",
+    "cardTitle": "Martial Artist — Specialization"
+  },
+  {
+    "outPath": "Void/Subclass/Brawler/martial-artist-3-mastery.webp",
+    "category": "subclass",
+    "class": "Brawler",
+    "subclass": "Martial Artist",
+    "tier": 3,
+    "slug": "martial-artist-3-mastery",
+    "cardTitle": "Martial Artist — Mastery"
+  },
+  {
+    "outPath": "Void/Ancestry/earthkin.webp",
+    "category": "ancestry",
+    "slug": "earthkin",
+    "cardTitle": "Earthkin"
+  },
+  {
+    "outPath": "Void/Ancestry/tidekin.webp",
+    "category": "ancestry",
+    "slug": "tidekin",
+    "cardTitle": "Tidekin"
+  },
+  {
+    "outPath": "Void/Ancestry/emberkin.webp",
+    "category": "ancestry",
+    "slug": "emberkin",
+    "cardTitle": "Emberkin"
+  },
+  {
+    "outPath": "Void/Ancestry/skykin.webp",
+    "category": "ancestry",
+    "slug": "skykin",
+    "cardTitle": "Skykin"
+  },
+  {
+    "outPath": "Void/Ancestry/aetheris.webp",
+    "category": "ancestry",
+    "slug": "aetheris",
+    "cardTitle": "Aetheris"
+  },
+  {
+    "outPath": "Void/Ancestry/gnome.webp",
+    "category": "ancestry",
+    "slug": "gnome",
+    "cardTitle": "Gnome"
+  },
+  {
+    "outPath": "Void/Community/duneborne.webp",
+    "category": "community",
+    "slug": "duneborne",
+    "cardTitle": "Duneborne"
+  },
+  {
+    "outPath": "Void/Community/freeborne.webp",
+    "category": "community",
+    "slug": "freeborne",
+    "cardTitle": "Freeborne"
+  },
+  {
+    "outPath": "Void/Community/frostborne.webp",
+    "category": "community",
+    "slug": "frostborne",
+    "cardTitle": "Frostborne"
+  },
+  {
+    "outPath": "Void/Community/hearthborne.webp",
+    "category": "community",
+    "slug": "hearthborne",
+    "cardTitle": "Hearthborne"
+  },
+  {
+    "outPath": "Void/Community/reborne.webp",
+    "category": "community",
+    "slug": "reborne",
+    "cardTitle": "Reborne"
+  },
+  {
+    "outPath": "Void/Community/warborne.webp",
+    "category": "community",
+    "slug": "warborne",
+    "cardTitle": "Warborne"
+  },
+  {
+    "outPath": "Void/Transformations/vampire.webp",
+    "category": "transformation",
+    "slug": "vampire",
+    "cardTitle": "Vampire"
+  },
+  {
+    "outPath": "Void/Transformations/werewolf.webp",
+    "category": "transformation",
+    "slug": "werewolf",
+    "cardTitle": "Werewolf"
+  },
+  {
+    "outPath": "Void/Transformations/reanimated.webp",
+    "category": "transformation",
+    "slug": "reanimated",
+    "cardTitle": "Reanimated"
+  },
+  {
+    "outPath": "Void/Transformations/shapeshifter.webp",
+    "category": "transformation",
+    "slug": "shapeshifter",
+    "cardTitle": "Shapeshifter"
+  },
+  {
+    "outPath": "Void/Transformations/ghost.webp",
+    "category": "transformation",
+    "slug": "ghost",
+    "cardTitle": "Ghost"
+  },
+  {
+    "outPath": "Void/Transformations/demigod.webp",
+    "category": "transformation",
+    "slug": "demigod",
+    "cardTitle": "Demigod"
+  }
+]

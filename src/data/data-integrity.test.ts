@@ -31,7 +31,7 @@ describe('catalog', () => {
   it('every card has art handles, a label, and a known kind', () => {
     // require() yields a numeric module id under Metro but an object stub under jest — so assert the
     // handle is present, not its runtime type.
-    const kinds: CatalogKind[] = ['domain', 'ancestry', 'community', 'subclass'];
+    const kinds: CatalogKind[] = ['domain', 'ancestry', 'community', 'subclass', 'transformation'];
     for (const c of CATALOG) {
       expect(c.source != null).toBe(true);
       expect(c.thumb != null).toBe(true);

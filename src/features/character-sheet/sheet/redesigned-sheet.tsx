@@ -18,6 +18,7 @@ import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, type CustomCardDef, toSheetCharacter } from '@/lib/character-file';
 import { CATALOG, cardById } from '@/data/catalog';
 import { CLASSES, classColor, classInfo } from '@/constants/identity';
+import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS, classBanner } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/data/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
@@ -1111,7 +1112,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const data = CLASS_DATA[file.className];
     // #311: each multiclassable class with the domains it can grant (those the character lacks) + its
     // subclass FOUNDATION cards (one of which the player picks to gain that subclass's foundation feature).
-    const classOptions: ClassOpt[] = CLASSES.filter((c) => c.key !== file.className).map((c) => ({
+    // v0.12.2: only multiclass into classes from THIS character's enabled expansions (base always).
+    const charExp = new Set(file.enabledExpansionIds ?? []);
+    const classOptions: ClassOpt[] = CLASSES.filter((c) => c.key !== file.className && (!classExpansion(c.key) || charExp.has(classExpansion(c.key)!))).map((c) => ({
       key: c.key,
       label: c.label,
       domains: classInfo(c.key).domains.filter((d) => !ownedDomains.has(d)),
@@ -1973,7 +1976,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={newCardEntry === 'card' ? undefined : onAcquireCard} onAcquireCustom={newCardEntry === 'card' ? undefined : onAcquireCustom} acquiredIds={acquiredIds} />
+            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={newCardEntry === 'card' ? undefined : onAcquireCard} onAcquireCustom={newCardEntry === 'card' ? undefined : onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (

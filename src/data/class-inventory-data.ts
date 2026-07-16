@@ -30,6 +30,12 @@ export const CLASS_INVENTORY: Record<ClassName, ClassInventory> = {
   sorcerer: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['a whispering orb', 'a family heirloom']] },
   warrior: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['the drawing of a lover', 'a sharpening stone']] },
   wizard: { take: COMMON_TAKE, choices: [POTION_CHOICE, ["a book you're trying to translate", 'a tiny, harmless elemental pet']], spellContainerPrompt: 'What do you carry your spells in? (large tomes, tarot cards, ...)' },
+  assassin: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['a list of names with several marked off', 'a mortar and pestle inscribed with a mysterious insignia']] },
+  witch: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['a small, harmless pet', 'a talking skull']], spellContainerPrompt: 'What do you use for your craft? (a handwritten journal, runestones, ...)' },
+  warlock: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['a carving that symbolizes your patron', "a ring you can't remove"]] },
+  bloodhunter: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['a steel needle', "a vial holding a foe's blood"]] },
+  summoner: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['a harmless spirit trapped inside a glass bottle', 'a pair of mysterious coins']] },
+  brawler: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['hand wraps from a mentor', 'a book about your secret hobby']] },
 };
 
 /** Strip a leading article for a card TITLE; keep the full phrase for the body/label. */

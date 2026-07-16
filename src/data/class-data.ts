@@ -192,6 +192,126 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     ],
     summary: 'Immense magical power acquired over years of learning — books, stones, potions, herbs. Advisors, healers, war-council minds; and no ranks quarrel harder over powerful secrets than their own.',
   },
+  assassin: {
+    startingEvasion: 12,
+    startingHp: 5,
+    classItems: 'A list of names with several marked off or a mortar and pestle inscribed with a mysterious insignia',
+    hopeFeature: {
+      name: 'Grim Resolve',
+      text: 'Spend 3 Hope to clear 2 Stress.',
+    },
+    features: [
+      {
+        name: 'Marked for Death',
+        text: 'On a successful weapon attack, you can mark a Stress to make the target Marked for Death. Attacks you make against a target that’s Marked for Death gain a bonus to damage equal to +1d4 per tier. You can only have one adversary Marked for Death at a time, and can’t transfer or remove the condition except by defeating the target. The GM can spend a number of Fear equal to your Proficiency to remove the Marked for Death condition. Otherwise, it ends automatically when you take a rest.',
+      },
+      {
+        name: 'Get In & Get Out',
+        text: 'Spend a Hope to ask the GM for either a quick or inconspicuous way into or out of a building or structure you can see. The next roll you make that capitalizes on this information has advantage.',
+      },
+    ],
+    summary: 'Unmatched stealth and lethal precision, striking from the dark before a target ever senses the threat. An assassin marks their quarry, waits for the opening, and ends the fight in a single breath.',
+  },
+  witch: {
+    startingEvasion: 10,
+    startingHp: 6,
+    classItems: 'A small, harmless pet or a talking skull',
+    hopeFeature: {
+      name: 'Witch’s Charm',
+      text: 'When you or an ally within Far range rolls a failure on an action roll, you can spend 3 Hope to change it into a success with Fear instead.',
+    },
+    features: [
+      {
+        name: 'Hex',
+        text: 'When a creature causes you or an ally within Close range to mark any number of Hit Points, you can mark a Stress to Hex them. Action and damage rolls against a Hexed creature gain a bonus equal to your tier. This condition lasts until the GM spends a number of Fear equal to your Spellcast trait to remove it or you Hex another creature. Otherwise, remove it when the scene ends.',
+      },
+      {
+        name: 'Commune',
+        text: 'Once per long rest, during a moment of calm, you can commune with an ancestor, deity, nature spirit, or otherworldly being. Ask them a question, then roll a number of d6s equal to your Spellcast trait. Choose one value from the rolled results and reference the chart below for the effect: 1-3: You taste a flavor, smell a scent, or feel a sensation relevant to the answer. 4-5: You hear sounds or see a vision relevant to the answer. 6: You psychically experience a scene relevant to the answer as if you were there.',
+      },
+    ],
+    summary: 'Weavers of earth, sky, and spirit, crafting protective charms for those they love and grim hexes for those they don’t. Cross a witch and their curse rides you until the scene runs cold.',
+  },
+  warlock: {
+    startingEvasion: 11,
+    startingHp: 5,
+    classItems: 'A carving that symbolizes your patron or a ring you can’t remove',
+    hopeFeature: {
+      name: 'Patron’s Boon',
+      text: 'Spend 3 Hope to call out to your patron for help, gaining 1d4 Favor.',
+    },
+    features: [
+      {
+        name: 'Warlock Patron',
+        text: 'You have committed yourself to a patron (god, demon, fae, or other supernatural entity) in exchange for power. Write their name above. Then choose their spheres of influence, at GM discretion (Nature & Mischief, Love & War, Knowledge & Shadow, etc.), record them below, and set their values to +2. Anytime you increase your tier, these spheres of influence gain a permanent +1 bonus. Before making an action roll that relates to one of your patron’s spheres of influence, you can spend a Favor to call on them and add its value to the roll.',
+      },
+      {
+        name: 'Favor',
+        text: 'Start with 3 Favor. During a rest, spend one of your downtime moves to tithe to your patron. When you do, gain Favor equal to your Presence. If you choose to forgo this offering, the GM instead gains a Fear.',
+      },
+    ],
+    summary: 'A life pledged to a patron — god, demon, or fae — in exchange for borrowed power. The warlock trades tithes and favor for might, and every gift carries the weight of the bargain that bought it.',
+  },
+  bloodhunter: {
+    startingEvasion: 11,
+    startingHp: 6,
+    classItems: 'A steel needle or a vial holding a foe’s blood',
+    hopeFeature: {
+      name: 'Blood Maledict',
+      text: 'Spend 3 Hope when an adversary succeeds on an attack roll within Close range to make them reroll with disadvantage.',
+    },
+    features: [
+      {
+        name: 'Crimson Rite',
+        text: 'Mark a Hit Point to enchant one of your active weapons with bloodthirsty power until the end of your next rest or you use this feature again. When you succeed on an attack with the enchanted weapon, it deals an extra 1d4 magic damage. This extra damage increases to 2d4 at level 2, 3d4 at level 5, and 4d4 at level 8.',
+      },
+      {
+        name: 'Grim Psychometry',
+        text: 'Make a Spellcast Roll (12) to inspect a location within Very Close range. On a success, you have a vision of the last creature that committed violence there. Until you take a long rest or use this feature again, you have advantage on action rolls to track them or recall information about them.',
+      },
+    ],
+    summary: 'Hunters who turn their own blood into a weapon, wielding forbidden hemocraft in a relentless pursuit of evil. A blood hunter pays for every rite in Hit Points, spilling their life to see monsters dead.',
+  },
+  summoner: {
+    startingEvasion: 10,
+    startingHp: 6,
+    classItems: 'A harmless spirit trapped inside a glass bottle or a pair of mysterious coins',
+    hopeFeature: {
+      name: 'Aid of the Spirits',
+      text: 'Spend 3 Hope to conjure otherworldly aid. Distribute 2 Hope among one or more other PCs within Far range, and you clear a Stress.',
+    },
+    features: [
+      {
+        name: 'Summon Entity',
+        text: 'You can summon otherworldly Entities: Fate Spirits and other Entities from your subclass. Each Entity is associated with a summoning circle below. Mark a Stress to summon a number of your Entities equal to your tier, and add them to the appropriate circles. You can hold a total number of Entities equal to your level. Summoned Entities stay within Very Close range, can perform harmless tasks within that range, and cannot be targeted. If a task requires an action roll, make a Spellcast Roll to command the Entity.',
+      },
+      {
+        name: 'First Circle — Fate Spirit',
+        text: 'After an adversary within Very Close range makes a successful attack roll, you can command a Fate Spirit to force the adversary to reroll the attack. The spirit then disappears.',
+      },
+    ],
+    summary: 'Occult adepts who call forth otherworldly Entities to act on their behalf — fate spirits, angels, the risen dead. A summoner rarely fights alone; the air around them is crowded with called things.',
+  },
+  brawler: {
+    startingEvasion: 10,
+    startingHp: 6,
+    classItems: 'Hand wraps from a mentor or a book about your secret hobby',
+    hopeFeature: {
+      name: 'Staggering Strike',
+      text: 'Spend 3 Hope when you succeed on an attack to temporarily Stagger your target and force them to mark a Stress. While Staggered, they have disadvantage on attack rolls.',
+    },
+    features: [
+      {
+        name: 'I Am the Weapon',
+        text: 'While you don’t have any equipped weapons: You gain a +1 bonus to Evasion. Your unarmed strikes are considered a Melee weapon, use the trait of your choice, and deal d8+d6 phy damage using your Proficiency.',
+      },
+      {
+        name: 'Combo Strikes',
+        text: 'After making a damage roll with a Melee weapon but before dealing that damage to the target, mark a Stress to start a combo strike. When you do, roll your Combo Die and note its value. Then, roll your Combo Die again. If the value of the second roll is equal to or greater than your first roll, continue rolling until the latest Combo Die’s roll is less than the roll that preceeded it. Total all rolled values and add that amount to your weapon’s damage. These values cannot be adjusted by features that affect damage dice. Your Combo Die starts as a d4. When you level up, once per tier you may use one of your advancement options to increase your Combo Die instead.',
+      },
+    ],
+    summary: 'Fighters who need no blade — a brawler’s fists are weapon enough, chaining blow into blow until the threat stops moving. Take away their armaments and they only grow more dangerous.',
+  },
 };
 
 /** A feature card "page": which sections of a class's rules land on one printed card. */

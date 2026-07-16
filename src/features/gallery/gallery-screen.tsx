@@ -10,7 +10,7 @@ import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RuneChip } from './components/rune-chip';
-import { type ClassName, classColor, type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
+import { classColor, type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 import { CATALOG, type CatalogCard, type CatalogKind } from '@/data/catalog';
@@ -35,6 +35,7 @@ const KINDS: { key: GalleryKind; label: string }[] = [
   { key: 'community', label: 'Community' },
   { key: 'class', label: 'Class' },
   { key: 'subclass', label: 'Subclass' },
+  { key: 'transformation', label: 'Forms' },
   { key: 'weapon', label: 'Weapons' },
   { key: 'armor', label: 'Armor' },
 ];
@@ -134,8 +135,8 @@ function ClassReader({ def, onClose }: { def: ClassCardDef; onClose: () => void 
   const total = 1 + pages.length;
   const deep = classColor(def.key).deep;
   const faces: ReactNode[] = [
-    <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={deep} Banner={def.Banner} pageMark={`1/${total}`} classKey={def.key} />,
-    ...pages.map((pg) => <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${pg.pageIndex + 2}/${total}`} sections={pg.sections} accentDeep={deep} Banner={def.Banner} classKey={def.key} />),
+    <ForgedCard key="face-0" title={def.title} kindLabel="Class" body={def.body} accentDeep={deep} Banner={def.Banner} pageMark={`1/${total}`} classKey={def.key} />,
+    ...pages.map((pg) => <ForgedTextCard key={`face-${pg.pageIndex + 1}`} title={def.title} kindLabel="Features" pageMark={`${pg.pageIndex + 2}/${total}`} sections={pg.sections} accentDeep={deep} Banner={def.Banner} classKey={def.key} />),
   ];
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 100 }}>

@@ -1,5 +1,5 @@
 import { type FC } from 'react';
-import { type SvgProps } from 'react-native-svg';
+import Svg, { Rect, type SvgProps } from 'react-native-svg';
 
 import BardBanner from '../../../../assets/art/classBanners/image-9.svg';
 import DruidBanner from '../../../../assets/art/classBanners/image-8.svg';
@@ -10,7 +10,7 @@ import SeraphBanner from '../../../../assets/art/classBanners/image-5.svg';
 import SorcererBanner from '../../../../assets/art/classBanners/image-4.svg';
 import WarriorBanner from '../../../../assets/art/classBanners/image.svg';
 import WizardBanner from '../../../../assets/art/classBanners/image-2.svg';
-import { type ClassName } from '@/constants/identity';
+import { classColor, type ClassName } from '@/constants/identity';
 import { CLASS_DATA } from '@/data/class-data';
 
 /**
@@ -25,6 +25,19 @@ export interface ClassCardDef {
   body: string;
 }
 
+// v0.12.2: placeholder banner for a Void class — a solid domain-blend field with a bright hairline.
+// Real Void banner art (the JPGs in assets/temp/Banners) is a later Recraft pass (Phase D).
+const voidBanner = (key: ClassName): FC<SvgProps> => {
+  const c = classColor(key);
+  const Banner: FC<SvgProps> = (props) => (
+    <Svg viewBox="0 0 62 210" {...props}>
+      <Rect x={0} y={0} width={62} height={210} fill={c.deep} />
+      <Rect x={3} y={3} width={56} height={204} rx={4} fill="none" stroke={c.bright} strokeWidth={2} />
+    </Svg>
+  );
+  return Banner;
+};
+
 const BANNERS: Record<ClassName, FC<SvgProps>> = {
   bard: BardBanner,
   druid: DruidBanner,
@@ -35,6 +48,12 @@ const BANNERS: Record<ClassName, FC<SvgProps>> = {
   sorcerer: SorcererBanner,
   warrior: WarriorBanner,
   wizard: WizardBanner,
+  assassin: voidBanner('assassin'),
+  witch: voidBanner('witch'),
+  warlock: voidBanner('warlock'),
+  bloodhunter: voidBanner('bloodhunter'),
+  summoner: voidBanner('summoner'),
+  brawler: voidBanner('brawler'),
 };
 
 export const classBanner = (key: ClassName): FC<SvgProps> => BANNERS[key];
