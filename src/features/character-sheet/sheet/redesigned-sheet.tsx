@@ -17,7 +17,7 @@ import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, type CustomCardDef, toSheetCharacter } from '@/lib/character-file';
 import { CATALOG, cardById } from '@/data/catalog';
-import { CLASSES, classColor, classInfo } from '@/constants/identity';
+import { CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS, classBanner } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/data/class-data';
@@ -654,10 +654,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const total = 1 + fpages.length;
     // face 0 = the class card (#110: the missing first page); same deck-wide marks as the forge
     const classJob = classDef
-      ? { key: `class-${cls}`, node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} classKey={cls} /> }
+      ? { key: `class-${cls}`, raster: isVoidClass(cls), node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} classKey={cls} /> }
       : null;
+    // Void class banners are expo-image rasters (async decode) — settle before capture (raster flag)
     const featJobs = fpages.map((p) => ({
       key: `feat-${cls}-${p.pageIndex}`,
+      raster: isVoidClass(cls),
       node: (
         <ForgedTextCard
           title={title}
@@ -678,10 +680,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const mcFpages = mc ? featurePages(mc) : [];
     const mcTotal = 1 + mcFpages.length;
     const mcClassJob: Job | null = mc && mcDef
-      ? { key: `mcclass-${mc}`, node: <ForgedCard title={mcTitle} kindLabel="Class" body={mcDef.body} accentDeep={classColor(mc).deep} Banner={mcDef.Banner} pageMark={`1/${mcTotal}`} classKey={mc} /> }
+      ? { key: `mcclass-${mc}`, raster: isVoidClass(mc), node: <ForgedCard title={mcTitle} kindLabel="Class" body={mcDef.body} accentDeep={classColor(mc).deep} Banner={mcDef.Banner} pageMark={`1/${mcTotal}`} classKey={mc} /> }
       : null;
     const mcFeatJobs: Job[] = mc
-      ? mcFpages.map((p) => ({ key: `mcfeat-${mc}-${p.pageIndex}`, node: <ForgedTextCard title={mcTitle} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${mcTotal}`} sections={p.sections} accentDeep={classColor(mc).deep} Banner={classBanner(mc)} classKey={mc} /> }))
+      ? mcFpages.map((p) => ({ key: `mcfeat-${mc}-${p.pageIndex}`, raster: isVoidClass(mc), node: <ForgedTextCard title={mcTitle} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${mcTotal}`} sections={p.sections} accentDeep={classColor(mc).deep} Banner={classBanner(mc)} classKey={mc} /> }))
       : [];
     const expJobs = (file.experiences ?? []).map((e) => ({
       key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0) + (e.color?.length ?? 0) * 13 + (e.modifier ?? 0) * 101) % 99991}`,
@@ -724,8 +726,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const fp = featurePages(k);
       const tot = 1 + fp.length;
       return [
-        { key: `acqclass-${k}`, node: <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={classColor(k).deep} Banner={def.Banner} pageMark={`1/${tot}`} classKey={k} /> },
-        ...fp.map((p) => ({ key: `acqfeat-${k}-${p.pageIndex}`, node: <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${tot}`} sections={p.sections} accentDeep={classColor(k).deep} Banner={classBanner(k)} classKey={k} /> })),
+        { key: `acqclass-${k}`, raster: isVoidClass(k), node: <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={classColor(k).deep} Banner={def.Banner} pageMark={`1/${tot}`} classKey={k} /> },
+        ...fp.map((p) => ({ key: `acqfeat-${k}-${p.pageIndex}`, raster: isVoidClass(k), node: <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${tot}`} sections={p.sections} accentDeep={classColor(k).deep} Banner={classBanner(k)} classKey={k} /> })),
       ];
     });
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
