@@ -10,7 +10,7 @@ import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { ChamferedImage } from './components/chamfered-image';
 import { RuneButton } from '@/components/rune-button';
-import { type ClassName, classColor, classInfo } from '@/constants/identity';
+import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { type TraitKey } from '@/features/character-sheet/character';
@@ -151,11 +151,14 @@ export function CreateScreen() {
         key: `class-${c.key}`,
         // deck-wide mark (#110): the class card is page 1 of (1 class + feature pages)
         node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${1 + featurePages(c.key).length}`} classKey={c.key} />,
+        // Void banners are expo-image rasters (async decode) — settle before capture or the art zone forges blank.
+        raster: isVoidClass(c.key),
       })),
       ...creationClassCards.flatMap((c) => {
         const total = 1 + featurePages(c.key).length;
         return featurePages(c.key).map((p) => ({
           key: `feat-${c.key}-${p.pageIndex}`,
+          raster: isVoidClass(c.key),
           node: (
             <ForgedTextCard
               title={c.title}

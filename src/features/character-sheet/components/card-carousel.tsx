@@ -218,6 +218,10 @@ interface SlotProps {
   grabIsGroup: SharedValue<number>;
   /** v0.12.3 (2c): 0..1 — suppresses the raised look (lift/scale/breathe/hint) while a pile is being dragged. */
   editFlat: SharedValue<number>;
+  /** v0.12.5 (drop-flash): id → NEW index, written at drop-commit BEFORE React re-renders. Slots resolve
+   *  their position through it, so stale worklet closures (old `index` props) still paint the new
+   *  arrangement — teardown can never flash the previous order. null outside the commit window. */
+  pendingOrderSV: SharedValue<Record<string, number> | null>;
   /** index → rank among the raised cards (−1 if not raised) / prefix counts / total, for the reflow. */
   raiseOrderSV: SharedValue<number[]>;
   raisedBeforeSV: SharedValue<number[]>;
@@ -231,17 +235,24 @@ interface SlotProps {
   menuBounce: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
   // v0.9.8: animate the raised/selected lift (no highlight — the lift itself is the selection cue).
   const raiseSV = useSharedValue(raised ? 1 : 0);
   useEffect(() => { raiseSV.value = withTiming(raised ? 1 : 0, { duration: 220, easing: Easing.out(Easing.cubic) }); }, [raised, raiseSV]);
+  const slotId = item.id; // primitive for the worklet (never capture the whole item — faces are ReactNodes)
   const style = useAnimatedStyle(() => {
+    // v0.12.5 (drop-flash): resolve this slot's position through the id→index bridge. During the drop-commit
+    // window the bridge holds the NEW order while the `index` props are still propagating — so even a stale
+    // closure paints the new arrangement and the teardown can't flash the old one for a frame.
+    const po = pendingOrderSV.value;
+    const mapped = po ? po[slotId] : undefined;
+    const idx = mapped !== undefined ? mapped : index;
     const p = expandProgress.value;
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
     const stepNow = (COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p) * (1 - GRIND_TIGHTEN * grindProgress.value);
     const centerPos = rotation.value / ANGLE_STEP;
-    const theta = (index - centerPos) * stepNow;
-    const dist = Math.abs(index - centerPos); // in card steps, state-independent
+    const theta = (idx - centerPos) * stepNow;
+    const dist = Math.abs(idx - centerPos); // in card steps, state-independent
 
     let x = OX + R * Math.sin(theta) + overscrollX.value; // gear over-scroll shoves the whole fan sideways (#174)
     let y = OY - R * Math.cos(theta) + COMPACT_DROP * (1 - p);
@@ -263,15 +274,15 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
       const flat = editFlat.value; // 2c: 1 = raised look suppressed (a grab visually deselects the pile)
       const grabbing = editGrabbed.value === 1;
       const isGroup = grabIsGroup.value === 1;
-      const ord = raiseOrderSV.value[index];
+      const ord = raiseOrderSV.value[idx];
       const myOrder = ord == null ? -1 : ord; // rank among raised, or −1
-      const inDrag = grabbing && (isGroup ? myOrder >= 0 : index === grabIndex.value);
+      const inDrag = grabbing && (isGroup ? myOrder >= 0 : idx === grabIndex.value);
       if (inDrag) {
         // The pile RISES from the card's own row slot up to the finger (grabAnim 0→1, item 5), FOLLOWS the
         // finger during the drag, then SPREADS from the finger into its landed columns (dropSpread 0→1) on
         // release — both ends animate, symmetric, no snap.
         const pileOrder = isGroup ? myOrder : 0;
-        const restX = OX + (index - centerPos) * EDIT_GAP + overscrollX.value; // where the card sat before the grab
+        const restX = OX + (idx - centerPos) * EDIT_GAP + overscrollX.value; // where the card sat before the grab
         const restY = EDIT_ROW_Y - raiseSV.value * (1 - flat) * EDIT_RAISE;
         const fingerX = grabXAnim.value + pileOrder * 3;
         const fingerY = grabYAnim.value - EDIT_RAISE + pileOrder * 2;
@@ -295,16 +306,16 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         // Reflow: the remaining cards close the gap the pile left and open ONE (ghost) slot at the
         // landing point while dragging; on release the gap widens to the block width (gapWidth 1→N) so
         // the row makes room before the pile drops in. The gap point (hoverAnim) springs → smooth glide.
-        let displaySlot = index;
+        let displaySlot = idx;
         if (grabbing) {
-          const rb = raisedBeforeSV.value[index];
-          const removedBefore = isGroup ? (rb == null ? 0 : rb) : (index > grabIndex.value ? 1 : 0);
-          const rrank = index - removedBefore; // rank among the remaining cards
+          const rb = raisedBeforeSV.value[idx];
+          const removedBefore = isGroup ? (rb == null ? 0 : rb) : (idx > grabIndex.value ? 1 : 0);
+          const rrank = idx - removedBefore; // rank among the remaining cards
           const shift = Math.max(0, Math.min(1, rrank - hoverAnim.value + 1));
           const grabbedSlot = rrank + gapWidth.value * shift;
-          // item 8a: ease from the resting slot (index) into the reflow, so lifting a block out doesn't
+          // item 8a: ease from the resting slot into the reflow, so lifting a block out doesn't
           // snap the neighbours closed — they slide in over grabAnim.
-          displaySlot = index + (grabbedSlot - index) * grabAnim.value;
+          displaySlot = idx + (grabbedSlot - idx) * grabAnim.value;
         }
         // v0.11.1 item 1: a dead-STRAIGHT row at the grind size/height — no curve, no fan tilt.
         const slotOff = displaySlot - centerPos;
@@ -318,14 +329,14 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
         // shifted slot scrolls off the row fades; one still on the row stays solid).
         opacity = opacity * (1 - e) + slotOpacityAt(Math.abs(slotOff), 1) * e;
         // Open-bounce feedback: the card the radial menu blooms on gives a small scale pop.
-        if (Math.round(menuCardIdx.value) === index) scale *= 1 + 0.09 * menuBounce.value;
+        if (Math.round(menuCardIdx.value) === idx) scale *= 1 + 0.09 * menuBounce.value;
       }
     }
 
     // Focus: the SAME card grows in place toward screen centre over the dim veil (#8c) — no second
     // object. It lifts above the veil (z 3000); the others stay below it and are dimmed.
     const fs = fullscreenProgress.value;
-    if (fs > 0 && Math.round(focusIndex.value) === index) {
+    if (fs > 0 && Math.round(focusIndex.value) === idx) {
       x = x + (OX - x) * fs;
       y = y + (FS_CENTER_Y - y) * fs;
       scale = scale + (FS_FOCUS_SCALE - scale) * fs;
@@ -772,6 +783,8 @@ export function CardCarousel() {
   // v0.10.7 selection breathing (synced white pulse) + the per-index selection order + prefix counts the
   // pile-drag reflow reads. These arrays are recomputed off `raisedIds`/`deck` in the effect below.
   const breathe = useSharedValue(0);
+  // v0.12.5 (drop-flash): id → NEW index bridge, written at drop-commit before React re-renders (see SlotProps).
+  const pendingOrderSV = useSharedValue<Record<string, number> | null>(null);
   const raiseOrderSV = useSharedValue<number[]>([]); // index → rank among raised (−1 if not raised)
   const raisedBeforeSV = useSharedValue<number[]>([]); // index → count of raised cards before it
   const raiseCountSV = useSharedValue(0);
@@ -854,18 +867,16 @@ export function CardCarousel() {
   // via the safety net. Deselect the moved pile NOW (over the NEW deck → no old-layout flash), release the
   // flatten envelope only after the deselect fade has passed (so deselected cards never briefly re-raise), reset.
   const finalizeCommittedDrop = useCallback(() => {
-    // v0.12.4 (flash fix): the reordered deck's per-card `index` props reach the UI thread a frame or two
-    // AFTER React commits them. If `editGrabbed` flips to 0 before then, the plain layout paints over the
-    // STILL-OLD native indices for one frame — that's the "flash back to the previous arrangement." The drag
-    // layout is identity-correct over the reordered deck (pre-written raiseOrder ranks + gap math), so we can
-    // safely HOLD it two frames until the new indices are live, THEN tear down. resetDrag BEFORE deselect so
-    // clearing raisedIds never disturbs the pile membership during the wait.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      resetDrag();
-      if (pendingDeselectRef.current) { pendingDeselectRef.current = false; deselectAll(); }
-      editFlat.value = withDelay(200, withTiming(0, { duration: 80 }));
-    }));
-  }, [deselectAll, resetDrag, editFlat]);
+    // v0.12.5 (flash fix, for real): teardown no longer races the React commit at all. The id→index bridge
+    // (pendingOrderSV, written in finishDrop BEFORE onReorderCards) makes every slot resolve to its NEW
+    // position even from a stale worklet closure, so reset/deselect can run immediately with no flash. The
+    // bridge is released after the new index props are long since live — identical values, invisible.
+    // (v0.12.4's 2-rAF hold still flashed: JS rAF ordering doesn't bound Reanimated's closure propagation.)
+    resetDrag();
+    if (pendingDeselectRef.current) { pendingDeselectRef.current = false; deselectAll(); }
+    editFlat.value = withDelay(200, withTiming(0, { duration: 80 }));
+    setTimeout(() => { pendingOrderSV.value = null; }, 600);
+  }, [deselectAll, resetDrag, editFlat, pendingOrderSV]);
   const finishDrop = useCallback((to: number) => {
     const dragSet = new Set(deck.filter((c) => raisedIds.has(c.id)).map((c) => c.id));
     const ids = deck.map((c) => c.id);
@@ -875,6 +886,11 @@ export function CardCarousel() {
       const orders: number[] = []; const before: number[] = []; let cnt = 0;
       for (let i = 0; i < ordered.length; i++) { before[i] = cnt; if (raisedIds.has(ordered[i])) { orders[i] = cnt; cnt++; } else orders[i] = -1; }
       raiseOrderSV.value = orders; raisedBeforeSV.value = before; raiseCountSV.value = cnt;
+      // v0.12.5: write the id→index bridge BEFORE the reorder commits — slots follow it from this moment,
+      // so the resting layout equals the drag-final layout regardless of when the new index props land.
+      const map: Record<string, number> = {};
+      for (let i = 0; i < ordered.length; i++) map[ordered[i]] = i;
+      pendingOrderSV.value = map;
       dropPendingRef.current = true;
       pendingDeselectRef.current = true; // 2b: defer the deselect until the new deck lands (no flash)
       onReorderCards([...dragSet], category, ordered);
@@ -885,7 +901,7 @@ export function CardCarousel() {
       editFlat.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
       resetDrag();
     }
-  }, [deck, raisedIds, category, onReorderCards, resetDrag, finalizeCommittedDrop, editFlat, raiseOrderSV, raisedBeforeSV, raiseCountSV]);
+  }, [deck, raisedIds, category, onReorderCards, resetDrag, finalizeCommittedDrop, editFlat, raiseOrderSV, raisedBeforeSV, raiseCountSV, pendingOrderSV]);
   // Finalize only once the reordered deck has actually landed (seamless — no old-layout flash, item 2b).
   useEffect(() => {
     if (dropPendingRef.current) finalizeCommittedDrop();
@@ -1032,6 +1048,7 @@ export function CardCarousel() {
           // the normal gear/grind/dwell logic runs (so normal scrolling is byte-for-byte unaffected).
           if (editMode.value > 0.5) {
             cancelAnimation(rotation);
+            pendingOrderSV.value = null; // v0.12.5: a fresh touch ends the drop-commit bridge window (props are live by now)
             startRot.value = rotation.value;
             const cp = rotation.value / ANGLE_STEP;
             const idx = Math.round(cp + (e.x - OX) / EDIT_GAP);
@@ -1517,7 +1534,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGearScroll, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGearScroll, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, pendingOrderSV, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
@@ -1567,6 +1584,7 @@ export function CardCarousel() {
         editGrabbed={editGrabbed}
         grabIsGroup={grabIsGroup}
         editFlat={editFlat}
+        pendingOrderSV={pendingOrderSV}
         raiseOrderSV={raiseOrderSV}
         raisedBeforeSV={raisedBeforeSV}
         raiseCountSV={raiseCountSV}

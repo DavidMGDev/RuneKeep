@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.12.4'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.12.5'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.12.4 - Void banners, ancestry strikethrough & the drop-flash, fixed. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThree fixes from your list:`n- VOID CLASS BANNERS: the placeholder/broken banners are gone - the six Void classes now paint your real pennant art (background stripped so they sit on the card like the base classes).`n- ANCESTRY STRIKETHROUGH: in a MIXED ancestry, the unused feature of each custom/Void ancestry is now struck through in the CREATION carousel too (not just on the sheet) - the mixed-ancestry indicator you need.`n- DROP FLASH: the 1-frame flash back to the old order at the end of a re-arrange is gone. The drag layout now holds until the reordered row is fully live on screen, then hands off - no flicker.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.12.5 - Void banners & the drop-flash: the real root causes, fixed. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`n- VOID CLASS BANNERS: the broken sliver was a STALE CACHED bitmap - class cards are pre-rendered once and cached on device, and that cache was never invalidated, so the earlier banner fixes never reached the screen. The cache version is bumped (all forged cards regenerate once) and Void banner captures now wait for the pennant art to decode. The six Void classes finally show your real red-and-gold pennants.`n- DROP FLASH: the 1-frame flash back to the old order after a re-arrange is gone at the source. Cards now resolve their position through an id-to-new-index bridge written at the moment of the drop, so the old and new layouts are pixel-identical during the handoff - the flash is impossible by construction, not timed around.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
