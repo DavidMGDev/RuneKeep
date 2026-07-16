@@ -40,7 +40,7 @@ import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
-import { type Expansion, type LibraryCard } from '@/lib/library';
+import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/library';
 import { libraryCardBody, libraryCardKindLabel, mixedCrossedTrait } from '@/lib/library-embed';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
@@ -54,6 +54,7 @@ import { Art } from '../art';
 import { chipWidth, trackBounds, wildshapeSummary } from './sheet-utils';
 import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
+import { OverlayShell } from './overlay-shell';
 import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory } from '../card-data';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
@@ -221,6 +222,9 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
   const stress = resolvePips({ total: character.stress.total, active: character.stress.active, locked: character.stress.locked, depletedRemainder: true });
   const armor = resolvePips({ total: character.armor.total, active: character.armor.active, locked: character.armor.locked, depletedRemainder: true });
   const hope = resolvePips({ total: character.hope.total, active: character.hope.active, depletedRemainder: true });
+  // v0.13.0 SCARS: the rightmost `scars` Hope slots are dead — greyed, disconnected, never markable.
+  // Flat count from the modifier engine (one per enabled "Add Scar" card); acts like trailing locked slots.
+  const scars = Math.max(0, Math.min(character.hope.total, character.scars ?? 0));
 
   return (
     <>
@@ -414,7 +418,14 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
         downIndex={trackBounds(character.hope).down}
         onUp={() => onTrack('hope', character.hope.active + 1)}
         onDown={() => onTrack('hope', character.hope.active - 1)}
-        renderSlot={(i) => <ArtImage source={hope[i] === 'active' ? Art.hope : Art.hopeDepleted} fit="contain" />}
+        renderSlot={(i) =>
+          i >= character.hope.total - scars ? (
+            // a scarred slot: permanently tainted grey silhouette, dimmed, no gold rule reaches it
+            <ArtImage source={Art.hopeDepleted} fit="contain" tint="#6E6E72" style={{ opacity: 0.45 }} />
+          ) : (
+            <ArtImage source={hope[i] === 'active' ? Art.hope : Art.hopeDepleted} fit="contain" />
+          )
+        }
         renderFilled={() => <ArtImage source={Art.hope} fit="contain" />}
         renderEmpty={() => <ArtImage source={Art.hopeDepleted} fit="contain" />}
         flavor="hope"
@@ -763,10 +774,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // armor/inventory/generic added via ADD GEAR) ride the inventory deck.
     const libJobs: Job[] = (file.libraryCards ?? []).map((lc) => {
       // mixed-ancestry cross-out (v0.10.4): strike the feature the mix crosses out on THIS ancestry card.
+      // v0.13.0: features can sit at ANY section index — resolve trait 1|2 through featureSectionIndexes.
       const crossed = lc.contentType === 'ancestry' ? mixedCrossedTrait(file, lc.id) : 0;
-      const struckIndex = crossed ? crossed - 1 : undefined; // trait 1|2 → section index 0|1
+      const struckIndex = crossed ? featureSectionIndexes(lc)[crossed - 1] : undefined;
+      // v0.13.0: order-sensitive section signature — re-arranging sections (same lengths) must NOT
+      // serve the stale pre-arrange snapshot.
+      const secSig = (lc.sections ?? []).reduce((a, s, i) => (a + (i + 1) * ((s.name?.length ?? 0) * 3 + s.body.length + (s.feature ? 5 : 0))) % 99991, 0);
       return {
-        key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + (lc.sections?.length ?? 0) * 41 + crossed * 7919) % 99991}`,
+        key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + secSig * 41 + crossed * 7919) % 99991}`,
         id: lc.id,
         node: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc, struckIndex)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
         raster: !!lc.imageUri,
@@ -1073,6 +1088,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
   const [leaveConfirm, setLeaveConfirm] = useState(false); // #297: device-back leave confirmation
+  // v0.13.0: empty-category panel — 'root' = "There is nothing here", 'cats' = the category chooser.
+  const [emptyPanel, setEmptyPanel] = useState<'root' | 'cats' | null>(null);
   const router = useRouter();
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
   const toastId = useRef(1);
@@ -1885,7 +1902,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} apiRef={carouselApiRef}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
        <FloatMenuProvider onOpenInterface={(k) => { if (k === 'custom') setNewCardEntry('menu'); setFloatKind(k); }}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}
@@ -2032,12 +2049,39 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onClose={() => setCardInfoId(null)}
             />
           ) : null}
+          {/* v0.13.0 item 10: empty-category panel — appears SILENTLY (mute, and SheetDim isn't gated
+              on it) instead of the fan/dim/gear ritual when the current deck has no cards. */}
+          {emptyPanel === 'root' ? (
+            <OverlayShell title="There is nothing here" subtitle="Switch to a category or create the first card?" onClose={() => setEmptyPanel(null)} scroll={false} mute width={312}>
+              <RuneButton label="Change category" kind="primary" height={44} onPress={() => setEmptyPanel('cats')} />
+              <RuneButton label="Add from Catalogue" kind="ghost" height={44} onPress={() => { setEmptyPanel(null); onAddGear(); }} />
+              <RuneButton label="Create Card" kind="ghost" height={44} onPress={() => { setEmptyPanel(null); onAddCard(); }} />
+            </OverlayShell>
+          ) : emptyPanel === 'cats' ? (
+            <OverlayShell title="Change category" subtitle="Only categories that have cards" onClose={() => setEmptyPanel(null)} mute width={312}>
+              {ring.map((k) => (
+                <RuneButton
+                  key={k}
+                  label={`${categoryMeta?.[k]?.label ?? categoryLabel(k)}  ·  ${carouselDecks?.[k]?.length ?? 0}`}
+                  kind="ghost"
+                  height={44}
+                  onPress={() => { setEmptyPanel(null); carouselApiRef.current?.setCategory(k, 'start'); }}
+                />
+              ))}
+            </OverlayShell>
+          ) : null}
           {/* leave-to-character-selection confirmation (#297): device back on the bare sheet */}
           {leaveConfirm ? (
             <LeaveConfirm
               onConfirm={() => { setLeaveConfirm(false); if (router.canGoBack()) router.back(); else router.replace('/'); }}
               onCancel={() => setLeaveConfirm(false)}
             />
+          ) : null}
+          {/* v0.13.0 SCARS, fully scarred: every Hope slot is dead → the WHOLE sheet loses color until
+              a scar card is unequipped. A gray saturation-blend wash (RN New Arch mixBlendMode) truly
+              desaturates everything beneath — still fully interactive (pointerEvents none). */}
+          {(character.scars ?? 0) >= character.hope.total ? (
+            <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#8A8A8A', mixBlendMode: 'saturation', zIndex: 99999 }} />
           ) : null}
         </View>
        </FloatMenuProvider>

@@ -12,8 +12,8 @@ import { FORGED_H, FORGED_W } from './forged-card';
  * the same.) Cache keyed by FORGE_RENDER_V — bump it whenever card layout/copy changes. Web (the
  * verify pipeline) skips capture and keeps the live components.
  */
-// v16: Void class banners became expo-image rasters — stale v15 captures (broken sliver) must regenerate.
-export const FORGE_RENDER_V = 16;
+// v17: v0.13.0 typeset — black titles, 10.5/14 left-aligned body, half-line section gaps, colon leads.
+export const FORGE_RENDER_V = 17;
 
 export interface ForgedSource {
   full: { uri: string };

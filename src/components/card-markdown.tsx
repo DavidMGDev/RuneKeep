@@ -53,7 +53,9 @@ export function CardMarkdownBody({
       <Text numberOfLines={numberOfLines} adjustsFontSizeToFit={adjustsFontSizeToFit} minimumFontScale={minimumFontScale} style={style}>
         {blocks.map((b, i) => (
           <Fragment key={i}>
-            {i > 0 ? '\n\n' : ''}
+            {/* v0.13.0 typeset: the blank line between sections rides a tiny-lineHeight span, so the
+                paragraph gap is ~a half line (like the printed cards), not a full empty line. */}
+            {i > 0 ? <Text style={{ fontSize: 6, lineHeight: 6 }}>{'\n\n'}</Text> : null}
             {spanNodes((b as { spans: MdSpan[] }).spans)}
           </Fragment>
         ))}
@@ -68,7 +70,7 @@ export function CardMarkdownBody({
   return (
     <View style={{ marginTop, alignSelf: alignSelf ?? 'stretch', flexShrink }}>
       {blocks.map((b, i) => {
-        const gap = i > 0 ? 4 : 0;
+        const gap = i > 0 ? 6 : 0; // v0.13.0 typeset: match the inline path's half-line section gap
         if (b.kind === 'p') {
           return (
             <Text key={i} style={[rowText, { marginTop: gap }]}>

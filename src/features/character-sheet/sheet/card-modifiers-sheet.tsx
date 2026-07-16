@@ -4,7 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
-import { EffectPicker, EffectsField, FormulaVarPicker, isThresholdTarget, matchOption, toEditableEffects } from '@/components/effects-editor';
+import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchOption, toEditableEffects } from '@/components/effects-editor';
 import { Body, Display, Rune } from '@/constants/theme';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
@@ -134,7 +134,7 @@ export function CardModifiersSheet({
         <EffectPicker
           current={matchOption(draft[pick])}
           onPick={(o) => {
-            setDraft((d) => d.map((e, j) => (j === pick ? { ...e, target: o.target, mode: isThresholdTarget(o.target) ? o.mode : undefined } : e)));
+            setDraft((d) => d.map((e, j) => (j === pick ? applyPickedOption(e, o) : e)));
             setPick(null);
           }}
           onClose={() => setPick(null)}

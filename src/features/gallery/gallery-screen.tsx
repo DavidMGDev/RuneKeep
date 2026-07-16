@@ -10,10 +10,11 @@ import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RuneChip } from './components/rune-chip';
-import { classColor, type DomainName, DOMAINS, DomainColors } from '@/constants/identity';
+import { classColor, type DomainName, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
-import { CATALOG, type CatalogCard, type CatalogKind } from '@/data/catalog';
+import { catalogFor, classExpansion, globallyEnabledExpansionIds } from '@/lib/expansions';
+import { type CatalogCard, type CatalogKind } from '@/data/catalog';
 import { featurePages } from '@/data/class-data';
 import { ALL_ARMOR, ALL_WEAPONS, type ArmorDef, type WeaponDef } from '@/data/equipment-data';
 import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
@@ -49,7 +50,7 @@ interface Filters {
   tiers: Set<number>; // tier 1–4, equipment only
 }
 
-function applyFilters(f: Filters): GalleryItem[] {
+function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string>): GalleryItem[] {
   const wantKind = (k: GalleryKind) => !f.kinds.size || f.kinds.has(k);
   // domains/levels are catalog-domain dimensions; tiers is an equipment dimension. Selecting one set
   // narrows to that family (mirrors the existing level→domain behavior).
@@ -57,7 +58,7 @@ function applyFilters(f: Filters): GalleryItem[] {
   const equipDim = f.tiers.size > 0;
   const out: GalleryItem[] = [];
   if (!equipDim) {
-    for (const c of CATALOG) {
+    for (const c of catalog) {
       if (!wantKind(c.kind)) continue;
       if (f.domains.size && (c.kind !== 'domain' || !f.domains.has(c.domain!))) continue;
       if (f.levels.size && (c.kind !== 'domain' || !f.levels.has(c.level!))) continue;
@@ -66,8 +67,13 @@ function applyFilters(f: Filters): GalleryItem[] {
   }
   // Class cards (v0.10.2): forged multi-page cards, not in CATALOG. They're neither a catalog-domain nor
   // an equipment dimension, so they show only when no domain/level/tier filter is narrowing the grid.
+  // v0.13.0: expansion classes (the Void six) show only when their pack is globally enabled.
   if (!catalogDim && !equipDim && wantKind('class')) {
-    for (const c of CLASS_CARDS) out.push({ type: 'class', id: `class-${c.key}`, label: c.title, def: c });
+    for (const c of CLASS_CARDS) {
+      const exp = classExpansion(c.key);
+      if (exp && !enabledExp.has(exp)) continue;
+      out.push({ type: 'class', id: `class-${c.key}`, label: c.title, def: c });
+    }
   }
   if (!catalogDim && wantKind('weapon')) {
     for (const w of ALL_WEAPONS) {
@@ -225,12 +231,23 @@ export function GalleryScreen() {
     levels: new Set(params.levels?.split(',').filter(Boolean).map(Number) ?? []),
     tiers: new Set<number>(),
   }));
+  // v0.13.0: the archive respects the GLOBAL expansion toggles — Void cards (and their Blood/Dread
+  // filter chips) appear only while The Void is enabled in the Card Library.
+  const [enabledExp, setEnabledExp] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let live = true;
+    globallyEnabledExpansionIds().then((s) => { if (live) setEnabledExp(s); }).catch(() => { if (live) setEnabledExp(new Set()); });
+    return () => { live = false; };
+  }, []);
   useEffect(() => {
     const t = setTimeout(() => setReady(true), 250);
     return () => clearTimeout(t);
   }, []);
 
-  const cards = useMemo(() => applyFilters(filters), [filters]);
+  const gated = useMemo(() => catalogFor(enabledExp ?? new Set()), [enabledExp]);
+  // Domain chips derive from the gated catalog (base order preserved; Void domains join at the end).
+  const domainChips = useMemo(() => [...new Set(gated.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!))], [gated]);
+  const cards = useMemo(() => applyFilters(filters, gated, enabledExp ?? new Set()), [filters, gated, enabledExp]);
   const toggle = useCallback(<T,>(set: Set<T>, v: T): Set<T> => {
     const next = new Set(set);
     if (next.has(v)) next.delete(v);
@@ -244,7 +261,7 @@ export function GalleryScreen() {
   const cellW = Math.floor((width - 36 - (cols - 1) * 10) / cols);
   const cellH = Math.round(cellW * 1.4);
 
-  if (!ready) return <LoadingScreen label="Opening the archive" />;
+  if (!ready || !enabledExp) return <LoadingScreen label="Opening the archive" />;
 
   return (
     <AppScreen
@@ -279,7 +296,7 @@ export function GalleryScreen() {
             ))}
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {DOMAINS.map((d) => (
+            {domainChips.map((d) => (
               <RuneChip
                 key={d}
                 label={d}

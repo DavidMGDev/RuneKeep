@@ -100,7 +100,7 @@ function applyOne(c: Character, tier: number, m: RestMove, sel: RestSelection): 
     }
     case 'hope': {
       const gain = sel.withParty ? 2 : 1;
-      const next = clamp(c.hope.active + gain, 0, c.hope.total);
+      const next = clamp(c.hope.active + gain, 0, c.hope.total - (c.hope.locked ?? 0)); // v0.13.0: scarred slots are locked
       const amount = next - c.hope.active;
       return { character: { ...c, hope: { ...c.hope, active: next } }, log: { moveId: m.id, title: m.title, amount, note: amount > 0 ? `+${amount} Hope` : 'Hope full' } };
     }

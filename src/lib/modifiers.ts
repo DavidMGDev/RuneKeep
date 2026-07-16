@@ -21,7 +21,11 @@ export type EffectTarget =
   | 'hopeMax'
   | 'proficiency'
   | 'majorThreshold'
-  | 'severeThreshold';
+  | 'severeThreshold'
+  /** v0.13.0 SCARS: a flat count, one per enabled "Add Scar" card. Each scar disables the character's
+   *  rightmost available Hope slot (usable hope = hopeMax − scars, floored at 0); at hopeMax scars the
+   *  whole sheet desaturates. Always `{ delta: 1 }` — the editor offers no formula/count for it. */
+  | 'scar';
 
 /**
  * One stat modifier carried by a card. Exactly one of `delta` / `byTier` / `dynamic` is meaningful:
@@ -95,7 +99,7 @@ export type SheetBreakdown = Record<EffectTarget, StatBreakdown>;
 /** Every target, in sheet-reading order (traits first). */
 export const EFFECT_TARGETS: EffectTarget[] = [
   'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge',
-  'evasion', 'armorScore', 'maxHp', 'stressMax', 'hopeMax', 'proficiency', 'majorThreshold', 'severeThreshold',
+  'evasion', 'armorScore', 'maxHp', 'stressMax', 'hopeMax', 'proficiency', 'majorThreshold', 'severeThreshold', 'scar',
 ];
 
 const TRAIT_TARGETS: EffectTarget[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
@@ -105,7 +109,7 @@ export const isTraitTarget = (t: EffectTarget): t is TraitKey => (TRAIT_TARGETS 
 export const TARGET_LABEL: Record<EffectTarget, string> = {
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
   evasion: 'Evasion', armorScore: 'Armor Score', maxHp: 'Max Hit Points', stressMax: 'Max Stress', hopeMax: 'Max Hope',
-  proficiency: 'Proficiency', majorThreshold: 'Major Threshold', severeThreshold: 'Severe Threshold',
+  proficiency: 'Proficiency', majorThreshold: 'Major Threshold', severeThreshold: 'Severe Threshold', scar: 'Scar',
 };
 
 /** Game caps: HP, Stress, and Armor slots can never exceed 12 (rulebook). */

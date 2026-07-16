@@ -13,7 +13,7 @@ import type { LibraryCard, CardSection } from '@/lib/library';
 
 /** Compose the plain `text` fallback (simple renderers) from the structured sections. */
 const composeText = (sections: CardSection[]): string =>
-  sections.map((s) => (s.name ? `**${s.name}.** ${s.body}` : s.body)).join('\n\n');
+  sections.map((s) => (s.name ? `**${s.name}:** ${s.body}` : s.body)).join('\n\n'); // colon lead (v0.13.0 typeset)
 
 const anc = (id: string, title: string, color: string, sections: CardSection[], extra?: Partial<LibraryCard>): LibraryCard => ({
   id,

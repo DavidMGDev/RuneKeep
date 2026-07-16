@@ -5,11 +5,11 @@ describe('composeSections (v0.10.2)', () => {
     expect(composeSections()).toBe('');
     expect(composeSections([])).toBe('');
   });
-  it('composes name + body as bold lead-in, blank-line separated', () => {
-    expect(composeSections([{ name: 'Tough', body: 'You are hardy.' }, { name: 'Keen', body: 'You notice things.' }])).toBe('**Tough.** You are hardy.\n\n**Keen.** You notice things.');
+  it('composes name + body as bold colon lead-in, blank-line separated', () => {
+    expect(composeSections([{ name: 'Tough', body: 'You are hardy.' }, { name: 'Keen', body: 'You notice things.' }])).toBe('**Tough:** You are hardy.\n\n**Keen:** You notice things.');
   });
   it('handles name-only and body-only sections, dropping empty ones', () => {
-    expect(composeSections([{ name: 'Lead', body: '' }, { body: 'plain' }, { body: '   ' }])).toBe('**Lead.**\n\nplain');
+    expect(composeSections([{ name: 'Lead', body: '' }, { body: 'plain' }, { body: '   ' }])).toBe('**Lead:**\n\nplain');
   });
 });
 

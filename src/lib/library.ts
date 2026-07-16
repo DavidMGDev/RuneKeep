@@ -30,6 +30,20 @@ export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
 export interface CardSection {
   name?: string;
   body: string;
+  /** v0.13.0: this section IS one of an ancestry's two mandatory features. Features can sit anywhere
+   *  among the sections (description first, etc.); their 1/2 identity is their RELATIVE order — the
+   *  upper flagged section is always "Feature 1". Cards without any flags (legacy + bundled Void
+   *  ancestries) resolve features to sections 0/1 via `featureSectionIndexes`. */
+  feature?: boolean;
+}
+
+/** The section indexes of an ancestry's Feature 1 and Feature 2, in vertical order. Falls back to the
+ *  legacy convention (the first two sections) when fewer than two sections carry the `feature` flag.
+ *  THE single place positional feature resolution lives — every strike/effect consumer routes here. */
+export function featureSectionIndexes(lc: { sections?: CardSection[] }): [number, number] {
+  const flagged: number[] = [];
+  (lc.sections ?? []).forEach((s, i) => { if (s.feature) flagged.push(i); });
+  return flagged.length >= 2 ? [flagged[0], flagged[1]] : [0, 1];
 }
 
 /** Mechanical fields for a custom WEAPON (v0.10.2) — mirrors data/equipment WeaponDef so a custom weapon
@@ -192,7 +206,7 @@ export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
     sections: Array.isArray(c.sections)
       ? (c.sections as unknown[]).map((s) => {
           const o = (s ?? {}) as Record<string, unknown>;
-          return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '' };
+          return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '', feature: o.feature === true ? true : undefined };
         })
       : undefined,
     weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,

@@ -13,7 +13,11 @@ import { classColor, classInfo } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
 import { deleteCharacter, exportCharacter, importCharacter, listCharacters } from '@/lib/character-store';
+import { seedOfficialExpansions } from '@/lib/expansions';
+import { type Expansion, isEnabledForCreation } from '@/lib/library';
+import { listExpansions } from '@/lib/library-store';
 import { playSfx } from '@/lib/sfx';
+import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picker';
 
 function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
   return (
@@ -73,6 +77,18 @@ export function RosterScreen() {
   const [actionsFor, setActionsFor] = useState<CharacterFile | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CharacterFile | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  // v0.13.0 item 6: the expansion picker moved HERE — it resolves BEFORE creation loads, so the
+  // creation interface never appears behind it. null = closed; [] would still render (base-only).
+  const [pickerExps, setPickerExps] = useState<Expansion[] | null>(null);
+
+  const onNewCharacter = useCallback(() => {
+    playSfx('buttonTap');
+    seedOfficialExpansions()
+      .catch(() => {})
+      .then(() => listExpansions())
+      .then(setPickerExps)
+      .catch(() => setPickerExps([]));
+  }, []);
 
   const reload = useCallback(() => {
     let live = true;
@@ -100,7 +116,7 @@ export function RosterScreen() {
     <AppScreen title="Characters" onBack={() => router.back()}>
       {files.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
-          <Pressable onPress={() => router.push('/create')} accessibilityRole="button" accessibilityLabel="Create your first character">
+          <Pressable onPress={onNewCharacter} accessibilityRole="button" accessibilityLabel="Create your first character">
             {({ pressed }) => (
               <ChamferBox
                 chamfer={18}
@@ -138,7 +154,7 @@ export function RosterScreen() {
           />
           <View style={{ flexDirection: 'row', gap: 10, paddingTop: 10, paddingBottom: 6 }}>
             <RuneButton label="Import" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
-            <RuneButton label="New character" kind="primary" height={46} style={{ flex: 2 }} onPress={() => router.push('/create')} />
+            <RuneButton label="New character" kind="primary" height={46} style={{ flex: 2 }} onPress={onNewCharacter} />
           </View>
         </>
       )}
@@ -186,6 +202,20 @@ export function RosterScreen() {
 
       {importError ? (
         <PopupDialog title="Import failed" body={importError} confirmLabel="OK" onConfirm={() => setImportError(null)} onCancel={() => setImportError(null)} />
+      ) : null}
+
+      {/* v0.13.0 item 6: choose expansions FIRST, then load creation with the picks as a route param. */}
+      {pickerExps ? (
+        <ExpansionPicker
+          expansions={pickerExps}
+          initial={new Set([BASE_PICK_ID, ...pickerExps.filter(isEnabledForCreation).map((e) => e.id)])}
+          onCancel={() => setPickerExps(null)}
+          onConfirm={(picked) => {
+            setPickerExps(null);
+            const exp = [...picked].filter((id) => id !== BASE_PICK_ID).join(',');
+            router.push({ pathname: '/create', params: { exp } });
+          }}
+        />
       ) : null}
     </AppScreen>
   );

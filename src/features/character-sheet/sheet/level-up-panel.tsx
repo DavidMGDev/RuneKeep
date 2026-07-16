@@ -132,7 +132,9 @@ export function LevelUpPanel({
   const tier = tierForLevel(newLevel);
   const tierStart = isTierStart(newLevel);
   const exps = file.experiences ?? [];
-  const marked = file.traitMarks ?? [];
+  // Tier starts clear all trait marks (applyLevelUp does this on commit) — the dialog must offer
+  // the cleared state, or the level-5/8 trait increases are unpickable (v0.13.0 item 9).
+  const marked = tierStart ? [] : (file.traitMarks ?? []);
 
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [centerIdx, setCenterIdx] = useState(0);

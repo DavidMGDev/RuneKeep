@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -17,7 +17,7 @@ import { type TraitKey } from '@/features/character-sheet/character';
 import { newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
-import { contentForCreation, type CreationContent, type Expansion, isEnabledForCreation, type LibraryCard } from '@/lib/library';
+import { contentForCreation, type CreationContent, type Expansion, featureSectionIndexes, isEnabledForCreation, type LibraryCard } from '@/lib/library';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { listExpansions } from '@/lib/library-store';
 import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
@@ -71,10 +71,15 @@ export function CreateScreen() {
   const [deck, setDeck] = useState<DeckKey>('class');
   // v0.12.2: per-character EXPANSION PICKER — which content packs this hero can draw from. `picked` holds
   // the chosen expansion ids plus the implicit BASE_PICK_ID; it gates every class/origin/domain list below.
-  // The picker modal opens on entry; until it's confirmed we default to base only (identical to before).
+  // v0.13.0 item 6: the picker now lives on the CHARACTER SELECT screen, which passes the picks as the
+  // `exp` route param (may be '' = base-only). The in-screen picker remains only as the fallback for
+  // entry paths that skip the roster (deep links / older routes).
+  const params = useLocalSearchParams<{ exp?: string }>();
   const [expansions, setExpansions] = useState<Expansion[] | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(() => new Set([BASE_PICK_ID]));
-  const [pickerOpen, setPickerOpen] = useState(true);
+  const [picked, setPicked] = useState<Set<string>>(
+    () => new Set([BASE_PICK_ID, ...(typeof params.exp === 'string' ? params.exp.split(',').filter(Boolean) : [])]),
+  );
+  const [pickerOpen, setPickerOpen] = useState(typeof params.exp !== 'string');
   useEffect(() => {
     let live = true;
     // seed the bundled official expansions (The Void) so they show in the picker, then list all installed.
@@ -314,11 +319,14 @@ export function CreateScreen() {
         const toggle: StraightItem = draft.mixedAncestry
           ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
           : { id: MIXED_ANCESTRY_ID, label: 'Mixed Ancestry', custom: <ForgedCard title="Mixed Ancestry" kindLabel="Ancestry" body="Combine two ancestries: take the first trait of one and the second trait of the other. Pick two — order decides which trait you keep." accentDeep={Rune.panel} colorArt="#3A2A4A" multilineTitle /> };
-        // mixed-ancestry cross-out for STRUCTURED ancestries: first-picked keeps trait 1 (strike section 1),
-        // second-picked keeps trait 2 (strike section 0) — mirrors ancestryCrossOuts for the image cards.
+        // mixed-ancestry cross-out for STRUCTURED ancestries: first-picked keeps Feature 1 (strike
+        // Feature 2), second-picked keeps Feature 2 (strike Feature 1) — mirrors ancestryCrossOuts for
+        // the image cards. v0.13.0: the struck FEATURE resolves to its actual section index (features
+        // can sit anywhere among the sections) via featureSectionIndexes.
         const mix = draft.mixedAncestry;
-        const struckIdx = (id: string): number | undefined => (mix?.first === id ? 1 : mix?.second === id ? 0 : undefined);
-        return [...base, ...(libContent?.ancestries ?? []).map((lc) => libCardItem(lc, struckIdx(lc.id))), toggle];
+        const struckIdx = (lc: LibraryCard): number | undefined =>
+          mix?.first === lc.id ? featureSectionIndexes(lc)[1] : mix?.second === lc.id ? featureSectionIndexes(lc)[0] : undefined;
+        return [...base, ...(libContent?.ancestries ?? []).map((lc) => libCardItem(lc, struckIdx(lc))), toggle];
       }
       case 'community':
         return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
