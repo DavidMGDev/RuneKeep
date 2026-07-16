@@ -110,7 +110,7 @@ export const EDIT_SCROLL_CANCEL = 1.5; // scrolled this many cards → a still h
 export const EDIT_SCALE = 0.45; // == grind center-card scale (SCALE_MAX * (1 - GRIND_SHRINK) = 0.45)
 export const EDIT_GAP = 106; // grind-size card (~103.5px) + a 3px gap
 export const EDIT_ROW_Y = 631; // == the expanded/grind center-card Y (OY - R): the row sits where grind cards do
-export const EDIT_RAISE = 40; // design px a selected card lifts
+export const EDIT_RAISE = 5; // design px a selected card lifts (v0.11.2: barely, keeps the row tidy)
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px.
 export const PAD_X = 126;
 export const PAD_Y = 812;
@@ -199,7 +199,7 @@ export const CARD_MENU_DEAD = 34; // center dead-zone radius (design px): releas
 export const CARD_MENU_RIN = 44; // wedge inner radius
 export const CARD_MENU_ROUT = 152; // wedge outer radius (release beyond = cancel, like the float menu)
 export const CARD_MENU_RICON = 100; // icon-placement ring radius
-export const CARD_MENU_ICON = 34; // wedge icon size (bigger than the float menu's 24)
+export const CARD_MENU_ICON = 43; // wedge icon size (v0.11.2: +25%, from 34)
 export const CARD_MENU_MARGIN = 8; // keep the whole wheel this far inside the 412×892 design edges
 
 /** Centre angle (deg, screen coords: -90 = up, 0 = right) of option `i` of `n`, evenly spaced around

@@ -402,8 +402,10 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     machineState.value = 'expanded';
     expandProgress.value = withSpring(1, EXPAND_SPRING);
     editMode.value = withTiming(1, { duration: 440, easing: Easing.inOut(Easing.cubic) });
-    desat.value = withTiming(1, { duration: 440, easing: Easing.inOut(Easing.cubic) });
-    gearFlash.value = withTiming(0, { duration: 440, easing: Easing.out(Easing.cubic) }); // the press-white melts into gray
+    // v0.11.2 item 4: desat rises FASTER than the white fades, so the gray is fully up before the white
+    // clears — the gear never flashes back to gold mid-transition (white → gray, no gold peek).
+    desat.value = withTiming(1, { duration: 240, easing: Easing.out(Easing.cubic) });
+    gearFlash.value = withTiming(0, { duration: 440, easing: Easing.out(Easing.cubic) });
     setEditing(true);
     playSfx('transitionStart');
   }, [editMode, desat, gearFlash, machineState, expandProgress]);
