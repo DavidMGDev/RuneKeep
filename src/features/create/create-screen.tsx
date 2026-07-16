@@ -10,7 +10,7 @@ import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { ChamferedImage } from './components/chamfered-image';
 import { RuneButton } from '@/components/rune-button';
-import { type ClassName, classColor, classInfo } from '@/constants/identity';
+import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { type TraitKey } from '@/features/character-sheet/character';
@@ -36,6 +36,10 @@ import { DeckRail } from './create-rail';
 import { DeckTab, SectionDivider, Segmented } from './create-ui';
 import { ExperiencesTab } from './experiences-tab';
 import { TraitsTab } from './traits-tab';
+
+// v0.12.2: character creation offers BASE classes only until the per-character expansion picker lands.
+// Void classes are gated (they'll be appended when The Void is selected). Keeps base creation identical.
+const CREATION_CLASS_CARDS = CLASS_CARDS.filter((c) => !isVoidClass(c.key));
 
 // ---------- screen ----------
 
@@ -123,12 +127,12 @@ export function CreateScreen() {
   // double as the loading state and swap to image cards as each capture lands.
   const snapshotJobs = useMemo(
     () => [
-      ...CLASS_CARDS.map((c) => ({
+      ...CREATION_CLASS_CARDS.map((c) => ({
         key: `class-${c.key}`,
         // deck-wide mark (#110): the class card is page 1 of (1 class + feature pages)
         node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${1 + featurePages(c.key).length}`} classKey={c.key} />,
       })),
-      ...CLASS_CARDS.flatMap((c) => {
+      ...CREATION_CLASS_CARDS.flatMap((c) => {
         const total = 1 + featurePages(c.key).length;
         return featurePages(c.key).map((p) => ({
           key: `feat-${c.key}-${p.pageIndex}`,
@@ -158,7 +162,7 @@ export function CreateScreen() {
   // live on web), then a hard fallback so it can never hang.
   const [loaderDone, setLoaderDone] = useState(false);
   const [loaderUp, setLoaderUp] = useState(true);
-  const firstClassKey = `class-${CLASS_CARDS[0].key}`;
+  const firstClassKey = `class-${CREATION_CLASS_CARDS[0].key}`;
   useEffect(() => {
     if (loaderDone) return;
     if (Platform.OS === 'web' || sources[firstClassKey]) {
@@ -249,7 +253,7 @@ export function CreateScreen() {
       case 'class':
         // Each class card is a FLIP-DECK (#110): face 0 = the class card, then one face per feature
         // page. Tapping the focused card flips through them in 3D — no separate features button.
-        return CLASS_CARDS.map((c) => {
+        return CREATION_CLASS_CARDS.map((c) => {
           const total = 1 + featurePages(c.key).length;
           const classPre = sources[`class-${c.key}`];
           const classFace: StraightFace = classPre
@@ -504,7 +508,7 @@ export function CreateScreen() {
     playSfx('cardSelect');
     let focusId: string | undefined; // the picked card to recenter the carousel on (Feature 2)
     switch (deck) {
-      case 'class': { const k = pick(CLASS_CARDS.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
+      case 'class': { const k = pick(CREATION_CLASS_CARDS.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
       case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => c.id)); if (id) { set({ subclassCardId: id }); focusId = id; } break; }
       case 'ancestry': {
         const anc = CATALOG.filter((c) => c.kind === 'ancestry').map((c) => c.id);

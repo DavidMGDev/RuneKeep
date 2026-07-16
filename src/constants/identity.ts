@@ -15,7 +15,10 @@ export type DomainName =
   | 'midnight'
   | 'sage'
   | 'splendor'
-  | 'valor';
+  | 'valor'
+  // v0.12.2 — "The Void" official expansion adds two domains (gated; see VOID_DOMAINS).
+  | 'blood'
+  | 'dread';
 
 export type ClassName =
   | 'bard'
@@ -26,7 +29,22 @@ export type ClassName =
   | 'seraph'
   | 'sorcerer'
   | 'warrior'
-  | 'wizard';
+  | 'wizard'
+  // v0.12.2 — "The Void" official expansion adds six classes (gated; see VOID_CLASSES).
+  | 'assassin'
+  | 'witch'
+  | 'warlock'
+  | 'bloodhunter'
+  | 'summoner'
+  | 'brawler';
+
+/** The Void-expansion classes/domains, kept SEPARATE from the base set so callers can gate them
+ *  (off by default globally; enabled per-character at creation). See [[runekeep_void_expansion]]. */
+export const VOID_EXPANSION_ID = 'void';
+export const VOID_CLASSES: ClassName[] = ['assassin', 'witch', 'warlock', 'bloodhunter', 'summoner', 'brawler'];
+export const VOID_DOMAINS: DomainName[] = ['blood', 'dread'];
+export const isVoidClass = (k: ClassName): boolean => VOID_CLASSES.includes(k);
+export const isVoidDomain = (d: DomainName): boolean => VOID_DOMAINS.includes(d);
 
 export interface IdentityColor {
   deep: string;
@@ -44,9 +62,15 @@ export const DomainColors: Record<DomainName, IdentityColor> = {
   sage: { deep: '#1D3B29', bright: '#289E58' },
   splendor: { deep: '#574E2A', bright: '#C8AA32' },
   valor: { deep: '#573C2A', bright: '#BA682E' },
+  // v0.12.2 Void domains (approx — refine from final art later): blood = deep crimson, dread = void violet.
+  blood: { deep: '#4A1D1D', bright: '#A82A2A' },
+  dread: { deep: '#2A2233', bright: '#7A56A0' },
 };
 
+/** Base-game domains only. The Void domains live in VOID_DOMAINS and are appended by gating-aware callers. */
 export const DOMAINS: DomainName[] = ['arcana', 'blade', 'bone', 'codex', 'grace', 'midnight', 'sage', 'splendor', 'valor'];
+/** All domains including the Void expansion's (for the archive / when the Void is enabled). */
+export const ALL_DOMAINS: DomainName[] = [...DOMAINS, ...VOID_DOMAINS];
 
 export interface ClassInfo {
   key: ClassName;
@@ -65,7 +89,16 @@ export const CLASSES: ClassInfo[] = [
   { key: 'sorcerer', label: 'Sorcerer', domains: ['arcana', 'midnight'] },
   { key: 'warrior', label: 'Warrior', domains: ['blade', 'bone'] },
   { key: 'wizard', label: 'Wizard', domains: ['codex', 'splendor'] },
+  // v0.12.2 — "The Void" classes (gated by VOID_CLASSES). classColor blends their two domains.
+  { key: 'assassin', label: 'Assassin', domains: ['midnight', 'blade'] },
+  { key: 'witch', label: 'Witch', domains: ['dread', 'sage'] },
+  { key: 'warlock', label: 'Warlock', domains: ['dread', 'grace'] },
+  { key: 'bloodhunter', label: 'Blood Hunter', domains: ['blood', 'bone'] },
+  { key: 'summoner', label: 'Summoner', domains: ['blood', 'splendor'] },
+  { key: 'brawler', label: 'Brawler', domains: ['bone', 'valor'] },
 ];
+/** Base-game classes only (the character creator's default set; Void classes appended when enabled). */
+export const BASE_CLASSES: ClassInfo[] = CLASSES.filter((c) => !VOID_CLASSES.includes(c.key));
 
 export const classInfo = (key: ClassName): ClassInfo => CLASSES.find((c) => c.key === key)!;
 
