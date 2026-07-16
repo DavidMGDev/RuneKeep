@@ -854,9 +854,17 @@ export function CardCarousel() {
   // via the safety net. Deselect the moved pile NOW (over the NEW deck → no old-layout flash), release the
   // flatten envelope only after the deselect fade has passed (so deselected cards never briefly re-raise), reset.
   const finalizeCommittedDrop = useCallback(() => {
-    if (pendingDeselectRef.current) { pendingDeselectRef.current = false; deselectAll(); }
-    editFlat.value = withDelay(240, withTiming(0, { duration: 80 }));
-    resetDrag();
+    // v0.12.4 (flash fix): the reordered deck's per-card `index` props reach the UI thread a frame or two
+    // AFTER React commits them. If `editGrabbed` flips to 0 before then, the plain layout paints over the
+    // STILL-OLD native indices for one frame — that's the "flash back to the previous arrangement." The drag
+    // layout is identity-correct over the reordered deck (pre-written raiseOrder ranks + gap math), so we can
+    // safely HOLD it two frames until the new indices are live, THEN tear down. resetDrag BEFORE deselect so
+    // clearing raisedIds never disturbs the pile membership during the wait.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      resetDrag();
+      if (pendingDeselectRef.current) { pendingDeselectRef.current = false; deselectAll(); }
+      editFlat.value = withDelay(200, withTiming(0, { duration: 80 }));
+    }));
   }, [deselectAll, resetDrag, editFlat]);
   const finishDrop = useCallback((to: number) => {
     const dragSet = new Set(deck.filter((c) => raisedIds.has(c.id)).map((c) => c.id));

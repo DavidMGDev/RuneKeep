@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.12.3'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.12.4'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.12.3 - The Void polish + Edit-mode re-arrange fixes. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nFrom your list:`n- VOID CLASS BANNERS: the six Void classes now show your real banner art instead of the placeholder rectangle.`n- VOID ANCESTRIES rebuilt from scratch as real text cards (like custom ancestries), so in a MIXED ancestry the unused feature is struck through - and Earthkin's Stoneskin (+1 Armor & Damage Thresholds) now actually applies, and drops when it's the crossed-out half.`n- VOID MODIFIERS: every Void card was analysed; the ones with a permanent stat passive now feed the sheet (e.g. Juggernaut's Rugged +3 Severe threshold). The rest are activated/conditional abilities, handled with tokens/dice like the base game.`n`nEdit-mode re-arrange (the drop animation):`n- The carousel cards now FINISH making room before the cards from your finger settle in - no more cancelled reflow.`n- The 1-frame flash of the old layout on drop is gone (the deselect now waits for the reordered row to be live).`n- Grabbed cards DESELECT (drop flat) while you drag; they only re-raise if you drop them back where they started, once every animation has ended.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.12.4 - Void banners, ancestry strikethrough & the drop-flash, fixed. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nThree fixes from your list:`n- VOID CLASS BANNERS: the placeholder/broken banners are gone - the six Void classes now paint your real pennant art (background stripped so they sit on the card like the base classes).`n- ANCESTRY STRIKETHROUGH: in a MIXED ancestry, the unused feature of each custom/Void ancestry is now struck through in the CREATION carousel too (not just on the sheet) - the mixed-ancestry indicator you need.`n- DROP FLASH: the 1-frame flash back to the old order at the end of a re-arrange is gone. The drag layout now holds until the reordered row is fully live on screen, then hands off - no flicker.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

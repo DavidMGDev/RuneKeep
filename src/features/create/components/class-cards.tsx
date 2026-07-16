@@ -1,5 +1,6 @@
 import { type FC } from 'react';
-import Svg, { Image as SvgImage, type SvgProps } from 'react-native-svg';
+import { Image as ExpoImage } from 'expo-image';
+import { type SvgProps } from 'react-native-svg';
 
 import BardBanner from '../../../../assets/art/classBanners/image-9.svg';
 import DruidBanner from '../../../../assets/art/classBanners/image-8.svg';
@@ -31,9 +32,9 @@ export interface ClassCardDef {
   body: string;
 }
 
-// v0.12.2: the owner's Void class banner art (assets/art/classBanners/void/*.webp), wrapped in an <Svg>
-// so it satisfies the FC<SvgProps> Banner contract and fills the 62px banner column exactly like the base
-// SVG banners — top-aligned, width-filling (the outer caller passes width/height/preserveAspectRatio).
+// v0.12.4: the owner's Void class banner art — transparent-background pennants (bg stripped from the WIP
+// JPGs), painted by expo-image so they sit on the deep card like the base SVG banners (top-aligned, fit to
+// the 62px column). assets/art/classBanners/void/*.webp.
 const VOID_BANNER_ART: Partial<Record<ClassName, number>> = {
   assassin: AssassinBanner,
   witch: WitchBanner,
@@ -43,12 +44,19 @@ const VOID_BANNER_ART: Partial<Record<ClassName, number>> = {
   brawler: BrawlerBanner,
 };
 
+// react-native-svg's <Image href=require(...)> does NOT render a bundled raster on Android (shows a faint
+// sliver) — so paint the (transparent-background) pennant with expo-image, top-aligned + width-fit like the
+// base SVG banners. The Banner is still an FC<SvgProps> so ForgedCard/the picker call it unchanged.
 const voidBanner = (key: ClassName): FC<SvgProps> => {
   const src = VOID_BANNER_ART[key]!;
-  const Banner: FC<SvgProps> = (props) => (
-    <Svg viewBox="0 0 62 97" {...props}>
-      <SvgImage href={src} x={0} y={0} width={62} height={97} preserveAspectRatio="xMidYMin slice" />
-    </Svg>
+  const Banner: FC<SvgProps> = ({ width, height }) => (
+    <ExpoImage
+      source={src}
+      style={{ width: typeof width === 'number' ? width : 62, height: typeof height === 'number' ? height : 141 }}
+      contentFit="contain"
+      contentPosition="top"
+      cachePolicy="memory-disk"
+    />
   );
   return Banner;
 };
