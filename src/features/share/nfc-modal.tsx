@@ -88,7 +88,7 @@ export function NfcSendModal({ content, label, onClose }: { content: RkpContent;
           ? error
           : state === 'sent'
             ? 'The other device received it.'
-            : 'Hold the other phone back-to-back with this one, on its Receive screen.'}
+            : 'Hold the other phone back-to-back with this one to receive it.'}
       </Text>
       {tooBig && state !== 'error' ? (
         <Text style={{ color: Rune.red, fontSize: 11, fontFamily: Body.bold, textAlign: 'center' }}>This is large ({Math.round(bytes / 1000)}KB) and may not fit over NFC — share the .rkp file if it fails.</Text>
@@ -136,7 +136,7 @@ export function NfcReceiveModal({ onReceived, onClose }: { onReceived: (content:
         {state === 'error' ? 'NFC error' : 'Receive by NFC'}
       </Text>
       <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19, textAlign: 'center' }}>
-        {state === 'error' ? error : 'Hold this phone back-to-back with the sender, who should be on their Send screen.'}
+        {state === 'error' ? error : 'Hold this phone back-to-back with the one sharing the card.'}
       </Text>
       <RuneButton label="Cancel" kind="ghost" height={42} style={{ alignSelf: 'stretch' }} onPress={close} />
     </Shell>

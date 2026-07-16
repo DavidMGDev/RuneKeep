@@ -144,15 +144,17 @@ const CardMenuIcon = memo(function CardMenuIcon({ kind, allFav, size, color }: {
           <Path d="M12 3 L15 6 M12 3 L9 6 M12 21 L15 18 M12 21 L9 18 M3 12 L6 9 M3 12 L6 15 M21 12 L18 9 M21 12 L18 15" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
         </>
       ) : kind === 'delete' ? (
+        // v0.12.1 item 9: thinner strokes + inner bars spaced wider so the trash reads cleanly.
         <>
-          <Path d="M5 7 H19 M9 7 V5 H15 V7 M7 7 L8 20 H16 L17 7" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
-          <Path d="M10 10 V17 M14 10 V17" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+          <Path d="M4.5 7 H19.5 M9.3 7 V4.6 H14.7 V7 M6.6 7 L7.6 20.5 H16.4 L17.4 7" fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+          <Path d="M9.4 10.4 V17 M14.6 10.4 V17" fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" />
         </>
       ) : (
-        // favorite / unfavorite — a star; unfavorite adds a DIAGONAL crossout (item 6).
+        // favorite / unfavorite — a star; unfavorite adds a DIAGONAL crossout. v0.12.1 item 9: bigger,
+        // more-spread points + thinner strokes so it's legible at wheel size.
         <>
-          <Path d="M12 4 L14.3 9 L19.6 9.6 L15.6 13.2 L16.7 18.5 L12 15.8 L7.3 18.5 L8.4 13.2 L4.4 9.6 L9.7 9 Z" fill={allFav ? color : 'none'} stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-          {allFav ? <Path d="M4.5 19.5 L19.5 4.5" stroke={color} strokeWidth={2.4} strokeLinecap="round" /> : null}
+          <Path d="M12 3.2 L14.6 9 L20.6 9.5 L16 13.5 L17.3 19.4 L12 16.2 L6.7 19.4 L8 13.5 L3.4 9.5 L9.4 9 Z" fill={allFav ? color : 'none'} stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
+          {allFav ? <Path d="M4 20 L20 4" stroke={color} strokeWidth={2} strokeLinecap="round" /> : null}
         </>
       )}
     </Svg>

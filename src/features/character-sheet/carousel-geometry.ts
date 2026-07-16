@@ -110,7 +110,7 @@ export const EDIT_SCROLL_CANCEL = 1.5; // scrolled this many cards → a still h
 export const EDIT_SCALE = 0.45; // == grind center-card scale (SCALE_MAX * (1 - GRIND_SHRINK) = 0.45)
 export const EDIT_GAP = 106; // grind-size card (~103.5px) + a 3px gap
 export const EDIT_ROW_Y = 631; // == the expanded/grind center-card Y (OY - R): the row sits where grind cards do
-export const EDIT_RAISE = 5; // design px a selected card lifts (v0.11.2: barely, keeps the row tidy)
+export const EDIT_RAISE = 12.5; // design px a selected card lifts (v0.12.1: 2.5× the v0.11.2 value)
 // The touchable pad over the inner gear's visible arc at the bottom edge, in design px. v0.12.0: a bit
 // WIDER + TALLER and lifted slightly off the very bottom edge — so the gear target clears the Android
 // gesture-navigation home strip (which intercepts the extreme bottom on Motorola/Xiaomi ROMs).

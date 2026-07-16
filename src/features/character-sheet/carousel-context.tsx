@@ -175,6 +175,17 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const [raisedIds, setRaisedIds] = useState<Set<string>>(() => new Set());
   const raisedIdsRef = useRef(raisedIds);
   raisedIdsRef.current = raisedIds;
+  // v0.12.1 item 8: a selected card that leaves the deck (deleted) must drop out of the selection, so the
+  // "X/Y Cards" count never counts ghosts. Prune to ids still present in the current category's deck.
+  const catRef2 = useRef(category);
+  catRef2.current = category;
+  useEffect(() => {
+    const present = new Set((decks[catRef2.current] ?? []).map((c) => c.id));
+    setRaisedIds((s) => {
+      if (![...s].some((id) => !present.has(id))) return s; // all still present → no change
+      return new Set([...s].filter((id) => present.has(id)));
+    });
+  }, [decks, category]);
   // v0.11.1 card-hold radial menu shared values — spray-select (the pan drives the finger + highlight).
   const cardMenuOpen = useSharedValue(0);
   const cardMenuAnchorX = useSharedValue(206);
