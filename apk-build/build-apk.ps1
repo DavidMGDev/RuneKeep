@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.12.2'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.12.3'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.12.2 - 'The Void' official expansion. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nTHE VOID is here - a full official content pack, OFF by default so your base game is untouched until you opt in:`n- 6 new classes: Assassin, Witch, Warlock, Blood Hunter (all three subclasses), Summoner, Brawler.`n- 2 new domains: Blood and Dread.`n- New ancestries, communities, and TRANSFORMATIONS (their own card category).`n`nHow to use it:`n- Card Library now has an 'Official Expansions' section - flip The Void on there to enable it everywhere. It's read-only (you can't edit official content), and it always sits first.`n- Character creation now opens with an EXPANSION PICKER: choose which packs this hero draws from. Base Game is always on; tick The Void (or any homebrew) to build with its classes, ancestries, domains and subclasses.`n- Transformations live beside your ancestries in the arsenal and in Add Gear - not in creation (you grow into them).`n- The Card Archive browses every Void card, with a new 'Forms' filter for transformations.`n`nYour characters are safe: disabling or deleting an expansion NEVER removes cards a character already has - the cards travel inside the character file, so shared heroes work even without the expansion installed.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.12.3 - The Void polish + Edit-mode re-arrange fixes. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nFrom your list:`n- VOID CLASS BANNERS: the six Void classes now show your real banner art instead of the placeholder rectangle.`n- VOID ANCESTRIES rebuilt from scratch as real text cards (like custom ancestries), so in a MIXED ancestry the unused feature is struck through - and Earthkin's Stoneskin (+1 Armor & Damage Thresholds) now actually applies, and drops when it's the crossed-out half.`n- VOID MODIFIERS: every Void card was analysed; the ones with a permanent stat passive now feed the sheet (e.g. Juggernaut's Rugged +3 Severe threshold). The rest are activated/conditional abilities, handled with tokens/dice like the base game.`n`nEdit-mode re-arrange (the drop animation):`n- The carousel cards now FINISH making room before the cards from your finger settle in - no more cancelled reflow.`n- The 1-frame flash of the old layout on drop is gone (the deselect now waits for the reordered row to be live).`n- Grabbed cards DESELECT (drop flat) while you drag; they only re-raise if you drop them back where they started, once every animation has ended.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

@@ -4,8 +4,8 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { isOfficialExpansion } from '@/lib/expansions';
-import { expansionSummary, type Expansion } from '@/lib/library';
+import { expansionCardCount, isOfficialExpansion } from '@/lib/expansions';
+import { type Expansion } from '@/lib/library';
 import { playSfx } from '@/lib/sfx';
 
 /** The pseudo-id for the always-present "Base Game" row. Never stored on the character (it's the
@@ -58,11 +58,10 @@ export function ExpansionPicker({ expansions, initial, onConfirm }: { expansions
   const rows = useMemo(
     () =>
       expansions.map((e) => {
-        const s = expansionSummary(e);
-        // official records keep their real cards in the catalog, so count from there when the record is empty
-        const count = isOfficialExpansion(e.id) && s.cardCount === 0 ? undefined : s.cardCount;
+        // official packs keep most cards in the catalog + some on the record — expansionCardCount sums both
+        const count = expansionCardCount(e);
         const bits = [isOfficialExpansion(e.id) ? 'Official' : e.author || 'Homebrew'];
-        if (count != null) bits.push(`${count} card${count === 1 ? '' : 's'}`);
+        if (count > 0) bits.push(`${count} card${count === 1 ? '' : 's'}`);
         return { id: e.id, name: e.name, subtitle: bits.join(' · ') };
       }),
     [expansions],

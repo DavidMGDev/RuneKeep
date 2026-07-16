@@ -8,8 +8,12 @@
  */
 import { CATALOG, type CatalogCard } from '@/data/catalog';
 import { VOID_EXPANSION_ID, VOID_CLASSES, type ClassName } from '@/constants/identity';
+import { VOID_ANCESTRIES } from '@/data/void-ancestries';
 import type { Expansion } from './library';
 import { getExpansion, saveExpansion } from './library-store';
+
+/** Bump when bundled Void content (VOID_ANCESTRIES, …) changes so already-installed copies refresh in place. */
+export const VOID_BUNDLE_VERSION = 2;
 
 /** Metadata for the bundled Void record (its CARDS live in the catalog; this holds the name + global toggle). */
 export const VOID_META = {
@@ -36,12 +40,21 @@ export function catalogFor(ids: string[] | Set<string> | undefined): CatalogCard
   return CATALOG.filter((c) => !c.expansion || set.has(c.expansion));
 }
 
+/** Total cards a user sees for an expansion: its record `cards` PLUS any catalog cards tagged to it.
+ *  Official packs keep most cards in the catalog but some (e.g. the Void ancestries) live on the record. */
+export function expansionCardCount(e: Expansion): number {
+  return e.cards.length + CATALOG.filter((c) => c.expansion === e.id).length;
+}
+
 /** Seed the bundled official-expansion record(s) into the library store if absent, so their global
  *  enable toggle persists next to user expansions. OFF by default (A2). Idempotent — call on library load. */
 export async function seedOfficialExpansions(): Promise<void> {
   const existing = await getExpansion(VOID_META.id);
   if (!existing) {
-    const seed: Expansion = { ...VOID_META, official: true, enabled: false, version: 1, createdAt: new Date().toISOString(), cards: [] };
+    const seed: Expansion = { ...VOID_META, official: true, enabled: false, version: VOID_BUNDLE_VERSION, createdAt: new Date().toISOString(), cards: VOID_ANCESTRIES };
     await saveExpansion(seed);
+  } else if ((existing.version ?? 0) < VOID_BUNDLE_VERSION) {
+    // refresh the bundled cards in place, preserving the user's global enable toggle + createdAt.
+    await saveExpansion({ ...existing, ...VOID_META, official: true, version: VOID_BUNDLE_VERSION, cards: VOID_ANCESTRIES });
   }
 }
