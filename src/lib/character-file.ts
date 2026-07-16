@@ -69,6 +69,10 @@ export interface CharacterFile {
   ancestryCardId: string;
   communityCardId: string;
   domainCardIds: string[];
+  /** v0.12.2: which EXPANSIONS this character was created with (e.g. ['void'] + custom ids). Undefined
+   *  or empty = base game only (back-compat). Gates which catalog/library content the sheet + ADD GEAR
+   *  show; travels with the character so a shared hero still shows all its cards. */
+  enabledExpansionIds?: string[];
   /** Trait modifiers, distributed at creation (+2, +1, +1, 0, 0, −1 in any order, #107). */
   traits?: Record<TraitKey, number>;
   /** The two creation experiences — player-authored cards (#107). */

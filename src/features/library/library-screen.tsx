@@ -18,6 +18,7 @@ import { RuneButton } from '@/components/rune-button';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DOMAINS } from '@/constants/identity';
+import { CATALOG } from '@/data/catalog';
 import { playSfx } from '@/lib/sfx';
 import {
   type ArmorSpec,
@@ -27,8 +28,10 @@ import {
   type LibraryContentType,
   type WeaponSpec,
   expansionSummary,
+  isEnabledForCreation,
   isExpansionEnabled,
 } from '@/lib/library';
+import { isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
@@ -100,6 +103,29 @@ function ExpansionToggle({ on, onToggle }: { on: boolean; onToggle: () => void }
       accessibilityLabel={on ? 'Enabled for creation. Tap to disable' : 'Disabled. Tap to enable'}
       style={{ width: 46, height: 26, borderRadius: 13, padding: 3, justifyContent: 'center', backgroundColor: on ? Rune.goldEdge : 'rgba(70,72,78,0.6)', borderWidth: 1, borderColor: on ? Rune.goldBright : 'rgba(147,142,136,0.5)' }}>
       <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: on ? Rune.ivory : '#B7BBC3', alignSelf: on ? 'flex-end' : 'flex-start' }} />
+    </Pressable>
+  );
+}
+
+/** v0.12.2: an official expansion's real cards live in the bundled catalog (its stored record's `cards`
+ *  is empty), so its count comes from there, keyed by expansion id. */
+const officialCardCount = (id: string): number => CATALOG.filter((c) => c.expansion === id).length;
+
+/** A single expansion row on the hub — name + version/count/author, with the enable toggle on the right.
+ *  Shared by the "Official Expansions" and "My expansions" sections (identical layout). */
+function ExpansionRow({ e, on, cardCount, onOpen, onToggle }: { e: Expansion; on: boolean; cardCount: number; onOpen: () => void; onToggle: () => void }) {
+  return (
+    <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Open ${e.name}`}>
+      {({ pressed }) => (
+        <ChamferBox chamfer={10} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, paddingVertical: 12 }}>
+          <View style={{ flex: 1, opacity: on ? 1 : 0.5 }}>
+            <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{e.name}</Text>
+            <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.medium, letterSpacing: 0.3, marginTop: 3 }}>v{e.version} · {cardCount} card{cardCount === 1 ? '' : 's'}{e.author ? ` · ${e.author}` : ''}</Text>
+          </View>
+          {/* v0.12.0: toggle enable/disable right here, no need to open the expansion. */}
+          <ExpansionToggle on={on} onToggle={onToggle} />
+        </ChamferBox>
+      )}
     </Pressable>
   );
 }
@@ -277,7 +303,12 @@ export function LibraryScreen() {
 
   const reload = useCallback(() => {
     let live = true;
-    listExpansions().then((all) => { if (live) setExpansions(all); });
+    // v0.12.2: seed the bundled official expansions (e.g. The Void) BEFORE listing so they appear in
+    // the hub. Idempotent + best-effort — swallow errors so a web/storage hiccup never blanks the list.
+    seedOfficialExpansions()
+      .catch(() => {})
+      .then(() => listExpansions())
+      .then((all) => { if (live) setExpansions(all); });
     return () => { live = false; };
   }, []);
   useFocusEffect(reload);
@@ -380,6 +411,32 @@ export function LibraryScreen() {
     );
   }
 
+  // ---- official expansion detail (read-only) ----
+  // v0.12.2: bundled expansions (The Void) are read-only — name/author/description + card count + the
+  // global enable toggle only. No edit/share/add/delete, no editable card list. Their cards live in the
+  // catalog (the record's own `cards` is empty), so the count comes from there.
+  if (selected && (selected.official || isOfficialExpansion(selected.id))) {
+    const cardCount = officialCardCount(selected.id);
+    const on = isEnabledForCreation(selected);
+    return (
+      <AppScreen title={selected.name} onBack={() => setSelectedId(null)}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
+          <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ padding: 12, gap: 8 }}>
+            <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · {cardCount} card{cardCount === 1 ? '' : 's'}</Text>
+            {selected.description ? <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>{on ? 'Enabled for creation' : 'Disabled'}</Text>
+                <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 2 }}>Official expansion — read only</Text>
+              </View>
+              <ExpansionToggle on={on} onToggle={() => { playSfx('buttonTap'); void persist({ ...selected, enabled: !on }); }} />
+            </View>
+          </ChamferBox>
+        </ScrollView>
+      </AppScreen>
+    );
+  }
+
   // ---- expansion detail ----
   if (selected) {
     const s = expansionSummary(selected);
@@ -440,7 +497,7 @@ export function LibraryScreen() {
         ) : null}
         {confirmDeleteExp ? (
           <PopupDialog title="Delete expansion?" body={`${confirmDeleteExp.name} and its ${confirmDeleteExp.cards.length} card(s) will be removed from this device. Exported .rkp files are unaffected.`} confirmLabel="Delete" destructive
-            onConfirm={() => { const id = confirmDeleteExp.id; setConfirmDeleteExp(null); setSelectedId(null); void deleteExpansion(id).then(reload); }}
+            onConfirm={() => { const id = confirmDeleteExp.id; setConfirmDeleteExp(null); setSelectedId(null); if (isOfficialExpansion(id)) return; void deleteExpansion(id).then(reload); }}
             onCancel={() => setConfirmDeleteExp(null)} />
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
@@ -450,6 +507,10 @@ export function LibraryScreen() {
   }
 
   // ---- hub ----
+  // v0.12.2: bundled official expansions (The Void) list FIRST in their own read-only section; the
+  // player's authored/received expansions follow under "My expansions".
+  const officialExps = expansions.filter((e) => e.official === true);
+  const customExps = expansions.filter((e) => !e.official);
   return (
     <AppScreen title="Card library" onBack={() => router.back()}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
@@ -467,34 +528,45 @@ export function LibraryScreen() {
           )}
         </Pressable>
 
+        {officialExps.length > 0 ? (
+          <>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+              <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Official expansions</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.25)' }} />
+            </View>
+            {officialExps.map((e) => (
+              <ExpansionRow
+                key={e.id}
+                e={e}
+                on={isEnabledForCreation(e)}
+                cardCount={officialCardCount(e.id)}
+                onOpen={() => setSelectedId(e.id)}
+                onToggle={() => { playSfx('buttonTap'); void persist({ ...e, enabled: !isEnabledForCreation(e) }); }}
+              />
+            ))}
+          </>
+        ) : null}
+
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
           <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>My expansions</Text>
           <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.25)' }} />
         </View>
 
-        {expansions.length === 0 ? (
+        {customExps.length === 0 ? (
           <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 14, lineHeight: 18 }}>
             No expansions yet. Create one to author homebrew cards,{'\n'}or import a friend&apos;s .rkp.
           </Text>
         ) : (
-          expansions.map((e) => {
-            const s = expansionSummary(e);
-            const on = isExpansionEnabled(e);
-            return (
-              <Pressable key={e.id} onPress={() => setSelectedId(e.id)} accessibilityRole="button" accessibilityLabel={`Open ${e.name}`}>
-                {({ pressed }) => (
-                  <ChamferBox chamfer={10} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, paddingVertical: 12 }}>
-                    <View style={{ flex: 1, opacity: on ? 1 : 0.5 }}>
-                      <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{e.name}</Text>
-                      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.medium, letterSpacing: 0.3, marginTop: 3 }}>v{e.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}{e.author ? ` · ${e.author}` : ''}</Text>
-                    </View>
-                    {/* v0.12.0: toggle enable/disable right here, no need to open the expansion. */}
-                    <ExpansionToggle on={on} onToggle={() => { playSfx('buttonTap'); void persist({ ...e, enabled: !on }); }} />
-                  </ChamferBox>
-                )}
-              </Pressable>
-            );
-          })
+          customExps.map((e) => (
+            <ExpansionRow
+              key={e.id}
+              e={e}
+              on={isExpansionEnabled(e)}
+              cardCount={expansionSummary(e).cardCount}
+              onOpen={() => setSelectedId(e.id)}
+              onToggle={() => { playSfx('buttonTap'); void persist({ ...e, enabled: !isExpansionEnabled(e) }); }}
+            />
+          ))
         )}
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>

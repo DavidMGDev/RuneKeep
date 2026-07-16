@@ -10,15 +10,17 @@ import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { ChamferedImage } from './components/chamfered-image';
 import { RuneButton } from '@/components/rune-button';
-import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/identity';
+import { type ClassName, classColor, classInfo } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { type TraitKey } from '@/features/character-sheet/character';
 import { newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
-import { contentForCreation, type CreationContent, isExpansionEnabled, type LibraryCard } from '@/lib/library';
+import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
+import { contentForCreation, type CreationContent, type Expansion, isEnabledForCreation, type LibraryCard } from '@/lib/library';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { listExpansions } from '@/lib/library-store';
+import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
 import { featurePages } from '@/data/class-data';
@@ -36,10 +38,6 @@ import { DeckRail } from './create-rail';
 import { DeckTab, SectionDivider, Segmented } from './create-ui';
 import { ExperiencesTab } from './experiences-tab';
 import { TraitsTab } from './traits-tab';
-
-// v0.12.2: character creation offers BASE classes only until the per-character expansion picker lands.
-// Void classes are gated (they'll be appended when The Void is selected). Keeps base creation identical.
-const CREATION_CLASS_CARDS = CLASS_CARDS.filter((c) => !isVoidClass(c.key));
 
 // ---------- screen ----------
 
@@ -69,13 +67,25 @@ export function CreateScreen() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [deck, setDeck] = useState<DeckKey>('class');
-  // v0.10.3 (B4): homebrew content from ENABLED expansions, offered in the matching decks.
-  const [libContent, setLibContent] = useState<CreationContent | null>(null);
+  // v0.12.2: per-character EXPANSION PICKER — which content packs this hero can draw from. `picked` holds
+  // the chosen expansion ids plus the implicit BASE_PICK_ID; it gates every class/origin/domain list below.
+  // The picker modal opens on entry; until it's confirmed we default to base only (identical to before).
+  const [expansions, setExpansions] = useState<Expansion[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set([BASE_PICK_ID]));
+  const [pickerOpen, setPickerOpen] = useState(true);
   useEffect(() => {
     let live = true;
-    void listExpansions().then((exps) => { if (live) setLibContent(contentForCreation(exps.filter(isExpansionEnabled))); });
+    // seed the bundled official expansions (The Void) so they show in the picker, then list all installed.
+    seedOfficialExpansions().catch(() => {}).then(() => listExpansions()).then((all) => { if (live) setExpansions(all); });
     return () => { live = false; };
   }, []);
+  // v0.10.3 (B4): homebrew content offered in the matching decks — now intersected with the PICKED set, so
+  // only content from expansions this hero opted into shows. An official pack contributes nothing here (its
+  // cards live in the catalog, gated by the same `picked`); custom expansions contribute their cards.
+  const libContent = useMemo<CreationContent | null>(
+    () => (expansions ? contentForCreation(expansions.filter((e) => picked.has(e.id))) : null),
+    [expansions, picked],
+  );
   const [pendingDeck, setPendingDeck] = useState<DeckKey | null>(null);
   const [unlockPulse, setUnlockPulse] = useState(0);
   const hadClass = useRef(false);
@@ -123,16 +133,24 @@ export function CreateScreen() {
 
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
 
+  // v0.12.2: the class list the creator offers, gated by the PICKED expansions (base classes always; a
+  // Void class only when 'void' is picked). Replaces the old base-only CREATION_CLASS_CARDS module const.
+  const creationClassCards = useMemo(
+    () => CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || picked.has(e); }),
+    [picked],
+  );
+
   // Pre-render every forged card to a bitmap pair on device (#104 perf): the live components
-  // double as the loading state and swap to image cards as each capture lands.
+  // double as the loading state and swap to image cards as each capture lands. Class-card jobs follow the
+  // picked set (base-only creation never forges a Void class — no extra work until The Void is chosen).
   const snapshotJobs = useMemo(
     () => [
-      ...CREATION_CLASS_CARDS.map((c) => ({
+      ...creationClassCards.map((c) => ({
         key: `class-${c.key}`,
         // deck-wide mark (#110): the class card is page 1 of (1 class + feature pages)
         node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${1 + featurePages(c.key).length}`} classKey={c.key} />,
       })),
-      ...CREATION_CLASS_CARDS.flatMap((c) => {
+      ...creationClassCards.flatMap((c) => {
         const total = 1 + featurePages(c.key).length;
         return featurePages(c.key).map((p) => ({
           key: `feat-${c.key}-${p.pageIndex}`,
@@ -154,7 +172,7 @@ export function CreateScreen() {
       ...SECONDARY_WEAPONS.map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> })),
       ...TIER1_ARMOR.map((a) => ({ key: a.id, node: <ForgedArmorCard armor={a} /> })),
     ],
-    [],
+    [creationClassCards],
   );
   const { sources, stage } = useForgedSnapshots(snapshotJobs);
 
@@ -162,7 +180,7 @@ export function CreateScreen() {
   // live on web), then a hard fallback so it can never hang.
   const [loaderDone, setLoaderDone] = useState(false);
   const [loaderUp, setLoaderUp] = useState(true);
-  const firstClassKey = `class-${CREATION_CLASS_CARDS[0].key}`;
+  const firstClassKey = `class-${creationClassCards[0].key}`;
   useEffect(() => {
     if (loaderDone) return;
     if (Platform.OS === 'web' || sources[firstClassKey]) {
@@ -253,7 +271,7 @@ export function CreateScreen() {
       case 'class':
         // Each class card is a FLIP-DECK (#110): face 0 = the class card, then one face per feature
         // page. Tapping the focused card flips through them in 3D — no separate features button.
-        return CREATION_CLASS_CARDS.map((c) => {
+        return creationClassCards.map((c) => {
           const total = 1 + featurePages(c.key).length;
           const classPre = sources[`class-${c.key}`];
           const classFace: StraightFace = classPre
@@ -282,11 +300,11 @@ export function CreateScreen() {
         });
       case 'subclass':
         return [
-          ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
+          ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
           ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (!c.className || c.className === draft.className)).map(libCardItem),
         ];
       case 'ancestry': {
-        const base = CATALOG.filter((c) => c.kind === 'ancestry' && !c.expansion).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+        const base = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
         // #265: the last card flips the mode — "Mixed Ancestry" enters mixed mode, "Single Ancestry" leaves it.
         const toggle: StraightItem = draft.mixedAncestry
           ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
@@ -294,17 +312,17 @@ export function CreateScreen() {
         return [...base, ...(libContent?.ancestries ?? []).map(libCardItem), toggle];
       }
       case 'community':
-        return [...CATALOG.filter((c) => c.kind === 'community' && !c.expansion).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
+        return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
       case 'domains': {
         if (!draft.className) return [];
         const pair = classInfo(draft.className).domains;
         return [
-          ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
+          ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
           ...(libContent?.domains ?? []).map(libCardItem),
         ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem, libContent]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem, libContent, picked, creationClassCards]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
@@ -457,6 +475,9 @@ export function CreateScreen() {
     }
     // enable custom origin/armor cards so their effects apply (armor score/thresholds, ancestry passive).
     const enabledCustom = libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id);
+    // v0.12.2: record which EXPANSIONS this hero was created with (real ids only — the implicit base is
+    // dropped). Omitted when empty so a base-only save stays byte-identical / back-compat.
+    const enabledExpansionIds = [...picked].filter((id) => id !== BASE_PICK_ID);
     await saveCharacter({
       schemaVersion: 1,
       id,
@@ -482,11 +503,12 @@ export function CreateScreen() {
       inventoryItemIds: draft.inventoryItemIds,
       ...(libraryCards.length ? { libraryCards } : {}),
       ...(enabledCustom.length ? { enabledCardIds: enabledCustom } : {}),
+      ...(enabledExpansionIds.length ? { enabledExpansionIds } : {}),
       gold: draft.gold,
       level: 1,
     });
     router.replace({ pathname: '/sheet', params: { id } });
-  }, [complete, draft, router, libContent]);
+  }, [complete, draft, router, libContent, picked]);
 
   const pickPortrait = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead
@@ -508,10 +530,10 @@ export function CreateScreen() {
     playSfx('cardSelect');
     let focusId: string | undefined; // the picked card to recenter the carousel on (Feature 2)
     switch (deck) {
-      case 'class': { const k = pick(CREATION_CLASS_CARDS.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
-      case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1).map((c) => c.id)); if (id) { set({ subclassCardId: id }); focusId = id; } break; }
+      case 'class': { const k = pick(creationClassCards.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
+      case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => c.id)); if (id) { set({ subclassCardId: id }); focusId = id; } break; }
       case 'ancestry': {
-        const anc = CATALOG.filter((c) => c.kind === 'ancestry' && !c.expansion).map((c) => c.id);
+        const anc = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => c.id);
         if (draft.mixedAncestry) {
           // Feature 3: fill the first EMPTY slot in order; if both are full, alternate which one re-rolls.
           // Re-rolling avoids the other slot's card AND its own current card so the pick visibly changes.
@@ -528,8 +550,8 @@ export function CreateScreen() {
         const id = pick(anc); if (id) { set({ ancestryCardId: id, mixedAncestry: null }); focusId = id; }
         break;
       }
-      case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community' && !c.expansion).map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
-      case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1)).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
+      case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
+      case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
       case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind)); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
       case 'armor': { const id = pick(TIER1_ARMOR.map((a) => a.id)); if (id) { set({ armorId: id, armorSkipped: false }); focusId = id; } break; }
       case 'inventory': { if (!draft.className) break; const opts = (CLASS_INVENTORY[draft.className]?.choices.flat() ?? []).map(itemOptionId); const picks = two(opts); set({ inventoryItemIds: picks, inventorySkipped: false }); focusId = picks[picks.length - 1]; break; }
@@ -538,7 +560,7 @@ export function CreateScreen() {
       const idx = items.findIndex((it) => it.id === focusId);
       if (idx >= 0) carouselRef.current?.scrollTo(idx);
     }
-  }, [deck, draft.className, draft.mixedAncestry, weaponKind, items, set]);
+  }, [deck, draft.className, draft.mixedAncestry, weaponKind, items, set, picked, creationClassCards]);
 
   return (
     <AppScreen
@@ -711,6 +733,16 @@ export function CreateScreen() {
       ) : null}
       {stage}
       {loaderUp ? <CreateLoader done={loaderDone} onHidden={() => setLoaderUp(false)} /> : null}
+      {/* v0.12.2: the per-character expansion picker — shown once the entry loader clears and the installed
+          expansions are known. Base defaults checked (plus any expansion enabled-for-creation); confirming
+          finalizes `picked`, which gates every content list above. */}
+      {pickerOpen && expansions && !loaderUp ? (
+        <ExpansionPicker
+          expansions={expansions}
+          initial={new Set([BASE_PICK_ID, ...expansions.filter(isEnabledForCreation).map((e) => e.id)])}
+          onConfirm={(p) => { setPicked(p); setPickerOpen(false); }}
+        />
+      ) : null}
     </AppScreen>
   );
 }

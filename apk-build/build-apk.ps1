@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.12.1'                          # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.12.2'                          # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.12.1 - Edit Mode polish + fixes. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nEight fixes to Golden Gear Edit, from your list:`n- RE-ARRANGE: cards now animate BOTH ways - up to your finger when you grab, and back into the row on release - no more snapping on grab.`n- RE-ARRANGE COMMIT no longer flickers to the old layout for a frame before settling.`n- Deleting the cards on screen now scrolls to your remaining cards instead of sitting empty.`n- Deleted cards drop out of the 'X/Y selected' count.`n- Selected cards lift 2.5x more, and their upward swipe hint now sits ABOVE the card.`n- The radial menu's delete + favorite/unfavorite icons are cleaner (thinner, more spaced).`n- The Move / Delete pop-ups fade in instead of popping.`n- NFC wording simplified (no more confusing 'Send/Receive screen').`n`nStill cooking (next release, with 'The Void'): showing expansion cards in the archive and NFC-sharing ANY card - these pair with the Void content work, whose card images are being extracted now.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.12.2 - 'The Void' official expansion. Offline Android APK (arm64-v8a, $mb MB), all card data bundled, no download needed.`n`nTHE VOID is here - a full official content pack, OFF by default so your base game is untouched until you opt in:`n- 6 new classes: Assassin, Witch, Warlock, Blood Hunter (all three subclasses), Summoner, Brawler.`n- 2 new domains: Blood and Dread.`n- New ancestries, communities, and TRANSFORMATIONS (their own card category).`n`nHow to use it:`n- Card Library now has an 'Official Expansions' section - flip The Void on there to enable it everywhere. It's read-only (you can't edit official content), and it always sits first.`n- Character creation now opens with an EXPANSION PICKER: choose which packs this hero draws from. Base Game is always on; tick The Void (or any homebrew) to build with its classes, ancestries, domains and subclasses.`n- Transformations live beside your ancestries in the arsenal and in Add Gear - not in creation (you grow into them).`n- The Card Archive browses every Void card, with a new 'Forms' filter for transformations.`n`nYour characters are safe: disabling or deleting an expansion NEVER removes cards a character already has - the cards travel inside the character file, so shared heroes work even without the expansion installed.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

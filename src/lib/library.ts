@@ -97,7 +97,13 @@ export interface Expansion {
    *  never deleted — characters already using its cards keep them, since those are embedded). Default
    *  (undefined) = enabled. */
   enabled?: boolean;
+  /** v0.12.2: a bundled OFFICIAL expansion (e.g. The Void) — hard-coded in the app, its cards live in
+   *  the catalog (tagged), read-only in the library (can't edit/delete/add cards), and OFF by default. */
+  official?: boolean;
 }
+
+/** v0.12.2: official expansions default to DISABLED (must be opted into); user expansions default enabled. */
+export const isEnabledForCreation = (e: Expansion): boolean => (e.official ? e.enabled === true : e.enabled !== false);
 
 /** Whether an installed expansion is offered in creation / ADD GEAR (default: yes). v0.10.3. */
 export const isExpansionEnabled = (e: Expansion): boolean => e.enabled !== false;

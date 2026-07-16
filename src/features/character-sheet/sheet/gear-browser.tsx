@@ -11,7 +11,8 @@ import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { ForgedCard } from '@/features/create/components/forged-card';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
 import { CATALOG } from '@/data/catalog';
-import { isExpansionEnabled, type LibraryCard } from '@/lib/library';
+import { catalogFor, classExpansion } from '@/lib/expansions';
+import { isEnabledForCreation, type LibraryCard } from '@/lib/library';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { listExpansions } from '@/lib/library-store';
 import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
@@ -20,8 +21,8 @@ import { FullScreenPanel } from './full-screen-panel';
 
 // #252: character cards (domain/ancestry/community/subclass/class) browsed as the creation carousel
 // (card ART, no names); weapons/armor stay a list. The Loot/Items tabs are gone.
-type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'weapon' | 'armor' | 'homebrew';
-const CARD_KINDS: Cat[] = ['domain', 'ancestry', 'community', 'subclass', 'class'];
+type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'transformation' | 'weapon' | 'armor' | 'homebrew';
+const CARD_KINDS: Cat[] = ['domain', 'ancestry', 'community', 'subclass', 'class', 'transformation'];
 const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -37,9 +38,13 @@ function classCardNode(key: string, title: string, Banner: FC<SvgProps>, body: s
   return <ForgedCard title={title} kindLabel="Class" body={body} accentDeep={classColor(key as never).deep} Banner={Banner} classKey={key as never} multilineTitle />;
 }
 
-export function GearBrowser({ acquiredIds, onAdd, onAddCustom, onBack, onClose }: { acquiredIds: Set<string>; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onBack: () => void; onClose: () => void }) {
+export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCustom, onBack, onClose }: { acquiredIds: Set<string>; enabledExpansionIds?: string[]; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onBack: () => void; onClose: () => void }) {
   const [cat, setCat] = useState<Cat>('domain');
   const [tier, setTier] = useState<1 | 2 | 3 | 4>(1);
+  // v0.12.2: ADD GEAR only offers content from THIS character's enabled expansions (base always).
+  const allowed = useMemo(() => catalogFor(enabledExpansionIds), [enabledExpansionIds]);
+  const allowedExp = useMemo(() => new Set(enabledExpansionIds ?? []), [enabledExpansionIds]);
+  const domains = useMemo(() => [...new Set(allowed.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!))], [allowed]);
   const [domain, setDomain] = useState(DOMAINS[0]);
   const [centerIdx, setCenterIdx] = useState(0);
   const carRef = useRef<StraightCarouselHandle>(null);
@@ -49,20 +54,20 @@ export function GearBrowser({ acquiredIds, onAdd, onAddCustom, onBack, onClose }
     let live = true;
     void listExpansions().then((exps) => {
       if (!live) return;
-      setHomebrew(exps.filter(isExpansionEnabled).flatMap((e) => e.cards).filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'));
+      setHomebrew(exps.filter((e) => isEnabledForCreation(e) && (!e.id || allowedExp.size === 0 || allowedExp.has(e.id) || !e.official)).flatMap((e) => e.cards).filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'));
     });
     return () => { live = false; };
-  }, []);
+  }, [allowedExp]);
   const isCardKind = (CARD_KINDS as string[]).includes(cat) || cat === 'homebrew';
 
   // carousel items (character-card kinds) — card ART only, NO names rendered by StraightCarousel
   const items: StraightItem[] = useMemo(() => {
-    if (cat === 'class') return CLASS_CARDS.map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) }));
-    if (cat === 'domain') return CATALOG.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
-    if (cat === 'ancestry' || cat === 'community' || cat === 'subclass') return CATALOG.filter((c) => c.kind === cat).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
+    if (cat === 'class') return CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || allowedExp.has(e); }).map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) }));
+    if (cat === 'domain') return allowed.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
+    if (cat === 'ancestry' || cat === 'community' || cat === 'subclass' || cat === 'transformation') return allowed.filter((c) => c.kind === cat).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
     if (cat === 'homebrew') return homebrew.map((lc) => ({ id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> }));
     return [];
-  }, [cat, domain, homebrew]);
+  }, [cat, domain, homebrew, allowed, allowedExp]);
   const centerId = items[Math.min(centerIdx, items.length - 1)]?.id;
   const centerAcquired = !!centerId && acquiredIds.has(centerId);
 
@@ -73,8 +78,12 @@ export function GearBrowser({ acquiredIds, onAdd, onAddCustom, onBack, onClose }
     return [];
   }, [cat, tier]);
 
+  const hasTransforms = useMemo(() => allowed.some((c) => c.kind === 'transformation'), [allowed]);
   const TABS: { key: Cat; label: string }[] = [
-    { key: 'domain', label: 'Domains' }, { key: 'ancestry', label: 'Ancestry' }, { key: 'community', label: 'Community' },
+    { key: 'domain', label: 'Domains' }, { key: 'ancestry', label: 'Ancestry' },
+    // v0.12.2 (A6): transformations are their own category, sitting beside Ancestry (their arsenal home).
+    ...(hasTransforms ? [{ key: 'transformation' as Cat, label: 'Transform' }] : []),
+    { key: 'community', label: 'Community' },
     { key: 'subclass', label: 'Subclass' }, { key: 'class', label: 'Class' }, { key: 'weapon', label: 'Weapons' }, { key: 'armor', label: 'Armor' },
     ...(homebrew.length ? [{ key: 'homebrew' as Cat, label: 'Homebrew' }] : []),
   ];
@@ -106,7 +115,7 @@ export function GearBrowser({ acquiredIds, onAdd, onAddCustom, onBack, onClose }
 
       {cat === 'domain' ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 5, paddingRight: 8 }} style={{ flexGrow: 0, marginBottom: 8 }}>
-          {DOMAINS.map((d) => (
+          {domains.map((d) => (
             <Pressable key={d} onPress={() => { setDomain(d); setCenterIdx(0); }} accessibilityRole="button" accessibilityState={{ selected: domain === d }}>
               <ChamferBox chamfer={5} fill={domain === d ? 'rgba(200,27,24,0.18)' : 'rgba(20,24,31,0.6)'} stroke={domain === d ? Rune.red : 'rgba(218,162,73,0.3)'} strokeWidth={1} style={{ height: 28, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: domain === d ? Rune.goldBright : Rune.muted, fontSize: 10, fontFamily: Body.bold, textTransform: 'uppercase' }}>{cap(d)}</Text>
