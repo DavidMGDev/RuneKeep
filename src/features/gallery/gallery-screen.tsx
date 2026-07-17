@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
@@ -19,6 +19,11 @@ import { featurePages } from '@/data/class-data';
 import { ALL_ARMOR, ALL_WEAPONS, type ArmorDef, type WeaponDef } from '@/data/equipment-data';
 import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/class-cards';
+import { NfcSendModal } from '@/features/share/nfc-modal';
+import { focusHaptic } from '@/lib/haptics';
+import { type LibraryCard, type LibraryContentType } from '@/lib/library';
+import { nfcModulesPresent } from '@/lib/nfc';
+import { type RkpContent } from '@/lib/rkp';
 
 // The archive browses catalog cards AND equipment. Weapons/armor have no image assets — they render
 // live via the forged components — so the grid item is a union (v0.10.0, owner: "all weapons and armor
@@ -164,8 +169,40 @@ function ClassReader({ def, onClose }: { def: ClassCardDef; onClose: () => void 
   );
 }
 
-/** Fullscreen reader: full-res card over a dim veil; tap or swipe-down closes (the sheet's focus feel). */
-function CardReader({ card, onClose }: { card: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' }>; onClose: () => void }) {
+/** v0.13.1 (#357): a DM shares any archive card by holding the fullscreened card — same hold feel as
+ *  enabling a carousel card. Catalog cards travel as a tiny catalog-reference payload (the receiving
+ *  phone resolves the id against its own bundled catalog for the real art); equipment travels with its
+ *  full structured stats. */
+function toShareCard(item: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' }>): LibraryCard {
+  if (item.type === 'weapon') {
+    const w = item.weapon;
+    return {
+      id: `share-${w.id}`, contentType: 'weapon', title: w.name, imageUri: null, effects: w.effects,
+      text: w.feature ? `**${w.feature.name}:** ${w.feature.text}` : '',
+      weapon: { trait: w.trait, range: w.range, damage: w.damage, damageType: w.damageType, burden: w.burden, kind: w.kind, slot: w.slot, tier: w.tier },
+    };
+  }
+  if (item.type === 'armor') {
+    const a = item.armor;
+    return {
+      id: `share-${a.id}`, contentType: 'armor', title: a.name, imageUri: null, effects: a.effects,
+      text: a.feature ? `**${a.feature.name}:** ${a.feature.text}` : '',
+      armor: { baseScore: a.baseScore, thresholds: a.thresholds, tier: a.tier },
+    };
+  }
+  const c = item.card;
+  const kindMap: Partial<Record<CatalogKind, LibraryContentType>> = { domain: 'domain', ancestry: 'ancestry', community: 'community', subclass: 'subclass' };
+  return {
+    id: `share-${c.id}`, contentType: kindMap[c.kind] ?? 'generic', title: c.label, text: '', imageUri: null,
+    catalogId: c.id, domain: c.domain, level: c.level,
+    ...(kindMap[c.kind] ? {} : { typeLabel: cap(c.kind) }),
+  };
+}
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Fullscreen reader: full-res card over a dim veil; tap or swipe-down closes (the sheet's focus feel).
+ *  v0.13.1: hold the card to share it via NFC (`onHoldShare`) — the carousel's bottom-to-top gold fill. */
+function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' }>; onClose: () => void; onHoldShare: () => void }) {
   const p = useSharedValue(0);
   const dragY = useSharedValue(0);
   useEffect(() => {
@@ -189,6 +226,33 @@ function CardReader({ card, onClose }: { card: Extract<GalleryItem, { type: 'car
         }),
     [dragY, close],
   );
+  // Hold-to-share (#357): the carousel's hold-to-toggle scan fill, verbatim feel — 760ms quartic
+  // ease-in so a tap never visibly starts the fill; any real movement (the close pan) cancels it.
+  const holdProgress = useSharedValue(0);
+  const commitShare = useCallback(() => { focusHaptic(); playSfx('cardEnable'); onHoldShare(); }, [onHoldShare]);
+  const hold = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(760)
+        .maxDistance(12)
+        .onBegin(() => {
+          'worklet';
+          holdProgress.value = withTiming(1, { duration: 760, easing: Easing.in(Easing.poly(4)) });
+        })
+        .onStart(() => {
+          'worklet';
+          holdProgress.value = withTiming(0, { duration: 240 });
+          runOnJS(commitShare)();
+        })
+        .onFinalize(() => {
+          'worklet';
+          cancelAnimation(holdProgress);
+          if (holdProgress.value !== 0) holdProgress.value = withTiming(0, { duration: 160 });
+        }),
+    [holdProgress, commitShare],
+  );
+  const cardH = Math.min(Dimensions.get('window').width - 36, (Dimensions.get('window').height - 160) * (5 / 7)) * 1.4;
+  const fillStyle = useAnimatedStyle(() => ({ height: holdProgress.value * cardH, opacity: Math.min(1, holdProgress.value * 14) }));
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.88 }));
   const cardStyle = useAnimatedStyle(() => ({
     opacity: p.value,
@@ -201,13 +265,16 @@ function CardReader({ card, onClose }: { card: Extract<GalleryItem, { type: 'car
       <Pressable style={{ flex: 1 }} onPress={close} accessibilityRole="button" accessibilityLabel="Close card">
         <Animated.View style={[{ flex: 1, backgroundColor: '#06080d' }, veil]} />
       </Pressable>
-      <GestureDetector gesture={pan}>
+      <GestureDetector gesture={Gesture.Race(hold, pan)}>
         <Animated.View
           pointerEvents="box-only"
           style={[{ position: 'absolute', alignSelf: 'center', top: '50%', marginTop: -(w * 1.4) / 2, width: w, height: w * 1.4 }, cardStyle]}>
           <Pressable style={{ flex: 1 }} onPress={close}>
             {card.type === 'card' ? <ArtImage source={card.card.source} fit="contain" /> : <ScaledForged item={card} width={w} />}
           </Pressable>
+          <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.26)' }, fillStyle]}>
+            <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 2.5, backgroundColor: Rune.goldBright }} />
+          </Animated.View>
         </Animated.View>
       </GestureDetector>
     </View>
@@ -225,6 +292,24 @@ export function GalleryScreen() {
   const [ready, setReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [reading, setReading] = useState<GalleryItem | null>(null);
+  // v0.13.1 (#357): hold-to-share — the NFC send panel for the held card (DMs granting cards).
+  const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 2200);
+    return () => clearTimeout(t);
+  }, [notice]);
+  const onHoldShare = useCallback(() => {
+    const r = reading;
+    if (!r || r.type === 'class') return;
+    if (!nfcModulesPresent()) {
+      setNotice('NFC sharing needs the installed app on an NFC-capable phone.');
+      return;
+    }
+    const payload = toShareCard(r);
+    setNfcSend({ content: { kind: 'card', payload }, label: payload.title || 'card' });
+  }, [reading]);
   const [filters, setFilters] = useState<Filters>(() => ({
     kinds: new Set((params.kinds?.split(',').filter(Boolean) as GalleryKind[]) ?? []),
     domains: new Set((params.domains?.split(',').filter(Boolean) as DomainName[]) ?? []),
@@ -367,9 +452,17 @@ export function GalleryScreen() {
         reading.type === 'class' ? (
           <ClassReader def={reading.def} onClose={() => setReading(null)} />
         ) : (
-          <CardReader card={reading} onClose={() => setReading(null)} />
+          <CardReader card={reading} onClose={() => setReading(null)} onHoldShare={onHoldShare} />
         )
       ) : null}
+      {notice ? (
+        <View pointerEvents="none" style={{ position: 'absolute', left: 24, right: 24, bottom: 34, zIndex: 200, alignItems: 'center' }}>
+          <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1} style={{ paddingHorizontal: 14, paddingVertical: 9 }}>
+            <Text style={{ color: Rune.ivory, fontSize: 12, fontFamily: Body.medium, textAlign: 'center' }}>{notice}</Text>
+          </ChamferBox>
+        </View>
+      ) : null}
+      {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
     </AppScreen>
   );
 }

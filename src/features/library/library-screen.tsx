@@ -11,6 +11,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
+import { ArtImage } from '@/components/art-image';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
@@ -30,6 +31,7 @@ import {
   isEnabledForCreation,
   isExpansionEnabled,
 } from '@/lib/library';
+import { cardById } from '@/data/catalog';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { nfcModulesPresent } from '@/lib/nfc';
@@ -460,7 +462,15 @@ export function LibraryScreen() {
               <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, subclass: c.subclass, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
                 {({ pressed }) => (
                   <ChamferBox chamfer={8} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 11 }}>
-                    <View style={{ width: 10, height: 10, backgroundColor: c.color ?? Rune.bronze, transform: [{ rotate: '45deg' }] }} />
+                    {/* v0.13.1 (#357): a catalog-reference card (NFC-granted system card) shows the REAL
+                        bundled card art instead of the homebrew color diamond. */}
+                    {c.catalogId && cardById(c.catalogId) ? (
+                      <View style={{ width: 30, height: 42 }}>
+                        <ArtImage source={cardById(c.catalogId)!.thumb} fit="contain" />
+                      </View>
+                    ) : (
+                      <View style={{ width: 10, height: 10, backgroundColor: c.color ?? Rune.bronze, transform: [{ rotate: '45deg' }] }} />
+                    )}
                     <View style={{ flex: 1 }}>
                       <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>{c.title || 'Untitled'}</Text>
                       <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2 }}>{cardSummary(c)}</Text>
