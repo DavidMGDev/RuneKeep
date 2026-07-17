@@ -75,7 +75,9 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
   const lib = libraryCardById(file, id);
   if (lib) {
     // v0.10.4: a custom ancestry in a MIX drops its passive when that feature is the crossed-out one.
-    if (lib.contentType === 'ancestry' && lib.ancestryEffectTrait && mixedCrossedTrait(file, id) === lib.ancestryEffectTrait) return [];
+    // v0.13.2 (#359): authors no longer pick which feature holds the passive — it rides Feature 1 by
+    // convention (like Void's Earthkin), so a missing ancestryEffectTrait defaults to 1.
+    if (lib.contentType === 'ancestry' && mixedCrossedTrait(file, id) === (lib.ancestryEffectTrait ?? 1)) return [];
     return libraryCardEffects(lib);
   }
   // #278: a player override replaces a CATALOG card's code-defined effects (custom cards edit their own

@@ -33,10 +33,10 @@ import {
 } from '@/lib/library';
 import { cardById } from '@/data/catalog';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
-import { deleteExpansion, exportRkp, getExpansion, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
+import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
-import { NfcReceiveModal, NfcSendModal } from '@/features/share/nfc-modal';
+import { NfcSendModal } from '@/features/share/nfc-modal';
 
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 /** Content types the New-card chooser offers (Feature 5/6), in display order. */
@@ -181,16 +181,9 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
           <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Make ALL THREE — a Foundation, a Specialization, and a Mastery — with the SAME class + subclass name. Foundation is chosen in creation; the other two are added automatically when you upgrade the subclass on level-up.</Text>
         </View>
       ) : null}
-      {t === 'ancestry' ? (
-        <View style={{ gap: 4 }}>
-          <Text style={smallLabel}>Passive on feature line</Text>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            <Chip label="Feature 1" on={config.ancestryEffectTrait === 1} onPress={() => set({ ancestryEffectTrait: 1 })} />
-            <Chip label="Feature 2" on={config.ancestryEffectTrait === 2} onPress={() => set({ ancestryEffectTrait: 2 })} />
-          </View>
-          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Which of the two features stays active when mixed with another ancestry (the other is crossed out).</Text>
-        </View>
-      ) : null}
+      {/* v0.13.2 (#359): the old "Passive on feature line" chip is gone. Which feature is crossed out in a
+          mix is decided by SELECTION ORDER (like Void ancestries), and the passive rides Feature 1 by
+          convention — no author choice needed. The section editor still organizes Feature 1 / 2 by position. */}
       {t === 'weapon' ? (
         <View style={{ gap: 6 }}>
           <Text style={smallLabel}>Trait</Text><View style={chipRow}>{WEAPON_TRAITS.map((x) => <Chip key={x} label={x} on={w.trait === x} onPress={() => setW({ trait: x })} />)}</View>
@@ -300,7 +293,8 @@ export function LibraryScreen() {
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<number | null>(null);
   const [message, setMessage] = useState<{ title: string; body: string } | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null);
-  const [nfcReceive, setNfcReceive] = useState(false);
+  // v0.13.2 (#359): NFC RECEIVING moved to the character sheet (a DM taps a card to a player on their
+  // sheet). The library only SENDS single cards + shares expansions via Import/Export .rkp.
   const nfcOn = nfcModulesPresent();
 
   const reload = useCallback(() => {
@@ -331,28 +325,6 @@ export function LibraryScreen() {
       setMessage({ title: res.expansion.name, body: `Expansion ${verb}.` });
     } catch (e) {
       setMessage({ title: 'Import failed', body: e instanceof Error ? e.message : 'Could not read that file.' });
-    }
-  }, [reload]);
-
-  const onNfcReceived = useCallback(async (content: RkpContent) => {
-    setNfcReceive(false);
-    try {
-      // v0.10.7: NFC now shares one card OR several (a multi-card send arrives as a one-off expansion).
-      // Heroes still go over file import/export on the character screen.
-      if (content.kind === 'character') {
-        setMessage({ title: 'That was a hero', body: 'NFC here receives cards — import a hero from a file on the character screen.' });
-        return;
-      }
-      const cards = content.kind === 'card' ? [content.payload] : content.payload.cards;
-      if (!cards.length) { setMessage({ title: 'Nothing to add', body: 'That tap had no cards on it.' }); return; }
-      // received cards land in a shared "Received cards" expansion in the library
-      const id = 'exp-received';
-      const exp = (await getExpansion(id)) ?? { id, name: 'Received cards', author: '', description: 'Cards received over NFC or file.', version: 1, createdAt: new Date().toISOString(), cards: [] };
-      await saveExpansion({ ...exp, cards: [...exp.cards, ...cards] });
-      reload();
-      setMessage({ title: cards.length === 1 ? cards[0].title || 'Card' : `${cards.length} cards`, body: 'Added to your "Received cards" expansion.' });
-    } catch (e) {
-      setMessage({ title: 'Receive failed', body: e instanceof Error ? e.message : 'Could not read that.' });
     }
   }, [reload]);
 
@@ -491,7 +463,7 @@ export function LibraryScreen() {
         </ScrollView>
         <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
           <RuneButton label="Delete expansion" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => setConfirmDeleteExp(selected)} />
-          <RuneButton label="Add card" kind="primary" height={46} style={{ flex: 1.4 }} onPress={() => setChoosingType(true)} />
+          <RuneButton label="Add card" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setChoosingType(true)} />
         </View>
 
         {metaForm === 'edit' ? (
@@ -581,8 +553,7 @@ export function LibraryScreen() {
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
         <RuneButton label="Import .rkp" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
-        {nfcOn ? <RuneButton label="Receive NFC" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); setNfcReceive(true); }} /> : null}
-        <RuneButton label="New expansion" kind="primary" height={46} style={{ flex: 1.4 }} onPress={() => setMetaForm('new')} />
+        <RuneButton label="New expansion" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setMetaForm('new')} />
       </View>
 
       {metaForm === 'new' ? (
@@ -595,7 +566,6 @@ export function LibraryScreen() {
           }}
         />
       ) : null}
-      {nfcReceive ? <NfcReceiveModal onReceived={onNfcReceived} onClose={() => setNfcReceive(false)} /> : null}
       {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
     </AppScreen>
   );

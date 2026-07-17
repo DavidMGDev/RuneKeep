@@ -38,45 +38,58 @@ function classCardNode(key: string, title: string, Banner: FC<SvgProps>, body: s
   return <ForgedCard title={title} kindLabel="Class" body={body} accentDeep={classColor(key as never).deep} Banner={Banner} classKey={key as never} multilineTitle />;
 }
 
+/** A record-stored (expansion) library card as a forged carousel item (v0.13.1 ancestries → v0.13.2 all kinds). */
+function recordItem(lc: LibraryCard): StraightItem {
+  return { id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> };
+}
+
 export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCustom, onBack, onClose }: { acquiredIds: Set<string>; enabledExpansionIds?: string[]; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onBack: () => void; onClose: () => void }) {
   const [cat, setCat] = useState<Cat>('domain');
   const [tier, setTier] = useState<1 | 2 | 3 | 4>(1);
   // v0.12.2: ADD GEAR only offers content from THIS character's enabled expansions (base always).
   const allowed = useMemo(() => catalogFor(enabledExpansionIds), [enabledExpansionIds]);
   const allowedExp = useMemo(() => new Set(enabledExpansionIds ?? []), [enabledExpansionIds]);
-  const domains = useMemo(() => [...new Set(allowed.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!))], [allowed]);
-  const [domain, setDomain] = useState(DOMAINS[0]);
+  const [domain, setDomain] = useState<string>(DOMAINS[0]); // v0.13.2: string, not the catalog union — custom expansions add their own domain names
   const [centerIdx, setCenterIdx] = useState(0);
   const carRef = useRef<StraightCarouselHandle>(null);
-  // v0.10.3 (B4): loose homebrew cards (generic/inventory/weapon/armor) from ENABLED expansions.
-  const [homebrew, setHomebrew] = useState<LibraryCard[]>([]);
-  // v0.13.1 (#357): record-stored ancestries (Void ancestries live on the expansion RECORD, not the
-  // catalog) so the Ancestry tab shows them like every other Void content type.
-  const [recordAncestries, setRecordAncestries] = useState<LibraryCard[]>([]);
+  // v0.13.2 (#359): ALL record-stored cards from globally-enabled expansions (Void + homebrew live on the
+  // expansion RECORD, not the bundled catalog). v0.13.1 only surfaced ancestries; now every content type
+  // is bucketed so custom domain/community/subclass/class cards appear in their tabs too.
+  const [records, setRecords] = useState<LibraryCard[]>([]);
   useEffect(() => {
     let live = true;
     void listExpansions().then((exps) => {
       if (!live) return;
+      // A custom (non-official) expansion counts as soon as it's globally enabled, regardless of this
+      // character's creation snapshot (`!e.official`); official packs still honor the snapshot.
       const enabled = exps.filter((e) => isEnabledForCreation(e) && (!e.id || allowedExp.size === 0 || allowedExp.has(e.id) || !e.official)).flatMap((e) => e.cards);
-      setHomebrew(enabled.filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'));
-      setRecordAncestries(enabled.filter((c) => c.contentType === 'ancestry'));
+      setRecords(enabled);
     });
     return () => { live = false; };
   }, [allowedExp]);
+  // v0.10.3 (B4): loose homebrew cards (generic/inventory/weapon/armor) ride their own "Homebrew" tab.
+  const homebrew = useMemo(() => records.filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'), [records]);
+  const recordAncestries = useMemo(() => records.filter((c) => c.contentType === 'ancestry'), [records]);
+  const recordDomains = useMemo(() => records.filter((c) => c.contentType === 'domain'), [records]);
+  const recordCommunities = useMemo(() => records.filter((c) => c.contentType === 'community'), [records]);
+  const recordSubclasses = useMemo(() => records.filter((c) => c.contentType === 'subclass'), [records]);
+  const recordClasses = useMemo(() => records.filter((c) => c.contentType === 'class'), [records]);
+  const domains = useMemo(() => [...new Set([...allowed.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!), ...(recordDomains.map((c) => c.domain).filter(Boolean) as string[])])], [allowed, recordDomains]);
   const isCardKind = (CARD_KINDS as string[]).includes(cat) || cat === 'homebrew';
 
   // carousel items (character-card kinds) — card ART only, NO names rendered by StraightCarousel
   const items: StraightItem[] = useMemo(() => {
-    if (cat === 'class') return CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || allowedExp.has(e); }).map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) }));
-    if (cat === 'domain') return allowed.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
+    if (cat === 'class') return [...CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || allowedExp.has(e); }).map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) })), ...recordClasses.map(recordItem)];
+    if (cat === 'domain') return [...allowed.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source })), ...recordDomains.filter((c) => c.domain === domain).map(recordItem)];
     if (cat === 'ancestry' || cat === 'community' || cat === 'subclass' || cat === 'transformation') {
       const catalog = allowed.filter((c) => c.kind === cat).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
-      if (cat !== 'ancestry') return catalog;
-      return [...catalog, ...recordAncestries.map((lc) => ({ id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> }))];
+      // transformations can't be authored (no LibraryContentType) — catalog only; the rest merge records.
+      const rec = cat === 'ancestry' ? recordAncestries : cat === 'community' ? recordCommunities : cat === 'subclass' ? recordSubclasses : [];
+      return [...catalog, ...rec.map(recordItem)];
     }
-    if (cat === 'homebrew') return homebrew.map((lc) => ({ id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> }));
+    if (cat === 'homebrew') return homebrew.map(recordItem);
     return [];
-  }, [cat, domain, homebrew, recordAncestries, allowed, allowedExp]);
+  }, [cat, domain, homebrew, recordAncestries, recordDomains, recordCommunities, recordSubclasses, recordClasses, allowed, allowedExp]);
   const centerId = items[Math.min(centerIdx, items.length - 1)]?.id;
   const centerAcquired = !!centerId && acquiredIds.has(centerId);
 
@@ -106,7 +119,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
         <View style={{ gap: 8 }}>
           {isCardKind && items.length > 0 ? (
             // #269: a card can be added more than once — each copy becomes an individual card.
-            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (!centerId) return; const lc = (cat === 'homebrew' ? homebrew : cat === 'ancestry' ? recordAncestries : []).find((c) => c.id === centerId); if (lc) onAddCustom?.(lc); else onAdd(centerId); }} />
+            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (!centerId) return; const lc = records.find((c) => c.id === centerId); if (lc) onAddCustom?.(lc); else onAdd(centerId); }} />
           ) : null}
           <RuneButton label="← Author a custom card instead" kind="ghost" dense height={36} onPress={onBack} />
         </View>
