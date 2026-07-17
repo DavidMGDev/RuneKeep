@@ -133,8 +133,8 @@ export function ForgedCard({
             <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
               <Text
                 numberOfLines={multilineTitle ? 4 : 1}
-                adjustsFontSizeToFit={multilineTitle}
-                minimumFontScale={0.42}
+                adjustsFontSizeToFit
+                minimumFontScale={multilineTitle ? 0.42 : 0.55}
                 style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>
                 {title}
               </Text>
@@ -211,7 +211,7 @@ export function ForgedTextCard({
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 14, paddingBottom: 24 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5 }}>
-          <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ flexShrink: 1, color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>
             {title}
           </Text>
           {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
@@ -287,7 +287,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Trait" value={weapon.trait} />
           <StatRow label="Range" value={weapon.range} />
@@ -363,7 +363,7 @@ export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Thresholds" value={armor.thresholds} />
           <StatRow label="Base Score" value={String(armor.baseScore)} />

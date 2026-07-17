@@ -11,6 +11,7 @@ import type { CharacterFile, ExperienceDef } from '@/lib/character-file';
 import type { LibraryCard } from '@/lib/library';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
+import { martialStanceById } from '@/data/martial-form-data';
 import { wildshapeById } from '@/data/wildshape-data';
 import { cardById } from '@/data/catalog';
 import { CATALOG_EFFECTS } from '@/data/catalog-effects';
@@ -108,6 +109,8 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
   if (l?.effects?.length) return l.effects;
   const ws = wildshapeById(id);
   if (ws?.effects?.length) return ws.effects;
+  const ms = martialStanceById(id);
+  if (ms?.effects?.length) return ms.effects; // #357: active martial stance (Steady, Immovable)
   return [];
 }
 
@@ -145,5 +148,5 @@ export function sourceLabelForCardId(rawId: string, file?: CharacterFile): strin
   if (custom) return custom.title;
   const lib = libraryCardById(file, id);
   if (lib) return lib.title || id;
-  return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? wildshapeById(id)?.name ?? id;
+  return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? wildshapeById(id)?.name ?? martialStanceById(id)?.name ?? id;
 }

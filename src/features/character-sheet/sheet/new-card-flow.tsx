@@ -39,6 +39,16 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
       </OverlayShell>
     );
   }
+  // Martial Form is the Martial Artist's built-in stance sheet (#357): same rule as Beastform.
+  if (category === 'martialform') {
+    return (
+      <OverlayShell title="Martial Form" subtitle="Martial Artist stance deck" onClose={onCancel} scroll={false}>
+        <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19 }}>
+          Martial Form cards can&apos;t be created — they&apos;re the Martial Artist&apos;s built-in stances. Switch to another card category to author a custom card.
+        </Text>
+      </OverlayShell>
+    );
+  }
   if (mode === 'catalog' && onAcquire) {
     // #328: route the catalog card to the category being added to (the Cards-panel per-category Add
     // button, or the current carousel category from the float menu) — not a hardcoded deck.

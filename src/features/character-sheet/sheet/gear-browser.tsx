@@ -50,11 +50,16 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   const carRef = useRef<StraightCarouselHandle>(null);
   // v0.10.3 (B4): loose homebrew cards (generic/inventory/weapon/armor) from ENABLED expansions.
   const [homebrew, setHomebrew] = useState<LibraryCard[]>([]);
+  // v0.13.1 (#357): record-stored ancestries (Void ancestries live on the expansion RECORD, not the
+  // catalog) so the Ancestry tab shows them like every other Void content type.
+  const [recordAncestries, setRecordAncestries] = useState<LibraryCard[]>([]);
   useEffect(() => {
     let live = true;
     void listExpansions().then((exps) => {
       if (!live) return;
-      setHomebrew(exps.filter((e) => isEnabledForCreation(e) && (!e.id || allowedExp.size === 0 || allowedExp.has(e.id) || !e.official)).flatMap((e) => e.cards).filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'));
+      const enabled = exps.filter((e) => isEnabledForCreation(e) && (!e.id || allowedExp.size === 0 || allowedExp.has(e.id) || !e.official)).flatMap((e) => e.cards);
+      setHomebrew(enabled.filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'));
+      setRecordAncestries(enabled.filter((c) => c.contentType === 'ancestry'));
     });
     return () => { live = false; };
   }, [allowedExp]);
@@ -64,10 +69,14 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   const items: StraightItem[] = useMemo(() => {
     if (cat === 'class') return CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || allowedExp.has(e); }).map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) }));
     if (cat === 'domain') return allowed.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
-    if (cat === 'ancestry' || cat === 'community' || cat === 'subclass' || cat === 'transformation') return allowed.filter((c) => c.kind === cat).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
+    if (cat === 'ancestry' || cat === 'community' || cat === 'subclass' || cat === 'transformation') {
+      const catalog = allowed.filter((c) => c.kind === cat).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
+      if (cat !== 'ancestry') return catalog;
+      return [...catalog, ...recordAncestries.map((lc) => ({ id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> }))];
+    }
     if (cat === 'homebrew') return homebrew.map((lc) => ({ id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> }));
     return [];
-  }, [cat, domain, homebrew, allowed, allowedExp]);
+  }, [cat, domain, homebrew, recordAncestries, allowed, allowedExp]);
   const centerId = items[Math.min(centerIdx, items.length - 1)]?.id;
   const centerAcquired = !!centerId && acquiredIds.has(centerId);
 
@@ -97,7 +106,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
         <View style={{ gap: 8 }}>
           {isCardKind && items.length > 0 ? (
             // #269: a card can be added more than once — each copy becomes an individual card.
-            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (!centerId) return; if (cat === 'homebrew') { const lc = homebrew.find((c) => c.id === centerId); if (lc) onAddCustom?.(lc); } else onAdd(centerId); }} />
+            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (!centerId) return; const lc = (cat === 'homebrew' ? homebrew : cat === 'ancestry' ? recordAncestries : []).find((c) => c.id === centerId); if (lc) onAddCustom?.(lc); else onAdd(centerId); }} />
           ) : null}
           <RuneButton label="← Author a custom card instead" kind="ghost" dense height={36} onPress={onBack} />
         </View>

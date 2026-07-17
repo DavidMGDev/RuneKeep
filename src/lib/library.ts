@@ -95,6 +95,9 @@ export interface LibraryCard {
   /** v0.10.2: mechanical data for weapon/armor content so it works in creation + on the sheet. */
   weapon?: WeaponSpec;
   armor?: ArmorSpec;
+  /** v0.13.1 (#357): a catalog-reference card — points at a bundled CATALOG id so a receiving phone
+   *  resolves the real card art/identity locally (system card scans are images, never sent as bytes). */
+  catalogId?: string;
 }
 
 export interface Expansion {
@@ -211,6 +214,7 @@ export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
       : undefined,
     weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,
     armor: c.armor && typeof c.armor === 'object' ? (c.armor as ArmorSpec) : undefined,
+    catalogId: typeof c.catalogId === 'string' ? c.catalogId : undefined,
   };
 }
 

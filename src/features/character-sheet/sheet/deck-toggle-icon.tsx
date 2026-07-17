@@ -95,6 +95,20 @@ export const CompanionIcon = memo(function CompanionIcon() {
   );
 });
 
+/** Martial Form (#357, Martial Artist Brawler): a clenched fist, front-on — the stance deck. */
+export const MartialFormIcon = memo(function MartialFormIcon() {
+  return (
+    <Svg width={42} height={42} viewBox="0 0 48 48">
+      {/* fist body */}
+      <Path d="M 13 20 Q 13 15 17 15 H 33 Q 37 15 37 20 V 31 Q 37 39 29 39 H 21 Q 13 39 13 31 Z" fill={FILL} stroke={GOLD} strokeWidth={2.4} strokeLinejoin="round" />
+      {/* finger creases */}
+      <Path d="M 19 15 V 24 M 25 15 V 24 M 31 15 V 24" fill="none" stroke={GOLD} strokeWidth={2} strokeLinecap="round" />
+      {/* thumb across */}
+      <Path d="M 13 27 Q 20 24 28 27 Q 30 28 28 30 Q 20 33 13 30" fill={FILL} stroke={GOLD} strokeWidth={2.2} strokeLinejoin="round" />
+    </Svg>
+  );
+});
+
 /** Archive (#306): a banker's archive box — flat lid + a front handle slot, distinct from the domed,
  *  banded Inventory chest. The stash you move cards into. */
 export function ArchiveIcon() {
@@ -127,6 +141,8 @@ export function CategoryGlyph({ category }: { category: CardCategory }) {
       return <WildshapeIcon />;
     case 'companion':
       return <CompanionIcon />;
+    case 'martialform':
+      return <MartialFormIcon />;
     case 'archive':
       return <ArchiveIcon />;
     default:
