@@ -1174,7 +1174,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         hp: Math.min(d.maxHp, c.hp + hpGain),
         stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
         armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
-        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total - (d.hope.locked ?? 0)) },
         gold: c.gold,
         portraitUri: c.portraitUri,
         portraitTransform: c.portraitTransform,
@@ -1323,17 +1323,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     saveFileRef.current(next);
     const c = characterRef.current;
     const d = toSheetCharacter(next);
-    setCharacter({
+    const result: Character = {
       ...d,
       hp: Math.min(d.maxHp, c.hp),
       stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
       armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
-      hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+      hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total - (d.hope.locked ?? 0)) },
       gold: c.gold,
       portraitUri: c.portraitUri,
       portraitTransform: c.portraitTransform,
-    });
-  }, []);
+    };
+    burstResources(c, result); // v0.13.1: effect edits that scar filled hope play the deplete fx
+    setCharacter(result);
+  }, [burstResources]);
   // Cards panel (#227/#246): toggle a category on/off (≥1 must stay enabled). Works for built-in AND
   // custom categories (the available set includes both).
   const onToggleCategory = useCallback((c: CardCategory) => {
@@ -1778,7 +1780,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         hp: Math.min(d.maxHp, c.hp + hpGain),
         stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
         armor: { ...d.armor, active: Math.min(d.armorScore, c.armor.active + armorGain) },
-        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total - (d.hope.locked ?? 0)) },
         gold: c.gold,
         portraitUri: c.portraitUri,
         portraitTransform: c.portraitTransform,
@@ -1821,7 +1823,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       hp: 0,
       stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
       armor: { ...d.armor, active: Math.min(c.armor.active, d.armor.total - (d.armor.locked ?? 0)) },
-      hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total) },
+      hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total - (d.hope.locked ?? 0)) },
       gold: c.gold,
       portraitUri: c.portraitUri,
       portraitTransform: c.portraitTransform,
