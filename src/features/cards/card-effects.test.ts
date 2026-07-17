@@ -140,6 +140,27 @@ describe('Void structured ancestries (v0.12.3)', () => {
   });
 });
 
+describe('custom ancestry without an authored effect-trait (v0.13.2 #359)', () => {
+  // A homebrew ancestry with a passive but NO ancestryEffectTrait (the "Passive on feature line" chip
+  // was removed): the passive rides Feature 1 by convention, so it drops when Feature 1 is crossed out.
+  const custom = {
+    id: 'lc-emberkin', contentType: 'ancestry' as const, title: 'Emberkin', text: '', imageUri: null,
+    effects: [{ target: 'evasion' as const, delta: 1 }],
+    sections: [{ body: 'Cinderborn', feature: true }, { body: 'Ashwalk', feature: true }],
+  };
+  it('single ancestry applies the passive', () => {
+    expect(effectsForCardId('lc-emberkin', baseFile({ libraryCards: [custom] }))).toEqual(custom.effects);
+  });
+  it('picked SECOND (Feature 1 crossed out) drops the passive', () => {
+    const drop = baseFile({ mixedAncestry: { first: 'ancestry-giant', second: 'lc-emberkin' }, libraryCards: [custom] });
+    expect(effectsForCardId('lc-emberkin', drop)).toEqual([]);
+  });
+  it('picked FIRST (Feature 2 crossed out) keeps the passive', () => {
+    const keep = baseFile({ mixedAncestry: { first: 'lc-emberkin', second: 'ancestry-giant' }, libraryCards: [custom] });
+    expect(effectsForCardId('lc-emberkin', keep)).toEqual(custom.effects);
+  });
+});
+
 describe('card copies — synced references (#277)', () => {
   it('refOf resolves a copy to its underlying card; others to their catalog id', () => {
     const file = baseFile({ cardCopies: [{ id: 'cp-1', ref: 'wpn-greatsword' }] });

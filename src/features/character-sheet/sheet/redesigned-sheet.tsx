@@ -47,6 +47,7 @@ import { libraryCardBody, libraryCardKindLabel, mixedCrossedTrait } from '@/lib/
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
+import { NfcReceiveCeremony, SheetNfcReceiver } from './nfc-receive-ceremony';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -1120,6 +1121,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [leaveConfirm, setLeaveConfirm] = useState(false); // #297: device-back leave confirmation
   // v0.13.0: empty-category panel — 'root' = "There is nothing here", 'cats' = the category chooser.
   const [emptyPanel, setEmptyPanel] = useState<'root' | 'cats' | null>(null);
+  // v0.13.2 (#359): a card received over NFC, awaiting the confirmation + landing ceremony.
+  const [incoming, setIncoming] = useState<LibraryCard | null>(null);
   const router = useRouter();
   const [toasts, setToasts] = useState<StatToast[]>([]); // stat-change toasts on card toggle (#233)
   const toastId = useRef(1);
@@ -1315,6 +1318,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     });
     pushNotice(`Added ${inst.title || 'card'}`);
   }, [pushNotice]);
+  // v0.13.2 (#359): commit a card received over NFC. A catalog-reference card (system scans travel as a
+  // tiny `catalogId`, never bytes) is acquired as its REAL catalog card (true art); a homebrew card is
+  // embedded as a self-contained copy. Both land in the category the ceremony chose.
+  const onNfcCard = useCallback((card: LibraryCard) => setIncoming(card), []);
+  const onNfcReject = useCallback((msg: string) => pushNotice(msg), [pushNotice]);
+  const commitReceived = useCallback((card: LibraryCard, category: CardCategory) => {
+    if (card.catalogId && cardById(card.catalogId)) onAcquireCard(card.catalogId, category);
+    else onAcquireCustom(card, category);
+  }, [onAcquireCard, onAcquireCustom]);
   // Hidden categories (#227, Cards panel): which categories the player toggled off. Back-compat:
   // a legacy save with showNotes === false maps to notes hidden.
   const hidden = useMemo<CardCategory[]>(
@@ -1955,6 +1967,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           onCloseFloat={() => { setFloatKind(null); setNewCardCat(null); }}
           onLeave={() => setLeaveConfirm(true)}
         />
+        {/* v0.13.2 (#359): always-on NFC card receiving. Inside the providers so it can read carousel
+            `editing`; suppressed only while a focused interface is open (never by card view state). */}
+        <SheetNfcReceiver
+          present={nfcModulesPresent()}
+          flags={{
+            floatOpen: floatKind !== null,
+            damageOpen,
+            cardInfoOpen: cardInfoId !== null,
+            editCardOpen: editCardId !== null,
+            emptyPanelOpen: emptyPanel !== null,
+            leaveConfirm,
+            sending: nfcSend !== null,
+            receiving: incoming !== null,
+          }}
+          onCard={onNfcCard}
+          onReject={onNfcReject}
+        />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
           <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
@@ -2010,6 +2039,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               </Animated.View>
             ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
+            {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}
+            {incoming ? <NfcReceiveCeremony card={incoming} onCommit={commitReceived} onDismiss={() => setIncoming(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             <SheetFrame />
@@ -2032,8 +2063,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {loaderUp ? <RuneLoader done={sheetReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /> : null}
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
+          {/* v0.13.2 (#359): the "Add Card" badge (entry 'card') now ALSO offers "Add card from catalog"
+              for parity with the float-menu "New Card" flow — the acquire callbacks are always passed;
+              only 'gear' opens straight into the catalog. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={newCardEntry === 'card' ? undefined : onAcquireCard} onAcquireCustom={newCardEntry === 'card' ? undefined : onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} />
+            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (

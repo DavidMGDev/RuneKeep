@@ -34,6 +34,6 @@ describe('martial form data (#357)', () => {
     expect(hasMartialForm({ subclassCardId: 'subclass-juggernaut-1-foundation', multiclassSubclassCardId: 'subclass-martial-artist-1-foundation' })).toBe(true);
     expect(hasMartialForm({ subclassCardId: 'subclass-juggernaut-1-foundation' })).toBe(false);
     expect(hasMartialForm({ subclassCardId: 'beastbound' })).toBe(false);
-    expect(hasMartialForm({})).toBe(false);
+    expect(hasMartialForm({ subclassCardId: '' })).toBe(false);
   });
 });

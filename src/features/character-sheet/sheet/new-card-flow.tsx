@@ -26,8 +26,8 @@ export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
 export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acquiredIds, enabledExpansionIds, categoryOverride, customTypes = [], initialMode = 'author' }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; onAcquireCustom?: (card: LibraryCard, category: CardCategory) => void; acquiredIds?: Set<string>; enabledExpansionIds?: string[]; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog' }) {
   const { category: liveCategory } = useCarousel();
   const category = categoryOverride ?? liveCategory;
-  // v0.9.8: the sheet's "Add Gear" badge opens straight in catalog mode; "Add Card" omits onAcquire so
-  // the catalog option is hidden entirely (pure author flow).
+  // v0.9.8: the sheet's "Add Gear" badge opens straight in catalog mode. v0.13.2 (#359): "Add Card" now
+  // also passes onAcquire, so the "Add card from catalog" button shows in the author flow too (parity).
   const [mode, setMode] = useState<'author' | 'catalog'>(initialMode);
   // Beastform is Druid-only and not player-authored (#242 item 5): block New Card here.
   if (category === 'wildshape') {

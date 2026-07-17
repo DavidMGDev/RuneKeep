@@ -59,7 +59,9 @@ export function RuneButton({ label, onPress, kind = 'secondary', disabled, heigh
         <ChamferBox chamfer={dense ? 7 : 10} fill={fill} stroke={stroke} strokeWidth={kind === 'primary' ? 0 : 1.4} style={{ height, justifyContent: 'center' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: dense ? 9 : 16 }}>
             {icon}
-            <Text numberOfLines={1} style={{ color, fontSize: dense ? 11 : 14, fontFamily: Body.bold, letterSpacing: dense ? 1 : 1.6, textTransform: 'uppercase' }}>
+            {/* v0.13.2 (#359): auto-shrink so wide uppercase labels ("Delete expansion", "New expansion")
+                never tail-truncate to "Delete E…" in a narrow flex column — they scale down to fit. */}
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ color, fontSize: dense ? 11 : 14, fontFamily: Body.bold, letterSpacing: dense ? 1 : 1.6, textTransform: 'uppercase' }}>
               {label}
             </Text>
           </View>
