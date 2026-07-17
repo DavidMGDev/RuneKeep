@@ -25,7 +25,7 @@ export const BUILTIN_CARD_TYPES: string[] = (() => {
 export function defaultTypeForCategory(key: CardCategory): string {
   if (key === 'inventory') return 'Item';
   if (key === 'notes') return 'Note';
-  if (key === 'abilities' || key === 'wildshape') return 'Ability';
+  if (key === 'abilities' || key === 'wildshape' || key === 'martialform') return 'Ability';
   return 'Card'; // custom categories
 }
 

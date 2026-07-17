@@ -24,7 +24,7 @@ const GOLD_BORDER = 'rgba(218,162,73,0.4)';
 /** Categories whose cards are LOCKED to them (#279/#311/v0.9.8): Beastform cards can't be moved out, and
  *  nothing can be moved in. Favorites is locked too — favoriting is the star action (creates a copy), not
  *  a drag/move. Companion cards are NOT locked (they're movable, just not deletable). */
-const LOCKED_CATS = new Set<string>(['wildshape', 'favorites']);
+const LOCKED_CATS = new Set<string>(['wildshape', 'martialform', 'favorites']); // #357: Martial Form locks like Beastform
 
 /** Proper SVG icon buttons for the category row (#264 item 4) — no emoji. */
 function PencilIcon({ color }: { color: string }) {
@@ -52,6 +52,8 @@ interface Props {
   isDruid: boolean;
   /** #311: the character has a Beastbound companion → the Companion category is available here. */
   hasCompanion: boolean;
+  /** #357: the character is a Martial Artist Brawler → the Martial Form category is available here. */
+  hasMartialForm: boolean;
   hidden: CardCategory[];
   customCategories: CustomCategory[];
   customTypes: string[];
@@ -143,7 +145,7 @@ function LiveTile({ item }: { item: CardItem }) {
  * LONG-PRESS to pick it up and drag it to reorder within a category or move it to another.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hasCompanion, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onFavorite, editableIds, onClose } = props;
+  const { isDruid, hasCompanion, hasMartialForm, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onFavorite, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   const [view, setView] = useState<'categories' | 'cards' | 'types'>('cards'); // #297: open on Cards
 
@@ -151,9 +153,9 @@ export function CardManagementPanel(props: Props) {
   // v0.9.8: surface the Favorites section once it has cards (it's not a normal available category).
   const hasFav = (decks.favorites?.length ?? 0) > 0;
   const ordered = useMemo(() => {
-    const avail = availableCategories({ isDruid, hasCompanion, hasFavorites: hasFav, custom: customCategories });
+    const avail = availableCategories({ isDruid, hasCompanion, hasMartialForm, hasFavorites: hasFav, custom: customCategories });
     return order && order.length ? [...order.filter((k) => avail.includes(k)), ...avail.filter((k) => !order.includes(k))] : avail;
-  }, [isDruid, hasCompanion, hasFav, customCategories, order]);
+  }, [isDruid, hasCompanion, hasMartialForm, hasFav, customCategories, order]);
   const enabledCount = ordered.filter((k) => !hiddenSet.has(k) && (decks[k]?.length ?? 0) > 0).length;
   const totalCards = useMemo(() => Object.values(decks).reduce((s, a) => s + (a?.length ?? 0), 0), [decks]);
   // The live GOLD card (#306): there is only ever one, so it can't be deleted or duplicated (only
@@ -499,7 +501,7 @@ function CardsView({ ordered, decks, customCategories, selected, dragSet, hover,
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <CatTile categoryKey={key} size={26} />
               <Text style={{ flex: 1, color: Rune.goldText, fontSize: 13, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{categoryLabel(key, customCategories)}</Text>
-              {key !== 'wildshape' ? (
+              {key !== 'wildshape' && key !== 'martialform' ? (
                 <Pressable onPress={() => onAddCardInCategory(key)} hitSlop={6} accessibilityRole="button" accessibilityLabel={`Add a card to ${categoryLabel(key, customCategories)}`}>
                   <View style={{ paddingHorizontal: 10, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 5, borderWidth: 1, borderColor: GOLD_BORDER }}><Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold }}>+ Add</Text></View>
                 </Pressable>

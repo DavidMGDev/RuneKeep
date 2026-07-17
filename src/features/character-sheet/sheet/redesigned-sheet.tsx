@@ -25,6 +25,7 @@ import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
+import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANCES, stanceColor } from '@/data/martial-form-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
 import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
@@ -32,6 +33,7 @@ import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
+import { MartialFocusCard } from '../components/martial-focus-card';
 import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/companion';
 import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, isFavorited, orphanedFavoriteIds, removeFavoriteByRef, removeFavoriteCopies } from '@/lib/favorites';
 import { RuneLoader } from '@/components/rune-loader';
@@ -650,13 +652,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs } = useMemo(() => {
+  const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs } = useMemo(() => {
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
     type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
     type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, mcClassJob: null as Job | null, mcFeatJobs: [] as Job[], expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], libJobs: [] as Job[], wildshapeFaceJobs: [] as Job[] };
+    const empty = { featJobs: [] as Job[], classJob: null as Job | null, mcClassJob: null as Job | null, mcFeatJobs: [] as Job[], expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], libJobs: [] as Job[], wildshapeFaceJobs: [] as Job[], martialJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
@@ -799,11 +801,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           { key: `ws-${w.id}-1`, node: <ForgedCard title={w.name} kindLabel="Features" body={w.features} accentDeep={Rune.panel} colorArt={w.color} pageMark="2/2" multilineTitle /> },
         ])
       : [];
-    return { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs };
+    // Martial Form (#357): Martial Artist Brawler stances — one forged card per stance of the
+    // character's tier or lower (the Beastform tier-gating convention), tier-tinted.
+    const martialJobs: Job[] = hasMartialForm(file)
+      ? MARTIAL_STANCES.filter((s) => s.tier <= wsTier).map((s) => ({
+          key: s.id,
+          node: <ForgedCard title={s.name} kindLabel="Stance" body={`Tier ${s.tier}\n${s.body}`} accentDeep={Rune.panel} colorArt={stanceColor(s)} multilineTitle />,
+        }))
+      : [];
+    return { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs };
   }, [file]);
   const allJobs = useMemo(
-    () => [...expJobs, ...(classJob ? [classJob] : []), ...(mcClassJob ? [mcClassJob] : []), ...mcFeatJobs, ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs],
-    [expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs],
+    () => [...expJobs, ...(classJob ? [classJob] : []), ...(mcClassJob ? [mcClassJob] : []), ...mcFeatJobs, ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs, ...martialJobs],
+    [expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, martialJobs],
   );
   const { sources: featureSources, stage: forgeStage } = useForgedSnapshots(allJobs);
 
@@ -1014,11 +1024,28 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const companionCards: CardItem[] = hasCompanion(file)
       ? [mkCompanion('name'), mkCompanion('evasion'), mkCompanion('damage'), mkCompanion('range'), mkCompanion('stress'), ...companionState.experiences.map((_, i) => mkCompanion('exp', i))]
       : [];
-    const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, companion: companionCards, notes: notesCards };
+    // Martial Form (#357): the live Focus token card leads, then every stance of the character's tier
+    // or lower (forged; live-node fallback until its bitmap lands — the gold-card convention).
+    const martialformCards: CardItem[] = hasMartialForm(file)
+      ? [
+          {
+            id: MARTIAL_FOCUS_CARD_ID,
+            source: GENERIC_CARD_ART,
+            thumb: GENERIC_CARD_ART,
+            live: <MartialFocusCard focus={file.martialFocus ?? 0} onChange={(n) => mutateFile({ martialFocus: n })} />,
+            interactive: true,
+          },
+          ...martialJobs.map((j): CardItem => {
+            const src = featureSources[j.key];
+            return src ? { id: j.key, source: src.full, thumb: src.thumb } : { id: j.key, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: j.node };
+          }),
+        ]
+      : [];
+    const base: Record<string, CardItem[]> = { abilities, inventory: invFull, wildshape: wildshapeCards, companion: companionCards, martialform: martialformCards, notes: notesCards };
     const validKeys = new Set<string>([...BUILTIN_CATEGORIES, FAVORITES_CATEGORY, ...customCats.map((c) => c.id)]);
     // #306/#311: archive + companion start as empty target decks (cards land via category override).
     // v0.9.8: favorites is a target deck too (favorite copies route here via their override).
-    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], companion: [], notes: [], archive: [], favorites: [] };
+    const decks: Record<string, CardItem[]> = { abilities: [], inventory: [], wildshape: [], companion: [], martialform: [], notes: [], archive: [], favorites: [] };
     for (const c of customCats) decks[c.id] = [];
     // Unique instance ids (#269): a catalog card the player holds twice (e.g. equipped AND acquired)
     // would otherwise share one id, so selecting/dragging/tokening one hit both. The first copy keeps
@@ -1038,8 +1065,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const ov = override[it.id] ?? override[catalogIdOf(it.id)];
       // Beastform cards are locked to the wildshape deck (#279): ignore any category override that would
       // move a wildshape out, and never let a non-wildshape card override INTO the wildshape deck.
+      // Martial Form cards (#357) lock to their deck the same way (stances + the Focus card).
       const isWs = isWildshapeId(catalogIdOf(it.id));
-      const target = isWs ? 'wildshape' : ov && validKeys.has(ov) && ov !== 'wildshape' ? ov : cat;
+      const isMf = isMartialStanceId(catalogIdOf(it.id)) || catalogIdOf(it.id) === MARTIAL_FOCUS_CARD_ID;
+      const target = isWs ? 'wildshape' : isMf ? 'martialform' : ov && validKeys.has(ov) && ov !== 'wildshape' && ov !== 'martialform' ? ov : cat;
       (decks[target] ??= []).push(it);
     }
     // Card copies (#277): extra instances of an existing card, built from a template primary so they
@@ -1048,7 +1077,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const templateByRef = new Map<string, { item: CardItem; cat: string }>();
     for (const f of flat) { const r = catalogIdOf(f.item.id); if (!templateByRef.has(r)) templateByRef.set(r, { item: f.item, cat: f.cat }); }
     for (const copy of file.cardCopies ?? []) {
-      if (removed.has(copy.id) || isWildshapeId(copy.ref)) continue;
+      if (removed.has(copy.id) || isWildshapeId(copy.ref) || isMartialStanceId(copy.ref) || copy.ref === MARTIAL_FOCUS_CARD_ID) continue; // #279/#357: special decks can't be copied
       const t = templateByRef.get(copy.ref);
       if (!t) continue;
       const it: CardItem = { ...t.item, id: copy.id, ref: copy.ref };
@@ -1071,6 +1100,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       inventory: { label: 'Inventory', builtin: true },
       wildshape: { label: 'Beastform', builtin: true },
       companion: { label: 'Companion', builtin: true },
+      martialform: { label: 'Martial Form', builtin: true }, // #357: Martial Artist Brawler
       notes: { label: 'Notes', builtin: true },
       archive: { label: 'Archive', builtin: true },
       favorites: { label: 'Favorites', icon: 'star', builtin: true }, // v0.9.8: special, un-deletable; star glyph
@@ -1081,7 +1111,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const fa = decks.abilities;
     const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
     return { decks, categoryMeta, originIndices };
-  }, [file, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, featureSources]);
+  }, [file, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null); // v0.10.1 NFC tap-to-share
@@ -1254,7 +1284,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Route the card to the category the player picked (the Cards-panel per-category Add button, or the
     // current carousel category from the float menu) via a cardCategory override; the deck builder's
     // override pass places it there (#328). Beastform is locked to its own deck — never override into it.
-    const valid = !!category && category !== 'wildshape' && (isBuiltinCategory(category) || (f.customCategories ?? []).some((c) => c.id === category));
+    const valid = !!category && category !== 'wildshape' && category !== 'martialform' && (isBuiltinCategory(category) || (f.customCategories ?? []).some((c) => c.id === category));
     setFile((cur) => {
       if (!cur) return cur;
       // #269: acquiredCardIds is a multiset — each copy becomes a unique deck instance (catalogIdOf maps back).
@@ -1275,7 +1305,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     if (!f) return;
     const inst: LibraryCard = { ...card, id: `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` };
     const enable = (inst.effects?.length ?? 0) > 0 || inst.contentType === 'armor';
-    const valid = !!category && category !== 'wildshape' && (isBuiltinCategory(category) || (f.customCategories ?? []).some((c) => c.id === category));
+    const valid = !!category && category !== 'wildshape' && category !== 'martialform' && (isBuiltinCategory(category) || (f.customCategories ?? []).some((c) => c.id === category));
     setFile((cur) => {
       if (!cur) return cur;
       const override = valid ? { cardCategory: { ...(cur.cardCategory ?? {}), [inst.id]: category! } } : {};
@@ -1303,7 +1333,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const isDruid = file?.className === 'druid' || file?.multiclassName === 'druid'; // #311: incl. multiclass
     const companion = hasCompanion({ subclassCardId: file?.subclassCardId ?? '', multiclassSubclassCardId: file?.multiclassSubclassCardId }); // #311
     const favorites = !!file && fileHasFavorites(file); // v0.9.8: in the ring only once there's a favorite
-    return activeRing({ isDruid, hasCompanion: companion, hasFavorites: favorites, hidden, custom: customCategories, order: file?.categoryOrder });
+    const martial = hasMartialForm({ subclassCardId: file?.subclassCardId ?? '', multiclassSubclassCardId: file?.multiclassSubclassCardId }); // #357
+    return activeRing({ isDruid, hasCompanion: companion, hasMartialForm: martial, hasFavorites: favorites, hidden, custom: customCategories, order: file?.categoryOrder });
   }, [file, hidden, customCategories]);
   const ring = useMemo(() => {
     if (!carouselDecks) return validRing; // demo sheet (no file) — no per-deck counts, use the ring as-is
@@ -1313,7 +1344,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // v0.9.8 Golden Gear Edit — categories the Move control can target: every real category except the
   // locked Beastform deck and Favorites (favoriting is the star action, never a move).
   const moveTargets = useMemo(
-    () => (file ? availableCategories({ isDruid: hasBeastform(file), hasCompanion: hasCompanion(file), hasFavorites: fileHasFavorites(file), custom: customCategories }).filter((k) => k !== 'favorites' && k !== 'wildshape') : []),
+    () => (file ? availableCategories({ isDruid: hasBeastform(file), hasCompanion: hasCompanion(file), hasMartialForm: hasMartialForm(file), hasFavorites: fileHasFavorites(file), custom: customCategories }).filter((k) => k !== 'favorites' && k !== 'wildshape' && k !== 'martialform') : []),
     [file, customCategories],
   );
   // Re-derive the runtime character from a new file, keeping in-play resource positions (clamped to the
@@ -1341,7 +1372,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onToggleCategory = useCallback((c: CardCategory) => {
     setFile((f) => {
       if (!f) return f;
-      const available = availableCategories({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), hasFavorites: fileHasFavorites(f), custom: f.customCategories ?? [] });
+      const available = availableCategories({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), hasMartialForm: hasMartialForm(f), hasFavorites: fileHasFavorites(f), custom: f.customCategories ?? [] });
       const cur = new Set<CardCategory>(f.hiddenCategories ?? (f.showNotes === false ? ['notes'] : []));
       if (cur.has(c)) cur.delete(c);
       else {
@@ -1359,7 +1390,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setFile((f) => {
       if (!f) return f;
       const cat = { id, label: label.trim() || 'New Category', icon };
-      const order = f.categoryOrder ?? activeRing({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), custom: f.customCategories ?? [] });
+      const order = f.categoryOrder ?? activeRing({ isDruid: hasBeastform(f), hasCompanion: hasCompanion(f), hasMartialForm: hasMartialForm(f), custom: f.customCategories ?? [] });
       const next = { ...f, customCategories: [...(f.customCategories ?? []), cat], categoryOrder: [...order, id] };
       saveFileRef.current(next);
       return next;
@@ -1444,7 +1475,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Non-deletable cards: Beastform (#279), the live Gold card (#306), and the live Companion facet
     // cards (#318 — name/evasion/damage/range/stress/exp; companion-* ids) are dropped from the request
     // so no path (incl. a bulk delete) can ever remove them. Companion copies (cp-… ids) stay deletable.
-    const rawIds = rawIds0.filter((id) => { const cid = catalogIdOf(id); return !isWildshapeId(cid) && cid !== 'gold' && !cid.startsWith('companion'); });
+    const rawIds = rawIds0.filter((id) => { const cid = catalogIdOf(id); return !isWildshapeId(cid) && cid !== 'gold' && !cid.startsWith('companion') && !isMartialStanceId(cid) && cid !== MARTIAL_FOCUS_CARD_ID; });
     if (rawIds.length === 0) return;
     // HARD safeguard (#252): never delete the last card overall. Count the cards actually in the live
     // decks; if this deletion would remove them all, keep one. This is the data-layer guard (the UI
@@ -1543,7 +1574,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // its image inlined (best-effort, if it fits the NFC ceiling); several → an ephemeral one-off
   // Expansion bundling them (images skipped — N photos won't fit). Each card is converted to a portable
   // LibraryCard (homebrew cards travel whole; authored keep title/body/art/effects; catalog → generic).
-  const onSendNfc = useCallback((ids: string[]) => {
+  const onSendNfc = useCallback((ids0: string[]) => {
+    // #357: Martial Form cards never travel (the wildshape/companion rule — bundled class content).
+    const ids = ids0.filter((id) => { const cid = catalogIdOf(id); return !isMartialStanceId(cid) && cid !== MARTIAL_FOCUS_CARD_ID; });
     if (!file || !ids.length) return;
     const makeId = (srcId: string) => `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}-${srcId.slice(-4)}`;
     playSfx('buttonTap');
@@ -1740,6 +1773,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           domainOverrideRef.current = 0;
         }
         playSfx(isWs ? 'activateBeastform' : 'cardEnable');
+        // Martial Form (#357): one active stance at a time — shifting into a stance ends the previous
+        // one (the sheet rule: "…until you shift into another stance"). Direct switching is allowed.
+        if (isMartialStanceId(ref)) for (const x of [...cur]) if (x !== ref && isMartialStanceId(x)) cur.delete(x);
         if (isWs) {
           // Transform: auto-unequip weapon cards (restored on exit); snapshot the enabled domain cards
           // so the player may re-equip one they drop mid-form (but not equip a brand-new domain).
@@ -2006,6 +2042,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <CardManagementPanel
               isDruid={hasBeastform(file)}
               hasCompanion={hasCompanion(file)}
+              hasMartialForm={hasMartialForm(file)}
               hidden={hidden}
               order={file.categoryOrder}
               customCategories={customCategories}

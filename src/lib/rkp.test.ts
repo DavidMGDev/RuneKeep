@@ -39,6 +39,12 @@ describe('rkp round-trip', () => {
     expect(r.kind).toBe('card');
     expect(r.payload).toMatchObject({ id: 'lc1', contentType: 'domain', domain: 'Pyre', level: 1 });
   });
+  it('round-trips a catalog-reference card, preserving catalogId (#357 archive NFC share)', () => {
+    const refCard = { id: 'share-1', contentType: 'domain' as const, title: 'Whirlwind', text: '', imageUri: null, catalogId: 'blade-01-1' };
+    const r = parseRkp(serializeRkp({ kind: 'card', payload: refCard }));
+    expect(r.kind).toBe('card');
+    expect(r.payload).toMatchObject({ catalogId: 'blade-01-1', title: 'Whirlwind' });
+  });
   it('round-trips an expansion (preserving version + cards)', () => {
     const r = parseRkp(serializeRkp({ kind: 'expansion', payload: expansion }));
     expect(r.kind).toBe('expansion');

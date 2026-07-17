@@ -195,6 +195,9 @@ export interface CharacterFile {
    *  die + range, Experiences, training options). Present only for a Beastbound character (primary or
    *  via multiclass); absent → a fresh companion is used. Additive. */
   companion?: import('@/lib/companion').CompanionState;
+  /** Martial Artist Brawler (#357): Focus tokens tracked on the live Focus card (0–6, rolled with
+   *  physical d6s at rest). Additive; absent → 0. */
+  martialFocus?: number;
   /** v0.10.3: embedded homebrew (library) cards this character USES — a self-contained COPY of each
    *  picked LibraryCard, so it renders + resolves effects with no expansion installed and survives the
    *  expansion being disabled/deleted (Bug 4). Structural slot ids (ancestry/subclass/community/domain/

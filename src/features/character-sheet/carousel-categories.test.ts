@@ -90,4 +90,9 @@ describe('subclass-gated categories (#311 companion)', () => {
   it('a Druid Beastbound (multiclass) shows both wildshape and companion', () => {
     expect(activeRing({ isDruid: true, hasCompanion: true })).toEqual(['abilities', 'inventory', 'wildshape', 'companion', 'notes', 'archive']);
   });
+  it('martialform appears only for a Martial Artist (#357), after companion', () => {
+    expect(availableCategories({})).not.toContain('martialform');
+    expect(availableCategories({ hasMartialForm: true })).toContain('martialform');
+    expect(activeRing({ hasMartialForm: true })).toEqual(['abilities', 'inventory', 'martialform', 'notes', 'archive']);
+  });
 });

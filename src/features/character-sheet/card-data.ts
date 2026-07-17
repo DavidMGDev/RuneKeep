@@ -21,7 +21,7 @@ export type CardCategory = string;
 /** The immutable built-in categories (#246): always present, never deletable. `wildshape` shows only
  *  for Druids and `companion` (#311) only for Beastbound Rangers (both gated in availableCategories).
  *  `archive` (#306) is a stash that starts empty → disabled (excluded from the ring + locked off). */
-export const BUILTIN_CATEGORIES = ['abilities', 'inventory', 'wildshape', 'companion', 'notes', 'archive'] as const;
+export const BUILTIN_CATEGORIES = ['abilities', 'inventory', 'wildshape', 'companion', 'martialform', 'notes', 'archive'] as const;
 export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 export const isBuiltinCategory = (k: string): k is BuiltinCategory => (BUILTIN_CATEGORIES as readonly string[]).includes(k);
 
@@ -129,5 +129,6 @@ export const CARD_DECKS: Record<CardCategory, CardItem[]> = {
   notes: [],
   wildshape: [],
   companion: [],
+  martialform: [], // #357: Martial Artist Brawler stances (character-supplied)
   archive: [],
 };

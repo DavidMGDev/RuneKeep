@@ -29,6 +29,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   notes: 'Notes',
   wildshape: 'Beastform',
   companion: 'Companion',
+  martialform: 'Martial Form', // #357: Martial Artist Brawler stances + Focus
   archive: 'Archive',
   favorites: 'Favorites', // v0.9.8: a special category of duplicates, gated by `hasFavorites`
 };
@@ -44,6 +45,8 @@ export interface RingOptions {
   isDruid?: boolean;
   /** The character is a Beastbound Ranger (#311) → the Companion category is available. */
   hasCompanion?: boolean;
+  /** The character is a Martial Artist Brawler (#357) → the Martial Form category is available. */
+  hasMartialForm?: boolean;
   /** The character has ≥1 favorite (v0.9.8) → the Favorites category is available. */
   hasFavorites?: boolean;
   /** Categories the player has toggled OFF in the Cards panel (#227). At least one always stays on. */
@@ -56,12 +59,12 @@ export interface RingOptions {
 
 /** Every category that COULD be in the ring (before hide), in canonical-then-custom order. The
  *  feature-gated categories appear only when their feature is present (#311 / v0.9.8 Favorites). */
-export function availableCategories({ isDruid, hasCompanion, custom = [] }: Pick<RingOptions, 'isDruid' | 'hasCompanion' | 'hasFavorites' | 'custom'>): CardCategory[] {
+export function availableCategories({ isDruid, hasCompanion, hasMartialForm, custom = [] }: Pick<RingOptions, 'isDruid' | 'hasCompanion' | 'hasMartialForm' | 'hasFavorites' | 'custom'>): CardCategory[] {
   // v0.10.7: Favorites is a HIDDEN mirror category — it is NEVER in the ring or the category menu (it
   // holds only copies of favorited cards). It's reachable ONLY via the sheet's Favorites button, which
   // opens it as a transient detour (see carousel-context `openFavorites`). So it's not appended here.
   return [
-    ...CATEGORY_ORDER.filter((c) => (c === 'wildshape' ? !!isDruid : c === 'companion' ? !!hasCompanion : true)),
+    ...CATEGORY_ORDER.filter((c) => (c === 'wildshape' ? !!isDruid : c === 'companion' ? !!hasCompanion : c === 'martialform' ? !!hasMartialForm : true)),
     ...custom.map((c) => c.id),
   ];
 }
@@ -70,8 +73,8 @@ export function availableCategories({ isDruid, hasCompanion, custom = [] }: Pick
  * The ordered list of ACTIVE categories (#227/#246): everything available, reordered by `order`, minus
  * the ones toggled off. Never empty — falls back to abilities so the ring always has a category.
  */
-export function activeRing({ isDruid, hasCompanion, hasFavorites, hidden = [], custom = [], order }: RingOptions): CardCategory[] {
-  const available = availableCategories({ isDruid, hasCompanion, hasFavorites, custom });
+export function activeRing({ isDruid, hasCompanion, hasMartialForm, hasFavorites, hidden = [], custom = [], order }: RingOptions): CardCategory[] {
+  const available = availableCategories({ isDruid, hasCompanion, hasMartialForm, hasFavorites, custom });
   const ordered = order && order.length
     ? [...order.filter((k) => available.includes(k)), ...available.filter((k) => !order.includes(k))]
     : available;
