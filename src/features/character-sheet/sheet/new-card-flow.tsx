@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Text } from 'react-native';
 
 import { CardEditor, type CardDraft } from '@/components/card-editor';
+import { type ExperienceRef } from '@/components/effects-editor';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 
@@ -23,7 +24,7 @@ export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
  * (middle ribbon) is chosen from a picker of built-in + custom types. Gear-bearing categories also
  * expose the system catalog browser. The save handler receives the resolved category KEY.
  */
-export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acquiredIds, enabledExpansionIds, categoryOverride, customTypes = [], initialMode = 'author' }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; onAcquireCustom?: (card: LibraryCard, category: CardCategory) => void; acquiredIds?: Set<string>; enabledExpansionIds?: string[]; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog' }) {
+export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acquiredIds, enabledExpansionIds, categoryOverride, customTypes = [], initialMode = 'author', experiences }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; onAcquireCustom?: (card: LibraryCard, category: CardCategory) => void; acquiredIds?: Set<string>; enabledExpansionIds?: string[]; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog'; experiences?: ExperienceRef[] }) {
   const { category: liveCategory } = useCarousel();
   const category = categoryOverride ?? liveCategory;
   // v0.9.8: the sheet's "Add Gear" badge opens straight in catalog mode. v0.13.2 (#359): "Add Card" now
@@ -61,5 +62,5 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   const catalogBtn = showsCatalog
     ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => setMode('catalog')} />
     : undefined;
-  return <CardEditor kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" onSave={(d) => onSave(d, category)} onCancel={onCancel} />;
+  return <CardEditor kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" experiences={experiences} onSave={(d) => onSave(d, category)} onCancel={onCancel} />;
 }

@@ -98,7 +98,7 @@ export function CardModifiersSheet({
       }>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
         {editing ? (
-          <EffectsField effects={draft} onChange={setDraft} onRequestPick={setPick} onRequestPickVar={setPickVar} preview={previewFn} />
+          <EffectsField effects={draft} onChange={setDraft} onRequestPick={setPick} onRequestPickVar={setPickVar} preview={previewFn} experiences={file.experiences} />
         ) : (
           <>
             {canEdit && onSaveEffects ? (
@@ -132,7 +132,8 @@ export function CardModifiersSheet({
       </ScrollView>
       {pick != null && draft[pick] ? (
         <EffectPicker
-          current={matchOption(draft[pick])}
+          current={matchOption(draft[pick], file.experiences)}
+          experiences={file.experiences}
           onPick={(o) => {
             setDraft((d) => d.map((e, j) => (j === pick ? applyPickedOption(e, o) : e)));
             setPick(null);

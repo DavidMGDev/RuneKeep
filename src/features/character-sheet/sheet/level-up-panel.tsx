@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
@@ -163,15 +163,27 @@ export function LevelUpPanel({
 
   const hasDomainAdv = takes.some((t) => t.key === 'domain');
   const maxDomains = 1 + (hasDomainAdv ? 1 : 0);
-  const items: StraightItem[] = domainOptions.map((d) => ({ id: d.id, thumb: d.thumb, source: d.source, label: d.title }));
+  // v0.14.0: MEMOIZED. An unstable `items` identity rebuilt the carousel's pan gesture on every detent
+  // (each detent re-renders this panel), which reconfigures a LIVE native handler and is what cancelled
+  // drags mid-flight — the trigger for the stale-centered-card bug. Creation memoizes this too.
+  const items: StraightItem[] = useMemo(
+    () => domainOptions.map((d) => ({ id: d.id, thumb: d.thumb, source: d.source, label: d.title })),
+    [domainOptions],
+  );
+  // The mirror is fine for LABELLING the button (it repaints on the next render anyway)...
   const centerId = domainOptions[Math.min(centerIdx, domainOptions.length - 1)]?.id;
   const centeredSelected = !!centerId && selectedDomains.includes(centerId);
   const toggleDomain = () => {
-    if (!centerId) return;
+    // ...but COMMITTING reads the deck's live position, never the mirror — the mirror is suppressed
+    // while the gear grinds and lags React by a frame, so it could name a card that is no longer
+    // centered (the "level up gave me a different domain card" bug).
+    const live = carRef.current?.centerIndex();
+    const id = (live != null ? domainOptions[Math.min(live, domainOptions.length - 1)]?.id : undefined) ?? centerId;
+    if (!id) return;
     setSelectedDomains((cur) => {
-      if (cur.includes(centerId)) { playSfx('cardDeselect'); return cur.filter((x) => x !== centerId); }
-      if (cur.length < maxDomains) { playSfx('cardSelect'); return [...cur, centerId]; }
-      if (maxDomains === 1) { playSfx('cardSelect'); return [centerId]; }
+      if (cur.includes(id)) { playSfx('cardDeselect'); return cur.filter((x) => x !== id); }
+      if (cur.length < maxDomains) { playSfx('cardSelect'); return [...cur, id]; }
+      if (maxDomains === 1) { playSfx('cardSelect'); return [id]; }
       return cur;
     });
   };

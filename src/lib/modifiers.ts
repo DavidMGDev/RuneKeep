@@ -25,7 +25,11 @@ export type EffectTarget =
   /** v0.13.0 SCARS: a flat count, one per enabled "Add Scar" card. Each scar disables the character's
    *  rightmost available Hope slot (usable hope = hopeMax − scars, floored at 0); at hopeMax scars the
    *  whole sheet desaturates. Always `{ delta: 1 }` — the editor offers no formula/count for it. */
-  | 'scar';
+  | 'scar'
+  /** v0.14.0: a bonus on ONE of the character's Experiences (the Honing Relic). Unlike every other
+   *  target this names an INSTANCE, carried by `experienceId` — so it has no sheet row and no base
+   *  value, and `computeSheet` skips it. See `experienceBreakdown` for how these resolve. */
+  | 'experience';
 
 /**
  * One stat modifier carried by a card. Exactly one of `delta` / `byTier` / `dynamic` is meaningful:
@@ -65,10 +69,14 @@ export interface CardEffect {
   mode?: 'set' | 'bonus';
   /** Optional human note (the rule text the effect came from) — shown in the Modifiers panel. */
   note?: string;
+  /** v0.14.0, `target: 'experience'` only: WHICH Experience this boosts. Absent = the character's first
+   *  one, which is what makes a shipped card (the Honing Relic) work before the player picks. An id that
+   *  no longer resolves (the Experience was deleted) contributes nothing. */
+  experienceId?: string;
 }
 
 /** The two damage-threshold stats, modeled specially (set-or-bonus) rather than plain additive. */
-const THRESHOLD_TARGETS: EffectTarget[] = ['majorThreshold', 'severeThreshold'];
+const THRESHOLD_TARGETS: SheetTarget[] = ['majorThreshold', 'severeThreshold'];
 const isThreshold = (t: EffectTarget) => (THRESHOLD_TARGETS as string[]).includes(t);
 
 /** A card's contribution to one stat, kept in application order so the panel can show provenance. */
@@ -93,11 +101,14 @@ export interface EffectSource {
   effects: CardEffect[];
 }
 
-export type BaseStats = Record<EffectTarget, number>;
-export type SheetBreakdown = Record<EffectTarget, StatBreakdown>;
+/** The targets that are actually SHEET stats — one base value, one row in the Modifiers panel. Excludes
+ *  `experience`, which is per-instance and resolved by `experienceBreakdown` instead. */
+export type SheetTarget = Exclude<EffectTarget, 'experience'>;
+export type BaseStats = Record<SheetTarget, number>;
+export type SheetBreakdown = Record<SheetTarget, StatBreakdown>;
 
-/** Every target, in sheet-reading order (traits first). */
-export const EFFECT_TARGETS: EffectTarget[] = [
+/** Every sheet target, in sheet-reading order (traits first). */
+export const EFFECT_TARGETS: SheetTarget[] = [
   'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge',
   'evasion', 'armorScore', 'maxHp', 'stressMax', 'hopeMax', 'proficiency', 'majorThreshold', 'severeThreshold', 'scar',
 ];
@@ -110,6 +121,7 @@ export const TARGET_LABEL: Record<EffectTarget, string> = {
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
   evasion: 'Evasion', armorScore: 'Armor Score', maxHp: 'Max Hit Points', stressMax: 'Max Stress', hopeMax: 'Max Hope',
   proficiency: 'Proficiency', majorThreshold: 'Major Threshold', severeThreshold: 'Severe Threshold', scar: 'Scar',
+  experience: 'Experience',
 };
 
 /** Game caps: HP, Stress, and Armor slots can never exceed 12 (rulebook). */
@@ -160,6 +172,7 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
   for (const src of sources) {
     for (const e of src.effects) {
       if (isThreshold(e.target)) continue;
+      if (e.target === 'experience') continue; // per-instance, not a sheet stat — see experienceBreakdown
       const d = flatDelta(e, tier);
       if (d === null || d === 0) continue;
       const b = out[e.target];
@@ -199,6 +212,7 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
   for (const src of sources) {
     for (const e of src.effects) {
       if (!e.dynamic) continue;
+      if (e.target === 'experience') continue; // per-instance, not a sheet stat
       const b = out[e.target];
       if (!b) continue;
       const d =

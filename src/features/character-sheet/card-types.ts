@@ -6,11 +6,18 @@
 
 import { type CardCategory, isBuiltinCategory } from './card-data';
 
+/** The card type that authors a real Experience rather than a custom card (v0.14.0). */
+export const EXPERIENCE_TYPE = 'Experience';
+export const isExperienceType = (t: string | undefined): boolean => (t ?? '').trim().toLowerCase() === EXPERIENCE_TYPE.toLowerCase();
+
 /** Built-in types grouped by the context they suit (used to pre-fill the default + group the picker). */
 export const BUILTIN_TYPE_GROUPS: { label: string; types: string[] }[] = [
   { label: 'Arsenal', types: ['Ability', 'Skill', 'Weapon', 'Spell', 'Trick', 'Maneuver'] },
   { label: 'Inventory', types: ['Item', 'Armor', 'Tool', 'Treasure', 'Key', 'Trinket', 'Supply', 'Relic'] },
   { label: 'Notes', types: ['Note', 'Reminder', 'Important', 'Story', 'Place', 'Person', 'Quest'] },
+  // v0.14.0: the ONLY type that changes where the card is stored — an Experience card becomes a real
+  // Experience on the file, so level-up advancements and experience-targeting effects can find it.
+  { label: 'Character', types: [EXPERIENCE_TYPE] },
 ];
 
 /** Flat list of every built-in type, de-duplicated in group order. */

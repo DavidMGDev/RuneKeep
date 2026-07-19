@@ -22,10 +22,12 @@ import { cardById } from '@/data/catalog';
 import { playSfx } from '@/lib/sfx';
 import { cancelNfcReceive, receiveNfc } from '@/lib/nfc';
 import type { LibraryCard } from '@/lib/library';
-import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
+import { libraryCardKindLabel } from '@/lib/library-embed';
+import { focusHaptic } from '@/lib/haptics';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 
-import { ForgedCard } from '@/features/create/components/forged-card';
+import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
+import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { type CardCategory } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { type NfcGateFlags, nfcReceiveActive } from './nfc-gate';
@@ -58,6 +60,9 @@ export function SheetNfcReceiver({ flags, present, onCard, onReject }: { flags: 
           const content = await receiveNfc();
           if (!live) break;
           if (content.kind === 'card') {
+            // v0.14.0: buzz the INSTANT the tag reads, before any UI paints. Tapping two phones together
+            // gives no other feedback that it landed, and the ceremony takes a beat to appear.
+            focusHaptic();
             onCardRef.current(content.payload);
             break; // stop reading; `receiving` closes the gate until the ceremony resolves
           }
@@ -78,8 +83,11 @@ export function SheetNfcReceiver({ flags, present, onCard, onReject }: { flags: 
 }
 
 // ---- ceremony timing (design knobs — tune on device) ------------------------------------------------
-const DESCEND_MS = 1000; // above-screen → present at center (+ a beat holding there)
-const TUCK_MS = 520; //     present → tuck into the hand
+// v0.14.0: the descent was too quick to read as an arrival, so it's markedly slower and eased in-out —
+// the card gathers pace leaving the top of the screen and settles into the center rather than snapping.
+const DESCEND_MS = 1700; // above-screen → present at center (+ a beat holding there)
+const TUCK_MS = 620; //     present → tuck into the hand
+const LAND_AT = Math.round(DESCEND_MS * 0.66); // the beat the card reaches center — landing haptic
 const COMMIT_AT = DESCEND_MS - 40; // fire the file commit as the tuck begins (hidden under the card)
 
 /** Deterministic sparkle field (no Math.random — index-derived angles), radiating from the present point. */
@@ -126,7 +134,8 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss }: { card: Librar
   const cardW = Math.min(220, width * 0.6);
   const cardH = Math.round(cardW * (322 / 230));
   const cardLeft = width / 2 - cardW / 2;
-  const aboveY = -cardH - 40;
+  const cardScale = cardW / FORGED_W; // scale the 230×322 forged plane down rather than cropping it
+  const aboveY = -cardH - 90; // fully clear of the top edge, so the entry is never a pop
   const presentY = height * 0.4 - cardH / 2;
   const tuckY = height * 0.72 - cardH / 2;
   const presentCx = width / 2;
@@ -153,9 +162,11 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss }: { card: Librar
     setAccepted(true);
     panel.value = withTiming(0, { duration: 160, easing: Easing.in(Easing.cubic) });
     drop.value = withSequence(
-      withTiming(0.68, { duration: DESCEND_MS, easing: Easing.out(Easing.poly(4)) }), // descend + settle at center (quartic ease-out)
-      withTiming(1, { duration: TUCK_MS, easing: Easing.in(Easing.cubic) }), //          tuck into the hand
+      // ease-IN-out: the card starts at rest above the screen, gathers pace, and settles at center.
+      withTiming(0.68, { duration: DESCEND_MS, easing: Easing.inOut(Easing.cubic) }),
+      withTiming(1, { duration: TUCK_MS, easing: Easing.in(Easing.cubic) }), // tuck into the hand
     );
+    setTimeout(() => focusHaptic(), LAND_AT); // the card touching down
     // Commit UNDER the descending card (as the tuck begins) so the carousel change is never a bare frame.
     setTimeout(() => onCommit(card, target), COMMIT_AT);
     setTimeout(() => onDismiss(), DESCEND_MS + TUCK_MS + 40);
@@ -184,12 +195,12 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss }: { card: Librar
       {!accepted ? (
         <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 }, panelStyle]}>
           <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: '100%', maxWidth: 340, paddingHorizontal: 22, paddingVertical: 22, gap: 14, alignItems: 'center' }}>
+            {/* v0.14.0: NAME ONLY. The old rendered preview was a fixed 230×322 card crammed into a
+                116px slot with no clipping, so three quarters of it bled straight out of the panel.
+                The card itself is the reveal — this step just says what's arriving. */}
             <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase' }}>A card was shared with you</Text>
-            <View style={{ width: 116, height: Math.round(116 * (322 / 230)) }}>
-              {/* LOD: the small preview uses the thumb; the big drop card below uses full-res. */}
-              {catalog ? <ArtImage source={catalog.thumb} fit="contain" /> : <ForgedCard title={card.title} kindLabel={libraryCardKindLabel(card)} body={libraryCardBody(card)} accentDeep={Rune.panel} imageUri={card.imageUri} colorArt={card.color} multilineTitle />}
-            </View>
-            <Text numberOfLines={2} style={{ color: Rune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{card.title || 'Card'}</Text>
+            <Text numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.ivory, fontSize: 22, lineHeight: 26, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{card.title || 'Card'}</Text>
+            <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{catalog?.label ?? libraryCardKindLabel(card)}</Text>
             <View style={{ flexDirection: 'row', gap: 10, alignSelf: 'stretch' }}>
               <RuneButton label="Decline" kind="ghost" height={46} style={{ flex: 1 }} onPress={decline} />
               <RuneButton label="Accept" kind="primary" height={46} style={{ flex: 1 }} muteSfx onPress={accept} />
@@ -206,7 +217,15 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss }: { card: Librar
           ))}
           <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: cardLeft, top: 0, width: cardW, height: cardH }, cardStyle]}>
             <ChamferBox chamfer={12} fill={Rune.panel} stroke={Rune.goldBright} strokeWidth={1.6} style={{ width: cardW, height: cardH, overflow: 'hidden' }}>
-              {catalog ? <ArtImage source={catalog.source} fit="contain" /> : <ForgedCard title={card.title} kindLabel={libraryCardKindLabel(card)} body={libraryCardBody(card)} accentDeep={Rune.panel} imageUri={card.imageUri} colorArt={card.color} multilineTitle />}
+              {catalog ? (
+                <ArtImage source={catalog.source} fit="contain" />
+              ) : (
+                // SCALE the forged plane down (the gallery idiom) — it used to be cropped, losing ~5px
+                // off each side and the footer watermark. LibraryForgedCard keeps weapon/armor decoration.
+                <View style={{ position: 'absolute', left: (cardW - FORGED_W) / 2, top: (cardH - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: cardScale }] }}>
+                  <LibraryForgedCard card={card} />
+                </View>
+              )}
             </ChamferBox>
           </Animated.View>
         </>

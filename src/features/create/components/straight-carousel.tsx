@@ -271,6 +271,10 @@ export interface StraightCarouselHandle {
   /** Spring the deck to center on `index` (e.g. after the Random button picks a card). Closes a
    *  focused card first so the recenter reads. */
   scrollTo: (index: number) => void;
+  /** v0.14.0: the LIVE centered index, read straight off the deck position at call time. `onIndexChange`
+   *  is a mirror that lags (it is suppressed while the gear grinds, and React commits a frame later), so
+   *  anything that COMMITS a choice must resolve the card through this — never through the mirror. */
+  centerIndex: () => number;
 }
 
 export const StraightCarousel = forwardRef<
@@ -378,6 +382,7 @@ export const StraightCarousel = forwardRef<
         if (fsOpen) closeFs();
         pos.value = withSpring(clampIdx(index, count), SNAP_SPRING);
       },
+      centerIndex: () => clampIdx(Math.round(pos.value), count),
     }),
     [fsOpen, closeFs, pos, count],
   );
@@ -475,7 +480,12 @@ export const StraightCarousel = forwardRef<
           padTouch.value = false;
         })
         .onFinalize(() => {
-          if (grind.value !== 0 && !scrolled.value) grind.value = withTiming(0, { duration: 220 });
+          // v0.14.0: ALWAYS unwind the grind here. The old `&& !scrolled.value` guard left an uncovered
+          // quadrant — a gear-strip drag that moved and was then CANCELLED (onEnd never ran) latched
+          // `grind` above the 0.05 freeze threshold forever, which silently froze index publication in
+          // the mapper below and made the parent's centered-card mirror go stale (the level-up
+          // "picked a different domain card" bug). Nothing depends on the value surviving finalize.
+          if (grind.value !== 0) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
     [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, flip],

@@ -153,6 +153,28 @@ export function getPlaqueTheme(kindLabel: string, classKey?: ClassName): PlaqueT
     };
   }
 
+  // v0.14.0: loot + consumables are their own families, distinct from weapons/armor/items. Loot reads
+  // as buried treasure (deep earth → old gold); consumables as alchemy (nightshade → apothecary green).
+  if (normalizedKind === 'loot') {
+    return {
+      gradientStops: [
+        { offset: '0%', color: '#2B2113' }, // dug earth
+        { offset: '100%', color: '#6B4A12' }, // old gold
+      ],
+      textColor: '#FCD34D', // Lamplight Gold
+    };
+  }
+
+  if (normalizedKind === 'consumable') {
+    return {
+      gradientStops: [
+        { offset: '0%', color: '#241B33' }, // nightshade
+        { offset: '100%', color: '#1B3A2E' }, // apothecary green
+      ],
+      textColor: '#6EE7B7', // Elixir Green
+    };
+  }
+
   if (normalizedKind === 'currency') {
     return {
       gradientStops: [

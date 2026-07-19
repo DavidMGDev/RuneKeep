@@ -49,6 +49,7 @@ export function EditCardFlow({
       typeGroups={isExp ? undefined : typePickerGroups(customTypes)}
       experienceMode={isExp}
       modifier={card.modifier}
+      experiences={file.experiences}
       saveLabel="Save changes"
       scrimless
       extraField={<HoldToConfirm label="Hold to delete card" onConfirm={() => onDelete(cardId)} />}

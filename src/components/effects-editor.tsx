@@ -12,7 +12,16 @@ import { type CardEffect, type EffectFormula, type EffectTarget, TARGET_LABEL } 
  * ×/÷, rounded up). `EffectPicker` (the target chooser) is rendered at the parent's root.
  */
 
-export interface EffectOption { key: string; label: string; target: EffectTarget; mode?: 'set' | 'bonus' }
+export interface EffectOption { key: string; label: string; target: EffectTarget; mode?: 'set' | 'bonus'; experienceId?: string }
+
+/** A character's Experiences, the minimum this module needs to build their picker options. */
+export interface ExperienceRef { id: string; title: string }
+
+/** v0.14.0: the Experiences group is per-CHARACTER, so it can't live in the static groups below — it's
+ *  generated from the file and appended. Every Experience is offered, however many the character has. */
+export function experienceOptions(experiences: ExperienceRef[] | undefined): EffectOption[] {
+  return (experiences ?? []).map((e, i) => ({ key: `experience:${e.id}`, label: e.title.trim() || `Experience ${i + 1}`, target: 'experience' as EffectTarget, experienceId: e.id }));
+}
 export const EFFECT_GROUPS: { label: string; options: EffectOption[] }[] = [
   { label: 'Resources', options: [
     { key: 'maxHp', label: 'Max Hit Points', target: 'maxHp' },
@@ -46,18 +55,26 @@ export const EFFECT_GROUPS: { label: string; options: EffectOption[] }[] = [
 const ALL_EFFECT_OPTIONS = EFFECT_GROUPS.flatMap((g) => g.options);
 export const isThresholdTarget = (t: EffectTarget) => t === 'majorThreshold' || t === 'severeThreshold';
 export const isSetEffect = (e: CardEffect) => isThresholdTarget(e.target) && e.mode === 'set' && e.dynamic !== 'formula';
-export function matchOption(e: CardEffect): EffectOption | undefined {
+export function matchOption(e: CardEffect, experiences?: ExperienceRef[]): EffectOption | undefined {
+  // An experience effect names an INSTANCE, so it must match on the id too — otherwise switching from
+  // one Experience to another would silently keep pointing at the first.
+  if (e.target === 'experience') {
+    const opts = experienceOptions(experiences);
+    return opts.find((o) => o.experienceId === (e.experienceId ?? opts[0]?.experienceId));
+  }
   return ALL_EFFECT_OPTIONS.find((o) => o.target === e.target && (isThresholdTarget(e.target) ? (o.mode ?? 'bonus') === (e.mode ?? 'bonus') : true));
 }
-export function effectLabel(e: CardEffect): string {
-  return matchOption(e)?.label ?? TARGET_LABEL[e.target];
+export function effectLabel(e: CardEffect, experiences?: ExperienceRef[]): string {
+  return matchOption(e, experiences)?.label ?? TARGET_LABEL[e.target];
 }
 
 /** Rewrite an effect for a freshly-picked option — shared by every EffectPicker call site. A scar is
  *  always exactly `{ target: 'scar', delta: 1 }` (no amount/formula/tier shapes survive the switch). */
 export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
   if (o.target === 'scar') return { target: 'scar', delta: 1, note: e.note };
-  return { ...e, target: o.target, mode: isThresholdTarget(o.target) ? o.mode : undefined };
+  // An experience bonus is a flat amount on one Experience — no threshold mode, no formula/tier shapes.
+  if (o.target === 'experience') return { target: 'experience', experienceId: o.experienceId, delta: e.delta ?? 1, note: e.note };
+  return { ...e, target: o.target, mode: isThresholdTarget(o.target) ? o.mode : undefined, experienceId: undefined };
 }
 
 /** Formula variables a player can scale (#278). */
@@ -105,14 +122,16 @@ export function FormulaVarPicker({ current, onPick, onClose }: { current?: Effec
   );
 }
 
-export function EffectPicker({ current, onPick, onClose }: { current?: EffectOption; onPick: (o: EffectOption) => void; onClose: () => void }) {
+export function EffectPicker({ current, onPick, onClose, experiences }: { current?: EffectOption; onPick: (o: EffectOption) => void; onClose: () => void; experiences?: ExperienceRef[] }) {
+  const expOpts = experienceOptions(experiences);
+  const groups = expOpts.length ? [...EFFECT_GROUPS, { label: 'Experiences', options: expOpts }] : EFFECT_GROUPS;
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, maxHeight: '82%', paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Pick a modifier</Text>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 11, paddingBottom: 4 }}>
-          {EFFECT_GROUPS.map((g) => (
+          {groups.map((g) => (
             <View key={g.label} style={{ gap: 6 }}>
               <Text style={{ color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{g.label}</Text>
               {g.options.map((o) => {
@@ -168,9 +187,11 @@ function modeOf(e: CardEffect): EffectMode {
   return e.dynamic === 'formula' ? 'formula' : e.byTier ? 'byTier' : 'flat';
 }
 
-export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVar, preview }: {
+export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVar, preview, experiences }: {
   effects: CardEffect[];
   onChange: (e: CardEffect[]) => void;
+  /** v0.14.0: the character's Experiences, so an experience-targeting row shows WHICH one by name. */
+  experiences?: ExperienceRef[];
   onRequestPick: (i: number) => void;
   /** #325: open the variable PICKER for the formula at index i (a panel, not a cycle). */
   onRequestPickVar: (i: number) => void;
@@ -220,9 +241,9 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
         return (
           <View key={i} style={{ borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)', borderRadius: 6, backgroundColor: 'rgba(20,24,31,0.5)', padding: 7, gap: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Pressable onPress={() => onRequestPick(i)} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Modifier ${effectLabel(e)}, tap to choose`}>
+              <Pressable onPress={() => onRequestPick(i)} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Modifier ${effectLabel(e, experiences)}, tap to choose`}>
                 <View style={{ height: 34, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 5, backgroundColor: 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
-                  <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>{effectLabel(e)}</Text>
+                  <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>{effectLabel(e, experiences)}</Text>
                 </View>
               </Pressable>
               {/* #325: flat / formula / by-tier selector. v0.13.0: a SCAR has no amount or formula —
@@ -230,8 +251,13 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
               {e.target !== 'scar' ? (
                 <>
                   <ModeBtn label="±N" on={mode === 'flat'} onPress={() => setMode(i, 'flat')} a11y="Flat amount" />
-                  <ModeBtn label="ƒx" on={mode === 'formula'} onPress={() => setMode(i, 'formula')} a11y="Scaling formula" />
-                  <ModeBtn label="T" on={mode === 'byTier'} onPress={() => setMode(i, 'byTier')} a11y="Per-tier value" />
+                  {/* An experience bonus is always a flat amount — no formula or per-tier shapes. */}
+                  {e.target !== 'experience' ? (
+                    <>
+                      <ModeBtn label="ƒx" on={mode === 'formula'} onPress={() => setMode(i, 'formula')} a11y="Scaling formula" />
+                      <ModeBtn label="T" on={mode === 'byTier'} onPress={() => setMode(i, 'byTier')} a11y="Per-tier value" />
+                    </>
+                  ) : null}
                 </>
               ) : null}
               <Pressable onPress={() => onChange(effects.filter((_, j) => j !== i))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove effect" style={{ padding: 3 }}>
