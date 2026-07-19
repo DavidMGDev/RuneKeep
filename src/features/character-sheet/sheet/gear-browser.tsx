@@ -7,21 +7,23 @@ import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 import { classColor } from '@/constants/identity';
 import { ALL_ARMOR, ALL_PRIMARY_WEAPONS, ALL_SECONDARY_WEAPONS } from '@/data/equipment-data';
+import { ALL_LOOT } from '@/data/loot-data';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { ForgedCard } from '@/features/create/components/forged-card';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
 import { CATALOG } from '@/data/catalog';
 import { catalogFor, classExpansion } from '@/lib/expansions';
 import { isEnabledForCreation, type LibraryCard } from '@/lib/library';
-import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
+import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { listExpansions } from '@/lib/library-store';
 import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
 
 import { FullScreenPanel } from './full-screen-panel';
 
 // #252: character cards (domain/ancestry/community/subclass/class) browsed as the creation carousel
-// (card ART, no names); weapons/armor stay a list. The Loot/Items tabs are gone.
-type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'transformation' | 'weapon' | 'armor' | 'homebrew';
+// (card ART, no names); weapons/armor stay a list. v0.14.0: Loot + Consumables are back as list tabs —
+// the rulebook's 120 items had no acquisition path at all, so none of them were reachable in play.
+type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'transformation' | 'weapon' | 'armor' | 'loot' | 'consumable' | 'homebrew';
 const CARD_KINDS: Cat[] = ['domain', 'ancestry', 'community', 'subclass', 'class', 'transformation'];
 const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -40,7 +42,7 @@ function classCardNode(key: string, title: string, Banner: FC<SvgProps>, body: s
 
 /** A record-stored (expansion) library card as a forged carousel item (v0.13.1 ancestries → v0.13.2 all kinds). */
 function recordItem(lc: LibraryCard): StraightItem {
-  return { id: lc.id, custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle /> };
+  return { id: lc.id, custom: <LibraryForgedCard card={lc} /> };
 }
 
 export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCustom, onBack, onClose }: { acquiredIds: Set<string>; enabledExpansionIds?: string[]; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onBack: () => void; onClose: () => void }) {
@@ -97,6 +99,8 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   const rows: Row[] = useMemo(() => {
     if (cat === 'weapon') return [...ALL_PRIMARY_WEAPONS, ...ALL_SECONDARY_WEAPONS].filter((w) => w.tier === tier).map((w) => ({ id: w.id, name: w.name, sub: `${w.slot === 'secondary' ? 'Secondary · ' : ''}${w.trait} · ${w.range} · ${w.damage} ${w.damageType}`, effects: w.effects }));
     if (cat === 'armor') return ALL_ARMOR.filter((a) => a.tier === tier).map((a) => ({ id: a.id, name: a.name, sub: `Thresholds ${a.thresholds} · Score ${a.baseScore}`, effects: a.effects }));
+    // Loot has no tier — the rulebook indexes it by table roll, so that's the sub-line.
+    if (cat === 'loot' || cat === 'consumable') return ALL_LOOT.filter((l) => l.kind === cat).map((l) => ({ id: l.id, name: l.name, sub: `Roll ${l.roll} · ${l.text.split('\n')[0]}`, effects: l.effects }));
     return [];
   }, [cat, tier]);
 
@@ -107,6 +111,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
     ...(hasTransforms ? [{ key: 'transformation' as Cat, label: 'Transform' }] : []),
     { key: 'community', label: 'Community' },
     { key: 'subclass', label: 'Subclass' }, { key: 'class', label: 'Class' }, { key: 'weapon', label: 'Weapons' }, { key: 'armor', label: 'Armor' },
+    { key: 'loot', label: 'Loot' }, { key: 'consumable', label: 'Consumables' },
     ...(homebrew.length ? [{ key: 'homebrew' as Cat, label: 'Homebrew' }] : []),
   ];
 

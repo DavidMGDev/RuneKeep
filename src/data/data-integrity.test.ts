@@ -14,7 +14,8 @@ import {
   TIER1_ARMOR,
   weaponById,
 } from '@/data/equipment-data';
-import { ALL_LOOT, lootById } from '@/data/loot-data';
+import { ALL_LOOT, CONSUMABLES, LOOT, lootById } from '@/data/loot-data';
+import { EFFECT_TARGETS } from '@/lib/modifiers';
 
 const duplicates = (ids: string[]): string[] => ids.filter((id, i) => ids.indexOf(id) !== i);
 
@@ -74,5 +75,29 @@ describe('loot', () => {
   it('has unique ids and lootById round-trips', () => {
     expect(duplicates(ALL_LOOT.map((x) => x.id))).toEqual([]);
     for (const x of ALL_LOOT) expect(lootById(x.id)).toBe(x);
+  });
+
+  // v0.14.0: the loot table shipped missing rolls 01-19 for several releases and nothing caught it.
+  it.each([['loot', LOOT] as const, ['consumable', CONSUMABLES] as const])('%s covers all 60 rulebook rolls exactly once', (kind, table) => {
+    expect(table.map((x) => x.roll).sort()).toEqual(Array.from({ length: 60 }, (_, i) => String(i + 1).padStart(2, '0')).sort());
+    for (const x of table) expect(x.kind).toBe(kind);
+  });
+
+  it('every entry has a name and body text', () => {
+    for (const x of ALL_LOOT) {
+      expect(x.name.trim().length).toBeGreaterThan(0);
+      expect(x.text.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every declared effect names a real target', () => {
+    for (const x of ALL_LOOT) for (const e of x.effects ?? []) expect(EFFECT_TARGETS.includes(e.target as never) || e.target === 'experience').toBe(true);
+  });
+
+  // effectsForCardId checks loot LAST, so an id shared with a weapon/armor/catalog card would be
+  // shadowed silently and the loot's effects would never apply.
+  it('loot ids never collide with catalog, weapon or armor ids', () => {
+    const others = new Set([...CATALOG.map((c) => c.id), ...ALL_WEAPONS.map((w) => w.id), ...ALL_ARMOR.map((a) => a.id)]);
+    expect(ALL_LOOT.filter((x) => others.has(x.id)).map((x) => x.id)).toEqual([]);
   });
 });

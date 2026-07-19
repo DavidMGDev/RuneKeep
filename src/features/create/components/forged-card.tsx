@@ -8,6 +8,7 @@ import { DividerPlaque, getPlaqueTheme } from './card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
 import { type ArmorDef, type WeaponDef } from '@/data/equipment-data';
+import { type LootDef } from '@/data/loot-data';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
@@ -46,6 +47,7 @@ export function PlaqueLabel({ text, textColor }: { text: string; textColor: stri
 export function ForgedCard({
   title,
   kindLabel,
+  subtitle,
   body,
   accentDeep,
   Banner,
@@ -60,6 +62,9 @@ export function ForgedCard({
 }: {
   title: string;
   kindLabel: string;
+  /** v0.14.0: a small centered line under the title — the subclass tier word (Foundation /
+   *  Specialization / Mastery), which the official subclass scans bake into their art. */
+  subtitle?: string;
   body: string;
   accentDeep: string;
   Banner?: FC<SvgProps>;
@@ -142,6 +147,11 @@ export function ForgedCard({
             </View>
           ) : pageMark ? (
             <Text style={{ alignSelf: 'flex-end', color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text>
+          ) : null}
+          {subtitle ? (
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.inkMuted, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'center', marginTop: 3 }}>
+              {subtitle}
+            </Text>
           ) : null}
           <CardMarkdownBody
             body={body}
@@ -300,6 +310,70 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
             {weapon.feature.text}
           </Text>
         ) : null}
+      </View>
+      <ForgedFooter />
+    </View>
+  );
+}
+
+/** Art-zone emblem for the loot cards (v0.14.0): a banded treasure chest, or an alchemist's flask. */
+function LootGlyph({ kind }: { kind: 'loot' | 'consumable' }) {
+  const stroke = Rune.goldEdge;
+  const size = Math.round(ART_H * 0.6);
+  if (kind === 'consumable') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 40 44">
+        {/* erlenmeyer flask: neck, shoulders, a settled liquid line and two rising bubbles */}
+        <Path d="M16 6 V17 L7 34 Q5.5 38.5 10 38.5 H30 Q34.5 38.5 33 34 L24 17 V6" fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round" />
+        <Path d="M13 6 H27" fill="none" stroke={stroke} strokeWidth={2} strokeLinecap="round" />
+        <Path d="M10.5 29 H29.5" fill="none" stroke={stroke} strokeWidth={1.4} strokeLinecap="round" />
+        <Circle cx={16} cy={33} r={1.5} fill="none" stroke={stroke} strokeWidth={1.2} />
+        <Circle cx={23.5} cy={34.5} r={1.1} fill="none" stroke={stroke} strokeWidth={1.2} />
+      </Svg>
+    );
+  }
+  return (
+    <Svg width={size} height={size} viewBox="0 0 40 44">
+      {/* treasure chest: domed lid, banded body, keyhole plate */}
+      <Path d="M5 21 V16 Q5 7 20 7 Q35 7 35 16 V21" fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round" />
+      <Path d="M4 21 H36 V36 Q36 38.5 33.5 38.5 H6.5 Q4 38.5 4 36 Z" fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round" />
+      <Path d="M16.5 21 H23.5 V30 H16.5 Z" fill="none" stroke={stroke} strokeWidth={1.6} strokeLinejoin="round" />
+      <Circle cx={20} cy={25} r={1.4} fill="none" stroke={stroke} strokeWidth={1.2} />
+    </Svg>
+  );
+}
+
+/**
+ * A forged LOOT / CONSUMABLE card (v0.14.0, immutable): the same printed-card layout the equipment
+ * cards use, so found treasure reads as a sibling of weapons and armor rather than as a plain note.
+ * Loot sits on dug earth, consumables on apothecary glass; the rulebook table roll rides a stat row.
+ */
+export function ForgedLootCard({ loot }: { loot: LootDef }) {
+  const kindLabel = loot.kind === 'consumable' ? 'Consumable' : 'Loot';
+  const accentDeep = loot.kind === 'consumable' ? '#1A2620' : '#241B10';
+  const theme = getPlaqueTheme(kindLabel);
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
+      <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <LootGlyph kind={loot.kind} />
+      </View>
+      <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
+        <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+          <PlaqueLabel text={kindLabel} textColor={theme.textColor} />
+        </DividerPlaque>
+      </View>
+      <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
+        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{loot.name}</Text>
+        <View style={{ marginTop: 8 }}>
+          <StatRow label="Roll" value={loot.roll} />
+        </View>
+        <CardMarkdownBody
+          body={loot.text}
+          numberOfLines={11}
+          adjustsFontSizeToFit
+          minimumFontScale={0.55}
+          style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: 8, flexShrink: 1 }}
+        />
       </View>
       <ForgedFooter />
     </View>

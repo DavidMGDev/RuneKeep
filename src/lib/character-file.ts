@@ -12,7 +12,7 @@ import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-ef
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA } from '@/data/class-data';
 import { activeWildshapeName } from '@/data/wildshape-data';
-import { type BaseStats, type CardEffect, computeSheet, type EffectSource } from '@/lib/modifiers';
+import { type BaseStats, type CardEffect, computeSheet, type Contribution, type EffectSource } from '@/lib/modifiers';
 
 /** Daggerheart proficiency by level (#128): tier 1 = 1, tier 2 (L2-4) = 2, tier 3 (L5-7) = 3, tier 4 = 4. */
 export function proficiencyForLevel(level: number): number {
@@ -415,4 +415,51 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     scar: 0, // v0.13.0
   };
   return computeSheet(base, file.level, allEffectSources(file));
+}
+
+/** The starting bonus on a new Experience (rulebook: +2, at creation and at each tier start). */
+const EXPERIENCE_BASE = 2;
+
+/** One Experience's resolved bonus, with provenance — the Modifiers panel's Experiences section. */
+export interface ExperienceBreakdown {
+  id: string;
+  title: string;
+  base: number;
+  contributions: Contribution[];
+  total: number;
+}
+
+/**
+ * v0.14.0: resolve every Experience's CURRENT bonus and where it came from.
+ *
+ * Experiences can't live in `sheetBreakdown` — that's a record keyed by target, which structurally
+ * can't hold one value per Experience. So they get their own pass over the same effect sources.
+ *
+ * Two kinds of contribution: the level-up advancements (folded into `modifier` at apply time, so only
+ * the total above the +2 start survives — it's shown as one "Level up" row) and enabled cards carrying
+ * an `experience` effect. An effect with no `experienceId` means the FIRST Experience (what a shipped
+ * card like the Honing Relic does before the player picks); one naming a deleted Experience is dropped.
+ */
+export function experienceBreakdown(file: CharacterFile): ExperienceBreakdown[] {
+  const exps = file.experiences ?? [];
+  if (!exps.length) return [];
+  const rows: ExperienceBreakdown[] = exps.map((e) => {
+    const mod = e.modifier ?? EXPERIENCE_BASE;
+    const base = Math.min(mod, EXPERIENCE_BASE);
+    const contributions: Contribution[] = [];
+    if (mod > base) contributions.push({ source: 'Level up', delta: mod - base, note: 'Experience advancements' });
+    return { id: e.id, title: e.title, base, contributions, total: mod };
+  });
+  for (const src of allEffectSources(file)) {
+    for (const e of src.effects) {
+      if (e.target !== 'experience') continue;
+      const row = e.experienceId ? rows.find((r) => r.id === e.experienceId) : rows[0];
+      if (!row) continue; // targets an Experience that no longer exists — contributes nothing
+      const d = e.delta ?? 0;
+      if (!d) continue;
+      row.contributions.push({ source: src.source, delta: d, note: e.note });
+      row.total += d;
+    }
+  }
+  return rows;
 }

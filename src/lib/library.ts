@@ -100,6 +100,40 @@ export interface LibraryCard {
   catalogId?: string;
 }
 
+/** The word printed under a subclass card's title, matching the official scans. */
+export const SUBCLASS_TIER_LABEL: Record<1 | 2 | 3, string> = { 1: 'Foundation', 2: 'Specialization', 3: 'Mastery' };
+export const SUBCLASS_TIERS: (1 | 2 | 3)[] = [1, 2, 3];
+
+/** v0.14.0: the key that LINKS a custom subclass's three tier cards into one family. Authors may fill
+ *  the explicit family field, but the common case is giving all three cards the SAME title — so the
+ *  title is the fallback, and matching is case- and whitespace-insensitive ("Blood Mage" == "blood
+ *  mage"). Cards of different classes never merge, so the class rides the key too. */
+export function subclassFamilyKey(lc: Pick<LibraryCard, 'subclass' | 'title' | 'className'>): string {
+  const fam = (lc.subclass?.trim() || lc.title?.trim() || '').toLowerCase().replace(/\s+/g, ' ');
+  return `${(lc.className ?? '').trim().toLowerCase()}::${fam}`;
+}
+
+/** The display name of a subclass family — the explicit family name if given, else the shared title. */
+export function subclassFamilyName(lc: Pick<LibraryCard, 'subclass' | 'title'>): string {
+  return lc.subclass?.trim() || lc.title?.trim() || 'Untitled';
+}
+
+/** v0.14.0: subclass families in a card set that are missing any of the three tiers. A subclass is only
+ *  fully playable with all three — the player can still save/enable the pack, but is warned. */
+export function incompleteSubclasses(cards: LibraryCard[]): { name: string; missing: string[] }[] {
+  const fams = new Map<string, { name: string; tiers: Set<number> }>();
+  for (const c of cards) {
+    if (c.contentType !== 'subclass') continue;
+    const key = subclassFamilyKey(c);
+    const fam = fams.get(key) ?? { name: subclassFamilyName(c), tiers: new Set<number>() };
+    fam.tiers.add(c.tier ?? 1);
+    fams.set(key, fam);
+  }
+  return [...fams.values()]
+    .map((f) => ({ name: f.name, missing: SUBCLASS_TIERS.filter((t) => !f.tiers.has(t)).map((t) => SUBCLASS_TIER_LABEL[t]) }))
+    .filter((f) => f.missing.length > 0);
+}
+
 export interface Expansion {
   /** Stable identity that survives renames — the key for update-in-place on import. */
   id: string;

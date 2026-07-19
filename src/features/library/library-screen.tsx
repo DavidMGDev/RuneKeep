@@ -28,13 +28,16 @@ import {
   type LibraryContentType,
   type WeaponSpec,
   expansionSummary,
+  incompleteSubclasses,
   isEnabledForCreation,
   isExpansionEnabled,
+  SUBCLASS_TIER_LABEL,
+  subclassFamilyName,
 } from '@/lib/library';
 import { cardById } from '@/data/catalog';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
-import { nfcModulesPresent } from '@/lib/nfc';
+import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 
@@ -178,7 +181,7 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
             <Chip label="Specialization" on={config.tier === 2} onPress={() => set({ tier: 2 })} />
             <Chip label="Mastery" on={config.tier === 3} onPress={() => set({ tier: 3 })} />
           </View>
-          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Make ALL THREE — a Foundation, a Specialization, and a Mastery — with the SAME class + subclass name. Foundation is chosen in creation; the other two are added automatically when you upgrade the subclass on level-up.</Text>
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Make ALL THREE — a Foundation, a Specialization, and a Mastery. Cards link into one subclass when they share a class and a name: leave the field above blank and just give all three cards the SAME title (capitals don&apos;t matter), or fill it in to link cards with different titles. Foundation is chosen in creation; the other two are added automatically when you upgrade the subclass on level-up.</Text>
         </View>
       ) : null}
       {/* v0.13.2 (#359): the old "Passive on feature line" chip is gone. Which feature is crossed out in a
@@ -279,8 +282,19 @@ const cardSummary = (c: LibraryCard) => {
   const parts = [CONTENT_TYPE_LABEL[c.contentType]];
   if (c.contentType === 'domain' && c.domain) parts.push(`${c.domain} L${c.level ?? 1}`);
   if ((c.contentType === 'subclass' || c.contentType === 'class') && c.className) parts.push(c.className);
+  // v0.14.0: show the tier AND the family a subclass card is linked into, so an author can see the
+  // grouping in the list instead of finding out at level-up whether it worked.
+  if (c.contentType === 'subclass') parts.push(SUBCLASS_TIER_LABEL[c.tier ?? 1], `“${subclassFamilyName(c)}”`);
   return parts.join(' · ');
 };
+
+/** v0.14.0: the advisory line for an expansion whose subclasses are missing tiers — never blocking. */
+function incompleteSubclassWarning(cards: LibraryCard[]): string | null {
+  const bad = incompleteSubclasses(cards);
+  if (!bad.length) return null;
+  const lines = bad.map((f) => `• ${f.name} — missing ${f.missing.join(' and ')}`).join('\n');
+  return `A subclass needs all three cards — Foundation, Specialization and Mastery — to level up properly. These are incomplete:\n\n${lines}\n\nYou can still use this pack; the missing tiers just won't be granted on level-up.`;
+}
 
 export function LibraryScreen() {
   const router = useRouter();
@@ -293,6 +307,18 @@ export function LibraryScreen() {
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<number | null>(null);
   const [message, setMessage] = useState<{ title: string; body: string } | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null);
+  // v0.14.0: an incomplete subclass (missing Foundation / Specialization / Mastery) can still be saved
+  // and enabled — but the player is told, both when they switch a pack on and when they open it.
+  const warnIncomplete = (e: Expansion) => {
+    const body = incompleteSubclassWarning(e.cards);
+    if (body) setMessage({ title: 'Incomplete subclass', body });
+  };
+  const openExpansion = (e: Expansion) => { setSelectedId(e.id); warnIncomplete(e); };
+  const toggleExpansion = (e: Expansion, turningOn: boolean) => {
+    playSfx('buttonTap');
+    void persist({ ...e, enabled: turningOn });
+    if (turningOn) warnIncomplete(e);
+  };
   // v0.13.2 (#359): NFC RECEIVING moved to the character sheet (a DM taps a card to a player on their
   // sheet). The library only SENDS single cards + shares expansions via Import/Export .rkp.
   const nfcOn = nfcModulesPresent();
@@ -350,6 +376,7 @@ export function LibraryScreen() {
     return (
       <CardEditor
         kindLabel={cfg.typeLabel || CONTENT_TYPE_LABEL[cfg.contentType]}
+        previewSubtitle={cfg.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[cfg.tier ?? 1] : undefined}
         initial={initial}
         sectioned
         sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
@@ -403,7 +430,7 @@ export function LibraryScreen() {
                 <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>{on ? 'Enabled for creation' : 'Disabled'}</Text>
                 <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 2 }}>Official expansion — read only</Text>
               </View>
-              <ExpansionToggle on={on} onToggle={() => { playSfx('buttonTap'); void persist({ ...selected, enabled: !on }); }} />
+              <ExpansionToggle on={on} onToggle={() => toggleExpansion(selected, !on)} />
             </View>
           </ChamferBox>
         </ScrollView>
@@ -447,8 +474,11 @@ export function LibraryScreen() {
                       <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>{c.title || 'Untitled'}</Text>
                       <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2 }}>{cardSummary(c)}</Text>
                     </View>
+                    {/* v0.14.0: INLINE the art. `imageUri` is a device-local file path — it serialized
+                        fine but resolved to nothing on the receiving phone, so every shared card with an
+                        uploaded image arrived blank. The sheet's send path always did this. */}
                     {nfcOn ? (
-                      <Pressable onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'card', payload: c }, label: c.title || 'card' }); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+                      <Pressable onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'card', payload: inlineCardImage(c, SAFE_NFC_BYTES - 2000) }, label: c.title || 'card' }); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
                       <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>NFC</Text>
                     </Pressable>
                     ) : null}
@@ -522,8 +552,8 @@ export function LibraryScreen() {
                 e={e}
                 on={isEnabledForCreation(e)}
                 cardCount={expansionCardCount(e)}
-                onOpen={() => setSelectedId(e.id)}
-                onToggle={() => { playSfx('buttonTap'); void persist({ ...e, enabled: !isEnabledForCreation(e) }); }}
+                onOpen={() => openExpansion(e)}
+                onToggle={() => toggleExpansion(e, !isEnabledForCreation(e))}
               />
             ))}
           </>
@@ -545,8 +575,8 @@ export function LibraryScreen() {
               e={e}
               on={isExpansionEnabled(e)}
               cardCount={expansionSummary(e).cardCount}
-              onOpen={() => setSelectedId(e.id)}
-              onToggle={() => { playSfx('buttonTap'); void persist({ ...e, enabled: !isExpansionEnabled(e) }); }}
+              onOpen={() => openExpansion(e)}
+              onToggle={() => toggleExpansion(e, !isExpansionEnabled(e))}
             />
           ))
         )}

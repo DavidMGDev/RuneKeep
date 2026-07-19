@@ -15,13 +15,13 @@ import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
-import { type CharacterFile, type CustomCardDef, toSheetCharacter } from '@/lib/character-file';
+import { type CharacterFile, type CustomCardDef, experienceBreakdown, toSheetCharacter } from '@/lib/character-file';
 import { CATALOG, cardById } from '@/data/catalog';
 import { CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS, classBanner } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/data/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
@@ -43,7 +43,8 @@ import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/library';
-import { libraryCardBody, libraryCardKindLabel, mixedCrossedTrait } from '@/lib/library-embed';
+import { mixedCrossedTrait } from '@/lib/library-embed';
+import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -59,6 +60,7 @@ import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-con
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
 import { OverlayShell } from './overlay-shell';
 import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory } from '../card-data';
+import { isExperienceType } from '../card-types';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
 import { CardCarousel } from '../components/card-carousel';
@@ -699,10 +701,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const mcFeatJobs: Job[] = mc
       ? mcFpages.map((p) => ({ key: `mcfeat-${mc}-${p.pageIndex}`, raster: isVoidClass(mc), node: <ForgedTextCard title={mcTitle} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${mcTotal}`} sections={p.sections} accentDeep={classColor(mc).deep} Banner={classBanner(mc)} classKey={mc} /> }))
       : [];
+    // v0.14.0: the pill shows the EFFECTIVE bonus — the level-up total plus any equipped card boosting
+    // this Experience (the Honing Relic). The total rides the forge key so equipping it re-forges.
+    const expTotals = new Map(experienceBreakdown(file).map((b) => [b.id, b.total]));
     const expJobs = (file.experiences ?? []).map((e) => ({
-      key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0) + (e.color?.length ?? 0) * 13 + (e.modifier ?? 0) * 101) % 99991}`,
+      key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0) + (e.color?.length ?? 0) * 13 + (expTotals.get(e.id) ?? e.modifier ?? 0) * 101) % 99991}`,
       id: e.id,
-      node: <ForgedCard title={e.title} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={e.imageUri} colorArt={e.color} experience modifier={e.modifier ?? 2} />,
+      node: <ForgedCard title={e.title} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={e.imageUri} colorArt={e.color} experience modifier={expTotals.get(e.id) ?? e.modifier ?? 2} />,
       // player photo (file://) decodes async — needs the forge settle so it isn't captured black (#121)
       raster: !!e.imageUri,
     }));
@@ -728,7 +733,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const acqLootJobs: Job[] = acquired
       .map((id) => lootById(id))
       .filter((l): l is NonNullable<typeof l> => !!l)
-      .map((l) => ({ key: l.id, node: <ForgedCard title={l.name} kindLabel={l.kind === 'consumable' ? 'Consumable' : 'Loot'} body={l.text} accentDeep={Rune.panel} colorArt={itemColor(l.name)} multilineTitle /> }));
+      // v0.14.0: loot + consumables get their own forged card (chest / flask glyph, roll stat row,
+      // own plaque family) instead of the generic flat-color one, so they read like weapons and armor.
+      .map((l) => ({ key: l.id, node: <ForgedLootCard loot={l} /> }));
     // Acquired CLASS cards (#250 item 4 / #328): a MULTI-PAGE card (class card + each feature page),
     // forged exactly like the primary/multiclass class-feature card — NOT a single page (the old bug:
     // catalog/added class cards showed "1 of 4"). NO stat effects. Forged per UNIQUE acquired class
@@ -786,7 +793,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return {
         key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + secSig * 41 + crossed * 7919) % 99991}`,
         id: lc.id,
-        node: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc, struckIndex)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
+        node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
         raster: !!lc.imageUri,
       };
     });
@@ -1255,6 +1262,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setFile((f) => {
       if (!f) return f;
       let next: CharacterFile;
+      // v0.14.0: the Experience type authors a REAL Experience, not a custom card — so level-up
+      // advancements and experience-targeting effects (the Honing Relic) can find it. It starts at the
+      // same +2 a creation/tier-start Experience does.
+      if (isExperienceType(draft.typeLabel)) {
+        next = { ...f, experiences: [...(f.experiences ?? []), { ...baseCard, text: '', modifier: 2 }] };
+        saveFileRef.current(next);
+        return next;
+      }
       if (categoryKey === 'notes') {
         next = { ...f, notes: [...(f.notes ?? []), baseCard] };
       } else {
@@ -2067,7 +2082,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               for parity with the float-menu "New Card" flow — the acquire callbacks are always passed;
               only 'gear' opens straight into the catalog. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} />
+            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (

@@ -15,6 +15,7 @@ import type { TraitKey } from '@/features/character-sheet/character';
 import { CATALOG, cardById } from '@/data/catalog';
 import type { CharacterFile } from './character-file';
 import { addCompanionExperience, applyCompanionOption, companionOf, hasCompanion } from './companion';
+import { subclassFamilyKey } from './library';
 import { tierForLevel } from './rest';
 
 export { tierForLevel };
@@ -94,14 +95,17 @@ const SUBCLASS_NEXT: Record<string, 'foundation' | 'specialization' | 'mastery'>
 
 /** The subclass card at a target progression tier (2 = specialization, 3 = mastery) in the same family as
  *  a foundation card. Catalog families derive from the `subclass` slug (ids like `subclass-stalwart-1-
- *  foundation`); custom (homebrew) subclasses match by the embedded cards' shared `subclass` family +
- *  `className` (v0.10.5). Used to auto-add the card on a subclass upgrade (Bug 3). */
+ *  foundation`). Custom (homebrew) subclasses match on `subclassFamilyKey` (v0.14.0), which falls back
+ *  from the explicit family field to the card TITLE, case-insensitively — authors overwhelmingly just
+ *  name all three tier cards the same thing and never fill the family field in, and the upgrade used to
+ *  silently do nothing for them. Used to auto-add the card on a subclass upgrade (Bug 3). */
 export function nextSubclassCardId(file: CharacterFile, foundationCardId: string, targetTier: 2 | 3): string | undefined {
   const slug = cardById(foundationCardId)?.subclass;
   if (slug) return CATALOG.find((c) => c.kind === 'subclass' && c.subclass === slug && c.tier === targetTier)?.id;
   const found = file.libraryCards?.find((c) => c.id === foundationCardId);
-  if (found?.contentType === 'subclass' && found.subclass) {
-    return file.libraryCards?.find((c) => c.contentType === 'subclass' && c.subclass === found.subclass && c.tier === targetTier)?.id;
+  if (found?.contentType === 'subclass') {
+    const key = subclassFamilyKey(found);
+    return file.libraryCards?.find((c) => c.contentType === 'subclass' && (c.tier ?? 1) === targetTier && subclassFamilyKey(c) === key)?.id;
   }
   return undefined;
 }

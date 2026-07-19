@@ -17,8 +17,8 @@ import { type TraitKey } from '@/features/character-sheet/character';
 import { newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
-import { contentForCreation, type CreationContent, type Expansion, featureSectionIndexes, isEnabledForCreation, type LibraryCard } from '@/lib/library';
-import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
+import { contentForCreation, type CreationContent, type Expansion, featureSectionIndexes, isEnabledForCreation, type LibraryCard, subclassFamilyKey } from '@/lib/library';
+import { LibraryForgedCard } from './components/library-forged-card';
 import { listExpansions } from '@/lib/library-store';
 import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
@@ -62,7 +62,7 @@ const SKIP_INVENTORY: StraightItem = { id: 'inventory-skip', label: 'Skip invent
 const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => ({
   id: lc.id,
   label: lc.title || 'Card',
-  custom: <ForgedCard title={lc.title} kindLabel={libraryCardKindLabel(lc)} body={libraryCardBody(lc, struckIndex)} accentDeep={Rune.panel} imageUri={lc.imageUri} colorArt={lc.color} multilineTitle />,
+  custom: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
 });
 
 export function CreateScreen() {
@@ -484,10 +484,13 @@ export function CreateScreen() {
     // v0.10.5: a custom subclass FOUNDATION drags its specialization + mastery siblings along (same family
     // + class) so the subclass-upgrade advancement can add them on level-up. They stay hidden on the sheet
     // until acquired.
+    // v0.14.0: family matching goes through subclassFamilyKey, which falls back to the card TITLE — an
+    // author who named all three cards the same and left the family field blank used to get no siblings.
     const subFoundation = draft.subclassCardId ? libById.get(draft.subclassCardId) : undefined;
-    if (subFoundation?.contentType === 'subclass' && subFoundation.subclass) {
+    if (subFoundation?.contentType === 'subclass') {
+      const famKey = subclassFamilyKey(subFoundation);
       for (const sib of libContent?.subclasses ?? []) {
-        if (sib.subclass === subFoundation.subclass && sib.className === subFoundation.className && (sib.tier ?? 1) !== 1 && !libraryCards.some((c) => c.id === sib.id)) libraryCards.push(sib);
+        if (subclassFamilyKey(sib) === famKey && (sib.tier ?? 1) !== 1 && !libraryCards.some((c) => c.id === sib.id)) libraryCards.push(sib);
       }
     }
     // enable custom origin/armor cards so their effects apply (armor score/thresholds, ancestry passive).

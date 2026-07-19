@@ -11,7 +11,8 @@ import { FORGED_H, ForgedCard } from '@/features/create/components/forged-card';
 import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
 import { type CardEffect } from '@/lib/modifiers';
-import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchOption } from '@/components/effects-editor';
+import { applyPickedOption, EffectPicker, EffectsField, type ExperienceRef, FormulaVarPicker, matchOption } from '@/components/effects-editor';
+import { isExperienceType } from '@/features/character-sheet/card-types';
 import { playSfx } from '@/lib/sfx';
 
 export interface CardDraft {
@@ -204,6 +205,8 @@ function EditorFrame({ framed, insetTop, insetBottom, animStyle, children }: { f
  */
 export function CardEditor({
   kindLabel,
+  previewSubtitle,
+  experiences,
   initial,
   onSave,
   onCancel,
@@ -217,6 +220,11 @@ export function CardEditor({
   sectionsConfig,
 }: {
   kindLabel: string;
+  /** v0.14.0: the centered line under the title in the LIVE preview — the subclass tier word, so an
+   *  author can confirm it before saving. Not part of the draft; the caller derives it from the config. */
+  previewSubtitle?: string;
+  /** v0.14.0: the character's Experiences, so an effect can target one of them by name. */
+  experiences?: ExperienceRef[];
   initial?: CardDraft;
   onSave: (draft: CardDraft) => void;
   onCancel: () => void;
@@ -259,7 +267,11 @@ export function CardEditor({
   // #318: a note/card can be saved with NO title as long as it has SOME content (a body). An experience
   // still needs its phrase (the title IS the experience).
   const hasSectionContent = (draft.sections ?? []).some((s) => s.body.trim() || (s.name ?? '').trim());
-  const canSave = experienceMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || (sectioned ? hasSectionContent : draft.text.trim().length > 0);
+  // v0.14.0: picking the "Experience" type flips this editor into the SAME layout creation and level-up
+  // use for an experience — a long phrase, no body, no effects, a bonus pill on the preview. The type
+  // chip itself stays tappable (it's gated on the prop, not this), so the choice is reversible.
+  const expMode = experienceMode || (!!typeGroups?.length && isExperienceType(draft.typeLabel));
+  const canSave = expMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || (sectioned ? hasSectionContent : draft.text.trim().length > 0);
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
   const [pickEffect, setPickEffect] = useState<number | null>(null);
@@ -286,7 +298,7 @@ export function CardEditor({
   const padFull = scrimless ? 30 : insets.top + 64; // resting top gap (keyboard closed)
   const padCompact = scrimless ? 8 : insets.top + 12; // typing: card top ~10px below the border
   // Height the fields column + buttons occupy below the card (approx; experiences have no body/effects).
-  const fieldsH = experienceMode ? 196 : 340;
+  const fieldsH = expMode ? 196 : 340;
   const cardRoom = screenH * 0.55 - padCompact - fieldsH; // vertical space left for the card while typing
   const fadeCard = cardRoom < 50; // too small to be worth showing → fade out instead of shrinking
   const targetScale = fadeCard ? 0.2 : Math.max(0.32, Math.min(1, cardRoom / FORGED_H));
@@ -335,11 +347,11 @@ export function CardEditor({
         {/* live preview — scales down from its TOP while a field is focused, the negative margin pulling
             the fields up so they sit above the keyboard */}
         <Animated.View style={[{ transformOrigin: 'top center' }, previewStyle]}>
-          {experienceMode ? (
+          {expMode ? (
             <ForgedCard title={draft.title.trim() || 'Experience'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
           ) : (
             // #318: no "Untitled" — an empty title previews as a titleless card (the body fills the space).
-            <ForgedCard title={draft.title.trim()} kindLabel={plaqueLabel} body={sectioned ? composeSections(draft.sections) : draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+            <ForgedCard title={draft.title.trim()} kindLabel={plaqueLabel} subtitle={previewSubtitle} body={sectioned ? composeSections(draft.sections) : draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
           )}
           {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
               transparent hit-band over the divider seam (~40% down), so the player taps the chip on
@@ -363,21 +375,21 @@ export function CardEditor({
             <RuneButton label="Add Image" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={pickImage} />
             <RuneButton label="Random Color" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={rollColor} muteSfx />
           </View>
-          <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: experienceMode ? 80 : 46, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: experienceMode ? 9 : 0 }}>
+          <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: expMode ? 80 : 46, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: expMode ? 9 : 0 }}>
             <TextInput
               value={draft.title}
               onChangeText={(title) => setDraft((d) => ({ ...d, title }))}
               onFocus={onFieldFocus}
-              placeholder={experienceMode ? 'The experience — a word or a whole phrase…' : 'Title'}
+              placeholder={expMode ? 'The experience — a word or a whole phrase…' : 'Title'}
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
-              multiline={experienceMode}
-              maxLength={experienceMode ? 160 : 70}
-              style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0, textAlignVertical: experienceMode ? 'top' : 'center' }}
-              accessibilityLabel={experienceMode ? 'Experience' : 'Card title'}
+              multiline={expMode}
+              maxLength={expMode ? 160 : 70}
+              style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0, textAlignVertical: expMode ? 'top' : 'center' }}
+              accessibilityLabel={expMode ? 'Experience' : 'Card title'}
             />
           </ChamferBox>
-          {experienceMode ? null : sectioned ? (
+          {expMode ? null : sectioned ? (
             <SectionsField sections={draft.sections ?? []} onChange={(sections) => setDraft((d) => ({ ...d, sections }))} minRows={sectionsConfig?.minRows} fixedLabels={sectionsConfig?.fixedLabels} ancestryFeatures={sectionsConfig?.ancestryFeatures} />
           ) : (
             <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
@@ -395,7 +407,7 @@ export function CardEditor({
               />
             </ChamferBox>
           )}
-          {experienceMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} />}
+          {expMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} experiences={experiences} />}
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
@@ -407,7 +419,8 @@ export function CardEditor({
       </EditorFrame>
       {pickEffect != null && draft.effects[pickEffect] ? (
         <EffectPicker
-          current={matchOption(draft.effects[pickEffect])}
+          current={matchOption(draft.effects[pickEffect], experiences)}
+          experiences={experiences}
           onPick={(o) => {
             setDraft((d) => ({
               ...d,
