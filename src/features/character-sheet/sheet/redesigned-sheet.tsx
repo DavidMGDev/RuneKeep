@@ -1339,7 +1339,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onNfcCard = useCallback((card: LibraryCard) => setIncoming(card), []);
   const onNfcReject = useCallback((msg: string) => pushNotice(msg), [pushNotice]);
   const commitReceived = useCallback((card: LibraryCard, category: CardCategory) => {
-    if (card.catalogId && cardById(card.catalogId)) onAcquireCard(card.catalogId, category);
+    // v0.14.1: loot/consumables share by reference too, so they land as REAL loot (own card, working
+    // modifiers) instead of a flattened inventory note. onAcquireCard already accepts a loot id.
+    if (card.catalogId && (cardById(card.catalogId) || lootById(card.catalogId))) onAcquireCard(card.catalogId, category);
     else onAcquireCustom(card, category);
   }, [onAcquireCard, onAcquireCustom]);
   // Hidden categories (#227, Cards panel): which categories the player toggled off. Back-compat:
@@ -1672,6 +1674,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // raised selection the carousel passes in.
   const [moveReq, setMoveReq] = useState<string[] | null>(null);
   const [deleteReq, setDeleteReq] = useState<string[] | null>(null);
+  /** v0.14.1: the consumable instance just switched OFF, awaiting the "used it up?" prompt. */
+  const [depletedId, setDepletedId] = useState<string | null>(null);
   const onCardAction = useCallback((kind: CardMenuKind, ids: string[]) => {
     switch (kind) {
       case 'duplicate': onDuplicateCards(ids); break;
@@ -1780,6 +1784,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         }
         domainOverrideRef.current = 0; // #318: any non-blocked toggle ends an exceed streak
         playSfx(isWs ? 'disableBeastform' : 'cardDisable');
+        // v0.14.1: a CONSUMABLE is used up the moment you switch it off — offer to bin the depleted
+        // card. Only offered, never automatic: the player may be holding several of the same potion,
+        // and onDeleteCards drops exactly one copy from the multiset.
+        if (lootById(catalogIdOf(id))?.kind === 'consumable') setDepletedId(id);
       } else {
         // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
         if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
@@ -2051,6 +2059,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {deleteReq ? (
               <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
                 <Confirm title={deleteReq.length > 1 ? `Delete ${deleteReq.length} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setDeleteReq(null)} onConfirm={() => { onDeleteCards(deleteReq); setDeleteReq(null); }} />
+              </Animated.View>
+            ) : null}
+            {/* v0.14.1: a consumable switched off has been used up — offer to discard the spent card. */}
+            {depletedId ? (
+              <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
+                <Confirm
+                  title="Used it up?"
+                  body={`${lootById(catalogIdOf(depletedId))?.name ?? 'That consumable'} is spent. Discard the card, or keep it if you're still carrying another.`}
+                  confirmLabel="Discard"
+                  onCancel={() => setDepletedId(null)}
+                  onConfirm={() => { onDeleteCards([depletedId]); setDepletedId(null); }}
+                />
               </Animated.View>
             ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
