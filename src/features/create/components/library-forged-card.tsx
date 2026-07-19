@@ -12,11 +12,12 @@
  * everywhere and forever — not just during the receive ceremony.
  */
 import type { ArmorDef, WeaponDef } from '@/data/equipment-data';
+import { lootById } from '@/data/loot-data';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
 import { Rune } from '@/constants/theme';
 
-import { ForgedArmorCard, ForgedCard, ForgedWeaponCard } from './forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
 
 /** The equipment cards print ONE feature line. Homebrew keeps it in the body as `**Name:** text`
  *  (that's what the share path writes), so unwrap it back into the shape those cards expect. */
@@ -34,6 +35,10 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
 }
 
 export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; struckIndex?: number }) {
+  // v0.14.1: a shared loot/consumable travels as a reference. If this phone has the item bundled,
+  // draw the REAL forged loot card (chest/flask glyph, roll row) rather than a flattened note.
+  const loot = card.catalogId ? lootById(card.catalogId) : undefined;
+  if (loot) return <ForgedLootCard loot={loot} />;
   if (card.contentType === 'weapon' && card.weapon) {
     const w = card.weapon;
     const def: WeaponDef = {

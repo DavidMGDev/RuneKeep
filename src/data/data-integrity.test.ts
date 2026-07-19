@@ -90,6 +90,25 @@ describe('loot', () => {
     }
   });
 
+  // v0.14.1: the Major potions shipped with `effects: []`, so drinking one changed nothing on the
+  // sheet. Anything whose text promises a numeric bonus to a SHEET stat must carry a real effect.
+  it.each([
+    ['consumable-stride-potion', 'agility', 1],
+    ['consumable-enlighten-potion', 'knowledge', 1],
+    ['consumable-major-enlighten-potion', 'knowledge', 1],
+    ['consumable-major-bolster-potion', 'strength', 1],
+    ['consumable-shrinking-potion', 'agility', 2],
+    ['consumable-growing-potion', 'strength', 2],
+    ['loot-enlighten-relic', 'knowledge', 1],
+  ])('%s applies %s %+d when equipped', (id, target, delta) => {
+    expect(lootById(id)?.effects).toEqual(expect.arrayContaining([expect.objectContaining({ target, delta })]));
+  });
+
+  it('the shrink/grow potions trade a trait against Proficiency', () => {
+    expect(lootById('consumable-shrinking-potion')?.effects).toEqual(expect.arrayContaining([expect.objectContaining({ target: 'proficiency', delta: -1 })]));
+    expect(lootById('consumable-growing-potion')?.effects).toEqual(expect.arrayContaining([expect.objectContaining({ target: 'proficiency', delta: 1 })]));
+  });
+
   it('every declared effect names a real target', () => {
     for (const x of ALL_LOOT) for (const e of x.effects ?? []) expect(EFFECT_TARGETS.includes(e.target as never) || e.target === 'experience').toBe(true);
   });

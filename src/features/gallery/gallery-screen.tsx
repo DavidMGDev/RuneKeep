@@ -17,7 +17,8 @@ import { catalogFor, classExpansion, globallyEnabledExpansionIds } from '@/lib/e
 import { type CatalogCard, type CatalogKind } from '@/data/catalog';
 import { featurePages } from '@/data/class-data';
 import { ALL_ARMOR, ALL_WEAPONS, type ArmorDef, type WeaponDef } from '@/data/equipment-data';
-import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
+import { ALL_LOOT, type LootDef } from '@/data/loot-data';
+import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/class-cards';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { focusHaptic } from '@/lib/haptics';
@@ -28,11 +29,14 @@ import { type RkpContent } from '@/lib/rkp';
 // The archive browses catalog cards AND equipment. Weapons/armor have no image assets — they render
 // live via the forged components — so the grid item is a union (v0.10.0, owner: "all weapons and armor
 // for all tiers" were missing because the gallery only ever read CATALOG).
-type GalleryKind = CatalogKind | 'weapon' | 'armor' | 'class';
+// v0.14.1: loot + consumables were missing here for the same reason weapons/armor once were — the
+// archive only read CATALOG and the equipment arrays. They browse and share like equipment.
+type GalleryKind = CatalogKind | 'weapon' | 'armor' | 'class' | 'loot' | 'consumable';
 type GalleryItem =
   | { type: 'card'; id: string; label: string; card: CatalogCard }
   | { type: 'weapon'; id: string; label: string; weapon: WeaponDef }
   | { type: 'armor'; id: string; label: string; armor: ArmorDef }
+  | { type: 'loot'; id: string; label: string; loot: LootDef }
   | { type: 'class'; id: string; label: string; def: ClassCardDef };
 
 const KINDS: { key: GalleryKind; label: string }[] = [
@@ -44,6 +48,8 @@ const KINDS: { key: GalleryKind; label: string }[] = [
   { key: 'transformation', label: 'Forms' },
   { key: 'weapon', label: 'Weapons' },
   { key: 'armor', label: 'Armor' },
+  { key: 'loot', label: 'Loot' },
+  { key: 'consumable', label: 'Consumables' },
 ];
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const TIERS = [1, 2, 3, 4];
@@ -92,17 +98,25 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
       out.push({ type: 'armor', id: a.id, label: a.name, armor: a });
     }
   }
+  // v0.14.1: loot has NO tier and no domain/level (the rulebook indexes it by table roll), so it shows
+  // only when neither dimension is narrowing the grid — the same guard the class cards use.
+  if (!catalogDim && !equipDim) {
+    for (const l of ALL_LOOT) {
+      if (!wantKind(l.kind)) continue;
+      out.push({ type: 'loot', id: l.id, label: l.name, loot: l });
+    }
+  }
   return out;
 }
 
 /** A forged equipment card (no image asset) scaled to fill `width`, clipped to the 5:7 cell. */
-function ScaledForged({ item, width }: { item: Extract<GalleryItem, { type: 'weapon' | 'armor' }>; width: number }) {
+function ScaledForged({ item, width }: { item: Extract<GalleryItem, { type: 'weapon' | 'armor' | 'loot' }>; width: number }) {
   const s = width / FORGED_W;
   const h = FORGED_H * s;
   return (
     <View style={{ width, height: h, overflow: 'hidden' }}>
       <View style={{ position: 'absolute', left: (width - FORGED_W) / 2, top: (h - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: s }] }}>
-        {item.type === 'weapon' ? <ForgedWeaponCard weapon={item.weapon} /> : <ForgedArmorCard armor={item.armor} />}
+        {item.type === 'weapon' ? <ForgedWeaponCard weapon={item.weapon} /> : item.type === 'armor' ? <ForgedArmorCard armor={item.armor} /> : <ForgedLootCard loot={item.loot} />}
       </View>
     </View>
   );
@@ -173,7 +187,18 @@ function ClassReader({ def, onClose }: { def: ClassCardDef; onClose: () => void 
  *  enabling a carousel card. Catalog cards travel as a tiny catalog-reference payload (the receiving
  *  phone resolves the id against its own bundled catalog for the real art); equipment travels with its
  *  full structured stats. */
-function toShareCard(item: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' }>): LibraryCard {
+function toShareCard(item: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' | 'loot' }>): LibraryCard {
+  // v0.14.1: loot travels as a reference (like catalog cards) — the receiving phone resolves the id
+  // against its own bundled loot table, so it lands as REAL loot with its chest/flask card, not a
+  // flattened inventory note. The text/effects ride along as a fallback for an older receiver.
+  if (item.type === 'loot') {
+    const l = item.loot;
+    return {
+      id: `share-${l.id}`, contentType: 'inventory', title: l.name, imageUri: null,
+      effects: l.effects ?? [], text: l.text, catalogId: l.id,
+      typeLabel: l.kind === 'consumable' ? 'Consumable' : 'Loot',
+    };
+  }
   if (item.type === 'weapon') {
     const w = item.weapon;
     return {
@@ -202,7 +227,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Fullscreen reader: full-res card over a dim veil; tap or swipe-down closes (the sheet's focus feel).
  *  v0.13.1: hold the card to share it via NFC (`onHoldShare`) — the carousel's bottom-to-top gold fill. */
-function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' }>; onClose: () => void; onHoldShare: () => void }) {
+function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' | 'loot' }>; onClose: () => void; onHoldShare: () => void }) {
   const p = useSharedValue(0);
   const dragY = useSharedValue(0);
   useEffect(() => {
