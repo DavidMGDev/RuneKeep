@@ -31,6 +31,25 @@ export const Rune = {
  * - `Body` = Archivo at text weights. Tracked-uppercase labels, secondary lines, badge values, quote.
  * One superfamily, weight contrast carries the hierarchy. No serif.
  */
+/**
+ * DM Mode palette (v0.15.0) — the desaturated twin of `Rune`, reusing the Golden-Gear-Edit greys
+ * (`#C4C8D0` / `#9AA0AA`) so DM surfaces read as "the same UI, drained of gold". Enabling DM Mode swaps
+ * these in; disabling reverts entirely. `accent`/`accentDim` replace gold; `line` replaces goldEdge.
+ */
+export const DmRune = {
+  ink: '#0B0E13',
+  panel: '#12151B',
+  panelLit: '#1A1E26',
+  accent: '#C4C8D0', // was gold
+  accentDim: '#9AA0AA',
+  line: 'rgba(196,200,208,0.5)',
+  lineStrong: 'rgba(196,200,208,0.85)',
+  ivory: '#F0F1F4',
+  text: '#E7E9ED',
+  muted: '#8B909A',
+  red: '#B2564E', // desaturated heraldic red for destructive/loss accents
+} as const;
+
 export const Display = {
   regular: 'Archivo_700Bold',
   semibold: 'Archivo_800ExtraBold',

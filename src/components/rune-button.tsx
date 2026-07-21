@@ -3,7 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
-import { Body, Rune } from '@/constants/theme';
+import { Body, DmRune, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 
 const PRESS_SPRING = { damping: 22, stiffness: 320, mass: 0.6 };
@@ -25,15 +25,17 @@ interface RuneButtonProps {
   /** Suppress the generic tap SFX (#255) — for buttons that already fire a bigger sound (confirm
    *  level, finish rest), so the click doesn't double up. */
   muteSfx?: boolean;
+  /** DM Mode (v0.15.0): desaturate into the DM palette. */
+  dm?: boolean;
 }
 
 /** The app's chamfered button. Flat fill or hairline, 45° corners, subtle press scale. */
-export function RuneButton({ label, onPress, kind = 'secondary', disabled, height = 48, icon, dense, style, accessibilityLabel, muteSfx }: RuneButtonProps) {
+export function RuneButton({ label, onPress, kind = 'secondary', disabled, height = 48, icon, dense, style, accessibilityLabel, muteSfx, dm }: RuneButtonProps) {
   const scale = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const fill = kind === 'primary' ? Rune.red : 'transparent';
-  const stroke = kind === 'primary' ? 'transparent' : kind === 'secondary' ? Rune.goldEdge : Rune.muted;
-  const color = kind === 'primary' ? Rune.ivory : kind === 'secondary' ? Rune.goldText : Rune.muted;
+  const fill = kind === 'primary' ? (dm ? DmRune.red : Rune.red) : 'transparent';
+  const stroke = kind === 'primary' ? 'transparent' : kind === 'secondary' ? (dm ? DmRune.accentDim : Rune.goldEdge) : (dm ? DmRune.muted : Rune.muted);
+  const color = kind === 'primary' ? (dm ? DmRune.ivory : Rune.ivory) : kind === 'secondary' ? (dm ? DmRune.accent : Rune.goldText) : (dm ? DmRune.muted : Rune.muted);
   return (
     <Pressable
       onPress={
