@@ -1,5 +1,5 @@
-import { type Href, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Polygon, Polyline } from 'react-native-svg';
@@ -9,9 +9,11 @@ import { AppScreen } from '@/components/app-screen';
 import { FitLine } from '@/components/fit-line';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
-import { Body, Display, Rune } from '@/constants/theme';
+import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { getDmMode, setDmMode } from '@/lib/dm-mode';
+import { listParties } from '@/lib/party-store';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 
 const THUMB_W = 76;
@@ -49,7 +51,7 @@ function DriftRow({ y, cards, duration, reverse, opacity }: { y: number; cards: 
   );
 }
 
-function MenuAction({ label, sub, glyph, onPress, delayIndex }: { label: string; sub: string; glyph: 'characters' | 'cards'; onPress: () => void; delayIndex: number }) {
+function MenuAction({ label, sub, glyph, onPress, delayIndex, dm, locked }: { label: string; sub: string; glyph: 'characters' | 'cards'; onPress: () => void; delayIndex: number; dm?: boolean; locked?: boolean }) {
   // Web (the verify pipeline) renders the settled state directly — the entrance is native-only.
   const enter = useSharedValue(Platform.OS === 'web' ? 1 : 0);
   const press = useSharedValue(1);
@@ -58,9 +60,15 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex }: { label: string;
     enter.value = reduced ? 1 : withSpring(1, { damping: 18, stiffness: 90, mass: 0.9 });
   }, [enter, reduced]);
   const style = useAnimatedStyle(() => ({
-    opacity: enter.value,
+    opacity: enter.value * (locked ? 0.42 : 1),
     transform: [{ translateY: (1 - enter.value) * (26 + delayIndex * 14) }, { scale: press.value }],
   }));
+  // DM Mode (PRD #2): the same chrome drained of gold into the desaturated Golden-Gear-Edit palette.
+  const edge = dm ? DmRune.accentDim : Rune.goldEdge;
+  const bright = dm ? DmRune.accent : Rune.goldBright;
+  const accent = dm ? DmRune.red : Rune.red;
+  const ivory = dm ? DmRune.ivory : Rune.ivory;
+  const muted = dm ? DmRune.muted : Rune.muted;
   return (
     <Animated.View style={style}>
       <Pressable
@@ -72,32 +80,53 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex }: { label: string;
           press.value = withSpring(1, { damping: 22, stiffness: 320, mass: 0.6 });
         }}
         accessibilityRole="button"
-        accessibilityLabel={label}>
-        <ChamferBox chamfer={14} fill="rgba(14,17,22,0.92)" stroke={Rune.goldEdge} strokeWidth={1.4} style={{ height: 108, justifyContent: 'center', paddingHorizontal: 22 }}>
+        accessibilityLabel={locked ? `${label}, locked` : label}>
+        <ChamferBox chamfer={14} fill="rgba(14,17,22,0.92)" stroke={edge} strokeWidth={1.4} style={{ height: 108, justifyContent: 'center', paddingHorizontal: 22 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
             <Svg width={44} height={44} viewBox="0 0 44 44">
               {glyph === 'characters' ? (
                 <>
                   {/* helm: chamfered shield silhouette */}
-                  <Polygon points="22,3 38,10 38,24 22,41 6,24 6,10" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinejoin="miter" />
-                  <Polyline points="14,18 22,26 30,18" fill="none" stroke={Rune.red} strokeWidth={2.6} strokeLinejoin="miter" />
+                  <Polygon points="22,3 38,10 38,24 22,41 6,24 6,10" fill="none" stroke={edge} strokeWidth={2} strokeLinejoin="miter" />
+                  <Polyline points="14,18 22,26 30,18" fill="none" stroke={accent} strokeWidth={2.6} strokeLinejoin="miter" />
                 </>
               ) : (
                 <>
                   {/* fanned cards */}
-                  <Polygon points="8,12 22,8 26,26 12,30" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinejoin="miter" />
-                  <Polygon points="20,10 34,12 32,32 18,30" fill={Rune.ink} stroke={Rune.goldBright} strokeWidth={2} strokeLinejoin="miter" />
+                  <Polygon points="8,12 22,8 26,26 12,30" fill="none" stroke={edge} strokeWidth={2} strokeLinejoin="miter" />
+                  <Polygon points="20,10 34,12 32,32 18,30" fill={Rune.ink} stroke={bright} strokeWidth={2} strokeLinejoin="miter" />
                 </>
               )}
             </Svg>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <FitLine style={{ color: Rune.ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>{label}</FitLine>
-              <FitLine minScale={0.7} style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, letterSpacing: 0.4, marginTop: 3 }}>{sub}</FitLine>
+              <FitLine style={{ color: ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>{label}</FitLine>
+              <FitLine minScale={0.7} style={{ color: muted, fontSize: 12, fontFamily: Body.medium, letterSpacing: 0.4, marginTop: 3 }}>{locked ? 'Enable a party to unlock' : sub}</FitLine>
             </View>
             <Svg width={16} height={16} viewBox="0 0 16 16">
-              <Polyline points="5,2 12,8 5,14" fill="none" stroke={Rune.goldEdge} strokeWidth={2.2} strokeLinejoin="miter" />
+              <Polyline points="5,2 12,8 5,14" fill="none" stroke={edge} strokeWidth={2.2} strokeLinejoin="miter" />
             </Svg>
           </View>
+        </ChamferBox>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/** The small "DM Mode" / "Player Mode" toggle below the actions (PRD #1). */
+function ModeToggle({ dm, onToggle }: { dm: boolean; onToggle: () => void }) {
+  const press = useSharedValue(1);
+  const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+  const edge = dm ? DmRune.accent : Rune.goldEdge;
+  return (
+    <Animated.View style={[anim, { alignSelf: 'center' }]}>
+      <Pressable
+        onPress={onToggle}
+        onPressIn={() => { press.value = withSpring(0.95, { damping: 22, stiffness: 320, mass: 0.6 }); }}
+        onPressOut={() => { press.value = withSpring(1, { damping: 22, stiffness: 320, mass: 0.6 }); }}
+        accessibilityRole="button"
+        accessibilityLabel={dm ? 'Switch to Player Mode' : 'Switch to DM Mode'}>
+        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 20 }}>
+          <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{dm ? 'Player Mode' : 'DM Mode'}</Text>
         </ChamferBox>
       </Pressable>
     </Animated.View>
@@ -112,8 +141,11 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex }: { label: string;
 export function MenuScreen() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [dm, setDm] = useState(false);
+  const [hasEnabledParty, setHasEnabledParty] = useState(false);
   useEffect(() => {
     preloadSfx(); // warm the audio engine + decode latency-sensitive sounds (#255)
+    void getDmMode().then(setDm);
     // One frame of intentional loading: lets fonts/thumb decodes land so the menu never flashes
     // half-drawn. Kept short — this screen has no real async data yet.
     const t = setTimeout(() => {
@@ -121,6 +153,24 @@ export function MenuScreen() {
       playSfx('appStartup'); // the forge is lit
     }, 350);
     return () => clearTimeout(t);
+  }, []);
+  // Sessions unlocks only once a party is enabled (PRD #17/#18). Re-checked whenever the menu regains
+  // focus (returning from Parties may have just enabled one).
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      void listParties().then((all) => { if (live) setHasEnabledParty(all.some((p) => p.enabled)); });
+      return () => { live = false; };
+    }, []),
+  );
+
+  const toggleDm = useCallback(() => {
+    playSfx('buttonTap');
+    setDm((prev) => {
+      const next = !prev;
+      void setDmMode(next);
+      return next;
+    });
   }, []);
 
   const rows = useMemo(() => {
@@ -151,10 +201,32 @@ export function MenuScreen() {
           </Svg>
         </View>
 
-        {/* actions */}
-        <View style={{ flex: 1, justifyContent: 'flex-end', gap: 16, paddingBottom: 40 }}>
-          <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
-          <MenuAction label="Cards" sub="Archive, homebrew & expansions" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
+        {/* actions — labels + destinations swap in DM Mode (PRD #3) */}
+        <View style={{ flex: 1, justifyContent: 'flex-end', gap: 16, paddingBottom: 28 }}>
+          {dm ? (
+            <>
+              <MenuAction label="Parties" sub="Build parties from your roster" glyph="characters" dm delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/parties' as Href); }} />
+              <MenuAction
+                label="Sessions"
+                sub="Encounters for an enabled party"
+                glyph="cards"
+                dm
+                locked={!hasEnabledParty}
+                delayIndex={1}
+                onPress={() => {
+                  if (!hasEnabledParty) { playSfx('buttonTap'); return; }
+                  playSfx('enterCardViewer');
+                  router.push('/sessions' as Href);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
+              <MenuAction label="Cards" sub="Archive, homebrew & expansions" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
+            </>
+          )}
+          <ModeToggle dm={dm} onToggle={toggleDm} />
         </View>
       </View>
     </AppScreen>

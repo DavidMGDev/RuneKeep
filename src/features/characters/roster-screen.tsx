@@ -1,7 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, Image, Pressable, Text, View } from 'react-native';
-import Svg, { Line, Polygon } from 'react-native-svg';
+import { Image, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -14,9 +14,11 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
 import { deleteCharacter, exportCharacter, importCharacter, listCharacters } from '@/lib/character-store';
 import { seedOfficialExpansions } from '@/lib/expansions';
+import { addFolder, assign, EMPTY_INDEX, type Folder, type FolderIndex, loadFolders, recolorFolder, removeFolder, renameFolder, saveFolders } from '@/lib/folders';
 import { type Expansion, isEnabledForCreation } from '@/lib/library';
 import { listExpansions } from '@/lib/library-store';
 import { playSfx } from '@/lib/sfx';
+import { NameDialog } from '@/features/dm/dm-ui';
 import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picker';
 
 function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
@@ -70,15 +72,38 @@ function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOp
   );
 }
 
-/** The roster: saved characters as files. Tap = play; hold = export/delete; import brings a friend's file in. */
+/** A folder group header (v0.15.0, PRD #6/#7): colour + name + count, tap to collapse, hold for actions. */
+function FolderHeader({ folder, count, collapsed, onToggle, onActions }: { folder: Folder; count: number; collapsed: boolean; onToggle: () => void; onActions: () => void }) {
+  return (
+    <Pressable onPress={onToggle} onLongPress={onActions} delayLongPress={380} accessibilityRole="button" accessibilityLabel={`Folder ${folder.name}, ${count} characters. Hold for actions`} style={{ marginTop: 6, marginBottom: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}>
+        <View style={{ width: 12, height: 12, backgroundColor: folder.color, transform: [{ rotate: '45deg' }] }} />
+        <FitLine style={{ flex: 1, color: Rune.ivory, fontSize: 14, fontFamily: Display.black, letterSpacing: 1.4, textTransform: 'uppercase' }}>{folder.name}</FitLine>
+        <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{count}</Text>
+        <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: collapsed ? '0deg' : '90deg' }] }}>
+          <Polyline points="5,3 11,8 5,13" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      </View>
+      <View style={{ height: 1, backgroundColor: 'rgba(218,162,73,0.28)' }} />
+    </Pressable>
+  );
+}
+
+interface Section { key: string; folder: Folder | null; all: CharacterFile[]; data: CharacterFile[] }
+
+/** The roster: saved characters as files, groupable into folders. Tap = play; hold = actions; import brings a friend's file in. */
 export function RosterScreen() {
   const router = useRouter();
   const [files, setFiles] = useState<CharacterFile[] | null>(null);
+  const [index, setIndex] = useState<FolderIndex>(EMPTY_INDEX);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [actionsFor, setActionsFor] = useState<CharacterFile | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CharacterFile | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  // v0.13.0 item 6: the expansion picker moved HERE — it resolves BEFORE creation loads, so the
-  // creation interface never appears behind it. null = closed; [] would still render (base-only).
+  const [movingChar, setMovingChar] = useState<CharacterFile | null>(null);
+  const [folderActions, setFolderActions] = useState<Folder | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState<Folder | null>(null);
+  const [newFolder, setNewFolder] = useState(false);
   const [pickerExps, setPickerExps] = useState<Expansion[] | null>(null);
 
   const onNewCharacter = useCallback(() => {
@@ -92,14 +117,12 @@ export function RosterScreen() {
 
   const reload = useCallback(() => {
     let live = true;
-    listCharacters().then((all) => {
-      if (live) setFiles(all);
-    });
-    return () => {
-      live = false;
-    };
+    void Promise.all([listCharacters(), loadFolders()]).then(([all, idx]) => { if (live) { setFiles(all); setIndex(idx); } });
+    return () => { live = false; };
   }, []);
   useFocusEffect(reload);
+
+  const commitIndex = useCallback((next: FolderIndex) => { setIndex(next); void saveFolders(next); }, []);
 
   const onImport = useCallback(async () => {
     try {
@@ -112,8 +135,30 @@ export function RosterScreen() {
 
   if (!files) return <LoadingScreen label="Summoning the roster" />;
 
+  // Group characters by folder assignment; unknown/removed folder ids fall back to Ungrouped.
+  const folderIds = new Set(index.folders.map((f) => f.id));
+  const sections: Section[] = index.folders.map((folder) => {
+    const all = files.filter((f) => index.assignments[f.id] === folder.id);
+    return { key: folder.id, folder, all, data: collapsed.has(folder.id) ? [] : all };
+  });
+  const ungrouped = files.filter((f) => { const fid = index.assignments[f.id]; return !fid || !folderIds.has(fid); });
+  if (ungrouped.length || sections.length) sections.push({ key: '__ungrouped', folder: null, all: ungrouped, data: collapsed.has('__ungrouped') ? [] : ungrouped });
+
+  const toggle = (key: string) => setCollapsed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+
   return (
-    <AppScreen title="Characters" onBack={() => router.back()}>
+    <AppScreen
+      title="Characters"
+      onBack={() => router.back()}
+      headerRight={
+        <Pressable onPress={() => setNewFolder(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="New folder">
+          <Svg width={22} height={22} viewBox="0 0 24 24">
+            <Polygon points="3,6 9,6 11,9 21,9 21,19 3,19" fill="none" stroke={Rune.goldEdge} strokeWidth={1.7} strokeLinejoin="round" />
+            <Line x1={12} y1={12} x2={12} y2={16} stroke={Rune.goldBright} strokeWidth={1.8} strokeLinecap="round" />
+            <Line x1={10} y1={14} x2={14} y2={14} stroke={Rune.goldBright} strokeWidth={1.8} strokeLinecap="round" />
+          </Svg>
+        </Pressable>
+      }>
       {files.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
           <Pressable onPress={onNewCharacter} accessibilityRole="button" accessibilityLabel="Create your first character">
@@ -141,15 +186,30 @@ export function RosterScreen() {
         </View>
       ) : (
         <>
-          <FlatList
-            data={files}
+          <SectionList
+            sections={sections}
             keyExtractor={(f) => f.id}
-            contentContainerStyle={{ gap: 12, paddingTop: 4, paddingBottom: 16 }}
+            contentContainerStyle={{ paddingTop: 4, paddingBottom: 16 }}
             showsVerticalScrollIndicator={false}
+            stickySectionHeadersEnabled={false}
+            renderSectionHeader={({ section }) => {
+              const s = section as unknown as Section;
+              // Ungrouped needs no header when there are NO folders at all (flat list, as before).
+              if (!s.folder) return index.folders.length === 0 ? null : (
+                <Pressable onPress={() => toggle('__ungrouped')} accessibilityRole="button" accessibilityLabel={`Ungrouped, ${s.all.length}`} style={{ marginTop: 8, marginBottom: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}>
+                    <Text style={{ flex: 1, color: Rune.muted, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Ungrouped</Text>
+                    <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{s.all.length}</Text>
+                    <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: collapsed.has('__ungrouped') ? '0deg' : '90deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={Rune.goldEdge} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+                  </View>
+                </Pressable>
+              );
+              return <FolderHeader folder={s.folder} count={s.all.length} collapsed={collapsed.has(s.folder.id)} onToggle={() => toggle(s.folder!.id)} onActions={() => { playSfx('floatMenuOpen'); setFolderActions(s.folder); }} />;
+            }}
             renderItem={({ item }) => (
-              // #258r3: NO sound on the row tap — it opens the sheet, whose sheet-enter chime is the
-              // feedback (selectCharacter belongs to the main-menu "Characters" button).
-              <CharacterRow file={item} onOpen={() => router.push({ pathname: '/sheet', params: { id: item.id } })} onLongPress={() => { playSfx('floatMenuOpen'); setActionsFor(item); }} />
+              <View style={{ marginBottom: 12 }}>
+                <CharacterRow file={item} onOpen={() => router.push({ pathname: '/sheet', params: { id: item.id } })} onLongPress={() => { playSfx('floatMenuOpen'); setActionsFor(item); }} />
+              </View>
             )}
           />
           <View style={{ flexDirection: 'row', gap: 10, paddingTop: 10, paddingBottom: 6 }}>
@@ -162,7 +222,7 @@ export function RosterScreen() {
       {actionsFor ? (
         <PopupDialog
           title={actionsFor.name}
-          body="Share this character as a file, or remove them from the roster."
+          body="Share this character as a file, move it to a folder, or remove them from the roster."
           confirmLabel="Share file"
           onConfirm={() => {
             const f = actionsFor;
@@ -170,7 +230,8 @@ export function RosterScreen() {
             void exportCharacter(f);
           }}
           onCancel={() => setActionsFor(null)}>
-          <View style={{ marginTop: 16 }}>
+          <View style={{ marginTop: 16, gap: 10 }}>
+            <RuneButton label="Move to folder" kind="secondary" height={40} onPress={() => { const f = actionsFor; setActionsFor(null); setMovingChar(f); }} />
             <RuneButton
               label="Delete"
               kind="primary"
@@ -193,8 +254,8 @@ export function RosterScreen() {
           onConfirm={() => {
             const f = confirmDelete;
             setConfirmDelete(null);
-            playSfx('loseHpDefault'); // deleting a character hits like taking damage (#255) — no meme roll
-            void deleteCharacter(f.id).then(reload);
+            playSfx('loseHpDefault');
+            void deleteCharacter(f.id).then(() => commitIndex(assign(index, f.id, null))).then(reload);
           }}
           onCancel={() => setConfirmDelete(null)}
         />
@@ -204,7 +265,45 @@ export function RosterScreen() {
         <PopupDialog title="Import failed" body={importError} confirmLabel="OK" onConfirm={() => setImportError(null)} onCancel={() => setImportError(null)} />
       ) : null}
 
-      {/* v0.13.0 item 6: choose expansions FIRST, then load creation with the picks as a route param. */}
+      {/* Move-to-folder chooser */}
+      {movingChar ? (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 250, alignItems: 'center', justifyContent: 'center' }]}>
+          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={() => setMovingChar(null)} accessibilityRole="button" accessibilityLabel="Dismiss" />
+          <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.5} style={{ width: 312, padding: 20, gap: 8 }}>
+            <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to folder</Text>
+            {index.folders.map((fo) => (
+              <Pressable key={fo.id} onPress={() => { const c = movingChar; setMovingChar(null); commitIndex(assign(index, c.id, fo.id)); }} accessibilityRole="button" accessibilityLabel={fo.name} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 8, backgroundColor: pressed ? 'rgba(218,162,73,0.12)' : 'transparent', borderRadius: 6 })}>
+                <View style={{ width: 11, height: 11, backgroundColor: fo.color, transform: [{ rotate: '45deg' }] }} />
+                <Text style={{ flex: 1, color: index.assignments[movingChar.id] === fo.id ? Rune.goldText : Rune.ivory, fontSize: 14, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{fo.name}</Text>
+                {index.assignments[movingChar.id] === fo.id ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: Rune.goldBright }} /> : null}
+              </Pressable>
+            ))}
+            <View style={{ marginTop: 6, gap: 8 }}>
+              <RuneButton label="Remove from folder" kind="ghost" height={40} onPress={() => { const c = movingChar; setMovingChar(null); commitIndex(assign(index, c.id, null)); }} />
+              <RuneButton label="New folder" kind="secondary" height={40} onPress={() => { setMovingChar(null); setNewFolder(true); }} />
+            </View>
+          </ChamferBox>
+        </View>
+      ) : null}
+
+      {/* Folder actions */}
+      {folderActions ? (
+        <PopupDialog
+          title={folderActions.name}
+          body="Rename this folder, re-roll its colour, or remove it (its characters become ungrouped)."
+          confirmLabel="Rename"
+          onConfirm={() => { const fo = folderActions; setFolderActions(null); setRenamingFolder(fo); }}
+          onCancel={() => setFolderActions(null)}>
+          <View style={{ marginTop: 16, gap: 10 }}>
+            <RuneButton label="Re-roll colour" kind="secondary" height={40} onPress={() => { commitIndex(recolorFolder(index, folderActions.id)); setFolderActions(null); }} />
+            <RuneButton label="Remove folder" kind="ghost" height={40} onPress={() => { commitIndex(removeFolder(index, folderActions.id)); setFolderActions(null); }} />
+          </View>
+        </PopupDialog>
+      ) : null}
+
+      {newFolder ? <NameDialog dm={false} title="New Folder" placeholder="Folder name" confirmLabel="Create" onConfirm={(name) => { setNewFolder(false); commitIndex(addFolder(index, name)); }} onCancel={() => setNewFolder(false)} /> : null}
+      {renamingFolder ? <NameDialog dm={false} title="Rename Folder" initial={renamingFolder.name} confirmLabel="Rename" onConfirm={(name) => { commitIndex(renameFolder(index, renamingFolder.id, name)); setRenamingFolder(null); }} onCancel={() => setRenamingFolder(null)} /> : null}
+
       {pickerExps ? (
         <ExpansionPicker
           expansions={pickerExps}
