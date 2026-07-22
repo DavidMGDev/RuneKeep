@@ -4,7 +4,7 @@
  * remove; rename / re-roll colour; and Enable the party (which unlocks Sessions). No character CREATION
  * here (PRD #15) — only select/import existing ones.
  */
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
@@ -23,6 +23,7 @@ import { initialVitals } from '@/lib/dm-vitals';
 import { addMembers, isPresent, type Party, randomColor, removeMember, togglePresent } from '@/lib/party';
 import { deleteParty, getParty, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
+import { showToast } from '@/components/toast';
 import { ColorDiamond, NameDialog } from './dm-ui';
 
 function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
@@ -186,18 +187,25 @@ export function PartyEditorScreen() {
         )}
 
         <View style={{ gap: 10, paddingTop: 8 }}>
-          <RuneButton label="Add characters" kind="secondary" height={46} dm onPress={() => setPicking(true)} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <RuneButton label="Add characters" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => setPicking(true)} />
+            {party.memberIds.length > 0 ? <RuneButton label="Party State" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => router.push(`/party-overview?partyId=${party.id}` as Href)} /> : null}
+          </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Delete party" kind="ghost" height={46} dm style={{ flex: 1 }} onPress={() => setConfirmDelete(true)} />
-            <RuneButton
-              label={party.enabled ? 'Enabled ✓' : 'Enable'}
-              kind={party.enabled ? 'secondary' : 'primary'}
-              height={46}
-              dm
-              disabled={!canEnable}
-              style={{ flex: 1.4 }}
-              onPress={() => { playSfx('buttonTap'); commit({ ...party, enabled: !party.enabled }); }}
-            />
+            {party.enabled ? (
+              <RuneButton label="Sessions" kind="primary" height={46} dm style={{ flex: 1.4 }} onPress={() => { playSfx('enterCardViewer'); router.push('/sessions' as Href); }} />
+            ) : (
+              <RuneButton
+                label="Enable"
+                kind="primary"
+                height={46}
+                dm
+                disabled={!canEnable}
+                style={{ flex: 1.4 }}
+                onPress={() => { playSfx('buttonTap'); commit({ ...party, enabled: true }); showToast('Party enabled — Sessions unlocked', 'success'); }}
+              />
+            )}
           </View>
         </View>
       </View>

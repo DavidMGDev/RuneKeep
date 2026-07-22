@@ -29,7 +29,10 @@ export function PopupDialog({
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Dismiss" />
-      <View style={{ width: 320, paddingVertical: 30, paddingHorizontal: 26 }}>
+      {/* tap-absorb wrapper (#3): a near-miss inside the panel never falls through to the scrim */}
+      <Pressable onPress={() => {}} style={{ width: 320, paddingVertical: 30, paddingHorizontal: 26 }}>
+        {/* opaque interior fill (#11) inset inside the frame outline, so the pop-up isn't see-through */}
+        <View style={[StyleSheet.absoluteFill, { top: 8, bottom: 8, left: 8, right: 8, backgroundColor: 'rgba(12,15,20,0.98)' }]} pointerEvents="none" />
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <PopupFrame width="100%" height="100%" preserveAspectRatio="none" />
         </View>
@@ -40,7 +43,7 @@ export function PopupDialog({
           <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
           <RuneButton label={confirmLabel} kind={destructive ? 'primary' : 'secondary'} height={42} style={{ flex: 1 }} onPress={onConfirm} />
         </View>
-      </View>
+      </Pressable>
     </View>
   );
 }

@@ -6,7 +6,7 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList } from 'react-native';
+import { FlatList, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { LoadingScreen } from '@/components/loading-screen';
@@ -14,9 +14,10 @@ import { NumberKeypad } from '@/features/character-sheet/sheet/number-keypad';
 import { type CharacterFile } from '@/lib/character-file';
 import { listCharacters } from '@/lib/character-store';
 import { memberMaxes } from '@/lib/dm-vitals';
-import { applyVitalDelta, type Party, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
+import { applyVitalDelta, isPresent, type Party, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
 import { MemberPanel } from './member-panel';
+import { DirectionToggle } from './stat-pulse';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
 
@@ -26,6 +27,7 @@ export function PartyOverviewScreen() {
   const [party, setParty] = useState<Party | null>(null);
   const [files, setFiles] = useState<Record<string, CharacterFile>>({});
   const [keypad, setKeypad] = useState<{ charId: string; key: VitalKey } | null>(null);
+  const [dir, setDir] = useState<1 | -1>(-1);
 
   // Debounced persistence: the heartbeat can fire many steps/sec; React state updates instantly, the
   // disk write trails the last change by a beat.
@@ -73,6 +75,9 @@ export function PartyOverviewScreen() {
 
   return (
     <AppScreen title="Players" dm onBack={() => router.back()}>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <DirectionToggle dir={dir} onChange={setDir} />
+      </View>
       <FlatList
         data={party.memberIds.filter((id) => files[id])}
         keyExtractor={(id) => id}
@@ -82,8 +87,10 @@ export function PartyOverviewScreen() {
           <MemberPanel
             file={files[charId]}
             vitals={party.global[charId] ?? { hp: 0, stress: 0, hope: 0, armor: 0 }}
+            dir={dir}
             editable
-            onStat={(key, dir) => onStat(charId, key, dir)}
+            absent={!isPresent(party, charId)}
+            onStat={(key, d) => onStat(charId, key, d)}
             onRequestSet={(key) => setKeypad({ charId, key })}
           />
         )}

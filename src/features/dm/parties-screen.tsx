@@ -31,7 +31,12 @@ function PartyRow({ party, onOpen }: { party: Party; onOpen: () => void }) {
               {party.memberIds.length} {party.memberIds.length === 1 ? 'Member' : 'Members'}{party.enabled ? ' · Enabled' : ''}
             </Text>
           </View>
-          {party.enabled ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: DmRune.accent }} /> : null}
+          {party.enabled ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(196,200,208,0.16)', borderWidth: 1, borderColor: DmRune.accent, paddingHorizontal: 8, paddingVertical: 4 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} />
+              <Text style={{ color: DmRune.accent, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Enabled</Text>
+            </View>
+          ) : null}
           <Svg width={14} height={14} viewBox="0 0 16 16">
             <Line x1={4} y1={2} x2={12} y2={8} stroke={DmRune.accentDim} strokeWidth={2} />
             <Line x1={12} y1={8} x2={4} y2={14} stroke={DmRune.accentDim} strokeWidth={2} />
@@ -93,7 +98,8 @@ export function PartiesScreen() {
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => <PartyRow party={item} onOpen={() => router.push(`/party?id=${item.id}` as Href)} />}
           />
-          <View style={{ paddingTop: 10, paddingBottom: 6 }}>
+          <View style={{ gap: 10, paddingTop: 10, paddingBottom: 6 }}>
+            {parties.some((p) => p.enabled) ? <RuneButton label="Sessions Menu" kind="secondary" height={46} dm onPress={() => { playSfx('enterCardViewer'); router.push('/sessions' as Href); }} /> : null}
             <RuneButton label="New party" kind="primary" height={46} dm onPress={() => setNaming(true)} />
           </View>
         </>

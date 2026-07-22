@@ -1,15 +1,25 @@
 import { addMembers, type MemberMaxes, type MemberVitals, newParty, togglePresent } from './party';
 import {
   canEditMembers,
+  cloneCombatant,
   combatantDelta,
   completeEncounter,
+  deleteLogEntries,
+  duplicateEncounter,
+  editLogEntry,
+  fell,
   formatStatLog,
+  type LogEntry,
   memberDelta,
   memberVitals,
+  moveEncounterToSession,
+  moveLogEntry,
   newAdversary,
   newEncounter,
   newSession,
   nextIndex,
+  recover,
+  restartEncounter,
   setActive,
   sortedEncounters,
   type Encounter,
@@ -100,5 +110,85 @@ describe('combatants + log', () => {
     ];
     expect(sortedEncounters(encs, 'e1').map((e) => e.id)).toEqual(['e1', 'e3', 'e2']);
     expect(sortedEncounters(encs, undefined).map((e) => e.id)).toEqual(['e3', 'e2', 'e1']);
+  });
+});
+
+describe('fallen adversaries (PRD #9)', () => {
+  it('reaching 0 HP falls with a half-max recover target', () => {
+    const c = { ...newAdversary(0), hp: 3, maxHp: 10 };
+    const downed = combatantDelta(c, 'hp', -3);
+    expect(downed.hp).toBe(0);
+    expect(downed.fallen).toBe(true);
+    expect(downed.recoverHp).toBe(5); // ceil(10/2)
+    expect(recover(downed).hp).toBe(5);
+    expect(recover(downed).fallen).toBe(false);
+  });
+  it('the X (fell) preserves current HP as the recover target', () => {
+    const c = { ...newAdversary(0), hp: 7, maxHp: 10 };
+    const downed = fell(c);
+    expect(downed.fallen).toBe(true);
+    expect(downed.recoverHp).toBe(7);
+    expect(recover(downed).hp).toBe(7);
+  });
+  it('healing above 0 clears the fallen flag', () => {
+    const c = { ...newAdversary(0), hp: 0, maxHp: 10, fallen: true, recoverHp: 5 };
+    expect(combatantDelta(c, 'hp', 2).fallen).toBe(false);
+  });
+  it('cloneCombatant resets to a fresh, upright, full-HP copy', () => {
+    const c = { ...newAdversary(0), hp: 0, maxHp: 8, fallen: true, recoverHp: 4 };
+    const copy = cloneCombatant(c);
+    expect(copy.id).not.toBe(c.id);
+    expect(copy.hp).toBe(8);
+    expect(copy.fallen).toBe(false);
+  });
+});
+
+describe('encounter reuse + restart', () => {
+  it('duplicate makes a prepared copy with a new index and upright combatants', () => {
+    const { enc } = setup();
+    const withAdv: Encounter = { ...enc, adversaries: [{ ...newAdversary(0), hp: 0, maxHp: 6, fallen: true }] };
+    const dup = duplicateEncounter(withAdv, 5);
+    expect(dup.id).not.toBe(withAdv.id);
+    expect(dup.index).toBe(5);
+    expect(dup.status).toBe('prepared');
+    expect(dup.adversaries[0].hp).toBe(6);
+    expect(dup.adversaries[0].fallen).toBe(false);
+    expect(dup.log).toEqual([]);
+  });
+  it('move re-homes an encounter to another session and reindexes', () => {
+    const { enc } = setup();
+    const moved = moveEncounterToSession(enc, 'other-session', 2);
+    expect(moved.sessionId).toBe('other-session');
+    expect(moved.index).toBe(2);
+  });
+  it('restart from encounter state rewinds the party global and revives adversaries', () => {
+    const { party, session, enc } = setup();
+    const active = setActive(session, enc).encounter;
+    const r1 = memberDelta(active, party, 'a', 'hp', -3, M); // party a → 3
+    const completed = completeEncounter(setActive(session, enc).session, { ...r1.encounter, adversaries: [{ ...newAdversary(0), hp: 0, maxHp: 8, fallen: true, recoverHp: 4 }] }, r1.party);
+    // now the party keeps moving after completion
+    const partyLater = { ...r1.party, global: { ...r1.party.global, a: { ...r1.party.global.a, hp: 1 } } };
+    const restarted = restartEncounter(completed.session, completed.encounter, partyLater, 'encounter');
+    expect(restarted.encounter.status).toBe('active');
+    expect(restarted.encounter.adversaries[0].fallen).toBe(false); // revived
+    expect(restarted.encounter.adversaries[0].hp).toBe(4);
+    expect(restarted.party.global.a.hp).toBe(3); // rewound to the archived snapshot, not the later 1
+  });
+});
+
+describe('log editing + reorder (PRD #5/#18)', () => {
+  const log: LogEntry[] = [
+    { id: 'n1', at: '', kind: 'note', text: 'first note' },
+    { id: 's1', at: '', kind: 'stat', text: 'auto' },
+    { id: 'n2', at: '', kind: 'note', text: 'second note' },
+  ];
+  it('edits an entry in place', () => {
+    expect(editLogEntry(log, 'n2', 'edited').find((e) => e.id === 'n2')?.text).toBe('edited');
+  });
+  it('moves a note to an earlier index', () => {
+    expect(moveLogEntry(log, 'n2', 0).map((e) => e.id)).toEqual(['n2', 'n1', 's1']);
+  });
+  it('deletes selected entries', () => {
+    expect(deleteLogEntries(log, new Set(['s1'])).map((e) => e.id)).toEqual(['n1', 'n2']);
   });
 });

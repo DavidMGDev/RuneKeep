@@ -14,6 +14,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Rune } from '@/constants/theme';
+import { ToastHost } from '@/components/toast';
 
 /**
  * Root layout. Establishes the three providers every screen relies on:
@@ -51,6 +52,7 @@ export default function RootLayout() {
             animation: 'fade',
           }}
         />
+        <ToastHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
