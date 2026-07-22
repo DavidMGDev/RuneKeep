@@ -269,6 +269,7 @@ export function RosterScreen() {
       {movingChar ? (
         <View style={[StyleSheet.absoluteFill, { zIndex: 250, alignItems: 'center', justifyContent: 'center' }]}>
           <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={() => setMovingChar(null)} accessibilityRole="button" accessibilityLabel="Dismiss" />
+          <Pressable onPress={() => {}} accessibilityElementsHidden>
           <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.5} style={{ width: 312, padding: 20, gap: 8 }}>
             <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to folder</Text>
             {index.folders.map((fo) => (
@@ -283,6 +284,7 @@ export function RosterScreen() {
               <RuneButton label="New folder" kind="secondary" height={40} onPress={() => { setMovingChar(null); setNewFolder(true); }} />
             </View>
           </ChamferBox>
+          </Pressable>
         </View>
       ) : null}
 

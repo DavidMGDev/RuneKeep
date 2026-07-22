@@ -29,6 +29,9 @@ export interface Combatant {
   description?: string;
   /** Which fields the DM chose to display for this combatant (PRD #32). */
   show: { hp: boolean; thresholds: boolean; stress: boolean; description: boolean };
+  /** v0.16.0 (PRD #9): a downed adversary isn't deleted — it's "Fallen" with a Recover target HP. */
+  fallen?: boolean;
+  recoverHp?: number;
 }
 
 /** An ally is either a party member (vitals resolved via the party) or a manually-added NPC (PRD #30). */
@@ -161,14 +164,35 @@ export function mutateCombatant(list: Combatant[], id: string, fn: (c: Combatant
   return list.map((c) => (c.id === id ? fn(c) : c));
 }
 
+/** Apply the fallen state implied by an HP value (PRD #9): 0 → Fallen (recover to half); >0 → up. */
+function withHp(c: Combatant, hp: number): Combatant {
+  if (hp <= 0) return { ...c, hp: 0, fallen: true, recoverHp: c.fallen ? c.recoverHp : Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)) };
+  return { ...c, hp, fallen: false, recoverHp: undefined };
+}
+
 export function combatantDelta(c: Combatant, stat: CombatantStat, delta: number): Combatant {
-  if (stat === 'hp') return { ...c, hp: clamp((c.hp ?? 0) + delta, c.maxHp ?? 0) };
+  if (stat === 'hp') return withHp(c, clamp((c.hp ?? 0) + delta, c.maxHp ?? 0));
   return { ...c, stress: clamp((c.stress ?? 0) + delta, c.maxStress ?? 0) };
 }
 
 export function combatantSet(c: Combatant, stat: CombatantStat, value: number): Combatant {
-  if (stat === 'hp') return { ...c, hp: clamp(value, c.maxHp ?? 0) };
+  if (stat === 'hp') return withHp(c, clamp(value, c.maxHp ?? 0));
   return { ...c, stress: clamp(value, c.maxStress ?? 0) };
+}
+
+/** Down a combatant WITHOUT changing its stats (the X press, PRD #9): Recover restores current HP. */
+export function fell(c: Combatant): Combatant {
+  return { ...c, fallen: true, recoverHp: (c.hp ?? 0) > 0 ? c.hp : Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)) };
+}
+
+/** Bring a fallen combatant back (PRD #9/#11): to its recover HP (half if it hit 0, else prior HP). */
+export function recover(c: Combatant): Combatant {
+  return { ...c, fallen: false, hp: c.recoverHp ?? c.hp ?? Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)), recoverHp: undefined };
+}
+
+/** A fresh copy of a combatant for reuse (library spawn / encounter duplicate): new id, full HP, upright. */
+export function cloneCombatant(c: Combatant, newName?: string): Combatant {
+  return { ...c, id: rid('cb'), name: newName ?? c.name, hp: c.maxHp ?? c.hp ?? 0, stress: 0, fallen: false, recoverHp: undefined };
 }
 
 // --- log (PRD #43-46) ------------------------------------------------------------------------------
@@ -212,4 +236,58 @@ export function sortedEncounters(encounters: Encounter[], activeId?: string): En
   const rest = encounters.filter((e) => e.id !== activeId).sort((a, b) => b.index - a.index);
   const active = encounters.find((e) => e.id === activeId);
   return active ? [active, ...rest] : rest;
+}
+
+/** Duplicate an encounter for reuse (PRD #9): fresh id, new index, prepared, upright combatants, no log. */
+export function duplicateEncounter(enc: Encounter, index: number): Encounter {
+  return {
+    ...enc,
+    id: rid('en'),
+    index,
+    createdAt: new Date().toISOString(),
+    name: `Encounter #${index}`,
+    status: 'prepared',
+    allies: enc.allies.map((a) => (a.kind === 'npc' ? { kind: 'npc', combatant: cloneCombatant(a.combatant) } : a)),
+    adversaries: enc.adversaries.map((c) => cloneCombatant(c)),
+    log: [],
+    localVitals: undefined,
+    archivedGlobal: undefined,
+  };
+}
+
+/** Move an encounter to another session (PRD #8) with a new index there. */
+export function moveEncounterToSession(enc: Encounter, sessionId: string, index: number): Encounter {
+  return { ...enc, sessionId, index, status: enc.status === 'active' ? 'prepared' : enc.status };
+}
+
+/**
+ * Restart a completed encounter (PRD #11). `source` chooses which member state to continue from: 'party'
+ * keeps the party's current live global; 'encounter' rewinds the party global to this encounter's archived
+ * snapshot. Downed adversaries revive to half HP. Returns the pieces to persist.
+ */
+export function restartEncounter(session: Session, enc: Encounter, party: Party, source: 'party' | 'encounter'): { session: Session; encounter: Encounter; party: Party } {
+  const nextParty = source === 'encounter' && enc.archivedGlobal && enc.options.globalSync ? { ...party, global: { ...party.global, ...enc.archivedGlobal } } : party;
+  const adversaries = enc.adversaries.map((c) => (c.fallen ? recover({ ...c, recoverHp: Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)) }) : c));
+  const encounter: Encounter = { ...enc, status: 'active', archivedGlobal: undefined, adversaries };
+  return { session: { ...session, activeEncounterId: enc.id }, encounter, party: nextParty };
+}
+
+/** Move a log entry to an earlier (lower index = newer) position (PRD #18: notes only, enforced by UI). */
+export function moveLogEntry(log: LogEntry[], id: string, toIndex: number): LogEntry[] {
+  const from = log.findIndex((e) => e.id === id);
+  if (from < 0) return log;
+  const next = [...log];
+  const [entry] = next.splice(from, 1);
+  next.splice(Math.max(0, Math.min(next.length, toIndex)), 0, entry);
+  return next;
+}
+
+/** Edit a log entry's text in place (PRD #5). */
+export function editLogEntry(log: LogEntry[], id: string, text: string): LogEntry[] {
+  return log.map((e) => (e.id === id ? { ...e, text } : e));
+}
+
+/** Delete log entries by id (PRD #18: auto/stat entries deletable via multi-select). */
+export function deleteLogEntries(log: LogEntry[], ids: Set<string>): LogEntry[] {
+  return log.filter((e) => !ids.has(e.id));
 }

@@ -3,13 +3,14 @@
  * thresholds and description. Numeric fields are plain inputs (this is prep, not the fast in-play pulse).
  */
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, DmRune } from '@/constants/theme';
 import { type Combatant } from '@/lib/session';
+import { DmModal } from './dm-ui';
 
 function NumField({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
@@ -39,9 +40,8 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
   const setShow = (k: keyof Combatant['show']) => setC((prev) => ({ ...prev, show: { ...prev.show, [k]: !prev.show[k] } }));
 
   return (
-    <View style={[StyleSheet.absoluteFill, { zIndex: 300, alignItems: 'center', justifyContent: 'center' }]}>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.86)' }]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Dismiss" />
-      <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 336, maxHeight: '84%', padding: 20 }}>
+    <DmModal onClose={onCancel}>
+      <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 336, maxHeight: 620, padding: 20 }}>
         <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 14 }}>Configure</Text>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 14 }}>
           <View style={{ gap: 4 }}>
@@ -94,6 +94,6 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
           <RuneButton label="Save" kind="secondary" height={44} dm style={{ flex: 1 }} onPress={() => onSave(c)} />
         </View>
       </ChamferBox>
-    </View>
+    </DmModal>
   );
 }
