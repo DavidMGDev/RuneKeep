@@ -1,9 +1,11 @@
 /**
- * CombatantPanel (v0.15.0; reworked v0.16.0, PRD #6/#9) — an adversary or NPC in an encounter. Filled
- * sheet-coloured StatPulses driven by the screen's global direction, a PENCIL to configure. Deletion is
- * deliberately hard (PRD #9): the X DOWNS a live unit (it becomes "name — Fallen" with a Recover button);
- * only a fallen unit's X actually deletes. Bulk delete goes through multi-select. Supports selection mode.
+ * CombatantPanel (v0.15.0; reworked v0.16.0/v0.17.0) — an adversary or NPC in an encounter. A portrait
+ * (tap → fullscreen), filled sheet-coloured StatPulses on the global direction, a PENCIL to configure, and
+ * an expand chevron revealing the full SRD stat block. Outline colour signals side: red = adversary, teal =
+ * ally (item 5). Selection is bold and obvious — accent wash + check badge (item 4). Deletion stays hard
+ * (PRD #9): the X downs a live unit to "Fallen"; only a fallen unit's X actually deletes.
  */
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
@@ -12,6 +14,7 @@ import { FitLine } from '@/components/fit-line';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, DmRune } from '@/constants/theme';
 import { type Combatant, type CombatantStat } from '@/lib/session';
+import { AdversaryPortrait, hasStatBlock, StatBlockDetail } from './adversary-detail';
 import { StatGlyph } from './stat-glyphs';
 import { StatPulse } from './stat-pulse';
 
@@ -21,9 +24,18 @@ function Pencil() {
   );
 }
 
+function CheckBadge() {
+  return (
+    <ChamferBox chamfer={5} fill={DmRune.accent} stroke="transparent" strokeWidth={0} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={13} height={13} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+    </ChamferBox>
+  );
+}
+
 export function CombatantPanel({
   combatant,
   dir,
+  friendly,
   selecting,
   selected,
   onStat,
@@ -34,11 +46,13 @@ export function CombatantPanel({
   onDelete,
   onLongPress,
   onToggleSelect,
+  onOpenImage,
   onHoldStart,
   onHoldEnd,
 }: {
   combatant: Combatant;
   dir: 1 | -1;
+  friendly?: boolean;
   selecting?: boolean;
   selected?: boolean;
   onStat: (stat: CombatantStat, dir: 1 | -1) => void;
@@ -49,41 +63,54 @@ export function CombatantPanel({
   onDelete: () => void;
   onLongPress?: () => void;
   onToggleSelect?: () => void;
+  onOpenImage?: () => void;
   onHoldStart?: (stat: CombatantStat) => void;
   onHoldEnd?: (stat: CombatantStat) => void;
 }) {
   const c = combatant;
-  const stroke = selected ? DmRune.accent : c.fallen ? 'rgba(139,144,154,0.5)' : 'rgba(178,86,78,0.5)';
+  const [open, setOpen] = useState(false);
+  const sideColor = friendly ? DmRune.ally : DmRune.red;
+  const stroke = selected ? DmRune.accent : c.fallen ? 'rgba(139,144,154,0.5)' : `${sideColor}80`;
+  const fill = selected ? 'rgba(196,200,208,0.16)' : c.fallen ? 'rgba(16,16,18,0.9)' : friendly ? 'rgba(15,20,20,0.92)' : 'rgba(20,15,15,0.92)';
 
   // A fallen unit collapses to name + Fallen + Recover; its X deletes.
   if (c.fallen) {
     return (
       <Pressable onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
-        <ChamferBox chamfer={11} fill="rgba(16,16,18,0.9)" stroke={stroke} strokeWidth={selected ? 1.8 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
+        <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
+          {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : null}
           <FitLine style={{ flex: 1, color: DmRune.muted, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
           <Text style={{ color: DmRune.red, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Fallen</Text>
-          <RuneButton label="Recover" kind="secondary" height={30} dense dm onPress={onRecover} />
-          <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${c.name}`}>
-            <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-          </Pressable>
+          {!selecting ? (
+            <>
+              <RuneButton label="Recover" kind="secondary" height={30} dense dm onPress={onRecover} />
+              <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${c.name}`}>
+                <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
+              </Pressable>
+            </>
+          ) : null}
         </ChamferBox>
       </Pressable>
     );
   }
 
   const anyTrack = c.show.hp || c.show.stress || c.show.thresholds;
+  const canExpand = hasStatBlock(c);
   return (
     <Pressable onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={360} accessibilityRole="button" accessibilityLabel={c.name}>
-      <ChamferBox chamfer={11} fill="rgba(18,15,15,0.92)" stroke={stroke} strokeWidth={selected ? 1.8 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || c.show.description ? 10 : 0 }}>
+      <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || (c.show.description && !open) || open ? 10 : 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {selecting ? (
-            <ChamferBox chamfer={4} fill={selected ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
-              {selected ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
-            </ChamferBox>
-          ) : null}
+          {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : (
+            <AdversaryPortrait uri={c.portraitUri} size={38} tint={sideColor} onPress={onOpenImage} />
+          )}
           <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
           {!selecting ? (
             <>
+              {canExpand ? (
+                <Pressable onPress={() => setOpen((o) => !o)} hitSlop={8} accessibilityRole="button" accessibilityLabel={open ? 'Collapse details' : 'Expand details'}>
+                  <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+                </Pressable>
+              ) : null}
               <Pressable onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Configure ${c.name}`}><Pencil /></Pressable>
               <Pressable onPress={onFell} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Down ${c.name}`}>
                 <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
@@ -93,7 +120,7 @@ export function CombatantPanel({
         </View>
 
         {anyTrack ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexWrap: 'wrap', paddingLeft: selecting ? 30 : 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexWrap: 'wrap', paddingLeft: selecting ? 0 : 48 }}>
             {c.show.hp ? <StatPulse kind="hp" value={c.hp ?? 0} max={c.maxHp ?? 0} dir={dir} onStep={(d) => onStat('hp', d)} onRequestSet={() => onRequestSet('hp')} onHoldStart={() => onHoldStart?.('hp')} onHoldEnd={() => onHoldEnd?.('hp')} /> : null}
             {c.show.stress ? <StatPulse kind="stress" value={c.stress ?? 0} max={c.maxStress ?? 0} dir={dir} onStep={(d) => onStat('stress', d)} onRequestSet={() => onRequestSet('stress')} onHoldStart={() => onHoldStart?.('stress')} onHoldEnd={() => onHoldEnd?.('stress')} /> : null}
             {c.show.thresholds ? (
@@ -105,9 +132,11 @@ export function CombatantPanel({
           </View>
         ) : null}
 
-        {c.show.description && c.description ? (
+        {c.show.description && c.description && !open ? (
           <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>{c.description}</Text>
         ) : null}
+
+        {open ? <StatBlockDetail c={c} /> : null}
       </ChamferBox>
     </Pressable>
   );

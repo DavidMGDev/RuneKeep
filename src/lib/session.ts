@@ -3,6 +3,7 @@
  * Party; an Encounter holds allies (party members + NPCs) and adversaries, a markdown log, and the
  * global-vs-local sync machinery (PRD #34–37). Deep, isolated, unit-testable — no store/IO imports.
  */
+import { type AdversaryFeature, type AdversaryRole } from '@/data/adversaries';
 import { type MemberMaxes, type MemberVitals, type PartyGlobalState, type Party, applyVitalDelta, presentMemberIds, setVital, type VitalKey } from './party';
 
 export const SESSION_SCHEMA_VERSION = 1;
@@ -32,6 +33,22 @@ export interface Combatant {
   /** v0.16.0 (PRD #9): a downed adversary isn't deleted — it's "Fallen" with a Recover target HP. */
   fallen?: boolean;
   recoverHp?: number;
+  // --- v0.17.0: full SRD stat-block detail (base-game roster + custom). All optional/additive so old
+  //     saved encounters keep working; shown in the panel's expandable detail + fully editable.
+  /** An image for the adversary (item 8), like a player portrait; tap to view fullscreen. */
+  portraitUri?: string;
+  role?: AdversaryRole;
+  tier?: 1 | 2 | 3 | 4;
+  difficulty?: number;
+  atkMod?: string;
+  attack?: { name: string; range: string; damage: string };
+  damageType?: 'Physical' | 'Magic';
+  motives?: string;
+  experience?: string;
+  features?: AdversaryFeature[];
+  hordeNote?: string;
+  /** Provenance: the BASE_ADVERSARIES id this was spawned from (item 12). Undefined = fully custom. */
+  baseGameId?: string;
 }
 
 /** An ally is either a party member (vitals resolved via the party) or a manually-added NPC (PRD #30). */
@@ -98,13 +115,13 @@ export function newEncounter(session: Session, party: Party, index: number): Enc
   };
 }
 
-/** Default adversary (PRD #31): "Adversary #X", no tracks shown until the DM enables them. */
+/** Default adversary (PRD #31): "Adversary #X", starts at full 10/10 HP (v0.17.0 item 8). */
 export function newAdversary(existingCount: number): Combatant {
-  return { id: rid('ad'), name: `Adversary #${existingCount + 1}`, hp: 0, maxHp: 10, stress: 0, maxStress: 6, thresholds: { major: 0, severe: 0 }, description: '', show: { hp: true, thresholds: false, stress: false, description: false } };
+  return { id: rid('ad'), name: `Adversary #${existingCount + 1}`, hp: 10, maxHp: 10, stress: 0, maxStress: 6, thresholds: { major: 0, severe: 0 }, description: '', show: { hp: true, thresholds: false, stress: false, description: false } };
 }
 
 export function newNpc(name: string): Combatant {
-  return { id: rid('np'), name: name.trim() || 'NPC', hp: 0, maxHp: 10, stress: 0, maxStress: 6, thresholds: { major: 0, severe: 0 }, description: '', show: { hp: true, thresholds: false, stress: false, description: false } };
+  return { id: rid('np'), name: name.trim() || 'NPC', hp: 10, maxHp: 10, stress: 0, maxStress: 6, thresholds: { major: 0, severe: 0 }, description: '', show: { hp: true, thresholds: false, stress: false, description: false } };
 }
 
 // --- global vs local resolution (PRD #34-37) ------------------------------------------------------
@@ -290,4 +307,9 @@ export function editLogEntry(log: LogEntry[], id: string, text: string): LogEntr
 /** Delete log entries by id (PRD #18: auto/stat entries deletable via multi-select). */
 export function deleteLogEntries(log: LogEntry[], ids: Set<string>): LogEntry[] {
   return log.filter((e) => !ids.has(e.id));
+}
+
+/** Keep ONLY the selected entries, erasing all others (v0.17.0 item 3: "Leave only selected"). */
+export function keepOnlyLogEntries(log: LogEntry[], ids: Set<string>): LogEntry[] {
+  return log.filter((e) => ids.has(e.id));
 }

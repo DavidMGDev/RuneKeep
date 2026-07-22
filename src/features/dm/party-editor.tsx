@@ -21,7 +21,7 @@ import { type CharacterFile } from '@/lib/character-file';
 import { importCharacter, listCharacters } from '@/lib/character-store';
 import { initialVitals } from '@/lib/dm-vitals';
 import { addMembers, isPresent, type Party, randomColor, removeMember, togglePresent } from '@/lib/party';
-import { deleteParty, getParty, saveParty } from '@/lib/party-store';
+import { deleteParty, getParty, listParties, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
 import { ColorDiamond, NameDialog } from './dm-ui';
@@ -127,6 +127,15 @@ export function PartyEditorScreen() {
     setPicking(false);
   }, [party, fileFor, commit]);
 
+  const enable = useCallback(async () => {
+    if (!party) return;
+    playSfx('buttonTap');
+    const all = await listParties();
+    const firstEver = !all.some((p) => p.enabled); // item 9: unlock toast only for the very first party
+    commit({ ...party, enabled: true });
+    showToast(firstEver ? 'Party enabled — Sessions unlocked' : 'Party enabled', 'success');
+  }, [party, commit]);
+
   const onImport = useCallback(async () => {
     const imported = await importCharacter();
     if (imported && party) {
@@ -203,7 +212,7 @@ export function PartyEditorScreen() {
                 dm
                 disabled={!canEnable}
                 style={{ flex: 1.4 }}
-                onPress={() => { playSfx('buttonTap'); commit({ ...party, enabled: true }); showToast('Party enabled — Sessions unlocked', 'success'); }}
+                onPress={() => void enable()}
               />
             )}
           </View>

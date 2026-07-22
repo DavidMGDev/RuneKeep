@@ -9,6 +9,7 @@ import {
   editLogEntry,
   fell,
   formatStatLog,
+  keepOnlyLogEntries,
   type LogEntry,
   memberDelta,
   memberVitals,
@@ -91,8 +92,13 @@ describe('completion archives party state (PRD #36)', () => {
 });
 
 describe('combatants + log', () => {
+  it('a fresh adversary starts full (item 8): 10/10', () => {
+    const c = newAdversary(0);
+    expect(c.hp).toBe(10);
+    expect(c.maxHp).toBe(10);
+  });
   it('clamps combatant hp to its own max', () => {
-    const c = newAdversary(0); // maxHp 10, hp 0
+    const c = { ...newAdversary(0), hp: 0 }; // maxHp 10, start empty for the clamp test
     expect(combatantDelta(c, 'hp', 4).hp).toBe(4);
     expect(combatantDelta(c, 'hp', -1).hp).toBe(0);
     expect(combatantDelta({ ...c, hp: 8 }, 'hp', 5).hp).toBe(10);
@@ -190,5 +196,9 @@ describe('log editing + reorder (PRD #5/#18)', () => {
   });
   it('deletes selected entries', () => {
     expect(deleteLogEntries(log, new Set(['s1'])).map((e) => e.id)).toEqual(['n1', 'n2']);
+  });
+  it('keeps only the selected entries (item 3: "leave only")', () => {
+    expect(keepOnlyLogEntries(log, new Set(['n1'])).map((e) => e.id)).toEqual(['n1']);
+    expect(keepOnlyLogEntries(log, new Set(['n1', 'n2'])).map((e) => e.id)).toEqual(['n1', 'n2']);
   });
 });

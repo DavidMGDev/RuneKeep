@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -378,25 +378,30 @@ export function GalleryScreen() {
       title="Card archive"
       onBack={() => router.back()}
       headerRight={
-        <Pressable
-          onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: drawerOpen }}
-          accessibilityLabel={`Filters, ${activeCount} active`}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Svg width={14} height={13} viewBox="0 0 18 16">
-            <Line x1={1} y1={3} x2={17} y2={3} stroke={Rune.goldEdge} strokeWidth={2} />
-            <Line x1={4} y1={8} x2={14} y2={8} stroke={Rune.goldEdge} strokeWidth={2} />
-            <Line x1={7} y1={13} x2={11} y2={13} stroke={Rune.goldEdge} strokeWidth={2} />
-          </Svg>
-          <Text style={{ color: activeCount ? Rune.red : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>
-            {activeCount ? `FILTERS · ${activeCount}` : 'FILTERS'}
-          </Text>
-          <Svg width={9} height={6} viewBox="0 0 10 7" style={{ transform: [{ rotate: drawerOpen ? '180deg' : '0deg' }] }}>
-            <Polyline points="1,1 5,6 9,1" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} />
-          </Svg>
-        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <Pressable onPress={() => { playSfx('buttonTap'); router.push('/adversary-library' as Href); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary library">
+            <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>ADVERSARIES</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: drawerOpen }}
+            accessibilityLabel={`Filters, ${activeCount} active`}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Svg width={14} height={13} viewBox="0 0 18 16">
+              <Line x1={1} y1={3} x2={17} y2={3} stroke={Rune.goldEdge} strokeWidth={2} />
+              <Line x1={4} y1={8} x2={14} y2={8} stroke={Rune.goldEdge} strokeWidth={2} />
+              <Line x1={7} y1={13} x2={11} y2={13} stroke={Rune.goldEdge} strokeWidth={2} />
+            </Svg>
+            <Text style={{ color: activeCount ? Rune.red : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>
+              {activeCount ? `FILTERS · ${activeCount}` : 'FILTERS'}
+            </Text>
+            <Svg width={9} height={6} viewBox="0 0 10 7" style={{ transform: [{ rotate: drawerOpen ? '180deg' : '0deg' }] }}>
+              <Polyline points="1,1 5,6 9,1" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} />
+            </Svg>
+          </Pressable>
+        </View>
       }>
       {drawerOpen ? (
         <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 8 }}>

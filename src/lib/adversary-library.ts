@@ -5,12 +5,31 @@
  */
 import { Platform } from 'react-native';
 
+import { type BaseAdversary } from '@/data/adversaries';
 import { type Combatant } from './session';
 
 /** A stored template — the combatant shape minus its live/fallen state (reset on spawn via cloneCombatant). */
 export type SavedAdversary = Combatant;
 
 const rid = (): string => `sa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+/** Turn a Base Game roster entry into a fresh, full-HP Combatant instance (v0.17.0 items 10/11) —
+ *  unique id so editing a spawned copy never touches the saved/base record. */
+export function baseToCombatant(b: BaseAdversary): Combatant {
+  const parts = b.thresholds.includes('/') ? b.thresholds.split('/').map((n) => parseInt(n, 10) || 0) : [0, 0];
+  return {
+    id: `ad-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    name: b.name,
+    hp: b.hp, maxHp: b.hp, stress: 0, maxStress: b.stress,
+    thresholds: { major: parts[0], severe: parts[1] },
+    description: b.description,
+    show: { hp: true, thresholds: b.thresholds !== 'None', stress: b.stress > 0, description: true },
+    role: b.role, tier: b.tier, difficulty: b.difficulty, atkMod: b.atk,
+    attack: { name: b.attackName, range: b.attackRange, damage: b.attackDamage },
+    damageType: b.damageType, motives: b.motives, experience: b.experience,
+    features: b.features, hordeNote: b.hordeNote, baseGameId: b.id,
+  };
+}
 
 // --- pure reducers ---------------------------------------------------------------------------------
 
