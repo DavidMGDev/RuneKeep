@@ -1,9 +1,9 @@
 /**
- * Encounter (v0.15.0; heavily reworked v0.16.0) — the DM's fight hub. Allies (present party members +
- * NPCs) and adversaries, each stat nudged by the global-direction heartbeat StatPulse (corner +/−).
- * Adversaries fall instead of delete; multi-select drives bulk delete / convert / library / presence;
- * completed encounters can Restart; the options panel animates and holds auto-log, sync, rename + card
- * archive. Every action persists.  PRD #4/#6/#7/#8/#9/#10/#11/#13/#14/#15/#16/#17.
+ * Encounter (v0.15.0; reworked v0.16.0/v0.17.0) — the DM's fight hub. Allies (present party members + NPCs)
+ * and adversaries, each stat nudged by the global-direction heartbeat StatPulse (corner +/−). Adversaries
+ * fall instead of delete; hold-to-multi-select drives bulk delete / convert / library / presence from a
+ * BOTTOM bar (item 4). Spawning pulls from a full-screen Adversary Library overlay in adversary/ally mode
+ * (items 10/11). Portraits open fullscreen (item 8). The options panel holds auto-log, sync + card archive.
  */
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -38,6 +38,7 @@ import {
   type Encounter,
   fell,
   formatStatLog,
+  keepOnlyLogEntries,
   memberDelta,
   memberSet,
   memberVitals,
@@ -53,7 +54,8 @@ import {
 import { getEncounter, getSession, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
 import { AdversaryEditor } from './adversary-editor';
-import { AdversaryLibraryPanel } from './adversary-library-panel';
+import { AdversaryImageViewer } from './adversary-detail';
+import { AdversaryLibrary } from './adversary-library-screen';
 import { CombatantPanel } from './combatant-panel';
 import { DmModal, NameDialog } from './dm-ui';
 import { DirectionToggle } from './stat-pulse';
@@ -63,6 +65,7 @@ import { useSelection } from './use-selection';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
 type KeypadTarget = { kind: 'member'; charId: string; key: VitalKey } | { kind: 'combatant'; id: string; stat: CombatantStat };
+type LibraryMode = 'adversary' | 'ally';
 
 function OptionRow({ label, hint, on, onToggle }: { label: string; hint: string; on: boolean; onToggle: () => void }) {
   return (
@@ -78,12 +81,15 @@ function OptionRow({ label, hint, on, onToggle }: { label: string; hint: string;
   );
 }
 
-function SelectionBar({ label, children }: { label: string; children: React.ReactNode }) {
+/** The bottom multi-select action bar (item 4: selection controls always live at the bottom). */
+function BottomBar({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <ChamferBox chamfer={9} fill="rgba(20,24,30,0.96)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 9, flexWrap: 'wrap' }}>
-      <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 4 }}>{label}</Text>
-      {children}
-    </ChamferBox>
+    <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>
+      <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
+        <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{label}</Text>
+        {children}
+      </ChamferBox>
+    </View>
   );
 }
 
@@ -98,11 +104,11 @@ export function EncounterScreen() {
   const [dir, setDir] = useState<1 | -1>(-1);
   const [keypad, setKeypad] = useState<KeypadTarget | null>(null);
   const [editing, setEditing] = useState<Combatant | null>(null);
+  const [viewImage, setViewImage] = useState<Combatant | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const [showLibrary, setShowLibrary] = useState(false);
+  const [libraryMode, setLibraryMode] = useState<LibraryMode | null>(null);
   const [addingNpc, setAddingNpc] = useState(false);
-  const [renaming, setRenaming] = useState(false);
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [confirmDeleteAdv, setConfirmDeleteAdv] = useState<Set<string> | null>(null);
   const [startConflict, setStartConflict] = useState(false);
@@ -110,6 +116,9 @@ export function EncounterScreen() {
 
   const advSel = useSelection();
   const allySel = useSelection();
+  // Only one list selects at a time (item 4): starting one clears the other.
+  const startAdv = useCallback((cid: string) => { allySel.clear(); if (advSel.selecting) advSel.toggle(cid); else advSel.start(cid); }, [advSel, allySel]);
+  const startAlly = useCallback((cid: string) => { advSel.clear(); if (allySel.selecting) allySel.toggle(cid); else allySel.start(cid); }, [advSel, allySel]);
 
   const encRef = useRef<Encounter | null>(null); encRef.current = encounter;
   const partyRef = useRef<Party | null>(null); partyRef.current = party;
@@ -257,10 +266,14 @@ export function EncounterScreen() {
     commitEncounter({ ...enc, allies: enc.allies.filter((a) => a.kind !== 'npc' || !ids.has(a.combatant.id)) });
   }, [commitEncounter]);
 
-  // --- library (PRD #10) ---
+  // --- library (PRD #10, item 11) ---
   const saveToLibrary = useCallback((cid: string) => { const r = findCombatant(cid); if (r) { commitLibrary(addTemplate(library, r.c)); showToast('Saved to adversary library', 'success'); } }, [findCombatant, library, commitLibrary]);
-  const spawnAdversary = useCallback((t: SavedAdversary) => { const enc = encRef.current; if (enc) commitEncounter({ ...enc, adversaries: [...enc.adversaries, cloneCombatant(t)] }); }, [commitEncounter]);
-  const spawnAlly = useCallback((t: SavedAdversary) => { const enc = encRef.current; if (enc) commitEncounter({ ...enc, allies: [...enc.allies, { kind: 'npc', combatant: cloneCombatant(t) }] }); }, [commitEncounter]);
+  const spawnMany = useCallback((c: Combatant, count: number, as: LibraryMode) => {
+    const enc = encRef.current; if (!enc) return;
+    const copies = Array.from({ length: count }, () => cloneCombatant(c));
+    if (as === 'ally') commitEncounter({ ...enc, allies: [...enc.allies, ...copies.map((cb) => ({ kind: 'npc' as const, combatant: cb }))] });
+    else commitEncounter({ ...enc, adversaries: [...enc.adversaries, ...copies] });
+  }, [commitEncounter]);
 
   // --- options + lifecycle ---
   const toggleAutoLog = useCallback(() => { const enc = encRef.current; if (enc) commitEncounter({ ...enc, options: { ...enc.options, autoLog: !enc.options.autoLog } }); }, [commitEncounter]);
@@ -273,7 +286,6 @@ export function EncounterScreen() {
   const doStart = useCallback(async () => {
     const enc = encRef.current, ses = session; if (!enc || !ses) return;
     playSfx('buttonTap');
-    // complete any OTHER active encounter, noting it in that encounter's log (PRD #14)
     if (ses.activeEncounterId && ses.activeEncounterId !== enc.id) {
       const prev = await getEncounter(ses.activeEncounterId);
       const pty = partyRef.current;
@@ -332,7 +344,7 @@ export function EncounterScreen() {
         </Pressable>
       }>
       <View style={{ flex: 1 }}>
-        {/* control row: status + log · corner direction toggle (PRD #7) */}
+        {/* control row: status + log (left) · corner direction toggle (item 7) */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <View style={{ flex: 1, gap: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -354,19 +366,14 @@ export function EncounterScreen() {
           <DirectionToggle dir={dir} onChange={setDir} />
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20, gap: 8 }}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 90, gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionLabel dm>Allies</SectionLabel>
-            <Pressable onPress={() => setAddingNpc(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add NPC ally"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>+ NPC</Text></Pressable>
+            <View style={{ flexDirection: 'row', gap: 14 }}>
+              <Pressable onPress={() => setLibraryMode('ally')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Ally library"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Library</Text></Pressable>
+              <Pressable onPress={() => setAddingNpc(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add NPC ally"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>+ NPC</Text></Pressable>
+            </View>
           </View>
-          {allySel.selecting ? (
-            <SelectionBar label={`${allySel.ids.size} selected`}>
-              <RuneButton label="Present ⇄" kind="ghost" height={30} dense dm onPress={() => { flipPresence(allySel.ids); allySel.clear(); }} />
-              <RuneButton label="To Adversary" kind="ghost" height={30} dense dm onPress={() => { convertToAdversaries(allySel.ids); allySel.clear(); }} />
-              <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => { deleteNpcAllies(allySel.ids); allySel.clear(); }} />
-              <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={allySel.clear} />
-            </SelectionBar>
-          ) : null}
           {memberAllies.map((a) => (
             <MemberPanel
               key={a.charId}
@@ -381,58 +388,76 @@ export function EncounterScreen() {
               onBlocked={blockedVitals}
               onHoldStart={(key) => memberHoldStart(a.charId, key)}
               onHoldEnd={(key) => memberHoldEnd(a.charId, key)}
-              onLongPress={() => (allySel.selecting ? allySel.toggle(a.charId) : allySel.start(a.charId))}
+              onLongPress={() => startAlly(a.charId)}
             />
           ))}
           {npcAllies.map((a) => (
-            <CombatantPanel key={a.combatant.id} combatant={a.combatant} dir={dir} selecting={allySel.selecting} selected={allySel.ids.has(a.combatant.id)}
+            <CombatantPanel key={a.combatant.id} combatant={a.combatant} dir={dir} friendly selecting={allySel.selecting} selected={allySel.ids.has(a.combatant.id)}
               onStat={(s, d) => onCombatantStat(a.combatant.id, s, d)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: a.combatant.id, stat: s })}
               onEdit={() => setEditing(a.combatant)} onFell={() => fellCombatant(a.combatant.id)} onRecover={() => recoverCombatant(a.combatant.id)} onDelete={() => deleteCombatants(new Set([a.combatant.id]))}
-              onLongPress={() => (allySel.selecting ? allySel.toggle(a.combatant.id) : allySel.start(a.combatant.id))} onToggleSelect={() => allySel.toggle(a.combatant.id)}
+              onLongPress={() => startAlly(a.combatant.id)} onToggleSelect={() => allySel.toggle(a.combatant.id)} onOpenImage={() => setViewImage(a.combatant)}
               onHoldStart={(s) => combatantHoldStart(a.combatant.id, s)} onHoldEnd={(s) => combatantHoldEnd(a.combatant.id, s)} />
           ))}
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
             <SectionLabel dm>Adversaries</SectionLabel>
             <View style={{ flexDirection: 'row', gap: 14 }}>
-              <Pressable onPress={() => setShowLibrary(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Adversary library"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Library</Text></Pressable>
+              <Pressable onPress={() => setLibraryMode('adversary')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Adversary library"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Library</Text></Pressable>
               <Pressable onPress={addAdversary} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add adversary"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>+ Adversary</Text></Pressable>
             </View>
           </View>
-          {advSel.selecting ? (
-            <SelectionBar label={`${advSel.ids.size} selected`}>
-              {advSel.ids.size === 1 ? <RuneButton label="Save to Library" kind="ghost" height={30} dense dm onPress={() => { saveToLibrary([...advSel.ids][0]); advSel.clear(); }} /> : null}
-              <RuneButton label="To Ally" kind="ghost" height={30} dense dm onPress={() => { convertToAllies(advSel.ids); advSel.clear(); }} />
-              <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDeleteAdv(new Set(advSel.ids))} />
-              <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={advSel.clear} />
-            </SelectionBar>
-          ) : null}
           {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet — add one or spawn from the library.</Text> : null}
           {enc.adversaries.map((c) => (
             <CombatantPanel key={c.id} combatant={c} dir={dir} selecting={advSel.selecting} selected={advSel.ids.has(c.id)}
               onStat={(s, d) => onCombatantStat(c.id, s, d)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: c.id, stat: s })}
               onEdit={() => setEditing(c)} onFell={() => fellCombatant(c.id)} onRecover={() => recoverCombatant(c.id)} onDelete={() => deleteCombatants(new Set([c.id]))}
-              onLongPress={() => (advSel.selecting ? advSel.toggle(c.id) : advSel.start(c.id))} onToggleSelect={() => advSel.toggle(c.id)}
+              onLongPress={() => startAdv(c.id)} onToggleSelect={() => advSel.toggle(c.id)} onOpenImage={() => setViewImage(c)}
               onHoldStart={(s) => combatantHoldStart(c.id, s)} onHoldEnd={(s) => combatantHoldEnd(c.id, s)} />
           ))}
         </ScrollView>
       </View>
 
+      {/* bottom multi-select bars (item 4) */}
+      {allySel.selecting ? (
+        <BottomBar label={`${allySel.ids.size} selected`}>
+          <RuneButton label="Present ⇄" kind="ghost" height={30} dense dm onPress={() => { flipPresence(allySel.ids); allySel.clear(); }} />
+          <RuneButton label="To Adversary" kind="ghost" height={30} dense dm onPress={() => { convertToAdversaries(allySel.ids); allySel.clear(); }} />
+          <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => { deleteNpcAllies(allySel.ids); allySel.clear(); }} />
+          <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={allySel.clear} />
+        </BottomBar>
+      ) : advSel.selecting ? (
+        <BottomBar label={`${advSel.ids.size} selected`}>
+          {advSel.ids.size === 1 ? <RuneButton label="Save to Library" kind="ghost" height={30} dense dm onPress={() => { saveToLibrary([...advSel.ids][0]); advSel.clear(); }} /> : null}
+          <RuneButton label="To Ally" kind="ghost" height={30} dense dm onPress={() => { convertToAllies(advSel.ids); advSel.clear(); }} />
+          <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDeleteAdv(new Set(advSel.ids))} />
+          <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={advSel.clear} />
+        </BottomBar>
+      ) : null}
+
       {keypad ? (
         <NumberKeypad title={`Set ${keypad.kind === 'member' ? KEY_LABEL[keypad.key] : keypad.stat.toUpperCase()}`} subtitle={`0–${Math.max(0, keypadMax)}`} min={0} max={Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
       ) : null}
       {editing ? <AdversaryEditor initial={editing} onSave={saveConfig} onCancel={() => setEditing(null)} /> : null}
+      {viewImage ? <AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}
       {addingNpc ? <NameDialog title="Add NPC" placeholder="NPC name" confirmLabel="Add" onConfirm={addNpcAlly} onCancel={() => setAddingNpc(false)} /> : null}
-      {renaming ? <NameDialog title="Rename Encounter" initial={enc.name} confirmLabel="Rename" onConfirm={(name) => { setRenaming(false); commitEncounter({ ...enc, name }); }} onCancel={() => setRenaming(false)} /> : null}
-      {showLibrary ? <AdversaryLibraryPanel templates={library} onAddAdversary={(t) => { spawnAdversary(t); setShowLibrary(false); }} onAddAlly={(t) => { spawnAlly(t); setShowLibrary(false); }} onDelete={(tid) => commitLibrary(removeTemplates(library, new Set([tid])))} onClose={() => setShowLibrary(false)} /> : null}
+      {libraryMode ? (
+        <AdversaryLibrary
+          mode={libraryMode}
+          savedList={library}
+          onSpawn={(c, count) => spawnMany(c, count, libraryMode)}
+          onDeleteSaved={(ids) => commitLibrary(removeTemplates(library, ids))}
+          onClose={() => setLibraryMode(null)}
+        />
+      ) : null}
       {showLog ? (
         <EncounterLog
           log={enc.log}
           onAddNote={(t) => commitEncounter(appendLog(enc, 'note', t))}
           onEditNote={(lid, t) => commitEncounter({ ...enc, log: editLogEntry(enc.log, lid, t) })}
           onDeleteNote={(lid) => commitEncounter({ ...enc, log: deleteLogEntries(enc.log, new Set([lid])) })}
-          onMoveNoteUp={(lid) => { const i = enc.log.findIndex((e) => e.id === lid); if (i > 0) commitEncounter({ ...enc, log: moveLogEntry(enc.log, lid, i - 1) }); }}
+          onMoveNote={(lid, delta) => { const i = enc.log.findIndex((e) => e.id === lid); if (i >= 0) commitEncounter({ ...enc, log: moveLogEntry(enc.log, lid, i + delta) }); }}
           onDeleteEntries={(ids) => commitEncounter({ ...enc, log: deleteLogEntries(enc.log, ids) })}
+          onKeepOnly={(ids) => commitEncounter({ ...enc, log: keepOnlyLogEntries(enc.log, ids) })}
           onClose={() => setShowLog(false)}
         />
       ) : null}
@@ -444,8 +469,8 @@ export function EncounterScreen() {
             <OptionRow label="Auto-log stat changes" hint="Record each stat-change hold as one log entry." on={enc.options.autoLog} onToggle={toggleAutoLog} />
             <OptionRow label="Sync party globally" hint="Off = a fully local encounter that never changes the party across other sessions." on={enc.options.globalSync} onToggle={toggleSync} />
             <View style={{ gap: 10, marginTop: 12 }}>
-              <RuneButton label="Rename encounter" kind="secondary" height={44} dm onPress={() => { setShowOptions(false); setRenaming(true); }} />
               <RuneButton label="Open card archive" kind="secondary" height={44} dm onPress={() => { setShowOptions(false); router.push('/gallery' as Href); }} />
+              <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>Rename this encounter by holding it in the session list.</Text>
               <RuneButton label="Done" kind="ghost" height={44} dm onPress={() => setShowOptions(false)} />
             </View>
           </ChamferBox>

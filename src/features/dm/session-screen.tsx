@@ -21,7 +21,7 @@ import { getParty } from '@/lib/party-store';
 import { duplicateEncounter, type Encounter, moveEncounterToSession, newEncounter, newSession, nextIndex, type Session, sortedEncounters } from '@/lib/session';
 import { deleteEncounter, getSession, listEncounters, listSessions, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
-import { DmModal } from './dm-ui';
+import { DmModal, NameDialog } from './dm-ui';
 import { useSelection } from './use-selection';
 
 const STATUS_COLOR = (s: Encounter['status']) => (s === 'active' ? DmRune.accent : s === 'completed' ? DmRune.muted : DmRune.accentDim);
@@ -54,6 +54,7 @@ export function SessionScreen() {
   const [encounters, setEncounters] = useState<Encounter[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<Set<string> | null>(null);
   const [moving, setMoving] = useState<Session[] | null>(null);
+  const [renaming, setRenaming] = useState<Encounter | null>(null);
   const sel = useSelection();
 
   const reload = useCallback(() => {
@@ -116,22 +117,18 @@ export function SessionScreen() {
     await moveTo(s.id);
   }, [session, moveTo]);
 
+  const renameEncounter = useCallback(async (name: string) => {
+    if (!renaming) return;
+    await saveEncounter({ ...renaming, name });
+    setRenaming(null); sel.clear(); reload();
+  }, [renaming, sel, reload]);
+
   if (!session) return <LoadingScreen label="Opening the session" />;
   const ordered = sortedEncounters(encounters, session.activeEncounterId);
 
   return (
     <AppScreen title={session.name} dm onBack={() => router.back()}>
       <View style={{ flex: 1 }}>
-        {sel.selecting ? (
-          <ChamferBox chamfer={9} fill="rgba(20,24,30,0.96)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10, flexWrap: 'wrap' }}>
-            <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 4 }}>{sel.ids.size} selected</Text>
-            {sel.ids.size === 1 ? <RuneButton label="Duplicate" kind="ghost" height={30} dense dm onPress={duplicate} /> : null}
-            <RuneButton label="Move" kind="ghost" height={30} dense dm onPress={openMove} />
-            <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDelete(new Set(sel.ids))} />
-            <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={sel.clear} />
-          </ChamferBox>
-        ) : null}
-
         {ordered.length === 0 ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40 }}>
             <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>No encounters yet.{'\n'}Prepare the first one.</Text>
@@ -153,7 +150,7 @@ export function SessionScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`${item.name}, ${item.status}`}>
                   {({ pressed }) => (
-                    <ChamferBox chamfer={12} fill={pressed || on ? 'rgba(24,28,35,0.95)' : 'rgba(14,17,22,0.9)'} stroke={on ? DmRune.accent : pinned ? DmRune.accent : DmRune.line} strokeWidth={on || pinned ? 1.6 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 15 }}>
+                    <ChamferBox chamfer={12} fill={on ? 'rgba(196,200,208,0.16)' : pressed ? 'rgba(24,28,35,0.95)' : 'rgba(14,17,22,0.9)'} stroke={on ? DmRune.accent : pinned ? DmRune.accent : DmRune.line} strokeWidth={on ? 2 : pinned ? 1.6 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 15 }}>
                       {sel.selecting ? (
                         <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
                           {on ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
@@ -181,8 +178,23 @@ export function SessionScreen() {
         </View>
       </View>
 
+      {/* bottom multi-select bar (item 4) */}
+      {sel.selecting ? (
+        <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>
+          <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
+            <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{sel.ids.size} selected</Text>
+            {sel.ids.size === 1 ? <RuneButton label="Rename" kind="ghost" height={30} dense dm onPress={() => { const e = ordered.find((x) => x.id === [...sel.ids][0]); if (e) setRenaming(e); }} /> : null}
+            {sel.ids.size === 1 ? <RuneButton label="Duplicate" kind="ghost" height={30} dense dm onPress={duplicate} /> : null}
+            <RuneButton label="Move" kind="ghost" height={30} dense dm onPress={openMove} />
+            <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDelete(new Set(sel.ids))} />
+            <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={sel.clear} />
+          </ChamferBox>
+        </View>
+      ) : null}
+
       {confirmDelete ? <PopupDialog title="Delete encounters?" body={`${confirmDelete.size} encounter(s) will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
       {moving ? <MoveTargetPicker sessions={moving} onPick={(sid) => void moveTo(sid)} onNew={() => void moveToNew()} onCancel={() => setMoving(null)} /> : null}
+      {renaming ? <NameDialog title="Rename Encounter" initial={renaming.name} confirmLabel="Rename" onConfirm={(name) => void renameEncounter(name)} onCancel={() => setRenaming(null)} /> : null}
     </AppScreen>
   );
 }

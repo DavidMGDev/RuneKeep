@@ -47,7 +47,8 @@ export const DmRune = {
   ivory: '#F0F1F4',
   text: '#E7E9ED',
   muted: '#8B909A',
-  red: '#B2564E', // desaturated heraldic red for destructive/loss accents
+  red: '#B2564E', // desaturated heraldic red for destructive/loss accents + adversary outlines
+  ally: '#5FA69C', // friendly teal for ally NPC outlines (v0.17.0 item 5)
 } as const;
 
 export const Display = {

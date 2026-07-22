@@ -1,5 +1,39 @@
-import { addTemplate, removeTemplates } from './adversary-library';
+import { BASE_ADVERSARIES } from '@/data/adversaries';
+import { addTemplate, baseToCombatant, removeTemplates } from './adversary-library';
 import { newAdversary } from './session';
+
+describe('base adversary roster (v0.17.0)', () => {
+  it('has the full SRD roster with unique ids and required fields', () => {
+    expect(BASE_ADVERSARIES.length).toBeGreaterThan(100);
+    const ids = new Set(BASE_ADVERSARIES.map((a) => a.id));
+    expect(ids.size).toBe(BASE_ADVERSARIES.length); // no duplicate ids
+    for (const a of BASE_ADVERSARIES) {
+      expect(a.name.length).toBeGreaterThan(0);
+      expect([1, 2, 3, 4]).toContain(a.tier);
+      expect(a.hp).toBeGreaterThanOrEqual(0);
+    }
+  });
+  it('baseToCombatant makes a fresh full-HP instance carrying the stat block', () => {
+    const b = BASE_ADVERSARIES.find((a) => a.thresholds.includes('/'))!;
+    const c = baseToCombatant(b);
+    expect(c.id).toMatch(/^ad-/);
+    expect(c.hp).toBe(b.hp);
+    expect(c.maxHp).toBe(b.hp);
+    expect(c.fallen).toBeFalsy();
+    expect(c.role).toBe(b.role);
+    expect(c.baseGameId).toBe(b.id);
+    expect(c.thresholds?.major).toBeGreaterThan(0);
+    expect(c.features).toEqual(b.features);
+  });
+  it('baseToCombatant handles "None" thresholds (minions)', () => {
+    const b = BASE_ADVERSARIES.find((a) => a.thresholds === 'None');
+    if (b) {
+      const c = baseToCombatant(b);
+      expect(c.thresholds).toEqual({ major: 0, severe: 0 });
+      expect(c.show.thresholds).toBe(false);
+    }
+  });
+});
 
 describe('adversary library', () => {
   it('saves a template as a fresh, upright, full-HP copy', () => {
