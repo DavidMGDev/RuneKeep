@@ -133,10 +133,12 @@ const CardMenuIcon = memo(function CardMenuIcon({ kind, allFav, size, color }: {
   }
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      {kind === 'duplicate' ? (
+      {kind === 'bulkEquip' ? (
+        // item 8: bulk equip/unequip — a stack of cards with a check, reading "apply to all at once".
         <>
-          <Path d="M9 9 H19 V19 H9 Z" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-          <Path d="M6 15 H5 V5 H15 V6" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
+          <Path d="M6 4 H15 V15 H6 Z" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
+          <Path d="M9 7 H18 V18 H9" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
+          <Path d="M11 12.5 L13.4 15 L18 9.4" fill="none" stroke={color} strokeWidth={sw + 0.3} strokeLinejoin="round" strokeLinecap="round" />
         </>
       ) : kind === 'move' ? (
         <>

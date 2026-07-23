@@ -3,7 +3,9 @@
  * renders the wedges and the dispatcher that fires the chosen action never drift. In the hidden
  * Favorites mirror the only safe action is Unfavorite — Duplicate/Move/Delete would touch the original.
  */
-export type CardMenuKind = 'duplicate' | 'favorite' | 'move' | 'delete' | 'nfc' | 'unfavorite';
+// v0.19.1 item 8: the old `duplicate` slot is now `bulkEquip` — equip/unequip the whole selection at once.
+// Copying cards moved to the Move panel's "Copy instead of move" toggle.
+export type CardMenuKind = 'bulkEquip' | 'favorite' | 'move' | 'delete' | 'nfc' | 'unfavorite';
 
 export interface CardMenuOption {
   kind: CardMenuKind;
@@ -19,7 +21,7 @@ export interface CardMenuOption {
 export function cardMenuOptions(isFavorites: boolean, nfcAvailable: boolean, allFavorited = false): CardMenuOption[] {
   if (isFavorites) return [{ kind: 'unfavorite', label: 'Unfavorite' }];
   const opts: CardMenuOption[] = [
-    { kind: 'duplicate', label: 'Duplicate' },
+    { kind: 'bulkEquip', label: 'Equip All' },
     { kind: 'favorite', label: allFavorited ? 'Unfavorite' : 'Favorite' },
     { kind: 'move', label: 'Move' },
     { kind: 'delete', label: 'Delete' },

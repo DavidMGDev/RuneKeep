@@ -53,6 +53,7 @@ import {
 } from '@/lib/session';
 import { getEncounter, getSession, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
+import { isUiMuted, setUiMuted } from '@/lib/sfx-prefs';
 import { AdversaryEditor } from './adversary-editor';
 import { AdversaryImageViewer } from './adversary-detail';
 import { AdversaryLibrary } from './adversary-library-screen';
@@ -112,6 +113,7 @@ export function EncounterScreen() {
   const [confirmDeleteAdv, setConfirmDeleteAdv] = useState<Set<string> | null>(null);
   const [startConflict, setStartConflict] = useState(false);
   const [restartPrompt, setRestartPrompt] = useState(false);
+  const [muted, setMuted] = useState(isUiMuted); // item 6: DM-side UI-sound mute
 
   const advSel = useSelection();
   const allySel = useSelection();
@@ -456,6 +458,7 @@ export function EncounterScreen() {
             <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Options</Text>
             <OptionRow label="Auto-log stat changes" hint="Record each stat-change hold as one log entry." on={enc.options.autoLog} onToggle={toggleAutoLog} />
             <OptionRow label="Sync party globally" hint="Off = a fully local encounter that never changes the party across other sessions." on={enc.options.globalSync} onToggle={toggleSync} />
+            <OptionRow label="Mute UI sounds" hint="Silences every DM interface sound until turned back on (also toggleable from the main menu)." on={muted} onToggle={() => { setMuted((m) => { const n = !m; setUiMuted(n); if (!n) playSfx('buttonTap'); return n; }); }} />
             <View style={{ gap: 10, marginTop: 12 }}>
               <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.</Text>
               <RuneButton label="Done" kind="ghost" height={44} dm onPress={() => setShowOptions(false)} />

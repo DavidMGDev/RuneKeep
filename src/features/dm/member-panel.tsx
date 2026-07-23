@@ -6,7 +6,8 @@
  * proficiency and the character's unique domain-card count (Armor is not repeated there).
  */
 import { useState } from 'react';
-import { Image, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits) — RN Image drops them on Android
 import Svg, { Polygon, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -71,7 +72,7 @@ export function MemberPanel({
       {/* header: portrait + identity (tap to expand) + read-only Evasion / thresholds + a clear chevron */}
       <Pressable onPress={() => setOpen((o) => !o)} onLongPress={onLongPress} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
         <ChamferBox chamfer={6} fill={DmRune.ink} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          {s.portraitUri ? <Image source={{ uri: s.portraitUri }} style={{ width: 46, height: 46 }} resizeMode="cover" /> : (
+          {s.portraitUri ? <Image source={s.portraitUri} style={{ width: 46, height: 46 }} contentFit="cover" /> : (
             <Svg width={20} height={20} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={DmRune.accentDim} strokeWidth={1.6} /></Svg>
           )}
         </ChamferBox>

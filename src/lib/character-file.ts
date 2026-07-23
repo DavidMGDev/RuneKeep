@@ -21,6 +21,22 @@ export function proficiencyForLevel(level: number): number {
 
 export const CHARACTER_SCHEMA_VERSION = 1;
 
+/** Class-tracker state (v0.19.1 item 7). Summoner uses summonerCircles (4 counts) + divineHope (Theurgy
+ *  Mastery only). Warlock uses patron / spheres / favor. All optional so a fresh card falls back to
+ *  sensible defaults (Favor starts at 3, spheres at +2, circles at 0). */
+export interface ClassTrackerState {
+  /** Summoner: entities held in circles 1–4 (Fate Spirit, subclass Foundation/Specialization/Mastery). */
+  summonerCircles?: number[];
+  /** Theurgy Mastery: the Divine Manifestation's remaining Hope dice (starts at 3, disappears at 0). */
+  divineHope?: number;
+  /** Warlock: the named patron. */
+  patron?: string;
+  /** Warlock: exactly two spheres of influence, each a name + value (starts at +2, +1 per tier). */
+  spheres?: { name: string; value: number }[];
+  /** Warlock: Favor — spendable resource, starts at 3, printed track shows 6. */
+  favor?: number;
+}
+
 export interface ExperienceDef {
   id: string;
   title: string;
@@ -198,6 +214,10 @@ export interface CharacterFile {
   /** Martial Artist Brawler (#357): Focus tokens tracked on the live Focus card (0–6, rolled with
    *  physical d6s at rest). Additive; absent → 0. */
   martialFocus?: number;
+  /** v0.19.1 (item 7): unique class trackers rendered as one live card in the Arsenal — the Summoner's
+   *  four summoning circles + Divine Manifestation Hope dice, and the Warlock's Patron / Spheres of
+   *  Influence / Favor. Only ever used by summoner / warlock characters. Additive; absent → defaults. */
+  classTracker?: ClassTrackerState;
   /** v0.10.3: embedded homebrew (library) cards this character USES — a self-contained COPY of each
    *  picked LibraryCard, so it renders + resolves effects with no expansion installed and survives the
    *  expansion being disabled/deleted (Bug 4). Structural slot ids (ancestry/subclass/community/domain/

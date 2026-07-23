@@ -2,7 +2,7 @@
  *  small chrome helpers. */
 import { type ReactNode, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -24,7 +24,8 @@ export function DmModal({ onClose, children, contentStyle }: { onClose: () => vo
       <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={StyleSheet.absoluteFill}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.86)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss" />
       </Animated.View>
-      <Animated.View entering={FadeInDown.springify().damping(20).stiffness(180)} exiting={FadeOutDown.duration(140)} style={contentStyle}>
+      {/* item 4: short, smooth, non-elastic — no spring bounce. */}
+      <Animated.View entering={FadeInDown.duration(150).easing(Easing.out(Easing.cubic))} exiting={FadeOutDown.duration(120).easing(Easing.in(Easing.cubic))} style={contentStyle}>
         {/* absorb inside taps: claim the START responder so empty areas don't fall through to the scrim,
             but never the MOVE responder — a child ScrollView takes that and scrolls (items 1/2). */}
         <View onStartShouldSetResponder={() => true}>

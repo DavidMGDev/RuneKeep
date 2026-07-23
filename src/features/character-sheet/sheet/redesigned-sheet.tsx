@@ -33,6 +33,7 @@ import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
+import { isClassTrackerId, SummonerTrackerCard, SUMMONER_TRACKER_ID, WarlockTrackerCard, WARLOCK_TRACKER_ID } from '../components/class-tracker-card';
 import { MartialFocusCard } from '../components/martial-focus-card';
 import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/companion';
 import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, isFavorited, orphanedFavoriteIds, removeFavoriteByRef, removeFavoriteCopies } from '@/lib/favorites';
@@ -958,7 +959,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // it explicitly here; the acquired pass skips ids already present, so it isn't double-added.
     const secondAncestryC = file.mixedAncestry ? (catItem(file.mixedAncestry.second) ?? libItem(file.mixedAncestry.second)) : undefined;
     const secondAncestryItem = secondAncestryC && secondAncestryC.id !== ancestryC.id ? [secondAncestryC] : [];
-    const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom];
+    // Class tracker (v0.19.1 item 7): one live Arsenal card for the Summoner (Summon Entity + circles) or
+    // the Warlock (Patron / Spheres / Favor). Never deletable or duplicatable (guards below); movable like
+    // any card via a category override. Source/thumb are placeholders — the live node renders.
+    const trackerSubclass = file.subclassCardId?.includes('theurgy') ? 'theurgy' as const : file.subclassCardId?.includes('necromancy') ? 'necromancy' as const : undefined;
+    const classTrackerItems: CardItem[] = file.className === 'summoner'
+      ? [{ id: SUMMONER_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <SummonerTrackerCard state={file.classTracker} subclass={trackerSubclass} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
+      : file.className === 'warlock'
+      ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
+      : [];
+    const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
@@ -1504,7 +1514,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Non-deletable cards: Beastform (#279), the live Gold card (#306), and the live Companion facet
     // cards (#318 — name/evasion/damage/range/stress/exp; companion-* ids) are dropped from the request
     // so no path (incl. a bulk delete) can ever remove them. Companion copies (cp-… ids) stay deletable.
-    const rawIds = rawIds0.filter((id) => { const cid = catalogIdOf(id); return !isWildshapeId(cid) && cid !== 'gold' && !cid.startsWith('companion') && !isMartialStanceId(cid) && cid !== MARTIAL_FOCUS_CARD_ID; });
+    const rawIds = rawIds0.filter((id) => { const cid = catalogIdOf(id); return !isWildshapeId(cid) && cid !== 'gold' && !cid.startsWith('companion') && !isMartialStanceId(cid) && cid !== MARTIAL_FOCUS_CARD_ID && !isClassTrackerId(cid); });
     if (rawIds.length === 0) return;
     // HARD safeguard (#252): never delete the last card overall. Count the cards actually in the live
     // decks; if this deletion would remove them all, keep one. This is the data-layer guard (the UI
@@ -1565,7 +1575,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [file, commitFile, carouselDecks]);
   // Duplicate selected cards (#277): each copy is a new instance referencing the same underlying card
   // (shared enable + single effect), placed in the source card's category. Beastform can't be copied.
-  const onDuplicateCards = useCallback((ids: string[]) => {
+  // v0.19.1 item 8: `targetCat` powers the move panel's "Copy instead of move" — the copies land in the
+  // chosen category (appended) rather than beside their originals.
+  const onDuplicateCards = useCallback((ids: string[], targetCat?: string) => {
     if (!file || !ids.length) return;
     const decksNow = carouselDecks ?? {};
     // The edit selection lives in ONE category — copies go there, right after the last selected card.
@@ -1576,21 +1588,27 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     let made = 0;
     for (const id of ids) {
       const ref = refOf(id, file);
-      if (isWildshapeId(ref)) continue; // #279: beastform cards aren't duplicatable
+      if (isWildshapeId(ref) || isClassTrackerId(ref)) continue; // #279: beastform + class trackers aren't duplicatable (item 7)
       const newId = `cp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}-${made++}`;
       copies.push({ id: newId, ref });
       const srcCat = cat ?? Object.keys(decksNow).find((k) => decksNow[k].some((c) => c.id === id));
-      if (srcCat) cardCategory[newId] = srcCat;
+      const destCat = targetCat ?? srcCat;
+      if (destCat) cardCategory[newId] = destCat;
       newIds.push(newId);
     }
     if (!newIds.length) { playSfx('floatMenuClose'); return; } // nothing copyable (e.g. only beastform selected)
-    // Order the copies right after the LAST selected card so they land beside their originals (item 7).
+    // Order the copies: into a copy-target category → appended at its end; otherwise right after the LAST
+    // selected card so they land beside their originals (item 7).
     let cardOrder = file.cardOrder;
-    if (cat) {
-      const deckIds = (decksNow[cat] ?? []).map((c) => c.id);
-      const positions = ids.map((id) => deckIds.indexOf(id)).filter((i) => i >= 0);
-      const at = positions.length ? Math.max(...positions) + 1 : deckIds.length;
-      cardOrder = { ...(file.cardOrder ?? {}), [cat]: [...deckIds.slice(0, at), ...newIds, ...deckIds.slice(at)] };
+    const destForOrder = targetCat ?? cat;
+    if (destForOrder) {
+      const deckIds = (decksNow[destForOrder] ?? []).map((c) => c.id);
+      let at = deckIds.length;
+      if (!targetCat) {
+        const positions = ids.map((id) => deckIds.indexOf(id)).filter((i) => i >= 0);
+        at = positions.length ? Math.max(...positions) + 1 : deckIds.length;
+      }
+      cardOrder = { ...(file.cardOrder ?? {}), [destForOrder]: [...deckIds.slice(0, at), ...newIds, ...deckIds.slice(at)] };
     }
     playSfx('customCardCreate');
     commitFile({ ...file, cardCopies: copies, cardCategory, ...(cardOrder ? { cardOrder } : {}) });
@@ -1676,16 +1694,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [deleteReq, setDeleteReq] = useState<string[] | null>(null);
   /** v0.14.1: the consumable instance just switched OFF, awaiting the "used it up?" prompt. */
   const [depletedId, setDepletedId] = useState<string | null>(null);
-  const onCardAction = useCallback((kind: CardMenuKind, ids: string[]) => {
-    switch (kind) {
-      case 'duplicate': onDuplicateCards(ids); break;
-      case 'favorite': onFavoriteCards(ids); break;
-      case 'move': setMoveReq(ids); break;
-      case 'delete': setDeleteReq(ids); break;
-      case 'nfc': onSendNfc(ids); break;
-      case 'unfavorite': onUnfavorite(ids); break;
-    }
-  }, [onDuplicateCards, onFavoriteCards, onSendNfc, onUnfavorite]);
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
   const editableIds = useMemo(() => editableCardIds(file), [file]);
@@ -1758,13 +1766,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Enabled/equipped cards (#175): the set drives the corner check; toggling re-derives the build
   // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
   const enabledIds = useMemo(() => new Set(file?.enabledCardIds ?? []), [file]);
-  const onToggleCard = useCallback(
-    (id: string) => {
+  // v0.19.1 item 8: ONE ref-based toggle implementation, shared by manual taps AND bulk equip. Reading +
+  // writing fileRef/characterRef synchronously lets a 35ms-staggered bulk sequence compose correctly (a
+  // stale `file` closure would make every step start from the same original file). `force` makes it
+  // directional for bulk: 'on' only equips, 'off' only unequips; a card already in the target state is
+  // skipped so nothing toggles the wrong way — the result is byte-for-byte the same as manual selection.
+  const toggleOneFromRefs = useCallback(
+    (id: string, force?: 'on' | 'off') => {
+      const file = fileRef.current;
       if (!file) return;
       // #277: enable + effects key by the card's REF (its catalog/custom id), so all copies of a card
       // share one equip and apply their effect once. `id` is the tapped instance; `ref` the underlying card.
       const ref = refOf(id, file);
       const wasEnabled = (file.enabledCardIds ?? []).includes(ref);
+      if (force === 'on' && wasEnabled) return; // bulk equip: already on
+      if (force === 'off' && !wasEnabled) return; // bulk unequip: already off
       const isWs = isWildshapeId(ref);
       const cur = new Set(file.enabledCardIds ?? []);
       // Beastform state (#279): the one enabled wildshape (if any) = "transformed".
@@ -1787,7 +1803,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         // v0.14.1: a CONSUMABLE is used up the moment you switch it off — offer to bin the depleted
         // card. Only offered, never automatic: the player may be holding several of the same potion,
         // and onDeleteCards drops exactly one copy from the multiset.
-        if (lootById(catalogIdOf(id))?.kind === 'consumable') setDepletedId(id);
+        if (force === undefined && lootById(catalogIdOf(id))?.kind === 'consumable') setDepletedId(id);
       } else {
         // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
         if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
@@ -1798,6 +1814,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         if (cidDomain) {
           const enabledDomains = [...cur].filter((x) => cardById(x)?.kind === 'domain').length;
           if (enabledDomains >= 5) {
+            if (force !== undefined) { playSfx('floatMenuClose'); return; } // bulk: respect the cap, skip this one
             domainOverrideRef.current += 1;
             if (domainOverrideRef.current < 3) { playSfx('floatMenuClose'); pushNotice('Maximum 5 Domain Cards'); return; }
             domainOverrideRef.current = 0; // 3rd insistence → let it through
@@ -1836,6 +1853,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       }
       const next = { ...file, enabledCardIds: [...cur], beastformUnequipped, beastformDomainSnapshot };
       setFile(next);
+      fileRef.current = next; // keep the ref fresh so a staggered bulk step reads the accumulated file
       saveFileRef.current(next);
       const c = characterRef.current;
       const d = toSheetCharacter(next);
@@ -1872,9 +1890,37 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // animate any track whose value the equip/unequip changed (e.g. +1 Max HP at full HP, removed)
       burstResources(c, result);
       setCharacter(result);
+      characterRef.current = result; // keep fresh for the next staggered bulk step
     },
-    [file, burstResources, pushToasts, pushNotice],
+    [burstResources, pushToasts, pushNotice],
   );
+  const onToggleCard = useCallback((id: string) => toggleOneFromRefs(id), [toggleOneFromRefs]);
+  // item 8: bulk equip/unequip the raised selection. If every card is already equipped the whole set is
+  // unequipped, otherwise the whole set is equipped — each firing 35ms after the last, LEFT→RIGHT in deck
+  // order, so they cascade on visibly. When the queue drains, the selection clears all at once.
+  const onBulkEquip = useCallback((ids: string[]) => {
+    const cur = fileRef.current;
+    if (!cur || !ids.length) return;
+    const decksNow = carouselDecks ?? {};
+    const cat = Object.keys(decksNow).find((k) => decksNow[k].some((c) => ids.includes(c.id)));
+    const order = cat ? decksNow[cat].map((c) => c.id).filter((cid) => ids.includes(cid)) : ids;
+    const enabled = new Set(cur.enabledCardIds ?? []);
+    const target: 'on' | 'off' = order.every((cid) => enabled.has(refOf(cid, cur))) ? 'off' : 'on';
+    order.forEach((cid, i) => setTimeout(() => toggleOneFromRefs(cid, target), i * 35));
+    setTimeout(() => carouselApiRef.current?.deselectAll(), order.length * 35 + 90);
+  }, [carouselDecks, toggleOneFromRefs]);
+  // v0.10.7 Golden Gear Edit card-hold radial → action. Move/Delete open their sheets; Bulk Equip runs the
+  // staggered equip; the rest fire immediately. Operates on the raised selection the carousel passes in.
+  const onCardAction = useCallback((kind: CardMenuKind, ids: string[]) => {
+    switch (kind) {
+      case 'bulkEquip': onBulkEquip(ids); break; // item 8: replaces the old Duplicate slot
+      case 'favorite': onFavoriteCards(ids); break;
+      case 'move': setMoveReq(ids); break;
+      case 'delete': setDeleteReq(ids); break;
+      case 'nfc': onSendNfc(ids); break;
+      case 'unfavorite': onUnfavorite(ids); break;
+    }
+  }, [onBulkEquip, onFavoriteCards, onSendNfc, onUnfavorite]);
   // Beastform auto-exit at 0 HP (#279): dropping to 0 ends the form — weapons re-equip, domain limits
   // lift. Reactive so it fires however HP reached 0 (damage panel, taps, etc.). Self-terminating: once
   // the form is gone there's no active wildshape, so it won't re-run.
@@ -2053,7 +2099,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* v0.12.1 item 10: the radial-menu pop-ups fade in (they used to POP). */}
             {moveReq ? (
               <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
-                <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
+                <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onCopy={(key) => { onDuplicateCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
               </Animated.View>
             ) : null}
             {deleteReq ? (

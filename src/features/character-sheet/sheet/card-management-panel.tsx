@@ -599,15 +599,27 @@ function CategoryForm({ title, initialLabel = '', initialIcon = DEFAULT_CATEGORY
   );
 }
 
-export function MoveSheet({ count, ordered, customCategories, onMove, onClose }: { count: number; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onClose: () => void }) {
+export function MoveSheet({ count, ordered, customCategories, onMove, onCopy, onClose }: { count: number; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onCopy?: (key: string) => void; onClose: () => void }) {
+  // v0.19.1 item 8: when the copy toggle is on, choosing a category COPIES the cards into it instead of
+  // moving them (the smoother "duplicate into another category" flow). Only offered when onCopy is wired.
+  const [copy, setCopy] = useState(false);
+  const verb = copy ? 'Copy' : 'Move';
   return (
     <CenterDialog onClose={onClose} zIndex={10004}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
-        <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase' }}>{`Move ${count} card${count > 1 ? 's' : ''}`}</Text>
-        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>Choose a category to move into.</Text>
+        <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase' }}>{`${verb} ${count} card${count > 1 ? 's' : ''}`}</Text>
+        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>Choose a category to {verb.toLowerCase()} into.</Text>
+        {onCopy ? (
+          <Pressable onPress={() => setCopy((c) => !c)} accessibilityRole="switch" accessibilityState={{ checked: copy }} accessibilityLabel="Copy instead of move" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <View style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 1.5, borderColor: copy ? Rune.red : GOLD_BORDER, backgroundColor: copy ? Rune.red : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+              {copy ? <Svg width={12} height={12} viewBox="0 0 12 12"><Path d="M2 6 L5 9 L10 3" fill="none" stroke={Rune.ivory} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+            </View>
+            <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.bold }}>Copy instead of move</Text>
+          </Pressable>
+        ) : null}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
           {ordered.filter((key) => key !== 'favorites').map((key) => (
-            <Pressable key={key} onPress={() => onMove(key)} accessibilityRole="button" accessibilityLabel={`Move to ${categoryLabel(key, customCategories)}`}>
+            <Pressable key={key} onPress={() => (copy && onCopy ? onCopy(key) : onMove(key))} accessibilityRole="button" accessibilityLabel={`${verb} to ${categoryLabel(key, customCategories)}`}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 36, borderRadius: 5, backgroundColor: SCRIM, borderWidth: 1, borderColor: GOLD_BORDER }}>
                 <CatTile categoryKey={key} size={22} />
                 <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.bold }}>{categoryLabel(key, customCategories)}</Text>

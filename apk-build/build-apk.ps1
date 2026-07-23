@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.19.0'                       # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.19.1'                       # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.19.0 - DM Mode performance + feel pass: the adversary library and its details scroll smoothly now, the stat radial is centered and snappy, and a batch of fixes. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- SMOOTH LIBRARY: the ~155-row adversary library and the creature detail panel no longer lag - rows are drawn far cheaper, off-screen rows are recycled, and each creature's stat block is built only when you open it. The details panel scrolls cleanly.`n- CONFIG SCROLL FIXED: the adversary configuration pop-up now scrolls whether or not the keyboard is open.`n- RADIAL, CENTERED: the hold-to-edit stat wheel now blooms exactly on the stat icon (it used to sit ~10-30px too high), and it's smoother - the particle burst was dropped in favor of steady FPS. Number-and-icon spacing on stats was tidied up.`n- SMALL FIX: the card archive's 'Forms' filter is now labelled 'Transformations'.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.19.1 - DM feel + Arsenal power tools. More responsive DM screens, working log drag-drop, a global UI mute, and interactive Summoner/Warlock tracker cards. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- SMOOTHER DETAILS: the adversary-selection detail pop-up scrolls cleanly the whole time (the list behind it no longer steals the thread for seconds at a stretch).`n- IMPORTED PORTRAITS SHOW: party members imported/received now display their pictures everywhere in DM Mode.`n- RADIAL, CENTERED FOR REAL: the hold-to-edit stat wheel now sits exactly on the stat icon.`n- ANIMATIONS: DM Mode motion is shorter, smoother, and no longer elastic.`n- LOG DRAG-DROP: you can grab the handle on a manual note and drag to reorder the log.`n- MUTE: a UI-sound mute on the main menu and in the DM encounter options (not on the character sheet).`n- SUMMONER & WARLOCK: a single interactive Arsenal card tracks Summon Entity's four circles (Summoner) and Patron / Spheres of Influence / Favor (Warlock) - non-deletable, only movable.`n- BULK EQUIP: the golden-gear edit wheel's Duplicate slot is now Equip All - it equips/unequips the whole selection one-by-one, left to right. Copying cards moved to the move panel's new 'Copy instead of move' toggle.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

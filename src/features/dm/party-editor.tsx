@@ -6,7 +6,8 @@
  */
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits)
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
 import { AppScreen, SectionLabel } from '@/components/app-screen';
@@ -29,7 +30,7 @@ import { ColorDiamond, NameDialog } from './dm-ui';
 function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
   return (
     <ChamferBox chamfer={6} fill={DmRune.ink} stroke={tint} strokeWidth={1.3} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {uri ? <Image source={{ uri }} style={{ width: 46, height: 46 }} resizeMode="cover" /> : (
+      {uri ? <Image source={uri} style={{ width: 46, height: 46 }} contentFit="cover" /> : (
         <Svg width={20} height={20} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={DmRune.accentDim} strokeWidth={1.6} strokeLinejoin="miter" /></Svg>
       )}
     </ChamferBox>
