@@ -64,6 +64,20 @@ export async function getParty(id: string): Promise<Party | null> {
   }
 }
 
+/**
+ * Make one party the ACTIVE party (v0.18.0 item 1) — exclusive: exactly one party is active at a time
+ * (the `enabled` flag now means "active"). Sets the target active, clears every other, persists only the
+ * ones that changed, and returns the full updated list.
+ */
+export async function setActiveParty(id: string): Promise<Party[]> {
+  const all = await listParties();
+  const next = all.map((p) => ({ ...p, enabled: p.id === id }));
+  for (let i = 0; i < all.length; i++) {
+    if (all[i].enabled !== next[i].enabled) await saveParty(next[i]);
+  }
+  return next;
+}
+
 export async function deleteParty(id: string): Promise<void> {
   if (Platform.OS === 'web') {
     webWrite(webList().filter((p) => p.id !== id));

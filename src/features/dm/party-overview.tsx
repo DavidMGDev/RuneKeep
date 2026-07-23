@@ -6,7 +6,7 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, View } from 'react-native';
+import { FlatList } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { LoadingScreen } from '@/components/loading-screen';
@@ -17,7 +17,7 @@ import { memberMaxes } from '@/lib/dm-vitals';
 import { applyVitalDelta, isPresent, type Party, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
 import { MemberPanel } from './member-panel';
-import { DirectionToggle } from './stat-pulse';
+import { StatRadialProvider } from './stat-radial';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
 
@@ -27,7 +27,6 @@ export function PartyOverviewScreen() {
   const [party, setParty] = useState<Party | null>(null);
   const [files, setFiles] = useState<Record<string, CharacterFile>>({});
   const [keypad, setKeypad] = useState<{ charId: string; key: VitalKey } | null>(null);
-  const [dir, setDir] = useState<1 | -1>(-1);
 
   // Debounced persistence: the heartbeat can fire many steps/sec; React state updates instantly, the
   // disk write trails the last change by a beat.
@@ -49,12 +48,12 @@ export function PartyOverviewScreen() {
     return () => { live = false; };
   }, [partyId]);
 
-  const onStat = useCallback((charId: string, key: VitalKey, dir: 1 | -1) => {
+  const onApply = useCallback((charId: string, key: VitalKey, delta: number) => {
     setParty((p) => {
       if (!p) return p;
       const f = files[charId];
       if (!f) return p;
-      const next = setMemberVitals(p, charId, applyVitalDelta(p.global[charId], key, dir, memberMaxes(f)));
+      const next = setMemberVitals(p, charId, applyVitalDelta(p.global[charId], key, delta, memberMaxes(f)));
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => { void saveParty(next); }, 220);
       return next;
@@ -74,10 +73,8 @@ export function PartyOverviewScreen() {
   const kpMax = kpFile && keypad ? memberMaxes(kpFile)[keypad.key === 'hp' ? 'maxHp' : keypad.key === 'stress' ? 'stressMax' : keypad.key === 'hope' ? 'hopeMax' : 'armorMax'] : 0;
 
   return (
+    <StatRadialProvider>
     <AppScreen title="Players" dm onBack={() => router.back()}>
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 }}>
-        <DirectionToggle dir={dir} onChange={setDir} />
-      </View>
       <FlatList
         data={party.memberIds.filter((id) => files[id])}
         keyExtractor={(id) => id}
@@ -87,10 +84,9 @@ export function PartyOverviewScreen() {
           <MemberPanel
             file={files[charId]}
             vitals={party.global[charId] ?? { hp: 0, stress: 0, hope: 0, armor: 0 }}
-            dir={dir}
             editable
             absent={!isPresent(party, charId)}
-            onStat={(key, d) => onStat(charId, key, d)}
+            onApply={(key, delta) => onApply(charId, key, delta)}
             onRequestSet={(key) => setKeypad({ charId, key })}
           />
         )}
@@ -106,5 +102,6 @@ export function PartyOverviewScreen() {
         />
       ) : null}
     </AppScreen>
+    </StatRadialProvider>
   );
 }

@@ -21,7 +21,7 @@ import { type CharacterFile } from '@/lib/character-file';
 import { importCharacter, listCharacters } from '@/lib/character-store';
 import { initialVitals } from '@/lib/dm-vitals';
 import { addMembers, isPresent, type Party, randomColor, removeMember, togglePresent } from '@/lib/party';
-import { deleteParty, getParty, listParties, saveParty } from '@/lib/party-store';
+import { deleteParty, getParty, saveParty, setActiveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
 import { ColorDiamond, NameDialog } from './dm-ui';
@@ -127,14 +127,13 @@ export function PartyEditorScreen() {
     setPicking(false);
   }, [party, fileFor, commit]);
 
-  const enable = useCallback(async () => {
+  const makeActive = useCallback(async () => {
     if (!party) return;
     playSfx('buttonTap');
-    const all = await listParties();
-    const firstEver = !all.some((p) => p.enabled); // item 9: unlock toast only for the very first party
-    commit({ ...party, enabled: true });
-    showToast(firstEver ? 'Party enabled — Sessions unlocked' : 'Party enabled', 'success');
-  }, [party, commit]);
+    await setActiveParty(party.id); // exclusive — clears any other active party (item 1)
+    setParty({ ...party, enabled: true });
+    showToast(`${party.name} is now the active party`, 'success');
+  }, [party]);
 
   const onImport = useCallback(async () => {
     const imported = await importCharacter();
@@ -206,13 +205,13 @@ export function PartyEditorScreen() {
               <RuneButton label="Sessions" kind="primary" height={46} dm style={{ flex: 1.4 }} onPress={() => { playSfx('enterCardViewer'); router.push('/sessions' as Href); }} />
             ) : (
               <RuneButton
-                label="Enable"
+                label="Set active"
                 kind="primary"
                 height={46}
                 dm
                 disabled={!canEnable}
                 style={{ flex: 1.4 }}
-                onPress={() => void enable()}
+                onPress={() => void makeActive()}
               />
             )}
           </View>

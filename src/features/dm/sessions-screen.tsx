@@ -18,7 +18,7 @@ import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { Body, Display, DmRune } from '@/constants/theme';
 import { type Party } from '@/lib/party';
-import { listParties, saveParty } from '@/lib/party-store';
+import { listParties, setActiveParty } from '@/lib/party-store';
 import { newSession, type Session } from '@/lib/session';
 import { deleteEncounter, deleteSession, listEncounters, listSessions, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
@@ -88,17 +88,16 @@ export function SessionsScreen() {
     void saveSession(s).then(() => router.push(`/session?id=${s.id}` as Href));
   }, [selected, router]);
 
-  const enableSelected = useCallback(async () => {
-    if (!selected) return;
+  /** Pick a party in the dropdown = make it the ACTIVE party (item 1: exactly one active at a time). */
+  const activate = useCallback(async (p: Party) => {
     playSfx('buttonTap');
-    const firstEver = !(parties ?? []).some((p) => p.enabled);
-    const next = { ...selected, enabled: true };
-    await saveParty(next);
-    setParties((all) => (all ?? []).map((p) => (p.id === next.id ? next : p)));
-    setSelected(next);
-    if (firstEver) showToast('Party enabled — Sessions unlocked', 'success');
-    else showToast('Party enabled', 'success');
-  }, [selected, parties]);
+    sel.clear();
+    setSelected({ ...p, enabled: true });
+    loadSessions(p.id);
+    const next = await setActiveParty(p.id);
+    setParties(next);
+    showToast(`${p.name} is now active`, 'success');
+  }, [sel, loadSessions]);
 
   const renameSession = useCallback(async (name: string) => {
     if (!renaming) return;
@@ -132,12 +131,12 @@ export function SessionsScreen() {
   return (
     <AppScreen title="Sessions" dm onBack={() => router.back()}>
       <View style={{ flex: 1, gap: 14 }}>
-        <PartyDropdown parties={parties} selected={selected} onSelect={(p) => { sel.clear(); setSelected(p); loadSessions(p.id); }} />
+        <PartyDropdown parties={parties} selected={selected} onSelect={(p) => void activate(p)} />
 
         {!selected.enabled ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingBottom: 40 }}>
-            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>{selected.name} isn’t enabled yet.{'\n'}Enable it to run sessions.</Text>
-            <RuneButton label="Enable party" kind="primary" height={46} dm style={{ minWidth: 200 }} onPress={() => void enableSelected()} />
+            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>{selected.name} isn’t the active party.{'\n'}Make it active to run its sessions.</Text>
+            <RuneButton label="Set active" kind="primary" height={46} dm style={{ minWidth: 200 }} onPress={() => void activate(selected)} />
           </View>
         ) : sessions.length === 0 ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40 }}>

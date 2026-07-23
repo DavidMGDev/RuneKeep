@@ -33,28 +33,22 @@ function ReadStat({ label, value, color = DmRune.text }: { label: string; value:
 export function MemberPanel({
   file,
   vitals,
-  dir,
   editable,
   absent,
   selected,
-  onStat,
+  onApply,
   onRequestSet,
   onBlocked,
-  onHoldStart,
-  onHoldEnd,
   onLongPress,
 }: {
   file: CharacterFile;
   vitals: MemberVitals;
-  dir: 1 | -1;
   editable: boolean;
   absent?: boolean;
   selected?: boolean;
-  onStat: (key: VitalKey, dir: 1 | -1) => void;
+  onApply: (key: VitalKey, delta: number) => void;
   onRequestSet: (key: VitalKey) => void;
   onBlocked?: () => void;
-  onHoldStart?: (key: VitalKey) => void;
-  onHoldEnd?: (key: VitalKey) => void;
   onLongPress?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -65,13 +59,10 @@ export function MemberPanel({
       kind={kind}
       value={vitals[key]}
       max={mx}
-      dir={dir}
       disabled={!editable}
-      onStep={(d) => onStat(key, d)}
+      onApply={(d) => onApply(key, d)}
       onRequestSet={() => onRequestSet(key)}
       onBlocked={onBlocked}
-      onHoldStart={() => onHoldStart?.(key)}
-      onHoldEnd={() => onHoldEnd?.(key)}
     />
   );
 

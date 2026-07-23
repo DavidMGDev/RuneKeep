@@ -1,12 +1,14 @@
 /**
- * CombatantPanel (v0.15.0; reworked v0.16.0/v0.17.0) — an adversary or NPC in an encounter. A portrait
- * (tap → fullscreen), filled sheet-coloured StatPulses on the global direction, a PENCIL to configure, and
- * an expand chevron revealing the full SRD stat block. Outline colour signals side: red = adversary, teal =
- * ally (item 5). Selection is bold and obvious — accent wash + check badge (item 4). Deletion stays hard
- * (PRD #9): the X downs a live unit to "Fallen"; only a fallen unit's X actually deletes.
+ * CombatantPanel (v0.15.0; reworked v0.16.0–v0.18.0) — an adversary or NPC in an encounter. A portrait
+ * (tap → fullscreen), sheet-coloured radial StatPulses (tap = keypad, hold = ±wheel), a PENCIL to configure.
+ * Tapping the TITLE / top row expands the full SRD stat block with a smooth layout animation — surrounding
+ * cards reflow, nothing pops (item 5). Outline colour signals side: red = adversary, teal = ally (item 5).
+ * Selection is bold — accent wash + check badge (item 4). Deletion stays hard (PRD #9): the X downs a live
+ * unit to "Fallen"; only a fallen unit's X actually deletes.
  */
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -17,6 +19,8 @@ import { type Combatant, type CombatantStat } from '@/lib/session';
 import { AdversaryPortrait, hasStatBlock, StatBlockDetail } from './adversary-detail';
 import { StatGlyph } from './stat-glyphs';
 import { StatPulse } from './stat-pulse';
+
+const SPRING = LinearTransition.springify().damping(20).stiffness(180);
 
 function Pencil() {
   return (
@@ -34,11 +38,10 @@ function CheckBadge() {
 
 export function CombatantPanel({
   combatant,
-  dir,
   friendly,
   selecting,
   selected,
-  onStat,
+  onApply,
   onRequestSet,
   onEdit,
   onFell,
@@ -47,15 +50,12 @@ export function CombatantPanel({
   onLongPress,
   onToggleSelect,
   onOpenImage,
-  onHoldStart,
-  onHoldEnd,
 }: {
   combatant: Combatant;
-  dir: 1 | -1;
   friendly?: boolean;
   selecting?: boolean;
   selected?: boolean;
-  onStat: (stat: CombatantStat, dir: 1 | -1) => void;
+  onApply: (stat: CombatantStat, delta: number) => void;
   onRequestSet: (stat: CombatantStat) => void;
   onEdit: () => void;
   onFell: () => void;
@@ -64,65 +64,63 @@ export function CombatantPanel({
   onLongPress?: () => void;
   onToggleSelect?: () => void;
   onOpenImage?: () => void;
-  onHoldStart?: (stat: CombatantStat) => void;
-  onHoldEnd?: (stat: CombatantStat) => void;
 }) {
   const c = combatant;
   const [open, setOpen] = useState(false);
   const sideColor = friendly ? DmRune.ally : DmRune.red;
   const stroke = selected ? DmRune.accent : c.fallen ? 'rgba(139,144,154,0.5)' : `${sideColor}80`;
   const fill = selected ? 'rgba(196,200,208,0.16)' : c.fallen ? 'rgba(16,16,18,0.9)' : friendly ? 'rgba(15,20,20,0.92)' : 'rgba(20,15,15,0.92)';
+  const canExpand = hasStatBlock(c);
 
   // A fallen unit collapses to name + Fallen + Recover; its X deletes.
   if (c.fallen) {
     return (
-      <Pressable onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
-        <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
-          {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : null}
-          <FitLine style={{ flex: 1, color: DmRune.muted, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
-          <Text style={{ color: DmRune.red, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Fallen</Text>
-          {!selecting ? (
-            <>
-              <RuneButton label="Recover" kind="secondary" height={30} dense dm onPress={onRecover} />
-              <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${c.name}`}>
-                <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-              </Pressable>
-            </>
-          ) : null}
-        </ChamferBox>
-      </Pressable>
+      <Animated.View layout={SPRING}>
+        <Pressable onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
+          <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
+            {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : null}
+            <FitLine style={{ flex: 1, color: DmRune.muted, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
+            <Text style={{ color: DmRune.red, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Fallen</Text>
+            {!selecting ? (
+              <>
+                <RuneButton label="Recover" kind="secondary" height={30} dense dm onPress={onRecover} />
+                <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${c.name}`}>
+                  <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
+                </Pressable>
+              </>
+            ) : null}
+          </ChamferBox>
+        </Pressable>
+      </Animated.View>
     );
   }
 
   const anyTrack = c.show.hp || c.show.stress || c.show.thresholds;
-  const canExpand = hasStatBlock(c);
+  const headerTap = () => { if (selecting) onToggleSelect?.(); else if (canExpand) setOpen((o) => !o); };
   return (
-    <Pressable onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={360} accessibilityRole="button" accessibilityLabel={c.name}>
+    <Animated.View layout={SPRING}>
       <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || (c.show.description && !open) || open ? 10 : 0 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        {/* header row — tap toggles the stat block; hold multi-selects */}
+        <Pressable onPress={headerTap} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}${canExpand ? ', tap to expand' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : (
             <AdversaryPortrait uri={c.portraitUri} size={38} tint={sideColor} onPress={onOpenImage} />
           )}
           <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
           {!selecting ? (
             <>
-              {canExpand ? (
-                <Pressable onPress={() => setOpen((o) => !o)} hitSlop={8} accessibilityRole="button" accessibilityLabel={open ? 'Collapse details' : 'Expand details'}>
-                  <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-                </Pressable>
-              ) : null}
+              {canExpand ? <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
               <Pressable onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Configure ${c.name}`}><Pencil /></Pressable>
               <Pressable onPress={onFell} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Down ${c.name}`}>
                 <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
               </Pressable>
             </>
           ) : null}
-        </View>
+        </Pressable>
 
         {anyTrack ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexWrap: 'wrap', paddingLeft: selecting ? 0 : 48 }}>
-            {c.show.hp ? <StatPulse kind="hp" value={c.hp ?? 0} max={c.maxHp ?? 0} dir={dir} onStep={(d) => onStat('hp', d)} onRequestSet={() => onRequestSet('hp')} onHoldStart={() => onHoldStart?.('hp')} onHoldEnd={() => onHoldEnd?.('hp')} /> : null}
-            {c.show.stress ? <StatPulse kind="stress" value={c.stress ?? 0} max={c.maxStress ?? 0} dir={dir} onStep={(d) => onStat('stress', d)} onRequestSet={() => onRequestSet('stress')} onHoldStart={() => onHoldStart?.('stress')} onHoldEnd={() => onHoldEnd?.('stress')} /> : null}
+            {c.show.hp ? <StatPulse kind="hp" value={c.hp ?? 0} max={c.maxHp ?? 0} onApply={(d) => onApply('hp', d)} onRequestSet={() => onRequestSet('hp')} /> : null}
+            {c.show.stress ? <StatPulse kind="stress" value={c.stress ?? 0} max={c.maxStress ?? 0} onApply={(d) => onApply('stress', d)} onRequestSet={() => onRequestSet('stress')} /> : null}
             {c.show.thresholds ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <StatGlyph kind="threshold" color={DmRune.accentDim} size={16} />
@@ -136,8 +134,12 @@ export function CombatantPanel({
           <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>{c.description}</Text>
         ) : null}
 
-        {open ? <StatBlockDetail c={c} /> : null}
+        {open ? (
+          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+            <StatBlockDetail c={c} />
+          </Animated.View>
+        ) : null}
       </ChamferBox>
-    </Pressable>
+    </Animated.View>
   );
 }
