@@ -2,7 +2,7 @@
  *  small chrome helpers. */
 import { type ReactNode, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -10,9 +10,11 @@ import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { useAndroidBack } from './use-android-back';
 
 /**
- * A centered modal (v0.16.0, PRD #3/#16): the scrim closes on press, but an inner Pressable ABSORBS taps
- * inside the panel so a near-miss never closes it. Content fades/springs in, animates its size with
- * `LinearTransition`, and fades out. Reused by every DM dialog + panel.
+ * A centered modal (v0.16.0, PRD #3/#16): the scrim closes on press, but an inner View ABSORBS taps inside
+ * the panel so a near-miss never closes it. Content fades/springs in and fades out. v0.19.0: dropped the
+ * `LinearTransition` size animation — it fought internal ScrollViews and cost FPS while scrolling (items
+ * 1/2). The tap-absorb is a plain View with a start-responder (no Pressable) so a child ScrollView keeps
+ * the move-responder and scrolls freely.
  */
 export function DmModal({ onClose, children, contentStyle }: { onClose: () => void; children: ReactNode; contentStyle?: object }) {
   // Android hardware back closes the modal instead of popping the screen (item 3).
@@ -22,11 +24,12 @@ export function DmModal({ onClose, children, contentStyle }: { onClose: () => vo
       <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={StyleSheet.absoluteFill}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.86)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss" />
       </Animated.View>
-      <Animated.View entering={FadeInDown.springify().damping(20).stiffness(180)} exiting={FadeOutDown.duration(140)} layout={LinearTransition.springify().damping(22)} style={contentStyle}>
-        {/* absorb inside taps — only the scrim (or a real button) acts */}
-        <Pressable onPress={() => {}} accessibilityElementsHidden>
+      <Animated.View entering={FadeInDown.springify().damping(20).stiffness(180)} exiting={FadeOutDown.duration(140)} style={contentStyle}>
+        {/* absorb inside taps: claim the START responder so empty areas don't fall through to the scrim,
+            but never the MOVE responder — a child ScrollView takes that and scrolls (items 1/2). */}
+        <View onStartShouldSetResponder={() => true}>
           {children}
-        </Pressable>
+        </View>
       </Animated.View>
     </View>
   );

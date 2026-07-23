@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.18.0'                       # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.19.0'                       # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.18.0 - DM Mode, fourth pass: a hold-to-edit radial for stats, drag-and-drop log reordering, The Void adversaries, and a batch of polish. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- RADIAL STAT EDITING: the +/- buttons are gone. Tap a stat's icon+number to set an exact value on the keypad; HOLD it and a small six-wedge wheel blooms - drag up for +1/+2/+3, down for -1/-2/-3, release to apply, with smooth motion and a particle burst. Works for players and adversaries alike.`n- THE VOID: all 16 adversaries from The Void v1.5 are bundled as their own collapsible, non-deletable library section (alongside Base Game and your own). Your custom adversaries now sort first, and every category collapses. Creature details scroll properly, and tapping an adversary card's title expands its full stat block with a smooth animation.`n- DRAG-AND-DROP LOG: reorder notes by dragging the grip handle - the row lifts as a ghost, a marker shows where it will land, and everything settles with a spring. No more up/down arrows.`n- ONE ACTIVE PARTY: parties are now 'Active' instead of 'enabled', with exactly one active at a time - the one in the Sessions dropdown. Switching the dropdown switches the active party.`n- POLISH: the hardware Back button now closes an open preview or panel instead of dumping you out of the encounter; the card archive is a button right on the encounter (next to the log); multi-select is bolder; and the adversary editor's feature titles are no longer clipped.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.19.0 - DM Mode performance + feel pass: the adversary library and its details scroll smoothly now, the stat radial is centered and snappy, and a batch of fixes. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- SMOOTH LIBRARY: the ~155-row adversary library and the creature detail panel no longer lag - rows are drawn far cheaper, off-screen rows are recycled, and each creature's stat block is built only when you open it. The details panel scrolls cleanly.`n- CONFIG SCROLL FIXED: the adversary configuration pop-up now scrolls whether or not the keyboard is open.`n- RADIAL, CENTERED: the hold-to-edit stat wheel now blooms exactly on the stat icon (it used to sit ~10-30px too high), and it's smoother - the particle burst was dropped in favor of steady FPS. Number-and-icon spacing on stats was tidied up.`n- SMALL FIX: the card archive's 'Forms' filter is now labelled 'Transformations'.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

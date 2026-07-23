@@ -97,7 +97,7 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
     <DmModal onClose={onCancel}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 340, maxHeight: 660, padding: 18 }}>
         <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Configure</Text>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 13 }}>
+        <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 13, paddingBottom: 4 }}>
           {/* portrait + name */}
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
             <Pressable onPress={pickImage} accessibilityRole="button" accessibilityLabel="Choose image">
