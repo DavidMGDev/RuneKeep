@@ -8,7 +8,7 @@
  */
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -20,7 +20,8 @@ import { AdversaryPortrait, hasStatBlock, StatBlockDetail } from './adversary-de
 import { StatGlyph } from './stat-glyphs';
 import { StatPulse } from './stat-pulse';
 
-const SPRING = LinearTransition.springify().damping(20).stiffness(180);
+// item 4: short, smooth reflow — no spring bounce.
+const SPRING = LinearTransition.duration(180).easing(Easing.out(Easing.cubic));
 
 function Pencil() {
   return (

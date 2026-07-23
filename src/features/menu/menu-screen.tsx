@@ -15,6 +15,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { listParties } from '@/lib/party-store';
 import { playSfx, preloadSfx } from '@/lib/sfx';
+import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
 const THUMB_W = 76;
 const THUMB_H = Math.round(THUMB_W * (263 / 188));
@@ -133,6 +134,37 @@ function ModeToggle({ dm, onToggle }: { dm: boolean; onToggle: () => void }) {
   );
 }
 
+/** The main-menu UI-sound mute (v0.19.1 item 6): a speaker glyph that gains a slash when muted. */
+function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onToggle: () => void }) {
+  const press = useSharedValue(1);
+  const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+  const edge = muted ? (dm ? DmRune.red : Rune.red) : dm ? DmRune.accent : Rune.goldEdge;
+  const glyph = muted ? (dm ? DmRune.red : Rune.red) : dm ? DmRune.accent : Rune.goldText;
+  return (
+    <Animated.View style={anim}>
+      <Pressable
+        onPress={onToggle}
+        onPressIn={() => { press.value = withSpring(0.95, { damping: 22, stiffness: 320, mass: 0.6 }); }}
+        onPressOut={() => { press.value = withSpring(1, { damping: 22, stiffness: 320, mass: 0.6 }); }}
+        accessibilityRole="button"
+        accessibilityLabel={muted ? 'Unmute UI sounds' : 'Mute UI sounds'}
+        accessibilityState={{ selected: muted }}>
+        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, width: 44, alignItems: 'center', justifyContent: 'center' }}>
+          <Svg width={20} height={20} viewBox="0 0 24 24">
+            <Polygon points="4,9 8,9 13,4 13,20 8,15 4,15" fill="none" stroke={glyph} strokeWidth={1.8} strokeLinejoin="round" />
+            {muted ? (
+              <Polyline points="17,9 22,15" fill="none" stroke={glyph} strokeWidth={2} strokeLinecap="round" />
+            ) : (
+              <Polyline points="16,8 18,12 16,16" fill="none" stroke={glyph} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            )}
+            {muted ? <Polyline points="22,9 17,15" fill="none" stroke={glyph} strokeWidth={2} strokeLinecap="round" /> : null}
+          </Svg>
+        </ChamferBox>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 /**
  * The main menu: the keep's gate. Title, two deliberate actions, and the card library itself
  * drifting dimly in the background (LOD thumbs only — the art is the spectacle, the chrome
@@ -142,8 +174,10 @@ export function MenuScreen() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [dm, setDm] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [hasEnabledParty, setHasEnabledParty] = useState(false);
   useEffect(() => {
+    setMuted(applyStoredMute()); // item 6: honour the persisted UI-sound mute before anything plays
     preloadSfx(); // warm the audio engine + decode latency-sensitive sounds (#255)
     void getDmMode().then(setDm);
     // One frame of intentional loading: lets fonts/thumb decodes land so the menu never flashes
@@ -169,6 +203,17 @@ export function MenuScreen() {
     setDm((prev) => {
       const next = !prev;
       void setDmMode(next);
+      return next;
+    });
+  }, []);
+
+  // item 6: the main-menu mute — silences every UI sound until re-enabled here. Tap plays only when
+  // UN-muting (a muted app must make no sound on the tap that muted it).
+  const toggleMute = useCallback(() => {
+    setMuted((prev) => {
+      const next = !prev;
+      setUiMuted(next);
+      if (!next) playSfx('buttonTap');
       return next;
     });
   }, []);
@@ -226,7 +271,10 @@ export function MenuScreen() {
               <MenuAction label="Cards" sub="Archive, homebrew & expansions" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
             </>
           )}
-          <ModeToggle dm={dm} onToggle={toggleDm} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <ModeToggle dm={dm} onToggle={toggleDm} />
+            <MuteToggle muted={muted} dm={dm} onToggle={toggleMute} />
+          </View>
         </View>
       </View>
     </AppScreen>

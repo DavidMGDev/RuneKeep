@@ -49,6 +49,12 @@ interface RadialCtx {
   fingerY: SharedValue<number>;
   highlight: SharedValue<number>;
   active: SharedValue<number>; // 1 while a hold is live
+  /** The host overlay's own window origin (item 4 fix). `measureInWindow` (used to place the anchor) and
+   *  the absolute-fill host can live in DIFFERENT frames on edge-to-edge Android — the status bar makes
+   *  window coords ~30px off from the host's local frame. We measure the host itself and subtract, so the
+   *  wheel lands dead-centre on the icon regardless of insets. */
+  hostX: SharedValue<number>;
+  hostY: SharedValue<number>;
   open: (ax: number, ay: number, color: string, onApply: (delta: number) => void) => void;
   commit: () => void;
   cancel: () => void;
@@ -69,6 +75,8 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
   const fingerY = useSharedValue(0);
   const highlight = useSharedValue(-1);
   const active = useSharedValue(0);
+  const hostX = useSharedValue(0);
+  const hostY = useSharedValue(0);
 
   const [color, setColor] = useState<string>(DmRune.accent);
   const applyRef = useRef<((d: number) => void) | null>(null);
@@ -103,11 +111,17 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
 
   const cancel = useCallback(() => { applyRef.current = null; close(); }, [close]);
 
-  const value = useMemo<RadialCtx>(() => ({ progress, anchorX, anchorY, fingerX, fingerY, highlight, active, open, commit, cancel }), [progress, anchorX, anchorY, fingerX, fingerY, highlight, active, open, commit, cancel]);
+  const frameRef = useRef<View>(null);
+  const measureFrame = useCallback(() => { frameRef.current?.measureInWindow((x, y) => { hostX.value = x; hostY.value = y; }); }, [hostX, hostY]);
+  const value = useMemo<RadialCtx>(() => ({ progress, anchorX, anchorY, fingerX, fingerY, highlight, active, hostX, hostY, open, commit, cancel }), [progress, anchorX, anchorY, fingerX, fingerY, highlight, active, hostX, hostY, open, commit, cancel]);
 
   return (
     <Ctx.Provider value={value}>
       {children}
+      {/* A persistent, always-mounted full-screen sensor: its measured window origin is the frame the
+          absolute-fill wheel actually renders in, so subtracting it reconciles the measureInWindow anchor
+          (item 4). Zero-cost — no paint, never interactive. */}
+      <View ref={frameRef} pointerEvents="none" style={StyleSheet.absoluteFill} collapsable={false} onLayout={measureFrame} />
       <StatRadialHost color={color} />
     </Ctx.Provider>
   );
@@ -122,7 +136,7 @@ function sector(cx: number, cy: number, a0: number, a1: number, ri: number, ro: 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 function StatRadialHost({ color }: { color: string }) {
-  const { progress, anchorX, anchorY, fingerX, fingerY, highlight } = useStatRadial();
+  const { progress, anchorX, anchorY, fingerX, fingerY, highlight, hostX, hostY } = useStatRadial();
   const [hl, setHl] = useState(-1);
   const [shown, setShown] = useState(false);
   useAnimatedReaction(() => progress.value > 0.001, (v, prev) => { if (v !== prev) runOnJS(setShown)(v); });
@@ -130,16 +144,17 @@ function StatRadialHost({ color }: { color: string }) {
     if (v !== prev) { runOnJS(setHl)(v); if (v >= 0) runOnJS(playSfx)('floatMenuHighlight'); }
   });
 
+  // Anchor/finger arrive in window coords; the host renders in its own (offset) frame — reconcile.
   const dim = useAnimatedStyle(() => ({ opacity: progress.value * 0.34 }));
   const wheel = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateX: anchorX.value - ROUT }, { translateY: anchorY.value - ROUT }, { scale: 0.72 + 0.28 * progress.value }],
+    transform: [{ translateX: anchorX.value - hostX.value - ROUT }, { translateY: anchorY.value - hostY.value - ROUT }, { scale: 0.72 + 0.28 * progress.value }],
   }));
   const line = useAnimatedStyle(() => {
     const dx = fingerX.value - anchorX.value; const dy = fingerY.value - anchorY.value;
-    return { width: Math.min(ROUT, Math.hypot(dx, dy)), opacity: progress.value, transform: [{ translateX: anchorX.value }, { translateY: anchorY.value - 1.5 }, { rotateZ: `${Math.atan2(dy, dx)}rad` }] };
+    return { width: Math.min(ROUT, Math.hypot(dx, dy)), opacity: progress.value, transform: [{ translateX: anchorX.value - hostX.value }, { translateY: anchorY.value - hostY.value - 1.5 }, { rotateZ: `${Math.atan2(dy, dx)}rad` }] };
   });
-  const dot = useAnimatedStyle(() => ({ opacity: progress.value, transform: [{ translateX: fingerX.value - 7 }, { translateY: fingerY.value - 7 }] }));
+  const dot = useAnimatedStyle(() => ({ opacity: progress.value, transform: [{ translateX: fingerX.value - hostX.value - 7 }, { translateY: fingerY.value - hostY.value - 7 }] }));
 
   if (!shown) return null;
   return (

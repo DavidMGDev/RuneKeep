@@ -11,7 +11,8 @@
  * inside a bounded ScrollView (item 5).
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, SectionList, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, SectionList, Text, TextInput, View } from 'react-native';
+import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (custom-adversary portraits)
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -49,7 +50,7 @@ const buildCombatant = (it: Item): Combatant => (it.base ? baseToCombatant(it.ba
 function Avatar({ uri, name, tint }: { uri?: string; name: string; tint: string }) {
   return (
     <View style={{ width: 36, height: 36, borderRadius: 5, borderWidth: 1, borderColor: tint, backgroundColor: DmRune.ink, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {uri ? <Image source={{ uri }} style={{ width: 36, height: 36 }} resizeMode="cover" /> : <Text style={{ color: DmRune.accentDim, fontSize: 16, fontFamily: Display.black }}>{(name[0] ?? '?').toUpperCase()}</Text>}
+      {uri ? <Image source={uri} style={{ width: 36, height: 36 }} contentFit="cover" /> : <Text style={{ color: DmRune.accentDim, fontSize: 16, fontFamily: Display.black }}>{(name[0] ?? '?').toUpperCase()}</Text>}
     </View>
   );
 }
@@ -207,16 +208,21 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           </ChamferBox>
         ) : null}
 
+        {/* item 1: unmount the ~155-row list while the detail modal is open. A mounted VirtualizedList keeps
+            filling batches on the JS thread (that's the periodic ~6s freeze while scrolling the detail);
+            with it gone the detail scroll owns the thread and stays smooth. Rows are cheap plain Views, so
+            the remount on close is instant. `removeClippedSubviews` is dropped — on Android its clip/unclip
+            churn is the other half of the stutter. */}
+        {detail ? <View style={{ flex: 1 }} /> : (
         <SectionList
           sections={sections}
           keyExtractor={(it) => it.key}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={{ gap: 8, paddingBottom: 90 }}
           showsVerticalScrollIndicator={false}
-          initialNumToRender={14}
-          maxToRenderPerBatch={14}
-          windowSize={9}
-          removeClippedSubviews
+          initialNumToRender={16}
+          maxToRenderPerBatch={10}
+          windowSize={7}
           renderSectionHeader={({ section }) => (
             <Pressable onPress={() => { playSfx('buttonTap'); setCollapsed((s) => { const n = new Set(s); if (n.has(section.key)) n.delete(section.key); else n.add(section.key); return n; }); }} accessibilityRole="button" accessibilityState={{ expanded: !section.collapsed }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 2 }}>
               <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: section.collapsed ? '0deg' : '90deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
@@ -252,6 +258,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
             );
           }}
         />
+        )}
       </View>
 
       {sel.selecting ? (

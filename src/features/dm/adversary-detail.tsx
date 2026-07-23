@@ -4,8 +4,9 @@
  * experience, features), and a fullscreen image viewer. Reused by the CombatantPanel and the library.
  */
 import { useEffect } from 'react';
-import { Dimensions, Image, Pressable, Text, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
+import { Dimensions, Pressable, Text, View } from 'react-native';
+import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/custom portraits)
+import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated';
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -28,7 +29,7 @@ export function BaseGameEmblem({ size = 22, color = DmRune.accentDim }: { size?:
 /** A square portrait chip. Base-game default = the tome emblem; custom = the image. Tap → fullscreen. */
 export function AdversaryPortrait({ uri, size = 42, tint, onPress }: { uri?: string; size?: number; tint: string; onPress?: () => void }) {
   const inner = uri ? (
-    <Image source={{ uri }} style={{ width: size, height: size }} resizeMode="cover" />
+    <Image source={uri} style={{ width: size, height: size }} contentFit="cover" />
   ) : (
     <BaseGameEmblem size={size * 0.5} />
   );
@@ -114,7 +115,7 @@ export const hasStatBlock = (c: Combatant): boolean =>
 /** Fullscreen image viewer for an adversary portrait (item 8). Tap anywhere to close. */
 export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; name: string; onClose: () => void }) {
   const p = useSharedValue(0);
-  useEffect(() => { p.value = withSpring(1, { damping: 18, stiffness: 120 }); }, [p]);
+  useEffect(() => { p.value = withTiming(1, { duration: 150, easing: Easing.out(Easing.cubic) }); }, [p]); // item 4: smooth, non-elastic
   const close = () => { p.value = withTiming(0, { duration: 150 }, (f) => { if (f) runOnJS(onClose)(); }); };
   useAndroidBack(() => { close(); return true; });
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.92 }));
@@ -130,7 +131,7 @@ export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; nam
       </Animated.View>
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: '50%', left: 0, right: 0, marginTop: -box / 2 - 24, alignItems: 'center' }, body]}>
         <ChamferBox chamfer={16} fill={DmRune.ink} stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: box, height: box, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          {uri ? <Image source={{ uri }} style={{ width: box, height: box }} resizeMode="contain" /> : <BaseGameEmblem size={box * 0.4} />}
+          {uri ? <Image source={uri} style={{ width: box, height: box }} contentFit="contain" /> : <BaseGameEmblem size={box * 0.4} />}
         </ChamferBox>
         <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginTop: 14 }}>{name}</Text>
       </Animated.View>
