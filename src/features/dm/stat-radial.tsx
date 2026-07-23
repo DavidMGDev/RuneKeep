@@ -1,10 +1,10 @@
 /**
- * Stat radial (v0.18.0 item 2) — the hold-to-edit wheel for DM stat pulses. A tap on a stat's icon+number
- * opens the keypad (handled by StatPulse); a short HOLD blooms this six-wedge wheel — three up (+1/+2/+3),
- * three down (−1/−2/−3) — modelled on the sheet float menu / gear-edit radial. Drag the finger onto a
- * wedge and release to fire; release in the left/right gap, the centre dead-zone, or past the ring cancels.
- * One shared host renders the wheel in WINDOW coordinates so it never clips inside a scroll or a panel; a
- * StatPulse drives the finger + highlight shared values from its own pan. Smooth bloom + a particle burst.
+ * Stat radial (v0.18.0 item 2; v0.19.0 trimmed) — the hold-to-edit wheel for DM stat pulses. A tap on a
+ * stat's icon+number opens the keypad (handled by StatPulse); a short HOLD blooms this six-wedge wheel —
+ * three up (+1/+2/+3), three down (−1/−2/−3). Drag the finger onto a wedge and release to fire; release in
+ * the left/right gap, the centre dead-zone, or past the ring cancels. One shared host renders the wheel in
+ * WINDOW coordinates so it never clips inside a scroll or panel; a StatPulse drives the finger + highlight
+ * shared values from its own pan. v0.19.0: particles dropped for a smoother, higher-FPS bloom (item 5).
  */
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -71,7 +71,6 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
   const active = useSharedValue(0);
 
   const [color, setColor] = useState<string>(DmRune.accent);
-  const [burst, setBurst] = useState<{ n: number; x: number; y: number; deg: number } | null>(null);
   const applyRef = useRef<((d: number) => void) | null>(null);
 
   const open = useCallback((ax: number, ay: number, c: string, onApply: (d: number) => void) => {
@@ -95,14 +94,12 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
       const w = RADIAL_WEDGES[i];
       applyRef.current(w.delta);
       playSfx('numpadPress', { cents: w.delta > 0 ? 300 : -200, vary: false });
-      const a = (w.center * Math.PI) / 180;
-      setBurst({ n: (burst?.n ?? 0) + 1, x: anchorX.value + RICON * Math.cos(a), y: anchorY.value + RICON * Math.sin(a), deg: w.center });
     } else {
       playSfx('floatMenuClose');
     }
     applyRef.current = null;
     close();
-  }, [highlight, anchorX, anchorY, burst, close]);
+  }, [highlight, close]);
 
   const cancel = useCallback(() => { applyRef.current = null; close(); }, [close]);
 
@@ -111,7 +108,7 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
   return (
     <Ctx.Provider value={value}>
       {children}
-      <StatRadialHost color={color} burst={burst} />
+      <StatRadialHost color={color} />
     </Ctx.Provider>
   );
 }
@@ -124,7 +121,7 @@ function sector(cx: number, cy: number, a0: number, a1: number, ri: number, ro: 
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-function StatRadialHost({ color, burst }: { color: string; burst: { n: number; x: number; y: number; deg: number } | null }) {
+function StatRadialHost({ color }: { color: string }) {
   const { progress, anchorX, anchorY, fingerX, fingerY, highlight } = useStatRadial();
   const [hl, setHl] = useState(-1);
   const [shown, setShown] = useState(false);
@@ -178,30 +175,6 @@ function StatRadialHost({ color, burst }: { color: string; burst: { n: number; x
       </Animated.View>
       <Animated.View style={[{ position: 'absolute', left: 0, top: 0, height: 3, backgroundColor: color, transformOrigin: 'left center' }, line]} />
       <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: color }, dot]} />
-      {burst ? <Burst key={burst.n} x={burst.x} y={burst.y} deg={burst.deg} color={color} /> : null}
     </View>
   );
-}
-
-/** A short particle burst fired when a wedge commits (item 2: "particles please"). */
-function Burst({ x, y, deg, color }: { x: number; y: number; deg: number; color: string }) {
-  const t = useSharedValue(0);
-  useMemo(() => { t.value = 0; t.value = withTiming(1, { duration: 460, easing: Easing.out(Easing.quad) }); }, [t]);
-  const N = 9;
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {Array.from({ length: N }).map((_, i) => {
-        const spread = (deg - 42 + (84 * i) / (N - 1)) * (Math.PI / 180);
-        const dist = 22 + (i % 3) * 12;
-        return <Particle key={i} t={t} x={x} y={y} dx={Math.cos(spread) * dist} dy={Math.sin(spread) * dist} color={color} />;
-      })}
-    </View>
-  );
-}
-function Particle({ t, x, y, dx, dy, color }: { t: SharedValue<number>; x: number; y: number; dx: number; dy: number; color: string }) {
-  const style = useAnimatedStyle(() => ({
-    opacity: (1 - t.value) * 0.9,
-    transform: [{ translateX: x - 3 + dx * t.value }, { translateY: y - 3 + dy * t.value }, { scale: 1 - 0.5 * t.value }],
-  }));
-  return <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: 6, height: 6, borderRadius: 3, backgroundColor: color }, style]} />;
 }

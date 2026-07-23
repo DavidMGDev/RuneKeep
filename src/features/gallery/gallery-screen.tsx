@@ -45,7 +45,7 @@ const KINDS: { key: GalleryKind; label: string }[] = [
   { key: 'community', label: 'Community' },
   { key: 'class', label: 'Class' },
   { key: 'subclass', label: 'Subclass' },
-  { key: 'transformation', label: 'Forms' },
+  { key: 'transformation', label: 'Transformations' },
   { key: 'weapon', label: 'Weapons' },
   { key: 'armor', label: 'Armor' },
   { key: 'loot', label: 'Loot' },

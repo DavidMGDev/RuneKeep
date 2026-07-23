@@ -1,17 +1,20 @@
 /**
- * Adversary Library (v0.17.0; reworked v0.18.0) — a full-screen browser (not a panel) over the DM's own
- * saved adversaries, the complete Base Game roster, and The Void pack, each in its own COLLAPSIBLE section
- * (item 4/7) — custom first, then Base Game, then The Void; only custom entries can be selected/deleted.
- * Gallery-style filter chips (tier / type / damage / trait) + name search; each row shows Tier · Type · HP ·
- * damage. Tap an entry to read its (scrollable) full stat block and choose how many to spawn (item 5).
- * Android back closes the preview, then the library, before touching navigation (item 3).
+ * Adversary Library (v0.17.0; reworked v0.18.0/v0.19.0) — a full-screen browser (not a panel) over the DM's
+ * own saved adversaries, the complete Base Game roster, and The Void pack, each in its own COLLAPSIBLE
+ * section (custom first, then Base Game, then The Void); only custom entries can be selected/deleted.
+ * Gallery-style filter chips + name search; each row shows Tier · Type · HP · damage.
+ *
+ * v0.19.0 PERF (item 1): the list holds ~155 rows. Every row used to be an SVG ChamferBox + a FitLine +
+ * an SVG portrait emblem — hundreds of react-native-svg canvases that tanked scroll FPS. Rows are now
+ * plain Views + plain Text + a cheap letter/image avatar (no SVG), the Combatant is built LAZILY only when
+ * a row is tapped (not 155× on mount), and the SectionList clips off-screen rows. The detail sheet scrolls
+ * inside a bounded ScrollView (item 5).
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, SectionList, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, SectionList, Text, TextInput, View } from 'react-native';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
-import { FitLine } from '@/components/fit-line';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
@@ -29,16 +32,26 @@ import { useSelection } from './use-selection';
 
 type Mode = 'adversary' | 'ally' | 'browse';
 type Source = 'custom' | 'base' | 'void';
-type Item = { key: string; name: string; combatant: Combatant; tier?: number; role?: AdversaryRole; hp: number; damage: string; damageType?: 'Physical' | 'Magic'; tags: string[]; source: Source };
+type Item = { key: string; name: string; source: Source; tier?: number; role?: AdversaryRole; hp: number; damage: string; damageType?: 'Physical' | 'Magic'; tags: string[]; portraitUri?: string; base?: BaseAdversary; saved?: SavedAdversary };
 
 interface Filters { tiers: Set<number>; roles: Set<AdversaryRole>; damage: Set<'Physical' | 'Magic'>; tags: Set<string> }
 const EMPTY: Filters = { tiers: new Set(), roles: new Set(), damage: new Set(), tags: new Set() };
 
 function baseItem(b: BaseAdversary, source: Source): Item {
-  return { key: `${source}-${b.id}`, name: b.name, combatant: baseToCombatant(b), tier: b.tier, role: b.role, hp: b.hp, damage: b.attackDamage, damageType: b.damageType, tags: b.tags, source };
+  return { key: `${source}-${b.id}`, name: b.name, source, tier: b.tier, role: b.role, hp: b.hp, damage: b.attackDamage, damageType: b.damageType, tags: b.tags, base: b };
 }
 function savedItem(s: SavedAdversary): Item {
-  return { key: `custom-${s.id}`, name: s.name, combatant: s, tier: s.tier, role: s.role, hp: s.maxHp ?? s.hp ?? 0, damage: s.attack?.damage ?? '', damageType: s.damageType, tags: [], source: 'custom' };
+  return { key: `custom-${s.id}`, name: s.name, source: 'custom', tier: s.tier, role: s.role, hp: s.maxHp ?? s.hp ?? 0, damage: s.attack?.damage ?? '', damageType: s.damageType, tags: [], portraitUri: s.portraitUri, saved: s };
+}
+const buildCombatant = (it: Item): Combatant => (it.base ? baseToCombatant(it.base) : (it.saved as Combatant));
+
+/** Cheap list avatar — no SVG: the image, or the first letter of the name in a bordered box. */
+function Avatar({ uri, name, tint }: { uri?: string; name: string; tint: string }) {
+  return (
+    <View style={{ width: 36, height: 36, borderRadius: 5, borderWidth: 1, borderColor: tint, backgroundColor: DmRune.ink, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {uri ? <Image source={{ uri }} style={{ width: 36, height: 36 }} resizeMode="cover" /> : <Text style={{ color: DmRune.accentDim, fontSize: 16, fontFamily: Display.black }}>{(name[0] ?? '?').toUpperCase()}</Text>}
+    </View>
+  );
 }
 
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
@@ -54,9 +67,9 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 function Stepper({ n, onChange }: { n: number; onChange: (n: number) => void }) {
   const btn = (delta: number, label: string) => (
     <Pressable onPress={() => onChange(Math.max(1, Math.min(20, n + delta)))} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}>
-      <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.2} style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 42, height: 42, borderRadius: 6, borderWidth: 1.2, borderColor: DmRune.line, backgroundColor: 'rgba(20,24,30,0.9)', alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: DmRune.accent, fontSize: 22, fontFamily: Display.black }}>{delta > 0 ? '+' : '–'}</Text>
-      </ChamferBox>
+      </View>
     </Pressable>
   );
   return (
@@ -68,17 +81,17 @@ function Stepper({ n, onChange }: { n: number; onChange: (n: number) => void }) 
   );
 }
 
-/** The detail / spawn sheet for one selected adversary. Scrollable stat block (item 5). */
+/** The detail / spawn sheet for one selected adversary. Combatant built lazily; stat block scrolls (item 5). */
 function DetailSheet({ item, mode, onSpawn, onViewImage, onClose }: { item: Item; mode: Mode; onSpawn: (c: Combatant, count: number) => void; onViewImage: () => void; onClose: () => void }) {
   const [count, setCount] = useState(1);
-  const c = item.combatant;
+  const c = useMemo(() => buildCombatant(item), [item]);
   const spawnLabel = mode === 'ally' ? `Spawn Ally ×${count}` : `Spawn ×${count}`;
   return (
     <DmModal onClose={onClose}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 344, maxHeight: 640, padding: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <AdversaryPortrait uri={c.portraitUri} size={48} tint={item.source === 'custom' ? DmRune.line : DmRune.accentDim} onPress={onViewImage} />
-          <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{c.name}</FitLine>
+          <Text numberOfLines={1} style={{ flex: 1, color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{c.name}</Text>
         </View>
         <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator nestedScrollEnabled contentContainerStyle={{ paddingBottom: 4 }}>
           <StatBlockDetail c={c} />
@@ -116,7 +129,6 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const sel = useSelection();
 
-  // Android back closes the library overlay (or preview via the DmModal handler) instead of popping nav.
   useAndroidBack(() => { onClose(); return true; });
 
   const toggle = <T,>(set: Set<T>, v: T): Set<T> => { const n = new Set(set); if (n.has(v)) n.delete(v); else n.add(v); return n; };
@@ -140,8 +152,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
       return { title, key, count: filtered.length, collapsed: isCollapsed, data: isCollapsed ? [] : filtered };
     };
     const out = [];
-    const yours = savedItems.filter(match);
-    if (yours.length || savedItems.length) out.push(build('Your Adversaries', 'custom', savedItems));
+    if (savedItems.length) out.push(build('Your Adversaries', 'custom', savedItems));
     out.push(build('Base Game', 'base', baseItems));
     out.push(build('The Void', 'void', voidItems));
     return out;
@@ -176,9 +187,9 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           </Pressable>
         </View>
 
-        <ChamferBox chamfer={8} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.1} style={{ height: 42, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 10 }}>
+        <View style={{ height: 42, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 10, borderRadius: 6, borderWidth: 1.1, borderColor: DmRune.line, backgroundColor: 'rgba(20,24,30,0.9)' }}>
           <TextInput value={search} onChangeText={setSearch} placeholder="Search adversaries…" placeholderTextColor={DmRune.muted} style={{ color: DmRune.text, fontSize: 15, fontFamily: Body.semibold }} />
-        </ChamferBox>
+        </View>
 
         {drawer ? (
           <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke={DmRune.line} strokeWidth={1.2} style={{ padding: 10, marginBottom: 10, gap: 8 }}>
@@ -202,6 +213,10 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           stickySectionHeadersEnabled={false}
           contentContainerStyle={{ gap: 8, paddingBottom: 90 }}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={14}
+          maxToRenderPerBatch={14}
+          windowSize={9}
+          removeClippedSubviews
           renderSectionHeader={({ section }) => (
             <Pressable onPress={() => { playSfx('buttonTap'); setCollapsed((s) => { const n = new Set(s); if (n.has(section.key)) n.delete(section.key); else n.add(section.key); return n; }); }} accessibilityRole="button" accessibilityState={{ expanded: !section.collapsed }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 2 }}>
               <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: section.collapsed ? '0deg' : '90deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
@@ -217,23 +232,22 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
                 onLongPress={() => selectable && (sel.selecting ? sel.toggle(item.key) : sel.start(item.key))}
                 delayLongPress={340}
                 accessibilityRole="button"
-                accessibilityLabel={`${item.name}, tier ${item.tier ?? '?'} ${item.role ?? ''}`}>
-                <ChamferBox chamfer={10} fill={on ? 'rgba(196,200,208,0.16)' : 'rgba(16,18,24,0.92)'} stroke={on ? DmRune.accent : DmRune.line} strokeWidth={on ? 1.8 : 1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 9 }}>
-                  <AdversaryPortrait uri={item.combatant.portraitUri} size={38} tint={selectable ? DmRune.line : DmRune.accentDim} />
-                  <View style={{ flex: 1 }}>
-                    <FitLine style={{ color: DmRune.ivory, fontSize: 14.5, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase' }}>{item.name}</FitLine>
-                    <Text style={{ color: DmRune.muted, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 }}>
-                      {item.tier ? `T${item.tier} · ` : ''}{item.role ? `${item.role} · ` : ''}HP {item.hp}{item.damage ? ` · ${item.damage}` : ''}
-                    </Text>
+                accessibilityLabel={`${item.name}, tier ${item.tier ?? '?'} ${item.role ?? ''}`}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 9, borderWidth: on ? 1.6 : 1, borderColor: on ? DmRune.accent : DmRune.line, backgroundColor: on ? 'rgba(196,200,208,0.16)' : 'rgba(16,18,24,0.92)' }}>
+                <Avatar uri={item.portraitUri} name={item.name} tint={selectable ? DmRune.line : DmRune.accentDim} />
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={{ color: DmRune.ivory, fontSize: 14.5, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase' }}>{item.name}</Text>
+                  <Text numberOfLines={1} style={{ color: DmRune.muted, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 }}>
+                    {item.tier ? `T${item.tier} · ` : ''}{item.role ? `${item.role} · ` : ''}HP {item.hp}{item.damage ? ` · ${item.damage}` : ''}
+                  </Text>
+                </View>
+                {sel.selecting && selectable ? (
+                  <View style={{ width: 22, height: 22, borderRadius: 4, borderWidth: 1.2, borderColor: DmRune.accentDim, backgroundColor: on ? DmRune.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                    {on ? <Text style={{ color: DmRune.ink, fontSize: 13, fontFamily: Display.black }}>✓</Text> : null}
                   </View>
-                  {sel.selecting && selectable ? (
-                    <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
-                      {on ? <Svg width={12} height={12} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
-                    </ChamferBox>
-                  ) : (
-                    <Svg width={12} height={12} viewBox="0 0 16 16"><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-                  )}
-                </ChamferBox>
+                ) : (
+                  <Text style={{ color: DmRune.accentDim, fontSize: 18, fontFamily: Display.black }}>›</Text>
+                )}
               </Pressable>
             );
           }}
@@ -251,7 +265,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
       ) : null}
 
       {detail ? <DetailSheet item={detail} mode={mode} onSpawn={doSpawn} onViewImage={() => setViewImage(detail)} onClose={() => setDetail(null)} /> : null}
-      {viewImage ? <AdversaryImageViewer uri={viewImage.combatant.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}
+      {viewImage ? <AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}
       {info ? <AdversaryInfoPanel onClose={() => setInfo(false)} /> : null}
       {confirmDelete ? (
         <PopupDialog title="Delete saved adversaries?" body={`${confirmDelete.size} saved adversary(ies) will be removed from your library. Base Game and Void adversaries are never affected.`} confirmLabel="Delete" destructive
