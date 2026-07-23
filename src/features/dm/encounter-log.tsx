@@ -1,13 +1,15 @@
 /**
- * Encounter log (v0.15.0; reworked v0.16.0/v0.17.0) — a smooth, left-side sliding panel (item 7: the Log
- * button is on the left, so the panel enters from the left). The whole background fades to dim in step with
- * the slide (item 1 — no elastic bounce, no undimmed gap). Notes are markdown, tap-to-edit, and carry a
- * grabber to reorder them (item 3); auto/stat entries render flatter with no grabber. Holding EITHER kind
- * enters multi-select; bottom controls Delete selected / Leave only selected, both confirmed (item 3).
+ * Encounter log (v0.15.0; reworked through v0.18.0) — a smooth, left-side sliding panel (item 7). The whole
+ * background fades to dim in step with the slide (item 1). Notes are markdown, tap-to-edit, and carry a
+ * DRAG HANDLE on the left (the grip lines) — press it and drag to reorder, with the row lifting as a ghost,
+ * a drop indicator showing where it will land, and every row settling with a spring on release (item 8).
+ * Auto/stat entries render flatter with no handle. Holding EITHER kind enters multi-select; bottom controls
+ * Delete selected / Leave only selected, both confirmed (item 3).
  */
-import { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, SlideInLeft, SlideOutLeft } from 'react-native-reanimated';
+import { useCallback, useRef, useState } from 'react';
+import { LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { FadeIn, FadeOut, LinearTransition, SlideInLeft, SlideOutLeft } from 'react-native-reanimated';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { CardMarkdownBody } from '@/components/card-markdown';
@@ -16,6 +18,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, DmRune } from '@/constants/theme';
 import { type LogEntry } from '@/lib/session';
+import { playSfx } from '@/lib/sfx';
 import { DmModal } from './dm-ui';
 import { useSelection } from './use-selection';
 
@@ -38,17 +41,11 @@ function NoteEditor({ initial, onSave, onDelete, onCancel }: { initial: string; 
   );
 }
 
-/** The reorder grabber shown only on note rows (item 3): move a note earlier (▲) or later (▼). */
-function Grabber({ onUp, onDown }: { onUp: () => void; onDown: () => void }) {
+/** The grip handle (drag lines) on note rows — no arrows (item 8). */
+function GripLines() {
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', gap: 2, paddingRight: 2 }}>
-      <Pressable onPress={onUp} hitSlop={8} accessibilityRole="button" accessibilityLabel="Move note earlier">
-        <Svg width={16} height={11} viewBox="0 0 16 11"><Polyline points="3,8 8,3 13,8" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-      </Pressable>
-      <Svg width={14} height={8} viewBox="0 0 14 8"><Line x1={2} y1={2} x2={12} y2={2} stroke={DmRune.line} strokeWidth={1.4} /><Line x1={2} y1={6} x2={12} y2={6} stroke={DmRune.line} strokeWidth={1.4} /></Svg>
-      <Pressable onPress={onDown} hitSlop={8} accessibilityRole="button" accessibilityLabel="Move note later">
-        <Svg width={16} height={11} viewBox="0 0 16 11"><Polyline points="3,3 8,8 13,3" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-      </Pressable>
+    <View style={{ width: 22, alignItems: 'center', justifyContent: 'center', gap: 3, paddingRight: 2 }}>
+      {[0, 1, 2].map((i) => <View key={i} style={{ width: 13, height: 2, borderRadius: 1, backgroundColor: DmRune.accentDim }} />)}
     </View>
   );
 }
@@ -58,7 +55,7 @@ export function EncounterLog({
   onAddNote,
   onEditNote,
   onDeleteNote,
-  onMoveNote,
+  onReorder,
   onDeleteEntries,
   onKeepOnly,
   onClose,
@@ -67,7 +64,7 @@ export function EncounterLog({
   onAddNote: (text: string) => void;
   onEditNote: (id: string, text: string) => void;
   onDeleteNote: (id: string) => void;
-  onMoveNote: (id: string, delta: number) => void;
+  onReorder: (id: string, toIndex: number) => void;
   onDeleteEntries: (ids: Set<string>) => void;
   onKeepOnly: (ids: Set<string>) => void;
   onClose: () => void;
@@ -77,13 +74,50 @@ export function EncounterLog({
   const [confirm, setConfirm] = useState<'delete' | 'keep' | null>(null);
   const sel = useSelection();
 
+  // drag-to-reorder state (item 8)
+  const geom = useRef<{ y: number; h: number }[]>([]);
+  const [dragFrom, setDragFrom] = useState(-1);
+  const [dragTY, setDragTY] = useState(0);
+  const [dropIndex, setDropIndex] = useState(-1);
+  const dragging = dragFrom >= 0;
+  const dragTYRef = useRef(0); dragTYRef.current = dragTY;
+
+  const onRowLayout = (i: number) => (e: LayoutChangeEvent) => { geom.current[i] = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height }; };
+
+  const computeDrop = useCallback((from: number, ty: number) => {
+    const g = geom.current;
+    if (!g[from]) return from;
+    const center = g[from].y + g[from].h / 2 + ty;
+    let idx = 0;
+    for (let j = 0; j < log.length; j++) {
+      if (j === from) continue;
+      const gj = g[j]; if (!gj) continue;
+      if (gj.y + gj.h / 2 < center) idx++;
+    }
+    return idx;
+  }, [log.length]);
+
+  const dragGesture = useCallback((from: number) => Gesture.Pan()
+    .activateAfterLongPress(120)
+    .runOnJS(true)
+    .onStart(() => { setDragFrom(from); setDragTY(0); setDropIndex(from); playSfx('floatMenuOpen'); })
+    .onUpdate((e) => { setDragTY(e.translationY); setDropIndex(computeDrop(from, e.translationY)); })
+    .onFinalize(() => {
+      setDragFrom((f) => {
+        if (f >= 0) {
+          const to = computeDrop(f, dragTYRef.current);
+          if (to !== f) { onReorder(log[f].id, to); playSfx('floatMenuHighlight'); }
+        }
+        return -1;
+      });
+      setDropIndex(-1); setDragTY(0);
+    }), [computeDrop, onReorder, log]);
+
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 300 }]}>
-      {/* full-screen dim that fades in step with the slide (item 1) */}
       <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(180)} style={StyleSheet.absoluteFill}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close log" />
       </Animated.View>
-      {/* the panel slides in smoothly from the LEFT (item 7) */}
       <Animated.View entering={SlideInLeft.duration(240)} exiting={SlideOutLeft.duration(200)} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '82%' }}>
         <ChamferBox chamfer={0} fill="rgba(10,13,18,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.4} style={{ flex: 1, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
@@ -95,46 +129,52 @@ export function EncounterLog({
           {log.length === 0 ? (
             <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, marginTop: 24 }}>No entries yet. Add a note, or toggle Auto-log to record stat changes.</Text>
           ) : (
-            <FlatList
-              data={log}
-              keyExtractor={(e) => e.id}
-              contentContainerStyle={{ gap: 8, paddingBottom: sel.selecting ? 76 : 10 }}
-              renderItem={({ item, index }) => {
-                const on = sel.ids.has(item.id);
-                const isNote = item.kind === 'note';
-                return (
-                  <Pressable
-                    onPress={() => { if (sel.selecting) sel.toggle(item.id); else if (isNote) setEditing(item); }}
-                    onLongPress={() => (sel.selecting ? sel.toggle(item.id) : sel.start(item.id))}
-                    delayLongPress={320}
-                    accessibilityRole="button"
-                    accessibilityLabel={isNote ? 'Note. Tap to edit, hold to select.' : 'Auto entry. Hold to select.'}>
-                    <ChamferBox
-                      chamfer={8}
-                      fill={on ? 'rgba(196,200,208,0.16)' : isNote ? 'rgba(18,22,28,0.92)' : 'rgba(12,15,20,0.7)'}
-                      stroke={on ? DmRune.accent : isNote ? DmRune.line : 'transparent'}
-                      strokeWidth={on ? 1.8 : 1.1}
-                      style={{ paddingHorizontal: 10, paddingVertical: 9, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                      {/* auto entries get a thin accent bar instead of a grabber, so the two kinds read differently */}
-                      {isNote && !sel.selecting ? (
-                        <Grabber onUp={() => onMoveNote(item.id, -1)} onDown={() => onMoveNote(item.id, 1)} />
-                      ) : !isNote ? (
-                        <View style={{ width: 3, alignSelf: 'stretch', backgroundColor: 'rgba(196,200,208,0.35)', borderRadius: 2 }} />
-                      ) : null}
-                      <View style={{ flex: 1 }}>
-                        <CardMarkdownBody body={item.text} style={{ color: isNote ? DmRune.text : DmRune.muted, fontSize: isNote ? 13 : 12, fontFamily: Body.regular, lineHeight: isNote ? 18 : 16 }} />
-                        <Text style={{ color: DmRune.muted, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 5 }}>{isNote ? 'Note' : 'Auto'} · {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                      </View>
-                      {sel.selecting ? (
-                        <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
-                          {on ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+            <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={!dragging} contentContainerStyle={{ paddingBottom: sel.selecting ? 76 : 10 }}>
+              <View>
+                {log.map((item, index) => {
+                  const on = sel.ids.has(item.id);
+                  const isNote = item.kind === 'note';
+                  const isDragged = dragFrom === index;
+                  // the drop indicator sits above the row at `dropIndex`
+                  const showDropAbove = dragging && !isDragged && dropIndex === index && dropIndex !== dragFrom;
+                  return (
+                    <Animated.View key={item.id} layout={LinearTransition.springify().damping(20)} onLayout={onRowLayout(index)} style={{ marginBottom: 8, transform: isDragged ? [{ translateY: dragTY }, { scale: 1.03 }] : undefined, zIndex: isDragged ? 20 : 1, opacity: isDragged ? 0.94 : 1 }}>
+                      {showDropAbove ? <View style={{ height: 2, backgroundColor: DmRune.accent, borderRadius: 1, marginBottom: 8, marginHorizontal: 4 }} /> : null}
+                      <Pressable
+                        onPress={() => { if (sel.selecting) sel.toggle(item.id); else if (isNote) setEditing(item); }}
+                        onLongPress={() => (sel.selecting ? sel.toggle(item.id) : sel.start(item.id))}
+                        delayLongPress={320}
+                        accessibilityRole="button"
+                        accessibilityLabel={isNote ? 'Note. Tap to edit, drag the handle to reorder, hold to select.' : 'Auto entry. Hold to select.'}>
+                        <ChamferBox
+                          chamfer={8}
+                          fill={on ? 'rgba(196,200,208,0.16)' : isDragged ? 'rgba(28,33,42,0.98)' : isNote ? 'rgba(18,22,28,0.92)' : 'rgba(12,15,20,0.7)'}
+                          stroke={on ? DmRune.accent : isDragged ? DmRune.accent : isNote ? DmRune.line : 'transparent'}
+                          strokeWidth={on || isDragged ? 1.8 : 1.1}
+                          style={{ paddingHorizontal: 10, paddingVertical: 9, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                          {isNote && !sel.selecting ? (
+                            <GestureDetector gesture={dragGesture(index)}><GripLines /></GestureDetector>
+                          ) : !isNote ? (
+                            <View style={{ width: 3, alignSelf: 'stretch', backgroundColor: 'rgba(196,200,208,0.35)', borderRadius: 2 }} />
+                          ) : null}
+                          <View style={{ flex: 1 }}>
+                            <CardMarkdownBody body={item.text} style={{ color: isNote ? DmRune.text : DmRune.muted, fontSize: isNote ? 13 : 12, fontFamily: Body.regular, lineHeight: isNote ? 18 : 16 }} />
+                            <Text style={{ color: DmRune.muted, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 5 }}>{isNote ? 'Note' : 'Auto'} · {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                          </View>
+                          {sel.selecting ? (
+                            <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+                              {on ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+                            </ChamferBox>
+                          ) : null}
                         </ChamferBox>
-                      ) : null}
-                    </ChamferBox>
-                  </Pressable>
-                );
-              }}
-            />
+                      </Pressable>
+                    </Animated.View>
+                  );
+                })}
+                {/* drop indicator at the very end */}
+                {dragging && dropIndex >= log.length ? <View style={{ height: 2, backgroundColor: DmRune.accent, borderRadius: 1, marginHorizontal: 4 }} /> : null}
+              </View>
+            </ScrollView>
           )}
           {!sel.selecting ? (
             <View style={{ paddingTop: 10 }}>
@@ -143,7 +183,6 @@ export function EncounterLog({
           ) : null}
         </ChamferBox>
 
-        {/* bottom multi-select controls (item 3/4) — always at the bottom of the panel */}
         {sel.selecting ? (
           <View style={{ position: 'absolute', left: 12, right: 12, bottom: 16 }}>
             <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ padding: 10, gap: 8 }}>
@@ -160,12 +199,7 @@ export function EncounterLog({
 
       {adding ? <NoteEditor initial="" onSave={(t) => { setAdding(false); onAddNote(t); }} onCancel={() => setAdding(false)} /> : null}
       {editing ? (
-        <NoteEditor
-          initial={editing.text}
-          onSave={(t) => { onEditNote(editing.id, t); setEditing(null); }}
-          onDelete={() => { onDeleteNote(editing.id); setEditing(null); }}
-          onCancel={() => setEditing(null)}
-        />
+        <NoteEditor initial={editing.text} onSave={(t) => { onEditNote(editing.id, t); setEditing(null); }} onDelete={() => { onDeleteNote(editing.id); setEditing(null); }} onCancel={() => setEditing(null)} />
       ) : null}
       {confirm === 'delete' ? (
         <PopupDialog title="Delete selected?" body={`${sel.ids.size} log entr${sel.ids.size === 1 ? 'y' : 'ies'} will be removed.`} confirmLabel="Delete" destructive

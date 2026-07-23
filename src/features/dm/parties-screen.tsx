@@ -28,13 +28,13 @@ function PartyRow({ party, onOpen }: { party: Party; onOpen: () => void }) {
           <View style={{ flex: 1 }}>
             <FitLine style={{ color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{party.name}</FitLine>
             <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginTop: 4 }}>
-              {party.memberIds.length} {party.memberIds.length === 1 ? 'Member' : 'Members'}{party.enabled ? ' · Enabled' : ''}
+              {party.memberIds.length} {party.memberIds.length === 1 ? 'Member' : 'Members'}{party.enabled ? ' · Active' : ''}
             </Text>
           </View>
           {party.enabled ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(196,200,208,0.16)', borderWidth: 1, borderColor: DmRune.accent, paddingHorizontal: 8, paddingVertical: 4 }}>
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} />
-              <Text style={{ color: DmRune.accent, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Enabled</Text>
+              <Text style={{ color: DmRune.accent, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Active</Text>
             </View>
           ) : null}
           <Svg width={14} height={14} viewBox="0 0 16 16">

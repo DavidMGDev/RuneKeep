@@ -35,8 +35,8 @@ function TextField({ label, value, onChange, multiline, placeholder, keyboardTyp
   return (
     <View style={{ flex: 1, gap: 4 }}>
       <Text style={FIELD_LABEL}>{label}</Text>
-      <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ minHeight: multiline ? 60 : 40, justifyContent: 'center', paddingHorizontal: 10, paddingVertical: multiline ? 8 : 0 }}>
-        <TextInput value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor={DmRune.muted} multiline={multiline} keyboardType={keyboardType} maxLength={maxLength} style={{ color: DmRune.text, fontSize: multiline ? 13.5 : 15, fontFamily: multiline ? Body.regular : Body.semibold, textAlignVertical: multiline ? 'top' : 'center', minHeight: multiline ? 44 : undefined }} />
+      <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ minHeight: multiline ? 60 : 42, justifyContent: 'center', paddingHorizontal: 10, paddingVertical: multiline ? 8 : 0 }}>
+        <TextInput value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor={DmRune.muted} multiline={multiline} keyboardType={keyboardType} maxLength={maxLength} style={{ color: DmRune.text, fontSize: multiline ? 13.5 : 15, fontFamily: multiline ? Body.regular : Body.semibold, textAlignVertical: multiline ? 'top' : 'center', paddingVertical: multiline ? 0 : 6, lineHeight: multiline ? 19 : 20, minHeight: multiline ? 44 : undefined }} />
       </ChamferBox>
     </View>
   );
@@ -61,8 +61,8 @@ function FeatureEditor({ f, onChange, onRemove }: { f: AdversaryFeature; onChang
   return (
     <ChamferBox chamfer={8} fill="rgba(16,20,26,0.8)" stroke={DmRune.line} strokeWidth={1.1} style={{ padding: 10, gap: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ flex: 1, height: 36, justifyContent: 'center', paddingHorizontal: 9 }}>
-          <TextInput value={f.name} onChangeText={(name) => onChange({ ...f, name })} placeholder="Feature name" placeholderTextColor={DmRune.muted} maxLength={50} style={{ color: DmRune.ivory, fontSize: 13.5, fontFamily: Body.bold }} />
+        <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ flex: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 9 }}>
+          <TextInput value={f.name} onChangeText={(name) => onChange({ ...f, name })} placeholder="Feature name" placeholderTextColor={DmRune.muted} maxLength={50} style={{ color: DmRune.ivory, fontSize: 13.5, fontFamily: Body.bold, paddingVertical: 6, lineHeight: 18, textAlignVertical: 'center' }} />
         </ChamferBox>
         <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove feature">
           <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>

@@ -7,6 +7,7 @@ import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutDown, LinearTransition } 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
+import { useAndroidBack } from './use-android-back';
 
 /**
  * A centered modal (v0.16.0, PRD #3/#16): the scrim closes on press, but an inner Pressable ABSORBS taps
@@ -14,6 +15,8 @@ import { Body, Display, DmRune, Rune } from '@/constants/theme';
  * `LinearTransition`, and fades out. Reused by every DM dialog + panel.
  */
 export function DmModal({ onClose, children, contentStyle }: { onClose: () => void; children: ReactNode; contentStyle?: object }) {
+  // Android hardware back closes the modal instead of popping the screen (item 3).
+  useAndroidBack(() => { onClose(); return true; });
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 300, alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={StyleSheet.absoluteFill}>

@@ -6,7 +6,7 @@
  */
 export type AdversaryRole =
   | 'Bruiser' | 'Horde' | 'Leader' | 'Minion' | 'Ranged' | 'Skulk' | 'Social' | 'Solo' | 'Standard' | 'Support';
-export type FeatureKind = 'Passive' | 'Action' | 'Reaction';
+export type FeatureKind = 'Passive' | 'Action' | 'Reaction' | 'Evolution';
 export interface AdversaryFeature { name: string; kind: FeatureKind; text: string; }
 export interface BaseAdversary {
   id: string;

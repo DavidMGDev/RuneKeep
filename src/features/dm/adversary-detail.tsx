@@ -12,6 +12,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, DmRune } from '@/constants/theme';
 import { type AdversaryFeature } from '@/data/adversaries';
 import { type Combatant } from '@/lib/session';
+import { useAndroidBack } from './use-android-back';
 
 /** A stylised tome/rune emblem marking a Base Game adversary that carries no custom image (item 12). */
 export function BaseGameEmblem({ size = 22, color = DmRune.accentDim }: { size?: number; color?: string }) {
@@ -115,6 +116,7 @@ export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; nam
   const p = useSharedValue(0);
   useEffect(() => { p.value = withSpring(1, { damping: 18, stiffness: 120 }); }, [p]);
   const close = () => { p.value = withTiming(0, { duration: 150 }, (f) => { if (f) runOnJS(onClose)(); }); };
+  useAndroidBack(() => { close(); return true; });
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.92 }));
   const body = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ scale: 0.9 + p.value * 0.1 }] }));
   const { width, height } = Dimensions.get('window');

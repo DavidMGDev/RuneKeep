@@ -1,6 +1,22 @@
 import { BASE_ADVERSARIES } from '@/data/adversaries';
+import { VOID_ADVERSARIES } from '@/data/void-adversaries';
 import { addTemplate, baseToCombatant, removeTemplates } from './adversary-library';
 import { newAdversary } from './session';
+
+describe('The Void roster (v0.18.0 item 7)', () => {
+  it('has the 16 Void adversaries with unique ids and no overlap with the base roster', () => {
+    expect(VOID_ADVERSARIES).toHaveLength(16);
+    const ids = new Set(VOID_ADVERSARIES.map((a) => a.id));
+    expect(ids.size).toBe(16);
+    const baseIds = new Set(BASE_ADVERSARIES.map((a) => a.id));
+    expect(VOID_ADVERSARIES.every((a) => !baseIds.has(a.id))).toBe(true);
+    expect(VOID_ADVERSARIES.every((a) => a.id.startsWith('void-'))).toBe(true);
+  });
+  it('carries the Evolution feature kind (Mountain Troll)', () => {
+    const troll = VOID_ADVERSARIES.find((a) => a.name === 'Mountain Troll');
+    expect(troll?.features.some((f) => f.kind === 'Evolution')).toBe(true);
+  });
+});
 
 describe('base adversary roster (v0.17.0)', () => {
   it('has the full SRD roster with unique ids and required fields', () => {
