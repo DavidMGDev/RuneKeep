@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.19.1'                       # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.19.2'                       # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.19.1 - DM feel + Arsenal power tools. More responsive DM screens, working log drag-drop, a global UI mute, and interactive Summoner/Warlock tracker cards. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- SMOOTHER DETAILS: the adversary-selection detail pop-up scrolls cleanly the whole time (the list behind it no longer steals the thread for seconds at a stretch).`n- IMPORTED PORTRAITS SHOW: party members imported/received now display their pictures everywhere in DM Mode.`n- RADIAL, CENTERED FOR REAL: the hold-to-edit stat wheel now sits exactly on the stat icon.`n- ANIMATIONS: DM Mode motion is shorter, smoother, and no longer elastic.`n- LOG DRAG-DROP: you can grab the handle on a manual note and drag to reorder the log.`n- MUTE: a UI-sound mute on the main menu and in the DM encounter options (not on the character sheet).`n- SUMMONER & WARLOCK: a single interactive Arsenal card tracks Summon Entity's four circles (Summoner) and Patron / Spheres of Influence / Favor (Warlock) - non-deletable, only movable.`n- BULK EQUIP: the golden-gear edit wheel's Duplicate slot is now Equip All - it equips/unequips the whole selection one-by-one, left to right. Copying cards moved to the move panel's new 'Copy instead of move' toggle.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.19.2 - Hope and Fear expansion + fixes. The Void pack is renamed Hope and Fear with proper illustrated card art, and it now adds a full set of weapons, armor, loot and consumables. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- HOPE AND FEAR: 'The Void' is now 'Hope and Fear' everywhere, and 57 of its cards (domains, subclasses, communities, transformations) now use the official illustrated art.`n- NEW EQUIPMENT: 120 weapons, 35 armor, 60 loot and 60 consumables from Hope and Fear - they appear in Add Gear, character creation and the card archive (with tier filters) whenever the pack is enabled. Items & consumables show which table they're from (Roll 35 . Table 2 for Hope and Fear, Table 1 for base game).`n- ADVERSARY SCROLL: the adversary info + details panels scroll cleanly now (the reference panel wasn't scrolling at all before).`n- ARCHIVE HEADER: the card archive's adversaries button is a compact icon that no longer overlaps the title.`n- BULK EQUIP ICON: the golden-gear edit wheel's Equip All is now a clear checkmark.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

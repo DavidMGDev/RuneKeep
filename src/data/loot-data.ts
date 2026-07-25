@@ -6,6 +6,7 @@
  * the modifier engine applies while the card is equipped.
  */
 import type { CardEffect } from '@/lib/modifiers';
+import { HF_CONSUMABLES, HF_LOOT } from './loot-hf';
 
 export interface LootDef {
   id: string;
@@ -14,6 +15,14 @@ export interface LootDef {
   roll: string;
   text: string;
   effects?: CardEffect[];
+  /** Expansion this belongs to (e.g. 'void' = Hope and Fear). undefined = base game. Gated by callers. */
+  expansion?: string;
+}
+
+/** Which roll TABLE an item is from (v0.19.2 item 5): base game = Table 1, Hope and Fear = Table 2. Shown
+ *  next to the roll number so "Roll 35" reads "Roll 35 · Table 2" when it's from the expansion. */
+export function lootTable(l: LootDef): 1 | 2 {
+  return l.expansion === 'void' ? 2 : 1;
 }
 
 export const LOOT: LootDef[] = [
@@ -144,7 +153,10 @@ export const CONSUMABLES: LootDef[] = [
   { id: "consumable-stardrop", name: "Stardrop", kind: "consumable", roll: "60", text: "You can use this stardrop to summon a hailstorm of comets that deals 8d20 physical damage to all targets within Very Far range.", effects: [] },
 ];
 
-export const ALL_LOOT: LootDef[] = [...LOOT, ...CONSUMABLES];
+// ALL_LOOT combines the base rulebook table (Table 1) with the Hope and Fear "Table 2" loot + consumables
+// (v0.19.2 item 5). The base LOOT/CONSUMABLES arrays stay pure (each is exactly rolls 01–60); surfaces read
+// ALL_LOOT and gate the HF entries by `expansion`.
+export const ALL_LOOT: LootDef[] = [...LOOT, ...CONSUMABLES, ...HF_LOOT, ...HF_CONSUMABLES];
 export function lootById(id: string): LootDef | undefined {
   return ALL_LOOT.find((x) => x.id === id);
 }

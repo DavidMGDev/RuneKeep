@@ -1,4 +1,4 @@
-import { type FC, useEffect, useMemo, useRef, useState } from 'react';
+import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { type SvgProps } from 'react-native-svg';
 
@@ -7,7 +7,7 @@ import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 import { classColor } from '@/constants/identity';
 import { ALL_ARMOR, ALL_PRIMARY_WEAPONS, ALL_SECONDARY_WEAPONS } from '@/data/equipment-data';
-import { ALL_LOOT } from '@/data/loot-data';
+import { ALL_LOOT, lootTable } from '@/data/loot-data';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { ForgedCard } from '@/features/create/components/forged-card';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
@@ -96,13 +96,15 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   const centerAcquired = !!centerId && acquiredIds.has(centerId);
 
   type Row = { id: string; name: string; sub: string; effects?: CardEffect[] };
+  // v0.19.2 item 5: HF (Hope and Fear) equipment shows only when the pack is enabled for this character.
+  const expOk = useCallback((exp?: string) => !exp || allowedExp.has(exp), [allowedExp]);
   const rows: Row[] = useMemo(() => {
-    if (cat === 'weapon') return [...ALL_PRIMARY_WEAPONS, ...ALL_SECONDARY_WEAPONS].filter((w) => w.tier === tier).map((w) => ({ id: w.id, name: w.name, sub: `${w.slot === 'secondary' ? 'Secondary · ' : ''}${w.trait} · ${w.range} · ${w.damage} ${w.damageType}`, effects: w.effects }));
-    if (cat === 'armor') return ALL_ARMOR.filter((a) => a.tier === tier).map((a) => ({ id: a.id, name: a.name, sub: `Thresholds ${a.thresholds} · Score ${a.baseScore}`, effects: a.effects }));
-    // Loot has no tier — the rulebook indexes it by table roll, so that's the sub-line.
-    if (cat === 'loot' || cat === 'consumable') return ALL_LOOT.filter((l) => l.kind === cat).map((l) => ({ id: l.id, name: l.name, sub: `Roll ${l.roll} · ${l.text.split('\n')[0]}`, effects: l.effects }));
+    if (cat === 'weapon') return [...ALL_PRIMARY_WEAPONS, ...ALL_SECONDARY_WEAPONS].filter((w) => w.tier === tier && expOk(w.expansion)).map((w) => ({ id: w.id, name: w.name, sub: `${w.slot === 'secondary' ? 'Secondary · ' : ''}${w.trait} · ${w.range} · ${w.damage} ${w.damageType}`, effects: w.effects }));
+    if (cat === 'armor') return ALL_ARMOR.filter((a) => a.tier === tier && expOk(a.expansion)).map((a) => ({ id: a.id, name: a.name, sub: `Thresholds ${a.thresholds} · Score ${a.baseScore}`, effects: a.effects }));
+    // Loot has no tier — the rulebook indexes it by table roll (Table 1 = base, Table 2 = Hope and Fear).
+    if (cat === 'loot' || cat === 'consumable') return ALL_LOOT.filter((l) => l.kind === cat && expOk(l.expansion)).map((l) => ({ id: l.id, name: l.name, sub: `Roll ${l.roll} · Table ${lootTable(l)} · ${l.text.split('\n')[0]}`, effects: l.effects }));
     return [];
-  }, [cat, tier]);
+  }, [cat, tier, expOk]);
 
   const hasTransforms = useMemo(() => allowed.some((c) => c.kind === 'transformation'), [allowed]);
   const TABS: { key: Cat; label: string }[] = [
