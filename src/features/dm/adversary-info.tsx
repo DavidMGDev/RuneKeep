@@ -28,7 +28,9 @@ export function AdversaryInfoPanel({ onClose }: { onClose: () => void }) {
     <DmModal onClose={onClose}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 344, maxHeight: 640, padding: 18 }}>
         <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Using Adversaries</Text>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingBottom: 4 }}>
+        {/* v0.19.2 item 6: the ScrollView had NO height bound, so it clipped instead of scrolling. Bound it
+            + nestedScrollEnabled (the proven AdversaryEditor pattern) so it scrolls inside the modal. */}
+        <ScrollView style={{ maxHeight: 520 }} nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingBottom: 4 }}>
           <Text style={P as object}>Each adversary’s stat block gives the mechanics you need to run it in combat. Here’s what each field means.</Text>
 
           <Section title="Difficulty">Adversaries don’t use Evasion — instead, every roll against them uses their <Text style={B}>Difficulty</Text>. A roll equal to or higher than the Difficulty succeeds against the adversary. If a feature doesn’t specify a Difficulty, it uses the adversary’s.</Section>

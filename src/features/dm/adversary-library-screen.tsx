@@ -94,7 +94,7 @@ function DetailSheet({ item, mode, onSpawn, onViewImage, onClose }: { item: Item
           <AdversaryPortrait uri={c.portraitUri} size={48} tint={item.source === 'custom' ? DmRune.line : DmRune.accentDim} onPress={onViewImage} />
           <Text numberOfLines={1} style={{ flex: 1, color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{c.name}</Text>
         </View>
-        <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator nestedScrollEnabled contentContainerStyle={{ paddingBottom: 4 }}>
+        <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 4 }}>
           <StatBlockDetail c={c} />
         </ScrollView>
         {mode !== 'browse' ? (
@@ -155,7 +155,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
     const out = [];
     if (savedItems.length) out.push(build('Your Adversaries', 'custom', savedItems));
     out.push(build('Base Game', 'base', baseItems));
-    out.push(build('The Void', 'void', voidItems));
+    out.push(build('Hope and Fear', 'void', voidItems));
     return out;
   }, [savedItems, baseItems, voidItems, match, collapsed]);
 

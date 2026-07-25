@@ -3,7 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { Dimensions, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { Line, Polyline } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
 import { AppScreen } from '@/components/app-screen';
@@ -88,12 +88,14 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
   }
   if (!catalogDim && wantKind('weapon')) {
     for (const w of ALL_WEAPONS) {
+      if (w.expansion && !enabledExp.has(w.expansion)) continue; // v0.19.2 item 5: HF gear needs its pack enabled
       if (f.tiers.size && !f.tiers.has(w.tier)) continue;
       out.push({ type: 'weapon', id: w.id, label: w.name, weapon: w });
     }
   }
   if (!catalogDim && wantKind('armor')) {
     for (const a of ALL_ARMOR) {
+      if (a.expansion && !enabledExp.has(a.expansion)) continue;
       if (f.tiers.size && !f.tiers.has(a.tier)) continue;
       out.push({ type: 'armor', id: a.id, label: a.name, armor: a });
     }
@@ -102,6 +104,7 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
   // only when neither dimension is narrowing the grid — the same guard the class cards use.
   if (!catalogDim && !equipDim) {
     for (const l of ALL_LOOT) {
+      if (l.expansion && !enabledExp.has(l.expansion)) continue;
       if (!wantKind(l.kind)) continue;
       out.push({ type: 'loot', id: l.id, label: l.name, loot: l });
     }
@@ -379,8 +382,14 @@ export function GalleryScreen() {
       onBack={() => router.back()}
       headerRight={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          {/* v0.19.2 item 1: a compact skull icon, not the wide "ADVERSARIES" text that overlapped the
+              centered title. */}
           <Pressable onPress={() => { playSfx('buttonTap'); router.push('/adversary-library' as Href); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary library">
-            <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>ADVERSARIES</Text>
+            <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Path d="M12 3 C7 3 4 6.6 4 11 C4 13.7 5.2 15.2 6 16.3 L6 19 H8.5 V17 H10.5 V19 H13.5 V17 H15.5 V19 H18 L18 16.3 C18.8 15.2 20 13.7 20 11 C20 6.6 17 3 12 3 Z" fill="none" stroke={Rune.goldText} strokeWidth={1.5} strokeLinejoin="round" />
+              <Circle cx={9} cy={11.2} r={1.7} fill={Rune.goldText} />
+              <Circle cx={15} cy={11.2} r={1.7} fill={Rune.goldText} />
+            </Svg>
           </Pressable>
           <Pressable
             onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}

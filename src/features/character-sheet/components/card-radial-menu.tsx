@@ -134,12 +134,8 @@ const CardMenuIcon = memo(function CardMenuIcon({ kind, allFav, size, color }: {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       {kind === 'bulkEquip' ? (
-        // item 8: bulk equip/unequip — a stack of cards with a check, reading "apply to all at once".
-        <>
-          <Path d="M6 4 H15 V15 H6 Z" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-          <Path d="M9 7 H18 V18 H9" fill="none" stroke={color} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
-          <Path d="M11 12.5 L13.4 15 L18 9.4" fill="none" stroke={color} strokeWidth={sw + 0.3} strokeLinejoin="round" strokeLinecap="round" />
-        </>
+        // v0.19.2 item 2: just a bold checkmark — the stacked-cards glyph was illegible at wheel size.
+        <Path d="M4 12.5 L9.5 18 L20 6" fill="none" stroke={color} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
       ) : kind === 'move' ? (
         <>
           <Path d="M12 4 V20 M4 12 H20" fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" />

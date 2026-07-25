@@ -7,6 +7,7 @@
  * card is enabled (e.g. Heavy => evasion -1). See src/lib/modifiers.ts.
  */
 import type { CardEffect } from '@/lib/modifiers';
+import { HF_ARMOR, HF_PRIMARY_WEAPONS, HF_SECONDARY_WEAPONS } from './equipment-hf';
 
 export type WeaponTrait = 'Strength' | 'Agility' | 'Finesse' | 'Instinct' | 'Presence' | 'Knowledge' | 'Spellcast';
 export type WeaponRange = 'Melee' | 'Very Close' | 'Close' | 'Far' | 'Very Far';
@@ -29,6 +30,8 @@ export interface WeaponDef {
   feature?: { name: string; text: string };
   /** While-equipped passive stat modifiers (modifier engine). */
   effects?: CardEffect[];
+  /** Expansion this belongs to (e.g. 'void' = Hope and Fear). undefined = base game. Gated by callers. */
+  expansion?: string;
 }
 
 export interface ArmorDef {
@@ -39,6 +42,8 @@ export interface ArmorDef {
   baseScore: number;
   feature?: { name: string; text: string };
   effects?: CardEffect[];
+  /** Expansion this belongs to (e.g. 'void' = Hope and Fear). undefined = base game. Gated by callers. */
+  expansion?: string;
 }
 
 /** Every primary weapon, all tiers. */
@@ -290,6 +295,12 @@ export const ALL_ARMOR: ArmorDef[] = [
   { id: "arm-veritas-opal", name: "Veritas Opal Armor", tier: 4, thresholds: "13 / 36", baseScore: 6, feature: { name: "Truthseeking", text: "This armor glows when another creature within Close range tells a lie." }, effects: [] },
   { id: "arm-savior-chainmail", name: "Savior Chainmail", tier: 4, thresholds: "18 / 48", baseScore: 8, feature: { name: "Difficult", text: "−1 to all character traits and Evasion" }, effects: [{ target: "agility", delta: -1 }, { target: "strength", delta: -1 }, { target: "finesse", delta: -1 }, { target: "instinct", delta: -1 }, { target: "presence", delta: -1 }, { target: "knowledge", delta: -1 }, { target: "evasion", delta: -1 }] },
 ];
+
+// Hope and Fear expansion equipment (v0.19.2 item 5) — appended so every ALL_*/tier accessor includes it;
+// surfaces gate by `expansion` so it only appears when the pack is enabled.
+ALL_PRIMARY_WEAPONS.push(...HF_PRIMARY_WEAPONS);
+ALL_SECONDARY_WEAPONS.push(...HF_SECONDARY_WEAPONS);
+ALL_ARMOR.push(...HF_ARMOR);
 
 /** Tier-1 starting equipment (character creation only offers tier 1). */
 export const PRIMARY_WEAPONS: WeaponDef[] = ALL_PRIMARY_WEAPONS.filter((w) => w.tier === 1);

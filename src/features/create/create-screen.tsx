@@ -255,13 +255,15 @@ export function CreateScreen() {
 
   const items: StraightItem[] = useMemo(() => {
     if (deck === 'weapons') {
-      const list = weaponSlot === 'secondary' ? SECONDARY_WEAPONS : PRIMARY_WEAPONS.filter((w) => w.kind === weaponKind);
+      // v0.19.2 item 5: HF (Hope and Fear) starting weapons only when that pack was picked for this hero.
+      const base = weaponSlot === 'secondary' ? SECONDARY_WEAPONS : PRIMARY_WEAPONS.filter((w) => w.kind === weaponKind);
+      const list = base.filter((w) => !w.expansion || picked.has(w.expansion));
       const cards = list.map((w) => forgedItem(w.id, w.name, <ForgedWeaponCard weapon={w} />));
       // Skip only on the primary slot — a secondary is already optional (v0.10.2).
       return weaponSlot === 'primary' ? [...cards, SKIP_WEAPONS] : cards;
     }
     if (deck === 'armor') {
-      return [...TIER1_ARMOR.map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), ...(libContent?.armor ?? []).map(libCardItem), SKIP_ARMOR];
+      return [...TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), ...(libContent?.armor ?? []).map(libCardItem), SKIP_ARMOR];
     }
     if (deck === 'inventory') {
       // Creation inventory shows ONLY the player's per-class CHOICES (#136): pick two of four, or Skip
@@ -572,8 +574,8 @@ export function CreateScreen() {
       }
       case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
       case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
-      case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind)); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
-      case 'armor': { const id = pick(TIER1_ARMOR.map((a) => a.id)); if (id) { set({ armorId: id, armorSkipped: false }); focusId = id; } break; }
+      case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind && (!x.expansion || picked.has(x.expansion)))); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
+      case 'armor': { const id = pick(TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => a.id)); if (id) { set({ armorId: id, armorSkipped: false }); focusId = id; } break; }
       case 'inventory': { if (!draft.className) break; const opts = (CLASS_INVENTORY[draft.className]?.choices.flat() ?? []).map(itemOptionId); const picks = two(opts); set({ inventoryItemIds: picks, inventorySkipped: false }); focusId = picks[picks.length - 1]; break; }
     }
     if (focusId) {

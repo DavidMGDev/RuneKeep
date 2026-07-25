@@ -8,7 +8,7 @@ import { DividerPlaque, getPlaqueTheme } from './card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
 import { type ArmorDef, type WeaponDef } from '@/data/equipment-data';
-import { type LootDef } from '@/data/loot-data';
+import { type LootDef, lootTable } from '@/data/loot-data';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
@@ -364,8 +364,9 @@ export function ForgedLootCard({ loot }: { loot: LootDef }) {
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
         <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{loot.name}</Text>
+        {/* v0.19.2 item 5: roll + which table it's from (Table 1 = base game, Table 2 = Hope and Fear). */}
         <View style={{ marginTop: 8 }}>
-          <StatRow label="Roll" value={loot.roll} />
+          <StatRow label="Roll" value={`${loot.roll}  ·  Table ${lootTable(loot)}`} />
         </View>
         <CardMarkdownBody
           body={loot.text}

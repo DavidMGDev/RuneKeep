@@ -13,16 +13,18 @@ import { type Expansion, isEnabledForCreation } from './library';
 import { getExpansion, listExpansions, saveExpansion } from './library-store';
 
 /** Bump when bundled Void content (VOID_ANCESTRIES, …) changes so already-installed copies refresh in place. */
-// v3: colon section leads in the composed text fallback (v0.13.0 typeset).
-export const VOID_BUNDLE_VERSION = 3;
+// v4 (v0.19.2): renamed the pack "The Void" -> "Hope and Fear" (the official release), illustrated card art.
+export const VOID_BUNDLE_VERSION = 4;
 
-/** Metadata for the bundled Void record (its CARDS live in the catalog; this holds the name + global toggle). */
+/** Metadata for the bundled record (its CARDS live in the catalog; this holds the name + global toggle).
+ *  NOTE: the internal id stays 'void' for back-compat with characters that already enabled it; only the
+ *  display NAME changed to "Hope and Fear" (v0.19.2 item 3). */
 export const VOID_META = {
   id: VOID_EXPANSION_ID,
-  name: 'The Void',
+  name: 'Hope and Fear',
   author: 'Darrington Press',
   description:
-    "Official homebrew — 6 classes (Assassin, Witch, Warlock, Blood Hunter, Summoner, Brawler), 2 domains (Blood, Dread), plus new ancestries, communities & transformations. The card art is the publisher's work-in-progress designs.",
+    'Official expansion — 6 classes (Assassin, Witch, Warlock, Blood Hunter, Summoner, Brawler), 2 domains (Blood, Dread), plus new ancestries, communities, transformations, and equipment. Illustrated card art.',
 };
 
 /** Official (bundled) expansion ids this build ships. Always listed FIRST in the library. */
