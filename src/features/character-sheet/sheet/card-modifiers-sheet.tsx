@@ -23,6 +23,7 @@ function resolvedDelta(e: CardEffect, character: Character, level: number): numb
       e.formula.variable === 'level' ? level
       : e.formula.variable === 'tier' ? tierForLevel(level)
       : e.formula.variable === 'proficiency' ? character.proficiency
+      : e.formula.variable === 'spellcast' ? (character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0)
       : character.traits[e.formula.variable] ?? 0;
     const div = e.formula.divide && e.formula.divide !== 0 ? e.formula.divide : 1;
     return Math.ceil((base * (e.formula.multiply ?? 1)) / div) + (e.formula.plus ?? 0); // #325: + flat constant

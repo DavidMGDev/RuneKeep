@@ -26,6 +26,22 @@ const anc = (id: string, title: string, color: string, sections: CardSection[], 
   ...extra,
 });
 
+/**
+ * v0.21.0 (items 1/2): the illustrated ancestry art, cropped from HOPEANDFEAR_Cards.pdf. Ancestries are
+ * STRUCTURED text cards (so mixed-ancestry strike-through + the Earthkin passive keep working), so they
+ * carry no `imageUri`; instead LibraryForgedCard looks the art up BY ID here and paints it in the card's
+ * art band (via ForgedCard's `fallbackArt`), matching the illustrated communities. Keyed by ancestry id;
+ * a bundled `require()` module number — deliberately NOT stored on the serializable LibraryCard.
+ */
+export const VOID_ANCESTRY_ART: Record<string, number> = {
+  'ancestry-earthkin': require('../../assets/extracted_cards/Void/Ancestry/earthkin.webp'),
+  'ancestry-tidekin': require('../../assets/extracted_cards/Void/Ancestry/tidekin.webp'),
+  'ancestry-emberkin': require('../../assets/extracted_cards/Void/Ancestry/emberkin.webp'),
+  'ancestry-skykin': require('../../assets/extracted_cards/Void/Ancestry/skykin.webp'),
+  'ancestry-aetheris': require('../../assets/extracted_cards/Void/Ancestry/aetheris.webp'),
+  'ancestry-gnome': require('../../assets/extracted_cards/Void/Ancestry/gnome.webp'),
+};
+
 export const VOID_ANCESTRIES: LibraryCard[] = [
   anc(
     'ancestry-earthkin',

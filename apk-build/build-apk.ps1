@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.19.2'                       # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.21.0'                       # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -135,7 +135,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.19.2 - Hope and Fear expansion + fixes. The Void pack is renamed Hope and Fear with proper illustrated card art, and it now adds a full set of weapons, armor, loot and consumables. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- HOPE AND FEAR: 'The Void' is now 'Hope and Fear' everywhere, and 57 of its cards (domains, subclasses, communities, transformations) now use the official illustrated art.`n- NEW EQUIPMENT: 120 weapons, 35 armor, 60 loot and 60 consumables from Hope and Fear - they appear in Add Gear, character creation and the card archive (with tier filters) whenever the pack is enabled. Items & consumables show which table they're from (Roll 35 . Table 2 for Hope and Fear, Table 1 for base game).`n- ADVERSARY SCROLL: the adversary info + details panels scroll cleanly now (the reference panel wasn't scrolling at all before).`n- ARCHIVE HEADER: the card archive's adversaries button is a compact icon that no longer overlaps the title.`n- BULK EQUIP ICON: the golden-gear edit wheel's Equip All is now a clear checkmark.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.21.0 - Hope and Fear class rules, Spellcast trait & Mage Robes, illustrated ancestries, and adversaries. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- ILLUSTRATED ANCESTRIES: Earthkin, Tidekin, Emberkin, Skykin, Aetheris and Gnome now show their official Hope and Fear artwork in character creation and on the sheet (communities already had theirs).`n- SPELLCAST TRAIT: each subclass now has a Spellcast trait, wired into the modifiers system as a formula variable. Mage Robes' Enchanted feature works - it adds your Spellcast trait to your damage thresholds, whatever your subclass. Character creation marks your Spellcast trait and warns if your +2 isn't on it.`n- CLASS UPDATES: the official release changes for Assassin, Brawler, Warlock and Witch are in - reworked hope features, Hex, Patron's Pact, I Am the Weapon, and the Brawler's Martial Stances rebuilt to the official 16-stance roster.`n- ADVERSARIES: the full Hope and Fear adversary roster is in the library.`n- ADVERSARY DETAIL SCROLL: the adversary details popup scrolls properly now.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

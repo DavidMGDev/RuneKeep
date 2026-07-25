@@ -44,7 +44,10 @@ export type EffectTarget =
  *  Daggerheart number rounds up). e.g. {variable:'level',divide:2} = ½ level (round up);
  *  {variable:'proficiency',multiply:2} = 2× Proficiency; {variable:'tier'} = your Tier. */
 export interface EffectFormula {
-  variable: 'level' | 'tier' | 'proficiency' | TraitKey;
+  /** v0.21.0: `spellcast` resolves to the character's Spellcast trait total — the trait named by their
+   *  subclass (Wizard→Knowledge, Sorcerer→Instinct, …). It's what makes Mage Robes' "Enchanted" work:
+   *  +Spellcast to damage thresholds, whatever the subclass. Resolves to 0 for a non-caster subclass. */
+  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | TraitKey;
   multiply?: number;
   divide?: number;
   /** #325: a flat constant ADDED after the ×/÷ round-up (e.g. Bare Bones' Armor = Strength + 3). */
@@ -146,13 +149,16 @@ function flatDelta(e: CardEffect, tier: number): number | null {
   return e.delta ?? 0;
 }
 
-/** Resolve a formula value (#278) from the finalized sheet, rounded UP (Daggerheart rounds up). */
-function resolveFormula(f: EffectFormula | undefined, out: SheetBreakdown, level: number): number {
+/** Resolve a formula value (#278) from the finalized sheet, rounded UP (Daggerheart rounds up).
+ *  `spellcastTrait` (v0.21.0) is the trait the character's subclass casts with; a `spellcast` formula
+ *  reads that trait's total. Null/undefined (non-caster or unknown subclass) resolves to 0. */
+function resolveFormula(f: EffectFormula | undefined, out: SheetBreakdown, level: number, spellcastTrait?: TraitKey | null): number {
   if (!f) return 0;
   const base =
     f.variable === 'level' ? level
     : f.variable === 'tier' ? tierForLevel(level)
     : f.variable === 'proficiency' ? out.proficiency?.total ?? 0
+    : f.variable === 'spellcast' ? (spellcastTrait ? out[spellcastTrait]?.total ?? 0 : 0)
     : out[f.variable]?.total ?? 0; // a trait total (from pass 1)
   const div = f.divide && f.divide !== 0 ? f.divide : 1;
   return Math.ceil((base * (f.multiply ?? 1)) / div) + (f.plus ?? 0); // #325: + flat constant
@@ -162,7 +168,7 @@ function resolveFormula(f: EffectFormula | undefined, out: SheetBreakdown, level
  * Compute the whole sheet. `base` holds the intrinsic value per target; `sources` are the enabled
  * cards' effects. Pure + deterministic — same inputs always yield the same breakdown.
  */
-export function computeSheet(base: BaseStats, level: number, sources: EffectSource[]): SheetBreakdown {
+export function computeSheet(base: BaseStats, level: number, sources: EffectSource[], spellcastTrait?: TraitKey | null): SheetBreakdown {
   const tier = tierForLevel(level);
   const out = {} as SheetBreakdown;
   for (const t of EFFECT_TARGETS) out[t] = { base: base[t] ?? 0, contributions: [], total: base[t] ?? 0 };
@@ -219,7 +225,7 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
         e.dynamic === 'proficiency' ? out.proficiency.total
         : e.dynamic === 'strengthPlus3' ? out.strength.total + 3
         : e.dynamic === 'halfAgility' ? Math.floor(out.agility.total / 2)
-        : resolveFormula(e.formula, out, level);
+        : resolveFormula(e.formula, out, level, spellcastTrait);
       if (e.mode === 'set') {
         b.contributions.push({ source: src.source, delta: d - b.total, note: e.note });
         b.total = d;

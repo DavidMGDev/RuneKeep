@@ -1,4 +1,5 @@
 import { type ClassName } from '@/constants/identity';
+import { type TraitKey } from '@/features/character-sheet/character';
 
 /**
  * Class data extracted from the Daggerheart Core Rulebook, Chapter 1 (PDF pages 28–52) via
@@ -195,15 +196,15 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
   assassin: {
     startingEvasion: 12,
     startingHp: 5,
-    classItems: 'A list of names with several marked off or a mortar and pestle inscribed with a mysterious insignia',
+    classItems: 'A list of names with several marked off or a rusted blade inscribed with an insignia',
     hopeFeature: {
-      name: 'Grim Resolve',
+      name: 'Deadly Determination',
       text: 'Spend 3 Hope to clear 2 Stress.',
     },
     features: [
       {
         name: 'Marked for Death',
-        text: 'On a successful weapon attack, you can mark a Stress to make the target Marked for Death. Attacks you make against a target that’s Marked for Death gain a bonus to damage equal to +1d4 per tier. You can only have one adversary Marked for Death at a time, and can’t transfer or remove the condition except by defeating the target. The GM can spend a number of Fear equal to your Proficiency to remove the Marked for Death condition. Otherwise, it ends automatically when you take a rest.',
+        text: 'On a successful weapon attack, you can mark a Stress to make the target Marked for Death. Attacks you make against a target that’s Marked for Death gain a bonus to damage equal to +1d4 per tier. You can only have one adversary Marked for Death at a time, and can’t transfer or remove the condition except by defeating the target. The GM can spend a number of Fear equal to your tier to remove the Marked for Death condition. Otherwise, it ends automatically when you take a rest.',
       },
       {
         name: 'Get In & Get Out',
@@ -215,7 +216,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
   witch: {
     startingEvasion: 10,
     startingHp: 6,
-    classItems: 'A small, harmless pet or a talking skull',
+    classItems: 'A small, harmless pet or a scrying stone',
     hopeFeature: {
       name: 'Witch’s Charm',
       text: 'When you or an ally within Far range rolls a failure on an action roll, you can spend 3 Hope to change it into a success with Fear instead.',
@@ -223,7 +224,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Hex',
-        text: 'When a creature causes you or an ally within Close range to mark any number of Hit Points, you can mark a Stress to Hex them. Action and damage rolls against a Hexed creature gain a bonus equal to your tier. This condition lasts until the GM spends a number of Fear equal to your Spellcast trait to remove it or you Hex another creature. Otherwise, remove it when the scene ends.',
+        text: 'Mark a Stress to temporarily Hex a target within Far range. While Hexed, the target gains a penalty to their damage rolls and Difficulty equal to your tier. The maximum number of creatures you can Hex at one time is equal to your Spellcast trait.',
       },
       {
         name: 'Commune',
@@ -238,16 +239,16 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     classItems: 'A carving that symbolizes your patron or a ring you can’t remove',
     hopeFeature: {
       name: 'Patron’s Boon',
-      text: 'Spend 3 Hope to call out to your patron for help, gaining 1d4 Favor.',
+      text: 'When you fail a roll, you can spend 3 Hope to reroll with advantage.',
     },
     features: [
       {
-        name: 'Warlock Patron',
-        text: 'You have committed yourself to a patron (god, demon, fae, or other supernatural entity) in exchange for power. Write their name above. Then choose their spheres of influence, at GM discretion (Nature & Mischief, Love & War, Knowledge & Shadow, etc.), record them below, and set their values to +2. Anytime you increase your tier, these spheres of influence gain a permanent +1 bonus. Before making an action roll that relates to one of your patron’s spheres of influence, you can spend a Favor to call on them and add its value to the roll.',
+        name: 'Patron’s Pact',
+        text: 'You have committed yourself to a supernatural entity — such as a god, fae, or demon — in exchange for power. Write their name on your character sheet, then work with your GM to determine their sphere of influence (such as Nature, Chaos, Wisdom, Mischief, Love, War, Justice, or Death). Before making an action roll that relates to your patron’s sphere of influence, you can spend a Favor to call upon their aid, rolling your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5.',
       },
       {
         name: 'Favor',
-        text: 'Start with 3 Favor. During a rest, spend one of your downtime moves to tithe to your patron. When you do, gain Favor equal to your Presence. If you choose to forgo this offering, the GM instead gains a Fear.',
+        text: 'You start with 3 Favor. You can use a downtime move to show tribute to your patron. Describe how and gain Favor equal to your Spellcast trait. Additionally, when you succeed on an action roll with Hope, you can choose to gain a Favor instead of a Hope.',
       },
     ],
     summary: 'A life pledged to a patron — god, demon, or fae — in exchange for borrowed power. The warlock trades tithes and favor for might, and every gift carries the weight of the bargain that bought it.',
@@ -297,22 +298,66 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     startingHp: 6,
     classItems: 'Hand wraps from a mentor or a book about your secret hobby',
     hopeFeature: {
-      name: 'Staggering Strike',
-      text: 'Spend 3 Hope when you succeed on an attack to temporarily Stagger your target and force them to mark a Stress. While Staggered, they have disadvantage on attack rolls.',
+      name: 'Square Up',
+      text: 'Spend 3 Hope to intimidate a target within Close range, making them temporarily Vulnerable.',
     },
     features: [
       {
         name: 'I Am the Weapon',
-        text: 'While you don’t have any equipped weapons: You gain a +1 bonus to Evasion. Your unarmed strikes are considered a Melee weapon, use the trait of your choice, and deal d8+d6 phy damage using your Proficiency.',
+        text: 'Your barehanded attacks are as strong as any blade. You have a primary weapon called Brawler’s Strike equipped while you have no other Active Weapons. It uses a trait of your choice, has Melee range, and deals d8+d6 physical damage using your Proficiency (both the d8 and the d6 scale off your Proficiency). While this weapon is active, you gain a +1 bonus to your Evasion.',
       },
       {
-        name: 'Combo Strikes',
-        text: 'After making a damage roll with a Melee weapon but before dealing that damage to the target, mark a Stress to start a combo strike. When you do, roll your Combo Die and note its value. Then, roll your Combo Die again. If the value of the second roll is equal to or greater than your first roll, continue rolling until the latest Combo Die’s roll is less than the roll that preceeded it. Total all rolled values and add that amount to your weapon’s damage. These values cannot be adjusted by features that affect damage dice. Your Combo Die starts as a d4. When you level up, once per tier you may use one of your advancement options to increase your Combo Die instead.',
+        name: 'Combo Strike',
+        text: 'After rolling damage on a successful attack with a Melee weapon, you can mark a Stress to start a combo strike. When you do, roll your Combo Die and note the result, then continue rolling your Combo Die until the result of your latest roll is lower than the roll that preceded it. You deal extra damage equal to the total of all rolled Combo Die results on this attack. The results can’t be modified by any means. Your Combo Die starts as a d4. Once per tier, you can increase your Combo Die by one step as a level advancement option.',
       },
     ],
     summary: 'Fighters who need no blade — a brawler’s fists are weapon enough, chaining blow into blow until the threat stops moving. Take away their armaments and they only grow more dangerous.',
   },
 };
+
+/**
+ * v0.21.0 (item 5): the Spellcast trait each SUBCLASS casts with, keyed by the catalog subclass SLUG.
+ * Both subclasses of a spellcasting class share that class's trait; martial subclasses (Guardian, Warrior,
+ * Brawler, and non-casting others) are simply absent → treated as "no Spellcast trait".
+ *
+ * This drives (a) the `spellcast` modifier variable — Mage Robes' "Enchanted" adds your Spellcast trait to
+ * your damage thresholds no matter the subclass — and (b) the creation-screen hint that warns when your +2
+ * trait isn't your Spellcast trait. Base-game values are the SRD's; the Hope-and-Fear rows are transcribed
+ * from HOPEANDFEAR_Classes.pdf.
+ */
+export const SUBCLASS_SPELLCAST: Record<string, TraitKey> = {
+  // Bard → Presence
+  troubadour: 'presence', wordsmith: 'presence',
+  // Druid → Instinct
+  'warden-of-renewal': 'instinct', 'warden-of-the-elements': 'instinct',
+  // Ranger → Agility
+  beastbound: 'agility', wayfinder: 'agility',
+  // Rogue → Finesse
+  nightwalker: 'finesse', syndicate: 'finesse',
+  // Seraph → Strength
+  'divine-wielder': 'strength', 'winged-sentinel': 'strength',
+  // Sorcerer → Instinct
+  'elemental-origin': 'instinct', 'primal-origin': 'instinct',
+  // Wizard → Knowledge
+  'school-of-knowledge': 'knowledge', 'school-of-war': 'knowledge',
+  // — Hope and Fear (transcribed from HOPEANDFEAR_Classes.pdf) —
+  // Assassin: each subclass casts with a different trait
+  'executioners-guild': 'agility', 'poisoners-guild': 'knowledge',
+  // Witch: Hedge → Knowledge, Moon → Instinct
+  hedge: 'knowledge', moon: 'instinct',
+  // Warlock → Presence (both pacts)
+  'pact-of-the-endless': 'presence', 'pact-of-the-wrathful': 'presence',
+  // Summoner → Knowledge (not in the Classes PDF preview; best-known values)
+  necromancy: 'knowledge', theurgy: 'knowledge',
+  // Blood Hunter → Knowledge (not in the Classes PDF preview; best-known values)
+  'order-of-the-lycan': 'knowledge', 'order-of-the-mutant': 'knowledge', 'order-of-the-specter': 'knowledge',
+  // Brawler (juggernaut / martial-artist) — martial, no Spellcast trait.
+};
+
+/** The Spellcast trait for a subclass slug, or null when the subclass doesn't cast. */
+export function spellcastTraitForSubclass(subclassSlug: string | undefined | null): TraitKey | null {
+  return (subclassSlug && SUBCLASS_SPELLCAST[subclassSlug]) || null;
+}
 
 /** A feature card "page": which sections of a class's rules land on one printed card. */
 export interface FeaturePage {

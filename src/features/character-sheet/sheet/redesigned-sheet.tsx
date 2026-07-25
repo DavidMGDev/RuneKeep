@@ -46,6 +46,7 @@ import { CategoryIconSvg } from './category-icons';
 import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/library';
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
+import { VOID_ANCESTRY_ART } from '@/data/void-ancestries';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -795,7 +796,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + secSig * 41 + crossed * 7919) % 99991}`,
         id: lc.id,
         node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
-        raster: !!lc.imageUri,
+        // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
+        // image-bearing card (avoids the async-art flicker, per the forged-card cache rules).
+        raster: !!lc.imageUri || !!VOID_ANCESTRY_ART[lc.id],
       };
     });
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip

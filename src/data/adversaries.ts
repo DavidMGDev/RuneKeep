@@ -1988,4 +1988,4 @@ export const baseAdversaryById = (id: string): BaseAdversary | undefined => BY_I
 
 export const ADVERSARY_ROLES: AdversaryRole[] = ['Bruiser', 'Horde', 'Leader', 'Minion', 'Ranged', 'Skulk', 'Social', 'Solo', 'Standard', 'Support'];
 /** All capability tags present in the roster, for building filter chips. */
-export const ADVERSARY_TAGS: string[] = ['Fear', 'Summoner', 'Undead', 'Arcane', 'Flying', 'Aquatic'];
+export const ADVERSARY_TAGS: string[] = ['Fear', 'Summoner', 'Undead', 'Arcane', 'Flying', 'Aquatic', 'Group', 'Horde'];

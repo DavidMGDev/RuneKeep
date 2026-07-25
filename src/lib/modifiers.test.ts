@@ -45,6 +45,25 @@ describe('formula effects (#278)', () => {
   });
 });
 
+describe('spellcast formula variable (v0.21.0 — Mage Robes)', () => {
+  // Mage Robes: +Spellcast trait to both damage thresholds. The armor SETS the base, the Enchanted effect
+  // adds the caster's spellcast trait on top.
+  const robes = src('Mage Robes', [
+    { target: 'majorThreshold', mode: 'set', delta: 4 },
+    { target: 'majorThreshold', mode: 'bonus', dynamic: 'formula', formula: { variable: 'spellcast' } },
+  ]);
+  it('adds the named spellcast trait total to the target', () => {
+    const withCast = computeSheet({ ...ZERO, knowledge: 3 }, 1, [robes], 'knowledge');
+    // base 0 → set 4 → +level(1)/+? threshold bonus... isolate: at least the +3 spellcast lands on top of 4.
+    expect(withCast.majorThreshold.total).toBeGreaterThanOrEqual(4 + 3);
+  });
+  it('resolves to 0 for a non-caster subclass (no spellcast trait passed)', () => {
+    const noCast = computeSheet({ ...ZERO, knowledge: 3 }, 1, [robes]);
+    const withCast = computeSheet({ ...ZERO, knowledge: 3 }, 1, [robes], 'knowledge');
+    expect(withCast.majorThreshold.total - noCast.majorThreshold.total).toBe(3);
+  });
+});
+
 describe('computeSheet', () => {
   it('returns base totals when nothing is enabled', () => {
     const s = computeSheet(ZERO, 1, []);

@@ -77,10 +77,10 @@ export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
   return { ...e, target: o.target, mode: isThresholdTarget(o.target) ? o.mode : undefined, experienceId: undefined };
 }
 
-/** Formula variables a player can scale (#278). */
-const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+/** Formula variables a player can scale (#278). v0.21.0: `spellcast` = your subclass's Spellcast trait. */
+const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
 const VAR_LABEL: Record<EffectFormula['variable'], string> = {
-  level: 'Level', tier: 'Tier', proficiency: 'Proficiency', agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
+  level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
 };
 
 /**
