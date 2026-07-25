@@ -13,6 +13,7 @@
  */
 import type { ArmorDef, WeaponDef } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
+import { VOID_ANCESTRY_ART } from '@/data/void-ancestries';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
 import { Rune } from '@/constants/theme';
@@ -69,6 +70,9 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
     };
     return <ForgedArmorCard armor={def} />;
   }
+  // v0.21.0 items 1/2: illustrated Hope-and-Fear ancestries. The art is bundled and looked up by id (kept
+  // off the serializable card); when present it fills the art band and wins over the flat color fill.
+  const bundledArt = VOID_ANCESTRY_ART[card.id];
   return (
     <ForgedCard
       title={card.title}
@@ -77,7 +81,8 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
       body={libraryCardBody(card, struckIndex)}
       accentDeep={Rune.panel}
       imageUri={card.imageUri}
-      colorArt={card.color}
+      fallbackArt={bundledArt}
+      colorArt={bundledArt ? null : card.color}
       multilineTitle
     />
   );

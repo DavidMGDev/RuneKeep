@@ -11,7 +11,10 @@
  * inside a bounded ScrollView (item 5).
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, SectionList, Text, TextInput, View } from 'react-native';
+import { Pressable, SectionList, Text, TextInput, View } from 'react-native';
+// v0.21.0 item 3: the RN ScrollView would not scroll inside the DmModal overlay (the modal's start-responder
+// wrapper starves it on Android). The gesture-handler ScrollView runs in the RNGH pipeline and wins the drag.
+import { ScrollView } from 'react-native-gesture-handler';
 import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (custom-adversary portraits)
 import Svg, { Line, Polyline } from 'react-native-svg';
 

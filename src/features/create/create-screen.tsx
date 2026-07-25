@@ -12,7 +12,7 @@ import { ChamferedImage } from './components/chamfered-image';
 import { RuneButton } from '@/components/rune-button';
 import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
-import { CATALOG } from '@/data/catalog';
+import { CATALOG, cardById } from '@/data/catalog';
 import { type TraitKey } from '@/features/character-sheet/character';
 import { newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
@@ -23,7 +23,7 @@ import { listExpansions } from '@/lib/library-store';
 import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
-import { featurePages } from '@/data/class-data';
+import { featurePages, spellcastTraitForSubclass } from '@/data/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
@@ -702,7 +702,7 @@ export function CreateScreen() {
               />
             </Animated.View>
           ) : null}
-          {deck === 'traits' ? <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} /> : null}
+          {deck === 'traits' ? <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} spellcastTrait={spellcastTraitForSubclass(draft.subclassCardId ? cardById(draft.subclassCardId)?.subclass : undefined)} /> : null}
           {deck === 'experiences' ? <ExperiencesTab experiences={draft.experiences} onEdit={(slot) => setEditingExperience(slot)} /> : null}
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}

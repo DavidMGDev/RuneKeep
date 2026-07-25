@@ -3,11 +3,11 @@ import { VOID_ADVERSARIES } from '@/data/void-adversaries';
 import { addTemplate, baseToCombatant, removeTemplates } from './adversary-library';
 import { newAdversary } from './session';
 
-describe('The Void roster (v0.18.0 item 7)', () => {
-  it('has the 16 Void adversaries with unique ids and no overlap with the base roster', () => {
-    expect(VOID_ADVERSARIES).toHaveLength(16);
+describe('The Hope and Fear roster (v0.21.0 item 7)', () => {
+  it('has the full Hope and Fear adversary roster with unique ids and no overlap with the base roster', () => {
+    expect(VOID_ADVERSARIES).toHaveLength(135);
     const ids = new Set(VOID_ADVERSARIES.map((a) => a.id));
-    expect(ids.size).toBe(16);
+    expect(ids.size).toBe(VOID_ADVERSARIES.length);
     const baseIds = new Set(BASE_ADVERSARIES.map((a) => a.id));
     expect(VOID_ADVERSARIES.every((a) => !baseIds.has(a.id))).toBe(true);
     expect(VOID_ADVERSARIES.every((a) => a.id.startsWith('void-'))).toBe(true);

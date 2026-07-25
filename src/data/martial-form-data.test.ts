@@ -1,15 +1,15 @@
 import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANCES, martialStanceById } from './martial-form-data';
 
 describe('martial form data (#357)', () => {
-  it('holds the 24 stances of the printed Martial Form sheet, tiered 6/7/7/4', () => {
-    expect(MARTIAL_STANCES).toHaveLength(24);
+  it('holds the official release roster: 16 stances, 4 per tier', () => {
+    expect(MARTIAL_STANCES).toHaveLength(16);
     const byTier = (t: number) => MARTIAL_STANCES.filter((s) => s.tier === t).length;
-    expect([byTier(1), byTier(2), byTier(3), byTier(4)]).toEqual([6, 7, 7, 4]);
+    expect([byTier(1), byTier(2), byTier(3), byTier(4)]).toEqual([4, 4, 4, 4]);
   });
 
   it('every stance has a unique ms- prefixed id, a name, and a body', () => {
     const ids = MARTIAL_STANCES.map((s) => s.id);
-    expect(new Set(ids).size).toBe(24);
+    expect(new Set(ids).size).toBe(16);
     for (const s of MARTIAL_STANCES) {
       expect(isMartialStanceId(s.id)).toBe(true);
       expect(s.name.length).toBeGreaterThan(0);
@@ -17,9 +17,9 @@ describe('martial form data (#357)', () => {
     }
   });
 
-  it('mechanical stances carry engine effects (Steady -1 Evasion, Immovable +2 thresholds)', () => {
-    expect(martialStanceById('ms-steady')?.effects).toEqual([{ target: 'evasion', delta: -1 }]);
-    expect(martialStanceById('ms-immovable')?.effects).toEqual([
+  it('mechanical stances carry engine effects (Aggressive -1 Evasion, Anchored +2 thresholds)', () => {
+    expect(martialStanceById('ms-aggressive')?.effects).toEqual([{ target: 'evasion', delta: -1 }]);
+    expect(martialStanceById('ms-anchored')?.effects).toEqual([
       { target: 'majorThreshold', mode: 'bonus', delta: 2 },
       { target: 'severeThreshold', mode: 'bonus', delta: 2 },
     ]);

@@ -10,7 +10,7 @@ import { CATALOG, cardById } from '@/data/catalog';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
-import { CLASS_DATA } from '@/data/class-data';
+import { CLASS_DATA, spellcastTraitForSubclass } from '@/data/class-data';
 import { activeWildshapeName } from '@/data/wildshape-data';
 import { type BaseStats, type CardEffect, computeSheet, type Contribution, type EffectSource } from '@/lib/modifiers';
 
@@ -365,7 +365,10 @@ export function toSheetCharacter(file: CharacterFile): Character {
     scar: 0, // v0.13.0: scars come only from enabled "Add Scar" cards
   };
   const sources = allEffectSources(file);
-  const sheet = computeSheet(base, file.level, sources);
+  // v0.21.0 item 5: the Spellcast trait (from the chosen subclass) powers the `spellcast` formula variable
+  // — e.g. Mage Robes' Enchanted feature adds it to the damage thresholds.
+  const spellcastTrait = spellcastTraitForSubclass(subclass?.subclass);
+  const sheet = computeSheet(base, file.level, sources, spellcastTrait);
   // v0.13.0 SCARS: each enabled scar card disables one Hope slot from the RIGHT. Flat count — freeing
   // any scar card always releases the leftmost scarred slot. Hope in play can never sit on a scarred slot.
   const scars = Math.max(0, Math.min(sheet.hopeMax.total, sheet.scar.total));
@@ -385,6 +388,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     level: file.level,
     className: cls.label,
     subclass: subclass?.label.replace(/ Foundation$/, '') ?? libTitle(file.subclassCardId) ?? '',
+    spellcastTrait,
     ancestry: ancestry?.label ?? libTitle(file.ancestryCardId) ?? '',
     community: community?.label ?? libTitle(file.communityCardId) ?? '',
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
@@ -434,7 +438,8 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     severeThreshold: 0,
     scar: 0, // v0.13.0
   };
-  return computeSheet(base, file.level, allEffectSources(file));
+  const spellcastTrait = spellcastTraitForSubclass(cardById(file.subclassCardId)?.subclass);
+  return computeSheet(base, file.level, allEffectSources(file), spellcastTrait);
 }
 
 /** The starting bonus on a new Experience (rulebook: +2, at creation and at each tier start). */

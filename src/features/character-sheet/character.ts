@@ -16,6 +16,9 @@ export interface Character {
   level: number;
   className: string;
   subclass: string;
+  /** v0.21.0: the trait the subclass casts with (Wizard→knowledge, …), or null for a non-caster. Lets the
+   *  Modifiers panel resolve a `spellcast` formula amount (Mage Robes). */
+  spellcastTrait?: TraitKey | null;
   ancestry: string;
   community: string;
   /** Two domain names shown as "A × B". */

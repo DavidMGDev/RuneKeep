@@ -3,7 +3,10 @@
  * browsing the library can look up what each stat-block field means and how the adversary types / feature
  * kinds work. A scrolling DmModal opened from the library's info button.
  */
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+// v0.21.0 item 3: gesture-handler ScrollView scrolls reliably inside the DmModal overlay (the RN one
+// gets starved by the modal's start-responder wrapper on Android).
+import { ScrollView } from 'react-native-gesture-handler';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
