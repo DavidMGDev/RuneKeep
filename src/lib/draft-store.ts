@@ -35,6 +35,7 @@ export interface StoredDraft<T = unknown> {
 
 // expo-file-system's File/Directory API is native-only — a top-level import breaks the web bundle.
 type FS = typeof import('expo-file-system');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = (): FS => require('expo-file-system') as FS;
 
 function draftFile() {
