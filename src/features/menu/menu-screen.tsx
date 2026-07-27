@@ -103,7 +103,7 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, dm, locked }: { la
             </Svg>
             <View style={{ flex: 1, minWidth: 0 }}>
               <FitLine style={{ color: ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>{label}</FitLine>
-              <FitLine minScale={0.7} style={{ color: muted, fontSize: 12, fontFamily: Body.medium, letterSpacing: 0.4, marginTop: 3 }}>{locked ? 'Enable a party to unlock' : sub}</FitLine>
+              <FitLine minScale={0.7} style={{ color: muted, fontSize: 12, fontFamily: Body.medium, letterSpacing: 0.4, marginTop: 3 }}>{locked ? 'Set a party active to unlock' : sub}</FitLine>
             </View>
             <Svg width={16} height={16} viewBox="0 0 16 16">
               <Polyline points="5,2 12,8 5,14" fill="none" stroke={edge} strokeWidth={2.2} strokeLinejoin="miter" />

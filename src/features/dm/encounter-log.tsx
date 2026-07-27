@@ -234,7 +234,7 @@ export function EncounterLog({
               <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel.ids.size} selected</Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <RuneButton label="Delete" kind="primary" height={34} dense dm style={{ flex: 1 }} onPress={() => setConfirm('delete')} />
-                <RuneButton label="Leave only" kind="secondary" height={34} dense dm style={{ flex: 1 }} onPress={() => setConfirm('keep')} />
+                <RuneButton label="Keep only these" kind="secondary" height={34} dense dm style={{ flex: 1 }} onPress={() => setConfirm('keep')} />
                 <RuneButton label="Cancel" kind="ghost" height={34} dense dm onPress={sel.clear} />
               </View>
             </ChamferBox>
@@ -251,7 +251,7 @@ export function EncounterLog({
           onConfirm={() => { onDeleteEntries(sel.ids); setConfirm(null); sel.clear(); }} onCancel={() => setConfirm(null)} />
       ) : null}
       {confirm === 'keep' ? (
-        <PopupDialog dm title="Leave only selected?" body={`Everything except the ${sel.ids.size} selected entr${sel.ids.size === 1 ? 'y' : 'ies'} will be erased.`} confirmLabel="Leave only" destructive
+        <PopupDialog dm title="Keep only these entries?" body={`Everything except the ${sel.ids.size} selected entr${sel.ids.size === 1 ? 'y' : 'ies'} will be erased.`} confirmLabel="Leave only" destructive
           onConfirm={() => { onKeepOnly(sel.ids); setConfirm(null); sel.clear(); }} onCancel={() => setConfirm(null)} />
       ) : null}
     </View>

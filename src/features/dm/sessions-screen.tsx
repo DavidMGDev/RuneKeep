@@ -135,7 +135,7 @@ export function SessionsScreen() {
 
         {!selected.enabled ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingBottom: 40 }}>
-            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>{selected.name} isn’t the active party.{'\n'}Make it active to run its sessions.</Text>
+            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>{selected.name} isn’t active.{'\n'}Make it active to run its sessions.</Text>
             <RuneButton label="Set active" kind="primary" height={46} dm style={{ minWidth: 200 }} onPress={() => void activate(selected)} />
           </View>
         ) : sessions.length === 0 ? (
@@ -200,7 +200,7 @@ export function SessionsScreen() {
 
       {naming ? <NameDialog title="New Session" placeholder="Session name" confirmLabel="Create" onConfirm={create} onCancel={() => setNaming(false)} /> : null}
       {renaming ? <NameDialog title="Rename Session" initial={renaming.name} confirmLabel="Rename" onConfirm={(name) => void renameSession(name)} onCancel={() => setRenaming(null)} /> : null}
-      {confirmDelete ? <PopupDialog dm title="Delete sessions?" body={`${confirmDelete.size} session(s) and their encounters will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
+      {confirmDelete ? <PopupDialog dm title="Delete sessions?" body={`${confirmDelete.size} and their encounters will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
     </AppScreen>
   );
 }

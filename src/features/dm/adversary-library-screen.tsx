@@ -284,7 +284,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
       {viewImage ? <AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}
       {info ? <AdversaryInfoPanel onClose={() => setInfo(false)} /> : null}
       {confirmDelete ? (
-        <PopupDialog dm title="Delete saved adversaries?" body={`${confirmDelete.size} saved adversary(ies) will be removed from your library. Base Game and Void adversaries are never affected.`} confirmLabel="Delete" destructive
+        <PopupDialog dm title="Delete saved adversaries?" body={`${confirmDelete.size} saved removed from your library. Base Game and official expansion adversaries are never affected.`} confirmLabel="Delete" destructive
           onConfirm={() => { onDeleteSaved?.(confirmDelete); setConfirmDelete(null); sel.clear(); showToast('Deleted', 'success'); }}
           onCancel={() => setConfirmDelete(null)} />
       ) : null}

@@ -343,7 +343,7 @@ export function EncounterScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusColor }} />
               <Text style={{ color: statusColor, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status}</Text>
-              {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Local</Text> : null}
+              {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Self-contained</Text> : null}
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Pressable onPress={() => setShowLog(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
@@ -420,15 +420,15 @@ export function EncounterScreen() {
       {/* bottom multi-select bars (item 4) */}
       {allySel.selecting ? (
         <BottomBar label={`${allySel.ids.size} selected`}>
-          <RuneButton label="Present ⇄" kind="ghost" height={30} dense dm onPress={() => { flipPresence(allySel.ids); allySel.clear(); }} />
-          <RuneButton label="To Adversary" kind="ghost" height={30} dense dm onPress={() => { convertToAdversaries(allySel.ids); allySel.clear(); }} />
+          <RuneButton label="Toggle present" kind="ghost" height={30} dense dm onPress={() => { flipPresence(allySel.ids); allySel.clear(); }} />
+          <RuneButton label="Make adversary" kind="ghost" height={30} dense dm onPress={() => { convertToAdversaries(allySel.ids); allySel.clear(); }} />
           <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDeleteAlly(new Set(allySel.ids))} />
           <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={allySel.clear} />
         </BottomBar>
       ) : advSel.selecting ? (
         <BottomBar label={`${advSel.ids.size} selected`}>
           {advSel.ids.size === 1 ? <RuneButton label="Save to Library" kind="ghost" height={30} dense dm onPress={() => { saveToLibrary([...advSel.ids][0]); advSel.clear(); }} /> : null}
-          <RuneButton label="To Ally" kind="ghost" height={30} dense dm onPress={() => { convertToAllies(advSel.ids); advSel.clear(); }} />
+          <RuneButton label="Make ally" kind="ghost" height={30} dense dm onPress={() => { convertToAllies(advSel.ids); advSel.clear(); }} />
           <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDeleteAdv(new Set(advSel.ids))} />
           <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={advSel.clear} />
         </BottomBar>
@@ -466,8 +466,8 @@ export function EncounterScreen() {
         <DmModal onClose={() => setShowOptions(false)} contentStyle={{ width: 330 }}>
           <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ padding: 20 }}>
             <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Options</Text>
-            <OptionRow label="Auto-log stat changes" hint="Record each stat-change hold as one log entry." on={enc.options.autoLog} onToggle={toggleAutoLog} />
-            <OptionRow label="Sync party globally" hint="Off = a fully local encounter that never changes the party across other sessions." on={enc.options.globalSync} onToggle={toggleSync} />
+            <OptionRow label="Auto-log stat changes" hint="Write every change you make to a stat into the log." on={enc.options.autoLog} onToggle={toggleAutoLog} />
+            <OptionRow label="Share vitals with the party" hint="Off keeps this fight self-contained: nothing here changes the party in your other sessions." on={enc.options.globalSync} onToggle={toggleSync} />
             <OptionRow label="Mute UI sounds" hint="Silences every DM interface sound until turned back on (also toggleable from the main menu)." on={muted} onToggle={() => { setMuted((m) => { const n = !m; setUiMuted(n); if (!n) playSfx('buttonTap'); return n; }); }} />
             <View style={{ gap: 10, marginTop: 12 }}>
               <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.</Text>
@@ -479,7 +479,7 @@ export function EncounterScreen() {
 
       {confirmComplete ? <PopupDialog dm title="Complete encounter?" body="This freezes the party's current state onto the encounter as a record. The party keeps its live state for the next encounter." confirmLabel="Complete" onConfirm={complete} onCancel={() => setConfirmComplete(false)} /> : null}
       {confirmDeleteAlly ? <PopupDialog dm title="Remove these allies?" body={`${confirmDeleteAlly.size === 1 ? 'This ally' : `These ${confirmDeleteAlly.size} allies`} will be removed from this encounter. Player characters are never removed this way.`} confirmLabel="Remove" destructive onConfirm={() => { deleteNpcAllies(confirmDeleteAlly); setConfirmDeleteAlly(null); allySel.clear(); }} onCancel={() => setConfirmDeleteAlly(null)} /> : null}
-      {confirmDeleteAdv ? <PopupDialog dm title="Delete selected?" body={`${confirmDeleteAdv.size} unit(s) will be removed from this encounter.`} confirmLabel="Delete" destructive onConfirm={() => { deleteCombatants(confirmDeleteAdv); setConfirmDeleteAdv(null); advSel.clear(); }} onCancel={() => setConfirmDeleteAdv(null)} /> : null}
+      {confirmDeleteAdv ? <PopupDialog dm title="Delete selected?" body={`${confirmDeleteAdv.size} removed from this encounter.`} confirmLabel="Delete" destructive onConfirm={() => { deleteCombatants(confirmDeleteAdv); setConfirmDeleteAdv(null); advSel.clear(); }} onCancel={() => setConfirmDeleteAdv(null)} /> : null}
       {startConflict ? <PopupDialog dm title="Another encounter is active" body="Starting this one will complete the currently active encounter (noted in its log). Continue?" confirmLabel="Start" onConfirm={() => { setStartConflict(false); void doStart(); }} onCancel={() => setStartConflict(false)} /> : null}
       {restartPrompt ? (
         <PopupDialog

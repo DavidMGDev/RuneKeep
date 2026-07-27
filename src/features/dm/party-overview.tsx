@@ -74,7 +74,7 @@ export function PartyOverviewScreen() {
 
   return (
     <StatRadialProvider>
-    <AppScreen title="Players" dm onBack={() => router.back()}>
+    <AppScreen title="Party sheet" dm onBack={() => router.back()}>
       <FlatList
         data={party.memberIds.filter((id) => files[id])}
         keyExtractor={(id) => id}

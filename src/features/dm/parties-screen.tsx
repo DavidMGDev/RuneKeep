@@ -99,7 +99,7 @@ export function PartiesScreen() {
             renderItem={({ item }) => <PartyRow party={item} onOpen={() => router.push(`/party?id=${item.id}` as Href)} />}
           />
           <View style={{ gap: 10, paddingTop: 10, paddingBottom: 6 }}>
-            {parties.some((p) => p.enabled) ? <RuneButton label="Sessions Menu" kind="secondary" height={46} dm onPress={() => { playSfx('enterCardViewer'); router.push('/sessions' as Href); }} /> : null}
+            {parties.some((p) => p.enabled) ? <RuneButton label="Sessions" kind="secondary" height={46} dm onPress={() => { playSfx('enterCardViewer'); router.push('/sessions' as Href); }} /> : null}
             <RuneButton label="New party" kind="primary" height={46} dm onPress={() => setNaming(true)} />
           </View>
         </>
