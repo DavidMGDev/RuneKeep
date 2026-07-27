@@ -6,7 +6,7 @@ import { Text, type TextProps } from 'react-native';
  * fine here: the web pipeline only verifies composition; devices are what shrink.
  * Use for any variable-length single-line text (names, menu actions, card titles).
  */
-export function FitLine({ minScale = 0.55, style, children, ...rest }: TextProps & { minScale?: number }) {
+export function FitLine({ minScale = 0.85, style, children, ...rest }: TextProps & { minScale?: number }) {
   return (
     <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={minScale} style={style} {...rest}>
       {children}

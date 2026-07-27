@@ -22,7 +22,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { ADVERSARY_ROLES, ADVERSARY_TAGS, BASE_ADVERSARIES, type AdversaryRole, type BaseAdversary } from '@/data/adversaries';
 import { VOID_ADVERSARIES } from '@/data/void-adversaries';
 import { baseToCombatant, type SavedAdversary } from '@/lib/adversary-library';
@@ -52,9 +52,9 @@ const buildCombatant = (it: Item): Combatant => (it.base ? baseToCombatant(it.ba
 /** Cheap list avatar — no SVG: the image, or the first letter of the name in a bordered box. */
 function Avatar({ uri, name, tint }: { uri?: string; name: string; tint: string }) {
   return (
-    <View style={{ width: 36, height: 36, borderRadius: 5, borderWidth: 1, borderColor: tint, backgroundColor: DmRune.ink, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {uri ? <Image source={uri} style={{ width: 36, height: 36 }} contentFit="cover" /> : <Text style={{ color: DmRune.accentDim, fontSize: 16, fontFamily: Display.black }}>{(name[0] ?? '?').toUpperCase()}</Text>}
-    </View>
+    <ChamferBox chamfer={5} fill={DmRune.ink} stroke={tint} strokeWidth={1} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {uri ? <Image source={uri} style={{ width: 36, height: 36 }} contentFit="cover" /> : <Text style={{ color: DmRune.accentDim, fontSize: DmType.title, fontFamily: Display.black }}>{(name[0] ?? '?').toUpperCase()}</Text>}
+    </ChamferBox>
   );
 }
 
@@ -62,7 +62,7 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
   return (
     <Pressable onPress={() => { playSfx('buttonTap'); onPress(); }} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label} hitSlop={4}>
       <ChamferBox chamfer={6} fill={on ? DmRune.accent : 'transparent'} stroke={on ? 'transparent' : DmRune.line} strokeWidth={1.1} style={{ height: 30, justifyContent: 'center', paddingHorizontal: 11 }}>
-        <Text style={{ color: on ? DmRune.ink : DmRune.text, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>{label}</Text>
+        <Text style={{ color: on ? DmRune.ink : DmRune.text, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
     </Pressable>
   );
@@ -71,15 +71,15 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 function Stepper({ n, onChange }: { n: number; onChange: (n: number) => void }) {
   const btn = (delta: number, label: string) => (
     <Pressable onPress={() => onChange(Math.max(1, Math.min(20, n + delta)))} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}>
-      <View style={{ width: 42, height: 42, borderRadius: 6, borderWidth: 1.2, borderColor: DmRune.line, backgroundColor: 'rgba(20,24,30,0.9)', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: DmRune.accent, fontSize: 22, fontFamily: Display.black }}>{delta > 0 ? '+' : '–'}</Text>
-      </View>
+      <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.2} style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: DmRune.accent, fontSize: DmType.hero, fontFamily: Display.black }}>{delta > 0 ? '+' : '–'}</Text>
+      </ChamferBox>
     </Pressable>
   );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
       {btn(-1, 'Fewer')}
-      <Text style={{ color: DmRune.ivory, fontSize: 26, fontFamily: Display.black, minWidth: 40, textAlign: 'center' }}>{n}</Text>
+      <Text style={{ color: DmRune.ivory, fontSize: DmType.hero, fontFamily: Display.black, minWidth: 40, textAlign: 'center' }}>{n}</Text>
       {btn(1, 'More')}
     </View>
   );
@@ -95,7 +95,7 @@ function DetailSheet({ item, mode, onSpawn, onViewImage, onClose }: { item: Item
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 344, maxHeight: 640, padding: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <AdversaryPortrait uri={c.portraitUri} size={48} tint={item.source === 'custom' ? DmRune.line : DmRune.accentDim} onPress={onViewImage} />
-          <Text numberOfLines={1} style={{ flex: 1, color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{c.name}</Text>
+          <Text numberOfLines={1} style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{c.name}</Text>
         </View>
         <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 4 }}>
           <StatBlockDetail c={c} />
@@ -103,7 +103,7 @@ function DetailSheet({ item, mode, onSpawn, onViewImage, onClose }: { item: Item
         {mode !== 'browse' ? (
           <View style={{ gap: 12, marginTop: 14, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ color: DmRune.muted, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>How many?</Text>
+              <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>How many?</Text>
               <Stepper n={count} onChange={setCount} />
             </View>
             <RuneButton label={spawnLabel} kind="primary" height={46} dm onPress={() => onSpawn(c, count)} />
@@ -181,19 +181,19 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
             <Svg width={22} height={22} viewBox="0 0 22 22"><Polyline points="13,4 6,11 13,18" fill="none" stroke={DmRune.accent} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
           </Pressable>
-          <Text style={{ flex: 1, color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase' }}>{title}</Text>
+          <Text style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase' }}>{title}</Text>
           <Pressable onPress={() => setInfo(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary reference">
             <Svg width={22} height={22} viewBox="0 0 22 22"><Polyline points="11,2 18,6.5 18,15.5 11,20 4,15.5 4,6.5 11,2" fill="none" stroke={DmRune.accentDim} strokeWidth={1.4} strokeLinejoin="round" /><Line x1={11} y1={6} x2={11} y2={6.4} stroke={DmRune.accent} strokeWidth={2.6} strokeLinecap="round" /><Line x1={11} y1={9.5} x2={11} y2={15.5} stroke={DmRune.accent} strokeWidth={2.2} strokeLinecap="round" /></Svg>
           </Pressable>
           <Pressable onPress={() => { playSfx('buttonTap'); setDrawer((o) => !o); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Filters, ${activeCount} active`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Svg width={16} height={14} viewBox="0 0 18 16"><Line x1={1} y1={3} x2={17} y2={3} stroke={DmRune.accent} strokeWidth={2} /><Line x1={4} y1={8} x2={14} y2={8} stroke={DmRune.accent} strokeWidth={2} /><Line x1={7} y1={13} x2={11} y2={13} stroke={DmRune.accent} strokeWidth={2} /></Svg>
-            {activeCount ? <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold }}>{activeCount}</Text> : null}
+            {activeCount ? <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold }}>{activeCount}</Text> : null}
           </Pressable>
         </View>
 
-        <View style={{ height: 42, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 10, borderRadius: 6, borderWidth: 1.1, borderColor: DmRune.line, backgroundColor: 'rgba(20,24,30,0.9)' }}>
-          <TextInput value={search} onChangeText={setSearch} placeholder="Search adversaries…" placeholderTextColor={DmRune.muted} style={{ color: DmRune.text, fontSize: 15, fontFamily: Body.semibold }} />
-        </View>
+        <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.1} style={{ height: 42, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 10 }}>
+          <TextInput value={search} onChangeText={setSearch} placeholder="Search adversaries…" placeholderTextColor={DmRune.muted} style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.semibold }} />
+        </ChamferBox>
 
         {drawer ? (
           <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke={DmRune.line} strokeWidth={1.2} style={{ padding: 10, marginBottom: 10, gap: 8 }}>
@@ -207,7 +207,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
               {(['Physical', 'Magic'] as const).map((d) => <Chip key={d} label={d} on={filters.damage.has(d)} onPress={() => setFilters((f) => ({ ...f, damage: toggle(f.damage, d) }))} />)}
               {ADVERSARY_TAGS.map((t) => <Chip key={t} label={t} on={filters.tags.has(t)} onPress={() => setFilters((f) => ({ ...f, tags: toggle(f.tags, t) }))} />)}
             </View>
-            {activeCount ? <Pressable onPress={() => setFilters(EMPTY)} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>Clear filters</Text></Pressable> : null}
+            {activeCount ? <Pressable onPress={() => setFilters(EMPTY)} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>Clear filters</Text></Pressable> : null}
           </ChamferBox>
         ) : null}
 
@@ -229,7 +229,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           renderSectionHeader={({ section }) => (
             <Pressable onPress={() => { playSfx('buttonTap'); setCollapsed((s) => { const n = new Set(s); if (n.has(section.key)) n.delete(section.key); else n.add(section.key); return n; }); }} accessibilityRole="button" accessibilityState={{ expanded: !section.collapsed }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 2 }}>
               <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: section.collapsed ? '0deg' : '90deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-              <Text style={{ color: DmRune.accentDim, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{section.title} · {section.count}</Text>
+              <Text style={{ color: DmRune.accentDim, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{section.title} · {section.count}</Text>
             </Pressable>
           )}
           renderItem={({ item }) => {
@@ -241,22 +241,28 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
                 onLongPress={() => selectable && (sel.selecting ? sel.toggle(item.key) : sel.start(item.key))}
                 delayLongPress={340}
                 accessibilityRole="button"
-                accessibilityLabel={`${item.name}, tier ${item.tier ?? '?'} ${item.role ?? ''}`}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 9, borderWidth: on ? 1.6 : 1, borderColor: on ? DmRune.accent : DmRune.line, backgroundColor: on ? 'rgba(196,200,208,0.16)' : 'rgba(16,18,24,0.92)' }}>
+                accessibilityLabel={`${item.name}, tier ${item.tier ?? '?'} ${item.role ?? ''}`}>
+                <ChamferBox
+                  chamfer={9}
+                  fill={on ? 'rgba(196,200,208,0.16)' : 'rgba(16,18,24,0.92)'}
+                  stroke={on ? DmRune.accent : DmRune.line}
+                  strokeWidth={on ? 1.6 : 1}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 9 }}>
                 <Avatar uri={item.portraitUri} name={item.name} tint={selectable ? DmRune.line : DmRune.accentDim} />
                 <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={{ color: DmRune.ivory, fontSize: 14.5, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase' }}>{item.name}</Text>
-                  <Text numberOfLines={1} style={{ color: DmRune.muted, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 }}>
+                  <Text numberOfLines={1} style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase' }}>{item.name}</Text>
+                  <Text numberOfLines={1} style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 }}>
                     {item.tier ? `T${item.tier} · ` : ''}{item.role ? `${item.role} · ` : ''}HP {item.hp}{item.damage ? ` · ${item.damage}` : ''}
                   </Text>
                 </View>
                 {sel.selecting && selectable ? (
-                  <View style={{ width: 22, height: 22, borderRadius: 4, borderWidth: 1.2, borderColor: DmRune.accentDim, backgroundColor: on ? DmRune.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                    {on ? <Text style={{ color: DmRune.ink, fontSize: 13, fontFamily: Display.black }}>✓</Text> : null}
-                  </View>
+                  <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
+                    {on ? <Text style={{ color: DmRune.ink, fontSize: DmType.body, fontFamily: Display.black }}>✓</Text> : null}
+                  </ChamferBox>
                 ) : (
-                  <Text style={{ color: DmRune.accentDim, fontSize: 18, fontFamily: Display.black }}>›</Text>
+                  <Text style={{ color: DmRune.accentDim, fontSize: DmType.title, fontFamily: Display.black }}>›</Text>
                 )}
+                </ChamferBox>
               </Pressable>
             );
           }}
@@ -267,7 +273,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
       {sel.selecting ? (
         <View style={{ position: 'absolute', left: 12, right: 12, bottom: 16 }}>
           <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10 }}>
-            <Text style={{ flex: 1, color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel.ids.size} selected</Text>
+            <Text style={{ flex: 1, color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel.ids.size} selected</Text>
             <RuneButton label={`Delete ${sel.ids.size}`} kind="primary" height={34} dense dm onPress={() => setConfirmDelete(new Set([...sel.ids].map((k) => k.replace(/^custom-/, ''))))} />
             <RuneButton label="Cancel" kind="ghost" height={34} dense dm onPress={sel.clear} />
           </ChamferBox>
@@ -278,7 +284,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
       {viewImage ? <AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}
       {info ? <AdversaryInfoPanel onClose={() => setInfo(false)} /> : null}
       {confirmDelete ? (
-        <PopupDialog title="Delete saved adversaries?" body={`${confirmDelete.size} saved adversary(ies) will be removed from your library. Base Game and Void adversaries are never affected.`} confirmLabel="Delete" destructive
+        <PopupDialog dm title="Delete saved adversaries?" body={`${confirmDelete.size} saved adversary(ies) will be removed from your library. Base Game and Void adversaries are never affected.`} confirmLabel="Delete" destructive
           onConfirm={() => { onDeleteSaved?.(confirmDelete); setConfirmDelete(null); sel.clear(); showToast('Deleted', 'success'); }}
           onCancel={() => setConfirmDelete(null)} />
       ) : null}

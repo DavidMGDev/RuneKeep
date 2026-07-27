@@ -10,7 +10,7 @@ import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, wi
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type AdversaryFeature } from '@/data/adversaries';
 import { type Combatant } from '@/lib/session';
 import { useAndroidBack } from './use-android-back';
@@ -52,10 +52,10 @@ function FeatureRow({ f }: { f: AdversaryFeature }) {
   const kindColor = f.kind === 'Action' ? DmRune.accent : f.kind === 'Reaction' ? DmRune.ally : DmRune.accentDim;
   return (
     <View style={{ gap: 2 }}>
-      <Text style={{ color: DmRune.ivory, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.3 }}>
-        {f.name} <Text style={{ color: kindColor, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>· {f.kind}</Text>
+      <Text style={{ color: DmRune.ivory, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.3 }}>
+        {f.name} <Text style={{ color: kindColor, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>· {f.kind}</Text>
       </Text>
-      <Text style={{ color: DmRune.text, fontSize: 12, fontFamily: Body.regular, lineHeight: 16.5 }}>{f.text}</Text>
+      <Text style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 16.5 }}>{f.text}</Text>
     </View>
   );
 }
@@ -63,8 +63,8 @@ function FeatureRow({ f }: { f: AdversaryFeature }) {
 function StatCell({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ gap: 1 }}>
-      <Text style={{ color: DmRune.muted, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
-      <Text style={{ color: DmRune.ivory, fontSize: 14, fontFamily: Display.black }}>{value}</Text>
+      <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
+      <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black }}>{value}</Text>
     </View>
   );
 }
@@ -76,12 +76,12 @@ export function StatBlockDetail({ c }: { c: Combatant }) {
   return (
     <View style={{ gap: 10 }}>
       {hasHeader ? (
-        <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>
+        <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>
           Tier {c.tier ?? '?'} {c.role ?? ''}{c.hordeNote ? ` (${c.hordeNote})` : ''}
         </Text>
       ) : null}
-      {c.description ? <Text style={{ color: DmRune.text, fontSize: 12.5, fontFamily: Body.regular, fontStyle: 'italic', lineHeight: 17 }}>{c.description}</Text> : null}
-      {c.motives ? <Text style={{ color: DmRune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}><Text style={{ fontFamily: Body.bold }}>Motives & Tactics: </Text>{c.motives}</Text> : null}
+      {c.description ? <Text style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', lineHeight: 17 }}>{c.description}</Text> : null}
+      {c.motives ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 16 }}><Text style={{ fontFamily: Body.bold }}>Motives & Tactics: </Text>{c.motives}</Text> : null}
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, paddingVertical: 4 }}>
         {c.difficulty != null ? <StatCell label="Diff" value={String(c.difficulty)} /> : null}
@@ -92,12 +92,12 @@ export function StatBlockDetail({ c }: { c: Combatant }) {
       </View>
 
       {c.attack && (c.attack.name || c.attack.damage) ? (
-        <Text style={{ color: DmRune.text, fontSize: 12.5, fontFamily: Body.regular }}>
+        <Text style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.regular }}>
           <Text style={{ fontFamily: Body.bold, color: DmRune.ivory }}>{c.attack.name || 'Attack'}</Text>
           {c.attack.range ? ` · ${RANGE_ABBR(c.attack.range)}` : ''}{c.attack.damage ? ` · ${c.attack.damage}` : ''}
         </Text>
       ) : null}
-      {c.experience ? <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.regular }}><Text style={{ fontFamily: Body.bold }}>Experience: </Text>{c.experience}</Text> : null}
+      {c.experience ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular }}><Text style={{ fontFamily: Body.bold }}>Experience: </Text>{c.experience}</Text> : null}
 
       {c.features && c.features.length ? (
         <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 9 }}>
@@ -133,7 +133,7 @@ export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; nam
         <ChamferBox chamfer={16} fill={DmRune.ink} stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: box, height: box, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           {uri ? <Image source={uri} style={{ width: box, height: box }} contentFit="contain" /> : <BaseGameEmblem size={box * 0.4} />}
         </ChamferBox>
-        <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginTop: 14 }}>{name}</Text>
+        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginTop: 14 }}>{name}</Text>
       </Animated.View>
     </View>
   );

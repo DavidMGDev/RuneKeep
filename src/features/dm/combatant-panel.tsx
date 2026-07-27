@@ -14,7 +14,7 @@ import Svg, { Line, Path, Polyline } from 'react-native-svg';
 import { ChamferBox } from '@/components/chamfer-box';
 import { FitLine } from '@/components/fit-line';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type Combatant, type CombatantStat } from '@/lib/session';
 import { AdversaryPortrait, hasStatBlock, StatBlockDetail } from './adversary-detail';
 import { StatGlyph } from './stat-glyphs';
@@ -80,8 +80,8 @@ export function CombatantPanel({
         <Pressable onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
           <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
             {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : null}
-            <FitLine style={{ flex: 1, color: DmRune.muted, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
-            <Text style={{ color: DmRune.red, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Fallen</Text>
+            <FitLine style={{ flex: 1, color: DmRune.muted, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
+            <Text style={{ color: DmRune.red, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Fallen</Text>
             {!selecting ? (
               <>
                 <RuneButton label="Recover" kind="secondary" height={30} dense dm onPress={onRecover} />
@@ -106,7 +106,7 @@ export function CombatantPanel({
           {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : (
             <AdversaryPortrait uri={c.portraitUri} size={38} tint={sideColor} onPress={onOpenImage} />
           )}
-          <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
+          <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
           {!selecting ? (
             <>
               {canExpand ? <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
@@ -125,14 +125,14 @@ export function CombatantPanel({
             {c.show.thresholds ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <StatGlyph kind="threshold" color={DmRune.accentDim} size={16} />
-                <Text style={{ color: DmRune.accent, fontSize: 15, fontFamily: Display.black }}>{c.thresholds?.major ?? 0}/{c.thresholds?.severe ?? 0}</Text>
+                <Text style={{ color: DmRune.accent, fontSize: DmType.title, fontFamily: Display.black }}>{c.thresholds?.major ?? 0}/{c.thresholds?.severe ?? 0}</Text>
               </View>
             ) : null}
           </View>
         ) : null}
 
         {c.show.description && c.description && !open ? (
-          <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>{c.description}</Text>
+          <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 17 }}>{c.description}</Text>
         ) : null}
 
         {open ? (

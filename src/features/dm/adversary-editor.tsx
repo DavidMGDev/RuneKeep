@@ -11,13 +11,13 @@ import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { ADVERSARY_ROLES, type AdversaryFeature, type AdversaryRole, type FeatureKind } from '@/data/adversaries';
 import { type Combatant } from '@/lib/session';
 import { AdversaryPortrait } from './adversary-detail';
 import { DmModal } from './dm-ui';
 
-const FIELD_LABEL = { color: DmRune.muted, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
+const FIELD_LABEL = { color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const INPUT_FILL = 'rgba(20,24,30,0.9)';
 const KINDS: FeatureKind[] = ['Passive', 'Action', 'Reaction'];
 
@@ -25,7 +25,7 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label} hitSlop={4}>
       <ChamferBox chamfer={5} fill={on ? DmRune.accent : 'transparent'} stroke={on ? 'transparent' : DmRune.line} strokeWidth={1.1} style={{ height: 28, justifyContent: 'center', paddingHorizontal: 10 }}>
-        <Text style={{ color: on ? DmRune.ink : DmRune.text, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
+        <Text style={{ color: on ? DmRune.ink : DmRune.text, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
     </Pressable>
   );
@@ -52,7 +52,7 @@ function Toggle({ label, on, onPress }: { label: string; on: boolean; onPress: (
       <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
         {on ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
       </ChamferBox>
-      <Text style={{ color: DmRune.text, fontSize: 12.5, fontFamily: Body.semibold, letterSpacing: 0.4 }}>{label}</Text>
+      <Text style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.semibold, letterSpacing: 0.4 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -62,7 +62,7 @@ function FeatureEditor({ f, onChange, onRemove }: { f: AdversaryFeature; onChang
     <ChamferBox chamfer={8} fill="rgba(16,20,26,0.8)" stroke={DmRune.line} strokeWidth={1.1} style={{ padding: 10, gap: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ flex: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 9 }}>
-          <TextInput value={f.name} onChangeText={(name) => onChange({ ...f, name })} placeholder="Feature name" placeholderTextColor={DmRune.muted} maxLength={50} style={{ color: DmRune.ivory, fontSize: 13.5, fontFamily: Body.bold, paddingVertical: 6, lineHeight: 18, textAlignVertical: 'center' }} />
+          <TextInput value={f.name} onChangeText={(name) => onChange({ ...f, name })} placeholder="Feature name" placeholderTextColor={DmRune.muted} maxLength={50} style={{ color: DmRune.ivory, fontSize: DmType.body, fontFamily: Body.bold, paddingVertical: 6, lineHeight: 18, textAlignVertical: 'center' }} />
         </ChamferBox>
         <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove feature">
           <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
@@ -72,7 +72,7 @@ function FeatureEditor({ f, onChange, onRemove }: { f: AdversaryFeature; onChang
         {KINDS.map((k) => <Chip key={k} label={k} on={f.kind === k} onPress={() => onChange({ ...f, kind: k })} />)}
       </View>
       <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ minHeight: 52, paddingHorizontal: 9, paddingVertical: 7 }}>
-        <TextInput value={f.text} onChangeText={(text) => onChange({ ...f, text })} placeholder="What it does…" placeholderTextColor={DmRune.muted} multiline maxLength={600} style={{ color: DmRune.text, fontSize: 13, fontFamily: Body.regular, textAlignVertical: 'top', minHeight: 38 }} />
+        <TextInput value={f.text} onChangeText={(text) => onChange({ ...f, text })} placeholder="What it does…" placeholderTextColor={DmRune.muted} multiline maxLength={600} style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.regular, textAlignVertical: 'top', minHeight: 38 }} />
       </ChamferBox>
     </ChamferBox>
   );
@@ -96,7 +96,7 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
   return (
     <DmModal onClose={onCancel}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 340, maxHeight: 660, padding: 18 }}>
-        <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Configure</Text>
+        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Configure</Text>
         <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 13, paddingBottom: 4 }}>
           {/* portrait + name */}
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
@@ -110,9 +110,9 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={FIELD_LABEL}>Name</Text>
               <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ height: 42, justifyContent: 'center', paddingHorizontal: 11 }}>
-                <TextInput value={c.name} onChangeText={(name) => set({ name })} maxLength={40} style={{ color: DmRune.text, fontSize: 16, fontFamily: Body.semibold }} />
+                <TextInput value={c.name} onChangeText={(name) => set({ name })} maxLength={40} style={{ color: DmRune.text, fontSize: DmType.title, fontFamily: Body.semibold }} />
               </ChamferBox>
-              {c.portraitUri ? <Pressable onPress={() => set({ portraitUri: undefined })} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Remove image</Text></Pressable> : null}
+              {c.portraitUri ? <Pressable onPress={() => set({ portraitUri: undefined })} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Remove image</Text></Pressable> : null}
             </View>
           </View>
 
@@ -189,7 +189,7 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
           <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={FIELD_LABEL}>Features</Text>
-              <Pressable onPress={addFeature} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add feature"><Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>+ Add</Text></Pressable>
+              <Pressable onPress={addFeature} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add feature"><Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>+ Add</Text></Pressable>
             </View>
             {features.map((f, i) => <FeatureEditor key={i} f={f} onChange={(nf) => setFeature(i, nf)} onRemove={() => removeFeature(i)} />)}
           </View>

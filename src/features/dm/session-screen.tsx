@@ -15,13 +15,13 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type Party } from '@/lib/party';
 import { getParty } from '@/lib/party-store';
 import { duplicateEncounter, type Encounter, moveEncounterToSession, newEncounter, newSession, nextIndex, type Session, sortedEncounters } from '@/lib/session';
 import { deleteEncounter, getSession, listEncounters, listSessions, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
-import { DmModal, NameDialog } from './dm-ui';
+import { DmEmpty, DmModal, NameDialog } from './dm-ui';
 import { useSelection } from './use-selection';
 
 const STATUS_COLOR = (s: Encounter['status']) => (s === 'active' ? DmRune.accent : s === 'completed' ? DmRune.muted : DmRune.accentDim);
@@ -31,10 +31,10 @@ function MoveTargetPicker({ sessions, onPick, onNew, onCancel }: { sessions: Ses
   return (
     <DmModal onClose={onCancel}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 312, padding: 20, gap: 6 }}>
-        <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to session</Text>
+        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to session</Text>
         {sessions.map((s) => (
           <Pressable key={s.id} onPress={() => onPick(s.id)} accessibilityRole="button" accessibilityLabel={s.name} style={({ pressed }) => ({ paddingVertical: 12, paddingHorizontal: 8, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent', borderRadius: 6 })}>
-            <Text style={{ color: DmRune.text, fontSize: 14, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{s.name}</Text>
+            <Text style={{ color: DmRune.text, fontSize: DmType.title, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{s.name}</Text>
           </Pressable>
         ))}
         <View style={{ marginTop: 8, gap: 8 }}>
@@ -123,16 +123,19 @@ export function SessionScreen() {
     setRenaming(null); sel.clear(); reload();
   }, [renaming, sel, reload]);
 
-  if (!session) return <LoadingScreen label="Opening the session" />;
+  if (!session) return <LoadingScreen dm label="Opening the session" />;
   const ordered = sortedEncounters(encounters, session.activeEncounterId);
 
   return (
     <AppScreen title={session.name} dm onBack={() => router.back()}>
       <View style={{ flex: 1 }}>
         {ordered.length === 0 ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40 }}>
-            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>No encounters yet.{'\n'}Prepare the first one.</Text>
-          </View>
+          <DmEmpty
+            title="No encounters yet"
+            body="An encounter holds the adversaries, the allies and the log for one fight. Prepare the first one."
+            actionLabel="New encounter"
+            onAction={create}
+          />
         ) : (
           <FlatList
             data={ordered}
@@ -159,8 +162,8 @@ export function SessionScreen() {
                         <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: STATUS_COLOR(item.status) }} />
                       )}
                       <View style={{ flex: 1 }}>
-                        <FitLine style={{ color: DmRune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{item.name}</FitLine>
-                        <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginTop: 3 }}>
+                        <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{item.name}</FitLine>
+                        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginTop: 3 }}>
                           {pinned ? 'Active · ' : ''}{item.adversaries.length} {item.adversaries.length === 1 ? 'Adversary' : 'Adversaries'}
                         </Text>
                       </View>
@@ -182,7 +185,7 @@ export function SessionScreen() {
       {sel.selecting ? (
         <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>
           <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
-            <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{sel.ids.size} selected</Text>
+            <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{sel.ids.size} selected</Text>
             {sel.ids.size === 1 ? <RuneButton label="Rename" kind="ghost" height={30} dense dm onPress={() => { const e = ordered.find((x) => x.id === [...sel.ids][0]); if (e) setRenaming(e); }} /> : null}
             {sel.ids.size === 1 ? <RuneButton label="Duplicate" kind="ghost" height={30} dense dm onPress={duplicate} /> : null}
             <RuneButton label="Move" kind="ghost" height={30} dense dm onPress={openMove} />
@@ -192,7 +195,7 @@ export function SessionScreen() {
         </View>
       ) : null}
 
-      {confirmDelete ? <PopupDialog title="Delete encounters?" body={`${confirmDelete.size} encounter(s) will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
+      {confirmDelete ? <PopupDialog dm title="Delete encounters?" body={`${confirmDelete.size} encounter(s) will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
       {moving ? <MoveTargetPicker sessions={moving} onPick={(sid) => void moveTo(sid)} onNew={() => void moveToNew()} onCancel={() => setMoving(null)} /> : null}
       {renaming ? <NameDialog title="Rename Encounter" initial={renaming.name} confirmLabel="Rename" onConfirm={(name) => void renameEncounter(name)} onCancel={() => setRenaming(null)} /> : null}
     </AppScreen>

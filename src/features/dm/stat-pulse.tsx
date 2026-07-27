@@ -9,7 +9,7 @@ import { Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { StatGlyph, STAT_COLOR, type StatGlyphKind } from './stat-glyphs';
 import { pickWedge, useStatRadial } from './stat-radial';
 
@@ -62,9 +62,13 @@ export function StatPulse({
         <View ref={iconRef} collapsable={false} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
           <StatGlyph kind={kind} color={disabled ? DmRune.muted : color} size={24} filled={!disabled} />
         </View>
-        <Text style={{ color: DmRune.ivory, fontSize: 20, fontFamily: Display.black, letterSpacing: 0.2, includeFontPadding: false }}>
+        {/* `title`, not `hero`: four of these sit in a row inside a panel whose NAME should dominate.
+            The audit's finding was that stat numbers read as loud as the adversary's name; promoting
+            them to the hero step would invert the hierarchy rather than fix it. The filled glyph
+            beside each one carries the visual weight instead. */}
+        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.2, includeFontPadding: false }}>
           {value}
-          <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.bold }}> /{max}</Text>
+          <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold }}> /{max}</Text>
         </Text>
       </View>
     </GestureDetector>

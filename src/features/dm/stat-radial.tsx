@@ -11,7 +11,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
-import { Display, DmRune } from '@/constants/theme';
+import { DmType, Display, DmRune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 
 // Six wedges. Top three read +1 +2 +3 left→right; bottom three read −1 −2 −3 left→right. The left and
@@ -183,7 +183,7 @@ function StatRadialHost({ color }: { color: string }) {
           const sel = hl === i;
           return (
             <View key={i} style={{ position: 'absolute', left: x - 18, top: y - 12, width: 36, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: sel ? DmRune.ink : DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.3 }}>{w.delta > 0 ? `+${w.delta}` : w.delta}</Text>
+              <Text style={{ color: sel ? DmRune.ink : DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.3 }}>{w.delta > 0 ? `+${w.delta}` : w.delta}</Text>
             </View>
           );
         })}

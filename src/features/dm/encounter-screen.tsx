@@ -16,7 +16,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmGap, DmType, Body, Display, DmRune } from '@/constants/theme';
 import { NumberKeypad } from '@/features/character-sheet/sheet/number-keypad';
 import { addTemplate, loadAdversaries, removeTemplates, saveAdversaries, type SavedAdversary } from '@/lib/adversary-library';
 import { type CharacterFile } from '@/lib/character-file';
@@ -75,8 +75,8 @@ function OptionRow({ label, hint, on, onToggle }: { label: string; hint: string;
         <View style={{ width: 18, height: 18, backgroundColor: on ? DmRune.ink : DmRune.accentDim, alignSelf: on ? 'flex-end' : 'flex-start', transform: [{ rotate: '45deg' }] }} />
       </ChamferBox>
       <View style={{ flex: 1 }}>
-        <Text style={{ color: DmRune.ivory, fontSize: 14, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
-        <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15, marginTop: 2 }}>{hint}</Text>
+        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
+        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, marginTop: 2 }}>{hint}</Text>
       </View>
     </Pressable>
   );
@@ -87,7 +87,7 @@ function BottomBar({ label, children }: { label: string; children: React.ReactNo
   return (
     <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>
       <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
-        <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{label}</Text>
+        <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{label}</Text>
         {children}
       </ChamferBox>
     </View>
@@ -312,7 +312,7 @@ export function EncounterScreen() {
     commitParty(r.party); commitEncounter(r.encounter);
   }, [session, commitParty, commitEncounter]);
 
-  if (!encounter) return <LoadingScreen label="Setting the scene" />;
+  if (!encounter) return <LoadingScreen dm label="Setting the scene" />;
   const enc = encounter;
   const editableMembers = canEditMembers(enc);
   const memberAllies = enc.allies.filter((a): a is { kind: 'member'; charId: string } => a.kind === 'member' && !!files[a.charId]);
@@ -342,24 +342,26 @@ export function EncounterScreen() {
           <View style={{ flex: 1, gap: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusColor }} />
-              <Text style={{ color: statusColor, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status}</Text>
-              {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Local</Text> : null}
+              <Text style={{ color: statusColor, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status}</Text>
+              {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Local</Text> : null}
             </View>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Pressable onPress={() => setShowLog(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
                 <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 11, height: 28, justifyContent: 'center' }}>
-                  <Text style={{ color: DmRune.accent, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Log · {enc.log.length}</Text>
+                  <Text style={{ color: DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Log · {enc.log.length}</Text>
                 </ChamferBox>
               </Pressable>
-              {enc.status === 'prepared' ? <RuneButton label="Start" kind="primary" height={28} dense dm onPress={onStart} /> : null}
-              {enc.status === 'active' ? <RuneButton label="Complete" kind="secondary" height={28} dense dm onPress={() => setConfirmComplete(true)} /> : null}
-              {enc.status === 'completed' ? <RuneButton label="Restart" kind="secondary" height={28} dense dm onPress={() => setRestartPrompt(true)} /> : null}
+              {enc.status === 'prepared' ? <View style={{ flex: 1 }}><RuneButton label="Start encounter" kind="primary" height={40} dm onPress={onStart} /></View> : null}
+              {enc.status === 'active' ? <View style={{ flex: 1 }}><RuneButton label="Complete" kind="secondary" height={40} dm onPress={() => setConfirmComplete(true)} /></View> : null}
+              {enc.status === 'completed' ? <View style={{ flex: 1 }}><RuneButton label="Restart" kind="secondary" height={40} dm onPress={() => setRestartPrompt(true)} /></View> : null}
             </View>
           </View>
           {/* card archive (item 9: replaces the old +/− direction toggle; moved out of options) */}
           <Pressable onPress={() => { playSfx('buttonTap'); router.push('/gallery' as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open card archive">
-            <ChamferBox chamfer={7} fill="rgba(14,17,22,0.9)" stroke={DmRune.line} strokeWidth={1.3} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-              <Svg width={22} height={22} viewBox="0 0 24 24"><Path d="M7 5 H16 A2 2 0 0 1 18 7 V19 L13 16 L8 19 Z" fill="none" stroke={DmRune.accent} strokeWidth={1.7} strokeLinejoin="round" /><Path d="M6 8 V21 L11 18" fill="none" stroke={DmRune.accentDim} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /></Svg>
+            {/* v0.22.0: was 44x44 — the largest control on the screen, for a jump to the card
+                gallery. Now a 30dp glyph so it stops out-shouting Start. */}
+            <ChamferBox chamfer={6} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+              <Svg width={17} height={17} viewBox="0 0 24 24"><Path d="M7 5 H16 A2 2 0 0 1 18 7 V19 L13 16 L8 19 Z" fill="none" stroke={DmRune.accent} strokeWidth={1.7} strokeLinejoin="round" /><Path d="M6 8 V21 L11 18" fill="none" stroke={DmRune.accentDim} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /></Svg>
             </ChamferBox>
           </Pressable>
         </View>
@@ -368,10 +370,15 @@ export function EncounterScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionLabel dm>Allies</SectionLabel>
             <View style={{ flexDirection: 'row', gap: 14 }}>
-              <Pressable onPress={() => setLibraryMode('ally')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Ally library"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Library</Text></Pressable>
-              <Pressable onPress={() => setAddingNpc(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add NPC ally"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>+ NPC</Text></Pressable>
+              <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} />
+              <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} />
             </View>
           </View>
+          {memberAllies.length === 0 && npcAllies.length === 0 ? (
+            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>
+              No allies yet. Present party members appear here automatically; add an NPC to fight alongside them.
+            </Text>
+          ) : null}
           {memberAllies.map((a) => (
             <MemberPanel
               key={a.charId}
@@ -393,14 +400,14 @@ export function EncounterScreen() {
               onLongPress={() => startAlly(a.combatant.id)} onToggleSelect={() => allySel.toggle(a.combatant.id)} onOpenImage={() => setViewImage(a.combatant)} />
           ))}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
             <SectionLabel dm>Adversaries</SectionLabel>
             <View style={{ flexDirection: 'row', gap: 14 }}>
-              <Pressable onPress={() => setLibraryMode('adversary')} hitSlop={8} accessibilityRole="button" accessibilityLabel="Adversary library"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Library</Text></Pressable>
-              <Pressable onPress={addAdversary} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add adversary"><Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>+ Adversary</Text></Pressable>
+              <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} />
+              <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} />
             </View>
           </View>
-          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet — add one or spawn from the library.</Text> : null}
+          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet — add one, or spawn a whole group from the library.</Text> : null}
           {enc.adversaries.map((c) => (
             <CombatantPanel key={c.id} combatant={c} selecting={advSel.selecting} selected={advSel.ids.has(c.id)}
               onApply={(s, delta) => onCombatantApply(c.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: c.id, stat: s })}
@@ -428,7 +435,7 @@ export function EncounterScreen() {
       ) : null}
 
       {keypad ? (
-        <NumberKeypad title={`Set ${keypad.kind === 'member' ? KEY_LABEL[keypad.key] : keypad.stat.toUpperCase()}`} subtitle={`0–${Math.max(0, keypadMax)}`} min={0} max={Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
+        <NumberKeypad dm title={`Set ${keypad.kind === 'member' ? KEY_LABEL[keypad.key] : keypad.stat.toUpperCase()}`} subtitle={`0–${Math.max(0, keypadMax)}`} min={0} max={Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
       ) : null}
       {editing ? <AdversaryEditor initial={editing} onSave={saveConfig} onCancel={() => setEditing(null)} /> : null}
       {viewImage ? <AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}
@@ -458,25 +465,42 @@ export function EncounterScreen() {
       {showOptions ? (
         <DmModal onClose={() => setShowOptions(false)} contentStyle={{ width: 330 }}>
           <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ padding: 20 }}>
-            <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Options</Text>
+            <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>Options</Text>
             <OptionRow label="Auto-log stat changes" hint="Record each stat-change hold as one log entry." on={enc.options.autoLog} onToggle={toggleAutoLog} />
             <OptionRow label="Sync party globally" hint="Off = a fully local encounter that never changes the party across other sessions." on={enc.options.globalSync} onToggle={toggleSync} />
             <OptionRow label="Mute UI sounds" hint="Silences every DM interface sound until turned back on (also toggleable from the main menu)." on={muted} onToggle={() => { setMuted((m) => { const n = !m; setUiMuted(n); if (!n) playSfx('buttonTap'); return n; }); }} />
             <View style={{ gap: 10, marginTop: 12 }}>
-              <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.</Text>
+              <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.</Text>
               <RuneButton label="Done" kind="ghost" height={44} dm onPress={() => setShowOptions(false)} />
             </View>
           </ChamferBox>
         </DmModal>
       ) : null}
 
-      {confirmComplete ? <PopupDialog title="Complete encounter?" body="This freezes the party's current state onto the encounter as a record. The party keeps its live state for the next encounter." confirmLabel="Complete" onConfirm={complete} onCancel={() => setConfirmComplete(false)} /> : null}
-      {confirmDeleteAlly ? <PopupDialog title="Remove these allies?" body={`${confirmDeleteAlly.size === 1 ? 'This ally' : `These ${confirmDeleteAlly.size} allies`} will be removed from this encounter. Player characters are never removed this way.`} confirmLabel="Remove" destructive onConfirm={() => { deleteNpcAllies(confirmDeleteAlly); setConfirmDeleteAlly(null); allySel.clear(); }} onCancel={() => setConfirmDeleteAlly(null)} /> : null}
-      {confirmDeleteAdv ? <PopupDialog title="Delete selected?" body={`${confirmDeleteAdv.size} unit(s) will be removed from this encounter.`} confirmLabel="Delete" destructive onConfirm={() => { deleteCombatants(confirmDeleteAdv); setConfirmDeleteAdv(null); advSel.clear(); }} onCancel={() => setConfirmDeleteAdv(null)} /> : null}
-      {startConflict ? <PopupDialog title="Another encounter is active" body="Starting this one will complete the currently active encounter (noted in its log). Continue?" confirmLabel="Start" onConfirm={() => { setStartConflict(false); void doStart(); }} onCancel={() => setStartConflict(false)} /> : null}
+      {confirmComplete ? <PopupDialog dm title="Complete encounter?" body="This freezes the party's current state onto the encounter as a record. The party keeps its live state for the next encounter." confirmLabel="Complete" onConfirm={complete} onCancel={() => setConfirmComplete(false)} /> : null}
+      {confirmDeleteAlly ? <PopupDialog dm title="Remove these allies?" body={`${confirmDeleteAlly.size === 1 ? 'This ally' : `These ${confirmDeleteAlly.size} allies`} will be removed from this encounter. Player characters are never removed this way.`} confirmLabel="Remove" destructive onConfirm={() => { deleteNpcAllies(confirmDeleteAlly); setConfirmDeleteAlly(null); allySel.clear(); }} onCancel={() => setConfirmDeleteAlly(null)} /> : null}
+      {confirmDeleteAdv ? <PopupDialog dm title="Delete selected?" body={`${confirmDeleteAdv.size} unit(s) will be removed from this encounter.`} confirmLabel="Delete" destructive onConfirm={() => { deleteCombatants(confirmDeleteAdv); setConfirmDeleteAdv(null); advSel.clear(); }} onCancel={() => setConfirmDeleteAdv(null)} /> : null}
+      {startConflict ? <PopupDialog dm title="Another encounter is active" body="Starting this one will complete the currently active encounter (noted in its log). Continue?" confirmLabel="Start" onConfirm={() => { setStartConflict(false); void doStart(); }} onCancel={() => setStartConflict(false)} /> : null}
       {restartPrompt ? (
-        <PopupDialog title="Restart encounter" body="Continue from which state? Downed adversaries revive to half HP." confirmLabel="Party state" onConfirm={() => doRestart('party')} onCancel={() => setRestartPrompt(false)}>
-          <View style={{ marginTop: 14 }}><RuneButton label="This encounter's state" kind="secondary" height={42} onPress={() => doRestart('encounter')} /></View>
+        <PopupDialog
+          dm
+          title="Restart encounter"
+          body="Downed adversaries revive at half HP either way. Choose which version of the party fights it."
+          confirmLabel="Cancel"
+          cancelLabel="Cancel"
+          onConfirm={() => setRestartPrompt(false)}
+          onCancel={() => setRestartPrompt(false)}>
+          <View style={{ marginTop: 14, gap: 10 }}>
+            <RuneButton label="Keep the party as it is now" kind="primary" height={44} dm onPress={() => doRestart('party')} />
+            <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.medium, lineHeight: 15, marginTop: -4 }}>
+              Their current HP, Stress, Hope and Armor carry into the restart.
+            </Text>
+            <RuneButton label="Roll back to the saved snapshot" kind="secondary" height={44} dm onPress={() => doRestart('encounter')} />
+            <Text style={{ color: DmRune.red, fontSize: DmType.micro, fontFamily: Body.medium, lineHeight: 15, marginTop: -4 }}>
+              Overwrites the party&apos;s live vitals with the state frozen when this encounter completed. Anything
+              that has happened to them since is lost.
+            </Text>
+          </View>
         </PopupDialog>
       ) : null}
     </AppScreen>

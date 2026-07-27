@@ -16,13 +16,13 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type Party } from '@/lib/party';
 import { listParties, setActiveParty } from '@/lib/party-store';
 import { newSession, type Session } from '@/lib/session';
 import { deleteEncounter, deleteSession, listEncounters, listSessions, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
-import { ColorDiamond, NameDialog } from './dm-ui';
+import { DmEmpty, ColorDiamond, NameDialog } from './dm-ui';
 import { useSelection } from './use-selection';
 
 function PartyDropdown({ parties, selected, onSelect }: { parties: Party[]; selected: Party; onSelect: (p: Party) => void }) {
@@ -32,8 +32,8 @@ function PartyDropdown({ parties, selected, onSelect }: { parties: Party[]; sele
       <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" accessibilityLabel={`Party: ${selected.name}. Change`}>
         <ChamferBox chamfer={10} fill="rgba(14,17,22,0.94)" stroke={DmRune.lineStrong} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, height: 52 }}>
           <ColorDiamond color={selected.color} size={14} />
-          <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{selected.name}</FitLine>
-          {!selected.enabled ? <Text style={{ color: DmRune.muted, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Disabled</Text> : null}
+          <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{selected.name}</FitLine>
+          {!selected.enabled ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Disabled</Text> : null}
           <Svg width={16} height={16} viewBox="0 0 16 16"><Polyline points="3,6 8,11 13,6" fill="none" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
         </ChamferBox>
       </Pressable>
@@ -42,8 +42,8 @@ function PartyDropdown({ parties, selected, onSelect }: { parties: Party[]; sele
           {parties.map((p) => (
             <Pressable key={p.id} onPress={() => { setOpen(false); onSelect(p); }} accessibilityRole="button" accessibilityLabel={p.name} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent' })}>
               <ColorDiamond color={p.color} size={12} />
-              <Text style={{ flex: 1, color: p.id === selected.id ? DmRune.accent : DmRune.text, fontSize: 14, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{p.name}</Text>
-              {p.enabled ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} /> : <Text style={{ color: DmRune.muted, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Off</Text>}
+              <Text style={{ flex: 1, color: p.id === selected.id ? DmRune.accent : DmRune.text, fontSize: DmType.title, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{p.name}</Text>
+              {p.enabled ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} /> : <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Off</Text>}
             </Pressable>
           ))}
         </ChamferBox>
@@ -117,12 +117,12 @@ export function SessionsScreen() {
     if (selected) loadSessions(selected.id);
   }, [sel, selected, loadSessions]);
 
-  if (!parties) return <LoadingScreen label="Opening the ledger" />;
+  if (!parties) return <LoadingScreen dm label="Opening the ledger" />;
   if (!selected) {
     return (
       <AppScreen title="Sessions" dm onBack={() => router.back()}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40 }}>
-          <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>No parties yet.{'\n'}Create a party to run sessions.</Text>
+          <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>No parties yet.{'\n'}Create a party to run sessions.</Text>
         </View>
       </AppScreen>
     );
@@ -135,13 +135,16 @@ export function SessionsScreen() {
 
         {!selected.enabled ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingBottom: 40 }}>
-            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>{selected.name} isn’t the active party.{'\n'}Make it active to run its sessions.</Text>
+            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>{selected.name} isn’t the active party.{'\n'}Make it active to run its sessions.</Text>
             <RuneButton label="Set active" kind="primary" height={46} dm style={{ minWidth: 200 }} onPress={() => void activate(selected)} />
           </View>
         ) : sessions.length === 0 ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 40 }}>
-            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>No sessions for {selected.name} yet.{'\n'}Start the first one.</Text>
-          </View>
+          <DmEmpty
+            title="No sessions yet"
+            body={`A session is one night at the table for ${selected.name}, holding its encounters. Start the first one.`}
+            actionLabel="New session"
+            onAction={() => setNaming(true)}
+          />
         ) : (
           <FlatList
             data={sessions}
@@ -165,8 +168,8 @@ export function SessionsScreen() {
                         </ChamferBox>
                       ) : null}
                       <View style={{ flex: 1 }}>
-                        <FitLine style={{ color: DmRune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{item.name}</FitLine>
-                        <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.medium, marginTop: 3 }}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                        <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{item.name}</FitLine>
+                        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, marginTop: 3 }}>{new Date(item.createdAt).toLocaleDateString()}</Text>
                       </View>
                       {!sel.selecting ? <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={4} y1={2} x2={12} y2={8} stroke={DmRune.accentDim} strokeWidth={2} /><Line x1={12} y1={8} x2={4} y2={14} stroke={DmRune.accentDim} strokeWidth={2} /></Svg> : null}
                     </ChamferBox>
@@ -187,7 +190,7 @@ export function SessionsScreen() {
       {sel.selecting ? (
         <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>
           <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
-            <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{sel.ids.size} selected</Text>
+            <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{sel.ids.size} selected</Text>
             {sel.ids.size === 1 ? <RuneButton label="Rename" kind="ghost" height={30} dense dm onPress={() => { const s = sessions.find((x) => x.id === [...sel.ids][0]); if (s) setRenaming(s); }} /> : null}
             <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDelete(new Set(sel.ids))} />
             <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={sel.clear} />
@@ -197,7 +200,7 @@ export function SessionsScreen() {
 
       {naming ? <NameDialog title="New Session" placeholder="Session name" confirmLabel="Create" onConfirm={create} onCancel={() => setNaming(false)} /> : null}
       {renaming ? <NameDialog title="Rename Session" initial={renaming.name} confirmLabel="Rename" onConfirm={(name) => void renameSession(name)} onCancel={() => setRenaming(null)} /> : null}
-      {confirmDelete ? <PopupDialog title="Delete sessions?" body={`${confirmDelete.size} session(s) and their encounters will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
+      {confirmDelete ? <PopupDialog dm title="Delete sessions?" body={`${confirmDelete.size} session(s) and their encounters will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
     </AppScreen>
   );
 }

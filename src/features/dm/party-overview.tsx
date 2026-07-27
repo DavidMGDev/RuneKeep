@@ -67,7 +67,7 @@ export function PartyOverviewScreen() {
     setKeypad(null);
   }, [keypad, party, files, commit]);
 
-  if (!party) return <LoadingScreen label="Reading the party" />;
+  if (!party) return <LoadingScreen dm label="Reading the party" />;
 
   const kpFile = keypad ? files[keypad.charId] : undefined;
   const kpMax = kpFile && keypad ? memberMaxes(kpFile)[keypad.key === 'hp' ? 'maxHp' : keypad.key === 'stress' ? 'stressMax' : keypad.key === 'hope' ? 'hopeMax' : 'armorMax'] : 0;
@@ -92,7 +92,7 @@ export function PartyOverviewScreen() {
         )}
       />
       {keypad ? (
-        <NumberKeypad
+        <NumberKeypad dm
           title={`Set ${KEY_LABEL[keypad.key]}`}
           subtitle={`0–${Math.max(0, kpMax)}`}
           min={0}

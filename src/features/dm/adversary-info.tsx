@@ -10,11 +10,11 @@ import { ScrollView } from 'react-native-gesture-handler';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { DmModal } from './dm-ui';
 
-const H = { color: DmRune.accent, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginTop: 4 };
-const P = { color: DmRune.text, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 17.5 };
+const H = { color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' as const, marginTop: 4 };
+const P = { color: DmRune.text, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 17.5 };
 const B = { fontFamily: Body.bold, color: DmRune.ivory };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -30,7 +30,7 @@ export function AdversaryInfoPanel({ onClose }: { onClose: () => void }) {
   return (
     <DmModal onClose={onClose}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 344, maxHeight: 640, padding: 18 }}>
-        <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Using Adversaries</Text>
+        <Text style={{ color: DmRune.ivory, fontSize: DmType.panel, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Using Adversaries</Text>
         {/* v0.19.2 item 6: the ScrollView had NO height bound, so it clipped instead of scrolling. Bound it
             + nestedScrollEnabled (the proven AdversaryEditor pattern) so it scrolls inside the modal. */}
         <ScrollView style={{ maxHeight: 520 }} nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingBottom: 4 }}>
