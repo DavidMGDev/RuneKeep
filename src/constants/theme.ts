@@ -51,6 +51,44 @@ export const DmRune = {
   ally: '#5FA69C', // friendly teal for ally NPC outlines (v0.17.0 item 5)
 } as const;
 
+/**
+ * DM Mode type scale (v0.22.0). DM screens had **21 distinct font sizes** across 105 declarations,
+ * with no adjacent step reaching 1.07x — five of them (14.5/15/16/17/18) doing the single job
+ * "list-row title", two of which rendered 1dp apart in the same ScrollView. That is not hierarchy,
+ * it is noise the eye reads as misalignment.
+ *
+ * Five steps at ~1.25x, assigned by ROLE. For comparison, the menu screen the owner likes uses three
+ * sizes at 2.00x and 1.67x.
+ */
+export const DmType = {
+  /** Tags, timestamps, chip text, stat captions. */
+  micro: 11,
+  /** Sublines, body copy, empty-state prose. */
+  body: 13,
+  /** List-row and panel titles — the single most over-forked role. */
+  title: 16,
+  /** Modal and section headings. */
+  panel: 20,
+  /** The one big numeral a screen is allowed. */
+  hero: 26,
+} as const;
+
+/**
+ * DM Mode spacing (v0.22.0). `Spacing` above has existed since v0.1 and is imported ZERO times; DM
+ * screens instead used 25 distinct values across 253 uses, peaking at 10 and 12 — a 2dp difference
+ * nobody can perceive. Worse, seven of nine screens had a SECTION gap smaller than or equal to their
+ * intra-block gap, against the design law of >= 2x, so nothing grouped and every screen read as one
+ * undifferentiated column.
+ */
+export const DmGap = {
+  /** Between elements inside one block. */
+  intra: 10,
+  /** Between sibling rows in a list. */
+  row: 12,
+  /** Between sections — deliberately 2x the intra gap, which is the whole point. */
+  section: 24,
+} as const;
+
 export const Display = {
   regular: 'Archivo_700Bold',
   semibold: 'Archivo_800ExtraBold',

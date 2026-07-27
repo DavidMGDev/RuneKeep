@@ -13,7 +13,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { FitLine } from '@/components/fit-line';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { newParty, type Party } from '@/lib/party';
 import { listParties, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
@@ -26,15 +26,15 @@ function PartyRow({ party, onOpen }: { party: Party; onOpen: () => void }) {
         <ChamferBox chamfer={12} fill={pressed ? 'rgba(24,28,35,0.95)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.line} strokeWidth={1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14 }}>
           <ColorDiamond color={party.color} size={16} />
           <View style={{ flex: 1 }}>
-            <FitLine style={{ color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{party.name}</FitLine>
-            <Text style={{ color: DmRune.muted, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginTop: 4 }}>
+            <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{party.name}</FitLine>
+            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginTop: 4 }}>
               {party.memberIds.length} {party.memberIds.length === 1 ? 'Member' : 'Members'}{party.enabled ? ' · Active' : ''}
             </Text>
           </View>
           {party.enabled ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(196,200,208,0.16)', borderWidth: 1, borderColor: DmRune.accent, paddingHorizontal: 8, paddingVertical: 4 }}>
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} />
-              <Text style={{ color: DmRune.accent, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Active</Text>
+              <Text style={{ color: DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Active</Text>
             </View>
           ) : null}
           <Svg width={14} height={14} viewBox="0 0 16 16">
@@ -66,7 +66,7 @@ export function PartiesScreen() {
     void saveParty(party).then(() => router.push(`/party?id=${party.id}` as Href));
   }, [router]);
 
-  if (!parties) return <LoadingScreen label="Gathering the parties" />;
+  if (!parties) return <LoadingScreen dm label="Gathering the parties" />;
 
   return (
     <AppScreen title="Parties" dm onBack={() => router.back()}>
@@ -83,8 +83,8 @@ export function PartiesScreen() {
             )}
           </Pressable>
           <View style={{ alignItems: 'center', gap: 6 }}>
-            <Text style={{ color: DmRune.ivory, fontSize: 18, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase' }}>No parties yet</Text>
-            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 19 }}>
+            <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase' }}>No parties yet</Text>
+            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', lineHeight: 19 }}>
               A party is a collection of your{'\n'}characters. Make your first one.
             </Text>
           </View>

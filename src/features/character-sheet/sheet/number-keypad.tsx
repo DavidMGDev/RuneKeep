@@ -3,21 +3,21 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
-import { Body, Display, Rune } from '@/constants/theme';
+import { DmRune, Body, Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 
 /** A flat chamfered keypad key (shared shape with the damage panel). */
-function Key({ label, onPress, accent, disabled }: { label: string; onPress: () => void; accent?: boolean; disabled?: boolean }) {
+function Key({ label, onPress, accent, disabled, dm }: { label: string; onPress: () => void; accent?: boolean; disabled?: boolean; dm?: boolean }) {
   return (
     <Pressable onPress={disabled ? undefined : onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={label} style={{ flex: 1 }}>
       {({ pressed }) => (
         <ChamferBox
           chamfer={8}
-          fill={pressed ? 'rgba(224,181,99,0.18)' : 'rgba(14,17,22,0.96)'}
-          stroke={accent ? 'rgba(200,27,24,0.7)' : 'rgba(218,162,73,0.5)'}
+          fill={pressed ? (dm ? 'rgba(196,200,208,0.16)' : 'rgba(224,181,99,0.18)') : 'rgba(14,17,22,0.96)'}
+          stroke={accent ? (dm ? 'rgba(178,86,78,0.75)' : 'rgba(200,27,24,0.7)') : dm ? DmRune.line : 'rgba(218,162,73,0.5)'}
           strokeWidth={1.2}
           style={{ height: 46, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1 }}>
-          <Text style={{ color: accent ? '#E2705A' : Rune.sheet, fontSize: 18, fontFamily: Display.bold }}>{label}</Text>
+          <Text style={{ color: accent ? (dm ? DmRune.red : '#E2705A') : dm ? DmRune.ivory : Rune.sheet, fontSize: 18, fontFamily: Display.bold }}>{label}</Text>
         </ChamferBox>
       )}
     </Pressable>
@@ -29,7 +29,7 @@ function Key({ label, onPress, accent, disabled }: { label: string; onPress: () 
  * and WITHOUT the damage thresholds. Used to ask the player for a dice result during a rest. OK is a
  * normal tap, enabled only when the typed value is within [min, max]. Tap the dim outside to cancel.
  */
-export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onClose }: { title: string; subtitle?: string; min?: number; max?: number; onSubmit: (n: number) => void; onClose: () => void }) {
+export function NumberKeypad({ title, subtitle, min = 1, max = 9, dm, onSubmit, onClose }: { title: string; subtitle?: string; min?: number; max?: number; /** v0.22.0: this is the PRIMARY stat-editing surface of DM mode, and it was gold-and-red. */ dm?: boolean; onSubmit: (n: number) => void; onClose: () => void }) {
   const vis = useSharedValue(0);
   const [typed, setTyped] = useState('');
   useEffect(() => { vis.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) }); }, [vis]);
@@ -58,11 +58,11 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onCl
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.01)' }]} collapsable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
       <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View style={panelStyle}>
-        <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.4} style={{ width: 264, padding: 16, gap: 12 }}>
-          <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{title}</Text>
+        <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke={dm ? DmRune.line : 'rgba(218,162,73,0.6)'} strokeWidth={1.4} style={{ width: 264, maxWidth: '92%', padding: 16, gap: 12 }}>
+          <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{title}</Text>
           {subtitle ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, textAlign: 'center', marginTop: -6 }}>{subtitle}</Text> : null}
           <View style={{ alignItems: 'center', minHeight: 52, justifyContent: 'center' }}>
-            <Text style={{ color: typed ? Rune.sheet : Rune.muted, fontSize: 40, fontFamily: Display.black, lineHeight: 44 }}>{typed || '0'}</Text>
+            <Text style={{ color: typed ? (dm ? DmRune.ivory : Rune.sheet) : Rune.muted, fontSize: 40, fontFamily: Display.black, lineHeight: 44 }}>{typed || '0'}</Text>
           </View>
           {[
             ['1', '2', '3'],
@@ -71,14 +71,14 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, onSubmit, onCl
           ].map((row, r) => (
             <View key={r} style={{ flexDirection: 'row', gap: 8 }}>
               {row.map((d) => (
-                <Key key={d} label={d} onPress={() => press(d)} />
+                <Key key={d} label={d} onPress={() => press(d)} dm={dm} />
               ))}
             </View>
           ))}
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Key label="CLR" onPress={clear} accent />
-            <Key label="0" onPress={() => press('0')} />
-            <Key label="OK" onPress={submit} disabled={!ok} />
+            <Key label="CLR" onPress={clear} accent dm={dm} />
+            <Key label="0" onPress={() => press('0')} dm={dm} />
+            <Key label="OK" onPress={submit} disabled={!ok} dm={dm} />
           </View>
           <Text style={{ color: Rune.muted, fontSize: 8.5, fontFamily: Body.medium, textAlign: 'center', letterSpacing: 0.4 }}>{`Enter ${min}–${max} · tap outside to cancel`}</Text>
         </ChamferBox>

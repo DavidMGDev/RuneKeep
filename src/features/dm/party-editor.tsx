@@ -17,7 +17,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { classColor, classInfo } from '@/constants/identity';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
 import { importCharacter, listCharacters } from '@/lib/character-store';
 import { initialVitals } from '@/lib/dm-vitals';
@@ -25,7 +25,7 @@ import { addMembers, isPresent, type Party, randomColor, removeMember, togglePre
 import { deleteParty, getParty, saveParty, setActiveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
-import { ColorDiamond, NameDialog } from './dm-ui';
+import { DmEmpty, ColorDiamond, NameDialog } from './dm-ui';
 
 function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
   return (
@@ -43,12 +43,12 @@ function MemberRow({ file, present, onTogglePresent, onRemove }: { file: Charact
     <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke={DmRune.line} strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10, opacity: present ? 1 : 0.5 }}>
       <Portrait uri={file.portraitUri} tint={classColor(file.className).bright} />
       <View style={{ flex: 1 }}>
-        <FitLine style={{ color: DmRune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{file.name}</FitLine>
-        <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {file.level} {cls.label}</Text>
+        <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{file.name}</FitLine>
+        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {file.level} {cls.label}</Text>
       </View>
       <Pressable onPress={onTogglePresent} hitSlop={8} accessibilityRole="button" accessibilityLabel={present ? `${file.name} present` : `${file.name} absent`}>
         <ChamferBox chamfer={5} fill={present ? 'rgba(196,200,208,0.14)' : 'transparent'} stroke={present ? DmRune.accent : DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 9, height: 26, justifyContent: 'center' }}>
-          <Text style={{ color: present ? DmRune.accent : DmRune.muted, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{present ? 'Present' : 'Absent'}</Text>
+          <Text style={{ color: present ? DmRune.accent : DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{present ? 'Present' : 'Absent'}</Text>
         </ChamferBox>
       </Pressable>
       <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${file.name}`}>
@@ -66,7 +66,7 @@ function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candidates: C
     <View style={[StyleSheet.absoluteFill, { zIndex: 300, backgroundColor: 'rgba(6,8,13,0.92)', paddingHorizontal: 18, paddingTop: 60, paddingBottom: 20 }]}>
       <SectionLabel dm style={{ marginBottom: 10 }}>Add characters</SectionLabel>
       {candidates.length === 0 ? (
-        <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', marginTop: 30 }}>Every roster character is already in this party. Import one to add more.</Text>
+        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', marginTop: 30 }}>Every roster character is already in this party. Import one to add more.</Text>
       ) : (
         <FlatList
           data={candidates}
@@ -80,8 +80,8 @@ function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candidates: C
                 <ChamferBox chamfer={10} fill={on ? 'rgba(196,200,208,0.14)' : 'rgba(14,17,22,0.9)'} stroke={on ? DmRune.accent : DmRune.line} strokeWidth={on ? 1.5 : 1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
                   <Portrait uri={item.portraitUri} tint={classColor(item.className).bright} />
                   <View style={{ flex: 1 }}>
-                    <FitLine style={{ color: DmRune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{item.name}</FitLine>
-                    <Text style={{ color: DmRune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {item.level} {cls.label}</Text>
+                    <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{item.name}</FitLine>
+                    <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {item.level} {cls.label}</Text>
                   </View>
                   <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
                     {on ? <Svg width={12} height={12} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
@@ -150,7 +150,7 @@ export function PartyEditorScreen() {
     }
   }, [party, commit]);
 
-  if (!party) return <LoadingScreen label="Reading the party" />;
+  if (!party) return <LoadingScreen dm label="Reading the party" />;
 
   const candidates = roster.filter((f) => !party.memberIds.includes(f.id));
   const canEnable = party.memberIds.length > 0;
@@ -169,14 +169,17 @@ export function PartyEditorScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <SectionLabel dm>{party.memberIds.length} {party.memberIds.length === 1 ? 'Member' : 'Members'}</SectionLabel>
           <Pressable onPress={() => setRenaming(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Rename party">
-            <Text style={{ color: DmRune.accentDim, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Rename</Text>
+            <Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Rename</Text>
           </Pressable>
         </View>
 
         {party.memberIds.length === 0 ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 40 }}>
-            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 19 }}>No members yet.{'\n'}Add characters from your roster.</Text>
-          </View>
+          <DmEmpty
+            title="No members yet"
+            body="A party is the characters you run together. Pull them in from your roster."
+            actionLabel="Add characters"
+            onAction={() => setPicking(true)}
+          />
         ) : (
           <FlatList
             data={party.memberIds}
@@ -187,7 +190,7 @@ export function PartyEditorScreen() {
               const f = fileFor(cid);
               if (!f) return (
                 <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke={DmRune.line} strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 12 }}>
-                  <Text style={{ flex: 1, color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, fontStyle: 'italic' }}>Missing character (removed from roster)</Text>
+                  <Text style={{ flex: 1, color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, fontStyle: 'italic' }}>Missing character (removed from roster)</Text>
                   <Pressable onPress={() => commit(removeMember(party, cid))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove missing member">
                     <Svg width={16} height={16} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
                   </Pressable>
@@ -225,7 +228,7 @@ export function PartyEditorScreen() {
       {picking ? <MemberPicker candidates={candidates} onCancel={() => setPicking(false)} onAdd={addSelected} onImport={onImport} /> : null}
       {renaming ? <NameDialog title="Rename Party" initial={party.name} confirmLabel="Rename" onConfirm={(name) => { setRenaming(false); commit({ ...party, name }); }} onCancel={() => setRenaming(false)} /> : null}
       {confirmRemove ? (
-        <PopupDialog
+        <PopupDialog dm
           title="Remove from party?"
           body={`${confirmRemove.name} leaves ${party.name}, and the HP, Stress, Hope and Armor tracked for them here are cleared. Their character sheet is untouched.`}
           confirmLabel="Remove"
@@ -236,7 +239,7 @@ export function PartyEditorScreen() {
       ) : null}
 
       {confirmDelete ? (
-        <PopupDialog title="Delete party?" body={`${party.name} will be removed. The characters themselves are untouched.`} confirmLabel="Delete" destructive onConfirm={() => { setConfirmDelete(false); void deleteParty(party.id).then(() => router.back()); }} onCancel={() => setConfirmDelete(false)} />
+        <PopupDialog dm title="Delete party?" body={`${party.name} will be removed. The characters themselves are untouched.`} confirmLabel="Delete" destructive onConfirm={() => { setConfirmDelete(false); void deleteParty(party.id).then(() => router.back()); }} onCancel={() => setConfirmDelete(false)} />
       ) : null}
     </AppScreen>
   );

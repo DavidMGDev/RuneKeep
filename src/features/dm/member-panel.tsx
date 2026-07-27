@@ -12,7 +12,7 @@ import Svg, { Polygon, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { FitLine } from '@/components/fit-line';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { domainCardCount, memberSummary } from '@/lib/dm-vitals';
 import { type CharacterFile } from '@/lib/character-file';
 import { type MemberVitals, type VitalKey } from '@/lib/party';
@@ -25,8 +25,8 @@ const TRAIT_ORDER: [keyof ReturnType<typeof memberSummary>['traits'], string][] 
 function ReadStat({ label, value, color = DmRune.text }: { label: string; value: string; color?: string }) {
   return (
     <View style={{ alignItems: 'center', gap: 2 }}>
-      <Text style={{ color, fontSize: 15, fontFamily: Display.black }}>{value}</Text>
-      <Text style={{ color: DmRune.muted, fontSize: 8, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
+      <Text style={{ color, fontSize: DmType.title, fontFamily: Display.black }}>{value}</Text>
+      <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
     </View>
   );
 }
@@ -78,10 +78,10 @@ export function MemberPanel({
         </ChamferBox>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-            <FitLine style={{ flexShrink: 1, color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{s.name}</FitLine>
-            {absent ? <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: DmRune.accentDim }}><Text style={{ color: DmRune.accentDim, fontSize: 8, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Absent</Text></View> : null}
+            <FitLine style={{ flexShrink: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{s.name}</FitLine>
+            {absent ? <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: DmRune.accentDim }}><Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Absent</Text></View> : null}
           </View>
-          <Text numberOfLines={1} style={{ color: DmRune.muted, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 2 }}>{s.subclass || `Lvl ${s.level}`}</Text>
+          <Text numberOfLines={1} style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 2 }}>{s.subclass || `Lvl ${s.level}`}</Text>
         </View>
         <ReadStat label="Eva" value={String(s.evasion)} />
         <ReadStat label="Thr" value={`${s.thresholds.major}/${s.thresholds.severe}`} color={DmRune.accent} />
@@ -107,8 +107,8 @@ export function MemberPanel({
           <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
             {TRAIT_ORDER.map(([k, label]) => (
               <View key={k} style={{ alignItems: 'center', gap: 2 }}>
-                <Text style={{ color: DmRune.ivory, fontSize: 15, fontFamily: Display.black }}>{s.traits[k] >= 0 ? `+${s.traits[k]}` : s.traits[k]}</Text>
-                <Text style={{ color: DmRune.muted, fontSize: 8, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{label}</Text>
+                <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black }}>{s.traits[k] >= 0 ? `+${s.traits[k]}` : s.traits[k]}</Text>
+                <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{label}</Text>
               </View>
             ))}
           </View>

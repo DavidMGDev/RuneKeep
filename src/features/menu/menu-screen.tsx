@@ -14,6 +14,7 @@ import { CATALOG } from '@/data/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { listParties } from '@/lib/party-store';
+import { showToast } from '@/components/toast';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
@@ -127,7 +128,7 @@ function ModeToggle({ dm, onToggle }: { dm: boolean; onToggle: () => void }) {
         accessibilityRole="button"
         accessibilityLabel={dm ? 'Switch to Player Mode' : 'Switch to DM Mode'}>
         <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 20 }}>
-          <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{dm ? 'Player Mode' : 'DM Mode'}</Text>
+          <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{dm ? 'DM Mode · On' : 'DM Mode · Off'}</Text>
         </ChamferBox>
       </Pressable>
     </Animated.View>
@@ -259,7 +260,8 @@ export function MenuScreen() {
                 locked={!hasEnabledParty}
                 delayIndex={1}
                 onPress={() => {
-                  if (!hasEnabledParty) { playSfx('buttonTap'); return; }
+                  // v0.22.0: a dead tap on a dimmed card reads as a bug. Say why it's locked.
+                  if (!hasEnabledParty) { playSfx('buttonTap'); showToast('Open Parties and set one active to run its sessions.'); return; }
                   playSfx('enterCardViewer');
                   router.push('/sessions' as Href);
                 }}

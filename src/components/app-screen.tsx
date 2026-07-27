@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Polyline } from 'react-native-svg';
 
 import FullUi from '../../assets/art/new/FullUI.svg';
+import FullUiDm from '../../assets/art/new/FullUI-dm.svg';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
 
 /** Same Android floors as the sheet (#54/#59): the owner's A54 reports 0 for both insets. */
@@ -87,7 +88,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
         </View>
         {/* Full-bleed sharp gold frame ON TOP of content (sharp 0-radius corners by design). */}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          <FullUi width="100%" height="100%" preserveAspectRatio="none" />
+          {dm ? <FullUiDm width="100%" height="100%" preserveAspectRatio="none" /> : <FullUi width="100%" height="100%" preserveAspectRatio="none" />}
         </View>
       </View>
       {/* painted inset bars, same belt-and-braces as the sheet */}

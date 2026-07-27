@@ -18,7 +18,7 @@ import { CardMarkdownBody } from '@/components/card-markdown';
 import { ChamferBox } from '@/components/chamfer-box';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type LogEntry } from '@/lib/session';
 import { playSfx } from '@/lib/sfx';
 import { DmModal } from './dm-ui';
@@ -32,11 +32,11 @@ function NoteEditor({ initial, onSave, onDelete, onCancel }: { initial: string; 
   return (
     <DmModal onClose={onCancel}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 330, padding: 20 }}>
-        <Text style={{ color: DmRune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{initial ? 'Edit note' : 'New note'}</Text>
+        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{initial ? 'Edit note' : 'New note'}</Text>
         <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.1} style={{ minHeight: 92, paddingHorizontal: 12, paddingVertical: 9, marginTop: 14 }}>
-          <TextInput value={text} onChangeText={setText} placeholder="What happened this round?" placeholderTextColor={DmRune.muted} autoFocus multiline maxLength={600} style={{ color: DmRune.text, fontSize: 15, fontFamily: Body.regular, textAlignVertical: 'top', minHeight: 74 }} />
+          <TextInput value={text} onChangeText={setText} placeholder="What happened this round?" placeholderTextColor={DmRune.muted} autoFocus multiline maxLength={600} style={{ color: DmRune.text, fontSize: DmType.title, fontFamily: Body.regular, textAlignVertical: 'top', minHeight: 74 }} />
         </ChamferBox>
-        <Text style={{ color: DmRune.muted, fontSize: 10, fontFamily: Body.regular, letterSpacing: 0.4, marginTop: 6 }}>Markdown supported</Text>
+        <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.regular, letterSpacing: 0.4, marginTop: 6 }}>Markdown supported</Text>
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
           {onDelete ? <RuneButton label="Delete" kind="ghost" height={42} dm style={{ flex: 1 }} onPress={onDelete} /> : <RuneButton label="Cancel" kind="ghost" height={42} dm style={{ flex: 1 }} onPress={onCancel} />}
           <RuneButton label="Save" kind="secondary" height={42} dm disabled={!text.trim()} style={{ flex: 1 }} onPress={() => onSave(text.trim())} />
@@ -92,7 +92,7 @@ function LogRow({ item, isNote, isDragged, selecting, on, showDropAbove, dragY, 
           style={{ flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <View style={{ flex: 1 }}>
             <CardMarkdownBody body={item.text} style={{ color: isNote ? DmRune.text : DmRune.muted, fontSize: isNote ? 13 : 12, fontFamily: Body.regular, lineHeight: isNote ? 18 : 16 }} />
-            <Text style={{ color: DmRune.muted, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 5 }}>{isNote ? 'Note' : 'Auto'} · {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+            <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 5 }}>{isNote ? 'Note' : 'Auto'} · {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
           </View>
           {selecting ? (
             <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
@@ -185,13 +185,13 @@ export function EncounterLog({
       <Animated.View entering={SlideInLeft.duration(210).easing(Easing.out(Easing.cubic))} exiting={SlideOutLeft.duration(170).easing(Easing.in(Easing.cubic))} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '82%' }}>
         <ChamferBox chamfer={0} fill="rgba(10,13,18,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.4} style={{ flex: 1, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={{ flex: 1, color: DmRune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>Log</Text>
+            <Text style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>Log</Text>
             <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close log">
               <Svg width={20} height={20} viewBox="0 0 20 20"><Line x1={4} y1={4} x2={16} y2={16} stroke={DmRune.accent} strokeWidth={2.2} /><Line x1={16} y1={4} x2={4} y2={16} stroke={DmRune.accent} strokeWidth={2.2} /></Svg>
             </Pressable>
           </View>
           {log.length === 0 ? (
-            <Text style={{ color: DmRune.muted, fontSize: 13, fontFamily: Body.medium, marginTop: 24 }}>No entries yet. Add a note, or toggle Auto-log to record stat changes.</Text>
+            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, marginTop: 24 }}>No entries yet. Add a note, or toggle Auto-log to record stat changes.</Text>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false} scrollEnabled={!dragging} contentContainerStyle={{ paddingBottom: sel.selecting ? 76 : 10 }}>
               <View>
@@ -231,7 +231,7 @@ export function EncounterLog({
         {sel.selecting ? (
           <View style={{ position: 'absolute', left: 12, right: 12, bottom: 16 }}>
             <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ padding: 10, gap: 8 }}>
-              <Text style={{ color: DmRune.accent, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel.ids.size} selected</Text>
+              <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel.ids.size} selected</Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <RuneButton label="Delete" kind="primary" height={34} dense dm style={{ flex: 1 }} onPress={() => setConfirm('delete')} />
                 <RuneButton label="Leave only" kind="secondary" height={34} dense dm style={{ flex: 1 }} onPress={() => setConfirm('keep')} />
@@ -247,11 +247,11 @@ export function EncounterLog({
         <NoteEditor initial={editing.text} onSave={(t) => { onEditNote(editing.id, t); setEditing(null); }} onDelete={() => { onDeleteNote(editing.id); setEditing(null); }} onCancel={() => setEditing(null)} />
       ) : null}
       {confirm === 'delete' ? (
-        <PopupDialog title="Delete selected?" body={`${sel.ids.size} log entr${sel.ids.size === 1 ? 'y' : 'ies'} will be removed.`} confirmLabel="Delete" destructive
+        <PopupDialog dm title="Delete selected?" body={`${sel.ids.size} log entr${sel.ids.size === 1 ? 'y' : 'ies'} will be removed.`} confirmLabel="Delete" destructive
           onConfirm={() => { onDeleteEntries(sel.ids); setConfirm(null); sel.clear(); }} onCancel={() => setConfirm(null)} />
       ) : null}
       {confirm === 'keep' ? (
-        <PopupDialog title="Leave only selected?" body={`Everything except the ${sel.ids.size} selected entr${sel.ids.size === 1 ? 'y' : 'ies'} will be erased.`} confirmLabel="Leave only" destructive
+        <PopupDialog dm title="Leave only selected?" body={`Everything except the ${sel.ids.size} selected entr${sel.ids.size === 1 ? 'y' : 'ies'} will be erased.`} confirmLabel="Leave only" destructive
           onConfirm={() => { onKeepOnly(sel.ids); setConfirm(null); sel.clear(); }} onCancel={() => setConfirm(null)} />
       ) : null}
     </View>
