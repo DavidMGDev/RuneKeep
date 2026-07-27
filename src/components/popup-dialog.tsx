@@ -13,6 +13,7 @@ export function PopupDialog({
   title,
   body,
   confirmLabel,
+  cancelLabel = 'Cancel',
   destructive,
   onConfirm,
   onCancel,
@@ -21,6 +22,8 @@ export function PopupDialog({
   title: string;
   body?: string;
   confirmLabel: string;
+  /** Override when "Cancel" understates what the other branch does (e.g. "Start fresh"). */
+  cancelLabel?: string;
   destructive?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -40,7 +43,7 @@ export function PopupDialog({
         {body ? <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.medium, lineHeight: 19, marginTop: 10 }}>{body}</Text> : null}
         {children}
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>
-          <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
+          <RuneButton label={cancelLabel} kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
           <RuneButton label={confirmLabel} kind={destructive ? 'primary' : 'secondary'} height={42} style={{ flex: 1 }} onPress={onConfirm} />
         </View>
       </Pressable>

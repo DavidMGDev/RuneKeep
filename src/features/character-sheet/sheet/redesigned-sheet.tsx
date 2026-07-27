@@ -27,6 +27,7 @@ import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
 import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANCES, stanceColor } from '@/data/martial-form-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
+import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
@@ -2155,7 +2156,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {floatKind === 'custom' ? (
             <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
-            <RestPanel character={character} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
+            <RestPanel character={character} moveLimit={restMoveLimit(file ?? {})} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
             <ModifiersPanel file={file} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (

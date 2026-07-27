@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { applyRestMoves, movesFor, restMoveById, type RestKind, type RestLogEntry, type RestMove, type RestSelection, tierForLevel } from '@/lib/rest';
+import { applyRestMoves, BASE_REST_MOVES, movesFor, restMoveById, type RestKind, type RestLogEntry, type RestMove, type RestSelection, tierForLevel } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 
 import type { Character } from '../character';
@@ -41,7 +42,8 @@ function MoveCard({ move, count, atMax, onAdd, onRemove }: { move: RestMove; cou
  * single move is also fine, owner rule). Dice moves roll 1d4 + tier on confirm; the effects apply to
  * the live resource tracks. "Rest again" lets characters with extra downtime moves take another rest.
  */
-export function RestPanel({ character, onApply, onClose }: { character: Character; onApply: (next: Character) => void; onClose: () => void }) {
+export function RestPanel({ character, moveLimit = BASE_REST_MOVES, onApply, onClose }: { character: Character; /** Ceiling on downtime moves — 3 for a character keeping an elf's Celestial Trance. */ moveLimit?: number; onApply: (next: Character) => void; onClose: () => void }) {
+  const limitWord = moveLimit === 2 ? 'two' : moveLimit === 3 ? 'three' : String(moveLimit);
   const [kind, setKind] = useState<RestKind | null>(null);
   const [picks, setPicks] = useState<string[]>([]);
   const [withParty, setWithParty] = useState(false);
@@ -57,7 +59,7 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
     setResult(null);
     setRolling(null);
   };
-  const addPick = (id: string) => setPicks((p) => { if (p.length >= 2) return p; playSfx('cardSelect'); return [...p, id]; });
+  const addPick = (id: string) => setPicks((p) => { if (p.length >= moveLimit) return p; playSfx('cardSelect'); return [...p, id]; });
   const removePick = (id: string) =>
     setPicks((p) => {
       const i = p.lastIndexOf(id);
@@ -146,13 +148,13 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
         <Pressable onPress={() => setKind('short')} accessibilityRole="button" accessibilityLabel="Short rest">
           <ChamferBox chamfer={11} fill="rgba(20,24,31,0.6)" stroke={Rune.goldEdge} strokeWidth={1.3} style={{ paddingVertical: 14, paddingHorizontal: 14 }}>
             <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Body.bold, textTransform: 'uppercase', letterSpacing: 0.8 }}>Short Rest</Text>
-            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 3 }}>About an hour. Choose two moves (1d4 + tier each).</Text>
+            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 3 }}>About an hour. Choose up to {limitWord} moves (1d4 + tier each).</Text>
           </ChamferBox>
         </Pressable>
         <Pressable onPress={() => setKind('long')} accessibilityRole="button" accessibilityLabel="Long rest">
           <ChamferBox chamfer={11} fill="rgba(20,24,31,0.6)" stroke={Rune.goldEdge} strokeWidth={1.3} style={{ paddingVertical: 14, paddingHorizontal: 14 }}>
             <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Body.bold, textTransform: 'uppercase', letterSpacing: 0.8 }}>Long Rest</Text>
-            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 3 }}>Make camp. Choose two moves (clear everything).</Text>
+            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 3 }}>Make camp. Choose up to {limitWord} moves (clear everything).</Text>
           </ChamferBox>
         </Pressable>
       </OverlayShell>
@@ -165,26 +167,33 @@ export function RestPanel({ character, onApply, onClose }: { character: Characte
   return (
     <OverlayShell
       title={kind === 'long' ? 'Long Rest' : 'Short Rest'}
-      subtitle={`Choose up to 2 moves · ${picks.length}/2`}
+      subtitle={`Choose up to ${moveLimit} moves · ${picks.length}/${moveLimit}`}
       onClose={onClose}
       footer={
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <RuneButton label="Back" kind="ghost" height={44} style={{ flex: 1 }} onPress={reset} />
-          <RuneButton label={picks.length > 0 ? `Rest · ${picks.length}` : 'Rest'} kind="primary" height={44} style={{ flex: 1.5 }} disabled={picks.length === 0} onPress={confirm} />
+          {/* v0.22.0: a rest is irreversible, so it earns the same hold as deleting a single card. */}
+          <View style={{ flex: 1.5 }}>
+            {picks.length === 0 ? (
+              <RuneButton label="Rest" kind="primary" height={44} disabled onPress={reset} />
+            ) : (
+              <HoldToConfirm label={`Hold to rest · ${picks.length}`} height={44} chamfer={10} sfx={null} onConfirm={confirm} />
+            )}
+          </View>
         </View>
       }>
       {moves.map((m) => (
-        <MoveCard key={m.id} move={m} count={countOf(m.id)} atMax={picks.length >= 2} onAdd={() => addPick(m.id)} onRemove={() => removePick(m.id)} />
+        <MoveCard key={m.id} move={m} count={countOf(m.id)} atMax={picks.length >= moveLimit} onAdd={() => addPick(m.id)} onRemove={() => removePick(m.id)} />
       ))}
       {hasPrepare ? (
         <Pressable onPress={() => setWithParty((v) => !v)} accessibilityRole="checkbox" accessibilityState={{ checked: withParty }} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 2 }}>
-          <View style={{ width: 20, height: 20, borderRadius: 3, borderWidth: 1.6, borderColor: withParty ? Rune.red : Rune.muted, backgroundColor: withParty ? Rune.red : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+          <ChamferBox chamfer={4} fill={withParty ? Rune.red : 'transparent'} stroke={withParty ? Rune.red : Rune.muted} strokeWidth={1.6} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
             {withParty ? <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text> : null}
-          </View>
+          </ChamferBox>
           <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.medium }}>Prepare with party (gain 2 Hope)</Text>
         </Pressable>
       ) : null}
-      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, marginTop: 2 }}>Use + / − to pick up to two (the same move twice is fine). One move is enough — rest light, then Rest again.</Text>
+      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, marginTop: 2 }}>Use + / − to pick up to {limitWord} (the same move twice is fine). Fewer is fine too — rest light, then Rest again.</Text>
     </OverlayShell>
   );
 }

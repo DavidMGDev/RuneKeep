@@ -1,5 +1,5 @@
 import { SAMPLE_CHARACTER, type Character } from '@/features/character-sheet/character';
-import { applyRestMoves, movesFor, restMoveById, tierForLevel } from './rest';
+import { applyRestMoves, movesFor, restMoveById, restMoveLimit, tierForLevel } from './rest';
 
 /** A wounded test character with room to heal/clear/repair on every track. */
 function wounded(over: Partial<Character> = {}): Character {
@@ -99,5 +99,35 @@ describe('restMoveById', () => {
   it('finds a move or returns undefined', () => {
     expect(restMoveById('tend')?.title).toBe('Tend to Wounds');
     expect(restMoveById('xxx')).toBeUndefined();
+  });
+});
+
+describe('restMoveLimit — Celestial Trance (v0.22.0)', () => {
+  it('allows two moves for an ancestry with no rest feature', () => {
+    expect(restMoveLimit({ ancestryCardId: 'ancestry-human' })).toBe(2);
+    expect(restMoveLimit({})).toBe(2);
+  });
+
+  it('allows three for a pure elf — both features are live', () => {
+    expect(restMoveLimit({ ancestryCardId: 'ancestry-elf' })).toBe(3);
+  });
+
+  it('allows three when elf is the SECOND mixed pick — it keeps feature 2', () => {
+    expect(restMoveLimit({ mixedAncestry: { first: 'ancestry-human', second: 'ancestry-elf' } })).toBe(3);
+  });
+
+  it('drops back to two when elf is the FIRST mixed pick — Celestial Trance is struck', () => {
+    expect(restMoveLimit({ mixedAncestry: { first: 'ancestry-elf', second: 'ancestry-human' } })).toBe(2);
+  });
+
+  it('ignores ancestryCardId once a mix is set', () => {
+    // The sheet keeps ancestryCardId populated alongside mixedAncestry; the mix must win, or an elf
+    // demoted to the first slot would keep a bonus its card no longer grants.
+    expect(restMoveLimit({ ancestryCardId: 'ancestry-elf', mixedAncestry: { first: 'ancestry-elf', second: 'ancestry-human' } })).toBe(2);
+  });
+
+  it('is a ceiling, not a requirement — resting with fewer moves still applies them', () => {
+    const { log } = applyRestMoves(wounded(), 2, [{ moveId: 'tend', roll: 2 }]);
+    expect(log).toHaveLength(1);
   });
 });
