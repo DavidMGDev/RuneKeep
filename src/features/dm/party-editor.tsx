@@ -204,7 +204,7 @@ export function PartyEditorScreen() {
         <View style={{ gap: 10, paddingTop: 8 }}>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Add characters" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => setPicking(true)} />
-            {party.memberIds.length > 0 ? <RuneButton label="Party State" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => router.push(`/party-overview?partyId=${party.id}` as Href)} /> : null}
+            {party.memberIds.length > 0 ? <RuneButton label="Party sheet" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => router.push(`/party-overview?partyId=${party.id}` as Href)} /> : null}
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Delete party" kind="ghost" height={46} dm style={{ flex: 1 }} onPress={() => setConfirmDelete(true)} />

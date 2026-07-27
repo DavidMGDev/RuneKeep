@@ -270,7 +270,7 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
           <RuneButton label="–" kind="ghost" dense height={34} onPress={() => setVersion((v) => Math.max(1, v - 1))} />
           <RuneButton label="+" kind="ghost" dense height={34} onPress={() => setVersion((v) => v + 1)} />
         </View>
-        <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Bump the version before re-sharing — recipients update in place.</Text>
+        <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Raise the version before sharing again, so anyone who already has it updates in place.</Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <RuneButton label="Cancel" kind="ghost" height={40} style={{ flex: 1 }} onPress={onCancel} />
           <RuneButton label="Save" kind="primary" height={40} style={{ flex: 1 }} disabled={!name.trim()} onPress={() => onSave({ name: name.trim(), author: author.trim(), description: description.trim(), version })} />
@@ -322,7 +322,7 @@ export function LibraryScreen() {
     if (turningOn) warnIncomplete(e);
   };
   // v0.13.2 (#359): NFC RECEIVING moved to the character sheet (a DM taps a card to a player on their
-  // sheet). The library only SENDS single cards + shares expansions via Import/Export .rkp.
+  // sheet). The library only SENDS single cards + shares expansions via Import/Export  one a friend shared with you.
   const nfcOn = nfcModulesPresent();
 
   const reload = useCallback(() => {
@@ -510,7 +510,7 @@ export function LibraryScreen() {
             onCancel={() => setConfirmDeleteCard(null)} />
         ) : null}
         {confirmDeleteExp ? (
-          <PopupDialog title="Delete expansion?" body={`${confirmDeleteExp.name} and its ${confirmDeleteExp.cards.length} card(s) will be removed from this device. Exported .rkp files are unaffected.`} confirmLabel="Delete" destructive
+          <PopupDialog title="Delete expansion?" body={`${confirmDeleteExp.name} and its ${confirmDeleteExp.cards.length} removed from this device. Files you have already exported are unaffected.`} confirmLabel="Delete" destructive
             onConfirm={() => { const id = confirmDeleteExp.id; setConfirmDeleteExp(null); setSelectedId(null); if (isOfficialExpansion(id)) return; void deleteExpansion(id).then(reload); }}
             onCancel={() => setConfirmDeleteExp(null)} />
         ) : null}
@@ -568,7 +568,7 @@ export function LibraryScreen() {
 
         {customExps.length === 0 ? (
           <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 14, lineHeight: 18 }}>
-            No expansions yet. Create one to author homebrew cards,{'\n'}or import a friend&apos;s .rkp.
+            No expansions yet. Create one to author homebrew cards,{'\n'}or import one a friend shared with you.
           </Text>
         ) : (
           customExps.map((e) => (
@@ -584,7 +584,7 @@ export function LibraryScreen() {
         )}
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
-        <RuneButton label="Import .rkp" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
+        <RuneButton label="Import a file" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
         <RuneButton label="New expansion" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setMetaForm('new')} />
       </View>
 

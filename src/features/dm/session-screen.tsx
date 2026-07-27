@@ -176,7 +176,7 @@ export function SessionScreen() {
           />
         )}
         <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
-          <RuneButton label="Players" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => party && router.push(`/party-overview?partyId=${party.id}` as Href)} />
+          <RuneButton label="Party sheet" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => party && router.push(`/party-overview?partyId=${party.id}` as Href)} />
           <RuneButton label="New encounter" kind="primary" height={46} dm style={{ flex: 1.4 }} onPress={create} />
         </View>
       </View>
@@ -195,7 +195,7 @@ export function SessionScreen() {
         </View>
       ) : null}
 
-      {confirmDelete ? <PopupDialog dm title="Delete encounters?" body={`${confirmDelete.size} encounter(s) will be removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
+      {confirmDelete ? <PopupDialog dm title="Delete encounters?" body={`${confirmDelete.size} removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
       {moving ? <MoveTargetPicker sessions={moving} onPick={(sid) => void moveTo(sid)} onNew={() => void moveToNew()} onCancel={() => setMoving(null)} /> : null}
       {renaming ? <NameDialog title="Rename Encounter" initial={renaming.name} confirmLabel="Rename" onConfirm={(name) => void renameEncounter(name)} onCancel={() => setRenaming(null)} /> : null}
     </AppScreen>
