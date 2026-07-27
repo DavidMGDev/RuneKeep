@@ -83,6 +83,14 @@ interface SheetTextProps {
   children: ReactNode;
 }
 
+/**
+ * Cap on the OS font-size multiplier for design-px text (v0.22.0). The sheet's boxes are fixed
+ * rectangles inside DesignStage: the stage scales box + glyph together, but the OS accessibility
+ * multiplier is applied INSIDE that space to fontSize only, so it grows text without growing its
+ * box. 1.1 is the headroom the tightest boxes carry after the v0.22.0 widening.
+ */
+export const SHEET_MAX_FONT_SCALE = 1.1;
+
 const justify = { top: 'flex-start', center: 'center', bottom: 'flex-end' } as const;
 const items = { left: 'flex-start', center: 'center', right: 'flex-end' } as const;
 
@@ -122,6 +130,10 @@ export function SheetText({
         numberOfLines={numberOfLines}
         adjustsFontSizeToFit={fit}
         minimumFontScale={fit ? minScale : undefined}
+        // v0.22.0: these boxes are design-px rectangles that DON'T grow with the OS font setting —
+        // DesignStage scales the box and the glyph together, but the OS multiplier is applied inside
+        // that space to fontSize alone. Uncapped it is a pure overflow multiplier into a hard clip.
+        maxFontSizeMultiplier={SHEET_MAX_FONT_SCALE}
         style={{
           maxWidth: width,
           color,
@@ -212,6 +224,7 @@ export function FillText({ left, top, width, height, color, family = Display.bla
       <Text
         onTextLayout={onTextLayout}
         numberOfLines={ready ? maxLines : undefined}
+        maxFontSizeMultiplier={SHEET_MAX_FONT_SCALE}
         style={{
           maxWidth: width,
           color,

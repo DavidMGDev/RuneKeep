@@ -13,6 +13,18 @@ import Svg, { Polygon } from 'react-native-svg';
  * stroke), so converting it would change the look. (Fill-only design-px frames use ChamferFrame's
  * plain-View path; this dp-world box keeps the SVG for its stroked corners.)
  */
+/**
+ * The 45°-cut octagon for a `w × h` box, inset by half the stroke so the outer half-stroke doesn't
+ * land outside the svg (#104). Exported so anything that needs to PAINT the same silhouette (the
+ * hold-to-confirm fill) matches the box it sits in instead of squaring off its corners.
+ */
+export function chamferPoints(w: number, h: number, c: number, strokeWidth = 0): string {
+  const i = strokeWidth / 2 + 0.25;
+  const r = w - i;
+  const b = h - i;
+  return `${c + i},${i} ${r - c},${i} ${r},${c + i} ${r},${b - c} ${r - c},${b} ${c + i},${b} ${i},${b - c} ${i},${c + i}`;
+}
+
 function ChamferBoxImpl({
   chamfer = 10,
   stroke = 'transparent',
@@ -33,13 +45,7 @@ function ChamferBoxImpl({
   // The polygon is INSET by half the stroke: drawn on the exact edge, the outer stroke half lands
   // outside the svg and the right/bottom lines vanish on device (#104). Memoized so re-renders that
   // don't change size/chamfer/stroke don't rebuild the (byte-identical) points string.
-  const points = useMemo(() => {
-    if (!size) return '';
-    const i = strokeWidth / 2 + 0.25;
-    const w = size.w - i;
-    const h = size.h - i;
-    return `${c + i},${i} ${w - c},${i} ${w},${c + i} ${w},${h - c} ${w - c},${h} ${c + i},${h} ${i},${h - c} ${i},${c + i}`;
-  }, [size, c, strokeWidth]);
+  const points = useMemo(() => (size ? chamferPoints(size.w, size.h, c, strokeWidth) : ''), [size, c, strokeWidth]);
   return (
     <View style={style} onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
       {size && size.w > 2 * c && size.h > 2 * c ? (

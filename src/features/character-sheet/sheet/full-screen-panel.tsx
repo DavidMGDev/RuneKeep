@@ -41,7 +41,7 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
         <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1, overflow: 'hidden', paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
             <View style={{ flex: 1, paddingRight: 8 }}>
-              <Text style={{ color: Rune.goldText, fontSize: 21, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>
+              <Text numberOfLines={2} style={{ color: Rune.goldText, fontSize: 21, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>
               {subtitle ? <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginTop: 2 }}>{subtitle}</Text> : null}
             </View>
             {headerExtra}

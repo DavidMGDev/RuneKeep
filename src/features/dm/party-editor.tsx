@@ -109,6 +109,9 @@ export function PartyEditorScreen() {
   const [picking, setPicking] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // v0.22.0: removing a member ALSO drops that character's global vitals record (party.ts), so one
+  // mistap silently wiped the HP/Stress/Hope/Armor the DM had been tracking all session.
+  const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
 
   const load = useCallback(() => {
     let live = true;
@@ -190,7 +193,7 @@ export function PartyEditorScreen() {
                   </Pressable>
                 </ChamferBox>
               );
-              return <MemberRow file={f} present={isPresent(party, cid)} onTogglePresent={() => commit(togglePresent(party, cid))} onRemove={() => commit(removeMember(party, cid))} />;
+              return <MemberRow file={f} present={isPresent(party, cid)} onTogglePresent={() => commit(togglePresent(party, cid))} onRemove={() => setConfirmRemove({ id: cid, name: f.name })} />;
             }}
           />
         )}
@@ -221,6 +224,17 @@ export function PartyEditorScreen() {
 
       {picking ? <MemberPicker candidates={candidates} onCancel={() => setPicking(false)} onAdd={addSelected} onImport={onImport} /> : null}
       {renaming ? <NameDialog title="Rename Party" initial={party.name} confirmLabel="Rename" onConfirm={(name) => { setRenaming(false); commit({ ...party, name }); }} onCancel={() => setRenaming(false)} /> : null}
+      {confirmRemove ? (
+        <PopupDialog
+          title="Remove from party?"
+          body={`${confirmRemove.name} leaves ${party.name}, and the HP, Stress, Hope and Armor tracked for them here are cleared. Their character sheet is untouched.`}
+          confirmLabel="Remove"
+          destructive
+          onConfirm={() => { commit(removeMember(party, confirmRemove.id)); setConfirmRemove(null); }}
+          onCancel={() => setConfirmRemove(null)}
+        />
+      ) : null}
+
       {confirmDelete ? (
         <PopupDialog title="Delete party?" body={`${party.name} will be removed. The characters themselves are untouched.`} confirmLabel="Delete" destructive onConfirm={() => { setConfirmDelete(false); void deleteParty(party.id).then(() => router.back()); }} onCancel={() => setConfirmDelete(false)} />
       ) : null}

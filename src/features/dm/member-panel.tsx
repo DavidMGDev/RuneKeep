@@ -95,7 +95,7 @@ export function MemberPanel({
       </Pressable>
 
       {/* vitals row: the four editable tracks, tightly grouped, sheet-coloured */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', columnGap: 14, rowGap: 8 }}>
         {pulse('hp', 'hp', m.maxHp)}
         {pulse('armor', 'armor', m.armorMax)}
         {pulse('stress', 'stress', m.stressMax)}

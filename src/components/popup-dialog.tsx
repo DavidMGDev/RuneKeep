@@ -36,7 +36,7 @@ export function PopupDialog({
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <PopupFrame width="100%" height="100%" preserveAspectRatio="none" />
         </View>
-        <Text style={{ color: Rune.ivory, fontSize: 19, fontFamily: Display.black, letterSpacing: 1.4, textTransform: 'uppercase' }}>{title}</Text>
+        <Text numberOfLines={2} style={{ color: Rune.ivory, fontSize: 19, fontFamily: Display.black, letterSpacing: 1.4, textTransform: 'uppercase' }}>{title}</Text>
         {body ? <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.medium, lineHeight: 19, marginTop: 10 }}>{body}</Text> : null}
         {children}
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>

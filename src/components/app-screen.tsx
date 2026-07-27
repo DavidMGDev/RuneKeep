@@ -51,11 +51,21 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
             // corner, the right control in the right corner, and a smaller CENTERED title between
             // them — nothing tall enough to clash with the frame's notches.
             <View style={{ height: 36, marginTop: 12, marginBottom: 8, justifyContent: 'center' }}>
-              <Text
-                numberOfLines={1}
-                style={{ alignSelf: 'center', maxWidth: '55%', color: titleColor, fontSize: 15, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>
-                {title}
-              </Text>
+              {/* v0.22.0: the title sits BETWEEN the two 44dp corner slots rather than being clamped to
+                  a flat 55% of the full width. The old clamp was measured against the whole header, so
+                  a title at exactly 55% could print under a wide right-hand control — and 207dp only
+                  bought ~17 uppercase characters, which an auto-named session ("SESSION 27/07/2026")
+                  already overran on day one. Now it gets ~288dp and shrinks to 80% before ellipsizing. */}
+              <View style={{ position: 'absolute', left: 44, right: 44, top: 0, bottom: 0, justifyContent: 'center' }} pointerEvents="none">
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                  maxFontSizeMultiplier={1.2}
+                  style={{ textAlign: 'center', color: titleColor, fontSize: 15, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>
+                  {title}
+                </Text>
+              </View>
               {onBack ? (
                 <Pressable
                   onPress={onBack}

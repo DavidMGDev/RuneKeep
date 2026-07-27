@@ -51,7 +51,7 @@ function StatCard({ label, b }: { label: string; b: { base: number; contribution
     // Plain View, NOT ChamferBox: 14 per-row SVGs in the ScrollView caused the scroll lag (#191).
     <View style={{ paddingVertical: 10, paddingHorizontal: 13, borderRadius: 4, backgroundColor: 'rgba(20,24,31,0.6)', borderWidth: has ? 1.3 : 1, borderColor: has ? Rune.red : 'rgba(218,162,73,0.35)' }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <Text numberOfLines={1} style={{ flex: 1, color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold, paddingRight: 8 }}>{label}</Text>
+        <Text style={{ flex: 1, color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold, paddingRight: 8 }}>{label}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
           {has ? <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>{`base ${signed(b.base).replace('+', '')}`}</Text> : null}
           <Text style={{ color: has ? Rune.goldBright : Rune.sheet, fontSize: 19, fontFamily: Display.black }}>{b.total}</Text>
@@ -59,7 +59,7 @@ function StatCard({ label, b }: { label: string; b: { base: number; contribution
       </View>
       {b.contributions.map((c, i) => (
         <View key={i} style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 4 }}>
-          <Text numberOfLines={1} style={{ flex: 1, color: Rune.muted, fontSize: 11, fontFamily: Body.medium, paddingRight: 8 }}>
+          <Text style={{ flex: 1, color: Rune.muted, fontSize: 11, fontFamily: Body.medium, paddingRight: 8 }}>
             {c.source}{c.note ? ` · ${c.note}` : ''}
           </Text>
           <Text style={{ color: c.delta >= 0 ? Rune.goldText : '#E2705A', fontSize: 13, fontFamily: Body.bold }}>{signed(c.delta)}</Text>

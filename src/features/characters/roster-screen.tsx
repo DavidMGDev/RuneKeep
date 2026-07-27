@@ -230,11 +230,15 @@ export function RosterScreen() {
             void exportCharacter(f);
           }}
           onCancel={() => setActionsFor(null)}>
+          {/* v0.22.0: Delete used to wear `kind="primary"` — the loudest, reddest treatment in the
+              dialog — while the benign Share sat in the confirm slot. Anyone reaching for the visually
+              dominant button was reaching for Delete. Destructive actions get the quiet treatment and
+              earn their weight in the confirm step instead. */}
           <View style={{ marginTop: 16, gap: 10 }}>
             <RuneButton label="Move to folder" kind="secondary" height={40} onPress={() => { const f = actionsFor; setActionsFor(null); setMovingChar(f); }} />
             <RuneButton
               label="Delete"
-              kind="primary"
+              kind="ghost"
               height={40}
               onPress={() => {
                 setConfirmDelete(actionsFor);

@@ -124,6 +124,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
             placeholderTextColor={Rune.muted}
             selectionColor={Rune.goldBright}
             multiline
+            maxLength={400}
             style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, minHeight: 48, textAlignVertical: 'top' }}
             accessibilityLabel={`Section ${i + 1} text`}
           />
