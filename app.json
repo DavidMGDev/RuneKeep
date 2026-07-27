@@ -29,7 +29,33 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "DEFAULT",
+            "BROWSABLE"
+          ],
+          "data": [
+            {
+              "scheme": "content",
+              "mimeType": "*/*",
+              "pathPattern": ".*\\.rkp"
+            },
+            {
+              "scheme": "file",
+              "mimeType": "*/*",
+              "pathPattern": ".*\\.rkp"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "application/octet-stream",
+              "pathPattern": ".*\\.rkp"
+            }
+          ]
+        }
+      ]
     },
     "web": {
       "output": "static",

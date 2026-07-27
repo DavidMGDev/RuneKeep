@@ -15,6 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Rune } from '@/constants/theme';
 import { ToastHost } from '@/components/toast';
+import { IncomingFileGate } from '@/features/share/incoming-file';
 
 /**
  * Root layout. Establishes the three providers every screen relies on:
@@ -52,6 +53,9 @@ export default function RootLayout() {
             animation: 'fade',
           }}
         />
+        {/* v0.22.0: a .rkp opened from WhatsApp or a file manager lands here. It never imports on
+            arrival — it asks, and defers entirely while a sheet or the creator is open. */}
+        <IncomingFileGate />
         <ToastHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>

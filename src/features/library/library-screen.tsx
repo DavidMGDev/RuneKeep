@@ -16,6 +16,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
+import { showToast } from '@/components/toast';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { Body, Display, Rune } from '@/constants/theme';
 import { ALL_DOMAINS, CLASSES } from '@/constants/identity';
@@ -451,7 +452,7 @@ export function LibraryScreen() {
             {/* v0.12.0: the enable/disable button moved OUT to the hub row toggle — no in-detail button. */}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
-              <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name); }} />
+              <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name).catch(() => showToast('Could not share that expansion.', 'error')); }} />
             </View>
           </ChamferBox>
 
