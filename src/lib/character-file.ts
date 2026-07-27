@@ -7,6 +7,7 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { CATALOG, cardById } from '@/data/catalog';
+import type { CharacterHistory } from '@/lib/character-history';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
@@ -223,6 +224,11 @@ export interface CharacterFile {
    *  expansion being disabled/deleted (Bug 4). Structural slot ids (ancestry/subclass/community/domain/
    *  armor) may reference these ids. Additive; absent on old saves = unchanged behavior. */
   libraryCards?: LibraryCard[];
+  /** v0.22.0: the character's state history — every change, rewindable from the State interface.
+   *  Additive and optional; a character saved before v0.22.0 simply starts recording from its next
+   *  edit. TRAVELS with the file on export (owner) so a shared character carries its whole story.
+   *  Snapshots inside never nest a history of their own. */
+  history?: CharacterHistory;
   level: number;
 }
 
@@ -232,6 +238,30 @@ export function newCharacterId(): string {
 }
 
 /** Parse + validate unknown JSON (imports!) into a CharacterFile. Throws with a readable reason. */
+/**
+ * Forward migrations, keyed by the version they upgrade FROM. Empty today — v1 is current — but the
+ * hook has to exist BEFORE anything depends on the schema moving: `parseCharacterFile` used to hard
+ * reject any version but 1 with no migration path, so the first bump would have made every existing
+ * save (and, since v0.22.0, every history snapshot inside them) unloadable at once.
+ */
+const MIGRATIONS: Record<number, (f: Record<string, unknown>) => void> = {};
+
+/** Upgrade an older file in place, or explain plainly why it can't be opened. */
+function migrateInPlace(f: Partial<CharacterFile>): void {
+  let v = f.schemaVersion;
+  if (typeof v !== 'number') throw new Error('Not a character file');
+  if (v > CHARACTER_SCHEMA_VERSION) {
+    throw new Error('This character was made by a newer version of RuneKeep. Update the app to open it.');
+  }
+  while (v < CHARACTER_SCHEMA_VERSION) {
+    const step = MIGRATIONS[v];
+    if (!step) throw new Error("This character is from an older version RuneKeep can no longer read.");
+    step(f as unknown as Record<string, unknown>);
+    v += 1;
+    f.schemaVersion = v;
+  }
+}
+
 export function parseCharacterFile(raw: string): CharacterFile {
   let data: unknown;
   try {
@@ -241,7 +271,7 @@ export function parseCharacterFile(raw: string): CharacterFile {
   }
   const f = data as Partial<CharacterFile>;
   if (typeof f !== 'object' || f === null) throw new Error('Not a character file');
-  if (f.schemaVersion !== CHARACTER_SCHEMA_VERSION) throw new Error(`Unsupported version ${f.schemaVersion}`);
+  migrateInPlace(f);
   if (typeof f.id !== 'string' || typeof f.name !== 'string' || !f.name.trim()) throw new Error('Missing name');
   // v0.10.3: normalize embedded homebrew cards (trust boundary for imported characters), then let the
   // structural/domain ids resolve against them as well as the catalog. No `libraryCards` = old behavior.
