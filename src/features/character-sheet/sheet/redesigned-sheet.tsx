@@ -76,7 +76,7 @@ import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
-import { emptyHistory, type CharacterHistory, readHistory, record, type RecordIntent, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
+import { emptyHistory, type CharacterHistory, readHistory, record, recoverableCards, type RecordIntent, restoreCard, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
@@ -684,6 +684,25 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     return r.repairs;
   }, []);
 
+  // v0.22.0 card trash. Derived from history rather than stored, so it cannot drift out of
+  // agreement with the character the way a parallel `trashedCards` array would.
+  // `historyRev` is deliberately a dependency: history lives in a ref (so the save closure can write
+  // it without scheduling a render-phase update), and this bump is what tells the memo it moved.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const trashRecords = useMemo(() => (file ? recoverableCards(historyRef.current, file) : []), [file, historyRev]);
+  const noticeRef = useRef<((t: string) => void) | null>(null);
+  const trashList = useMemo(() => trashRecords.map((r) => ({ id: r.id, title: r.title, at: r.at })), [trashRecords]);
+  const onRestoreCard = useCallback((id: string) => {
+    const cur = fileRef.current;
+    const rec = trashRecords.find((r) => r.id === id);
+    if (!cur || !rec) return;
+    const next = restoreCard(cur, rec);
+    withIntent({ kind: 'cards', label: `Restored ${rec.title}` });
+    setFile(next);
+    saveFileRef.current(next);
+    noticeRef.current?.(`${rec.title} restored`);
+  }, [trashRecords, withIntent]);
+
   const mutateFile = useCallback((patch: Partial<CharacterFile>) => {
     setFile((f) => {
       if (!f) return f;
@@ -1218,6 +1237,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const id = toastId.current++;
     setToasts((list) => [...list, { id, label, delta: 0, notice: true }].slice(-5));
   }, []);
+  noticeRef.current = pushNotice; // the trash restore fires before this is declared
   // #318: consecutive attempts to enable a 6th domain card without leaving fullscreen. 3 in a row
   // overrides the cap (a debug escape hatch); reset on any other toggle or on leaving fullscreen.
   const domainOverrideRef = useRef(0);
@@ -2221,6 +2241,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (
             <CardManagementPanel
+              trash={trashList}
+              onRestoreCard={onRestoreCard}
               isDruid={hasBeastform(file)}
               hasCompanion={hasCompanion(file)}
               hasMartialForm={hasMartialForm(file)}

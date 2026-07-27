@@ -2,6 +2,7 @@ import { type FC, useCallback, useEffect, useMemo, useRef, useState } from 'reac
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { type SvgProps } from 'react-native-svg';
 
+import { LoadingScreen } from '@/components/loading-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
@@ -58,6 +59,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   // expansion RECORD, not the bundled catalog). v0.13.1 only surfaced ancestries; now every content type
   // is bucketed so custom domain/community/subclass/class cards appear in their tabs too.
   const [records, setRecords] = useState<LibraryCard[]>([]);
+  const [recordsReady, setRecordsReady] = useState(false);
   useEffect(() => {
     let live = true;
     void listExpansions().then((exps) => {
@@ -66,6 +68,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
       // character's creation snapshot (`!e.official`); official packs still honor the snapshot.
       const enabled = exps.filter((e) => isEnabledForCreation(e) && (!e.id || allowedExp.size === 0 || allowedExp.has(e.id) || !e.official)).flatMap((e) => e.cards);
       setRecords(enabled);
+      setRecordsReady(true);
     });
     return () => { live = false; };
   }, [allowedExp]);
@@ -167,7 +170,13 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
       {isCardKind ? (
         <View style={{ flex: 1, minHeight: 260 }}>
           {items.length === 0 ? (
-            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, textAlign: 'center', marginTop: 24 }}>No cards.</Text>
+            // v0.22.0: PRODUCT.md 5 says every async surface gets a designed loading state; this was
+            // the one that didn't, so a pending catalog was indistinguishable from an empty one.
+            !recordsReady ? (
+              <View style={{ marginTop: 20, height: 160 }}><LoadingScreen label="Opening the catalogue" /></View>
+            ) : (
+              <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, textAlign: 'center', marginTop: 24 }}>Nothing here yet. Try another tab, or author a custom card below.</Text>
+            )
           ) : (
             <StraightCarousel key={`${cat}-${domain}`} ref={carRef} items={items} selectedIds={[...acquiredIds]} onIndexChange={setCenterIdx} />
           )}

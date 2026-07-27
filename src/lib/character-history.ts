@@ -346,3 +346,59 @@ export function timeline(history: CharacterHistory): { entry: HistoryEntry; inde
     .map((entry, index) => ({ entry, index, discarded: cut != null && index > cut }))
     .reverse();
 }
+
+/** An authored card that existed in an earlier snapshot and is gone from the character now. */
+export interface RecoverableCard {
+  id: string;
+  title: string;
+  /** Which collection it lived in, so restoring puts it back where it came from. */
+  collection: AuthoredCollection;
+  /** When it was last seen alive. */
+  at: string;
+  /** The card object itself, ready to be put back. */
+  card: unknown;
+}
+
+/** The four collections that hold player-AUTHORED cards. Catalog cards aren't listed: they are
+ *  re-addable from the gear browser at any time, so they were never really lost. */
+export type AuthoredCollection = 'customCards' | 'inventoryCustom' | 'notes' | 'experiences';
+const AUTHORED: AuthoredCollection[] = ['customCards', 'inventoryCustom', 'notes', 'experiences'];
+
+function cardsIn(file: CharacterFile, col: AuthoredCollection): { id?: string; title?: string }[] {
+  const v = (file as unknown as Record<string, unknown>)[col];
+  return Array.isArray(v) ? (v as { id?: string; title?: string }[]) : [];
+}
+
+/**
+ * The card trash (v0.22.0), derived rather than stored.
+ *
+ * The owner asked for a way to see and recover deleted cards without a general undo stack. Because
+ * every mutation already snapshots the whole character, a deleted card is still sitting in history —
+ * so the trash is a QUERY over what used to exist, not a second copy of the data to keep in sync.
+ * That also means it is bounded by the history cap for free, and cannot drift out of agreement with
+ * the character the way a parallel `trashedCards` array would.
+ *
+ * Newest sighting wins, so a card deleted, restored and deleted again reports the latest version.
+ */
+export function recoverableCards(history: CharacterHistory, current: CharacterFile): RecoverableCard[] {
+  const alive = new Set<string>();
+  for (const col of AUTHORED) for (const c of cardsIn(current, col)) if (c.id) alive.add(c.id);
+
+  const found = new Map<string, RecoverableCard>();
+  for (const entry of history.entries) {
+    for (const col of AUTHORED) {
+      for (const c of cardsIn(entry.snapshot, col)) {
+        if (!c.id || alive.has(c.id)) continue;
+        found.set(c.id, { id: c.id, title: c.title || 'Untitled card', collection: col, at: entry.at, card: c });
+      }
+    }
+  }
+  return [...found.values()].sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/** Put a recovered card back in the collection it came from. Returns a new file. */
+export function restoreCard(file: CharacterFile, rec: RecoverableCard): CharacterFile {
+  const existing = cardsIn(file, rec.collection);
+  if (existing.some((c) => c.id === rec.id)) return file; // already back; restoring twice is a no-op
+  return { ...file, [rec.collection]: [...existing, rec.card] } as CharacterFile;
+}
