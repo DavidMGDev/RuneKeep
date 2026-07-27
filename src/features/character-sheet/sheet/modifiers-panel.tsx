@@ -13,13 +13,13 @@ const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
  * shows the character's BASE value, then, in application order, each enabled card's contribution (and
  * the card responsible), and the final (capped) total. No manual stat editing — cards do it all now.
  */
-export function ModifiersPanel({ file, onClose }: { file: CharacterFile; onClose: () => void }) {
+export function ModifiersPanel({ file, onClose, header }: { file: CharacterFile; onClose: () => void; header?: React.ReactNode }) {
   const sheet = sheetBreakdown(file);
   const exps = experienceBreakdown(file);
   const enabledCount = (file.enabledCardIds ?? []).length;
   const subtitle = enabledCount > 0 ? `${enabledCount} card${enabledCount === 1 ? '' : 's'} equipped` : 'No cards equipped';
   return (
-    <OverlayShell title="Modifiers" subtitle={subtitle} onClose={onClose}>
+    <OverlayShell title="Modifiers" subtitle={subtitle} onClose={onClose} header={header}>
       {enabledCount === 0 ? (
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18, marginBottom: 2 }}>
           Press and hold a card in the carousel to equip it — its modifiers will appear here, layered on your base stats.

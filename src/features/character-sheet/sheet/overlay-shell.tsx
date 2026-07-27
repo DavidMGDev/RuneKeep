@@ -18,6 +18,7 @@ export function OverlayShell({
   subtitle,
   onClose,
   children,
+  header,
   footer,
   width = 348,
   scroll = true,
@@ -28,6 +29,8 @@ export function OverlayShell({
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
+  /** Pinned above the scrolling body — used by the State panel for its tab strip. */
+  header?: ReactNode;
   footer?: ReactNode;
   width?: number;
   scroll?: boolean;
@@ -80,6 +83,7 @@ export function OverlayShell({
             <Text style={{ color: Rune.muted, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
           </Pressable>
         </View>
+        {header}
         {scroll ? (
           <ScrollView style={{ maxHeight: scrollMax }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 2 }} keyboardShouldPersistTaps="handled">
             {children}

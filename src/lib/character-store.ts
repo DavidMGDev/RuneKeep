@@ -89,6 +89,10 @@ export async function exportCharacter(file: CharacterFile): Promise<void> {
   const safe = file.name.replace(/[^\w-]+/g, '_').slice(0, 40) || 'character';
   const out = new File(Paths.cache, `${safe}.rkp`);
   if (out.exists) out.delete();
+  // v0.22.0: history travels WITH the file (owner). A shared character carries its whole story, so
+  // a friend importing it — or you restoring your own backup — gets the timeline too, not just the
+  // final state. Characters are never shared over NFC (only cards are), so the ~60KB tag ceiling
+  // that governs card sharing does not apply here.
   out.write(serializeRkp({ kind: 'character', payload: file }));
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Sharing = require('expo-sharing') as typeof import('expo-sharing');

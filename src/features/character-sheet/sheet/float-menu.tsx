@@ -53,7 +53,9 @@ const TAP_SLOP = 12;
 
 const SLOTS: Slot[] = [
   // Order (#282): N = Modifiers, then Level Up, Rest, New Card, S = Cards.
-  { kind: 'modifiers', label: 'Modifiers' }, // due-NORTH
+  // v0.22.0: the north slot is now STATE — the modifier breakdown (unchanged) plus the character's
+  // full rewindable timeline. Same `kind` so every existing route to it keeps working.
+  { kind: 'modifiers', label: 'State' }, // due-NORTH
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
   { kind: 'custom', label: 'New Card' },

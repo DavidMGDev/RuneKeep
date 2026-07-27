@@ -76,6 +76,7 @@ import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
+import { emptyHistory, type CharacterHistory, readHistory, record, type RecordIntent, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
@@ -85,7 +86,7 @@ import { EditCardFlow } from './edit-card-flow';
 import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
-import { ModifiersPanel } from './modifiers-panel';
+import { StatePanel } from './state-panel';
 import { CardManagementPanel, Confirm, MoveSheet } from './card-management-panel';
 import { type CardMenuKind } from '../card-menu';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
@@ -624,10 +625,65 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Held in a ref (not useCallback) so the many save call-sites don't each need it as a dependency —
   // it only reads refs, so it's safe to treat as stable.
   const saveFileRef = useRef<(next: CharacterFile) => void>(() => {});
+  // v0.22.0 — STATE HISTORY. This closure is the single choke point every in-play mutation passes
+  // through (creation and import are the only other write entry points), which is what makes "no
+  // action is exempt" tractable rather than a 40-site audit.
+  const historyRef = useRef<CharacterHistory>(emptyHistory());
+  const lastSavedRef = useRef<CharacterFile | null>(null);
+  // One-shot intent for changes a diff cannot identify: a rest only moves resources, so it is
+  // indistinguishable from a tap on the HP track; a bulk equip arrives as N writes 35ms apart and
+  // has to collapse by intent rather than by timing.
+  const intentRef = useRef<RecordIntent>({});
+  const [historyRev, setHistoryRev] = useState(0);
   saveFileRef.current = (next) => {
     const r = liveResRef.current;
-    void saveCharacter({ ...next, resources: { hp: r.hp, stress: r.stress, hope: r.hope, armor: r.armor }, gold: r.gold });
+    const stamped: CharacterFile = { ...next, resources: { hp: r.hp, stress: r.stress, hope: r.hope, armor: r.armor }, gold: r.gold };
+    const snapshot = stripHistory(stamped);
+    const intent = intentRef.current;
+    intentRef.current = {};
+    historyRef.current = record(historyRef.current, lastSavedRef.current, snapshot, intent);
+    lastSavedRef.current = snapshot;
+    // Deliberately NO setState here. `mutateFile` calls this from inside a `setFile` updater, which
+    // React runs during the render phase, so scheduling an update here would be a render-phase
+    // update on another component. The panel reads `historyRef.current` when it mounts (always
+    // fresh) and `rewindTo` — a plain callback — is the only path that needs to re-render it.
+    void saveCharacter({ ...stamped, history: historyRef.current });
   };
+  /** Tag the NEXT save with an explicit intent. */
+  const withIntent = useCallback((intent: RecordIntent) => {
+    intentRef.current = intent;
+  }, []);
+  const historySeeded = useRef(false);
+  if (!historySeeded.current && characterFile) {
+    historySeeded.current = true;
+    historyRef.current = readHistory(characterFile.history);
+    lastSavedRef.current = stripHistory(characterFile);
+    // A character made before v0.22.0 has no history; seed one so its timeline starts somewhere
+    // meaningful rather than with whatever it happens to do next.
+    if (historyRef.current.entries.length === 0) {
+      historyRef.current = record(historyRef.current, null, stripHistory(characterFile));
+    }
+  }
+
+  /**
+   * Restore the character to an earlier point. This does NOT create a history entry — it moves the
+   * viewing position and persists; the next real change is what truncates the discarded future.
+   * Character-scoped by construction: party vitals, the card library and DM encounters are not
+   * touched, and `repairs` carries anything the snapshot couldn't legally restore.
+   */
+  const rewindTo = useCallback((index: number): string[] => {
+    const live = fileRef.current;
+    if (!live) return [];
+    const r = rewindHistory(historyRef.current, index, live);
+    historyRef.current = r.history;
+    lastSavedRef.current = stripHistory(r.file);
+    setFile(r.file);
+    setCharacter(toSheetCharacter(r.file));
+    void saveCharacter({ ...r.file, history: r.history });
+    setHistoryRev((n) => n + 1);
+    return r.repairs;
+  }, []);
+
   const mutateFile = useCallback((patch: Partial<CharacterFile>) => {
     setFile((f) => {
       if (!f) return f;
@@ -1220,6 +1276,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // animation and every stat change pops a toast.
   const onApplyLevelUp = useCallback(
     (next: CharacterFile) => {
+      withIntent({ kind: 'level', label: `Levelled up to ${next.level}` });
       setFile(next);
       saveFileRef.current(next);
       const c = characterRef.current;
@@ -1912,7 +1969,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const order = cat ? decksNow[cat].map((c) => c.id).filter((cid) => ids.includes(cid)) : ids;
     const enabled = new Set(cur.enabledCardIds ?? []);
     const target: 'on' | 'off' = order.every((cid) => enabled.has(refOf(cid, cur))) ? 'off' : 'on';
-    order.forEach((cid, i) => setTimeout(() => toggleOneFromRefs(cid, target), i * 35));
+    // Each toggle is its own disk write; tag every one with the SAME intent so history folds them
+    // into a single "Equipped 8 cards" rather than eight entries for one gesture.
+    const label = `${target === 'on' ? 'Equipped' : 'Unequipped'} ${order.length} card${order.length === 1 ? '' : 's'}`;
+    order.forEach((cid, i) => setTimeout(() => { withIntent({ kind: 'equip', label }); toggleOneFromRefs(cid, target); }, i * 35));
     setTimeout(() => carouselApiRef.current?.deselectAll(), order.length * 35 + 90);
   }, [carouselDecks, toggleOneFromRefs]);
   // v0.10.7 Golden Gear Edit card-hold radial → action. Move/Delete open their sheets; Bulk Equip runs the
@@ -2156,9 +2216,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {floatKind === 'custom' ? (
             <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
-            <RestPanel character={character} moveLimit={restMoveLimit(file ?? {})} onApply={(next) => { burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
+            <RestPanel character={character} moveLimit={restMoveLimit(file ?? {})} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
-            <ModifiersPanel file={file} onClose={() => setFloatKind(null)} />
+            <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (
             <CardManagementPanel
               isDruid={hasBeastform(file)}
