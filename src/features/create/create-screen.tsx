@@ -11,6 +11,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { ChamferedImage } from './components/chamfered-image';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
+import { showToast } from '@/components/toast';
 import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { CATALOG, cardById } from '@/data/catalog';
@@ -529,7 +530,6 @@ export function CreateScreen() {
 
   const forge = useCallback(async () => {
     if (!complete || !draft.className) return;
-    clearDraft(); // the draft has become a character; it must not be offered back next visit
     const id = newCharacterId();
     // v0.10.3 (B4): embed a self-contained COPY of every picked homebrew card so the character renders +
     // resolves effects with no expansion installed and survives it being disabled/deleted. Derived from
@@ -583,7 +583,14 @@ export function CreateScreen() {
       ...(enabledExpansionIds.length ? { enabledExpansionIds } : {}),
       gold: draft.gold,
       level: 1,
+    }).catch((e: unknown) => {
+      // v0.22.0: this was awaited with NO catch, so a failed write produced no feedback at all.
+      // Put the draft back so nothing is lost, and say what happened.
+      saveDraft(draft, { deck, picked: [...picked] });
+      showToast('Could not save your hero. Your draft is safe — try Forge again.', 'error');
+      throw e;
     });
+    clearDraft(); // only now: the draft has become a character and must not be offered back
     router.replace({ pathname: '/sheet', params: { id } });
   }, [complete, draft, router, libContent, picked]);
 
