@@ -69,3 +69,4 @@ scripts/_features_full.txt
 
 # build logs (transient)
 apk-build/*.log
+dm210-build.log
