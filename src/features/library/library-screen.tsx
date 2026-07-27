@@ -75,7 +75,7 @@ function defaultConfigFor(t: LibraryContentType): CardConfig {
   return { contentType: t };
 }
 
-function LibInput({ label, value, onChangeText, placeholder, keyboardType }: { label: string; value: string; onChangeText: (s: string) => void; placeholder?: string; keyboardType?: 'default' | 'number-pad' }) {
+function LibInput({ label, value, onChangeText, placeholder, keyboardType, maxLength }: { label: string; value: string; onChangeText: (s: string) => void; placeholder?: string; keyboardType?: 'default' | 'number-pad'; maxLength?: number }) {
   return (
     <View style={{ gap: 4 }}>
       <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
@@ -87,6 +87,7 @@ function LibInput({ label, value, onChangeText, placeholder, keyboardType }: { l
           placeholderTextColor={Rune.muted}
           selectionColor={Rune.goldBright}
           keyboardType={keyboardType}
+          maxLength={maxLength}
           style={{ color: Rune.sheet, fontSize: 14, fontFamily: Body.semibold, padding: 0 }}
           accessibilityLabel={label}
         />
@@ -257,7 +258,7 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 10 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{initial ? 'Edit expansion' : 'New expansion'}</Text>
-        <LibInput label="Name" value={name} onChangeText={setName} placeholder="My homebrew" />
+        <LibInput label="Name" value={name} onChangeText={setName} placeholder="My homebrew" maxLength={32} />
         <LibInput label="Author" value={author} onChangeText={setAuthor} placeholder="You" />
         <LibInput label="Description" value={description} onChangeText={setDescription} placeholder="What's inside" />
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>

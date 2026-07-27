@@ -294,7 +294,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
           taller than web's and the 17px box clipped the descender band off "LVL 4 SORCERER". */}
       {/* level/class + proficiency on ONE line now (#128): "Prof" abbreviation, no arrow, middot
           separator — the freed vertical space goes to the (taller, squarer) origin badges below. */}
-      <SheetText left={176} top={95} width={224} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1}>
+      <SheetText left={176} top={95} width={224} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1} fit minScale={0.85}>
         Lvl {character.level} {character.className} · Prof {character.proficiency}
       </SheetText>
 
@@ -370,8 +370,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
           — red current, smaller ink "/ max"; the current numeral steps down a size at double digits
           so 12/12 still fits under the label (#30 I/#43 I). */}
       <View style={[box(48, 330, 92, 38), { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-start', overflow: 'hidden' }]} pointerEvents="none">
-        <Text numberOfLines={1} style={{ fontSize: hp.current >= 10 ? 28 : 32, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
-        <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {character.maxHp}</Text>
+        {/* v0.22.0: a third step at 3 digits. The box is 92 wide and can't grow — x=140 is HeartTrack —
+            and maxHp has no clamp, so homebrew stacking reaches 100+ and used to clip silently. */}
+        <Text numberOfLines={1} style={{ fontSize: hp.current >= 100 ? 20 : hp.current >= 10 ? 28 : 32, color: tint ?? RED, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>{hp.current}</Text>
+        <Text numberOfLines={1} style={{ marginLeft: 5, fontSize: character.maxHp >= 100 ? 14 : 24, color: INK, fontFamily: Display.bold, fontVariant: ['tabular-nums'] }}>/ {character.maxHp}</Text>
       </View>
       {/* Hearts sit 10px further left (#30 I); states + readout both derive from HP (D1/§1A). */}
       <HeartTrack ref={heartRef} left={140} top={333} width={235} pip={35} hp={character.hp} slots={heartSlotCount} maxHp={character.maxHp} accent={tint ?? RED} onHp={onHp} />

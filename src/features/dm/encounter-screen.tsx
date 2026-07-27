@@ -111,6 +111,9 @@ export function EncounterScreen() {
   const [addingNpc, setAddingNpc] = useState(false);
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [confirmDeleteAdv, setConfirmDeleteAdv] = useState<Set<string> | null>(null);
+  // v0.22.0: the ally bar's Delete used to fire immediately while the adversary bar's confirmed —
+  // two buttons apart, same word, different stakes.
+  const [confirmDeleteAlly, setConfirmDeleteAlly] = useState<Set<string> | null>(null);
   const [startConflict, setStartConflict] = useState(false);
   const [restartPrompt, setRestartPrompt] = useState(false);
   const [muted, setMuted] = useState(isUiMuted); // item 6: DM-side UI-sound mute
@@ -361,7 +364,7 @@ export function EncounterScreen() {
           </Pressable>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 90, gap: 8 }}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: allySel.selecting || advSel.selecting ? 150 : 90, gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionLabel dm>Allies</SectionLabel>
             <View style={{ flexDirection: 'row', gap: 14 }}>
@@ -412,7 +415,7 @@ export function EncounterScreen() {
         <BottomBar label={`${allySel.ids.size} selected`}>
           <RuneButton label="Present ⇄" kind="ghost" height={30} dense dm onPress={() => { flipPresence(allySel.ids); allySel.clear(); }} />
           <RuneButton label="To Adversary" kind="ghost" height={30} dense dm onPress={() => { convertToAdversaries(allySel.ids); allySel.clear(); }} />
-          <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => { deleteNpcAllies(allySel.ids); allySel.clear(); }} />
+          <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDeleteAlly(new Set(allySel.ids))} />
           <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={allySel.clear} />
         </BottomBar>
       ) : advSel.selecting ? (
@@ -468,6 +471,7 @@ export function EncounterScreen() {
       ) : null}
 
       {confirmComplete ? <PopupDialog title="Complete encounter?" body="This freezes the party's current state onto the encounter as a record. The party keeps its live state for the next encounter." confirmLabel="Complete" onConfirm={complete} onCancel={() => setConfirmComplete(false)} /> : null}
+      {confirmDeleteAlly ? <PopupDialog title="Remove these allies?" body={`${confirmDeleteAlly.size === 1 ? 'This ally' : `These ${confirmDeleteAlly.size} allies`} will be removed from this encounter. Player characters are never removed this way.`} confirmLabel="Remove" destructive onConfirm={() => { deleteNpcAllies(confirmDeleteAlly); setConfirmDeleteAlly(null); allySel.clear(); }} onCancel={() => setConfirmDeleteAlly(null)} /> : null}
       {confirmDeleteAdv ? <PopupDialog title="Delete selected?" body={`${confirmDeleteAdv.size} unit(s) will be removed from this encounter.`} confirmLabel="Delete" destructive onConfirm={() => { deleteCombatants(confirmDeleteAdv); setConfirmDeleteAdv(null); advSel.clear(); }} onCancel={() => setConfirmDeleteAdv(null)} /> : null}
       {startConflict ? <PopupDialog title="Another encounter is active" body="Starting this one will complete the currently active encounter (noted in its log). Continue?" confirmLabel="Start" onConfirm={() => { setStartConflict(false); void doStart(); }} onCancel={() => setStartConflict(false)} /> : null}
       {restartPrompt ? (

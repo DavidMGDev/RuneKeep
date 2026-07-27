@@ -137,7 +137,7 @@ export function SessionScreen() {
           <FlatList
             data={ordered}
             keyExtractor={(e) => e.id}
-            contentContainerStyle={{ gap: 12, paddingTop: 4, paddingBottom: 16 }}
+            contentContainerStyle={{ gap: 12, paddingTop: 4, paddingBottom: sel.selecting ? 96 : 16 }}
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => {
               const pinned = item.id === session.activeEncounterId;

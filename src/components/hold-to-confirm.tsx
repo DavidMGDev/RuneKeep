@@ -1,9 +1,10 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Svg, { Polygon } from 'react-native-svg';
 
-import { ChamferBox } from '@/components/chamfer-box';
+import { ChamferBox, chamferPoints } from '@/components/chamfer-box';
 import { Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 
@@ -57,17 +58,35 @@ export function HoldToConfirm({
   );
 
   const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + charge.value * 0.1 }] }));
-  const fillStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (1 - charge.value) * height }] }));
+  // The fill is a CHAMFERED polygon revealed bottom-up, not a square wipe (v0.22.0): the clip window
+  // slides DOWN by the unfilled remainder and the silhouette inside slides UP by the same amount, so
+  // the visible region is exactly the bottom `charge` fraction of the octagon — flat top edge, 45°
+  // bottom corners that match the box. Both are transforms; nothing animates a layout property.
+  const clipStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (1 - charge.value) * height }] }));
+  const shapeStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -(1 - charge.value) * height }] }));
   const edgeStyle = useAnimatedStyle(() => ({ opacity: charge.value > 0.02 ? 1 : 0 }));
+
+  const [w, setW] = useState(0);
+  const points = useMemo(() => (w > 2 * chamfer ? chamferPoints(w, height, chamfer, 1.4) : ''), [w, height, chamfer]);
 
   return (
     <GestureDetector gesture={hold}>
       <Animated.View style={[{ alignSelf: 'stretch' }, scaleStyle]} accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Press and hold to confirm">
         <ChamferBox chamfer={chamfer} fill="rgba(14,17,22,0.96)" stroke={color} strokeWidth={1.4} style={{ height, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          <Animated.View style={[StyleSheet.absoluteFill, fillStyle]} pointerEvents="none">
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: color }]} />
-            <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, height: 2.5, backgroundColor: Rune.goldBright }, edgeStyle]} />
-          </Animated.View>
+          <View style={StyleSheet.absoluteFill} pointerEvents="none" onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+            {points ? (
+              <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, clipStyle]}>
+                <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: w, height }, shapeStyle]}>
+                  <Svg width={w} height={height}>
+                    <Polygon points={points} fill={color} />
+                  </Svg>
+                </Animated.View>
+                {/* the bright leading edge rides the TOP of the clip window — i.e. the fill's own
+                    waterline — not the top of the silhouette. */}
+                <Animated.View style={[{ position: 'absolute', left: chamfer, right: chamfer, top: 0, height: 2.5, backgroundColor: Rune.goldBright }, edgeStyle]} />
+              </Animated.View>
+            ) : null}
+          </View>
           <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Display.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
         </ChamferBox>
       </Animated.View>
