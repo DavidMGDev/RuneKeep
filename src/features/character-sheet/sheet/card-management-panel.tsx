@@ -49,6 +49,9 @@ const TILE_W = 92;
 const TILE_H = Math.round((TILE_W * 7) / 5);
 
 interface Props {
+  /** v0.22.0 card trash: authored cards that used to exist, derived from the character's history. */
+  trash?: { id: string; title: string; at: string }[];
+  onRestoreCard?: (id: string) => void;
   isDruid: boolean;
   /** #311: the character has a Beastbound companion → the Companion category is available here. */
   hasCompanion: boolean;
@@ -147,7 +150,7 @@ function LiveTile({ item }: { item: CardItem }) {
 export function CardManagementPanel(props: Props) {
   const { isDruid, hasCompanion, hasMartialForm, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onFavorite, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
-  const [view, setView] = useState<'categories' | 'cards' | 'types'>('cards'); // #297: open on Cards
+  const [view, setView] = useState<'categories' | 'cards' | 'types' | 'trash'>('cards'); // #297: open on Cards
 
   const hiddenSet = useMemo(() => new Set(hidden), [hidden]);
   // v0.9.8: surface the Favorites section once it has cards (it's not a normal available category).
@@ -338,10 +341,15 @@ export function CardManagementPanel(props: Props) {
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <TabButton label="Cards" active={view === 'cards'} onPress={() => setView('cards')} />
         <TabButton label="Categories" active={view === 'categories'} onPress={() => setView('categories')} />
+        {/* v0.22.0: deleting a card used to be terminal. The trash is derived from history rather
+            than stored, so it can never drift out of agreement with the character. */}
+        <TabButton label={props.trash?.length ? `Trash · ${props.trash.length}` : 'Trash'} active={view === 'trash'} onPress={() => setView('trash')} />
       </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 8 }} scrollEnabled={!dragId} keyboardShouldPersistTaps="handled">
-        {view === 'categories' ? (
+        {view === 'trash' ? (
+          <TrashView trash={props.trash ?? []} onRestore={props.onRestoreCard} />
+        ) : view === 'categories' ? (
           <CategoriesView ordered={ordered} decks={decks} hiddenSet={hiddenSet} enabledCount={enabledCount} currentCategory={currentCategory} customCategories={customCategories} onToggle={onToggle} onQuickSwitch={quickSwitch} onMoveUpDown={moveCat} onEdit={setEditing} onAskDelete={setConfirmDelCat} onCreate={() => setCreateOpen(true)} onManageTypes={() => setView('types')} />
         ) : view === 'cards' ? (
           <CardsView
@@ -648,5 +656,36 @@ export function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { ti
         </View>
       </ChamferBox>
     </CenterDialog>
+  );
+}
+
+
+/**
+ * Recoverable cards. Deleting has always been permanent and hold-gated; this is the safety net the
+ * owner asked for instead of a general undo stack. Entries age out with the history cap, which is
+ * stated plainly rather than left as a surprise.
+ */
+function TrashView({ trash, onRestore }: { trash: { id: string; title: string; at: string }[]; onRestore?: (id: string) => void }) {
+  if (trash.length === 0) {
+    return (
+      <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
+        Nothing deleted recently. Cards you author and then delete show up here so you can put them back.
+      </Text>
+    );
+  }
+  return (
+    <>
+      <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 17, marginBottom: 4 }}>
+        Cards you wrote and later deleted. They stay recoverable for as long as they remain in this character&apos;s history.
+      </Text>
+      {trash.map((t) => (
+        <ChamferBox key={t.id} chamfer={6} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.3)" strokeWidth={1} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, paddingVertical: 9 }}>
+          <View style={{ flex: 1 }}>
+            <Text numberOfLines={2} style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{t.title}</Text>
+          </View>
+          <RuneButton label="Restore" kind="secondary" dense height={30} onPress={() => onRestore?.(t.id)} />
+        </ChamferBox>
+      ))}
+    </>
   );
 }

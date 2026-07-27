@@ -15,6 +15,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { listParties } from '@/lib/party-store';
 import { showToast } from '@/components/toast';
+import { loadOnboarding } from '@/lib/onboarding-store';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
@@ -172,6 +173,8 @@ function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onTo
  * stays out of the way).
  */
 export function MenuScreen() {
+  // v0.22.0: offered ONCE. `done` is set by finishing or skipping, and nothing re-raises it.
+  const [tourChecked, setTourChecked] = useState(false);
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [dm, setDm] = useState(false);
@@ -189,6 +192,14 @@ export function MenuScreen() {
     }, 350);
     return () => clearTimeout(t);
   }, []);
+  // v0.22.0: offer the tour ONCE, after the menu has actually settled — a first-run user shouldn't
+  // meet a modal before they have seen the app it describes. Finishing or skipping sets `done`, and
+  // nothing raises it again; the "?" button is the only way back in.
+  useEffect(() => {
+    if (!ready || tourChecked) return;
+    setTourChecked(true);
+    if (!loadOnboarding().done) router.push('/onboarding' as Href);
+  }, [ready, tourChecked, router]);
   // Sessions unlocks only once a party is enabled (PRD #17/#18). Re-checked whenever the menu regains
   // focus (returning from Parties may have just enabled one).
   useFocusEffect(
@@ -270,12 +281,21 @@ export function MenuScreen() {
           ) : (
             <>
               <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
-              <MenuAction label="Cards" sub="Archive, homebrew & expansions" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
+              <MenuAction label="Cards" sub="Browse the archive, build homebrew" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
             </>
           )}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
             <ModeToggle dm={dm} onToggle={toggleDm} />
             <MuteToggle muted={muted} dm={dm} onToggle={toggleMute} />
+            {/* v0.22.0: the tour is re-openable, not a one-shot you can never find again. */}
+            <Pressable
+              onPress={() => { playSfx('buttonTap'); router.push('/onboarding' as Href); }}
+              accessibilityRole="button"
+              accessibilityLabel="How RuneKeep works">
+              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={dm ? DmRune.line : Rune.goldEdge} strokeWidth={1.3} style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 15, fontFamily: Display.black }}>?</Text>
+              </ChamferBox>
+            </Pressable>
           </View>
         </View>
       </View>

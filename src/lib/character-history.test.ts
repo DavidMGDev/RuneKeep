@@ -1,5 +1,5 @@
 import type { CharacterFile } from './character-file';
-import { capEntries, classify, COALESCE_MS, emptyHistory, HISTORY_CAP, preview, readHistory, record, repair, rewind, stripHistory, timeline } from './character-history';
+import { capEntries, classify, recoverableCards, restoreCard, COALESCE_MS, emptyHistory, HISTORY_CAP, preview, readHistory, record, repair, rewind, stripHistory, timeline } from './character-history';
 
 /** A minimal but realistic character file. Only the fields a test touches need to be meaningful. */
 function mk(over: Partial<CharacterFile> = {}): CharacterFile {
@@ -274,5 +274,51 @@ describe('storage hygiene', () => {
     expect(readHistory(undefined).entries).toEqual([]);
     expect(readHistory({ version: 99, entries: [] }).entries).toEqual([]);
     expect(readHistory({ version: 1, entries: 'nope' }).entries).toEqual([]);
+  });
+});
+
+describe('the card trash is derived from history, not stored', () => {
+  const withCards = (cards: { id: string; title: string }[]) => mk({ customCards: cards as never });
+
+  it('lists an authored card that existed before and is gone now', () => {
+    let h = record(emptyHistory(), null, withCards([{ id: 'cc-1', title: 'Ember Ward' }]), {}, T0);
+    const after = mk({ customCards: [] as never });
+    h = record(h, withCards([{ id: 'cc-1', title: 'Ember Ward' }]), after, {}, at(60_000));
+    const rec = recoverableCards(h, after);
+    expect(rec).toHaveLength(1);
+    expect(rec[0]).toMatchObject({ id: 'cc-1', title: 'Ember Ward', collection: 'customCards' });
+  });
+
+  it('does not list cards the character still has', () => {
+    const live = withCards([{ id: 'cc-1', title: 'Ember Ward' }]);
+    const h = record(emptyHistory(), null, live, {}, T0);
+    expect(recoverableCards(h, live)).toEqual([]);
+  });
+
+  it('stops listing a card once it has been restored', () => {
+    let h = record(emptyHistory(), null, withCards([{ id: 'cc-1', title: 'Ember Ward' }]), {}, T0);
+    const gone = mk({ customCards: [] as never });
+    h = record(h, withCards([{ id: 'cc-1', title: 'Ember Ward' }]), gone, {}, at(60_000));
+    const back = restoreCard(gone, recoverableCards(h, gone)[0]);
+    expect(recoverableCards(h, back)).toEqual([]);
+  });
+
+  it('puts a restored card back in the collection it came from', () => {
+    let h = record(emptyHistory(), null, mk({ notes: [{ id: 'n-1', title: 'Tavern' }] as never }), {}, T0);
+    const gone = mk({ notes: [] as never });
+    h = record(h, mk({ notes: [{ id: 'n-1', title: 'Tavern' }] as never }), gone, {}, at(60_000));
+    const rec = recoverableCards(h, gone);
+    expect(rec[0].collection).toBe('notes');
+    const back = restoreCard(gone, rec[0]);
+    expect((back.notes as unknown as { id: string }[]).map((n) => n.id)).toEqual(['n-1']);
+  });
+
+  it('restoring twice is a no-op rather than a duplicate', () => {
+    let h = record(emptyHistory(), null, withCards([{ id: 'cc-1', title: 'Ember Ward' }]), {}, T0);
+    const gone = mk({ customCards: [] as never });
+    h = record(h, withCards([{ id: 'cc-1', title: 'Ember Ward' }]), gone, {}, at(60_000));
+    const rec = recoverableCards(h, gone)[0];
+    const once = restoreCard(gone, rec);
+    expect((restoreCard(once, rec).customCards as unknown as unknown[]).length).toBe(1);
   });
 });
