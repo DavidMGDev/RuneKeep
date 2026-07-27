@@ -9,6 +9,7 @@ import { AppScreen } from '@/components/app-screen';
 import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { ChamferedImage } from './components/chamfered-image';
+import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
@@ -32,6 +33,8 @@ import { itemColor } from '@/data/item-colors';
 import { useForgedSnapshots } from './components/forged-snapshots';
 import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
 import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } from './create-types';
+import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
+
 import { DECKS, deckDone, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
@@ -65,9 +68,26 @@ const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => ({
   custom: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
 });
 
+/**
+ * A draft is worth persisting/resuming only if SOMETHING was chosen — otherwise resuming would show
+ * an empty creator and ask the player to decide about nothing.
+ */
+function draftHasContent(d: unknown): boolean {
+  const x = d as Draft | undefined;
+  if (!x) return false;
+  return !!x.name?.trim() || DECKS.some((k) => deckDone(k.key, x));
+}
+
 export function CreateScreen() {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(EMPTY);
+  // v0.22.0: the draft used to live ONLY here, so the back chevron, hardware back, a phone call or a
+  // low-memory kill destroyed ten steps of work in silence. It is now persisted and guarded.
+  const nameRef = useRef<TextInput>(null);
+  const draftRef = useRef<Draft>(EMPTY);
+  const [leaveConfirm, setLeaveConfirm] = useState(false);
+  const [resumeOffer, setResumeOffer] = useState<{ draft: Draft; deck?: string; savedAt: string } | null>(null);
+  const [resumeChecked, setResumeChecked] = useState(false);
   const [deck, setDeck] = useState<DeckKey>('class');
   // v0.12.2: per-character EXPANSION PICKER — which content packs this hero can draw from. `picked` holds
   // the chosen expansion ids plus the implicit BASE_PICK_ID; it gates every class/origin/domain list below.
@@ -120,8 +140,8 @@ export function CreateScreen() {
       // before we reveal them — long enough that nothing is seen assembling.
       setTimeout(() => {
         setPendingDeck(null); // cards are painted → drop the loader
-        fade.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.quad) });
-      }, 620);
+        fade.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) });
+      }, 260);
     },
     [fade],
   );
@@ -131,7 +151,7 @@ export function CreateScreen() {
       setPendingDeck(next);
       const apply = () => finishFade(next);
       // fade EVERYTHING (cards + the SELECT controls) out before the swap so no button morphs (#150)
-      fade.value = withTiming(0, { duration: 200, easing: Easing.in(Easing.quad) }, (finished) => {
+      fade.value = withTiming(0, { duration: 140, easing: Easing.in(Easing.quad) }, (finished) => {
         if (finished) runOnJS(apply)();
       });
     },
@@ -238,6 +258,11 @@ export function CreateScreen() {
           return true;
         }
         if (carouselRef.current?.closeIfFullscreen()) return true;
+        // v0.22.0: hardware back used to pop the route and destroy the draft silently.
+        if (draftHasContent(draftRef.current)) {
+          setLeaveConfirm(true);
+          return true;
+        }
         return false;
       });
       return () => sub.remove();
@@ -471,10 +496,40 @@ export function CreateScreen() {
     [deck, draft, set, weaponSlot, secondaryAllowed, libContent],
   );
 
+  useEffect(() => {
+    if (resumeChecked) return;
+    setResumeChecked(true);
+    const stored = loadDraft<Draft>();
+    if (isResumable(stored, draftHasContent) && stored) setResumeOffer({ draft: stored.draft, deck: stored.deck, savedAt: stored.savedAt });
+    else clearDraft();
+  }, [resumeChecked]);
+
+  // Persist after every edit. Cheap (one small JSON) and it means the draft survives anything.
+  useEffect(() => {
+    if (!resumeChecked || resumeOffer) return; // don't overwrite a draft we're still offering back
+    if (draftHasContent(draft)) saveDraft(draft, { deck, picked: [...picked] });
+  }, [draft, deck, picked, resumeChecked, resumeOffer]);
+
+  draftRef.current = draft;
   const complete = DECKS.every((d) => deckDone(d.key, draft)) && draft.name.trim().length > 0;
+  // Aggregate progress (v0.22.0). The rail showed per-step ticks but nothing showed how close you
+  // were overall, and the NAME requirement had no representation on the rail at all — so a player
+  // could hold ten gold ticks and a disabled Forge button with no explanation of why.
+  const steps = DECKS.length + 1; // +1 for the name
+  const stepsDone = DECKS.filter((d) => deckDone(d.key, draft)).length + (draft.name.trim().length > 0 ? 1 : 0);
+  const missingLabel = !draft.name.trim() ? 'a name' : (DECKS.find((d) => !deckDone(d.key, draft))?.label.toLowerCase() ?? null);
+
+  /** Tapping Forge while incomplete jumps to the first unmet step instead of doing nothing. */
+  const jumpToMissing = useCallback(() => {
+    playSfx('buttonTap');
+    const next = DECKS.find((d) => !deckDone(d.key, draft));
+    if (next) switchDeck(next.key);
+    else nameRef.current?.focus(); // every deck is done, so the name is what's left
+  }, [draft, switchDeck]);
 
   const forge = useCallback(async () => {
     if (!complete || !draft.className) return;
+    clearDraft(); // the draft has become a character; it must not be offered back next visit
     const id = newCharacterId();
     // v0.10.3 (B4): embed a self-contained COPY of every picked homebrew card so the character renders +
     // resolves effects with no expansion installed and survives it being disabled/deleted. Derived from
@@ -540,7 +595,9 @@ export function CreateScreen() {
   const locked = (k: DeckKey) =>
     ((k === 'subclass' || k === 'domains') && !draft.className) || !!DECKS.find((d) => d.key === k)?.stub; // stubs land next issue
   const maxSelect = deck === 'domains' || deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
-  const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'card' : deck === 'armor' ? 'armor' : deck;
+  // 'domains' used to fall back to the word 'card' — the least specific label in the app, on the one
+  // step where you pick two. It only shows now when the centred card's own name is too long to fit.
+  const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'domain card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
 
@@ -587,8 +644,8 @@ export function CreateScreen() {
   return (
     <AppScreen
       title="New hero"
-      onBack={() => router.back()}
-      headerRight={<RuneButton label="Forge" kind="primary" height={26} dense disabled={!complete} onPress={forge} accessibilityLabel="Create character" />}>
+      onBack={() => { if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); router.back(); } }}
+      headerRight={<RuneButton label="Forge" kind="primary" height={26} dense onPress={() => { if (complete) void forge(); else jumpToMissing(); }} accessibilityLabel="Create character" />}>
       <View style={{ flex: 1 }}>
         {/* ---- details ---- */}
         <SectionDivider label="Details" />
@@ -621,6 +678,7 @@ export function CreateScreen() {
                 <TextInput
                   value={draft.name}
                   onChangeText={(name) => set({ name })}
+                  ref={nameRef}
                   placeholder="Name"
                   placeholderTextColor={Rune.muted}
                   selectionColor={Rune.goldBright}
@@ -638,6 +696,20 @@ export function CreateScreen() {
         {/* ---- cards ---- */}
         <View style={{ marginTop: 12 }}>
           <SectionDivider label="Cards" />
+        </View>
+        {/* v0.22.0: aggregate progress. The rail carried per-step ticks but nothing said how close
+            you were overall, and the NAME requirement wasn't on the rail at all — so ten gold ticks
+            plus a dead Forge button had no explanation. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 2 }}>
+          <Text style={{ color: complete ? Rune.goldBright : Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>
+            {stepsDone} / {steps}
+          </Text>
+          <View style={{ flex: 1, height: 2, backgroundColor: 'rgba(218,162,73,0.2)' }}>
+            <View style={{ width: `${(stepsDone / steps) * 100}%`, height: 2, backgroundColor: complete ? Rune.goldBright : Rune.gold }} />
+          </View>
+          <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, maxWidth: 150 }}>
+            {complete ? 'Ready to forge' : `Next: ${missingLabel}`}
+          </Text>
         </View>
         {/* The deck rail (#107, nine steps): fixed-width tabs, free scroll. A thin custom scroll
             indicator (#110) tracks position instead of the old static chevron. */}
@@ -732,7 +804,7 @@ export function CreateScreen() {
         // reach further into this band) — the buttons must never overlap the carousel (owner).
         <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: deck === 'weapons' ? 40 : 56, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
-            label={centerSelected ? 'Deselect' : `Select ${noun}`}
+            label={centerSelected ? 'Deselect' : `Select ${centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun}`}
             kind={centerSelected ? 'ghost' : 'primary'}
             height={40}
             muteSfx
@@ -749,7 +821,7 @@ export function CreateScreen() {
           {/* v0.10.6: the class/weapons hint tooltips were removed — they pushed these buttons up into
               the card carousel (owner). */}
           <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
-            {deck === 'inventory' ? `${draft.inventoryItemIds.length}/2` : `${selectedIds.length}/${maxSelect}`}
+            {deck === 'inventory' ? `Picked ${draft.inventoryItemIds.length}/2` : `Picked ${selectedIds.length}/${maxSelect}`}
           </Text>
         </Animated.View>
       ) : null}
@@ -763,6 +835,36 @@ export function CreateScreen() {
           expansions={expansions}
           initial={new Set([BASE_PICK_ID, ...expansions.filter(isEnabledForCreation).map((e) => e.id)])}
           onConfirm={(p) => { setPicked(p); setPickerOpen(false); }}
+        />
+      ) : null}
+
+      {/* v0.22.0: leaving used to discard everything with no prompt. */}
+      {leaveConfirm ? (
+        <PopupDialog
+          title="Leave character creation?"
+          body="Your progress is saved as a draft — you can pick it up next time you start a new hero. Discard it instead to start clean."
+          confirmLabel="Keep draft & leave"
+          onConfirm={() => { setLeaveConfirm(false); router.back(); }}
+          onCancel={() => setLeaveConfirm(false)}>
+          <View style={{ marginTop: 16 }}>
+            <RuneButton label="Discard draft" kind="ghost" height={40} onPress={() => { clearDraft(); setLeaveConfirm(false); router.back(); }} />
+          </View>
+        </PopupDialog>
+      ) : null}
+
+      {resumeOffer ? (
+        <PopupDialog
+          title="Resume your draft?"
+          body="You left a hero part-way through. Pick up where you stopped, or start a new one."
+          confirmLabel="Resume"
+          onConfirm={() => {
+            const o = resumeOffer;
+            setDraft(o.draft);
+            if (o.deck) setDeck(o.deck as DeckKey);
+            setResumeOffer(null);
+          }}
+          onCancel={() => { clearDraft(); setResumeOffer(null); }}
+          cancelLabel="Start fresh"
         />
       ) : null}
     </AppScreen>

@@ -5,6 +5,7 @@ import Svg, { Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
 import { CardEditor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
+import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -523,7 +524,16 @@ export function LevelUpPanel({
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
           <RuneButton label="Cancel" kind="ghost" height={44} style={{ flex: 1 }} onPress={onClose} />
           {/* Always pressable: if something's missing, jump to that step; otherwise confirm. */}
-          <RuneButton label="Confirm level" kind="primary" height={44} style={{ flex: 1.6 }} onPress={() => { if (canConfirm) confirm(); else if (missing) { playSfx('buttonTap'); setStep(missing.step); } }} muteSfx />
+          {/* v0.22.0: levelling is permanent and used to commit on a single tap, in an app that asks
+              for a 620ms hold to delete one card. When requirements are UNMET the button stays a tap
+              that jumps to the first missing step — that behaviour is good and shouldn't cost a hold. */}
+          <View style={{ flex: 1.6 }}>
+            {canConfirm ? (
+              <HoldToConfirm label="Hold to confirm" height={44} chamfer={10} sfx={null} onConfirm={confirm} />
+            ) : (
+              <RuneButton label="Confirm level" kind="primary" height={44} onPress={() => { if (missing) { playSfx('buttonTap'); setStep(missing.step); } }} muteSfx />
+            )}
+          </View>
         </View>
        </ChamferBox>
       </Animated.View>
