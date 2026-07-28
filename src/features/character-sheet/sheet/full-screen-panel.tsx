@@ -7,6 +7,7 @@ import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
 import { useLayout } from '@/hooks/use-layout';
 import { playSfx } from '@/lib/sfx';
+import { useScreenDim } from '@/lib/screen-dim';
 
 /**
  * The shared FULL-SCREEN interface shell (#252) — the Level Up pattern, generalised. An OPAQUE
@@ -34,6 +35,8 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
   const bgStyle = useAnimatedStyle(() => ({ opacity: p.value }));
   const panelStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 16 }] }));
 
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(0.985);
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
       {/* opaque catching backdrop — no onPress (button-only close), but a touch target so nothing

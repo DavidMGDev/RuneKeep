@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 
 import { box } from '@/lib/design';
+import { useScreenDim } from '@/lib/screen-dim';
 import { useCarousel } from '../carousel-context';
 
 // #293: tap-to-dismiss only in the BOTTOM 40% of the 892-design-tall screen. The top 60% (where the
@@ -35,6 +36,8 @@ export function FocusOverlay() {
   const dim = useAnimatedStyle(() => ({ opacity: fullscreenProgress.value * 0.82 }));
   const tap = Gesture.Tap().onEnd(() => runOnJS(closeFullscreen)());
 
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(active ? 0.82 : 0);
   if (!active) return null;
 
   return (

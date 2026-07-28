@@ -1,23 +1,31 @@
 /**
- * Whole-display dimming (v0.24.0).
+ * What the tablet margins must mirror (v0.24.1).
  *
- * Every overlay in the app dims by painting an absolutely-positioned scrim inside its own screen.
- * On a phone that screen IS the display, so it works. Inside the tablet's `PhoneFrame` it is only the
- * middle column, so opening a dialog darkened the app and left the margins at full brightness, which
- * read as a rendering bug rather than a frame.
+ * `PhoneFrame` draws the app into a phone-shaped column and leaves margins either side. Those margins
+ * have to be indistinguishable from a continuation of the screen, or the frame reads as a bug rather
+ * than a frame. Two things decide what is at the column's horizontal edge:
  *
- * Rather than rewrite thirteen scrims to escape their parent (they cannot: the frame clips), each one
- * announces the darkness it is applying. `PhoneFrame` paints the same value in the margins, so the
- * whole display dims together.
+ *  - **A base colour.** Most screens paint `Rune.ink`. The character sheet paints its parchment matte
+ *    edge to edge, which is why a tablet showed a near-white column between two dark strips.
+ *  - **Whatever is dimming.** Every overlay in the app dims by painting a scrim inside its own screen,
+ *    and the column clips, so the margins could not see any of them.
  *
- * Deliberately module-level rather than a context: scrims live at every depth of the tree, and a
- * provider high enough to reach them all would re-render the entire app on every open.
+ * Neither can be sampled: React Native has no cheap way to read back a rendered pixel, and doing it
+ * per frame would cost more than the whole frame does. So the screen DECLARES both, and the margins
+ * paint the declaration. Anything that covers the screen edge belongs here.
+ *
+ * Deliberately module-level rather than context: these are declared at every depth of the tree, and a
+ * provider high enough to reach them all would re-render the whole app on every dialog.
  */
 
 import { useEffect, useState } from 'react';
 
+// ---------------------------------------------------------------------------------------------
+// Dimming
+// ---------------------------------------------------------------------------------------------
+
 const active = new Map<number, number>();
-const subscribers = new Set<(v: number) => void>();
+const dimSubscribers = new Set<(v: number) => void>();
 let nextId = 1;
 
 /** The darkest scrim currently on screen. Overlays stack, so the deepest one wins rather than summing. */
@@ -27,9 +35,9 @@ export function dimLevel(): number {
   return max;
 }
 
-function emit(): void {
+function emitDim(): void {
   const v = dimLevel();
-  for (const f of subscribers) f(v);
+  for (const f of dimSubscribers) f(v);
 }
 
 /** Add a dim; call the returned function to remove it. The hook below is the only intended caller. */
@@ -37,17 +45,18 @@ export function registerDim(opacity: number): () => void {
   if (opacity <= 0) return () => {};
   const id = nextId++;
   active.set(id, opacity);
-  emit();
+  emitDim();
   return () => {
     active.delete(id);
-    emit();
+    emitDim();
   };
 }
 
 /**
  * Declare that this component is dimming the screen by `opacity` while it is mounted.
  *
- * Call it alongside the scrim it describes. On a phone nothing observes it, so it costs a map write.
+ * Call it alongside the scrim it describes. Pass 0 when the scrim is not up, so a conditional dim
+ * needs no branch. On a phone nothing observes it, so it costs a map write.
  */
 export function useScreenDim(opacity: number): void {
   useEffect(() => registerDim(opacity), [opacity]);
@@ -57,10 +66,10 @@ export function useScreenDim(opacity: number): void {
 export function useDimLevel(): number {
   const [v, setV] = useState(dimLevel);
   useEffect(() => {
-    subscribers.add(setV);
+    dimSubscribers.add(setV);
     setV(dimLevel());
     return () => {
-      subscribers.delete(setV);
+      dimSubscribers.delete(setV);
     };
   }, []);
   return v;
@@ -75,8 +84,65 @@ export function DimScreen({ opacity }: { opacity: number }): null {
   return null;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Edge colour
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * No screen has declared an edge. The caller supplies its own fallback (the app's ink navy); this
+ * module stays free of theme imports so it remains a plain unit-testable module.
+ */
+export const DEFAULT_EDGE = null;
+
+const edges: { id: number; color: string }[] = [];
+const edgeSubscribers = new Set<(v: string | null) => void>();
+
+/**
+ * The colour at the screen's horizontal edge. A stack, not a map: screens nest (the sheet mounts
+ * inside the router, a panel mounts inside the sheet), and the most recently mounted declaration is
+ * the one on top, so it is the one the edge shows.
+ */
+export function edgeColor(): string | null {
+  return edges.length ? edges[edges.length - 1].color : DEFAULT_EDGE;
+}
+
+function emitEdge(): void {
+  const v = edgeColor();
+  for (const f of edgeSubscribers) f(v);
+}
+
+export function registerEdge(color: string): () => void {
+  const id = nextId++;
+  edges.push({ id, color });
+  emitEdge();
+  return () => {
+    const i = edges.findIndex((e) => e.id === id);
+    if (i >= 0) edges.splice(i, 1);
+    emitEdge();
+  };
+}
+
+/** Declare the colour this screen paints at its left and right edges, for as long as it is mounted. */
+export function useScreenEdge(color: string): void {
+  useEffect(() => registerEdge(color), [color]);
+}
+
+export function useEdgeColor(): string | null {
+  const [v, setV] = useState(edgeColor);
+  useEffect(() => {
+    edgeSubscribers.add(setV);
+    setV(edgeColor());
+    return () => {
+      edgeSubscribers.delete(setV);
+    };
+  }, []);
+  return v;
+}
+
 /** Test seam: drop every registration. */
 export function resetScreenDim(): void {
   active.clear();
-  emit();
+  edges.length = 0;
+  emitDim();
+  emitEdge();
 }

@@ -15,6 +15,7 @@ import { type CompanionState, COMPANION_OPTIONS, companionOptionDef } from '@/li
 import { playSfx } from '@/lib/sfx';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
 import { ForgedCard } from '@/features/create/components/forged-card';
+import { useScreenDim } from '@/lib/screen-dim';
 
 import { TRAIT_ORDER } from '../character';
 import type { DomainCardInfo } from './domain-card-info';
@@ -297,6 +298,9 @@ export function LevelUpPanel({
     cfade.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
   }, [step, cfade, reduced]);
   const contentStyle = useAnimatedStyle(() => ({ opacity: cfade.value }));
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim). Above the
+  // max-level branch: both branches paint the same near-opaque backdrop.
+  useScreenDim(0.98);
 
   // v0.10.5: level 10 is the cap — never advance past it. (The float-menu entry stays; this is the
   // explanation if it's opened at max level.)
@@ -306,7 +310,7 @@ export function LevelUpPanel({
         <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
         <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 20, paddingVertical: 22, gap: 14, alignItems: 'center' }}>
           <Text style={{ color: Rune.goldText, fontSize: 20, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Max level</Text>
-          <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19, textAlign: 'center' }}>This hero is level {MAX_LEVEL} — the highest level in Daggerheart. There&apos;s nothing left to advance.</Text>
+          <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19, textAlign: 'center' }}>This hero is level {MAX_LEVEL}, the highest level in Daggerheart. There&apos;s nothing left to advance.</Text>
           <RuneButton label="Close" kind="primary" height={44} style={{ alignSelf: 'stretch' }} onPress={onClose} />
         </ChamferBox>
       </View>

@@ -13,6 +13,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { DmType, Display, DmRune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
+import { useScreenDim } from '@/lib/screen-dim';
 
 // Six wedges. Top three read +1 +2 +3 left→right; bottom three read −1 −2 −3 left→right. The left and
 // right sides (around ±0° and ±180°) are the cancel gaps.
@@ -159,6 +160,8 @@ function StatRadialHost({ color }: { color: string }) {
   });
   const dot = useAnimatedStyle(() => ({ opacity: progress.value, transform: [{ translateX: fingerX.value - hostX.value - 7 }, { translateY: fingerY.value - hostY.value - 7 }] }));
 
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(shown ? 0.34 : 0);
   if (!shown) return null;
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 9000 }]} pointerEvents="none">

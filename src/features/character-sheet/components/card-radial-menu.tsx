@@ -8,6 +8,7 @@ import { playSfx } from '@/lib/sfx';
 import { useCarousel } from '../carousel-context';
 import { cardMenuOptions, type CardMenuKind } from '../card-menu';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
+import { useScreenDim } from '@/lib/screen-dim';
 import { cardMenuAngle, CARD_MENU_ICON, CARD_MENU_RICON, CARD_MENU_RIN, CARD_MENU_ROUT } from '../carousel-geometry';
 
 /**
@@ -77,6 +78,8 @@ export function CardRadialMenu() {
   });
   const dot = useAnimatedStyle(() => ({ opacity: cardMenuOpen.value, transform: [{ translateX: cardMenuFingerX.value - 7 }, { translateY: cardMenuFingerY.value - 7 }] }));
 
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(visible && n > 0 ? 0.28 : 0);
   if (!visible || n === 0) return null;
   const half = 360 / n / 2;
   return (

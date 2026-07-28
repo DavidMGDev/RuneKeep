@@ -7,6 +7,7 @@ import FullUi from '../../assets/art/new/FullUI.svg';
 import FullUiDm from '../../assets/art/new/FullUI-dm.svg';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { scaled, useFrame, useLayout } from '@/hooks/use-layout';
+import { useScreenEdge } from '@/lib/screen-dim';
 
 /** Same Android floors as the sheet (#54/#59): the owner's A54 reports 0 for both insets. */
 export function useScreenInsets() {
@@ -40,6 +41,8 @@ interface AppScreenProps {
  */
 export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
+  // v0.24.1: what the tablet margins copy. Every AppScreen paints ink to its left and right edges.
+  useScreenEdge(Rune.ink);
   const titleColor = dm ? DmRune.ivory : Rune.ivory;
   const backStroke = dm ? DmRune.accent : Rune.goldEdge;
   const { scale, maxContent } = useLayout();

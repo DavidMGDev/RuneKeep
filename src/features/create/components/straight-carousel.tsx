@@ -22,6 +22,7 @@ import { playSfx } from '@/lib/sfx';
 import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
 import { useLayout } from '@/hooks/use-layout';
+import { useScreenDim } from '@/lib/screen-dim';
 import { FORGED_H, FORGED_W } from './forged-card';
 
 // Gear swoosh (#258r2): gearScroll1 only, on each fast direction-reversal while grinding — matches
@@ -498,6 +499,8 @@ export const StraightCarousel = forwardRef<
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(fsOpen ? 0.86 : 0);
   // The gear grinds with the deck (#110): rotation tracks pos linearly, so every detent turns it;
   // the fast-grind drag moves pos far more px-per-step, so it naturally spins faster while used.
   const gearStyle = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * grind.value, transform: [{ rotate: `${pos.value * GEAR_DEG_PER_STEP}deg` }] }));

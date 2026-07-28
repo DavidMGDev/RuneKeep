@@ -6,6 +6,7 @@ import Svg, { Polygon } from 'react-native-svg';
 import { Body, Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { beginLoading, endLoading } from '@/lib/sfx';
+import { useScreenDim } from '@/lib/screen-dim';
 
 /**
  * Full-screen forge loader (#150): a slowly turning rune ring around a pulsing core that covers the
@@ -46,6 +47,8 @@ export function RuneLoader({ done, onHidden, caption }: { done: boolean; onHidde
   const glow = useAnimatedStyle(() => ({ opacity: 0.45 + 0.55 * pulse.value, transform: [{ scale: 0.92 + 0.12 * pulse.value }] }));
   const ring = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
   const veil = useAnimatedStyle(() => ({ opacity: fade.value }));
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(done ? 0 : 1);
   return (
     <Animated.View
       pointerEvents={done ? 'none' : 'auto'}

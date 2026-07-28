@@ -84,7 +84,7 @@ import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
-import { useScreenDim } from '@/lib/screen-dim';
+import { useScreenDim, useScreenEdge } from '@/lib/screen-dim';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { EditCardFlow } from './edit-card-flow';
 import { LevelUpPanel } from './level-up-panel';
@@ -2112,6 +2112,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // instead of the container. On a phone the two are nearly the same shape, so this resolves to the
   // full container and nothing changes.
   const [stageBox, setStageBox] = useState<{ w: number; h: number } | null>(null);
+  // v0.24.1: the sheet is the one screen that does NOT paint ink at its edges. Its parchment matte
+  // runs the full width between the inset bars, so the tablet margins must be parchment too or the
+  // sheet reads as a pale column stranded between two dark strips.
+  useScreenEdge(Rune.sheet);
   const { isTablet } = useLayout();
   const frameRect = useMemo(() => {
     if (!isTablet || !stageBox || stageBox.w <= 0) return null;

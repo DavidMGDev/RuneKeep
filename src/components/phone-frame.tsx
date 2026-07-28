@@ -1,18 +1,17 @@
 import { type ReactNode, useMemo } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import { Platform, StatusBar as RNStatusBar, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ArtImage } from '@/components/art-image';
 import { Rune } from '@/constants/theme';
-import { CATALOG } from '@/data/catalog';
 import { DESIGN_H, DESIGN_W, FrameContext, TABLET_MIN_SW } from '@/hooks/use-layout';
-import { useDimLevel } from '@/lib/screen-dim';
+import { useDimLevel, useEdgeColor } from '@/lib/screen-dim';
 
 /**
- * The tablet frame (v0.24.0).
+ * The tablet frame (v0.24.0, margins reworked v0.24.1).
  *
  * A tablet does not get a tablet layout. It gets the phone layout, drawn into a phone-shaped viewport
- * that is uniformly magnified to the height of the display and centred, with the leftover width used
- * as a decorated margin.
+ * that is uniformly magnified to the height of the display and centred, with the leftover width to
+ * either side.
  *
  * Three things follow from that, all of which were the owner's complaints about v0.23.0:
  *
@@ -24,9 +23,16 @@ import { useDimLevel } from '@/lib/screen-dim';
  *    a phone and every tablet branch added in v0.23.0 turns itself off. Six trait dials go back to
  *    two rows of three.
  *
- * The scale is `min(w/412, h/892)`, so the viewport fills the display's height and keeps a phone's
- * proportions. Its height in layout dp is whatever that leaves, which is how a shorter or taller
- * tablet still gets a full-height frame instead of letterboxing top and bottom.
+ * ## The margins
+ *
+ * v0.24.0 decorated them with faint card art. That was wrong twice: it drew attention to the very
+ * thing it was there to make unremarkable, and it could not follow what the screen was doing, so the
+ * character sheet's parchment column sat between two dark strips and every dialog lit them up.
+ *
+ * They are a plain continuation of the screen now. Whatever colour a screen paints at its horizontal
+ * edge, it declares (`lib/screen-dim`), and the margins paint the same, under the same dim, behind the
+ * same status and navigation bars. Nothing is sampled, because React Native cannot read back a
+ * rendered pixel cheaply; the screen is asked instead.
  *
  * Phones return the children untouched, with no context and no extra views.
  */
@@ -34,6 +40,9 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const { width, height } = useWindowDimensions();
   const isTablet = Math.min(width, height) >= TABLET_MIN_SW;
   const dim = useDimLevel();
+  // Ink is the app's own background, and what every screen but the character sheet paints to its edges.
+  const edge = useEdgeColor() ?? Rune.ink;
+  const insets = useSafeAreaInsets();
 
   const frame = useMemo(() => {
     const scale = Math.min(width / DESIGN_W, height / DESIGN_H);
@@ -45,66 +54,41 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const shownW = frame.width * frame.scale;
   const margin = frame.offsetX;
 
+  // The same floors the screens use (#54/#59), in PHYSICAL dp: the bars painted here sit outside the
+  // magnified column, so they must not be divided by the frame scale the way a screen's own are.
+  const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
+  const topBar = Platform.OS === 'android' && detected < 24 ? 32 : detected;
+  const bottomBar = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
+
   return (
-    <View style={{ flex: 1, backgroundColor: Rune.ink, alignItems: 'center', overflow: 'hidden' }}>
-      <Margins width={width} height={height} />
+    <View style={{ flex: 1, backgroundColor: edge, alignItems: 'center', overflow: 'hidden' }}>
       <View style={{ width: shownW, height, overflow: 'hidden' }}>
         <View style={{ width: frame.width, height: frame.height, transform: [{ scale: frame.scale }], transformOrigin: [0, 0, 0] }}>
           <FrameContext.Provider value={frame}>{children}</FrameContext.Provider>
         </View>
       </View>
-      {/* The margins dim with the app, so an open dialog darkens the whole display rather than a
-          brightly-lit strip either side of a darkened phone. Painted outside the clip, hence the
-          registry in lib/screen-dim rather than the scrims reaching out here themselves. */}
-      {dim > 0 && margin > 0 ? (
+      {margin > 0 ? (
         <>
-          <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: margin, backgroundColor: `rgba(6,8,13,${dim})` }} />
-          <View pointerEvents="none" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: margin, backgroundColor: `rgba(6,8,13,${dim})` }} />
+          <MarginStrip side="left" width={margin} topBar={topBar} bottomBar={bottomBar} dim={dim} />
+          <MarginStrip side="right" width={margin} topBar={topBar} bottomBar={bottomBar} dim={dim} />
         </>
       ) : null}
     </View>
   );
 }
 
-const DECOR_W = 150;
-const DECOR_H = Math.round(DECOR_W * (263 / 188));
-
 /**
- * The margins, so they read as deliberate rather than empty: a scatter of card faces at the edge of
- * visibility. Deterministic (index arithmetic, no randomness) so it never reshuffles on a re-render,
- * static (no animation) so it costs nothing to keep on screen, and drawn full-width because the
- * viewport paints over the middle anyway.
+ * One margin, stacked in the same order a screen stacks its own edge: the base colour (inherited from
+ * the frame's background), the ink status and navigation bands, then the dim. Confined to the margin
+ * rather than drawn across the display, so a full-screen overlay inside the column still owns its own
+ * status-bar strip.
  */
-function Margins({ width, height }: { width: number; height: number }) {
-  const decor = useMemo(() => {
-    const domains = CATALOG.filter((c) => c.kind === 'domain');
-    if (!domains.length) return [];
-    const cols = Math.max(2, Math.ceil(width / DECOR_W));
-    const rows = Math.max(2, Math.ceil(height / (DECOR_H * 0.8)));
-    const out: { key: string; thumb: number; x: number; y: number; rot: string }[] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const i = r * cols + c;
-        out.push({
-          key: `${r}-${c}`,
-          thumb: domains[(i * 29) % domains.length].thumb,
-          // The half-column stagger and the alternating tilt stop it reading as a grid.
-          x: c * DECOR_W + (r % 2 ? DECOR_W * 0.5 : 0) - DECOR_W * 0.35,
-          y: r * DECOR_H * 0.8 - DECOR_H * 0.2,
-          rot: `${((i % 5) - 2) * 3}deg`,
-        });
-      }
-    }
-    return out;
-  }, [width, height]);
-
+function MarginStrip({ side, width, topBar, bottomBar, dim }: { side: 'left' | 'right'; width: number; topBar: number; bottomBar: number; dim: number }) {
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width, height, opacity: 0.05 }}>
-      {decor.map((d) => (
-        <View key={d.key} style={{ position: 'absolute', left: d.x, top: d.y, width: DECOR_W, height: DECOR_H, transform: [{ rotate: d.rot }] }}>
-          <ArtImage source={d.thumb} fit="contain" />
-        </View>
-      ))}
+    <View pointerEvents="none" style={{ position: 'absolute', top: 0, bottom: 0, width, [side]: 0 }}>
+      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: topBar, backgroundColor: Rune.ink }} />
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: bottomBar, backgroundColor: Rune.ink }} />
+      {dim > 0 ? <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: `rgba(6,8,13,${dim})` }} /> : null}
     </View>
   );
 }

@@ -14,6 +14,7 @@ import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type AdversaryFeature } from '@/data/adversaries';
 import { type Combatant } from '@/lib/session';
 import { useLayout } from '@/hooks/use-layout';
+import { useScreenDim } from '@/lib/screen-dim';
 import { useAndroidBack } from './use-android-back';
 
 /** A stylised tome/rune emblem marking a Base Game adversary that carries no custom image (item 12). */
@@ -120,6 +121,8 @@ export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; nam
   const close = () => { p.value = withTiming(0, { duration: 150 }, (f) => { if (f) runOnJS(onClose)(); }); };
   useAndroidBack(() => { close(); return true; });
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.92 }));
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(0.92);
   const body = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ scale: 0.9 + p.value * 0.1 }] }));
   const { width, height } = useLayout();
   const box = Math.min(width - 48, height - 220);

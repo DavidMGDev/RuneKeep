@@ -26,6 +26,7 @@ import { focusHaptic } from '@/lib/haptics';
 import { type LibraryCard, type LibraryContentType } from '@/lib/library';
 import { nfcModulesPresent } from '@/lib/nfc';
 import { type RkpContent } from '@/lib/rkp';
+import { useScreenDim } from '@/lib/screen-dim';
 
 // The archive browses catalog cards AND equipment. Weapons/armor have no image assets — they render
 // live via the forged components — so the grid item is a union (v0.10.0, owner: "all weapons and armor
@@ -155,6 +156,8 @@ function ClassReader({ def, onClose }: { def: ClassCardDef; onClose: () => void 
     });
   }, [p, onClose]);
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.9 }));
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(0.9);
   const pagerStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 40 }] }));
   const { width, height } = useLayout();
   const w = Math.min(width - 36, (height - 160) * (5 / 7));
@@ -284,6 +287,8 @@ function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem,
   const cardH = Math.min(winW - 36, (winH - 160) * (5 / 7)) * 1.4;
   const fillStyle = useAnimatedStyle(() => ({ height: holdProgress.value * cardH, opacity: Math.min(1, holdProgress.value * 14) }));
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.88 }));
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(0.88);
   const cardStyle = useAnimatedStyle(() => ({
     opacity: p.value,
     transform: [{ translateY: (1 - p.value) * 60 + dragY.value }, { scale: 0.92 + p.value * 0.08 }],

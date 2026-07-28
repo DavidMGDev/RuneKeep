@@ -7,6 +7,7 @@ import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import { playSfx } from '@/lib/sfx';
+import { useScreenDim } from '@/lib/screen-dim';
 
 import { useCarousel } from '../carousel-context';
 import { DeckToggleIcon } from './deck-toggle-icon';
@@ -388,6 +389,8 @@ export function FloatMenuOverlay() {
   });
   const dot = useAnimatedStyle(() => ({ opacity: dragging.value, transform: [{ translateX: fingerX.value - 7 }, { translateY: fingerY.value - 7 }] }));
 
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(open ? 0.72 : 0);
   if (!open) return null;
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 9999 }]} pointerEvents="box-none">

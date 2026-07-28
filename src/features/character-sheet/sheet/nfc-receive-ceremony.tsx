@@ -29,6 +29,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { useLayout } from '@/hooks/use-layout';
+import { useScreenDim } from '@/lib/screen-dim';
 import { type CardCategory } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { type NfcGateFlags, nfcReceiveActive } from './nfc-gate';
@@ -188,6 +189,8 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss }: { card: Librar
     ],
   }));
 
+  // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
+  useScreenDim(0.88);
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9600 }} pointerEvents={accepted ? 'none' : 'auto'}>
       <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: '#06080D' }, dimStyle]} pointerEvents="none" />

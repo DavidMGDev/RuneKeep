@@ -53,9 +53,13 @@ Everything else follows from that, rather than needing its own tablet case:
   physical window space and ignore the frame's transform, so anything that positions a view from them (a
   drag ghost, a radial cursor, a keyboard spacer) must pass through `windowToFrameX/Y` or divide by
   `useFrame().scale`. `DesignStage` publishes stage × frame through `useStageScale()` for the same reason.
-- **Scrims cannot escape the clip.** An overlay that dims declares its opacity with `useScreenDim` /
-  `<DimScreen>` (`src/lib/screen-dim.ts`) and `PhoneFrame` paints the same value in the margins, so the
-  whole display darkens together instead of a lit strip either side.
+- **The margins mirror the screen; they do not decorate it.** They paint whatever colour the screen
+  paints at its horizontal edge, under the same dim, behind the same status and navigation bars. Both
+  are DECLARED, not sampled (React Native cannot read back a rendered pixel cheaply):
+  `useScreenEdge(color)` for the base colour, `useScreenDim(opacity)` / `<DimScreen>` for a scrim
+  (`src/lib/screen-dim.ts`). **Anything that covers the screen edge must declare itself**, or a tablet
+  shows a lit strip either side of a darkened app. `AppScreen` declares ink; the character sheet
+  declares parchment, because its matte runs edge to edge.
 - Gesture *translations* are still reported in physical px, so a drag scrubs the carousel about 40% faster
   on a tablet than on a phone. Cards snap to slots, so it reads as a livelier flick rather than a fault;
   correcting it would mean retuning constants that are currently right on phones.
