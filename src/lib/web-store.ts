@@ -47,7 +47,7 @@ const OWNED_KEYS = [
 
 const mem = new Map<string, string>();
 let backend: 'idb' | 'local' = 'local';
-let hydrated = false;
+let hydration: Promise<void> | null = null;
 
 function idb(): IDBFactory | null {
   const f = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
@@ -86,12 +86,16 @@ let db: IDBDatabase | null = null;
  * Resolves even when it fails: a browser that cannot give us IndexedDB still gets a working app on
  * `localStorage`, which is what it had before.
  */
-export async function hydrateWebStore(): Promise<void> {
-  if (hydrated || Platform.OS !== 'web') {
-    hydrated = true;
-    return;
-  }
-  hydrated = true;
+export function hydrateWebStore(): Promise<void> {
+  // Memoised, not flag-guarded: a flag set before the await lets a second caller through while the
+  // first is still reading, and the gate would open on an empty map. React's dev-mode double effect
+  // invocation is exactly that second caller.
+  hydration ??= run();
+  return hydration;
+}
+
+async function run(): Promise<void> {
+  if (Platform.OS !== 'web') return;
   try {
     db = await open();
     backend = 'idb';
@@ -167,5 +171,5 @@ export function resetWebStore(): void {
   mem.clear();
   db = null;
   backend = 'local';
-  hydrated = false;
+  hydration = null;
 }
