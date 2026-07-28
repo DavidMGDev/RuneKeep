@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccentProvider, useAccentTint } from '../components/accent';
 import { ArtImage } from '@/components/art-image';
 import { DesignStage } from '@/components/design-stage';
+import { useLayout } from '@/hooks/use-layout';
+import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
@@ -2102,6 +2104,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // never less than a 32dp floor. The shift is a MARGIN (not padding): absolutely-positioned
   // children like the SheetFrame border anchor to the view's box, so a margin moves border and
   // content together, while padding can leave absolute children at the physical top.
+  // v0.23.0: the stage's own rect, so the parchment matte and the gold border can follow the DESIGN
+  // instead of the container. On a phone the two are nearly the same shape, so this resolves to the
+  // full container and nothing changes.
+  const [stageBox, setStageBox] = useState<{ w: number; h: number } | null>(null);
+  const { isTablet } = useLayout();
+  const frameRect = useMemo(() => {
+    if (!isTablet || !stageBox || stageBox.w <= 0) return null;
+    const m = computeStageScale({ availW: stageBox.w, availH: stageBox.h, designW: SHEET_DESIGN_WIDTH, designH: SHEET_DESIGN_HEIGHT });
+    return { left: m.offsetX, top: m.offsetY, width: m.scaledW, height: m.scaledH };
+  }, [isTablet, stageBox]);
+
   const insets = useSafeAreaInsets();
   const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
   const topInset = Platform.OS === 'android' && detected < 24 ? 32 : detected;
@@ -2144,10 +2157,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           onReject={onNfcReject}
         />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
-          <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
+          <View
+            style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}
+            onLayout={(e) => setStageBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
-                frame frames parchment instead of a dark gap (#1). */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
+                frame frames parchment instead of a dark gap (#1).
+                v0.23.0 TABLET: on a tablet the matte is confined to the stage rather than the whole
+                container, so the sheet reads as the phone's sheet, centred, rather than a page
+                stretched to a different shape. */}
+            <View style={[frameRect ?? StyleSheet.absoluteFill, { position: 'absolute', backgroundColor: Rune.sheet }]} />
             {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges.
                 The safe-area inset pushes everything (border included) below the status bar; the
                 strip above reads as the root's ink navy. Web's inset is 0, so the layouts are the
@@ -2214,7 +2232,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {incoming ? <NfcReceiveCeremony card={incoming} onCommit={commitReceived} onDismiss={() => setIncoming(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
-            <SheetFrame />
+            {/* The gold border is a raster authored at 753x1500 (aspect 0.502). Stretched to a
+                CONTAINER it smears whenever the container's aspect differs, which on a phone it
+                barely does and on a tablet it very much does. Pinning it to the stage box keeps it
+                at the aspect it was drawn for. */}
+            <View style={[frameRect ?? StyleSheet.absoluteFill, { position: 'absolute' }]} pointerEvents="none">
+              <SheetFrame />
+            </View>
           </View>
           {/* EXPLICIT bars painted over the status-bar and nav-control strips (#54 D, #59): even if
               some layer below misbehaves, both strips always read as the border's ink navy. The

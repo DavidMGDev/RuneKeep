@@ -5,6 +5,7 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 import { ChamferBox } from '@/components/chamfer-box';
 import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
+import { useLayout } from '@/hooks/use-layout';
 import { playSfx } from '@/lib/sfx';
 
 /**
@@ -16,6 +17,7 @@ import { playSfx } from '@/lib/sfx';
  */
 export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra, children }: { title: string; subtitle?: string; onClose: () => void; footer?: ReactNode; headerExtra?: ReactNode; children: ReactNode }) {
   const insets = useScreenInsets();
+  const { maxContent } = useLayout();
   const reduced = useReducedMotion();
   const p = useSharedValue(0);
   useEffect(() => {
@@ -37,7 +39,7 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
       {/* opaque catching backdrop — no onPress (button-only close), but a touch target so nothing
           behind can ever be tapped through. */}
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, bgStyle]} />
-      <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
+      <Animated.View style={[{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
         <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1, overflow: 'hidden', paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
             <View style={{ flex: 1, paddingRight: 8 }}>

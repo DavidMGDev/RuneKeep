@@ -16,6 +16,7 @@ import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { listParties } from '@/lib/party-store';
 import { showToast } from '@/components/toast';
 import { resetTours, shouldShow } from '@/lib/onboarding-store';
+import { useLayout } from '@/hooks/use-layout';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
@@ -177,6 +178,8 @@ export function MenuScreen() {
   const [tourChecked, setTourChecked] = useState(false);
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const { height: screenH } = useLayout();
+  const driftY = (f: number) => Math.round(screenH * f);
   const [dm, setDm] = useState(false);
   const [muted, setMuted] = useState(false);
   const [hasEnabledParty, setHasEnabledParty] = useState(false);
@@ -244,9 +247,11 @@ export function MenuScreen() {
         {/* ambient deck, dim, behind everything — rows fill the gap BETWEEN the title and the
             actions (owner #102: never behind the title; the bottom row's spot is approved). */}
         <View style={StyleSheet.absoluteFill}>
-          <DriftRow y={228} cards={rows[0]} duration={90000} opacity={0.2} />
-          <DriftRow y={396} cards={rows[1]} duration={120000} reverse opacity={0.15} />
-          <DriftRow y={560} cards={rows[2]} duration={105000} opacity={0.1} />
+          {/* v0.23.0: proportional, not absolute. These were tuned against an 892dp phone, so on a
+              1280dp display all three bunched into the top 44% and left the bottom empty. */}
+          <DriftRow y={driftY(0.26)} cards={rows[0]} duration={90000} opacity={0.2} />
+          <DriftRow y={driftY(0.45)} cards={rows[1]} duration={120000} reverse opacity={0.15} />
+          <DriftRow y={driftY(0.63)} cards={rows[2]} duration={105000} opacity={0.1} />
         </View>
 
         {/* title block */}

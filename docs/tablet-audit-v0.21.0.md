@@ -1,7 +1,32 @@
 # RuneKeep — tablet & large-screen audit (v0.21.0)
 
 Date: 2026-07-27 · Split out of `ux-audit-v0.21.0.md` at the owner's request.
-**Status: DEFERRED.** The general UX audit is being worked first. Nothing in this file is scheduled.
+**Status: ADDRESSED in v0.23.0.** See the "What shipped" note below. This file is kept as the record
+of the original findings and the reasoning behind them.
+
+## What shipped (v0.23.0)
+
+The strategy is **look the same, do not stretch**. A phone layout blown out to 800dp gives 760dp rows
+holding a five-character name, three enormous blurry thumbnails, and 320dp dialogs marooned in the
+middle; none of that is "bigger", it is just wrong at a larger size.
+
+| Finding | Resolution |
+|---|---|
+| §II.2 #1 gallery locked to 3 columns | `gridColumns` adds columns instead of inflating cells, so a thumbnail stays near its native size |
+| §II.2 #2 sheet frame stretched full-bleed | The gold border and the parchment matte are pinned to the **stage rect** on tablets, keeping the raster at the 0.502 aspect it was authored for |
+| §II.2 #3 fixed-dp dialogs | `PopupDialog`, `OverlayShell`, `NumberKeypad` scale and cap at a share of the screen |
+| §II.2 #4 everything phone-sized | `TABLET_SCALE` 1.3 on type, control heights and paddings |
+| §II.2 #5 menu absolute Y | `DriftRow` positions are proportional |
+| §II.2 #6/#7/#8 stretched rows, no measure cap | `AppScreen` centres a measured content column; every non-sheet screen inherits it, which also fixes the traits grid reflow |
+| §II.0 orientation | Still portrait-locked. The Android 16 large-screen override remains a live risk and is NOT mitigated |
+
+**Phone layout is provably unchanged**: below `smallestWidth 600dp` the scale is exactly 1 and
+`maxContent` is `Infinity`, so every call site is a no-op. The widest phone reports ~480dp, a 25%
+margin under the threshold. Unfolded foldables (~700dp) are correctly treated as tablets.
+
+Still open: the Void class banners are tiny rasters that are **vector in the source PDFs** and could
+be re-extracted, and `FullUI.svg` still stretches with `preserveAspectRatio="none"` (moderate in
+portrait, fatal only in landscape, which is out of scope).
 
 Scope agreed with the owner: **portrait only, orientation stays locked.** Landscape is not a design
 target. See §II.0 — the lock does not currently hold, and that is the one item here with a deadline

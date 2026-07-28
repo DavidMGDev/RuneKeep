@@ -9,6 +9,7 @@ import { ArtImage } from '@/components/art-image';
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
+import { gridColumns, useLayout } from '@/hooks/use-layout';
 import { RuneChip } from './components/rune-chip';
 import { classColor, type DomainName, DomainColors } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
@@ -370,9 +371,12 @@ export function GalleryScreen() {
   }, []);
 
   const activeCount = filters.kinds.size + filters.domains.size + filters.levels.size + filters.tiers.size;
-  const { width } = Dimensions.get('window');
-  const cols = 3;
-  const cellW = Math.floor((width - 36 - (cols - 1) * 10) / cols);
+  const { width, isTablet, maxContent } = useLayout();
+  // v0.23.0: the grid lives inside AppScreen's measured column, so size cells against THAT, and add
+  // columns rather than inflating each cell. Phones keep the 3 they have always had.
+  const gridW = Math.min(width, maxContent);
+  const cols = gridColumns(gridW, isTablet);
+  const cellW = Math.floor((gridW - 36 - (cols - 1) * 10) / cols);
   const cellH = Math.round(cellW * 1.4);
 
   if (!ready || !enabledExp) return <LoadingScreen label="Opening the archive" />;
