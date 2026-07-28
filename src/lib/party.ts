@@ -25,6 +25,9 @@ export type VitalKey = keyof MemberVitals;
 export type PartyGlobalState = Record<string, MemberVitals>;
 
 export interface Party {
+  /** v0.23.0: PERMANENT max bonuses the DM granted, per character. Kept on the party rather than
+   *  written into the player's character file, which belongs to the player. */
+  maxBonus?: Record<string, Partial<Record<VitalKey, number>>>;
   schemaVersion: number;
   id: string;
   createdAt: string; // ISO

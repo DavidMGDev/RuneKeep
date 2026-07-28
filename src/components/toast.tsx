@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, DmRune, Rune } from '@/constants/theme';
@@ -21,7 +21,7 @@ export function showToast(text: string, tone: ToastTone = 'info') {
   for (const l of listeners) l(msg);
 }
 
-const TONE_COLOR: Record<ToastTone, string> = { info: DmRune.accent, error: Rune.red, success: '#7BC98A' };
+const TONE_COLOR: Record<ToastTone, string> = { info: Rune.goldEdge, error: '#7A3A32', success: Rune.goldEdge };
 
 export function ToastHost() {
   const [items, setItems] = useState<ToastMsg[]>([]);
@@ -36,12 +36,14 @@ export function ToastHost() {
 
   if (items.length === 0) return null;
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 96, zIndex: 9999 }]}>
-      <View style={{ gap: 8, alignItems: 'center' }}>
+    // v0.23.0: matched to the sheet's StatToastHost -- pinned just below the top border, compact
+    // pill, tone on the stroke. There is now ONE toast look in the app.
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'flex-start', paddingTop: 46, zIndex: 9999 }]}>
+      <View style={{ gap: 6, alignItems: 'center' }}>
         {items.map((m) => (
-          <Animated.View key={m.id} entering={FadeInDown.springify().damping(18)} exiting={FadeOut}>
-            <ChamferBox chamfer={9} fill="rgba(12,15,20,0.97)" stroke={TONE_COLOR[m.tone]} strokeWidth={1.4} style={{ paddingHorizontal: 18, paddingVertical: 11, maxWidth: 340 }}>
-              <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.semibold, letterSpacing: 0.3, textAlign: 'center' }}>{m.text}</Text>
+          <Animated.View key={m.id} entering={FadeInUp.springify().damping(18)} exiting={FadeOut}>
+            <ChamferBox chamfer={7} fill="rgba(12,15,20,0.96)" stroke={TONE_COLOR[m.tone]} strokeWidth={1.2} style={{ paddingHorizontal: 13, paddingVertical: 6, maxWidth: 320 }}>
+              <Text style={{ color: m.tone === 'error' ? '#E2705A' : Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.3, textAlign: 'center' }}>{m.text}</Text>
             </ChamferBox>
           </Animated.View>
         ))}

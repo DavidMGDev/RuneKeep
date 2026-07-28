@@ -35,16 +35,17 @@ export function StatPulse({
   const color = STAT_COLOR[kind];
 
   const onTap = useCallback(() => { if (disabled) onBlocked?.(); else onRequestSet(); }, [disabled, onBlocked, onRequestSet]);
-  const beginHold = useCallback(() => {
+  const beginHold = useCallback((tx: number, ty: number) => {
     if (disabled) { onBlocked?.(); return; }
     // Measure the ICON (not the whole row) so the wheel's origin sits exactly on the glyph (item 4).
-    iconRef.current?.measureInWindow((x, y, w, h) => { if (w > 0) radial.open(x + w / 2, y + h / 2, color, onApply); });
+    // The touch point rides along so the cursor starts under the thumb rather than on the glyph.
+    iconRef.current?.measureInWindow((x, y, w, h) => { if (w > 0) radial.open(x + w / 2, y + h / 2, color, onApply, { x: tx, y: ty }); });
   }, [disabled, onBlocked, radial, color, onApply]);
 
   const gesture = Gesture.Exclusive(
     Gesture.Pan()
       .activateAfterLongPress(150)
-      .onStart(() => { 'worklet'; runOnJS(beginHold)(); })
+      .onStart((e) => { 'worklet'; runOnJS(beginHold)(e.absoluteX, e.absoluteY); })
       .onUpdate((e) => {
         'worklet';
         if (radial.active.value !== 1) return;

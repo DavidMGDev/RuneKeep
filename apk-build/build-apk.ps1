@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.22.0'                       # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.23.0'                       # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -116,6 +116,15 @@ if (Test-Path $rnaDir) {
 
 Section "Build release APK (arm64-v8a). First run downloads Gradle + compiles native (~10-20 min)."
 Set-Location (Join-Path $repo 'android')
+Section 'Prebuild (regenerate android/ from app.json)'
+# Without this the native manifest is whatever it was the FIRST time android/ was generated, so any
+# app.json change since -- intent filters, permissions, orientation -- is silently dropped from the
+# APK. v0.22.0 shipped its .rkp file association this way and it did nothing.
+Push-Location $repo
+npx expo prebuild -p android --no-install
+if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'expo prebuild failed' }
+Pop-Location
+
 & .\gradlew.bat assembleRelease "-PreactNativeArchitectures=arm64-v8a" --console=plain
 if ($LASTEXITCODE -ne 0) { Fail "gradle build (exit $LASTEXITCODE) - paste the red error lines to Claude" }
 

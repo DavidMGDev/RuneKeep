@@ -239,7 +239,7 @@ export function MenuScreen() {
   if (!ready) return <LoadingScreen label="Stoking the forge" />;
 
   return (
-    <AppScreen>
+    <AppScreen dm={dm}>
       <View style={{ flex: 1 }}>
         {/* ambient deck, dim, behind everything — rows fill the gap BETWEEN the title and the
             actions (owner #102: never behind the title; the bottom row's spot is approved). */}
