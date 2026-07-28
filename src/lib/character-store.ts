@@ -8,6 +8,7 @@
 import { Platform } from 'react-native';
 
 import { type CharacterFile, parseCharacterFile, serializeCharacterFile } from './character-file';
+import { embedCharacterImages } from './image-embed';
 import { parseRkp, serializeRkp } from './rkp';
 
 const WEB_KEY = 'runekeep.characters';
@@ -93,7 +94,11 @@ export async function exportCharacter(file: CharacterFile): Promise<void> {
   // a friend importing it — or you restoring your own backup — gets the timeline too, not just the
   // final state. Characters are never shared over NFC (only cards are), so the ~60KB tag ceiling
   // that governs card sharing does not apply here.
-  out.write(serializeRkp({ kind: 'character', payload: file }));
+  // v0.23.0: the portrait and every custom card image travel WITH the file. The picker only ever
+  // gave us a `file://` into this app's cache, which means nothing on the recipient's phone, so a
+  // shared character used to arrive with blank art and no indication anything was missing.
+  const withArt = await embedCharacterImages(file);
+  out.write(serializeRkp({ kind: 'character', payload: withArt }));
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Sharing = require('expo-sharing') as typeof import('expo-sharing');
   await Sharing.shareAsync(out.uri, { mimeType: 'application/octet-stream', dialogTitle: `Share ${file.name}` });

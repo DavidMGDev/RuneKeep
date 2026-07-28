@@ -48,6 +48,7 @@ import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/l
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { VOID_ANCESTRY_ART } from '@/data/void-ancestries';
+import { embedCardImageForNfc } from '@/lib/image-embed';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -1711,8 +1712,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const makeId = (srcId: string) => `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}-${srcId.slice(-4)}`;
     playSfx('buttonTap');
     if (ids.length === 1) {
-      const card = inlineCardImage(cardToLibraryCard(file, ids[0], makeId), SAFE_NFC_BYTES - 2000);
-      setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
+      // v0.23.0: compress the art down until it fits the tag rather than dropping it, which is what
+      // the old sync inliner did for any photo over the budget.
+      void embedCardImageForNfc(cardToLibraryCard(file, ids[0], makeId)).then((card) => {
+        setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
+      });
       return;
     }
     const cards = ids.map((id) => cardToLibraryCard(file, id, makeId));

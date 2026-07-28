@@ -38,7 +38,8 @@ import {
 import { cardById } from '@/data/catalog';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
-import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
+import { embedCardImageForNfc } from '@/lib/image-embed';
+import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 
@@ -480,7 +481,7 @@ export function LibraryScreen() {
                         fine but resolved to nothing on the receiving phone, so every shared card with an
                         uploaded image arrived blank. The sheet's send path always did this. */}
                     {nfcOn ? (
-                      <Pressable onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'card', payload: inlineCardImage(c, SAFE_NFC_BYTES - 2000) }, label: c.title || 'card' }); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+                      <Pressable onPress={() => { playSfx('buttonTap'); void embedCardImageForNfc(c).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
                       <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>NFC</Text>
                     </Pressable>
                     ) : null}
