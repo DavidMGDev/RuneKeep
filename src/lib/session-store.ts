@@ -1,7 +1,7 @@
 /**
  * Session + Encounter persistence (v0.15.0) — sessions under documents/sessions/, encounters under
  * documents/encounters/ (each references its sessionId). Device-local; mirrors character-store. Encounter
- * mutations save immediately (PRD #27). Web (verify pipeline) uses localStorage shims.
+ * mutations save immediately (PRD #27). Web uses `lib/web-store` shims.
  */
 import { Platform } from 'react-native';
 

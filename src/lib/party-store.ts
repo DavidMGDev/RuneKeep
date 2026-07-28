@@ -1,7 +1,7 @@
 /**
  * Party persistence (v0.15.0) — one JSON file per party under documents/parties/, mirroring
  * character-store. Device-local, no sharing (DM data doesn't travel). Web (verify pipeline) uses a
- * localStorage shim with the same surface.
+ * browser store with the same surface (`lib/web-store`).
  */
 import { Platform } from 'react-native';
 

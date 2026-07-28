@@ -1,6 +1,6 @@
 /**
  * UI-sound mute preference (v0.19.1 item 6) — a persisted device-local boolean that silences every UI
- * sound until turned back on. Mirrors dm-mode.ts: one tiny JSON file / localStorage key. The main menu and
+ * sound until turned back on. Mirrors dm-mode.ts: one tiny JSON file, or one browser-store key. The main menu and
  * the DM encounter options both toggle it; the character sheet deliberately gets no control. Applied to the
  * live SFX engine at startup so a muted app stays silent across restarts.
  */

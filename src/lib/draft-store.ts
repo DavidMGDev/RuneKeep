@@ -11,7 +11,7 @@
  * exactly one draft (you can only be creating one hero at a time), and is cleared the moment the
  * character is forged or the player says to discard it.
  *
- * Storage mirrors `character-store`: a native file under documents, a localStorage shim on web.
+ * Storage mirrors `character-store`: a native file under documents, `lib/web-store` on web.
  */
 
 import { Platform } from 'react-native';

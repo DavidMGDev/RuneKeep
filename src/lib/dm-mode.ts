@@ -1,7 +1,7 @@
 /**
  * DM Mode flag (v0.15.0, PRD #1-5) — a persisted device-local boolean. Enabling it recolours the DM
  * surface and re-labels the menu; it changes no stored data and is fully reversible. Kept dead simple:
- * a single JSON file / localStorage key, read once at menu mount.
+ * a single JSON file natively, one browser-store key on web. Read once at menu mount.
  */
 import { Platform } from 'react-native';
 import { webGet, webSet } from './web-store';

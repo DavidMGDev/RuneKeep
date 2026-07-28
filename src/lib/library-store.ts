@@ -2,7 +2,7 @@
  * Library persistence (v0.10.0) — one JSON file per EXPANSION under documents/library/, mirroring
  * character-store. App-level, independent of any character. Export/import use the shared `.rkp`
  * envelope through the OS share sheet + document picker (the same stack characters already use).
- * Web (verify pipeline) uses a localStorage shim with the same surface.
+ * Web uses `lib/web-store` (IndexedDB) with the same surface.
  */
 import { Platform } from 'react-native';
 

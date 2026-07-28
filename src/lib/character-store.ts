@@ -1,7 +1,7 @@
 /**
  * Character persistence — one JSON file per character (sharable by design, PRODUCT.md 6).
  * Native: documents/characters/*.json via expo-file-system. Web (the verify pipeline): a
- * localStorage shim with the same surface, so every screen renders + screenshots identically.
+ * browser store with the same surface (`lib/web-store`, IndexedDB), so every screen renders identically.
  * Export = share the JSON via the OS sheet; import = document picker -> parse -> save.
  */
 
