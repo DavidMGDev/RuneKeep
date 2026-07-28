@@ -17,13 +17,14 @@ character made on your laptop does not appear on a player's phone. Sharing happe
 does: export a `.rkp`, send it, import it. That is not a limitation of the hosting, it is how the app
 works, and it stays true wherever you put it.
 
-**Browser storage is about 5 MB per site, and RuneKeep uses `localStorage`.** Characters are small
-(a few KB each) so a roster of a dozen is fine. **Portraits and custom card images are not.** Picked
-in a browser they are stored inline, and a handful of them will fill the quota. When it fills,
-`localStorage` throws rather than degrading, so a save fails rather than getting smaller. If your
-players want portraits on the web version, the stores need moving to IndexedDB first (they are
-already isolated behind `Platform.OS === 'web'` branches, so it is a contained change). Without
-portraits you will not come near the limit.
+**Storage is IndexedDB, so portraits are fine** (since v0.24.2). It used to be `localStorage`, capped
+around 5 MB, which a handful of inline portraits would fill, and it threw rather than degrading, so a
+save silently did not happen. IndexedDB has no practical cap: browsers grant a share of free disk,
+typically hundreds of MB. A browser that blocks IndexedDB entirely (private mode in some engines)
+falls back to `localStorage` and its old limit, which is the worst case rather than the normal one.
+
+Existing browser data migrates on first load, and the old `localStorage` copy is deliberately left in
+place so rolling back a deploy does not strand anyone.
 
 **NFC card sharing does not exist in a browser**, and neither does the `.rkp` file association. Import
 becomes a file picker, export becomes a download. Everything else, including sound, works.

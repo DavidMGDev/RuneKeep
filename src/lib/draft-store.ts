@@ -15,6 +15,7 @@
  */
 
 import { Platform } from 'react-native';
+import { webGet, webRemove, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.draft';
 const FILE_NAME = 'creation-draft.json';
@@ -55,7 +56,7 @@ export function isResumable(stored: StoredDraft | null, hasContent: (draft: unkn
 
 export function loadDraft<T>(): StoredDraft<T> | null {
   try {
-    const raw = Platform.OS === 'web' ? (globalThis.localStorage?.getItem(WEB_KEY) ?? null) : draftFile().exists ? draftFile().textSync() : null;
+    const raw = Platform.OS === 'web' ? (webGet(WEB_KEY) ?? null) : draftFile().exists ? draftFile().textSync() : null;
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredDraft<T>;
     // A draft from an older shape is dropped, never migrated: it is cheap to re-make and expensive
@@ -72,7 +73,7 @@ export function saveDraft<T>(draft: T, meta: { deck?: string; picked?: string[] 
   const payload: StoredDraft<T> = { version: DRAFT_VERSION, savedAt: new Date().toISOString(), ...meta, draft };
   try {
     const json = JSON.stringify(payload);
-    if (Platform.OS === 'web') globalThis.localStorage?.setItem(WEB_KEY, json);
+    if (Platform.OS === 'web') webSet(WEB_KEY, json);
     else draftFile().write(json);
   } catch {
     // Losing a draft write is survivable; crashing the creator mid-edit is not.
@@ -81,7 +82,7 @@ export function saveDraft<T>(draft: T, meta: { deck?: string; picked?: string[] 
 
 export function clearDraft(): void {
   try {
-    if (Platform.OS === 'web') globalThis.localStorage?.removeItem(WEB_KEY);
+    if (Platform.OS === 'web') webRemove(WEB_KEY);
     else if (draftFile().exists) draftFile().delete();
   } catch {
     // Same reasoning as saveDraft.

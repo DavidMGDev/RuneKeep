@@ -9,6 +9,8 @@ import {
   useFonts,
 } from '@expo-google-fonts/archivo';
 import { Stack } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -17,6 +19,7 @@ import { Rune } from '@/constants/theme';
 import { PhoneFrame } from '@/components/phone-frame';
 import { ToastHost } from '@/components/toast';
 import { IncomingFileGate } from '@/features/share/incoming-file';
+import { hydrateWebStore } from '@/lib/web-store';
 
 /**
  * Root layout. Establishes the three providers every screen relies on:
@@ -27,6 +30,13 @@ import { IncomingFileGate } from '@/features/share/incoming-file';
  * Also loads the Archivo superfamily before first paint so text never flashes a fallback.
  */
 export default function RootLayout() {
+  // v0.24.2 (web only): the browser stores read synchronously during render, so IndexedDB has to be
+  // in memory before anything mounts. Native resolves this on the first tick and never waits.
+  const [stored, setStored] = useState(Platform.OS !== 'web');
+  useEffect(() => {
+    void hydrateWebStore().then(() => setStored(true));
+  }, []);
+
   const [fontsLoaded, fontError] = useFonts({
     Archivo_400Regular,
     Archivo_400Regular_Italic,
@@ -37,7 +47,7 @@ export default function RootLayout() {
     Archivo_900Black,
   });
 
-  if (!fontsLoaded && !fontError) return null;
+  if ((!fontsLoaded && !fontError) || !stored) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Rune.ink }}>

@@ -7,6 +7,7 @@
 import { Platform } from 'react-native';
 
 import { setSfxMuted } from './sfx';
+import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.uiMuted';
 type FS = typeof import('expo-file-system');
@@ -17,7 +18,7 @@ const file = () => new (fs().File)(fs().Paths.document, 'sfx-prefs.json');
 /** Read the persisted mute flag synchronously (cheap enough for a mount read). */
 export function isUiMuted(): boolean {
   try {
-    if (Platform.OS === 'web') return globalThis.localStorage?.getItem(WEB_KEY) === '1';
+    if (Platform.OS === 'web') return webGet(WEB_KEY) === '1';
     const f = file();
     return f.exists && JSON.parse(f.textSync())?.muted === true;
   } catch {
@@ -29,7 +30,7 @@ export function isUiMuted(): boolean {
 export function setUiMuted(muted: boolean): void {
   setSfxMuted(muted);
   try {
-    if (Platform.OS === 'web') { globalThis.localStorage?.setItem(WEB_KEY, muted ? '1' : '0'); return; }
+    if (Platform.OS === 'web') { webSet(WEB_KEY, muted ? '1' : '0'); return; }
     file().write(JSON.stringify({ muted }));
   } catch {
     /* best-effort persistence */

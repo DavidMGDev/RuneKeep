@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.24.1'                       # release version: bump here once -> drives tag, APK name, title
+$ver  = 'v0.24.2'                       # release version: bump here once -> drives tag, APK name, title
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -144,7 +144,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.24.1 - the tablet margins are now a plain continuation of the screen instead of decoration. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- TABLET MARGINS: the faint cards either side are gone. The space now takes whatever colour the screen is painting at its edge, so the character sheet reads as one continuous page rather than a pale column between two dark strips.`n- DIMMING COVERS EVERYTHING: opening a panel, focusing a card, holding a stat wheel or running a loader now darkens the whole display instead of only the middle. Every overlay in the app was checked, not just the dialogs.`n- STATUS AND NAVIGATION BARS line up across the full width.`n`nEverything from v0.24.0 is included: tablets run the phone interface at a larger size, .rkp files open from WhatsApp, the Hope and Fear ancestries have their correct text, card previews rebuild on every update, and the title screen cards actually loop.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.24.2 - browser storage moved to IndexedDB, so the web version can hold portraits. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- WEB STORAGE: the browser build used to keep everything in localStorage, which caps out around 5 MB. A few character portraits filled it, and it failed by refusing to save rather than by warning you. It uses IndexedDB now, which has no practical limit. Existing browser data is carried across automatically. This changes nothing on Android, which has always used real files.`n- TABLET MARGINS (from v0.24.1): the faint cards either side are gone. The space takes whatever colour the screen paints at its edge, so the character sheet reads as one continuous page, and every overlay in the app dims the whole display rather than just the middle.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

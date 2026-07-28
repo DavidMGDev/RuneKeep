@@ -6,6 +6,7 @@
 import { Platform } from 'react-native';
 
 import { randomColor } from './party';
+import { webGet, webSet } from './web-store';
 
 export interface Folder {
   id: string;
@@ -77,7 +78,7 @@ const file = () => new (fs().File)(fs().Paths.document, 'folders.json');
 
 export async function loadFolders(): Promise<FolderIndex> {
   try {
-    if (Platform.OS === 'web') return JSON.parse(globalThis.localStorage?.getItem(WEB_KEY) ?? 'null') ?? EMPTY_INDEX;
+    if (Platform.OS === 'web') return JSON.parse(webGet(WEB_KEY) ?? 'null') ?? EMPTY_INDEX;
     const f = file();
     return f.exists ? (JSON.parse(f.textSync()) as FolderIndex) : EMPTY_INDEX;
   } catch {
@@ -87,7 +88,7 @@ export async function loadFolders(): Promise<FolderIndex> {
 
 export async function saveFolders(idx: FolderIndex): Promise<void> {
   if (Platform.OS === 'web') {
-    globalThis.localStorage?.setItem(WEB_KEY, JSON.stringify(idx));
+    webSet(WEB_KEY, JSON.stringify(idx));
     return;
   }
   file().write(JSON.stringify(idx, null, 2));

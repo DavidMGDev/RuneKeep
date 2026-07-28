@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
 import { type CharacterFile, parseCharacterFile, serializeCharacterFile } from './character-file';
 import { embedCharacterImages } from './image-embed';
 import { parseRkp, serializeRkp } from './rkp';
+import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.characters';
 
@@ -29,13 +30,13 @@ function charactersDir() {
 // --- web shim (verify pipeline + dev in browser) ---
 function webList(): CharacterFile[] {
   try {
-    return JSON.parse(globalThis.localStorage?.getItem(WEB_KEY) ?? '[]') as CharacterFile[];
+    return JSON.parse(webGet(WEB_KEY) ?? '[]') as CharacterFile[];
   } catch {
     return [];
   }
 }
 function webWrite(all: CharacterFile[]) {
-  globalThis.localStorage?.setItem(WEB_KEY, JSON.stringify(all));
+  webSet(WEB_KEY, JSON.stringify(all));
 }
 
 export async function listCharacters(): Promise<CharacterFile[]> {

@@ -17,6 +17,7 @@
  */
 
 import { Platform } from 'react-native';
+import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.onboarding';
 const FILE_NAME = 'onboarding.json';
@@ -55,7 +56,7 @@ function file() {
 
 function read(): OnboardingState {
   try {
-    const raw = Platform.OS === 'web' ? (globalThis.localStorage?.getItem(WEB_KEY) ?? null) : file().exists ? file().textSync() : null;
+    const raw = Platform.OS === 'web' ? (webGet(WEB_KEY) ?? null) : file().exists ? file().textSync() : null;
     if (!raw) return fresh();
     const parsed = JSON.parse(raw) as Partial<Record<TourId, Partial<TourState>>> & { done?: boolean };
     const out = fresh();
@@ -80,7 +81,7 @@ function read(): OnboardingState {
 function write(state: OnboardingState): void {
   try {
     const json = JSON.stringify(state);
-    if (Platform.OS === 'web') globalThis.localStorage?.setItem(WEB_KEY, json);
+    if (Platform.OS === 'web') webSet(WEB_KEY, json);
     else file().write(json);
   } catch {
     /* Losing this write only means a tour may offer itself once more. */

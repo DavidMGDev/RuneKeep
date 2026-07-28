@@ -8,6 +8,7 @@ import { Platform } from 'react-native';
 
 import { type Expansion, mergeDecision } from './library';
 import { parseRkp, type RkpContent, serializeRkp } from './rkp';
+import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.library';
 
@@ -24,13 +25,13 @@ function libraryDir() {
 
 function webList(): Expansion[] {
   try {
-    return JSON.parse(globalThis.localStorage?.getItem(WEB_KEY) ?? '[]') as Expansion[];
+    return JSON.parse(webGet(WEB_KEY) ?? '[]') as Expansion[];
   } catch {
     return [];
   }
 }
 function webWrite(all: Expansion[]) {
-  globalThis.localStorage?.setItem(WEB_KEY, JSON.stringify(all));
+  webSet(WEB_KEY, JSON.stringify(all));
 }
 
 export async function listExpansions(): Promise<Expansion[]> {

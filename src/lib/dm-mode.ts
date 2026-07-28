@@ -4,6 +4,7 @@
  * a single JSON file / localStorage key, read once at menu mount.
  */
 import { Platform } from 'react-native';
+import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.dmMode';
 type FS = typeof import('expo-file-system');
@@ -13,7 +14,7 @@ const file = () => new (fs().File)(fs().Paths.document, 'dm-mode.json');
 
 export async function getDmMode(): Promise<boolean> {
   try {
-    if (Platform.OS === 'web') return globalThis.localStorage?.getItem(WEB_KEY) === '1';
+    if (Platform.OS === 'web') return webGet(WEB_KEY) === '1';
     const f = file();
     return f.exists && JSON.parse(f.textSync())?.on === true;
   } catch {
@@ -23,7 +24,7 @@ export async function getDmMode(): Promise<boolean> {
 
 export async function setDmMode(on: boolean): Promise<void> {
   if (Platform.OS === 'web') {
-    globalThis.localStorage?.setItem(WEB_KEY, on ? '1' : '0');
+    webSet(WEB_KEY, on ? '1' : '0');
     return;
   }
   file().write(JSON.stringify({ on }));

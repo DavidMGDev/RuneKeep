@@ -6,6 +6,7 @@
 import { Platform } from 'react-native';
 
 import { type Party } from './party';
+import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.parties';
 type FS = typeof import('expo-file-system');
@@ -21,13 +22,13 @@ function partiesDir() {
 
 function webList(): Party[] {
   try {
-    return JSON.parse(globalThis.localStorage?.getItem(WEB_KEY) ?? '[]') as Party[];
+    return JSON.parse(webGet(WEB_KEY) ?? '[]') as Party[];
   } catch {
     return [];
   }
 }
 function webWrite(all: Party[]) {
-  globalThis.localStorage?.setItem(WEB_KEY, JSON.stringify(all));
+  webSet(WEB_KEY, JSON.stringify(all));
 }
 
 export async function listParties(): Promise<Party[]> {

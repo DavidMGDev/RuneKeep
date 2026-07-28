@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 
 import { type BaseAdversary } from '@/data/adversaries';
 import { type Combatant } from './session';
+import { webGet, webSet } from './web-store';
 
 /** A stored template — the combatant shape minus its live/fallen state (reset on spawn via cloneCombatant). */
 export type SavedAdversary = Combatant;
@@ -51,7 +52,7 @@ const file = () => new (fs().File)(fs().Paths.document, 'adversary-library.json'
 
 export async function loadAdversaries(): Promise<SavedAdversary[]> {
   try {
-    if (Platform.OS === 'web') return JSON.parse(globalThis.localStorage?.getItem(WEB_KEY) ?? '[]');
+    if (Platform.OS === 'web') return JSON.parse(webGet(WEB_KEY) ?? '[]');
     const f = file();
     return f.exists ? (JSON.parse(f.textSync()) as SavedAdversary[]) : [];
   } catch {
@@ -61,7 +62,7 @@ export async function loadAdversaries(): Promise<SavedAdversary[]> {
 
 export async function saveAdversaries(list: SavedAdversary[]): Promise<void> {
   if (Platform.OS === 'web') {
-    globalThis.localStorage?.setItem(WEB_KEY, JSON.stringify(list));
+    webSet(WEB_KEY, JSON.stringify(list));
     return;
   }
   file().write(JSON.stringify(list, null, 2));

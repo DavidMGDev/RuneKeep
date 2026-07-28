@@ -6,6 +6,7 @@
 import { Platform } from 'react-native';
 
 import { type Encounter, type Session } from './session';
+import { webGet, webSet } from './web-store';
 
 const SESSION_KEY = 'runekeep.sessions';
 const ENCOUNTER_KEY = 'runekeep.encounters';
@@ -21,13 +22,13 @@ function dir(name: string) {
 }
 function webList<T>(key: string): T[] {
   try {
-    return JSON.parse(globalThis.localStorage?.getItem(key) ?? '[]') as T[];
+    return JSON.parse(webGet(key) ?? '[]') as T[];
   } catch {
     return [];
   }
 }
 function webWrite<T>(key: string, all: T[]) {
-  globalThis.localStorage?.setItem(key, JSON.stringify(all));
+  webSet(key, JSON.stringify(all));
 }
 function diskList<T>(dirName: string): T[] {
   const { File } = fs();
