@@ -257,7 +257,7 @@ export function LevelUpPanel({
     : tierStart && !expReady
       ? { step: 'exp', text: 'Write your new Experience' }
       : !advanceDone
-        ? { step: 'advance', text: `Choose 2 advancements — ${picks}/2 chosen` }
+        ? { step: 'advance', text: `Choose 2 advancements, ${picks}/2 chosen` }
         : hasCompanionStep && !companionDone
           ? { step: 'companion', text: 'Choose your companion training' }
           : null;
@@ -365,7 +365,7 @@ export function LevelUpPanel({
                 )}
               </View>
               {items.length > 0 ? (
-                <RuneButton label={centeredSelected ? 'Selected ✓ — tap to remove' : 'Choose this card'} kind={centeredSelected ? 'secondary' : 'primary'} dense height={42} onPress={toggleDomain} />
+                <RuneButton label={centeredSelected ? 'Selected ✓, tap to remove' : 'Choose this card'} kind={centeredSelected ? 'secondary' : 'primary'} dense height={42} onPress={toggleDomain} />
               ) : null}
             </View>
           ) : null}
@@ -399,7 +399,7 @@ export function LevelUpPanel({
               <SectionLabel>{`Choose 2 advancements · ${picks}/2`}</SectionLabel>
               {!expReady ? (
                 <ChamferBox chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ paddingVertical: 11, paddingHorizontal: 12, gap: 8 }}>
-                  <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>Write your new Experience first — then you can boost the one you just made.</Text>
+                  <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>Write your new Experience first, then you can boost the one you just made.</Text>
                   <RuneButton label="Write Experience →" kind="primary" dense height={36} onPress={() => setStep('exp')} />
                 </ChamferBox>
               ) : null}
@@ -462,7 +462,7 @@ export function LevelUpPanel({
                                   {co.domains.map((d) => <Chip key={d} label={d.charAt(0).toUpperCase() + d.slice(1)} on={t.multiclassDomain === d} onPress={() => setField(i, { multiclassDomain: t.multiclassDomain === d ? undefined : d })} />)}
                                 </View>
                               ) : (
-                                <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>This class shares both your domains — no new domain to add.</Text>
+                                <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>This class shares both your domains, no new domain to add.</Text>
                               )}
                             </>
                           );

@@ -6,6 +6,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { RedesignedSheet } from '@/features/character-sheet/sheet/redesigned-sheet';
 import { type CharacterFile } from '@/lib/character-file';
 import { getCharacter } from '@/lib/character-store';
+import { shouldShow } from '@/lib/onboarding-store';
 import { playSfx } from '@/lib/sfx';
 
 /** The play surface. With an id, loads that CharacterFile; without one, the sample character. */
@@ -28,6 +29,15 @@ export default function Sheet() {
   useEffect(() => {
     if (state.loaded) playSfx('sheetEnter'); // #255: the sheet is open
   }, [state.loaded]);
+
+  // v0.23.0: teach the sheet's gestures once there is a character to try them on, rather than on
+  // first launch before the player has one.
+  const [tourChecked, setTourChecked] = useState(false);
+  useEffect(() => {
+    if (!state.loaded || !state.file || tourChecked) return;
+    setTourChecked(true);
+    if (shouldShow('sheet')) router.push('/onboarding?tour=sheet' as Href);
+  }, [state.loaded, state.file, tourChecked, router]);
 
   if (!state.loaded) return <LoadingScreen label="Unrolling the sheet" />;
   // v0.22.0: an id that doesn't resolve used to fall through to the SAMPLE character silently, so a

@@ -15,7 +15,7 @@ import { FitLine } from '@/components/fit-line';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { domainCardCount, memberSummary } from '@/lib/dm-vitals';
 import { type CharacterFile } from '@/lib/character-file';
-import { type MemberVitals, type VitalKey } from '@/lib/party';
+import { type MemberMaxes, type MemberVitals, type VitalKey } from '@/lib/party';
 import { StatPulse } from './stat-pulse';
 
 const TRAIT_ORDER: [keyof ReturnType<typeof memberSummary>['traits'], string][] = [
@@ -34,6 +34,7 @@ function ReadStat({ label, value, color = DmRune.text }: { label: string; value:
 export function MemberPanel({
   file,
   vitals,
+  maxes,
   editable,
   absent,
   selected,
@@ -44,6 +45,8 @@ export function MemberPanel({
 }: {
   file: CharacterFile;
   vitals: MemberVitals;
+  /** v0.23.0: overrides the file-derived maxes so DM-granted bonuses show as 8/8 rather than 8/6. */
+  maxes?: MemberMaxes;
   editable: boolean;
   absent?: boolean;
   selected?: boolean;
@@ -54,7 +57,7 @@ export function MemberPanel({
 }) {
   const [open, setOpen] = useState(false);
   const s = memberSummary(file);
-  const m = s.maxes;
+  const m = maxes ?? s.maxes;
   const pulse = (key: VitalKey, kind: 'hp' | 'armor' | 'stress' | 'hope', mx: number) => (
     <StatPulse
       kind={kind}

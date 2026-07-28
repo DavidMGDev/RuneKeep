@@ -25,6 +25,9 @@ import { memberMaxes } from '@/lib/dm-vitals';
 import { isPresent, type Party, togglePresent, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
 import {
+  bonusMaxes,
+  grantMaxBonus,
+  memberBonus,
   appendLog,
   canEditMembers,
   cloneCombatant,
@@ -94,6 +97,9 @@ function BottomBar({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
+/** One height for every control in the encounter's top strip. */
+const CTRL_H = 28;
+
 export function EncounterScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -103,6 +109,9 @@ export function EncounterScreen() {
   const [files, setFiles] = useState<Record<string, CharacterFile>>({});
   const [library, setLibrary] = useState<SavedAdversary[]>([]);
   const [keypad, setKeypad] = useState<KeypadTarget | null>(null);
+  // v0.23.0: setting a member above their maximum asks whether it is a bonus for this fight or a
+  // real raise. Adversaries are encounter-local by definition, so there is nothing to ask them.
+  const [overMax, setOverMax] = useState<{ charId: string; name: string; key: VitalKey; value: number; cap: number } | null>(null);
   const [editing, setEditing] = useState<Combatant | null>(null);
   const [viewImage, setViewImage] = useState<Combatant | null>(null);
   const [showLog, setShowLog] = useState(false);
@@ -177,7 +186,7 @@ export function EncounterScreen() {
     const enc = encRef.current, pty = partyRef.current, f = files[charId];
     if (!enc || !pty || !f) return;
     const from = memberVitals(enc, pty, charId)?.[key] ?? 0;
-    const r = memberDelta(enc, pty, charId, key, delta, memberMaxes(f));
+    const r = memberDelta(enc, pty, charId, key, delta, bonusMaxes(memberMaxes(f), memberBonus(enc, pty, charId)));
     const to = memberVitals(r.encounter, r.party, charId)?.[key] ?? from;
     commitParty(r.party);
     commitEncounter(r.encounter.options.autoLog && from !== to ? appendLog(r.encounter, 'stat', formatStatLog('Player', f.name, key, from, to)) : r.encounter);
@@ -197,7 +206,10 @@ export function EncounterScreen() {
     if (keypad.kind === 'member') {
       const f = files[keypad.charId]; if (!f) { setKeypad(null); return; }
       const from = memberVitals(enc, pty, keypad.charId)?.[keypad.key] ?? 0;
-      const r = memberSet(enc, pty, keypad.charId, keypad.key, n, memberMaxes(f));
+      const maxes = bonusMaxes(memberMaxes(f), memberBonus(enc, pty, keypad.charId));
+      const cap = keypad.key === 'hp' ? maxes.maxHp : keypad.key === 'stress' ? maxes.stressMax : keypad.key === 'hope' ? maxes.hopeMax : maxes.armorMax;
+      if (n > cap) { setOverMax({ charId: keypad.charId, name: f.name, key: keypad.key, value: n, cap }); setKeypad(null); return; }
+      const r = memberSet(enc, pty, keypad.charId, keypad.key, n, maxes);
       commitParty(r.party);
       let e2 = r.encounter;
       const to = memberVitals(e2, r.party, keypad.charId)?.[keypad.key] ?? n;
@@ -214,6 +226,22 @@ export function EncounterScreen() {
     }
     setKeypad(null);
   }, [keypad, files, findCombatant, updateCombatant, commitParty, commitEncounter]);
+
+  /** Grant the overflow as a bonus, then set the value now that it fits. */
+  const applyOverMax = useCallback((scope: 'encounter' | 'party') => {
+    const enc = encRef.current, pty = partyRef.current; if (!enc || !pty || !overMax) return;
+    const f = files[overMax.charId];
+    const g = grantMaxBonus(enc, pty, overMax.charId, overMax.key, overMax.value - overMax.cap, scope);
+    commitParty(g.party);
+    const maxes = bonusMaxes(memberMaxes(f), memberBonus(g.encounter, g.party, overMax.charId));
+    const from = memberVitals(g.encounter, g.party, overMax.charId)?.[overMax.key] ?? 0;
+    const r = memberSet(g.encounter, g.party, overMax.charId, overMax.key, overMax.value, maxes);
+    commitParty(r.party);
+    let e2 = r.encounter;
+    if (e2.options.autoLog) e2 = appendLog(e2, 'stat', formatStatLog('Player', f?.name ?? 'Player', overMax.key, from, overMax.value));
+    commitEncounter(e2);
+    setOverMax(null);
+  }, [overMax, files, commitParty, commitEncounter]);
 
   // --- structure edits ---
   const addAdversary = useCallback(() => { const enc = encRef.current; if (!enc) return; playSfx('buttonTap'); commitEncounter({ ...enc, adversaries: [...enc.adversaries, newAdversary(enc.adversaries.length)] }); }, [commitEncounter]);
@@ -282,7 +310,7 @@ export function EncounterScreen() {
       const prev = await getEncounter(ses.activeEncounterId);
       const pty = partyRef.current;
       if (prev && pty) {
-        const noted = appendLog(prev, 'note', `**Completed** — ${enc.name} was started.`);
+        const noted = appendLog(prev, 'note', `**Completed**, ${enc.name} was started.`);
         const done = completeEncounter(ses, noted, pty);
         await saveEncounter(done.encounter);
       }
@@ -320,7 +348,7 @@ export function EncounterScreen() {
 
   const keypadMax = (() => {
     if (!keypad) return 0;
-    if (keypad.kind === 'member') { const f = files[keypad.charId]; if (!f) return 0; const m = memberMaxes(f); return keypad.key === 'hp' ? m.maxHp : keypad.key === 'stress' ? m.stressMax : keypad.key === 'hope' ? m.hopeMax : m.armorMax; }
+    if (keypad.kind === 'member') { const f = files[keypad.charId]; const e = encRef.current, pt = partyRef.current; if (!f || !e || !pt) return 0; const m = bonusMaxes(memberMaxes(f), memberBonus(e, pt, keypad.charId)); return keypad.key === 'hp' ? m.maxHp : keypad.key === 'stress' ? m.stressMax : keypad.key === 'hope' ? m.hopeMax : m.armorMax; }
     const r = findCombatant(keypad.id); return (keypad.stat === 'hp' ? r?.c.maxHp : r?.c.maxStress) ?? 0;
   })();
   const statusColor = enc.status === 'active' ? DmRune.accent : enc.status === 'completed' ? DmRune.muted : DmRune.accentDim;
@@ -337,33 +365,32 @@ export function EncounterScreen() {
         </Pressable>
       }>
       <View style={{ flex: 1 }}>
-        {/* control row: status + log (left) · corner direction toggle (item 7) */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <View style={{ flex: 1, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusColor }} />
-              <Text style={{ color: statusColor, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status}</Text>
-              {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Self-contained</Text> : null}
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => setShowLog(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
-                <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 11, height: 28, justifyContent: 'center' }}>
-                  <Text style={{ color: DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Log · {enc.log.length}</Text>
-                </ChamferBox>
-              </Pressable>
-              {enc.status === 'prepared' ? <View style={{ flex: 1 }}><RuneButton label="Start encounter" kind="primary" height={40} dm onPress={onStart} /></View> : null}
-              {enc.status === 'active' ? <View style={{ flex: 1 }}><RuneButton label="Complete" kind="secondary" height={40} dm onPress={() => setConfirmComplete(true)} /></View> : null}
-              {enc.status === 'completed' ? <View style={{ flex: 1 }}><RuneButton label="Restart" kind="secondary" height={40} dm onPress={() => setRestartPrompt(true)} /></View> : null}
-            </View>
+        {/* v0.23.0: status on its own line, then ONE row of controls all at the same 28dp height
+            and on the same baseline. The lifecycle button was 40dp next to a 28dp Log and a 30dp
+            archive tile, so three controls that belong together sat at three different heights. */}
+        <View style={{ gap: 8, marginBottom: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusColor }} />
+            <Text style={{ color: statusColor, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status}</Text>
+            {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Self-contained</Text> : null}
           </View>
-          {/* card archive (item 9: replaces the old +/− direction toggle; moved out of options) */}
-          <Pressable onPress={() => { playSfx('buttonTap'); router.push('/gallery' as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open card archive">
-            {/* v0.22.0: was 44x44 — the largest control on the screen, for a jump to the card
-                gallery. Now a 30dp glyph so it stops out-shouting Start. */}
-            <ChamferBox chamfer={6} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
-              <Svg width={17} height={17} viewBox="0 0 24 24"><Path d="M7 5 H16 A2 2 0 0 1 18 7 V19 L13 16 L8 19 Z" fill="none" stroke={DmRune.accent} strokeWidth={1.7} strokeLinejoin="round" /><Path d="M6 8 V21 L11 18" fill="none" stroke={DmRune.accentDim} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /></Svg>
-            </ChamferBox>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Pressable onPress={() => setShowLog(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
+              <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 11, height: CTRL_H, justifyContent: 'center' }}>
+                <Text style={{ color: DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Log · {enc.log.length}</Text>
+              </ChamferBox>
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              {enc.status === 'prepared' ? <RuneButton label="Start encounter" kind="primary" height={CTRL_H} dense dm onPress={onStart} /> : null}
+              {enc.status === 'active' ? <RuneButton label="Complete" kind="secondary" height={CTRL_H} dense dm onPress={() => setConfirmComplete(true)} /> : null}
+              {enc.status === 'completed' ? <RuneButton label="Restart" kind="secondary" height={CTRL_H} dense dm onPress={() => setRestartPrompt(true)} /> : null}
+            </View>
+            <Pressable onPress={() => { playSfx('buttonTap'); router.push('/gallery' as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open card archive">
+              <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ width: CTRL_H, height: CTRL_H, alignItems: 'center', justifyContent: 'center' }}>
+                <Svg width={16} height={16} viewBox="0 0 24 24"><Path d="M7 5 H16 A2 2 0 0 1 18 7 V19 L13 16 L8 19 Z" fill="none" stroke={DmRune.accent} strokeWidth={1.7} strokeLinejoin="round" /><Path d="M6 8 V21 L11 18" fill="none" stroke={DmRune.accentDim} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /></Svg>
+              </ChamferBox>
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: allySel.selecting || advSel.selecting ? 150 : 90, gap: 8 }}>
@@ -384,6 +411,7 @@ export function EncounterScreen() {
               key={a.charId}
               file={files[a.charId]}
               vitals={(partyRef.current && memberVitals(enc, partyRef.current, a.charId)) || { hp: 0, stress: 0, hope: 0, armor: 0 }}
+              maxes={partyRef.current && files[a.charId] ? bonusMaxes(memberMaxes(files[a.charId]), memberBonus(enc, partyRef.current, a.charId)) : undefined}
               editable={editableMembers && !!partyRef.current}
               absent={!!partyRef.current && !isPresent(partyRef.current, a.charId)}
               selected={allySel.ids.has(a.charId)}
@@ -407,7 +435,7 @@ export function EncounterScreen() {
               <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} />
             </View>
           </View>
-          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet — add one, or spawn a whole group from the library.</Text> : null}
+          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet, add one, or spawn a whole group from the library.</Text> : null}
           {enc.adversaries.map((c) => (
             <CombatantPanel key={c.id} combatant={c} selecting={advSel.selecting} selected={advSel.ids.has(c.id)}
               onApply={(s, delta) => onCombatantApply(c.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: c.id, stat: s })}
@@ -435,7 +463,22 @@ export function EncounterScreen() {
       ) : null}
 
       {keypad ? (
-        <NumberKeypad dm title={`Set ${keypad.kind === 'member' ? KEY_LABEL[keypad.key] : keypad.stat.toUpperCase()}`} subtitle={`0–${Math.max(0, keypadMax)}`} min={0} max={Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
+        <NumberKeypad dm title={`Set ${keypad.kind === 'member' ? KEY_LABEL[keypad.key] : keypad.stat.toUpperCase()}`} subtitle={keypad.kind === 'member' ? `Max ${Math.max(0, keypadMax)} · go higher to grant a bonus` : `0–${Math.max(0, keypadMax)}`} min={0} max={keypad.kind === 'member' ? Math.max(0, keypadMax) + 30 : Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
+      ) : null}
+      {overMax ? (
+        <PopupDialog
+          dm
+          title={`${overMax.value} is above ${overMax.name}'s maximum`}
+          body={`Their ${KEY_LABEL[overMax.key]} maximum is ${overMax.cap}. Raising it by ${overMax.value - overMax.cap} can last just this fight, or stay with them.`}
+          confirmLabel="Cancel"
+          cancelLabel="Cancel"
+          onConfirm={() => setOverMax(null)}
+          onCancel={() => setOverMax(null)}>
+          <View style={{ marginTop: 14, gap: 10 }}>
+            <RuneButton label="Just this encounter" kind="primary" height={42} dm onPress={() => applyOverMax('encounter')} />
+            <RuneButton label="Raise their maximum" kind="secondary" height={42} dm onPress={() => applyOverMax('party')} />
+          </View>
+        </PopupDialog>
       ) : null}
       {editing ? <AdversaryEditor initial={editing} onSave={saveConfig} onCancel={() => setEditing(null)} /> : null}
       {viewImage ? <AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}

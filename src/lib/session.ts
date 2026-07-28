@@ -30,7 +30,7 @@ export interface Combatant {
   description?: string;
   /** Which fields the DM chose to display for this combatant (PRD #32). */
   show: { hp: boolean; thresholds: boolean; stress: boolean; description: boolean };
-  /** v0.16.0 (PRD #9): a downed adversary isn't deleted — it's "Fallen" with a Recover target HP. */
+  /** v0.16.0 (PRD #9): a downed adversary isn't deleted, it's "Fallen" with a Recover target HP. */
   fallen?: boolean;
   recoverHp?: number;
   // --- v0.17.0: full SRD stat-block detail (base-game roster + custom). All optional/additive so old
@@ -79,6 +79,45 @@ export interface Encounter {
   localVitals?: PartyGlobalState;
   /** Frozen party state at completion (PRD #36). Present only once completed. */
   archivedGlobal?: PartyGlobalState;
+  /** v0.23.0: TEMPORARY max bonuses the DM granted for this fight only — bonus HP, a bigger stress
+   *  track, extra armor slots. Encounter-scoped by definition, so it evaporates with the encounter
+   *  and never touches the player's character file. A PERMANENT raise lives on the party instead. */
+  maxBonus?: Record<string, Partial<Record<VitalKey, number>>>;
+}
+
+/** Fold a DM-granted bonus into a member's derived maxes. */
+export function bonusMaxes(base: MemberMaxes, bonus: Partial<Record<VitalKey, number>> | undefined): MemberMaxes {
+  if (!bonus) return base;
+  return {
+    maxHp: base.maxHp + (bonus.hp ?? 0),
+    stressMax: base.stressMax + (bonus.stress ?? 0),
+    hopeMax: base.hopeMax + (bonus.hope ?? 0),
+    armorMax: base.armorMax + (bonus.armor ?? 0),
+  };
+}
+
+/** The bonus in force for a member: the encounter's temporary grant plus the party's permanent one. */
+export function memberBonus(encounter: Encounter, party: Party, charId: string): Partial<Record<VitalKey, number>> {
+  const tmp = encounter.maxBonus?.[charId] ?? {};
+  const perm = party.maxBonus?.[charId] ?? {};
+  const keys: VitalKey[] = ['hp', 'stress', 'hope', 'armor'];
+  const out: Partial<Record<VitalKey, number>> = {};
+  for (const k of keys) {
+    const v = (tmp[k] ?? 0) + (perm[k] ?? 0);
+    if (v) out[k] = v;
+  }
+  return out;
+}
+
+/** Grant a max bonus. `scope: 'encounter'` is the temporary one; `'party'` survives the fight. */
+export function grantMaxBonus(encounter: Encounter, party: Party, charId: string, key: VitalKey, amount: number, scope: 'encounter' | 'party'): { encounter: Encounter; party: Party } {
+  if (amount <= 0) return { encounter, party };
+  if (scope === 'encounter') {
+    const cur = encounter.maxBonus?.[charId] ?? {};
+    return { encounter: { ...encounter, maxBonus: { ...encounter.maxBonus, [charId]: { ...cur, [key]: (cur[key] ?? 0) + amount } } }, party };
+  }
+  const cur = party.maxBonus?.[charId] ?? {};
+  return { encounter, party: { ...party, maxBonus: { ...party.maxBonus, [charId]: { ...cur, [key]: (cur[key] ?? 0) + amount } } } };
 }
 
 const rid = (p: string): string => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -223,9 +262,9 @@ const STAT_LABEL: Record<VitalKey | CombatantStat, string> = { hp: 'HP', stress:
 
 /** The auto-log line for a stat change (PRD #45): who (side + name), what, and the resulting value. */
 export function formatStatLog(side: 'Player' | 'Adversary', name: string, stat: VitalKey | CombatantStat, from: number, to: number): string {
-  if (from === to) return `**${side} · ${name}** — ${STAT_LABEL[stat]} unchanged (${to})`;
+  if (from === to) return `**${side} · ${name}**, ${STAT_LABEL[stat]} unchanged (${to})`;
   const arrow = to > from ? '▲' : '▼';
-  return `**${side} · ${name}** — ${STAT_LABEL[stat]} ${arrow} ${from} → **${to}**`;
+  return `**${side} · ${name}**, ${STAT_LABEL[stat]} ${arrow} ${from} → **${to}**`;
 }
 
 // --- lifecycle -------------------------------------------------------------------------------------

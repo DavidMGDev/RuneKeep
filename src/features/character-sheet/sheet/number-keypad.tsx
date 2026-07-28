@@ -4,6 +4,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { DmRune, Body, Display, Rune } from '@/constants/theme';
+import { scaled, useLayout } from '@/hooks/use-layout';
 import { playSfx } from '@/lib/sfx';
 
 /** A flat chamfered keypad key (shared shape with the damage panel). */
@@ -30,6 +31,7 @@ function Key({ label, onPress, accent, disabled, dm }: { label: string; onPress:
  * normal tap, enabled only when the typed value is within [min, max]. Tap the dim outside to cancel.
  */
 export function NumberKeypad({ title, subtitle, min = 1, max = 9, dm, onSubmit, onClose }: { title: string; subtitle?: string; min?: number; max?: number; /** v0.22.0: this is the PRIMARY stat-editing surface of DM mode, and it was gold-and-red. */ dm?: boolean; onSubmit: (n: number) => void; onClose: () => void }) {
+  const { scale } = useLayout();
   const vis = useSharedValue(0);
   const [typed, setTyped] = useState('');
   useEffect(() => { vis.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) }); }, [vis]);
@@ -58,7 +60,7 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, dm, onSubmit, 
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.01)' }]} collapsable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
       <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View style={panelStyle}>
-        <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke={dm ? DmRune.line : 'rgba(218,162,73,0.6)'} strokeWidth={1.4} style={{ width: 264, maxWidth: '92%', padding: 16, gap: 12 }}>
+        <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke={dm ? DmRune.line : 'rgba(218,162,73,0.6)'} strokeWidth={1.4} style={{ width: scaled(264, scale), maxWidth: '92%', padding: scaled(16, scale), gap: 12 }}>
           <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{title}</Text>
           {subtitle ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, textAlign: 'center', marginTop: -6 }}>{subtitle}</Text> : null}
           <View style={{ alignItems: 'center', minHeight: 52, justifyContent: 'center' }}>

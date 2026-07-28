@@ -38,7 +38,8 @@ import {
 import { cardById } from '@/data/catalog';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
-import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
+import { embedCardImageForNfc } from '@/lib/image-embed';
+import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 
@@ -183,7 +184,7 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
             <Chip label="Specialization" on={config.tier === 2} onPress={() => set({ tier: 2 })} />
             <Chip label="Mastery" on={config.tier === 3} onPress={() => set({ tier: 3 })} />
           </View>
-          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Make ALL THREE — a Foundation, a Specialization, and a Mastery. Cards link into one subclass when they share a class and a name: leave the field above blank and just give all three cards the SAME title (capitals don&apos;t matter), or fill it in to link cards with different titles. Foundation is chosen in creation; the other two are added automatically when you upgrade the subclass on level-up.</Text>
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Make ALL THREE, a Foundation, a Specialization, and a Mastery. Cards link into one subclass when they share a class and a name: leave the field above blank and just give all three cards the SAME title (capitals don&apos;t matter), or fill it in to link cards with different titles. Foundation is chosen in creation; the other two are added automatically when you upgrade the subclass on level-up.</Text>
         </View>
       ) : null}
       {/* v0.13.2 (#359): the old "Passive on feature line" chip is gone. Which feature is crossed out in a
@@ -217,7 +218,7 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
         </View>
       ) : null}
       {t === 'generic' ? (
-        <LibInput label="Type label (optional)" value={config.typeLabel ?? ''} onChangeText={(typeLabel) => set({ typeLabel })} placeholder="e.g. Consumable, Relic — shows on the plaque" />
+        <LibInput label="Type label (optional)" value={config.typeLabel ?? ''} onChangeText={(typeLabel) => set({ typeLabel })} placeholder="e.g. Consumable, Relic, shows on the plaque" />
       ) : null}
     </View>
   );
@@ -294,8 +295,8 @@ const cardSummary = (c: LibraryCard) => {
 function incompleteSubclassWarning(cards: LibraryCard[]): string | null {
   const bad = incompleteSubclasses(cards);
   if (!bad.length) return null;
-  const lines = bad.map((f) => `• ${f.name} — missing ${f.missing.join(' and ')}`).join('\n');
-  return `A subclass needs all three cards — Foundation, Specialization and Mastery — to level up properly. These are incomplete:\n\n${lines}\n\nYou can still use this pack; the missing tiers just won't be granted on level-up.`;
+  const lines = bad.map((f) => `• ${f.name}, missing ${f.missing.join(' and ')}`).join('\n');
+  return `A subclass needs all three cards. Foundation, Specialization and Mastery, to level up properly. These are incomplete:\n\n${lines}\n\nYou can still use this pack; the missing tiers just won't be granted on level-up.`;
 }
 
 export function LibraryScreen() {
@@ -430,7 +431,7 @@ export function LibraryScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>{on ? 'Enabled for creation' : 'Disabled'}</Text>
-                <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 2 }}>Official expansion — read only</Text>
+                <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 2 }}>Official expansion, read only</Text>
               </View>
               <ExpansionToggle on={on} onToggle={() => toggleExpansion(selected, !on)} />
             </View>
@@ -480,7 +481,7 @@ export function LibraryScreen() {
                         fine but resolved to nothing on the receiving phone, so every shared card with an
                         uploaded image arrived blank. The sheet's send path always did this. */}
                     {nfcOn ? (
-                      <Pressable onPress={() => { playSfx('buttonTap'); setNfcSend({ content: { kind: 'card', payload: inlineCardImage(c, SAFE_NFC_BYTES - 2000) }, label: c.title || 'card' }); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+                      <Pressable onPress={() => { playSfx('buttonTap'); void embedCardImageForNfc(c).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
                       <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>NFC</Text>
                     </Pressable>
                     ) : null}

@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -35,6 +35,7 @@ import { useForgedSnapshots } from './components/forged-snapshots';
 import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
 import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } from './create-types';
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
+import { shouldShow } from '@/lib/onboarding-store';
 
 import { DECKS, deckDone, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CreateLoader, DeckLoader } from './create-loaders';
@@ -55,9 +56,9 @@ import { TraitsTab } from './traits-tab';
 // v0.10.2 (Feature 3): inline "Skip" cards that end the weapons/armor/inventory carousels. Selecting one
 // sets the matching skip flag so the step counts as done with nothing equipped. Module-scope so the
 // `items` memo keeps a stable reference.
-const SKIP_WEAPONS: StraightItem = { id: 'weapons-skip', label: 'Skip weapons', custom: <ForgedCard title="No weapon" kindLabel="Weapon" body="Skip — start with no weapon equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
-const SKIP_ARMOR: StraightItem = { id: 'armor-skip', label: 'Skip armor', custom: <ForgedCard title="No armor" kindLabel="Armor" body="Skip — start with no armor equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
-const SKIP_INVENTORY: StraightItem = { id: 'inventory-skip', label: 'Skip inventory', custom: <ForgedCard title="No items" kindLabel="Item" body="Skip — start with no chosen inventory items." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
+const SKIP_WEAPONS: StraightItem = { id: 'weapons-skip', label: 'Skip weapons', custom: <ForgedCard title="No weapon" kindLabel="Weapon" body="Skip, start with no weapon equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
+const SKIP_ARMOR: StraightItem = { id: 'armor-skip', label: 'Skip armor', custom: <ForgedCard title="No armor" kindLabel="Armor" body="Skip, start with no armor equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
+const SKIP_INVENTORY: StraightItem = { id: 'inventory-skip', label: 'Skip inventory', custom: <ForgedCard title="No items" kindLabel="Item" body="Skip, start with no chosen inventory items." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
 
 // v0.10.3 (B4): a homebrew library card as a creation carousel item — rendered live (no webp) like the
 // other forged cards. Stats for weapon/armor are folded into the body.
@@ -78,6 +79,14 @@ function draftHasContent(d: unknown): boolean {
   if (!x) return false;
   return !!x.name?.trim() || DECKS.some((k) => deckDone(k.key, x));
 }
+
+/**
+ * Height reserved at the bottom of the carousel rail for the SELECT / RANDOM cluster, and the offset
+ * the cluster itself sits at. v0.23.0: previously the rail used its full height, so the centred card
+ * (the biggest one) grew down into the buttons. Weapons no longer needs its own smaller offset --
+ * reserving the band handles the taller filter row for free.
+ */
+const CONTROLS_BAND = 96;
 
 export function CreateScreen() {
   const router = useRouter();
@@ -346,7 +355,7 @@ export function CreateScreen() {
         // #265: the last card flips the mode — "Mixed Ancestry" enters mixed mode, "Single Ancestry" leaves it.
         const toggle: StraightItem = draft.mixedAncestry
           ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
-          : { id: MIXED_ANCESTRY_ID, label: 'Mixed Ancestry', custom: <ForgedCard title="Mixed Ancestry" kindLabel="Ancestry" body="Combine two ancestries: take the first trait of one and the second trait of the other. Pick two — order decides which trait you keep." accentDeep={Rune.panel} colorArt="#3A2A4A" multilineTitle /> };
+          : { id: MIXED_ANCESTRY_ID, label: 'Mixed Ancestry', custom: <ForgedCard title="Mixed Ancestry" kindLabel="Ancestry" body="Combine two ancestries: take the first trait of one and the second trait of the other. Pick two, order decides which trait you keep." accentDeep={Rune.panel} colorArt="#3A2A4A" multilineTitle /> };
         // mixed-ancestry cross-out for STRUCTURED ancestries: first-picked keeps Feature 1 (strike
         // Feature 2), second-picked keeps Feature 2 (strike Feature 1) — mirrors ancestryCrossOuts for
         // the image cards. v0.13.0: the struck FEATURE resolves to its actual section index (features
@@ -497,6 +506,11 @@ export function CreateScreen() {
     [deck, draft, set, weaponSlot, secondaryAllowed, libContent],
   );
 
+  // v0.23.0: teach the creator when the creator opens, not on first launch.
+  useEffect(() => {
+    if (shouldShow('creation')) router.push('/onboarding?tour=creation' as Href);
+  }, [router]);
+
   useEffect(() => {
     if (resumeChecked) return;
     setResumeChecked(true);
@@ -587,7 +601,7 @@ export function CreateScreen() {
       // v0.22.0: this was awaited with NO catch, so a failed write produced no feedback at all.
       // Put the draft back so nothing is lost, and say what happened.
       saveDraft(draft, { deck, picked: [...picked] });
-      showToast('Could not save your hero. Your draft is safe — try Forge again.', 'error');
+      showToast('Could not save your hero. Your draft is safe, try Forge again.', 'error');
       throw e;
     });
     clearDraft(); // only now: the draft has become a character and must not be offered back
@@ -773,6 +787,7 @@ export function CreateScreen() {
                 items={items}
                 selectedIds={selectedIds}
                 crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
+                reserveBottom={CONTROLS_BAND}
                 initialIndex={deckIndexes.current[deck] ?? Math.floor(items.length / 2)}
                 onIndexChange={(i) => {
                   deckIndexes.current[deck] = i;
@@ -809,7 +824,7 @@ export function CreateScreen() {
       {isCarouselDeck(deck) ? (
         // Weapons sits its cluster lower (the filter toggles push its carousel down, so the cards
         // reach further into this band) — the buttons must never overlap the carousel (owner).
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: deck === 'weapons' ? 40 : 56, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 20, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
             label={centerSelected ? 'Deselect' : `Select ${centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun}`}
             kind={centerSelected ? 'ghost' : 'primary'}
@@ -849,7 +864,7 @@ export function CreateScreen() {
       {leaveConfirm ? (
         <PopupDialog
           title="Leave character creation?"
-          body="Your progress is saved as a draft — you can pick it up next time you start a new hero. Discard it instead to start clean."
+          body="Your progress is saved as a draft, you can pick it up next time you start a new hero. Discard it instead to start clean."
           confirmLabel="Keep draft & leave"
           onConfirm={() => { setLeaveConfirm(false); router.back(); }}
           onCancel={() => setLeaveConfirm(false)}>

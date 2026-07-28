@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccentProvider, useAccentTint } from '../components/accent';
 import { ArtImage } from '@/components/art-image';
 import { DesignStage } from '@/components/design-stage';
+import { useLayout } from '@/hooks/use-layout';
+import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
@@ -48,6 +50,7 @@ import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/l
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { VOID_ANCESTRY_ART } from '@/data/void-ancestries';
+import { embedCardImageForNfc } from '@/lib/image-embed';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -1391,7 +1394,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // A weapon/armor already held as STARTING equipment is dropped by the deck builder (it can't be
     // forged twice), so it would never appear — say so rather than silently no-op.
     const startEquip = new Set([f.weaponPrimaryId, f.weaponSecondaryId, f.armorId].filter(Boolean) as string[]);
-    if (startEquip.has(id)) { pushNotice('Already equipped — not added'); return; }
+    if (startEquip.has(id)) { pushNotice('Already equipped, not added'); return; }
     // Route the card to the category the player picked (the Cards-panel per-category Add button, or the
     // current carousel category from the float menu) via a cardCategory override; the deck builder's
     // override pass places it there (#328). Beastform is locked to its own deck — never override into it.
@@ -1572,7 +1575,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Group drag-drop apply (#311): several cards land together in `toCat`; `orderedIds` is the target's
   // full visible order with the moved group spliced in at the drop index. Same as onReorderCard but for
   // a set: re-file each moved id and drop them all from every other category's explicit order.
-  // v0.11.0: imperative handle into the carousel (it's a CHILD of CarouselProvider — the sheet can't read
+  // v0.11.0: imperative handle into the carousel (it's a CHILD of CarouselProvider, the sheet can't read
   // context). Used after a Duplicate to deselect + scroll the row onto the fresh copies.
   const carouselApiRef = useRef<CarouselApi | null>(null);
   const onReorderCards = useCallback((movedIds: string[], toCat: string, orderedIds: string[]) => {
@@ -1711,8 +1714,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const makeId = (srcId: string) => `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}-${srcId.slice(-4)}`;
     playSfx('buttonTap');
     if (ids.length === 1) {
-      const card = inlineCardImage(cardToLibraryCard(file, ids[0], makeId), SAFE_NFC_BYTES - 2000);
-      setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
+      // v0.23.0: compress the art down until it fits the tag rather than dropping it, which is what
+      // the old sync inliner did for any photo over the budget.
+      void embedCardImageForNfc(cardToLibraryCard(file, ids[0], makeId)).then((card) => {
+        setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
+      });
       return;
     }
     const cards = ids.map((id) => cardToLibraryCard(file, id, makeId));
@@ -2098,6 +2104,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // never less than a 32dp floor. The shift is a MARGIN (not padding): absolutely-positioned
   // children like the SheetFrame border anchor to the view's box, so a margin moves border and
   // content together, while padding can leave absolute children at the physical top.
+  // v0.23.0: the stage's own rect, so the parchment matte and the gold border can follow the DESIGN
+  // instead of the container. On a phone the two are nearly the same shape, so this resolves to the
+  // full container and nothing changes.
+  const [stageBox, setStageBox] = useState<{ w: number; h: number } | null>(null);
+  const { isTablet } = useLayout();
+  const frameRect = useMemo(() => {
+    if (!isTablet || !stageBox || stageBox.w <= 0) return null;
+    const m = computeStageScale({ availW: stageBox.w, availH: stageBox.h, designW: SHEET_DESIGN_WIDTH, designH: SHEET_DESIGN_HEIGHT });
+    return { left: m.offsetX, top: m.offsetY, width: m.scaledW, height: m.scaledH };
+  }, [isTablet, stageBox]);
+
   const insets = useSafeAreaInsets();
   const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
   const topInset = Platform.OS === 'android' && detected < 24 ? 32 : detected;
@@ -2140,10 +2157,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           onReject={onNfcReject}
         />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
-          <View style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}>
+          <View
+            style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}
+            onLayout={(e) => setStageBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
             {/* Parchment matte: any letterbox margin reads as sheet, never ink, so the full-bleed gold
-                frame frames parchment instead of a dark gap (#1). */}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: Rune.sheet }]} />
+                frame frames parchment instead of a dark gap (#1).
+                v0.23.0 TABLET: on a tablet the matte is confined to the stage rather than the whole
+                container, so the sheet reads as the phone's sheet, centred, rather than a page
+                stretched to a different shape. */}
+            <View style={[frameRect ?? StyleSheet.absoluteFill, { position: 'absolute', backgroundColor: Rune.sheet }]} />
             {/* clip off: the expand/focus dims overdraw past the stage to reach the screen edges.
                 The safe-area inset pushes everything (border included) below the status bar; the
                 strip above reads as the root's ink navy. Web's inset is 0, so the layouts are the
@@ -2210,7 +2232,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {incoming ? <NfcReceiveCeremony card={incoming} onCommit={commitReceived} onDismiss={() => setIncoming(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
-            <SheetFrame />
+            {/* The gold border is a raster authored at 753x1500 (aspect 0.502). Stretched to a
+                CONTAINER it smears whenever the container's aspect differs, which on a phone it
+                barely does and on a tablet it very much does. Pinning it to the stage box keeps it
+                at the aspect it was drawn for. */}
+            <View style={[frameRect ?? StyleSheet.absoluteFill, { position: 'absolute' }]} pointerEvents="none">
+              <SheetFrame />
+            </View>
           </View>
           {/* EXPLICIT bars painted over the status-bar and nav-control strips (#54 D, #59): even if
               some layer below misbehaves, both strips always read as the border's ink navy. The

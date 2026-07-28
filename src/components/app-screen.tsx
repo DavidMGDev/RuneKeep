@@ -6,6 +6,7 @@ import Svg, { Polyline } from 'react-native-svg';
 import FullUi from '../../assets/art/new/FullUI.svg';
 import FullUiDm from '../../assets/art/new/FullUI-dm.svg';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
+import { scaled, useLayout } from '@/hooks/use-layout';
 
 /** Same Android floors as the sheet (#54/#59): the owner's A54 reports 0 for both insets. */
 export function useScreenInsets() {
@@ -38,6 +39,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
   const { top, bottom } = useScreenInsets();
   const titleColor = dm ? DmRune.ivory : Rune.ivory;
   const backStroke = dm ? DmRune.accent : Rune.goldEdge;
+  const { scale, maxContent } = useLayout();
   return (
     // height/width 100% + overflow hidden belt-and-braces: on web the router wrapper sizes to
     // content — tall content collapsed the flex chain (menu) and a wide min-content child pushed
@@ -45,13 +47,18 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
     // distributes from there. Harmless on native.
     <View style={{ flex: 1, height: '100%' as never, width: '100%' as never, maxWidth: '100%' as never, overflow: 'hidden', backgroundColor: Rune.ink }}>
       <View style={{ flex: 1, marginTop: top, marginBottom: bottom }}>
-        {/* content inset inside the frame's gold line (frame edge ≈ 10dp + breathing room) */}
-        <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
+        {/* content inset inside the frame's gold line (frame edge ≈ 10dp + breathing room).
+            v0.23.0 TABLET: the column keeps a phone-like measure and centres, rather than stretching.
+            `maxContent` is Infinity on phones and `alignSelf: center` is a no-op at full width, so
+            phone layout is byte-identical. This one wrapper is what makes every non-sheet screen
+            read the same on a tablet: rows stop being 760dp wide for a five-character name, buttons
+            stop spanning the display, and prose keeps a sane measure. */}
+        <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: scaled(18, scale), paddingTop: title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
           {title ? (
             // The header FOLLOWS the border's top band (owner #102): back pinned in the left
             // corner, the right control in the right corner, and a smaller CENTERED title between
             // them — nothing tall enough to clash with the frame's notches.
-            <View style={{ height: 36, marginTop: 12, marginBottom: 8, justifyContent: 'center' }}>
+            <View style={{ height: scaled(36, scale), marginTop: 12, marginBottom: 8, justifyContent: 'center' }}>
               {/* v0.22.0: the title sits BETWEEN the two 44dp corner slots rather than being clamped to
                   a flat 55% of the full width. The old clamp was measured against the whole header, so
                   a title at exactly 55% could print under a wide right-hand control — and 207dp only
@@ -63,7 +70,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
                   adjustsFontSizeToFit
                   minimumFontScale={0.8}
                   maxFontSizeMultiplier={1.2}
-                  style={{ textAlign: 'center', color: titleColor, fontSize: 15, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>
+                  style={{ textAlign: 'center', color: titleColor, fontSize: scaled(15, scale), fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>
                   {title}
                 </Text>
               </View>
@@ -74,7 +81,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
                   accessibilityRole="button"
                   accessibilityLabel="Back"
                   style={({ pressed }) => ({ position: 'absolute', left: 0, top: 0, bottom: 0, width: 34, alignItems: 'flex-start', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
-                  <Svg width={16} height={16} viewBox="0 0 18 18">
+                  <Svg width={scaled(16, scale)} height={scaled(16, scale)} viewBox="0 0 18 18">
                     <Polyline points="12,2 5,9 12,16" fill="none" stroke={backStroke} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </Pressable>

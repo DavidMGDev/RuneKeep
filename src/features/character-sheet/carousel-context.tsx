@@ -480,7 +480,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     () => (isCardFavorited && raisedIds.size > 0 ? [...raisedIds].every((id) => isCardFavorited(id)) : false),
     [isCardFavorited, raisedIds],
   );
-  // Expose an imperative handle so the sheet (the CarouselProvider's PARENT — it can't read context)
+  // Expose an imperative handle so the sheet (the CarouselProvider's PARENT, it can't read context)
   // can deselect + scroll after mutating the file (the Duplicate "reveal the copies" flow).
   useEffect(() => {
     if (!apiRef) return;

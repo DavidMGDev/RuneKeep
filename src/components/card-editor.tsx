@@ -120,7 +120,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
             value={r.body}
             onChangeText={(body) => update(i, { body })}
             onSelectionChange={(e) => setSel({ row: i, start: e.nativeEvent.selection.start, end: e.nativeEvent.selection.end })}
-            placeholder="Describe it — select text, then tap B / I / • to format."
+            placeholder="Describe it. Select text, then tap B, I or bullet to format."
             placeholderTextColor={Rune.muted}
             selectionColor={Rune.goldBright}
             multiline
@@ -164,7 +164,7 @@ function TypePicker({ groups, current, onPick, onClose }: { groups: { label: str
               </View>
             </View>
           ))}
-        </ScrollView>
+      </ScrollView>
       </ChamferBox>
     </View>
   );
@@ -300,11 +300,16 @@ export function CardEditor({
   const padCompact = scrimless ? 8 : insets.top + 12; // typing: card top ~10px below the border
   // Height the fields column + buttons occupy below the card (approx; experiences have no body/effects).
   const fieldsH = expMode ? 196 : 340;
-  const cardRoom = screenH * 0.55 - padCompact - fieldsH; // vertical space left for the card while typing
+  const kb = useSharedValue(0);
+  // v0.23.0: the REAL keyboard height, reported by the OS. Used as a bottom spacer so the footer is
+  // always above it, whatever keyboard the player uses.
+  const kbH = useSharedValue(0);
+  const [kbPx, setKbPx] = useState(0);
+  const usableWhileTyping = kbPx > 0 ? screenH - kbPx : screenH * 0.55;
+  const cardRoom = usableWhileTyping - padCompact - fieldsH; // vertical space left for the card while typing
   const fadeCard = cardRoom < 50; // too small to be worth showing → fade out instead of shrinking
   const targetScale = fadeCard ? 0.2 : Math.max(0.32, Math.min(1, cardRoom / FORGED_H));
 
-  const kb = useSharedValue(0);
   const KB = { duration: 240, easing: Easing.out(Easing.cubic) };
   const onFieldFocus = useCallback(() => {
     if (!reduced) kb.value = withTiming(1, KB);
@@ -314,11 +319,17 @@ export function CardEditor({
   // (Back / dismiss) animates back even though the field keeps its cursor.
   useEffect(() => {
     if (reduced) return;
-    const show = Keyboard.addListener('keyboardDidShow', () => { kb.value = withTiming(1, KB); });
-    const hide = Keyboard.addListener('keyboardDidHide', () => { kb.value = withTiming(0, KB); });
+    const show = Keyboard.addListener('keyboardDidShow', (e) => {
+      kb.value = withTiming(1, KB);
+      const h = e.endCoordinates?.height ?? 0;
+      kbH.value = withTiming(h, KB);
+      setKbPx(h);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => { kb.value = withTiming(0, KB); kbH.value = withTiming(0, KB); setKbPx(0); });
     return () => { show.remove(); hide.remove(); };
-  }, [kb, reduced]);
+  }, [kb, kbH, reduced]);
   const topSpacer = useAnimatedStyle(() => ({ height: padFull + (padCompact - padFull) * kb.value }));
+  const bottomSpacer = useAnimatedStyle(() => ({ height: kbH.value }));
   const previewStyle = useAnimatedStyle(() => {
     const scale = 1 + (targetScale - 1) * kb.value; // 1 (resting) -> targetScale (typing)
     return {
@@ -381,7 +392,7 @@ export function CardEditor({
               value={draft.title}
               onChangeText={(title) => setDraft((d) => ({ ...d, title }))}
               onFocus={onFieldFocus}
-              placeholder={expMode ? 'The experience — a word or a whole phrase…' : 'Title'}
+              placeholder={expMode ? 'A word, or a whole phrase' : 'Title'}
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
               multiline={expMode}
@@ -398,7 +409,7 @@ export function CardEditor({
                 value={draft.text}
                 onChangeText={(text) => setDraft((d) => ({ ...d, text }))}
                 onFocus={onFieldFocus}
-                placeholder="Describe it — what it means, when it helps."
+                placeholder="What it means, and when it helps."
                 placeholderTextColor={Rune.muted}
                 selectionColor={Rune.goldBright}
                 multiline
@@ -416,6 +427,9 @@ export function CardEditor({
           </View>
           <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>Same format as every RuneKeep card.</Text>
         </View>
+        {/* v0.23.0: a spacer the exact height of the keyboard, so Cancel and Save can always be
+            reached and are never underneath it. */}
+        <Animated.View style={bottomSpacer} />
       </ScrollView>
       </EditorFrame>
       {pickEffect != null && draft.effects[pickEffect] ? (

@@ -55,7 +55,7 @@ interface RadialCtx {
    *  wheel lands dead-centre on the icon regardless of insets. */
   hostX: SharedValue<number>;
   hostY: SharedValue<number>;
-  open: (ax: number, ay: number, color: string, onApply: (delta: number) => void) => void;
+  open: (ax: number, ay: number, color: string, onApply: (delta: number) => void, touch?: { x: number; y: number }) => void;
   commit: () => void;
   cancel: () => void;
 }
@@ -81,9 +81,12 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
   const [color, setColor] = useState<string>(DmRune.accent);
   const applyRef = useRef<((d: number) => void) | null>(null);
 
-  const open = useCallback((ax: number, ay: number, c: string, onApply: (d: number) => void) => {
+  const open = useCallback((ax: number, ay: number, c: string, onApply: (d: number) => void, touch?: { x: number; y: number }) => {
     applyRef.current = onApply;
-    anchorX.value = ax; anchorY.value = ay; fingerX.value = ax; fingerY.value = ay;
+    anchorX.value = ax; anchorY.value = ay;
+    // v0.23.0: seed the cursor at the REAL touch point, not the anchor. Seeding it to the glyph
+    // centre made the dot appear a finger-width away from the thumb until the first drag update.
+    fingerX.value = touch?.x ?? ax; fingerY.value = touch?.y ?? ay;
     highlight.value = -1; active.value = 1;
     setColor(c);
     progress.value = withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) });

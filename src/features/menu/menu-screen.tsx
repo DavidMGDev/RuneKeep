@@ -15,7 +15,8 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { listParties } from '@/lib/party-store';
 import { showToast } from '@/components/toast';
-import { loadOnboarding } from '@/lib/onboarding-store';
+import { resetTours, shouldShow } from '@/lib/onboarding-store';
+import { useLayout } from '@/hooks/use-layout';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
@@ -177,6 +178,8 @@ export function MenuScreen() {
   const [tourChecked, setTourChecked] = useState(false);
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const { height: screenH } = useLayout();
+  const driftY = (f: number) => Math.round(screenH * f);
   const [dm, setDm] = useState(false);
   const [muted, setMuted] = useState(false);
   const [hasEnabledParty, setHasEnabledParty] = useState(false);
@@ -198,7 +201,7 @@ export function MenuScreen() {
   useEffect(() => {
     if (!ready || tourChecked) return;
     setTourChecked(true);
-    if (!loadOnboarding().done) router.push('/onboarding' as Href);
+    if (shouldShow('welcome')) router.push('/onboarding?tour=welcome' as Href);
   }, [ready, tourChecked, router]);
   // Sessions unlocks only once a party is enabled (PRD #17/#18). Re-checked whenever the menu regains
   // focus (returning from Parties may have just enabled one).
@@ -239,14 +242,16 @@ export function MenuScreen() {
   if (!ready) return <LoadingScreen label="Stoking the forge" />;
 
   return (
-    <AppScreen>
+    <AppScreen dm={dm}>
       <View style={{ flex: 1 }}>
         {/* ambient deck, dim, behind everything — rows fill the gap BETWEEN the title and the
             actions (owner #102: never behind the title; the bottom row's spot is approved). */}
         <View style={StyleSheet.absoluteFill}>
-          <DriftRow y={228} cards={rows[0]} duration={90000} opacity={0.2} />
-          <DriftRow y={396} cards={rows[1]} duration={120000} reverse opacity={0.15} />
-          <DriftRow y={560} cards={rows[2]} duration={105000} opacity={0.1} />
+          {/* v0.23.0: proportional, not absolute. These were tuned against an 892dp phone, so on a
+              1280dp display all three bunched into the top 44% and left the bottom empty. */}
+          <DriftRow y={driftY(0.26)} cards={rows[0]} duration={90000} opacity={0.2} />
+          <DriftRow y={driftY(0.45)} cards={rows[1]} duration={120000} reverse opacity={0.15} />
+          <DriftRow y={driftY(0.63)} cards={rows[2]} duration={105000} opacity={0.1} />
         </View>
 
         {/* title block */}
@@ -280,7 +285,7 @@ export function MenuScreen() {
             </>
           ) : (
             <>
-              <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
+              <MenuAction label="Characters" sub="Your roster, play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
               <MenuAction label="Cards" sub="Browse the archive, build homebrew" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
             </>
           )}
@@ -289,9 +294,9 @@ export function MenuScreen() {
             <MuteToggle muted={muted} dm={dm} onToggle={toggleMute} />
             {/* v0.22.0: the tour is re-openable, not a one-shot you can never find again. */}
             <Pressable
-              onPress={() => { playSfx('buttonTap'); router.push('/onboarding' as Href); }}
+              onPress={() => { playSfx('buttonTap'); resetTours(); showToast('Tips are back on. They will appear as you go.'); }}
               accessibilityRole="button"
-              accessibilityLabel="How RuneKeep works">
+              accessibilityLabel="Show tips again">
               <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={dm ? DmRune.line : Rune.goldEdge} strokeWidth={1.3} style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 15, fontFamily: Display.black }}>?</Text>
               </ChamferBox>

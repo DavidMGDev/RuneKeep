@@ -326,13 +326,13 @@ export function repair(snapshot: CharacterFile): { file: CharacterFile; repairs:
   // build whose maxHp is now 6 silently yields 6. Say so rather than hide it.
   const res = file.resources;
   if (res && typeof file.maxHp === 'number' && res.hp > file.maxHp) {
-    repairs.push(`HP reduced to ${file.maxHp} — this build's maximum is lower than it was.`);
+    repairs.push(`HP reduced to ${file.maxHp}, this build's maximum is lower than it was.`);
     file.resources = { ...res, hp: file.maxHp };
   }
 
   // At least one category must stay enabled, or the carousel has nothing to show.
   if (Array.isArray(file.hiddenCategories) && file.hiddenCategories.length > 0 && file.customCategories?.length === 0 && file.hiddenCategories.includes('abilities')) {
-    repairs.push('Re-enabled the Abilities category — every category was hidden.');
+    repairs.push('Re-enabled the Abilities category, every category was hidden.');
     file.hiddenCategories = file.hiddenCategories.filter((c) => c !== 'abilities');
   }
 

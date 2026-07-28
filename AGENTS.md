@@ -34,6 +34,13 @@ stretch non-panel art (lock `aspectRatio` / `resizeMode="contain"`). See `docs/a
 - Add `@shopify/react-native-skia` (particles via `<Atlas>`) and `react-native-svg` only when first used: `npx expo install ...` (never plain `npm install` for Expo-tracked libs).
 - Wrap interactive art in a small pressable that owns a `scale` shared value — never drop a bare `<Image>` where touch behavior is expected later.
 
+## Copy rules (non-negotiable)
+- **No em dashes anywhere the user can read.** Not in labels, bodies, placeholders, toasts, errors,
+  empty states, or release notes. Use commas, colons, semicolons, periods or parentheses. `--` is
+  not a substitute either. Code comments are not user-facing and are exempt.
+- Plain language over flavour. Say what the control does; don't decorate it. Flavour belongs in the
+  card content, which is the player's, not in the chrome.
+
 ## Conventions
 - TypeScript, functional components, `StyleSheet.create`. No NativeWind/Tailwind in this project.
 - Keep screens runnable in Expo Go during development.

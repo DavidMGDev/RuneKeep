@@ -105,7 +105,7 @@ export function RestPanel({ character, moveLimit = BASE_REST_MOVES, onApply, onC
     return (
       <NumberKeypad
         title={`Dice ${idx + 1} of ${rolling.queue.length}`}
-        subtitle={`${move?.title ?? 'Roll'} — enter your 1d4`}
+        subtitle={`${move?.title ?? 'Roll'}, enter your 1d4`}
         min={1}
         max={4}
         onSubmit={submitRoll}

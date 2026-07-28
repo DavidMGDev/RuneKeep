@@ -9,8 +9,8 @@
  * selected, both confirmed (item 3).
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, FadeIn, FadeOut, LinearTransition, runOnJS, type SharedValue, SlideInLeft, SlideOutLeft, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
@@ -49,8 +49,10 @@ function NoteEditor({ initial, onSave, onDelete, onCancel }: { initial: string; 
 /** The grip handle (drag lines) on note rows — no arrows (item 8). Its own gesture area (item 5). */
 function GripLines() {
   return (
-    <View style={{ width: 26, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-      {[0, 1, 2].map((i) => <View key={i} style={{ width: 13, height: 2, borderRadius: 1, backgroundColor: DmRune.accentDim }} />)}
+    // v0.23.0: 34dp wide, not 26. Combined with the RN ScrollView stealing the touch (now the
+    // gesture-handler one), the handle was effectively unhittable.
+    <View style={{ width: 34, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+      {[0, 1, 2].map((i) => <View key={i} style={{ width: 15, height: 2, backgroundColor: DmRune.accentDim }} />)}
     </View>
   );
 }
@@ -81,7 +83,7 @@ function LogRow({ item, isNote, isDragged, selecting, on, showDropAbove, dragY, 
         ) : !isNote ? (
           <View style={{ width: 3, alignSelf: 'stretch', marginLeft: 10, backgroundColor: 'rgba(196,200,208,0.35)', borderRadius: 2 }} />
         ) : (
-          <View style={{ width: 26 }} />
+          <View style={{ width: 34 }} />
         )}
         <Pressable
           onPress={onPress}

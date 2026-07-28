@@ -113,7 +113,7 @@ function mixHex(a: string, b: string): string {
 }
 
 /**
- * A class's identity color is the blend of its two domains — grounded in the game's own system
+ * A class's identity color is the blend of its two domains, grounded in the game's own system
  * (the subclass card chrome itself is class-neutral gold, so there is no class color to sample).
  */
 export function classColor(key: ClassName): IdentityColor {

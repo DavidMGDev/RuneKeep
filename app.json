@@ -2,7 +2,7 @@
   "expo": {
     "name": "RuneKeep",
     "slug": "RuneKeep",
-    "version": "0.22.0",
+    "version": "0.23.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "runekeep",
@@ -40,18 +40,36 @@
           "data": [
             {
               "scheme": "content",
-              "mimeType": "*/*",
-              "pathPattern": ".*\\.rkp"
-            },
-            {
-              "scheme": "file",
-              "mimeType": "*/*",
-              "pathPattern": ".*\\.rkp"
+              "mimeType": "application/octet-stream"
             },
             {
               "scheme": "content",
-              "mimeType": "application/octet-stream",
-              "pathPattern": ".*\\.rkp"
+              "mimeType": "application/rkp"
+            },
+            {
+              "scheme": "content",
+              "mimeType": "application/x-rkp"
+            }
+          ]
+        },
+        {
+          "action": "VIEW",
+          "category": [
+            "DEFAULT",
+            "BROWSABLE"
+          ],
+          "data": [
+            {
+              "scheme": "file",
+              "host": "*",
+              "mimeType": "*/*",
+              "pathPattern": ".*\\\\.rkp"
+            },
+            {
+              "scheme": "content",
+              "host": "*",
+              "mimeType": "*/*",
+              "pathPattern": ".*\\\\.rkp"
             }
           ]
         }

@@ -4,6 +4,7 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, Rune } from '@/constants/theme';
+import { scaled, useLayout } from '@/hooks/use-layout';
 import { playSfx } from '@/lib/sfx';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -39,6 +40,7 @@ export function OverlayShell({
   /** v0.13.0: no open/close sounds (the empty-category panel must appear silently, owner item 10). */
   mute?: boolean;
 }) {
+  const { scale } = useLayout();
   // The body ScrollView is capped to a real pixel height (#233): a flex-shrink ScrollView inside a
   // content-sized ChamferBox collapsed to ~nothing (it has no intrinsic main-axis height), which
   // cropped the Modifiers + Rest panels. Sizing the ChamferBox to its content and the ScrollView to
@@ -73,7 +75,7 @@ export function OverlayShell({
           gestures through to the sheet's stat tracks underneath). SheetDim still provides the visible dim. */}
       <AnimatedPressable collapsable={false} style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.01)' }, scrimStyle]} onPress={dismissOnScrim ? close : undefined} accessibilityElementsHidden={!dismissOnScrim} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
       <Animated.View style={boxStyle}>
-      <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width, paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
+      <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: scaled(width, scale), maxWidth: '94%', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
           <View style={{ flex: 1, paddingRight: 8 }}>
             <Text numberOfLines={2} style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>

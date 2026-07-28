@@ -61,7 +61,7 @@ export interface RouteInput {
 export function friendlyError(raw: string): string {
   const m = raw.toLowerCase();
   if (m.includes('bad json') || m.includes('not a json')) {
-    return "That file isn't readable. It may have been renamed, or damaged in transit — ask for it again.";
+    return "That file isn't readable. It may have been renamed, or damaged in transit, ask for it again.";
   }
   if (m.includes('newer version')) {
     return 'That file was made by a newer version of RuneKeep. Update the app and try again.';
@@ -70,7 +70,7 @@ export function friendlyError(raw: string): string {
     return "That file is from an older version RuneKeep can no longer read.";
   }
   if (m.includes('not a runekeep') || m.includes('unknown .rkp content kind')) {
-    return "That isn't a RuneKeep file. RuneKeep opens .rkp files — characters, cards and expansions.";
+    return "That isn't a RuneKeep file. RuneKeep opens .rkp files, characters, cards and expansions.";
   }
   if (m.includes('card') && m.includes('missing')) {
     return 'That expansion has a damaged card in it, so it cannot be installed. Ask whoever made it to export it again.';
@@ -85,7 +85,7 @@ export function friendlyError(raw: string): string {
 }
 
 const DEFER_REASON: Record<Exclude<AppLocation, 'idle'>, string> = {
-  sheet: 'You have a character open. Finish up and import it from the main menu — nothing is lost.',
+  sheet: 'You have a character open. Finish up and import it from the main menu, nothing is lost.',
   creating: 'You are part-way through making a hero. Finish or save that first, then import from the main menu.',
 };
 
@@ -104,7 +104,7 @@ export function routeIncoming({ text, location, existingCharacterIds }: RouteInp
   // Routing it from a file would need a target character and a category, which is a whole flow —
   // so say where it belongs rather than half-doing it.
   if (kind === 'card') {
-    return { action: 'explain-card', message: 'That file is a single card. Open the character you want it on, then share it over NFC — or add it to an expansion in the Card Library.' };
+    return { action: 'explain-card', message: 'That file is a single card. Open the character you want it on, then share it over NFC, or add it to an expansion in the Card Library.' };
   }
 
   // Anything that would change what is under the user's feet waits until they are somewhere safe.
