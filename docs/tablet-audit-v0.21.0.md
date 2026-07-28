@@ -115,3 +115,32 @@ A cheaper middle path I *can* do entirely in code: replace the frame with a proc
 | **A dedicated tablet layout** for the sheet (two-pane, or using the 125 dp gutters) | Not blocked by tooling — blocked by *design intent*. `DesignStage` is deliberately a fixed 412×892 composition and `PRODUCT.md` calls the sheet owner-approved. Any real use of tablet space is a new composition someone has to design, not a responsive rule someone can write. |
 
 ---
+
+
+---
+
+## v0.24.0 — the strategy was replaced
+
+The v0.23.0 work below is superseded. It adapted each screen to a large display: a wider centred
+column, magnified controls, more grid columns. That shipped and the owner's verdict was that it made
+the tablet a *different app*, with three concrete faults the approach could not fix:
+
+1. The gold border sat at the edge of the display, not around anything.
+2. The character sheet's carousel drew its off-screen cards across the empty width, because the
+   carousel deliberately overflows and there was nothing to clip it to.
+3. A dialog dimmed the app column and left the margins at full brightness, so every popup looked
+   like a rendering fault.
+
+It also broke layouts that had been tuned as phone compositions: six trait dials became five in a row
+and one alone, because the row was suddenly wide enough for five.
+
+**v0.24.0 renders the phone UI into a phone-shaped viewport instead** (`src/components/phone-frame.tsx`,
+documented in `docs/architecture.md` › *Tablets*). The viewport is 412dp wide, magnified to the display
+height and centred, clipped, with faint card art in the margins. All three faults above stop being
+possible rather than being fixed one at a time, and every per-screen tablet branch turns itself off
+because `useLayout()` now reports the viewport rather than the display.
+
+The individual findings below remain accurate as *descriptions of what was wrong*; only the remedies
+changed. The two genuinely open items are unchanged: the Void class banners are tiny rasters that are
+**vector in the source PDFs** and could be re-extracted, and `FullUI.svg` still stretches with
+`preserveAspectRatio="none"` (harmless now, since the frame it stretches into is always phone-shaped).
