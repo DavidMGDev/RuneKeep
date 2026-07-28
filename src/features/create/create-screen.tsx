@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -35,6 +35,7 @@ import { useForgedSnapshots } from './components/forged-snapshots';
 import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
 import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } from './create-types';
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
+import { shouldShow } from '@/lib/onboarding-store';
 
 import { DECKS, deckDone, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CreateLoader, DeckLoader } from './create-loaders';
@@ -504,6 +505,11 @@ export function CreateScreen() {
     },
     [deck, draft, set, weaponSlot, secondaryAllowed, libContent],
   );
+
+  // v0.23.0: teach the creator when the creator opens, not on first launch.
+  useEffect(() => {
+    if (shouldShow('creation')) router.push('/onboarding?tour=creation' as Href);
+  }, [router]);
 
   useEffect(() => {
     if (resumeChecked) return;

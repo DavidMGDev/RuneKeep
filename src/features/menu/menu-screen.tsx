@@ -15,7 +15,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { listParties } from '@/lib/party-store';
 import { showToast } from '@/components/toast';
-import { loadOnboarding } from '@/lib/onboarding-store';
+import { resetTours, shouldShow } from '@/lib/onboarding-store';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
@@ -198,7 +198,7 @@ export function MenuScreen() {
   useEffect(() => {
     if (!ready || tourChecked) return;
     setTourChecked(true);
-    if (!loadOnboarding().done) router.push('/onboarding' as Href);
+    if (shouldShow('welcome')) router.push('/onboarding?tour=welcome' as Href);
   }, [ready, tourChecked, router]);
   // Sessions unlocks only once a party is enabled (PRD #17/#18). Re-checked whenever the menu regains
   // focus (returning from Parties may have just enabled one).
@@ -289,9 +289,9 @@ export function MenuScreen() {
             <MuteToggle muted={muted} dm={dm} onToggle={toggleMute} />
             {/* v0.22.0: the tour is re-openable, not a one-shot you can never find again. */}
             <Pressable
-              onPress={() => { playSfx('buttonTap'); router.push('/onboarding' as Href); }}
+              onPress={() => { playSfx('buttonTap'); resetTours(); showToast('Tips are back on. They will appear as you go.'); }}
               accessibilityRole="button"
-              accessibilityLabel="How RuneKeep works">
+              accessibilityLabel="Show tips again">
               <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={dm ? DmRune.line : Rune.goldEdge} strokeWidth={1.3} style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 15, fontFamily: Display.black }}>?</Text>
               </ChamferBox>
