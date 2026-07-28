@@ -1,6 +1,6 @@
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Dimensions, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Polygon, Polyline } from 'react-native-svg';
 
@@ -28,7 +28,7 @@ const THUMB_H = Math.round(THUMB_W * (263 / 188));
  * row container (no per-card work), thumbs only (~9KB each) — decorative cost ≈ one full card.
  */
 function DriftRow({ y, cards, duration, reverse, opacity }: { y: number; cards: { thumb: number; id: string }[]; duration: number; reverse?: boolean; opacity: number }) {
-  const screenW = Dimensions.get('window').width;
+  const { width: screenW } = useLayout();
   const gap = 14;
   const span = cards.length * (THUMB_W + gap);
   const x = useSharedValue(0);
@@ -37,14 +37,22 @@ function DriftRow({ y, cards, duration, reverse, opacity }: { y: number; cards: 
     if (reduced) return;
     x.value = withRepeat(withTiming(1, { duration, easing: Easing.linear }), -1, false);
   }, [x, duration, reduced]);
-  const style = useAnimatedStyle(() => ({
-    transform: [{ translateX: (reverse ? 1 : -1) * x.value * span }],
-  }));
-  // Two copies back-to-back so the loop wraps seamlessly; row total stays comfortably > screen.
-  const strip = [...cards, ...cards];
+  // v0.24.0: BOTH directions now travel the same window, `-span` to `0`. The reverse row used to
+  // start at `screenW - span` and travel to `+span`, which walks the strip clean off the right of
+  // the screen: the gap on its left grew for the whole two-minute cycle and then snapped back. That
+  // is the "middle row is short on the left" the owner saw, and it was never a seam, it was the row
+  // leaving. Anchored at `left: 0`, the strip covers `[-span, copies*span - span]` at every offset.
+  const style = useAnimatedStyle(() => {
+    const t = reverse ? 1 - x.value : x.value;
+    return { transform: [{ translateX: -t * span }] };
+  });
+  // Enough copies that the strip still reaches the right edge at the furthest offset. Two was fine
+  // on a 412dp phone and is not on anything wider, which is the other half of the same bug.
+  const copies = Math.max(2, Math.ceil(screenW / span) + 1);
+  const strip = Array.from({ length: copies }, () => cards).flat();
   return (
     <View style={{ position: 'absolute', left: 0, right: 0, top: y, height: THUMB_H, opacity }} pointerEvents="none">
-      <Animated.View style={[{ flexDirection: 'row', gap, position: 'absolute', left: reverse ? -span + screenW : 0 }, style]}>
+      <Animated.View style={[{ flexDirection: 'row', gap, position: 'absolute', left: 0 }, style]}>
         {strip.map((c, i) => (
           <View key={`${c.id}-${i}`} style={{ width: THUMB_W, height: THUMB_H, transform: [{ rotate: i % 2 ? '2.5deg' : '-2deg' }] }}>
             <ArtImage source={c.thumb} fit="contain" />

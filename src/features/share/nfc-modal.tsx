@@ -20,11 +20,13 @@ import {
   startNfcSend,
 } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
+import { DimScreen } from '@/lib/screen-dim';
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9500, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
+      <DimScreen opacity={0.92} />
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 20, paddingVertical: 22, gap: 14, alignItems: 'center' }}>
         {children}
       </ChamferBox>

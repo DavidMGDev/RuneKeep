@@ -1,0 +1,57 @@
+import { isFilePayload, pushIncomingUrl, resetIncomingUrl, subscribeIncomingUrl, takeIncomingUrl } from './incoming-url';
+
+/**
+ * These shapes are the whole bug. v0.23.0 shipped a filter that only accepted URLs ending in `.rkp`,
+ * which every sender that matters fails to produce, so the one case the file association existed to
+ * serve was silently dropped. Each `content://` case below is a real launch URL.
+ */
+describe('isFilePayload', () => {
+  it('accepts the provider URI WhatsApp actually sends', () => {
+    // Verbatim from the owner's screenshot. No filename, no extension, nothing to pattern-match.
+    expect(isFilePayload('content://com.whatsapp.provider.media/item/8a832779-5612-4208-907e-181224b74a5a')).toBe(true);
+  });
+
+  it('accepts other providers with opaque ids', () => {
+    expect(isFilePayload('content://com.android.providers.downloads.documents/document/msf%3A1000000042')).toBe(true);
+    expect(isFilePayload('content://media/external/file/12345')).toBe(true);
+  });
+
+  it('accepts file URIs that name a .rkp', () => {
+    expect(isFilePayload('file:///storage/emulated/0/Download/Aeliana.rkp')).toBe(true);
+    expect(isFilePayload('file:///data/user/0/com.davidmgdev.runekeep/cache/x.rkp?v=2')).toBe(true);
+  });
+
+  it('rejects file URIs that are some other download', () => {
+    expect(isFilePayload('file:///storage/emulated/0/Download/holiday.jpg')).toBe(false);
+  });
+
+  it('rejects the app own deep links, which are routes', () => {
+    expect(isFilePayload('runekeep://sheet?id=abc')).toBe(false);
+    expect(isFilePayload('runekeep://')).toBe(false);
+  });
+
+  it('rejects nothing at all', () => {
+    expect(isFilePayload(null)).toBe(false);
+    expect(isFilePayload(undefined)).toBe(false);
+    expect(isFilePayload('')).toBe(false);
+  });
+});
+
+describe('the launch handoff', () => {
+  beforeEach(resetIncomingUrl);
+
+  it('holds a URL captured before React mounted, and yields it once', () => {
+    pushIncomingUrl('content://x/1');
+    expect(takeIncomingUrl()).toBe('content://x/1');
+    expect(takeIncomingUrl()).toBeNull();
+  });
+
+  it('notifies a mounted gate for a warm launch', () => {
+    const seen: string[] = [];
+    const off = subscribeIncomingUrl((u) => seen.push(u));
+    pushIncomingUrl('content://x/2');
+    off();
+    pushIncomingUrl('content://x/3');
+    expect(seen).toEqual(['content://x/2']);
+  });
+});

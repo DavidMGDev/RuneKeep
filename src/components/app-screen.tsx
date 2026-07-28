@@ -6,15 +6,18 @@ import Svg, { Polyline } from 'react-native-svg';
 import FullUi from '../../assets/art/new/FullUI.svg';
 import FullUiDm from '../../assets/art/new/FullUI-dm.svg';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
-import { scaled, useLayout } from '@/hooks/use-layout';
+import { scaled, useFrame, useLayout } from '@/hooks/use-layout';
 
 /** Same Android floors as the sheet (#54/#59): the owner's A54 reports 0 for both insets. */
 export function useScreenInsets() {
   const insets = useSafeAreaInsets();
+  // v0.24.0: inside the tablet frame the whole tree is magnified, so a 24dp status bar would be
+  // painted 34dp tall. Insets are physical, so divide them back out and they land where they are.
+  const { scale } = useFrame();
   const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
   const top = Platform.OS === 'android' && detected < 24 ? 32 : detected;
   const bottom = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
-  return { top, bottom };
+  return { top: top / scale, bottom: bottom / scale };
 }
 
 interface AppScreenProps {
@@ -58,7 +61,10 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
             // The header FOLLOWS the border's top band (owner #102): back pinned in the left
             // corner, the right control in the right corner, and a smaller CENTERED title between
             // them — nothing tall enough to clash with the frame's notches.
-            <View style={{ height: scaled(36, scale), marginTop: 12, marginBottom: 8, justifyContent: 'center' }}>
+            // v0.24.0: the frame art is drawn OVER the content, and its top band dips to ~2.7% of the
+            // frame height (~24dp), which was clipping the top of titles like "Making a hero" and
+            // "Card Archive". 22dp of margin clears the band with room to spare at any frame height.
+            <View style={{ height: scaled(36, scale), marginTop: 22, marginBottom: 8, justifyContent: 'center' }}>
               {/* v0.22.0: the title sits BETWEEN the two 44dp corner slots rather than being clamped to
                   a flat 55% of the full width. The old clamp was measured against the whole header, so
                   a title at exactly 55% could print under a wide right-hand control — and 207dp only

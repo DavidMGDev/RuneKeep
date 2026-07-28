@@ -11,7 +11,7 @@
  * (so the carousel update never shows a wrong-order or empty frame — the Golden-Gear-Edit principle).
  */
 import { useEffect, useRef, useState } from 'react';
-import { Text, useWindowDimensions, View } from 'react-native';
+import { Text, View } from 'react-native';
 import Animated, { Easing, interpolate, type SharedValue, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -28,6 +28,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
+import { useLayout } from '@/hooks/use-layout';
 import { type CardCategory } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { type NfcGateFlags, nfcReceiveActive } from './nfc-gate';
@@ -120,7 +121,7 @@ function Spark({ drop, cx, cy, s }: { drop: SharedValue<number>; cx: number; cy:
  * handler + the target category and clears `card` when done.
  */
 export function NfcReceiveCeremony({ card, onCommit, onDismiss }: { card: LibraryCard; onCommit: (card: LibraryCard, category: CardCategory) => void; onDismiss: () => void }) {
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useLayout();
   const { collapse, category } = useCarousel();
   const reduced = useReducedMotion();
   // A received card lands in the category being viewed — unless that's a locked/special deck it can't

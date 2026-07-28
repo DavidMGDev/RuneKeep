@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from '
 import { type LayoutChangeEvent, type StyleProp, View, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { useFrame } from '@/hooks/use-layout';
 import { computeStageScale, type StageFit } from '@/lib/stage-scale';
 
 /**
@@ -44,6 +45,10 @@ export function DesignStage({
   children,
 }: DesignStageProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
+  // v0.24.0: on a tablet the whole app is already magnified by PhoneFrame, and onLayout reports
+  // LAYOUT dp, which does not see that. Gesture translations do. So the scale published to
+  // descendants is the full design-px-to-screen-px factor, not just this stage's part of it.
+  const frame = useFrame();
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -82,7 +87,7 @@ export function DesignStage({
             },
             fade,
           ]}>
-          <StageScaleContext.Provider value={scale}>{children}</StageScaleContext.Provider>
+          <StageScaleContext.Provider value={scale * frame.scale}>{children}</StageScaleContext.Provider>
         </Animated.View>
       )}
     </View>

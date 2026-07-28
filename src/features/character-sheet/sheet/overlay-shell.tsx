@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect } from 'react';
-import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -45,7 +45,7 @@ export function OverlayShell({
   // content-sized ChamferBox collapsed to ~nothing (it has no intrinsic main-axis height), which
   // cropped the Modifiers + Rest panels. Sizing the ChamferBox to its content and the ScrollView to
   // maxHeight = a slice of the screen lets short content show fully and tall content scroll.
-  const { height: screenH } = useWindowDimensions();
+  const { height: screenH } = useLayout();
   const scrollMax = Math.round(screenH * 0.6);
   // Entrance (#201): the scrim fades in and the panel rises + scales in instead of popping.
   const reduced = useReducedMotion();

@@ -27,6 +27,39 @@ which applies a single uniform scale (`transformOrigin: 'top left'`) to fit the 
 - Only stretch the ink background; never stretch the frame. A subtree that later needs genuinely reflowing
   content (long lists/text) can opt out of the stage and use plain flex — the stage is per-screen, not global.
 
+### Tablets — the `PhoneFrame` (v0.24.0)
+
+**A tablet does not get a tablet layout. It runs the phone layout.**
+
+v0.23.0 tried the other thing: a wider centred column, scaled-up controls, more grid columns per screen.
+It worked and it was wrong. The border ended up stranded at the edge of a 10" panel with the carousel
+spilling past it, dialogs dimmed the middle of the display and left the sides lit, and creation put five
+trait dials in one row and the sixth alone. It had become a second app to maintain.
+
+**Decision:** `<PhoneFrame>` (`src/components/phone-frame.tsx`) wraps the entire router at the root. Above
+`smallestWidth 600dp` it renders everything into a **412dp-wide viewport**, uniformly magnified by
+`min(w/412, h/892)` so it fills the display height, centred, clipped, with the leftover width used as
+decorated margin. Below the breakpoint it returns its children untouched.
+
+Everything else follows from that, rather than needing its own tablet case:
+
+- `useLayout()` reads the **viewport**, not the window, so it reports ~412dp inside the frame. Every
+  tablet branch written in v0.23.0 evaluates false on its own. `scaled()` and `gridColumns()` are now
+  identities, kept only so those call sites still read naturally.
+- **Never read `Dimensions.get('window')` or `useWindowDimensions()` in a screen.** Use `useLayout()` /
+  `useFrame()`. The window is the display; the frame is the space you are laying out in, and inside the
+  frame they differ by the magnification.
+- **Window coordinates need converting.** Gesture `absoluteX/absoluteY` and `measureInWindow` report
+  physical window space and ignore the frame's transform, so anything that positions a view from them (a
+  drag ghost, a radial cursor, a keyboard spacer) must pass through `windowToFrameX/Y` or divide by
+  `useFrame().scale`. `DesignStage` publishes stage × frame through `useStageScale()` for the same reason.
+- **Scrims cannot escape the clip.** An overlay that dims declares its opacity with `useScreenDim` /
+  `<DimScreen>` (`src/lib/screen-dim.ts`) and `PhoneFrame` paints the same value in the margins, so the
+  whole display darkens together instead of a lit strip either side.
+- Gesture *translations* are still reported in physical px, so a drag scrubs the carousel about 40% faster
+  on a tablet than on a phone. Cards snap to slots, so it reads as a livelier flick rather than a fault;
+  correcting it would mean retuning constants that are currently right on phones.
+
 ---
 
 ## Card carousel

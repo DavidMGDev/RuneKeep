@@ -10,6 +10,7 @@ import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
+import { useFrame, windowToFrameX, windowToFrameY } from '@/hooks/use-layout';
 
 import { type CardCategory, type CardItem, isBuiltinCategory } from '../card-data';
 import { availableCategories, categoryLabel, type CustomCategory } from '../carousel-categories';
@@ -456,6 +457,7 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
   setRef: (id: string, ref: View | null) => void; setCat: (id: string, cat: string) => void;
   ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
 }) {
+  const frame = useFrame();
   const tap = useMemo(() => Gesture.Tap().maxDuration(260).onEnd(() => runOnJS(onToggleSelect)(item.id)), [onToggleSelect, item.id]);
   const drag = useMemo(
     () =>
@@ -463,15 +465,16 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
         .activateAfterLongPress(420)
         .onStart((e) => {
           'worklet';
-          ghostX.value = e.absoluteX;
-          ghostY.value = e.absoluteY;
+          // v0.24.0: window coords, and the ghost is drawn inside the (possibly magnified) frame.
+          ghostX.value = windowToFrameX(e.absoluteX, frame);
+          ghostY.value = windowToFrameY(e.absoluteY, frame);
           ghostOn.value = 1;
           runOnJS(onBeginDrag)(item.id);
         })
-        .onUpdate((e) => { 'worklet'; ghostX.value = e.absoluteX; ghostY.value = e.absoluteY; runOnJS(onHover)(e.absoluteX, e.absoluteY); })
+        .onUpdate((e) => { 'worklet'; ghostX.value = windowToFrameX(e.absoluteX, frame); ghostY.value = windowToFrameY(e.absoluteY, frame); runOnJS(onHover)(e.absoluteX, e.absoluteY); })
         .onEnd((e) => { 'worklet'; runOnJS(onEndDrag)(e.absoluteX, e.absoluteY); })
         .onFinalize(() => { 'worklet'; ghostOn.value = 0; }),
-    [item.id, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn],
+    [item.id, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn, frame],
   );
   const gesture = useMemo(() => Gesture.Race(drag, tap), [drag, tap]);
   return (

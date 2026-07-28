@@ -1,6 +1,6 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { Dimensions, FlatList, Pressable, ScrollView, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
@@ -156,7 +156,7 @@ function ClassReader({ def, onClose }: { def: ClassCardDef; onClose: () => void 
   }, [p, onClose]);
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.9 }));
   const pagerStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 40 }] }));
-  const { width, height } = Dimensions.get('window');
+  const { width, height } = useLayout();
   const w = Math.min(width - 36, (height - 160) * (5 / 7));
   const h = w * 1.4;
   const s = w / FORGED_W;
@@ -280,14 +280,15 @@ function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem,
         }),
     [holdProgress, commitShare],
   );
-  const cardH = Math.min(Dimensions.get('window').width - 36, (Dimensions.get('window').height - 160) * (5 / 7)) * 1.4;
+  const { width: winW, height: winH } = useLayout();
+  const cardH = Math.min(winW - 36, (winH - 160) * (5 / 7)) * 1.4;
   const fillStyle = useAnimatedStyle(() => ({ height: holdProgress.value * cardH, opacity: Math.min(1, holdProgress.value * 14) }));
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.88 }));
   const cardStyle = useAnimatedStyle(() => ({
     opacity: p.value,
     transform: [{ translateY: (1 - p.value) * 60 + dragY.value }, { scale: 0.92 + p.value * 0.08 }],
   }));
-  const { width, height } = Dimensions.get('window');
+  const { width, height } = useLayout();
   const w = Math.min(width - 36, (height - 160) * (5 / 7));
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 100 }}>

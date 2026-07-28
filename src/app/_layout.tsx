@@ -14,6 +14,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Rune } from '@/constants/theme';
+import { PhoneFrame } from '@/components/phone-frame';
 import { ToastHost } from '@/components/toast';
 import { IncomingFileGate } from '@/features/share/incoming-file';
 
@@ -46,17 +47,21 @@ export default function RootLayout() {
             was hidden by an earlier build, and Expo Go keeps the native flag across reloads unless
             a component actively claims it (#48 A). */}
         <StatusBar style="light" hidden={false} translucent />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: Rune.ink },
-            animation: 'fade',
-          }}
-        />
-        {/* v0.22.0: a .rkp opened from WhatsApp or a file manager lands here. It never imports on
-            arrival — it asks, and defers entirely while a sheet or the creator is open. */}
-        <IncomingFileGate />
-        <ToastHost />
+        {/* v0.24.0: on a tablet everything below renders into a phone-shaped, magnified viewport, so
+            the app looks the same at any size and the border sits on a real edge. A no-op on phones. */}
+        <PhoneFrame>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: Rune.ink },
+              animation: 'fade',
+            }}
+          />
+          {/* v0.22.0: a .rkp opened from WhatsApp or a file manager lands here. It never imports on
+              arrival — it asks, and defers entirely while a sheet or the creator is open. */}
+          <IncomingFileGate />
+          <ToastHost />
+        </PhoneFrame>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -53,7 +53,7 @@ const CREATION: Page[] = [
   {
     title: 'Pick from the middle',
     body: 'Swipe the cards sideways. Whichever one sits in the middle is the one the button picks, and the button names it so you always know which.\n\nTap a card that is already in the middle to read it full screen.',
-    render: ({ markDid }) => <HandDemo onDid={markDid} />,
+    render: () => <HandDemo />,
   },
   {
     title: 'If you get stuck',
@@ -66,7 +66,7 @@ const SHEET: Page[] = [
   {
     title: 'Your hand of cards',
     body: 'Your cards sit along the bottom. Tap them to fan the hand open, tap the middle one to read it, and swipe down to put it away.\n\nSwipe sideways at any time to look through the rest.',
-    render: ({ markDid }) => <HandDemo onDid={markDid} />,
+    render: () => <HandDemo />,
   },
   {
     title: 'Hold to equip',

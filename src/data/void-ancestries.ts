@@ -42,42 +42,63 @@ export const VOID_ANCESTRY_ART: Record<string, number> = {
   'ancestry-gnome': require('../../assets/extracted_cards/Void/Ancestry/gnome.webp'),
 };
 
+/** The italic line above the two features on the printed card. Never a feature, so never struck out. */
+const flavour = (body: string): CardSection => ({ body });
+
+/**
+ * v0.24.0: every one of these was transcribed from a pre-release sheet and had since been reprinted.
+ * Two ancestries had the WRONG SECOND FEATURE entirely (Aetheris had "Divine Countenance" instead of
+ * Celestial Wings, Gnome had "True Sight" instead of Flicker Step) and the other four had reworded
+ * mechanics, several of which changed what the feature actually does: Tidekin's Lifespring went from
+ * "mark 2 Stress to heal" to "mark a Stress to clear", and Emberkin's Ignition dropped its Melee
+ * restriction. Retranscribed from the printed faces (DH HF 025-030/063).
+ *
+ * Each card now leads with its flavour line, matching the print. `featureSectionIndexes` resolves the
+ * two `feature`-flagged sections wherever they sit, so mixed-ancestry strike-through and Earthkin's
+ * stat passive keep pointing at the right blocks.
+ */
 export const VOID_ANCESTRIES: LibraryCard[] = [
   anc(
     'ancestry-earthkin',
     'Earthkin',
     '#5A4632',
     [
-      { name: 'Stoneskin', body: 'Gain a **+1** bonus to your Armor Score and Damage Thresholds.' },
-      { name: 'Immoveable', body: 'While your feet are touching the ground, you cannot be lifted or moved against your will.' },
+      flavour('Earthkin are humanoids whose bodies are made of flesh and earth.'),
+      { name: 'Stoneskin', body: 'Gain a permanent **+1** bonus to your Armor Score and damage thresholds at character creation.', feature: true },
+      { name: 'Immovable', body: "While you're touching the ground, you can't be lifted or moved against your will.", feature: true },
     ],
     {
       ancestryEffectTrait: 1,
       effects: [
         { target: 'armorScore', mode: 'bonus', delta: 1, note: 'Stoneskin: +1 Armor Score' },
-        { target: 'majorThreshold', mode: 'bonus', delta: 1, note: 'Stoneskin: +1 Damage Thresholds' },
-        { target: 'severeThreshold', mode: 'bonus', delta: 1, note: 'Stoneskin: +1 Damage Thresholds' },
+        { target: 'majorThreshold', mode: 'bonus', delta: 1, note: 'Stoneskin: +1 damage thresholds' },
+        { target: 'severeThreshold', mode: 'bonus', delta: 1, note: 'Stoneskin: +1 damage thresholds' },
       ],
     },
   ),
   anc('ancestry-tidekin', 'Tidekin', '#2E5A6B', [
-    { name: 'Amphibious', body: 'You can breathe and move naturally underwater.' },
-    { name: 'Lifespring', body: 'Once per rest, when you have access to a small amount of water, you can mark 2 Stress to heal a Hit Point on yourself or an ally.' },
+    flavour('Tidekin are humanoids whose bodies are made of flesh and water.'),
+    { name: 'Amphibious', body: 'You can breathe and move naturally underwater.', feature: true },
+    { name: 'Lifespring', body: 'Once per rest when you have access to a small amount of water, you can **mark a Stress** to clear a Hit Point on yourself or an ally within Very Close range.', feature: true },
   ]),
   anc('ancestry-emberkin', 'Emberkin', '#7A3320', [
-    { name: 'Fireproof', body: 'You are immune to damage from magical or mundane flame.' },
-    { name: 'Ignition', body: 'Mark a Stress to wreathe your primary weapon in flame until the end of the scene. While ablaze, it gives off a bright light and grants a **1d6** bonus to damage rolls against targets within Melee range.' },
+    flavour('Emberkin are humanoids whose bodies are made of flesh and fire.'),
+    { name: 'Fireproof', body: 'You are immune to damage from magical or mundane flame.', feature: true },
+    { name: 'Ignition', body: '**Mark a Stress** to wreathe your primary weapon in flame until the end of the scene. While the weapon is ablaze, it gives off a bright light, and you gain a **1d6** bonus to damage rolls with that weapon.', feature: true },
   ]),
   anc('ancestry-skykin', 'Skykin', '#3E5A78', [
-    { name: 'Gale Force', body: 'Mark a Stress to conjure a gust of wind that carries you or an ally up to Very Far range. Additionally, you can always control the speed at which you fall.' },
-    { name: 'Eye of the Storm', body: "Spend 2 Hope to grant a **+1** bonus to either your or an ally's Evasion until you next take Severe damage or you use Eye of the Storm again." },
+    flavour('Skykin are humanoids whose bodies are made of flesh and air.'),
+    { name: 'Gale Force', body: '**Mark a Stress** to conjure a gust of wind that carries you or a Very Close ally up to Very Far range. Additionally, you can always control the speed at which you fall.', feature: true },
+    { name: 'Eye of the Storm', body: '**Spend 2 Hope** to grant you or an ally within Melee range a **+1** bonus to Evasion until you take Severe damage or you use this feature again.', feature: true },
   ]),
   anc('ancestry-aetheris', 'Aetheris', '#6B5A2E', [
-    { name: 'Hallowed Aura', body: 'Once per rest, when an ally within Close range rolls with Fear, you can make it a roll with Hope instead.' },
-    { name: 'Divine Countenance', body: 'You have advantage on rolls to command or persuade.' },
+    flavour('Aetheris are humanoids most easily recognized by their wings and sacred markings.'),
+    { name: 'Hallowed Aura', body: 'Once per long rest when an ally within Close range rolls with Fear, you can change it into a roll with Hope instead.', feature: true },
+    { name: 'Celestial Wings', body: 'You have wings that allow you to fly. Once per scene while flying, you can **spend a Hope** instead of marking an Armor Slot.', feature: true },
   ]),
   anc('ancestry-gnome', 'Gnome', '#3F5A3A', [
-    { name: 'Nimble Fingers', body: 'When you make a Finesse Roll, you can spend 2 Hope to reroll your Hope Die.' },
-    { name: 'True Sight', body: 'You have advantage on rolls to see through illusions.' },
+    flavour('Gnomes are typically small humanoids with conical heads and the ability to teleport short distances.'),
+    { name: 'Nimble Fingers', body: 'When you make a Finesse Roll, you can **spend 2 Hope** to reroll your Hope Die.', feature: true },
+    { name: 'Flicker Step', body: 'Once per scene, you can teleport to another point you can see within Far range.', feature: true },
   ]),
 ];
