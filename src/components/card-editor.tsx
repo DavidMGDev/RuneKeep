@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, useWindowDimensions, View, type ViewStyle } from 'react-native';
+import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,6 +14,8 @@ import { type CardEffect } from '@/lib/modifiers';
 import { applyPickedOption, EffectPicker, EffectsField, type ExperienceRef, FormulaVarPicker, matchOption } from '@/components/effects-editor';
 import { isExperienceType } from '@/features/character-sheet/card-types';
 import { playSfx } from '@/lib/sfx';
+import { DimScreen } from '@/lib/screen-dim';
+import { useFrame } from '@/hooks/use-layout';
 
 export interface CardDraft {
   title: string;
@@ -144,6 +146,7 @@ function TypePicker({ groups, current, onPick, onClose }: { groups: { label: str
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      <DimScreen opacity={0.9} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, maxHeight: '82%', paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Card type</Text>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 11, paddingBottom: 4 }}>
@@ -292,7 +295,7 @@ export function CardEditor({
   // below the UI border (item 1) — never off-screen. The card scale is COMPUTED from the space left
   // after the fields, so on short screens it shrinks just enough; if that would leave it < 50px tall,
   // it FADES OUT instead and fades back when typing ends (item 1).
-  const { height: screenH } = useWindowDimensions();
+  const { height: screenH, scale: frameScale } = useFrame();
   const insets = useSafeAreaInsets();
   // In the in-sheet (scrimless) full-screen frame (#252) the bordered frame already provides the top
   // inset, so the content's own top gap is small; standalone (creation) keeps the safe-area gap.
@@ -321,13 +324,16 @@ export function CardEditor({
     if (reduced) return;
     const show = Keyboard.addListener('keyboardDidShow', (e) => {
       kb.value = withTiming(1, KB);
-      const h = e.endCoordinates?.height ?? 0;
+      // v0.24.0: the keyboard reports PHYSICAL dp. Inside the tablet frame the spacer that reserves
+      // room for it is magnified, so without dividing it out the editor reserves a keyboard and a
+      // half and the buttons walk off the top.
+      const h = (e.endCoordinates?.height ?? 0) / frameScale;
       kbH.value = withTiming(h, KB);
       setKbPx(h);
     });
     const hide = Keyboard.addListener('keyboardDidHide', () => { kb.value = withTiming(0, KB); kbH.value = withTiming(0, KB); setKbPx(0); });
     return () => { show.remove(); hide.remove(); };
-  }, [kb, kbH, reduced]);
+  }, [kb, kbH, reduced, frameScale]);
   const topSpacer = useAnimatedStyle(() => ({ height: padFull + (padCompact - padFull) * kb.value }));
   const bottomSpacer = useAnimatedStyle(() => ({ height: kbH.value }));
   const previewStyle = useAnimatedStyle(() => {
@@ -353,6 +359,7 @@ export function CardEditor({
         <Animated.View style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} />
       )}
       <EditorFrame framed={scrimless} insetTop={insets.top} insetBottom={insets.bottom} animStyle={contentStyle}>
+      <DimScreen opacity={scrimless ? 0.985 : 0.92} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* top gap: collapses while typing so the card + fields ride up to just below the border (#227) */}
         <Animated.View style={topSpacer} />

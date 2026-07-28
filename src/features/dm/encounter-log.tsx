@@ -21,6 +21,7 @@ import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type LogEntry } from '@/lib/session';
 import { playSfx } from '@/lib/sfx';
+import { DimScreen } from '@/lib/screen-dim';
 import { DmModal } from './dm-ui';
 import { useSelection } from './use-selection';
 
@@ -182,6 +183,7 @@ export function EncounterLog({
     <View style={[StyleSheet.absoluteFill, { zIndex: 300 }]}>
       <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(160)} style={StyleSheet.absoluteFill}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close log" />
+        <DimScreen opacity={0.72} />
       </Animated.View>
       {/* item 4: short, smooth slide — no elastic spring. */}
       <Animated.View entering={SlideInLeft.duration(210).easing(Easing.out(Easing.cubic))} exiting={SlideOutLeft.duration(170).easing(Easing.in(Easing.cubic))} style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '82%' }}>

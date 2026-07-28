@@ -10,6 +10,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
+import { useFrame, windowToFrameX, windowToFrameY } from '@/hooks/use-layout';
 import { StatGlyph, STAT_COLOR, type StatGlyphKind } from './stat-glyphs';
 import { pickWedge, useStatRadial } from './stat-radial';
 
@@ -31,6 +32,7 @@ export function StatPulse({
   onBlocked?: () => void;
 }): ReactNode {
   const radial = useStatRadial();
+  const frame = useFrame();
   const iconRef = useRef<View>(null);
   const color = STAT_COLOR[kind];
 
@@ -39,8 +41,12 @@ export function StatPulse({
     if (disabled) { onBlocked?.(); return; }
     // Measure the ICON (not the whole row) so the wheel's origin sits exactly on the glyph (item 4).
     // The touch point rides along so the cursor starts under the thumb rather than on the glyph.
-    iconRef.current?.measureInWindow((x, y, w, h) => { if (w > 0) radial.open(x + w / 2, y + h / 2, color, onApply, { x: tx, y: ty }); });
-  }, [disabled, onBlocked, radial, color, onApply]);
+    // v0.24.0: measureInWindow and absoluteX are both WINDOW coords; the wheel is drawn inside
+    // the frame, so both the anchor and the touch point come back to frame space together.
+    iconRef.current?.measureInWindow((x, y, w, h) => {
+      if (w > 0) radial.open(windowToFrameX(x + w / 2, frame), windowToFrameY(y + h / 2, frame), color, onApply, { x: windowToFrameX(tx, frame), y: windowToFrameY(ty, frame) });
+    });
+  }, [disabled, onBlocked, radial, color, onApply, frame]);
 
   const gesture = Gesture.Exclusive(
     Gesture.Pan()
@@ -49,9 +55,9 @@ export function StatPulse({
       .onUpdate((e) => {
         'worklet';
         if (radial.active.value !== 1) return;
-        radial.fingerX.value = e.absoluteX;
-        radial.fingerY.value = e.absoluteY;
-        radial.highlight.value = pickWedge(e.absoluteX - radial.anchorX.value, e.absoluteY - radial.anchorY.value);
+        radial.fingerX.value = windowToFrameX(e.absoluteX, frame);
+        radial.fingerY.value = windowToFrameY(e.absoluteY, frame);
+        radial.highlight.value = pickWedge(radial.fingerX.value - radial.anchorX.value, radial.fingerY.value - radial.anchorY.value);
       })
       .onFinalize(() => { 'worklet'; if (radial.active.value === 1) runOnJS(radial.commit)(); }),
     Gesture.Tap().maxDuration(260).onEnd(() => { 'worklet'; runOnJS(onTap)(); }),

@@ -84,6 +84,7 @@ import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
+import { useScreenDim } from '@/lib/screen-dim';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { EditCardFlow } from './edit-card-flow';
 import { LevelUpPanel } from './level-up-panel';
@@ -596,6 +597,9 @@ function ExpandVeil() {
  * Sits above the sheet (zIndex 9500) but below the overlay panels (10000).
  */
 function SheetDim({ up }: { up: boolean }) {
+  // v0.24.0: the tablet frame clips, so the margins either side cannot see this. Declare it and
+  // PhoneFrame paints the same darkness out there, instead of leaving two bright strips.
+  useScreenDim(up ? 0.84 : 0);
   const p = useSharedValue(0);
   useEffect(() => {
     p.value = withTiming(up ? 1 : 0, { duration: up ? 200 : 220, easing: up ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic) });

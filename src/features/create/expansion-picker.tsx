@@ -7,6 +7,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { expansionCardCount, isOfficialExpansion } from '@/lib/expansions';
 import { type Expansion } from '@/lib/library';
 import { playSfx } from '@/lib/sfx';
+import { DimScreen } from '@/lib/screen-dim';
 
 /** The pseudo-id for the always-present "Base Game" row. Never stored on the character (it's the
  *  implicit, untagged content). */
@@ -77,6 +78,7 @@ export function ExpansionPicker({ expansions, initial, onConfirm, onCancel }: { 
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 12000, alignItems: 'center', justifyContent: 'center' }}>
       {/* non-dismissing backdrop: the picker must be resolved via Continue (no outside-tap close) */}
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
+      <DimScreen opacity={0.92} />
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 344, maxWidth: '92%', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16, gap: 12 }}>
         <View style={{ gap: 3 }}>
           <Text style={{ color: Rune.goldText, fontSize: 20, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Choose expansions</Text>

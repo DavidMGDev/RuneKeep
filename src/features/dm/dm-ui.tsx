@@ -9,6 +9,7 @@ import { RuneButton } from '@/components/rune-button';
 import Svg, { Line } from 'react-native-svg';
 
 import { Body, Display, DmGap, DmRune, DmType, Rune } from '@/constants/theme';
+import { DimScreen } from '@/lib/screen-dim';
 import { useAndroidBack } from './use-android-back';
 
 /**
@@ -25,6 +26,7 @@ export function DmModal({ onClose, children, contentStyle }: { onClose: () => vo
     <View style={[StyleSheet.absoluteFill, { zIndex: 300, alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={StyleSheet.absoluteFill}>
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.86)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss" />
+        <DimScreen opacity={0.86} />
       </Animated.View>
       {/* item 4: short, smooth, non-elastic — no spring bounce. */}
       <Animated.View entering={FadeInDown.duration(150).easing(Easing.out(Easing.cubic))} exiting={FadeOutDown.duration(120).easing(Easing.in(Easing.cubic))} style={contentStyle}>

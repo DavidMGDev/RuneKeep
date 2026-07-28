@@ -1,79 +1,109 @@
+import { createContext, useContext } from 'react';
 import { useWindowDimensions } from 'react-native';
 
 /**
- * Layout mode (v0.23.0).
+ * Layout mode (v0.24.0).
  *
- * The whole tablet strategy in one idea: **the UI should look the same, not stretched**. A phone
- * layout blown out to 800dp gives you 760dp-wide rows holding a five-character name, three
- * enormous blurry card thumbs, and 320dp dialogs marooned in the middle. None of that is "bigger",
- * it is just wrong at a larger size.
+ * v0.23.0 adapted each screen for tablets: a wider centred column, scaled-up controls, more grid
+ * columns. That worked, but it made the app a DIFFERENT app on a tablet. A creation step that puts
+ * six trait dials in two rows of three on a phone put five in one row and one alone on a tablet, and
+ * the sheet's carousel spilled past the gold border into empty space.
  *
- * So on a tablet the content keeps a phone-like measure, centred, and everything inside it scales up
- * modestly so it does not read as tiny. Grids get MORE columns rather than bigger cells, which is the
- * one place where scaling up would be actively worse (the thumbnails are 188px and already upscale
- * on a phone).
+ * So the strategy changed to the one the owner asked for: **the tablet runs the phone UI**. The whole
+ * app renders into a phone-shaped viewport (`DESIGN_W` x whatever height fits), uniformly scaled up
+ * and centred, with the border sitting on the edge of that viewport and the leftover screen used as
+ * decorated margin. See `components/phone-frame.tsx`.
+ *
+ * That makes this module small again. `PhoneFrame` publishes the viewport it created through
+ * `FrameContext`, and everything downstream asks `useLayout()` for the size of the space it is
+ * actually laying out in, rather than the size of the physical display. Inside the frame that is
+ * ~412dp, so `isTablet` reads false and every v0.23.0 tablet branch turns itself off. Nothing needed
+ * to be deleted; it just stopped firing.
  *
  * ## The breakpoint
  *
- * `smallestWidth >= 600dp`, which is Android's own tablet threshold and the same number the platform
- * uses for its `sw600dp` resource bucket. The margin over phones is deliberately enormous:
+ * `smallestWidth >= 600dp`, Android's own `sw600dp` bucket:
  *
- *   - 6.1" phone      ~390dp
- *   - 6.7" phone      ~430dp
  *   - 6.9" phone      ~480dp
- *   - foldable, open  ~670-720dp   <- correctly treated as a tablet
+ *   - foldable, open  ~670-720dp   <- correctly framed
  *   - 10" tablet      ~800dp
  *
- * Nothing a phone can report comes near 600, so no phone can ever slip into tablet mode. Using the
- * SMALLEST dimension rather than the current width also means a phone in landscape stays a phone.
+ * Nothing a phone reports comes near 600, so a phone can never enter the frame.
  */
 
 /** Android's own tablet threshold. Phones top out around 480dp, so the margin is ~25%. */
 export const TABLET_MIN_SW = 600;
 
-/** How much larger everything reads on a tablet. Deliberately modest: this is the same UI, not a new one. */
-export const TABLET_SCALE = 1.3;
+/** The width the whole app is authored at. Same number the character sheet's DesignStage uses. */
+export const DESIGN_W = 412;
+/** The reference height, used only to pick the frame's scale. Real height is whatever fits. */
+export const DESIGN_H = 892;
 
-/** The measure the content column keeps on a tablet, before scaling. Roughly a large phone. */
-const BASE_CONTENT = 440;
-
-export interface Layout {
-  isTablet: boolean;
-  /** Multiply fixed dp (font sizes, control heights, dialog widths) by this. 1 on phones. */
-  scale: number;
-  /** Max width for a centred content column. `Infinity` on phones, so nothing is constrained. */
-  maxContent: number;
+export interface Frame {
+  /** Width of the viewport being laid out in, in layout dp. */
   width: number;
+  /** Height of the viewport being laid out in, in layout dp. */
   height: number;
+  /** How much the viewport is magnified on the physical display. 1 when unframed. */
+  scale: number;
+  /** Physical x of the viewport's left edge. Non-zero only when the frame is centred in margins. */
+  offsetX: number;
+}
+
+/** Set by `PhoneFrame`. Absent on phones, where the viewport IS the window. */
+export const FrameContext = createContext<Frame | null>(null);
+
+/** The viewport the caller is laying out in. Use this instead of `Dimensions.get('window')`. */
+export function useFrame(): Frame {
+  const ctx = useContext(FrameContext);
+  const { width, height } = useWindowDimensions();
+  return ctx ?? { width, height, scale: 1, offsetX: 0 };
+}
+
+export interface Layout extends Frame {
+  /** True only when laying out directly on a large display, which the frame prevents. */
+  isTablet: boolean;
+  /** Retained so v0.23.0 call sites still compile. Always 1 now: the frame does the magnifying. */
+  scale: number;
+  /** Retained for the same reason. Always `Infinity`: the frame is the measure. */
+  maxContent: number;
 }
 
 export function useLayout(): Layout {
-  const { width, height } = useWindowDimensions();
-  const isTablet = Math.min(width, height) >= TABLET_MIN_SW;
+  const frame = useFrame();
   return {
-    isTablet,
-    scale: isTablet ? TABLET_SCALE : 1,
-    maxContent: isTablet ? BASE_CONTENT * TABLET_SCALE : Infinity,
-    width,
-    height,
+    ...frame,
+    // Inside the frame this is ~412, so every tablet branch downstream evaluates false and the
+    // phone layout runs verbatim. Outside it (a phone) it was already false.
+    isTablet: Math.min(frame.width, frame.height) >= TABLET_MIN_SW,
+    scale: 1,
+    maxContent: Infinity,
   };
 }
 
 /**
- * Scale a fixed dp value for the current layout. A no-op on phones by construction, so every call
- * site is provably phone-identical.
+ * Convert a WINDOW coordinate (`e.absoluteX`, `measureInWindow`) into the frame's layout space.
+ *
+ * Gesture handlers and `measureInWindow` both report physical window coordinates, which ignore the
+ * frame's transform. Anything that positions a view from them, a drag ghost, a radial cursor, has to
+ * come back through here or it lands a margin-width away from the finger. Pure maths so it inlines
+ * into a worklet.
  */
-export function scaled(n: number, scale: number): number {
-  return scale === 1 ? n : Math.round(n * scale);
+export function windowToFrameX(x: number, frame: Frame): number {
+  return (x - frame.offsetX) / frame.scale;
 }
 
-/**
- * Columns for a card grid. Phones keep the hard-coded 3 they have always had; tablets add columns so
- * each cell stays about the size it is on a phone, instead of three 250dp cells rendering 188px
- * thumbnails at 2.6x.
- */
-export function gridColumns(width: number, isTablet: boolean, phoneCols = 3): number {
-  if (!isTablet) return phoneCols;
-  const target = 132; // roughly a phone cell, so thumbnails stay near their native size
-  return Math.max(phoneCols, Math.min(7, Math.floor(width / target)));
+/** The vertical twin. The frame is always full-height, so this is scale only. */
+export function windowToFrameY(y: number, frame: Frame): number {
+  return y / frame.scale;
+}
+
+/** Scale a fixed dp value for the current layout. A no-op now; kept so call sites read unchanged. */
+export function scaled(n: number, _scale: number): number {
+  return n;
+}
+
+/** Columns for a card grid. The frame means a tablet gets the phone's grid, which is the point. */
+export function gridColumns(_width: number, _isTablet: boolean, phoneCols = 3): number {
+  return phoneCols;
 }

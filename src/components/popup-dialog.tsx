@@ -6,6 +6,7 @@ import PopupFrameDm from '../../assets/art/new/Pop-up-dm.svg';
 import { RuneButton } from '@/components/rune-button';
 import { scaled, useLayout } from '@/hooks/use-layout';
 import { DmRune, Body, Display, Rune } from '@/constants/theme';
+import { DimScreen } from '@/lib/screen-dim';
 
 /**
  * The app's confirm dialog, seated in the owner's Pop-up frame (sharp corners by design).
@@ -38,6 +39,7 @@ export function PopupDialog({
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Dismiss" />
+      <DimScreen opacity={0.82} />
       {/* tap-absorb wrapper (#3): a near-miss inside the panel never falls through to the scrim */}
       <Pressable onPress={() => {}} style={{ width: scaled(320, scale), maxWidth: '92%', paddingVertical: scaled(30, scale), paddingHorizontal: scaled(26, scale) }}>
         {/* opaque interior fill (#11) inset inside the frame outline, so the pop-up isn't see-through */}

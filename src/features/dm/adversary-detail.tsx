@@ -4,7 +4,7 @@
  * experience, features), and a fullscreen image viewer. Reused by the CombatantPanel and the library.
  */
 import { useEffect } from 'react';
-import { Dimensions, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/custom portraits)
 import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated';
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
@@ -13,6 +13,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type AdversaryFeature } from '@/data/adversaries';
 import { type Combatant } from '@/lib/session';
+import { useLayout } from '@/hooks/use-layout';
 import { useAndroidBack } from './use-android-back';
 
 /** A stylised tome/rune emblem marking a Base Game adversary that carries no custom image (item 12). */
@@ -120,7 +121,7 @@ export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; nam
   useAndroidBack(() => { close(); return true; });
   const veil = useAnimatedStyle(() => ({ opacity: p.value * 0.92 }));
   const body = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ scale: 0.9 + p.value * 0.1 }] }));
-  const { width, height } = Dimensions.get('window');
+  const { width, height } = useLayout();
   const box = Math.min(width - 48, height - 220);
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 400 }}>

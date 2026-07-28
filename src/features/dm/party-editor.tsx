@@ -25,6 +25,7 @@ import { addMembers, isPresent, type Party, randomColor, removeMember, togglePre
 import { deleteParty, getParty, saveParty, setActiveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
+import { DimScreen } from '@/lib/screen-dim';
 import { DmEmpty, ColorDiamond, NameDialog } from './dm-ui';
 
 function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
@@ -64,6 +65,7 @@ function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candidates: C
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 300, backgroundColor: 'rgba(6,8,13,0.92)', paddingHorizontal: 18, paddingTop: 60, paddingBottom: 20 }]}>
+    <DimScreen opacity={0.92} />
       <SectionLabel dm style={{ marginBottom: 10 }}>Add characters</SectionLabel>
       {candidates.length === 0 ? (
         <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', marginTop: 30 }}>Every roster character is already in this party. Import one to add more.</Text>

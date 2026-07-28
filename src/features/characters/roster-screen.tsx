@@ -21,6 +21,7 @@ import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
 import { NameDialog } from '@/features/dm/dm-ui';
 import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picker';
+import { DimScreen } from '@/lib/screen-dim';
 
 function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
   return (
@@ -287,6 +288,7 @@ export function RosterScreen() {
       {movingChar ? (
         <View style={[StyleSheet.absoluteFill, { zIndex: 250, alignItems: 'center', justifyContent: 'center' }]}>
           <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={() => setMovingChar(null)} accessibilityRole="button" accessibilityLabel="Dismiss" />
+          <DimScreen opacity={0.82} />
           <Pressable onPress={() => {}} accessibilityElementsHidden>
           <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.5} style={{ width: 312, padding: 20, gap: 8 }}>
             <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to folder</Text>

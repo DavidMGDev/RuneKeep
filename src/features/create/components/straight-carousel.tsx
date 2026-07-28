@@ -1,5 +1,5 @@
 import { forwardRef, memo, type ReactNode, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Dimensions, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -21,6 +21,7 @@ import { TraitCrossOut } from '@/features/character-sheet/components/trait-cross
 import { playSfx } from '@/lib/sfx';
 import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
+import { useLayout } from '@/hooks/use-layout';
 import { FORGED_H, FORGED_W } from './forged-card';
 
 // Gear swoosh (#258r2): gearScroll1 only, on each fast direction-reversal while grinding — matches
@@ -297,7 +298,7 @@ export const StraightCarousel = forwardRef<
 >(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0 }, ref) {
   const count = items.length;
   const insets = useScreenInsets();
-  const screenH = Dimensions.get('window').height;
+  const { height: screenH } = useLayout();
   const railRef = useRef<View>(null);
   const [width, setWidth] = useState(0);
   const heightSV = useSharedValue(0);

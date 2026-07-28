@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
@@ -13,7 +14,21 @@ import { FORGED_H, FORGED_W } from './forged-card';
  * verify pipeline) skips capture and keeps the live components.
  */
 // v18: v0.13.1 — long titles shrink-to-fit instead of truncating with "…" (#357).
-export const FORGE_RENDER_V = 18;
+const FORGE_LAYOUT_V = 18;
+
+/**
+ * v0.24.0: the cache key now carries the APP VERSION as well as the layout version.
+ *
+ * Bumping `FORGE_LAYOUT_V` by hand is a step that gets forgotten, and when it is forgotten the
+ * failure is invisible to whoever forgot it: their device has no cache for the card they just
+ * changed, so it forges fresh and looks right, while every existing install keeps serving a bitmap
+ * of the old card forever. That is exactly what happened to the Hope and Fear cards, which kept
+ * showing their pre-illustration text-only faces for anyone who had opened them before.
+ *
+ * Keying on the app version makes a release the invalidation, which is a thing that cannot be
+ * forgotten. `FORGE_LAYOUT_V` stays for local iteration between releases.
+ */
+export const FORGE_RENDER_V = `${FORGE_LAYOUT_V}-${(Constants.expoConfig?.version ?? '0').replace(/[^\w.]/g, '')}`;
 
 export interface ForgedSource {
   full: { uri: string };
@@ -32,10 +47,24 @@ type FS = typeof import('expo-file-system');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = (): FS => require('expo-file-system') as FS;
 
+let pruned = false;
+
 function forgedDir() {
   const { Directory, Paths } = fs();
   const dir = new Directory(Paths.document, 'forged');
   if (!dir.exists) dir.create({ intermediates: true });
+  // Once per launch, drop bitmaps from an older key. Without this the folder would keep a full set
+  // of PNGs per release forever, and these are 750x1050 each.
+  if (!pruned) {
+    pruned = true;
+    try {
+      for (const entry of dir.list()) {
+        if (!entry.name.includes(`-v${FORGE_RENDER_V}`)) entry.delete();
+      }
+    } catch {
+      // A failed prune only costs disk; never let it stop a card from rendering.
+    }
+  }
   return dir;
 }
 

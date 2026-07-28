@@ -6,9 +6,25 @@ import { Platform } from 'react-native';
 import { PopupDialog } from '@/components/popup-dialog';
 import { showToast } from '@/components/toast';
 import { listCharacters, saveCharacter } from '@/lib/character-store';
+import { isFilePayload, subscribeIncomingUrl, takeIncomingUrl } from '@/lib/incoming-url';
 import { saveExpansion } from '@/lib/library-store';
 import { parseRkp } from '@/lib/rkp';
 import { type AppLocation, type RouteOutcome, routeIncoming } from '@/lib/rkp-route';
+
+/**
+ * Read whatever the OS handed us.
+ *
+ * `content://` works here even though the URI is a provider row id with no path: the modern
+ * filesystem module routes content URIs straight to `ContentResolver.openInputStream`, and its read
+ * permission check passes them unconditionally. (The LEGACY module would not: it only recognises
+ * `com.android.externalstorage` and throws "Unsupported scheme" on everything else, which rules out
+ * WhatsApp, Gmail and Drive. Worth knowing before anyone reaches for it.)
+ */
+async function readIncoming(uri: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { File } = require('expo-file-system') as typeof import('expo-file-system');
+  return new File(uri).textSync();
+}
 
 interface Incoming {
   /** The raw file text, kept so the confirm branch re-parses exactly what was decided on. */
@@ -27,7 +43,7 @@ interface Incoming {
  * The decision is pure and lives in `lib/rkp-route`; this component only performs what it returns.
  */
 export function IncomingFileGate() {
-  const url = Linking.useURL();
+  const linked = Linking.useURL();
   const pathname = usePathname();
   const router = useRouter();
   const [incoming, setIncoming] = useState<Incoming | null>(null);
@@ -35,6 +51,15 @@ export function IncomingFileGate() {
   const [parked, setParked] = useState<string | null>(null);
   /** `useURL` re-emits the initial url on remount; handle each one once. */
   const seen = useRef<Set<string>>(new Set());
+
+  /**
+   * Two sources, because a share can arrive either way and neither covers both cases:
+   *  - `+native-intent` catches it before React mounts, which is every cold launch from a share.
+   *  - `Linking.useURL` catches it while the app is already running.
+   * `seen` makes the overlap harmless.
+   */
+  const [captured, setCaptured] = useState<string | null>(() => takeIncomingUrl());
+  useEffect(() => subscribeIncomingUrl(setCaptured), []);
 
   /** Where the user is, from the route. Deferral exists to protect these two. */
   const location: AppLocation = pathname?.startsWith('/sheet') ? 'sheet' : pathname?.startsWith('/create') ? 'creating' : 'idle';
@@ -47,16 +72,14 @@ export function IncomingFileGate() {
   }, []);
 
   useEffect(() => {
-    if (!url || Platform.OS === 'web') return;
-    // Only file payloads; the app's own `runekeep://` deep links are not this component's business.
-    if (!/\.rkp($|[?#])/i.test(url)) return;
-    if (seen.current.has(url)) return;
+    if (Platform.OS === 'web') return;
+    // The app's own `runekeep://` deep links are routes, not this component's business.
+    const url = [captured, linked].find((u) => isFilePayload(u) && !seen.current.has(u!));
+    if (!url) return;
     seen.current.add(url);
     void (async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { File } = require('expo-file-system') as typeof import('expo-file-system');
-        await decide(new File(url).textSync(), location);
+        await decide(await readIncoming(url), location);
       } catch {
         setIncoming({
           text: '',
@@ -64,7 +87,7 @@ export function IncomingFileGate() {
         });
       }
     })();
-  }, [url, location, decide]);
+  }, [captured, linked, location, decide]);
 
   /** A parked file becomes actionable the moment the user reaches somewhere safe. */
   useEffect(() => {

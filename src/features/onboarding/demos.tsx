@@ -48,33 +48,45 @@ function BlankCard({ w = 46, h = 66, bright, chamfer = 5 }: { w?: number; h?: nu
 // 1. The hand: tap to fan open, tap the middle card to read it, tap again to put it back.
 // --------------------------------------------------------------------------------------------------
 
-export function HandDemo({ onDid }: { onDid?: () => void }) {
-  const [state, setState] = useState<'closed' | 'open' | 'focused'>('closed');
+/** The demo's own clock: closed, open, focused, and back. Text and motion read from the same step. */
+const HAND_STEPS = [
+  { state: 'closed', hold: 1500, caption: 'Tap the cards to open your hand' },
+  { state: 'open', hold: 2200, caption: 'The middle card is the one in play' },
+  { state: 'focused', hold: 2400, caption: 'Tap it again to read it full screen' },
+] as const;
+
+export function HandDemo() {
+  const [step, setStep] = useState(0);
+  const state = HAND_STEPS[step].state;
   const t = useSharedValue(0);
   const f = useSharedValue(0);
 
+  // v0.24.0: this WAS a tap-through demo, and it taught the wrong thing. Its fan drew the middle card
+  // beneath its neighbours (siblings paint in order, so the last card won), which is upside down from
+  // the sheet, and because it only responded to taps a player who tried to swipe it, which is what the
+  // page text tells them to do, got nothing. A demo that behaves unlike the thing it describes is
+  // worse than no demo. So it runs itself now, and it matches the carousel: centre card raised, on
+  // top, neighbours tilting away and sitting behind it.
   useEffect(() => {
-    t.value = withTiming(state === 'closed' ? 0 : 1, { duration: 320, easing: Easing.out(Easing.quad) });
-    f.value = withTiming(state === 'focused' ? 1 : 0, { duration: 300, easing: Easing.out(Easing.quad) });
-  }, [state, t, f]);
+    const id = setTimeout(() => setStep((s) => (s + 1) % HAND_STEPS.length), HAND_STEPS[step].hold);
+    return () => clearTimeout(id);
+  }, [step]);
 
-  const advance = useCallback(() => {
-    playSfx('buttonTap');
-    setState((s) => {
-      const next = s === 'closed' ? 'open' : s === 'open' ? 'focused' : 'open';
-      if (next === 'focused') onDid?.();
-      return next;
-    });
-  }, [onDid]);
+  useEffect(() => {
+    t.value = withTiming(state === 'closed' ? 0 : 1, { duration: 380, easing: Easing.out(Easing.quad) });
+    f.value = withTiming(state === 'focused' ? 1 : 0, { duration: 340, easing: Easing.out(Easing.quad) });
+  }, [state, t, f]);
 
   return (
     <Stage>
-      <Pressable onPress={advance} accessibilityRole="button" accessibilityLabel="Try the hand of cards" style={{ width: 240, height: 150, alignItems: 'center', justifyContent: 'flex-end' }}>
-        {[-2, -1, 0, 1, 2].map((i) => (
+      <View style={{ width: 240, height: 150, alignItems: 'center', justifyContent: 'flex-end' }}>
+        {/* Painted outermost-first so the centre card lands on top, exactly as it does on the sheet. */}
+        {[-2, 2, -1, 1, 0].map((i) => (
           <FanCard key={i} i={i} t={t} f={f} />
         ))}
-      </Pressable>
-      <Prompt text={state === 'closed' ? 'Tap the cards' : state === 'open' ? 'Tap the middle one' : 'Tap to put it back'} done={state === 'focused'} />
+        <TapRing t={t} f={f} />
+      </View>
+      <Prompt text={HAND_STEPS[step].caption} />
     </Stage>
   );
 }
@@ -83,18 +95,37 @@ function FanCard({ i, t, f }: { i: number; t: SharedValue<number>; f: SharedValu
   const centre = i === 0;
   const style = useAnimatedStyle(() => {
     const spread = i * 34 * t.value;
-    const lift = -Math.abs(i) * 6 * t.value;
+    // The centre RISES and the outer cards drop away, which is the shape of a real hand and the
+    // opposite of what this used to draw.
+    const lift = Math.abs(i) * 7 * t.value;
     const rot = i * 8 * t.value;
-    const scale = centre ? 1 + 0.75 * f.value : 1 - 0.35 * f.value;
-    const fade = centre ? 1 : 1 - 0.8 * f.value;
+    const scale = (centre ? 1 + 0.12 * t.value : 1 - 0.06 * t.value) * (centre ? 1 + 0.62 * f.value : 1 - 0.3 * f.value);
+    const fade = centre ? 1 : 1 - 0.75 * f.value;
     return {
       opacity: fade,
-      transform: [{ translateX: spread }, { translateY: lift - 30 * f.value * (centre ? 1 : 0) }, { rotate: `${rot}deg` }, { scale }],
+      transform: [{ translateX: spread }, { translateY: lift - 34 * f.value * (centre ? 1 : 0) }, { rotate: `${rot}deg` }, { scale }],
     };
   });
   return (
-    <Animated.View style={[{ position: 'absolute', bottom: 10 }, style]}>
+    <Animated.View style={[{ position: 'absolute', bottom: 10, zIndex: 10 - Math.abs(i) }, style]}>
       <BlankCard bright={centre} />
+    </Animated.View>
+  );
+}
+
+/** Where the finger would be. Sits on the stack while closed, on the centre card once it is open. */
+function TapRing({ t, f }: { t: SharedValue<number>; f: SharedValue<number> }) {
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    pulse.value = withRepeat(withSequence(withTiming(1, { duration: 520, easing: Easing.out(Easing.quad) }), withTiming(0, { duration: 0 }), withDelay(560, withTiming(0, { duration: 0 }))), -1, false);
+  }, [pulse]);
+  const style = useAnimatedStyle(() => ({
+    opacity: (1 - f.value) * (0.9 - pulse.value * 0.9),
+    transform: [{ translateY: 8 * t.value }, { scale: 0.6 + pulse.value * 0.9 }],
+  }));
+  return (
+    <Animated.View style={[{ position: 'absolute', bottom: 34, zIndex: 20 }, style]} pointerEvents="none">
+      <View style={{ width: 34, height: 34, borderRadius: 17, borderWidth: 1.6, borderColor: GOLD }} />
     </Animated.View>
   );
 }

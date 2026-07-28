@@ -42,6 +42,7 @@ import { embedCardImageForNfc } from '@/lib/image-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
+import { DimScreen } from '@/lib/screen-dim';
 
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 /** Content types the New-card chooser offers (Feature 5/6), in display order. */
@@ -230,6 +231,7 @@ function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => v
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
       {/* v0.13.0: non-dismissing backdrop — closing is deliberate (the Cancel button), never a stray tap. */}
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
+      <DimScreen opacity={0.9} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 12 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What are you making?</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -258,6 +260,7 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
       {/* v0.13.0: non-dismissing backdrop — a stray tap between fields must never destroy typed input.
           The form closes ONLY via its Cancel/Save buttons. */}
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
+      <DimScreen opacity={0.9} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 10 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{initial ? 'Edit expansion' : 'New expansion'}</Text>
         <LibInput label="Name" value={name} onChangeText={setName} placeholder="My homebrew" maxLength={32} />
