@@ -39,7 +39,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'Once per session, describe how you rally the party and give yourself and each of your allies a Rally Die. At level 1, your Rally Die is a d6. A PC can spend their Rally Die to roll it, adding the result to their action roll, reaction roll, damage roll, or to clear a number of Stress equal to the result. At the end of each session, clear all unspent Rally Dice. At level 5, your Rally Die increases to a d8.',
       },
     ],
-    summary: 'The most charismatic people in all the realms, masters of captivation who thrive in any social situation. A bard can bring a party together — or, in ill temper, tear one apart just as easily.',
+    summary: 'The most charismatic people in all the realms, masters of captivation who thrive in any social situation. A bard can bring a party together, or, in ill temper, tear one apart just as easily.',
   },
   druid: {
     startingEvasion: 10,
@@ -56,10 +56,10 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
       },
       {
         name: 'Wildtouch',
-        text: 'You can perform harmless, subtle effects that involve nature — such as causing a flower to rapidly grow, summoning a slight gust of wind, or starting a campfire — at will.',
+        text: 'You can perform harmless, subtle effects that involve nature, such as causing a flower to rapidly grow, summoning a slight gust of wind, or starting a campfire, at will.',
       },
     ],
-    summary: 'A calling, not an occupation: protectors who learn from the magic of the wilderness itself. Gentle cultivators at rest — and terrifying to behold when they channel the untamed forces of nature.',
+    summary: 'A calling, not an occupation: protectors who learn from the magic of the wilderness itself. Gentle cultivators at rest, and terrifying to behold when they channel the untamed forces of nature.',
   },
   guardian: {
     startingEvasion: 9,
@@ -75,7 +75,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'Once per long rest, you can become Unstoppable. You gain an Unstoppable Die. At level 1, your Unstoppable Die is a d4. Place it on your character sheet, starting with the 1 value facing up. After you make a damage roll that deals 1 or more Hit Points to a target, increase the Unstoppable Die value by one. When the die’s value would exceed its maximum value or when the scene ends, remove the die and drop out of Unstoppable. At level 5, your Unstoppable Die increases to a d6. While Unstoppable: you reduce the severity of physical damage by one threshold; you add the current value of the Unstoppable Die to your damage roll; and you can’t be Restrained or Vulnerable.',
       },
     ],
-    summary: 'Fortitude with a moral compass. Guardians fight with remarkable ferocity against overwhelming odds, defending the few they truly care for above all else — and answering every injury in kind.',
+    summary: 'Fortitude with a moral compass. Guardians fight with remarkable ferocity against overwhelming odds, defending the few they truly care for above all else, and answering every injury in kind.',
   },
   ranger: {
     startingEvasion: 12,
@@ -91,7 +91,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'Spend a Hope and make an attack against a target. On a success, deal your attack’s normal damage and temporarily make the attack’s target your Focus. Until this feature ends or you make a different creature your Focus, you gain the following benefits against your Focus: you know precisely what direction they are in; when you deal damage to them, they must mark a Stress; and when you fail an attack against them, you can end your Ranger’s Focus feature to reroll your Duality Dice.',
       },
     ],
-    summary: 'Sly tacticians of the wilds, hunting with cunning and patience rather than armies. Expert trackers, as likely to ensnare their quarry in a trap as to assail it head-on — often beside a bonded companion.',
+    summary: 'Sly tacticians of the wilds, hunting with cunning and patience rather than armies. Expert trackers, as likely to ensnare their quarry in a trap as to assail it head-on, often beside a bonded companion.',
   },
   rogue: {
     startingEvasion: 12,
@@ -127,7 +127,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'At the beginning of each session, roll a number of d4s equal to your subclass’s Spellcast trait and place them on your character sheet. These are your Prayer Dice. You can spend any number of Prayer Dice to aid yourself or an ally within Far range. You can use a spent die’s value to reduce incoming damage, add to a roll’s result after the roll is made, or gain Hope equal to the result. At the end of each session, clear all unspent Prayer Dice.',
       },
     ],
-    summary: 'Divine fighters and healers imbued with sacred purpose, appointed by the realms’ many gods. Better to stand beside a seraph than against one — they are terrifying foes to those who defy their purpose.',
+    summary: 'Divine fighters and healers imbued with sacred purpose, appointed by the realms’ many gods. Better to stand beside a seraph than against one, they are terrifying foes to those who defy their purpose.',
   },
   sorcerer: {
     startingEvasion: 10,
@@ -151,7 +151,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'Once per long rest, you can place a domain card from your loadout into your vault and choose to either: gain Hope equal to the level of the card, or enhance a spell that deals damage, gaining a bonus to your damage roll equal to twice the level of the card.',
       },
     ],
-    summary: 'Innate magic, inherited and honed. Becoming formidable is not acquiring power but learning to control the power already in your blood — undisciplined, that same gift is a dangerous force indeed.',
+    summary: 'Innate magic, inherited and honed. Becoming formidable is not acquiring power but learning to control the power already in your blood, undisciplined, that same gift is a dangerous force indeed.',
   },
   warrior: {
     startingEvasion: 11,
@@ -171,7 +171,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'You ignore burden when equipping weapons. When you deal physical damage, you gain a bonus to your damage roll equal to your level.',
       },
     ],
-    summary: 'A lifetime devoted to the mastery of weapons and violence — agile in body and mind, the most sought-after fighters across the realms. To come between a warrior and their blade is a grievous mistake.',
+    summary: 'A lifetime devoted to the mastery of weapons and violence, agile in body and mind, the most sought-after fighters across the realms. To come between a warrior and their blade is a grievous mistake.',
   },
   wizard: {
     startingEvasion: 11,
@@ -191,7 +191,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'Choose a number between 1 and 12. When you roll that number on a Duality Die, gain a Hope or clear a Stress. You can change this number when you take a long rest.',
       },
     ],
-    summary: 'Immense magical power acquired over years of learning — books, stones, potions, herbs. Advisors, healers, war-council minds; and no ranks quarrel harder over powerful secrets than their own.',
+    summary: 'Immense magical power acquired over years of learning, books, stones, potions, herbs. Advisors, healers, war-council minds; and no ranks quarrel harder over powerful secrets than their own.',
   },
   assassin: {
     startingEvasion: 12,
@@ -244,14 +244,14 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Patron’s Pact',
-        text: 'You have committed yourself to a supernatural entity — such as a god, fae, or demon — in exchange for power. Write their name on your character sheet, then work with your GM to determine their sphere of influence (such as Nature, Chaos, Wisdom, Mischief, Love, War, Justice, or Death). Before making an action roll that relates to your patron’s sphere of influence, you can spend a Favor to call upon their aid, rolling your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5.',
+        text: 'You have committed yourself to a supernatural entity, such as a god, fae, or demon, in exchange for power. Write their name on your character sheet, then work with your GM to determine their sphere of influence (such as Nature, Chaos, Wisdom, Mischief, Love, War, Justice, or Death). Before making an action roll that relates to your patron’s sphere of influence, you can spend a Favor to call upon their aid, rolling your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5.',
       },
       {
         name: 'Favor',
         text: 'You start with 3 Favor. You can use a downtime move to show tribute to your patron. Describe how and gain Favor equal to your Spellcast trait. Additionally, when you succeed on an action roll with Hope, you can choose to gain a Favor instead of a Hope.',
       },
     ],
-    summary: 'A life pledged to a patron — god, demon, or fae — in exchange for borrowed power. The warlock trades tithes and favor for might, and every gift carries the weight of the bargain that bought it.',
+    summary: 'A life pledged to a patron, god, demon, or fae, in exchange for borrowed power. The warlock trades tithes and favor for might, and every gift carries the weight of the bargain that bought it.',
   },
   bloodhunter: {
     startingEvasion: 11,
@@ -287,11 +287,11 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'You can summon otherworldly Entities: Fate Spirits and other Entities from your subclass. Each Entity is associated with a summoning circle below. Mark a Stress to summon a number of your Entities equal to your tier, and add them to the appropriate circles. You can hold a total number of Entities equal to your level. Summoned Entities stay within Very Close range, can perform harmless tasks within that range, and cannot be targeted. If a task requires an action roll, make a Spellcast Roll to command the Entity.',
       },
       {
-        name: 'First Circle — Fate Spirit',
+        name: 'First Circle. Fate Spirit',
         text: 'After an adversary within Very Close range makes a successful attack roll, you can command a Fate Spirit to force the adversary to reroll the attack. The spirit then disappears.',
       },
     ],
-    summary: 'Occult adepts who call forth otherworldly Entities to act on their behalf — fate spirits, angels, the risen dead. A summoner rarely fights alone; the air around them is crowded with called things.',
+    summary: 'Occult adepts who call forth otherworldly Entities to act on their behalf, fate spirits, angels, the risen dead. A summoner rarely fights alone; the air around them is crowded with called things.',
   },
   brawler: {
     startingEvasion: 10,
@@ -311,7 +311,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
         text: 'After rolling damage on a successful attack with a Melee weapon, you can mark a Stress to start a combo strike. When you do, roll your Combo Die and note the result, then continue rolling your Combo Die until the result of your latest roll is lower than the roll that preceded it. You deal extra damage equal to the total of all rolled Combo Die results on this attack. The results can’t be modified by any means. Your Combo Die starts as a d4. Once per tier, you can increase your Combo Die by one step as a level advancement option.',
       },
     ],
-    summary: 'Fighters who need no blade — a brawler’s fists are weapon enough, chaining blow into blow until the threat stops moving. Take away their armaments and they only grow more dangerous.',
+    summary: 'Fighters who need no blade, a brawler’s fists are weapon enough, chaining blow into blow until the threat stops moving. Take away their armaments and they only grow more dangerous.',
   },
 };
 
@@ -414,7 +414,7 @@ function splitFeature(f: ClassFeature): ClassFeature[] {
  *  features themselves split at sentence boundaries (owner: never edit the text, divide it). */
 export function featurePages(cls: ClassName): FeaturePage[] {
   const data = CLASS_DATA[cls];
-  const units = [...data.features, { name: `${data.hopeFeature.name} — Hope Feature`, text: data.hopeFeature.text }].flatMap(splitFeature);
+  const units = [...data.features, { name: `${data.hopeFeature.name}, Hope Feature`, text: data.hopeFeature.text }].flatMap(splitFeature);
   const pages: ClassFeature[][] = [];
   let current: ClassFeature[] = [];
   let used = 0;

@@ -475,7 +475,7 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
 /** The starting bonus on a new Experience (rulebook: +2, at creation and at each tier start). */
 const EXPERIENCE_BASE = 2;
 
-/** One Experience's resolved bonus, with provenance — the Modifiers panel's Experiences section. */
+/** One Experience's resolved bonus, with provenance, the Modifiers panel's Experiences section. */
 export interface ExperienceBreakdown {
   id: string;
   title: string;
@@ -487,7 +487,7 @@ export interface ExperienceBreakdown {
 /**
  * v0.14.0: resolve every Experience's CURRENT bonus and where it came from.
  *
- * Experiences can't live in `sheetBreakdown` — that's a record keyed by target, which structurally
+ * Experiences can't live in `sheetBreakdown`, that's a record keyed by target, which structurally
  * can't hold one value per Experience. So they get their own pass over the same effect sources.
  *
  * Two kinds of contribution: the level-up advancements (folded into `modifier` at apply time, so only

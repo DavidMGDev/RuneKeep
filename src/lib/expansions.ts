@@ -24,7 +24,7 @@ export const VOID_META = {
   name: 'Hope and Fear',
   author: 'Darrington Press',
   description:
-    'Official expansion — 6 classes (Assassin, Witch, Warlock, Blood Hunter, Summoner, Brawler), 2 domains (Blood, Dread), plus new ancestries, communities, transformations, and equipment. Illustrated card art.',
+    'Official expansion, 6 classes (Assassin, Witch, Warlock, Blood Hunter, Summoner, Brawler), 2 domains (Blood, Dread), plus new ancestries, communities, transformations, and equipment. Illustrated card art.',
 };
 
 /** Official (bundled) expansion ids this build ships. Always listed FIRST in the library. */

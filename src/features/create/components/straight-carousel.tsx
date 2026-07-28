@@ -288,8 +288,13 @@ export const StraightCarousel = forwardRef<
     onIndexChange?: (i: number) => void;
     /** Mixed ancestry (#265): card id → which trait (1|2) to strike through. */
     crossOuts?: Record<string, 1 | 2>;
+    /** v0.23.0: dp of rail height reserved at the BOTTOM for the parent's select controls. The rest
+     *  position is a fraction of the rail, so without this the centred card -- which is the largest
+     *  one -- grew down into the buttons and overlapped them. Reserving the band makes the card
+     *  centre itself in the space that is actually free. */
+    reserveBottom?: number;
   }
->(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts }, ref) {
+>(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0 }, ref) {
   const count = items.length;
   const insets = useScreenInsets();
   const screenH = Dimensions.get('window').height;
@@ -508,7 +513,7 @@ export const StraightCarousel = forwardRef<
           {/* the rail */}
           <View
             ref={railRef}
-            style={{ flex: 1 }}
+            style={{ flex: 1, marginBottom: reserveBottom }}
             onLayout={(e) => {
               railHSV.value = e.nativeEvent.layout.height;
               // measure the rail's absolute window Y so the fullscreen target lands at a

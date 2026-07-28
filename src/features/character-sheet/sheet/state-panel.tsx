@@ -154,7 +154,7 @@ function TimelineView({
       <OverlayShell title="Rewind character?" subtitle={entry.label} onClose={() => setConfirm(null)}>
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
           Your character goes back to how it was at {timeLabel(entry.at)}
-          {entry.milestone ? ' — a milestone.' : '.'}
+          {entry.milestone ? ', a milestone.' : '.'}
         </Text>
         {discards > 0 ? (
           <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.medium, lineHeight: 18, marginTop: 10 }}>
@@ -211,7 +211,7 @@ function TimelineView({
               ) : null}
               {open ? (
                 <Text style={{ color: discarded ? Rune.muted : Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, marginTop: 7, paddingLeft: 17 }}>
-                  {discarded ? 'Discarded — change anything and this is gone' : 'Hold this entry to rewind here'}
+                  {discarded ? 'Discarded, change anything and this is gone' : 'Hold this entry to rewind here'}
                 </Text>
               ) : null}
             </ChamferBox>

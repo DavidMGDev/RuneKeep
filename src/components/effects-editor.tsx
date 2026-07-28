@@ -17,7 +17,7 @@ export interface EffectOption { key: string; label: string; target: EffectTarget
 /** A character's Experiences, the minimum this module needs to build their picker options. */
 export interface ExperienceRef { id: string; title: string }
 
-/** v0.14.0: the Experiences group is per-CHARACTER, so it can't live in the static groups below — it's
+/** v0.14.0: the Experiences group is per-CHARACTER, so it can't live in the static groups below, it's
  *  generated from the file and appended. Every Experience is offered, however many the character has. */
 export function experienceOptions(experiences: ExperienceRef[] | undefined): EffectOption[] {
   return (experiences ?? []).map((e, i) => ({ key: `experience:${e.id}`, label: e.title.trim() || `Experience ${i + 1}`, target: 'experience' as EffectTarget, experienceId: e.id }));

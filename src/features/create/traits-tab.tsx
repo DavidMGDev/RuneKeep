@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
+import { showToast } from '@/components/toast';
 import { Body, Display, Rune } from '@/constants/theme';
 import { Art } from '@/features/character-sheet/art';
 import { formatModifier, TRAIT_ORDER, type TraitKey } from '@/features/character-sheet/character';
@@ -15,6 +16,29 @@ import { TRAIT_POOL } from './create-constants';
  * tapping a trait banner places the armed value (swapping any previous value back to the pool);
  * tapping an assigned banner with nothing armed clears it. The banners are the sheet's own.
  */
+/** Fire the spellcast guidance as a toast on the moments it is actually useful. */
+function useSpellcastWarnings(spellcastLabel: string | null, spellcastMisplaced: boolean, highestLabel: string | null) {
+  const prevSpellcast = useRef<string | null>(null);
+  const warned = useRef(false);
+  useEffect(() => {
+    if (!spellcastLabel) return;
+    // The subclass changed under an already-placed +2.
+    if (prevSpellcast.current && prevSpellcast.current !== spellcastLabel && spellcastMisplaced) {
+      showToast(`Your Spellcast trait is now ${spellcastLabel}, not ${prevSpellcast.current}. Your +2 is still on ${highestLabel}.`);
+      warned.current = true;
+    }
+    prevSpellcast.current = spellcastLabel;
+  }, [spellcastLabel, spellcastMisplaced, highestLabel]);
+  useEffect(() => {
+    if (!spellcastLabel) return;
+    if (spellcastMisplaced && !warned.current) {
+      showToast(`Your +2 is on ${highestLabel}. Casters usually want it on ${spellcastLabel}.`);
+      warned.current = true;
+    }
+    if (!spellcastMisplaced) warned.current = false;
+  }, [spellcastMisplaced, spellcastLabel, highestLabel]);
+}
+
 export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partial<Record<TraitKey, number>>; onTraits: (t: Partial<Record<TraitKey, number>>) => void; spellcastTrait?: TraitKey | null }) {
   const [armed, setArmed] = useState<number | null>(null);
 
@@ -24,6 +48,7 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
   const highestKey = TRAIT_ORDER.find((t) => traits[t.key] === 2)?.key;
   const highestLabel = highestKey ? TRAIT_ORDER.find((t) => t.key === highestKey)?.label : undefined;
   const spellcastMisplaced = !!spellcastTrait && highestKey !== undefined && highestKey !== spellcastTrait;
+  useSpellcastWarnings(spellcastLabel ?? null, spellcastMisplaced, highestLabel ?? null);
 
   const assignedValues = TRAIT_ORDER.map((t) => traits[t.key]).filter((v): v is number => v !== undefined);
   const pool: number[] = [...TRAIT_POOL];
@@ -90,19 +115,11 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
         )}
       </View>
       <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center', marginTop: 2 }}>
-        {armed !== null ? `Tap a trait to place ${formatModifier(armed)}` : pool.length ? 'Tap a modifier, then a trait — tap a trait to clear it' : `${assignedCount}/6 set`}
+        {armed !== null ? `Tap a trait to place ${formatModifier(armed)}` : pool.length ? 'Tap a modifier, then a trait, tap a trait to clear it' : `${assignedCount}/6 set`}
       </Text>
-      <View style={{ alignItems: 'center', marginTop: 6 }}>
+      <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 14 }}>
         <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel="Random traits" />
       </View>
-      {/* item 6: Spellcast-trait guidance — a hint while unplaced, a warning once the +2 lands off-Spellcast. */}
-      {spellcastLabel ? (
-        <Text style={{ color: spellcastMisplaced ? '#E2A15A' : Rune.muted, fontSize: 10, fontFamily: Body.bold, textAlign: 'center', marginTop: 6, paddingHorizontal: 16, letterSpacing: 0.3 }}>
-          {spellcastMisplaced
-            ? `⚠ Your +2 is on ${highestLabel}, but your Spellcast trait is ${spellcastLabel}. Casters are usually strongest with the +2 on their Spellcast trait.`
-            : `Your Spellcast trait is ${spellcastLabel} — casters usually want their +2 here.`}
-        </Text>
-      ) : null}
       {/* the banners — the sheet's own art */}
       <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'center', columnGap: 14, rowGap: 6 }}>
         {TRAIT_ORDER.map((t) => {
@@ -125,7 +142,7 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
               </Text>
               {/* item 6: mark the Spellcast trait right on its banner. */}
               {t.key === spellcastTrait ? (
-                <Text style={{ position: 'absolute', top: 108, left: 0, right: 0, textAlign: 'center', color: Rune.goldBright, fontSize: 7.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                <Text numberOfLines={1} style={{ position: 'absolute', top: 108, left: 10, right: 10, textAlign: 'center', color: Rune.goldBright, fontSize: 7.5, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
                   ✦ Spellcast
                 </Text>
               ) : null}

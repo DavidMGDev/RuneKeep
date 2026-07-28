@@ -30,7 +30,7 @@ export interface Combatant {
   description?: string;
   /** Which fields the DM chose to display for this combatant (PRD #32). */
   show: { hp: boolean; thresholds: boolean; stress: boolean; description: boolean };
-  /** v0.16.0 (PRD #9): a downed adversary isn't deleted — it's "Fallen" with a Recover target HP. */
+  /** v0.16.0 (PRD #9): a downed adversary isn't deleted, it's "Fallen" with a Recover target HP. */
   fallen?: boolean;
   recoverHp?: number;
   // --- v0.17.0: full SRD stat-block detail (base-game roster + custom). All optional/additive so old
@@ -262,9 +262,9 @@ const STAT_LABEL: Record<VitalKey | CombatantStat, string> = { hp: 'HP', stress:
 
 /** The auto-log line for a stat change (PRD #45): who (side + name), what, and the resulting value. */
 export function formatStatLog(side: 'Player' | 'Adversary', name: string, stat: VitalKey | CombatantStat, from: number, to: number): string {
-  if (from === to) return `**${side} · ${name}** — ${STAT_LABEL[stat]} unchanged (${to})`;
+  if (from === to) return `**${side} · ${name}**, ${STAT_LABEL[stat]} unchanged (${to})`;
   const arrow = to > from ? '▲' : '▼';
-  return `**${side} · ${name}** — ${STAT_LABEL[stat]} ${arrow} ${from} → **${to}**`;
+  return `**${side} · ${name}**, ${STAT_LABEL[stat]} ${arrow} ${from} → **${to}**`;
 }
 
 // --- lifecycle -------------------------------------------------------------------------------------

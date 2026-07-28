@@ -1391,7 +1391,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // A weapon/armor already held as STARTING equipment is dropped by the deck builder (it can't be
     // forged twice), so it would never appear — say so rather than silently no-op.
     const startEquip = new Set([f.weaponPrimaryId, f.weaponSecondaryId, f.armorId].filter(Boolean) as string[]);
-    if (startEquip.has(id)) { pushNotice('Already equipped — not added'); return; }
+    if (startEquip.has(id)) { pushNotice('Already equipped, not added'); return; }
     // Route the card to the category the player picked (the Cards-panel per-category Add button, or the
     // current carousel category from the float menu) via a cardCategory override; the deck builder's
     // override pass places it there (#328). Beastform is locked to its own deck — never override into it.
@@ -1572,7 +1572,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Group drag-drop apply (#311): several cards land together in `toCat`; `orderedIds` is the target's
   // full visible order with the moved group spliced in at the drop index. Same as onReorderCard but for
   // a set: re-file each moved id and drop them all from every other category's explicit order.
-  // v0.11.0: imperative handle into the carousel (it's a CHILD of CarouselProvider — the sheet can't read
+  // v0.11.0: imperative handle into the carousel (it's a CHILD of CarouselProvider, the sheet can't read
   // context). Used after a Duplicate to deselect + scroll the row onto the fresh copies.
   const carouselApiRef = useRef<CarouselApi | null>(null);
   const onReorderCards = useCallback((movedIds: string[], toCat: string, orderedIds: string[]) => {

@@ -109,9 +109,11 @@ function Switch({ on }: { on: boolean }) {
 function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={{ flex: 1 }} accessibilityRole="tab" accessibilityState={{ selected: active }}>
-      <View style={{ height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 6, backgroundColor: active ? Rune.red : 'rgba(20,24,31,0.6)', borderWidth: 1, borderColor: active ? 'transparent' : GOLD_BORDER }}>
-        <Text style={{ color: active ? Rune.ivory : Rune.muted, fontSize: 13, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
-      </View>
+      {/* v0.23.0: horizontal padding (the label was flush to the edges) and a chamfer instead of a
+          border radius, which DESIGN.md rules out everywhere but circular emblems and pips. */}
+      <ChamferBox chamfer={6} fill={active ? Rune.red : 'rgba(20,24,31,0.6)'} stroke={active ? 'transparent' : GOLD_BORDER} strokeWidth={1} style={{ height: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
+        <Text numberOfLines={1} style={{ color: active ? Rune.ivory : Rune.muted, fontSize: 13, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
+      </ChamferBox>
     </Pressable>
   );
 }

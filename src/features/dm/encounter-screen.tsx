@@ -310,7 +310,7 @@ export function EncounterScreen() {
       const prev = await getEncounter(ses.activeEncounterId);
       const pty = partyRef.current;
       if (prev && pty) {
-        const noted = appendLog(prev, 'note', `**Completed** — ${enc.name} was started.`);
+        const noted = appendLog(prev, 'note', `**Completed**, ${enc.name} was started.`);
         const done = completeEncounter(ses, noted, pty);
         await saveEncounter(done.encounter);
       }
@@ -435,7 +435,7 @@ export function EncounterScreen() {
               <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} />
             </View>
           </View>
-          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet — add one, or spawn a whole group from the library.</Text> : null}
+          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet, add one, or spawn a whole group from the library.</Text> : null}
           {enc.adversaries.map((c) => (
             <CombatantPanel key={c.id} combatant={c} selecting={advSel.selecting} selected={advSel.ids.has(c.id)}
               onApply={(s, delta) => onCombatantApply(c.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: c.id, stat: s })}

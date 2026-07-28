@@ -235,12 +235,12 @@ const PAGES: Page[] = [
   },
   {
     title: 'Hold to equip',
-    body: 'Holding a card equips it. A gold fill rises as you hold, and a check lands in the corner when it takes. Equipped cards apply their modifiers to your sheet — the State screen shows you exactly what each one is doing.',
+    body: 'Holding a card equips it. A gold fill rises as you hold, and a check lands in the corner when it takes. Equipped cards apply their modifiers to your sheet, the State screen shows you exactly what each one is doing.',
     demo: DemoHoldEquip,
   },
   {
     title: 'Hit Points, Stress, Hope, Armor',
-    body: 'Each track is split down the middle. Hold the left side to clear, hold the right side to spend — or double-tap either side to skip the ceremony when things are moving fast.',
+    body: 'Each track is split down the middle. Hold the left side to clear, hold the right side to spend, or double-tap either side to skip the ceremony when things are moving fast.',
     demo: DemoZones,
   },
   {

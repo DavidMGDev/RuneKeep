@@ -85,7 +85,7 @@ export function CardModifiersSheet({
   return (
     <FullScreenPanel
       title={label}
-      subtitle={editing ? 'Editing modifiers' : enabled ? 'Equipped — applying to your sheet' : 'Not equipped'}
+      subtitle={editing ? 'Editing modifiers' : enabled ? 'Equipped, applying to your sheet' : 'Not equipped'}
       onClose={onClose}
       footer={
         editing ? (

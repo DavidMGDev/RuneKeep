@@ -16,9 +16,20 @@ export interface FolderIndex {
   folders: Folder[];
   /** character id → folder id. A character with no entry is ungrouped. */
   assignments: Record<string, string>;
+  /** v0.23.0: which groups the player has collapsed. Collapsing is a preference about how they want
+   *  to see their roster, so it has to survive leaving the screen like every other preference. */
+  collapsed?: string[];
 }
 
-export const EMPTY_INDEX: FolderIndex = { folders: [], assignments: {} };
+export const EMPTY_INDEX: FolderIndex = { folders: [], assignments: {}, collapsed: [] };
+
+/** Remember a group's collapsed state. `key` is a folder id, or `__ungrouped`. */
+export function setCollapsed(idx: FolderIndex, key: string, collapsed: boolean): FolderIndex {
+  const cur = new Set(idx.collapsed ?? []);
+  if (collapsed) cur.add(key);
+  else cur.delete(key);
+  return { ...idx, collapsed: [...cur] };
+}
 
 const rid = (): string => `fd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 

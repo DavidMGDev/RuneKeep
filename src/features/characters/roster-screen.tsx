@@ -12,12 +12,13 @@ import { RuneButton } from '@/components/rune-button';
 import { classColor, classInfo } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
-import { deleteCharacter, exportCharacter, importCharacter, listCharacters } from '@/lib/character-store';
+import { deleteCharacter, exportCharacter, importCharacter, listCharacters, saveCharacter } from '@/lib/character-store';
 import { seedOfficialExpansions } from '@/lib/expansions';
-import { addFolder, assign, EMPTY_INDEX, type Folder, type FolderIndex, loadFolders, recolorFolder, removeFolder, renameFolder, saveFolders } from '@/lib/folders';
+import { addFolder, assign, EMPTY_INDEX, type Folder, type FolderIndex, loadFolders, recolorFolder, removeFolder, renameFolder, saveFolders, setCollapsed as setCollapsedIn } from '@/lib/folders';
 import { type Expansion, isEnabledForCreation } from '@/lib/library';
 import { listExpansions } from '@/lib/library-store';
 import { playSfx } from '@/lib/sfx';
+import { showToast } from '@/components/toast';
 import { NameDialog } from '@/features/dm/dm-ui';
 import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picker';
 
@@ -77,7 +78,11 @@ function FolderHeader({ folder, count, collapsed, onToggle, onActions }: { folde
   return (
     <Pressable onPress={onToggle} onLongPress={onActions} delayLongPress={380} accessibilityRole="button" accessibilityLabel={`Folder ${folder.name}, ${count} characters. Hold for actions`} style={{ marginTop: 6, marginBottom: 6 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}>
-        <View style={{ width: 12, height: 12, backgroundColor: folder.color, transform: [{ rotate: '45deg' }] }} />
+        {/* v0.23.0: the rotated square needs a container as wide as its DIAGONAL, or its left tip
+            bleeds past the row and under the screen border. */}
+        <View style={{ width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 12, height: 12, backgroundColor: folder.color, transform: [{ rotate: '45deg' }] }} />
+        </View>
         <FitLine style={{ flex: 1, color: Rune.ivory, fontSize: 14, fontFamily: Display.black, letterSpacing: 1.4, textTransform: 'uppercase' }}>{folder.name}</FitLine>
         <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{count}</Text>
         <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: collapsed ? '0deg' : '90deg' }] }}>
@@ -96,13 +101,16 @@ export function RosterScreen() {
   const router = useRouter();
   const [files, setFiles] = useState<CharacterFile[] | null>(null);
   const [index, setIndex] = useState<FolderIndex>(EMPTY_INDEX);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsedState] = useState<Set<string>>(new Set());
   const [actionsFor, setActionsFor] = useState<CharacterFile | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CharacterFile | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [movingChar, setMovingChar] = useState<CharacterFile | null>(null);
   const [folderActions, setFolderActions] = useState<Folder | null>(null);
   const [renamingFolder, setRenamingFolder] = useState<Folder | null>(null);
+  // v0.23.0: a character's name was fixed at creation with no way to change it, which is a strange
+  // thing to be permanent when everything else about them can be edited.
+  const [renamingChar, setRenamingChar] = useState<CharacterFile | null>(null);
   const [newFolder, setNewFolder] = useState(false);
   const [pickerExps, setPickerExps] = useState<Expansion[] | null>(null);
 
@@ -144,7 +152,12 @@ export function RosterScreen() {
   const ungrouped = files.filter((f) => { const fid = index.assignments[f.id]; return !fid || !folderIds.has(fid); });
   if (ungrouped.length || sections.length) sections.push({ key: '__ungrouped', folder: null, all: ungrouped, data: collapsed.has('__ungrouped') ? [] : ungrouped });
 
-  const toggle = (key: string) => setCollapsed((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  // v0.23.0: persisted, so a roster you tidied stays tidy when you come back.
+  const toggle = (key: string) => {
+    const next = !collapsed.has(key);
+    setCollapsedState((s) => { const n = new Set(s); if (next) n.add(key); else n.delete(key); return n; });
+    setIndex((cur) => { const n = setCollapsedIn(cur, key, next); void saveFolders(n); return n; });
+  };
 
   return (
     <AppScreen
@@ -235,6 +248,7 @@ export function RosterScreen() {
               dominant button was reaching for Delete. Destructive actions get the quiet treatment and
               earn their weight in the confirm step instead. */}
           <View style={{ marginTop: 16, gap: 10 }}>
+            <RuneButton label="Rename" kind="secondary" height={40} onPress={() => { const f = actionsFor; setActionsFor(null); setRenamingChar(f); }} />
             <RuneButton label="Move to folder" kind="secondary" height={40} onPress={() => { const f = actionsFor; setActionsFor(null); setMovingChar(f); }} />
             <RuneButton
               label="Delete"
@@ -308,6 +322,25 @@ export function RosterScreen() {
       ) : null}
 
       {newFolder ? <NameDialog dm={false} title="New Folder" placeholder="Folder name" confirmLabel="Create" onConfirm={(name) => { setNewFolder(false); commitIndex(addFolder(index, name)); }} onCancel={() => setNewFolder(false)} /> : null}
+      {renamingChar ? (
+        <NameDialog
+          dm={false}
+          title="Rename character"
+          initial={renamingChar.name}
+          confirmLabel="Rename"
+          onConfirm={(name) => {
+            const trimmed = name.trim();
+            const target = renamingChar;
+            setRenamingChar(null);
+            if (!trimmed || !target) return;
+            const next = { ...target, name: trimmed };
+            void saveCharacter(next)
+              .then(() => setFiles((all) => (all ?? []).map((c) => (c.id === next.id ? next : c))))
+              .catch(() => showToast('Could not rename that character.', 'error'));
+          }}
+          onCancel={() => setRenamingChar(null)}
+        />
+      ) : null}
       {renamingFolder ? <NameDialog dm={false} title="Rename Folder" initial={renamingFolder.name} confirmLabel="Rename" onConfirm={(name) => { commitIndex(renameFolder(index, renamingFolder.id, name)); setRenamingFolder(null); }} onCancel={() => setRenamingFolder(null)} /> : null}
 
       {pickerExps ? (

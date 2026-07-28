@@ -22,7 +22,7 @@ export const SAFE_NFC_BYTES = 60000; // headroom under the ~64KB Type-4 NDEF cei
  * over NFC / `.rkp` (the picker stores only a device file URI, which is meaningless on another phone).
  * Returns the card unchanged when there's no local image; DROPS the image (→ null) when it wouldn't fit
  * under `budget` bytes or can't be read, so the payload always stays valid. Native only + sync (the
- * File API is native; a huge photo simply won't fit the ~64KB NFC ceiling — that's expected).
+ * File API is native; a huge photo simply won't fit the ~64KB NFC ceiling, that's expected).
  */
 export function inlineCardImage(card: LibraryCard, budget: number = SAFE_NFC_BYTES): LibraryCard {
   const uri = card.imageUri;

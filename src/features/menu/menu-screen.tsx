@@ -280,7 +280,7 @@ export function MenuScreen() {
             </>
           ) : (
             <>
-              <MenuAction label="Characters" sub="Your roster — play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
+              <MenuAction label="Characters" sub="Your roster, play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
               <MenuAction label="Cards" sub="Browse the archive, build homebrew" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
             </>
           )}

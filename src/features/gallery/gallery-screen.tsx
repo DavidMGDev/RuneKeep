@@ -344,6 +344,7 @@ export function GalleryScreen() {
     levels: new Set(params.levels?.split(',').filter(Boolean).map(Number) ?? []),
     tiers: new Set<number>(),
   }));
+  const clearFilters = useCallback(() => setFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set() }), []);
   // v0.13.0: the archive respects the GLOBAL expansion toggles — Void cards (and their Blood/Dread
   // filter chips) appear only while The Void is enabled in the Card Library.
   const [enabledExp, setEnabledExp] = useState<Set<string> | null>(null);
@@ -381,9 +382,7 @@ export function GalleryScreen() {
       title="Card archive"
       onBack={() => router.back()}
       headerRight={
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-          {/* v0.19.2 item 1: a compact skull icon, not the wide "ADVERSARIES" text that overlapped the
-              centered title. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Pressable onPress={() => { playSfx('buttonTap'); router.push('/adversary-library' as Href); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary library">
             <Svg width={20} height={20} viewBox="0 0 24 24">
               <Path d="M12 3 C7 3 4 6.6 4 11 C4 13.7 5.2 15.2 6 16.3 L6 19 H8.5 V17 H10.5 V19 H13.5 V17 H15.5 V19 H18 L18 16.3 C18.8 15.2 20 13.7 20 11 C20 6.6 17 3 12 3 Z" fill="none" stroke={Rune.goldText} strokeWidth={1.5} strokeLinejoin="round" />
@@ -391,27 +390,36 @@ export function GalleryScreen() {
               <Circle cx={15} cy={11.2} r={1.7} fill={Rune.goldText} />
             </Svg>
           </Pressable>
-          <Pressable
-            onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: drawerOpen }}
-            accessibilityLabel={`Filters, ${activeCount} active`}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+        </View>
+      }>
+      {/* v0.23.0: the filter control lives in the content, not the header corner. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <Pressable
+          onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: drawerOpen }}
+          accessibilityLabel={`Filters, ${activeCount} active`}>
+          <ChamferBox chamfer={5} fill={activeCount ? 'rgba(200,27,24,0.16)' : 'transparent'} stroke={activeCount ? Rune.red : Rune.goldEdge} strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 30 }}>
             <Svg width={14} height={13} viewBox="0 0 18 16">
               <Line x1={1} y1={3} x2={17} y2={3} stroke={Rune.goldEdge} strokeWidth={2} />
               <Line x1={4} y1={8} x2={14} y2={8} stroke={Rune.goldEdge} strokeWidth={2} />
               <Line x1={7} y1={13} x2={11} y2={13} stroke={Rune.goldEdge} strokeWidth={2} />
             </Svg>
-            <Text style={{ color: activeCount ? Rune.red : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>
-              {activeCount ? `FILTERS · ${activeCount}` : 'FILTERS'}
+            <Text style={{ color: activeCount ? Rune.goldBright : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+              {activeCount ? `Filters · ${activeCount}` : 'Filters'}
             </Text>
             <Svg width={9} height={6} viewBox="0 0 10 7" style={{ transform: [{ rotate: drawerOpen ? '180deg' : '0deg' }] }}>
               <Polyline points="1,1 5,6 9,1" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} />
             </Svg>
+          </ChamferBox>
+        </Pressable>
+        {activeCount ? (
+          <Pressable onPress={() => { playSfx('buttonTap'); clearFilters(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear filters">
+            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Clear</Text>
           </Pressable>
-        </View>
-      }>
+        ) : null}
+      </View>
       {drawerOpen ? (
         <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 8 }}>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
