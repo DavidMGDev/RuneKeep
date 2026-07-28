@@ -6,6 +6,7 @@ import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { Body, Rune } from '@/constants/theme';
 import { findEditableCard } from '@/features/cards/card-effects';
 import { type CharacterFile } from '@/lib/character-file';
+import { DimScreen } from '@/lib/screen-dim';
 
 import { typePickerGroups } from '../card-types';
 
@@ -68,6 +69,10 @@ export function EditCardFlow({
 export function DeleteCardConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
+      {/* Stacked on top of SheetDim's 0.84, so this alone is lighter than what the screen shows. It is
+          declared anyway: the registry takes the darkest, and this must not be the one layer that is
+          right only because something else happens to be underneath it. */}
+      <DimScreen opacity={0.6} />
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.6)' }]} collapsable={false} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Cancel" />
       <ChamferBox chamfer={14} fill="rgba(11,14,19,0.98)" stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 280, padding: 18, gap: 14 }}>
         <Text style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>Delete this card?</Text>
