@@ -10,7 +10,7 @@ cap, no card required, and it serves the 63 MB of card art without complaint.
 
 ## Before you start: read this bit
 
-Three things are true of the web build, and one of them will bite you.
+Three things are true of the web build. The first is the one that will surprise your players.
 
 **Everything is stored in the browser, on that device.** There is no server and no account. A
 character made on your laptop does not appear on a player's phone. Sharing happens the way it already
