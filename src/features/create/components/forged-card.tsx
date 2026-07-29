@@ -13,7 +13,9 @@ import { type LootDef, lootTable } from '@/data/loot-data';
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
 export const FORGED_H = 322;
-const ART_H = Math.round(FORGED_H * 0.4); // top 40% = art; the divider plaque rides the seam
+/** Top 40% = art; the divider plaque rides the seam. Exported so the quick-card art gesture can
+ *  charge over exactly the art band and nothing else. */
+export const ART_H = Math.round(FORGED_H * 0.4);
 
 /** Auto-fit plaque text helper: tightly squeezes long labels (like "Experience") so they don't bleed out of the plaque */
 export function PlaqueLabel({ text, textColor }: { text: string; textColor: string }) {

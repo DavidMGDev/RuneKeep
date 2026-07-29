@@ -127,7 +127,32 @@ to clear the finial) < fullscreen overlay `5000`.
 - Per-frame math = module-scope worklets reading shared values. Finalize any decay with a `withSpring` snap.
 - Install Expo-tracked libs with `npx expo install …`, never plain `npm install`.
 
+## The web target (v0.24.3)
+The browser is not a small phone; it brings its own defaults, and four of them made the app look
+broken rather than merely different. All four fixes live outside the screens, so nothing has to
+remember them:
+
+- **`src/app/+html.tsx`** (web only) is the HTML shell. It kills image dragging (`user-drag: none`,
+  or every card hands you a translucent ghost instead of scrolling), kills text selection outside
+  inputs, stops overscroll, links the PWA manifest, and carries the **drag-to-scroll** shim. A browser
+  will not scroll an `overflow` container from a press-and-drag, so every list looked frozen with a
+  mouse; the shim restores the phone gesture and steps aside whenever a gesture-handler target
+  (`touch-action: none`) sits between the pointer and the scroller.
+- **`.svgrrc.js`** adds SVGO's `prefixIds`. Ids are minified per file (`a`, `b`, `c`), which is fine on
+  native where each `<Svg>` owns its canvas, and fatal on web where every inline `<svg>` shares one
+  document: `url(#a)` resolved to whichever gradient rendered first, so all nine class banners painted
+  in one colour. (This supersedes `scripts/uniquify_svg_ids.py`, which namespaced ids in the source
+  files only for SVGO to rename them again.)
+- **Platform API shapes can differ inside one library.** `createBufferSource` takes an options object
+  on native and a bare boolean on web, so `{ pitchCorrection: false }` read as truthy there and every
+  single sound threw. Check the `web-core` implementation, not just the types.
+- **Anything gated on native-only work must be satisfied on web.** The sheet waits for every forged
+  card bitmap before lifting its loading veil, and web never forges any (cards render live instead),
+  so the veil sat opaque and click-eating for its full 7.5s fallback on every open.
+
+Verify with `scripts/web-probe.mjs`, which drives the real browser; see `docs/web-deploy.md`.
+
 ## Data
 All static game data is bundled with the app — **no database, no network, fully offline**. User saves are
-per-character JSON via `expo-file-system` (native) / `localStorage` (web), serialized through
-`src/lib/character-file.ts` (versioned `CharacterFile` schema).
+per-character JSON via `expo-file-system` (native) / IndexedDB (web, `src/lib/web-store.ts`),
+serialized through `src/lib/character-file.ts` (versioned `CharacterFile` schema).

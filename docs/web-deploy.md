@@ -31,6 +31,34 @@ becomes a file picker, export becomes a download. Everything else, including sou
 
 ---
 
+## Checking the web build before you ship it
+
+The web target is the platform nobody plays on day to day, so it rots quietly. In v0.24.3 it was
+broken in four separate ways at once, and `tsc`, `eslint` and `jest` all passed the whole time:
+
+- every sound threw an uncaught error, because `createBufferSource` takes an options object on native
+  and a bare boolean on web;
+- no list scrolled, because a browser does not scroll an `overflow` container from a press-and-drag,
+  and dragging card art started an HTML5 image drag instead;
+- every class banner painted with the wrong gradient, because SVGO minifies ids per file and all the
+  inline `<svg>`s share one document;
+- the sheet's loading veil never lifted on its own, because nothing is ever forged on web, so it hung
+  opaque for its 7.5 second fallback while swallowing every tap.
+
+None of those are visible to a type checker, so run the browser instead. It uses the Chrome you
+already have, and exits non-zero if the page logs anything:
+
+```bash
+npx expo start --web
+node scripts/web-probe.mjs http://localhost:8081 ./out tap:SKIP tap:CHARACTERS shot:roster
+```
+
+Read the header of `scripts/web-probe.mjs` for the full step vocabulary. Worth doing before any
+release that touches web, and worth doing on the exported `dist/` too, since the dev server and the
+static export do not bundle identically.
+
+---
+
 ## 1. Build it
 
 ```bash
@@ -86,24 +114,10 @@ any redirect rules. Nothing extra to configure.
 
 ## 3. Make it an app on the desktop
 
-The site is one step from being installable. Add `public/manifest.json`:
+Already done, as of v0.24.3: `public/manifest.json` ships the PWA manifest and `src/app/+html.tsx`
+links it from the page head. Anything in `public/` is copied into `dist/` untouched.
 
-```json
-{
-  "name": "RuneKeep",
-  "short_name": "RuneKeep",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0B0E13",
-  "theme_color": "#0B0E13",
-  "icons": [{ "src": "/favicon.ico", "sizes": "48x48", "type": "image/x-icon" }]
-}
-```
-
-Anything in `public/` is copied into `dist/` untouched. Link it from the page head via
-`expo-router`'s root HTML (`src/app/+html.tsx`, create it if it does not exist).
-
-Chrome and Edge then offer **Install app** in the address bar. It gets its own window, its own icon
+Chrome and Edge therefore offer **Install app** in the address bar. It gets its own window, its own icon
 and no browser chrome, which is as close to a desktop app as this needs to be. Add a service worker
 later if you want it to work with the wifi off; without one it needs a connection to start, though
 the browser cache will make it fast.
