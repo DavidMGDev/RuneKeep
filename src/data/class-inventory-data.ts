@@ -38,6 +38,15 @@ export const CLASS_INVENTORY: Record<ClassName, ClassInventory> = {
   brawler: { take: COMMON_TAKE, choices: [POTION_CHOICE, ['hand wraps from a mentor', 'a book about your secret hobby']] },
 };
 
+/**
+ * Whether a starting item is a CONSUMABLE rather than a piece of kit (v0.26.0).
+ *
+ * Every class guide offers a potion as its first choice, and those were landing as generic items, so
+ * a Brawler's Minor Health Potion sat in the same deck as their hand wraps and read as equipment. The
+ * guides phrase these consistently enough to recognise by name.
+ */
+export const isConsumableName = (name: string): boolean => /(potion|elixir|salve|oil|tonic|draught)/i.test(name);
+
 /** Strip a leading article for a card TITLE; keep the full phrase for the body/label. */
 export function itemTitle(name: string): string {
   const t = name.replace(/^(a|an|the)\s+/i, '');

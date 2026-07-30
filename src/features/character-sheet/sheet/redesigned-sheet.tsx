@@ -32,7 +32,7 @@ import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isPermanentCard, refOf, sourceLabelForCardId } from '@/features/cards/card-effects';
-import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
+import { CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
@@ -858,7 +858,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
     const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const chosenIds = file.inventoryItemIds ?? [];
-    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
+    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
       key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
       id: it.id,

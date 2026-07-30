@@ -49,7 +49,9 @@ export function deckDone(deck: DeckKey, d: Draft): boolean {
     case 'armor':
       return d.armorSkipped || !!d.armorId;
     case 'inventory':
-      return d.inventorySkipped || d.inventoryItemIds.length === 2 || (d.inventoryLibIds?.length ?? 0) > 0; // pick two (#136), a homebrew item, or skip
+      // v0.26.0: the guide asks TWO questions, and the step is done when both have an answer. Taking
+      // nothing counts as an answer. An older draft that set the whole-step skip still counts.
+      return d.inventorySkipped || (d.inventoryItemIds.length + (d.inventorySkips?.length ?? 0)) >= 2 || (d.inventoryLibIds?.length ?? 0) > 0;
   }
 }
 
