@@ -25,6 +25,17 @@ export function chamferPoints(w: number, h: number, c: number, strokeWidth = 0):
   return `${c + i},${i} ${r - c},${i} ${r},${c + i} ${r},${b - c} ${r - c},${b} ${c + i},${b} ${i},${b - c} ${i},${c + i}`;
 }
 
+/**
+ * v0.26.0: the decoration is pinned BEHIND the content with a NEGATIVE z-index.
+ *
+ * CSS paints positioned elements above in-flow ones. This overlay is absolutely positioned and a
+ * plain `<input>` is not, so the panel fill painted straight over the text inside it. Zero is not
+ * enough: only a negative index drops below in-flow content. The symptom was that typing a
+ * character name produced letters the same colour as the box they sat in. It read as "the field is
+ * greyed out and never takes what I type", when the value had been there all along, buried under its
+ * own background. React Native views are position:relative and so were never affected, which is why
+ * only text fields looked broken.
+ */
 function ChamferBoxImpl({
   chamfer = 10,
   stroke = 'transparent',
@@ -49,7 +60,7 @@ function ChamferBoxImpl({
   return (
     <View style={style} onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
       {size && size.w > 2 * c && size.h > 2 * c ? (
-        <View style={{ position: 'absolute', left: 0, top: 0, width: size.w, height: size.h }} pointerEvents="none">
+        <View style={{ position: 'absolute', left: 0, top: 0, width: size.w, height: size.h, zIndex: -1 }} pointerEvents="none">
           {/* v0.26.0: an explicit viewBox. Without one the polygon's coordinates are interpreted in
               CSS pixels, which is fine until the whole app sits inside the phone frame's scale
               transform: engines disagree about whether an attribute-sized svg rasterises before or

@@ -513,7 +513,20 @@ export function CreateScreen() {
 
   // v0.23.0: teach the creator when the creator opens, not on first launch.
   useEffect(() => {
-    if (shouldShow('creation')) router.push('/onboarding?tour=creation&from=/create' as Href);
+    // v0.26.0: DEFERRED out of the mount tick, deliberately.
+    //
+    // Pushing the tour while the creator's own navigation is still settling made both history
+    // entries in the same tick, and Firefox collapses those into one. Going back from the tour then
+    // went back PAST the creator and landed on the character list, which is empty for a new player,
+    // so making a character looked like it had failed. Chrome kept both entries, which is why it only
+    // ever happened in one browser.
+    //
+    // One frame is enough for the creator's entry to exist in its own right. Returning still uses
+    // back(), which keeps the creator mounted with everything the player has already chosen; sending
+    // them forward to a fresh copy instead would re-ask which expansions they wanted.
+    if (!shouldShow('creation')) return;
+    const t = setTimeout(() => router.push('/onboarding?tour=creation' as Href), 0);
+    return () => clearTimeout(t);
   }, [router]);
 
   useEffect(() => {

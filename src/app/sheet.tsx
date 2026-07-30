@@ -38,7 +38,10 @@ export default function Sheet() {
     setTourChecked(true);
     // The sheet's id has to travel with the return address, or dismissing the tour would come back
     // to a sheet with no character.
-    if (shouldShow('sheet')) router.push(`/onboarding?tour=sheet&from=${encodeURIComponent(id ? `/sheet?id=${id}` : '/sheet')}` as Href);
+    // Deferred for the same reason as the creator's tour: two history entries in one tick collapse
+    // in Firefox, and going back then overshoots the screen the tour is about.
+    const t = setTimeout(() => { if (shouldShow('sheet')) router.push('/onboarding?tour=sheet' as Href); }, 0);
+    return () => clearTimeout(t);
   }, [state.loaded, state.file, tourChecked, router]);
 
   if (!state.loaded) return <LoadingScreen label="Unrolling the sheet" />;
