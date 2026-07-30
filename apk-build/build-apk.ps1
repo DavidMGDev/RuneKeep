@@ -12,6 +12,10 @@
 # PS 5.1-safe: ErrorActionPreference = Continue, no 2>&1 on native commands, explicit exit checks.
 # Tell Claude when it prints  ===ALL DONE===  (with the size), or paste any line containing FAILED.
 
+# -NoRelease builds the APK and stops there, for when the build is wanted but publishing it is not
+# the same decision.
+param([switch]$NoRelease)
+
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
 # Release version, READ FROM app.json so it cannot drift from the version the app reports about
@@ -145,6 +149,11 @@ $niceApk = Join-Path (Split-Path $apk.FullName -Parent) "Runekeep $ver.apk"
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
 
+if ($NoRelease) {
+  Write-Host "`n===ALL DONE=== APK $mb MB at $niceApk (not published: -NoRelease)" -ForegroundColor Green
+  exit 0
+}
+
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
@@ -153,8 +162,17 @@ $tag = $ver
 # is the thing nobody remembers to edit. `$mb` is substituted so the size stays accurate.
 $notesPath = Join-Path $PSScriptRoot 'release-notes.md'
 $notes = if (Test-Path $notesPath) { (Get-Content $notesPath -Raw).Replace('$mb', $mb) } else { "RuneKeep $ver (Android). Offline APK, arm64-v8a, $mb MB." }
-gh release delete $tag --yes --cleanup-tag 2>$null
-gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
+# The notes go through a FILE, not --notes.
+#
+# PowerShell 5.1 re-quotes an argument on its way to a native program, and it splits on double quotes
+# inside the string rather than escaping them. A release note containing a quoted phrase therefore
+# arrived at gh as several arguments, and the build failed at the last step with an error naming a
+# word from the middle of a sentence. Both v0.25.0 and v0.26.0 were uploaded by hand because of it.
+$notesFile = Join-Path $env:TEMP "rk-notes-$($ver -replace '[^\w.]', '').md"
+Set-Content -Path $notesFile -Value $notes -Encoding utf8
+gh release delete $tag --yes --cleanup-tag   # nothing to delete on a first upload; the exit code is not checked
+gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes-file $notesFile
+Remove-Item -Force $notesFile -ErrorAction SilentlyContinue
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2

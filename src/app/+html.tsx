@@ -204,9 +204,12 @@ const MOUSE_SCROLL = `
 
   function scroller(target, wantX) {
     for (var n = target; n && n !== document.body; n = n.parentElement) {
-      // A gesture handler owns this pointer: leave it alone.
-      if (getComputedStyle(n).touchAction === 'none') return null;
+      // ONE style read per node. This runs on every wheel tick, in a non-passive listener, walking a
+      // tree that react-native-web nests deeply, and each getComputedStyle forces the engine to
+      // resolve style for that node. Asking twice doubled the cost of every scroll for nothing.
       var s = getComputedStyle(n);
+      // A gesture handler owns this pointer: leave it alone.
+      if (s.touchAction === 'none') return null;
       var flow = wantX ? s.overflowX : s.overflowY;
       if (flow !== 'auto' && flow !== 'scroll') continue;
       var room = wantX ? n.scrollWidth - n.clientWidth : n.scrollHeight - n.clientHeight;
@@ -255,13 +258,20 @@ const MOUSE_SCROLL = `
 
   // A wheel over a strip that only scrolls sideways should move it sideways. Without this a mouse
   // with no horizontal wheel cannot reach the end of the category strip at all.
+  //
+  // The answer is remembered per element. A wheel fires in bursts of dozens over the same target, and
+  // working it out means walking to the root twice reading styles as it goes: cheap once, expensive
+  // sixty times a second. It is re-resolved the moment the pointer is over something else.
+  var wheelOn = null, wheelBox = null;
   document.addEventListener('wheel', function (e) {
     if (!e.deltaY || e.shiftKey) return;
-    var sideways = scroller(e.target, true);
-    if (!sideways) return;
-    var upright = scroller(e.target, false);
-    if (upright) return;
-    sideways.scrollLeft += e.deltaY;
+    if (e.target !== wheelOn) {
+      wheelOn = e.target;
+      var sideways = scroller(e.target, true);
+      wheelBox = sideways && !scroller(e.target, false) ? sideways : null;
+    }
+    if (!wheelBox) return;
+    wheelBox.scrollLeft += e.deltaY;
     e.preventDefault();
   }, { capture: true, passive: false });
 })();
