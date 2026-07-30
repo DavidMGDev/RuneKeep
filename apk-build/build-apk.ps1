@@ -14,7 +14,11 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.24.2'                       # release version: bump here once -> drives tag, APK name, title
+# Release version, READ FROM app.json so it cannot drift from the version the app reports about
+# itself. It used to be a hardcoded string here, and the v0.24.3 build shipped as v0.24.2 because
+# that string was the one thing nobody remembered to change: it names the tag, the asset and the
+# title, and `gh release delete --cleanup-tag` then OVERWRITES the older release with the new build.
+$ver  = 'v' + (Get-Content (Join-Path $repo 'app.json') -Raw | ConvertFrom-Json).expo.version
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
@@ -144,7 +148,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.24.2 - browser storage moved to IndexedDB, so the web version can hold portraits. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- WEB STORAGE: the browser build used to keep everything in localStorage, which caps out around 5 MB. A few character portraits filled it, and it failed by refusing to save rather than by warning you. It uses IndexedDB now, which has no practical limit. Existing browser data is carried across automatically. This changes nothing on Android, which has always used real files.`n- TABLET MARGINS (from v0.24.1): the faint cards either side are gone. The space takes whatever colour the screen paints at its edge, so the character sheet reads as one continuous page, and every overlay in the app dims the whole display rather than just the middle.`n`nSideload: enable Install unknown apps, then open the APK."
+$notes = "RuneKeep v0.24.3 - quick card creation, a prompt for where each card goes, and a web version that actually works. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- QUICK CARD: the Add Card button on your sheet now opens a faster editor. A name, what it does, and Enter moves you along: name, then description, then the finished card to accept. Tap the card art for a new colour, hold it to pick a picture. Everything else (effects, card type, the catalog) is still there under Advanced options, and your draft comes with you. New Card in the circle controls opens the full editor as before.`n- WHERE DOES IT GO: creating a card, or receiving one over NFC, now asks which deck it should join instead of dropping it into whichever deck you happened to be looking at.`n- SHEET EDGES: on tablets the strips either side of the character sheet were white. They match the screen edge now, like every other screen.`n- THE WEB VERSION: it was broken four different ways. Sounds threw errors constantly, lists would not scroll with a mouse (dragging a card gave you a ghost of the image instead), every class banner painted itself in the wrong colours, and opening a sheet left an invisible layer over the screen that ate your taps for several seconds. All four are fixed, and the site can now be installed as a desktop app.`n`nSideload: enable Install unknown apps, then open the APK."
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {

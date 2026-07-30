@@ -98,3 +98,14 @@ export function nextCategory(ring: CardCategory[], current: CardCategory, dir: n
 export function ringContains(ring: CardCategory[], category: CardCategory): boolean {
   return ring.includes(category);
 }
+
+/**
+ * The order the destination prompt offers categories in (v0.24.3): the SUGGESTED category leads, so
+ * the common case is one tap, then the rest in their given order. Favorites is never a destination:
+ * it is a mirror of other decks, so a card cannot be created or received into it.
+ */
+export function destinationOrder(categories: CardCategory[], suggested?: CardCategory): CardCategory[] {
+  const list = categories.filter((k) => k !== 'favorites');
+  if (!suggested || !list.includes(suggested)) return list;
+  return [suggested, ...list.filter((k) => k !== suggested)];
+}

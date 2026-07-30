@@ -198,13 +198,18 @@ export interface PlayOpts {
   vary?: boolean;
 }
 
+// v0.24.3: `createBufferSource` takes an OPTIONS OBJECT on native but a BARE BOOLEAN on web
+// (web-core/AudioContext wraps it itself). Passing `{ pitchCorrection: false }` therefore read as
+// truthy on web, selecting the pitch-stretcher, whose WASM never loads in a bundled app — so EVERY
+// sound threw "window[globalTag] is not a function". Calling it with NO argument is correct on both:
+// native gets `undefined` options, web gets `undefined` pitchCorrection. Do not "restore" the object.
 function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) {
   const c = getCtx();
   if (!c) return;
   void decode(src).then((buf) => {
     if (!buf) return;
     try {
-      const node = c.createBufferSource({ pitchCorrection: false });
+      const node = c.createBufferSource();
       node.buffer = buf;
       const vary = opts?.vary === false ? 0 : jitter() * varyCents;
       const cents = (opts?.cents ?? 0) + vary;
@@ -298,7 +303,7 @@ export function playRiser(id: SfxId, opts?: RiserOpts): RiserHandle {
     return NOOP_RISER;
   }
   try {
-    const node = c.createBufferSource({ pitchCorrection: false });
+    const node = c.createBufferSource();
     node.buffer = buf;
     if (opts?.cents) node.detune.value = opts.cents;
     const gain: GainNode = c.createGain();

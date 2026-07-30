@@ -10,10 +10,13 @@ import { Body, Rune } from '@/constants/theme';
 import { type LibraryCard } from '@/lib/library';
 
 import { type CardCategory } from '../card-data';
+import { type CustomCategory } from '../carousel-categories';
 import { defaultTypeForCategory, typePickerGroups } from '../card-types';
 import { useCarousel } from '../carousel-context';
+import { CardDestination } from './card-destination';
 import { GearBrowser } from './gear-browser';
 import { OverlayShell } from './overlay-shell';
+import { QuickCardFlow } from './quick-card-flow';
 
 /** Where a created card lands. `notes` (#214) is the Notes deck; the others ride inventory/arsenal. */
 export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
@@ -23,13 +26,25 @@ export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
  * explicit `categoryOverride` from the Card Management panel's per-category add button). Its "type"
  * (middle ribbon) is chosen from a picker of built-in + custom types. Gear-bearing categories also
  * expose the system catalog browser. The save handler receives the resolved category KEY.
+ *
+ * v0.24.3 adds two things around that:
+ * - `quick`: the sheet's Add Card badge opens the stripped QuickCardFlow first (see that file for
+ *   why). Advanced hands its draft to this editor, so switching is never a restart.
+ * - The DESTINATION prompt: whichever mode authored the card, saving asks which deck it joins rather
+ *   than silently using the category on screen. One choke point, so both modes and both entry points
+ *   behave identically.
  */
-export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acquiredIds, enabledExpansionIds, categoryOverride, customTypes = [], initialMode = 'author', experiences }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; onAcquireCustom?: (card: LibraryCard, category: CardCategory) => void; acquiredIds?: Set<string>; enabledExpansionIds?: string[]; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog'; experiences?: ExperienceRef[] }) {
+export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acquiredIds, enabledExpansionIds, categoryOverride, customTypes = [], initialMode = 'author', experiences, quick = false, destinations = [], customCategories = [] }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; onAcquireCustom?: (card: LibraryCard, category: CardCategory) => void; acquiredIds?: Set<string>; enabledExpansionIds?: string[]; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog'; experiences?: ExperienceRef[]; quick?: boolean; destinations?: CardCategory[]; customCategories?: CustomCategory[] }) {
   const { category: liveCategory } = useCarousel();
   const category = categoryOverride ?? liveCategory;
   // v0.9.8: the sheet's "Add Gear" badge opens straight in catalog mode. v0.13.2 (#359): "Add Card" now
   // also passes onAcquire, so the "Add card from catalog" button shows in the author flow too (parity).
   const [mode, setMode] = useState<'author' | 'catalog'>(initialMode);
+  // v0.24.3: quick mode until the player asks for Advanced (which carries the draft across).
+  const [simple, setSimple] = useState(quick);
+  const [handoff, setHandoff] = useState<CardDraft | undefined>(undefined);
+  // A finished draft waiting on its destination. Held here so BOTH editors ask the same question.
+  const [pending, setPending] = useState<CardDraft | null>(null);
   // Beastform is Druid-only and not player-authored (#242 item 5): block New Card here.
   if (category === 'wildshape') {
     return (
@@ -50,10 +65,39 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
       </OverlayShell>
     );
   }
+  // The destination prompt. With no list to offer (a caller that hasn't wired it) the authored
+  // category stands, so a missing prop can never strand a finished card.
+  const finish = (draft: CardDraft) => {
+    if (destinations.length === 0) { onSave(draft, category); return; }
+    setPending(draft);
+  };
+  if (pending) {
+    return (
+      <CardDestination
+        cardTitle={pending.title.trim() || undefined}
+        categories={destinations}
+        customCategories={customCategories}
+        suggested={destinations.includes(category) ? category : undefined}
+        cancelLabel="Back"
+        onPick={(key) => { setPending(null); onSave(pending, key); }}
+        onCancel={() => setPending(null)}
+      />
+    );
+  }
   if (mode === 'catalog' && onAcquire) {
     // #328: route the catalog card to the category being added to (the Cards-panel per-category Add
     // button, or the current carousel category from the float menu) — not a hardcoded deck.
     return <GearBrowser acquiredIds={acquiredIds ?? new Set()} enabledExpansionIds={enabledExpansionIds} onAdd={(id) => onAcquire(id, category)} onAddCustom={onAcquireCustom ? (card) => onAcquireCustom(card, category) : undefined} onBack={() => setMode('author')} onClose={onCancel} />;
+  }
+  if (simple) {
+    return (
+      <QuickCardFlow
+        initial={handoff}
+        onSave={finish}
+        onCancel={onCancel}
+        onAdvanced={(d) => { setHandoff(d); setSimple(false); }}
+      />
+    );
   }
   const defaultType = defaultTypeForCategory(category);
   const typeGroups = typePickerGroups(customTypes);
@@ -62,5 +106,5 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   const catalogBtn = showsCatalog
     ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => setMode('catalog')} />
     : undefined;
-  return <CardEditor kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" experiences={experiences} onSave={(d) => onSave(d, category)} onCancel={onCancel} />;
+  return <CardEditor initial={handoff} kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" experiences={experiences} onSave={finish} onCancel={onCancel} />;
 }

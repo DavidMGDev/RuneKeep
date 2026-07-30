@@ -917,7 +917,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Entry loader (#150): cover the WHOLE sheet until every forged card is captured (so nothing is
   // seen popping in one-by-one), then fade in. A hard fallback guarantees it can't hang.
   const expectedKeys = useMemo(() => allJobs.map((j) => j.key), [allJobs]);
-  const allForged = expectedKeys.length === 0 || expectedKeys.every((k) => featureSources[k]);
+  // v0.24.3: on WEB nothing is ever forged — `useForgedSnapshots` skips capture there and the cards
+  // render as live components instead. So `allForged` could never become true, and the sheet sat
+  // behind the OPAQUE veil for the full 7.5s fallback on every single open, swallowing every tap in
+  // the meantime. It looked like the app had hung, and a player tapping Add Card got nothing. There
+  // is nothing to wait for on web, so say so.
+  const allForged = Platform.OS === 'web' || expectedKeys.length === 0 || expectedKeys.every((k) => featureSources[k]);
   const [sheetReady, setSheetReady] = useState(false);
   const [loaderUp, setLoaderUp] = useState(true);
   // The loader was lifting before the body + cards had actually painted (#168): allForged goes true
@@ -2115,7 +2120,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // v0.24.1: the sheet is the one screen that does NOT paint ink at its edges. Its parchment matte
   // runs the full width between the inset bars, so the tablet margins must be parchment too or the
   // sheet reads as a pale column stranded between two dark strips.
-  useScreenEdge(Rune.sheet);
+  // The margins mirror the screen's EDGE, and the border band around the sheet is ink even here, so
+  // the parchment must not leak into them: it read as a white gutter on tablet and web (#0.24.3).
+  useScreenEdge(Rune.ink);
   const { isTablet } = useLayout();
   const frameRect = useMemo(() => {
     if (!isTablet || !stageBox || stageBox.w <= 0) return null;
@@ -2237,7 +2244,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
             {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}
-            {incoming ? <NfcReceiveCeremony card={incoming} onCommit={commitReceived} onDismiss={() => setIncoming(null)} /> : null}
+            {incoming ? <NfcReceiveCeremony card={incoming} destinations={moveTargets} customCategories={customCategories} onCommit={commitReceived} onDismiss={() => setIncoming(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
             {/* The gold border is a raster authored at 753x1500 (aspect 0.502). Stretched to a
@@ -2270,7 +2277,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               for parity with the float-menu "New Card" flow — the acquire callbacks are always passed;
               only 'gear' opens straight into the catalog. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
+            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} quick={newCardEntry === 'card'} destinations={moveTargets} customCategories={customCategories} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} moveLimit={restMoveLimit(file ?? {})} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
