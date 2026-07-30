@@ -14,7 +14,8 @@ import { FORGED_H, FORGED_W } from './forged-card';
  * verify pipeline) skips capture and keeps the live components.
  */
 // v18: v0.13.1 — long titles shrink-to-fit instead of truncating with "…" (#357).
-const FORGE_LAYOUT_V = 18;
+// v19: v0.25.0 — the Hope and Fear ancestries are printed faces now, not app-rendered text.
+const FORGE_LAYOUT_V = 19;
 
 /**
  * v0.24.0: the cache key now carries the APP VERSION as well as the layout version.

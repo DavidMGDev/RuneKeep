@@ -13,12 +13,12 @@
  */
 import type { ArmorDef, WeaponDef } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
-import { VOID_ANCESTRY_ART } from '@/data/void-ancestries';
+import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
 import { Rune } from '@/constants/theme';
 
-import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
 
 /** The equipment cards print ONE feature line. Homebrew keeps it in the body as `**Name:** text`
  *  (that's what the share path writes), so unwrap it back into the shape those cards expect. */
@@ -70,9 +70,12 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
     };
     return <ForgedArmorCard armor={def} />;
   }
-  // v0.21.0 items 1/2: illustrated Hope-and-Fear ancestries. The art is bundled and looked up by id (kept
-  // off the serializable card); when present it fills the art band and wins over the flat color fill.
-  const bundledArt = VOID_ANCESTRY_ART[card.id];
+  // v0.25.0: the Hope and Fear ancestries ARE their printed faces, bundled and looked up by id (kept
+  // off the serializable card). Nothing to forge: the publisher laid the card out already. The
+  // mixed-ancestry cross-out rides over the top as measured strike lines instead of striking text,
+  // which is why `struckIndex` must not also apply here.
+  const face = VOID_ANCESTRY_FACE[card.id];
+  if (face != null) return <ForgedFaceCard face={face} />;
   return (
     <ForgedCard
       title={card.title}
@@ -81,8 +84,7 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
       body={libraryCardBody(card, struckIndex)}
       accentDeep={Rune.panel}
       imageUri={card.imageUri}
-      fallbackArt={bundledArt}
-      colorArt={bundledArt ? null : card.color}
+      colorArt={card.color}
       multilineTitle
     />
   );

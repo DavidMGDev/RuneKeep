@@ -16,6 +16,9 @@ import {
 } from '@/data/equipment-data';
 import { ALL_LOOT, CONSUMABLES, LOOT, lootById } from '@/data/loot-data';
 import { EFFECT_TARGETS } from '@/lib/modifiers';
+import { ANCESTRY_STRIKES, hasStrikeLines } from '@/data/ancestry-trait-regions';
+import { VOID_ANCESTRIES, VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
+import { featureSectionIndexes } from '@/lib/library';
 
 const duplicates = (ids: string[]): string[] => ids.filter((id, i) => ids.indexOf(id) !== i);
 
@@ -118,5 +121,35 @@ describe('loot', () => {
   it('loot ids never collide with catalog, weapon or armor ids', () => {
     const others = new Set([...CATALOG.map((c) => c.id), ...ALL_WEAPONS.map((w) => w.id), ...ALL_ARMOR.map((a) => a.id)]);
     expect(ALL_LOOT.filter((x) => others.has(x.id)).map((x) => x.id)).toEqual([]);
+  });
+  // v0.25.0: the Hope and Fear ancestries are printed faces, so the mixed-ancestry cross-out is DRAWN
+  // at measured positions rather than applied to text. A face without marks would silently stop
+  // crossing anything out, which looks like a working card showing two features it should not have.
+  describe('printed-face ancestries carry their strike lines', () => {
+    it('every Hope and Fear ancestry has a face and marks for both features', () => {
+      for (const a of VOID_ANCESTRIES) {
+        expect(VOID_ANCESTRY_FACE[a.id]).toBeDefined();
+        expect(hasStrikeLines(a.id)).toBe(true);
+        expect(ANCESTRY_STRIKES[a.id].a.length).toBeGreaterThan(0);
+        expect(ANCESTRY_STRIKES[a.id].b.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('marks sit below the art, in order, and inside the card', () => {
+      for (const [id, s] of Object.entries(ANCESTRY_STRIKES)) {
+        const all = [...s.a, ...s.b];
+        expect(all.every((y) => y > 0.4 && y < 1)).toBe(true); // text half of the card, never the art
+        expect([...all].sort((p, q) => p - q)).toEqual(all); // feature 1 above feature 2
+        expect(id).toMatch(/^ancestry-/);
+      }
+    });
+
+    it('still resolves which section holds each feature, for the text fallback and effects', () => {
+      for (const a of VOID_ANCESTRIES) {
+        const [first, second] = featureSectionIndexes(a);
+        expect(first).toBeGreaterThanOrEqual(0);
+        expect(second).toBeGreaterThan(first);
+      }
+    });
   });
 });

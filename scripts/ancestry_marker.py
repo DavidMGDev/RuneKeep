@@ -84,6 +84,31 @@ def card_rect(col: int, row: int) -> fitz.Rect:
     return fitz.Rect(x, y, x + CARD_W, y + CARD_H)
 
 
+def write_faces(page: fitz.Page, out_dir: pathlib.Path) -> None:
+    """
+    Write each card face as a 750x1050 webp, the size every other card art in the app uses.
+
+    These become the ancestry cards themselves, replacing the app-rendered text version, so they have
+    to match the forged card's pixel dimensions exactly or the strike positions land off the lines.
+    The `_lod` twins are a gitignored build artifact: run `scripts/generate_lods.py` after this.
+    """
+    from PIL import Image  # only needed for this path, so not a hard dependency of the marker
+    import io
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for card_id, title, col, row in CARDS:
+        rect = card_rect(col, row)
+        # Render well above target, then downsample: the PDF's text is vector, so oversampling and
+        # shrinking is what keeps the small print legible at 750px.
+        pix = page.get_pixmap(clip=rect, dpi=600)
+        img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+        img = img.resize((750, 1050), Image.LANCZOS)
+        name = card_id.replace("ancestry-", "")
+        path = out_dir / f"{name}.webp"
+        img.save(path, "WEBP", quality=90, method=6)
+        print(f"  {title:10} -> {path.name}  ({path.stat().st_size / 1024:.0f} KB)")
+
+
 def crop(page: fitz.Page, rect: fitz.Rect) -> str:
     """The card face as a base64 JPEG, so the tool is one file with no loose assets."""
     pix = page.get_pixmap(clip=rect, dpi=DPI)
@@ -318,10 +343,15 @@ def main() -> None:
     ap.add_argument("--pdf", default="D:/Tools/Homebrew/Daggerheart/HOPEANDFEAR_Cards.pdf")
     ap.add_argument("--out", default="ancestry-marker.html")
     ap.add_argument("--pack", default="hope-and-fear")
+    ap.add_argument("--faces", metavar="DIR", help="write the card faces as webp and exit")
     args = ap.parse_args()
 
     doc = fitz.open(args.pdf)
     page = doc[PAGE]
+
+    if args.faces:
+        write_faces(page, pathlib.Path(args.faces))
+        return
 
     cards = []
     for card_id, title, col, row in CARDS:

@@ -49,7 +49,8 @@ import { CategoryIconSvg } from './category-icons';
 import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/library';
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
-import { VOID_ANCESTRY_ART } from '@/data/void-ancestries';
+import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
+import { hasStrikeLines } from '@/data/ancestry-trait-regions';
 import { embedCardImageForNfc } from '@/lib/image-embed';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
@@ -873,7 +874,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // mixed-ancestry cross-out (v0.10.4): strike the feature the mix crosses out on THIS ancestry card.
       // v0.13.0: features can sit at ANY section index — resolve trait 1|2 through featureSectionIndexes.
       const crossed = lc.contentType === 'ancestry' ? mixedCrossedTrait(file, lc.id) : 0;
-      const struckIndex = crossed ? featureSectionIndexes(lc)[crossed - 1] : undefined;
+      // v0.25.0: an ancestry with a PRINTED FACE has no text blocks to strike; TraitCrossOut draws
+      // measured lines over the bitmap instead. Striking here as well would cross the feature twice.
+      const struckIndex = crossed && !hasStrikeLines(lc.id) ? featureSectionIndexes(lc)[crossed - 1] : undefined;
       // v0.13.0: order-sensitive section signature — re-arranging sections (same lengths) must NOT
       // serve the stale pre-arrange snapshot.
       const secSig = (lc.sections ?? []).reduce((a, s, i) => (a + (i + 1) * ((s.name?.length ?? 0) * 3 + s.body.length + (s.feature ? 5 : 0))) % 99991, 0);
@@ -883,7 +886,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
         // image-bearing card (avoids the async-art flicker, per the forged-card cache rules).
-        raster: !!lc.imageUri || !!VOID_ANCESTRY_ART[lc.id],
+        raster: !!lc.imageUri || !!VOID_ANCESTRY_FACE[lc.id],
       };
     });
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip

@@ -17,6 +17,23 @@ export const FORGED_H = 322;
  *  charge over exactly the art band and nothing else. */
 export const ART_H = Math.round(FORGED_H * 0.4);
 
+/**
+ * A card that IS a printed face (v0.25.0): one bitmap, edge to edge, no plaque and no text.
+ *
+ * The Hope and Fear ancestries use this. There is nothing to lay out because the publisher already
+ * laid it out, so the only thing that matters is that it occupies exactly the same box as every other
+ * forged card. The mixed-ancestry cross-out is drawn OVER it by `TraitCrossOut`, at positions measured
+ * against this exact size, so changing the box without re-measuring would slide every strike off its
+ * line.
+ */
+export function ForgedFaceCard({ face }: { face: number }) {
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
+      <ExpoImage source={face} style={{ width: FORGED_W, height: FORGED_H }} contentFit="cover" cachePolicy="memory-disk" />
+    </View>
+  );
+}
+
 /** Auto-fit plaque text helper: tightly squeezes long labels (like "Experience") so they don't bleed out of the plaque */
 export function PlaqueLabel({ text, textColor }: { text: string; textColor: string }) {
   return (
