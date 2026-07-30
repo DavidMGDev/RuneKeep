@@ -70,3 +70,6 @@ scripts/_features_full.txt
 # build logs (transient)
 apk-build/*.log
 dm210-build.log
+
+# Zipped web export, produced for uploading to Cloudflare Pages (see docs/web-deploy.md).
+RuneKeep-web-*.zip
