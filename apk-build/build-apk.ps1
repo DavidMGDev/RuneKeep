@@ -14,7 +14,11 @@
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
-$ver  = 'v0.24.2'                       # release version: bump here once -> drives tag, APK name, title
+# Release version, READ FROM app.json so it cannot drift from the version the app reports about
+# itself. It used to be a hardcoded string here, and the v0.24.3 build shipped as v0.24.2 because
+# that string was the one thing nobody remembered to change: it names the tag, the asset and the
+# title, and `gh release delete --cleanup-tag` then OVERWRITES the older release with the new build.
+$ver  = 'v' + (Get-Content (Join-Path $repo 'app.json') -Raw | ConvertFrom-Json).expo.version
 $sdk  = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }
 $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
