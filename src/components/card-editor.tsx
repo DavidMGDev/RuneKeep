@@ -1,4 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -264,7 +266,8 @@ export function CardEditor({
   // Adding an image clears the random color; Random Color clears any uploaded image.
   const pickImage = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
-    if (!res.canceled && res.assets[0]) setDraft((d) => ({ ...d, imageUri: res.assets[0].uri, color: null }));
+    // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
+    if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null })); }
   }, []);
   const rollColor = useCallback(() => { playSfx('tokenCopyColor'); setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null })); }, []);
 

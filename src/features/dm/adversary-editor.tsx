@@ -7,6 +7,8 @@
 import { useCallback, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -85,7 +87,8 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
 
   const pickImage = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-    if (!res.canceled && res.assets[0]) set({ portraitUri: res.assets[0].uri });
+    // v0.26.0: own the file, or an update clears the cache it came from (see lib/owned-image).
+    if (!res.canceled && res.assets[0]) set({ portraitUri: (await ownImage(res.assets[0].uri)) ?? undefined });
   }, []);
 
   const features = c.features ?? [];

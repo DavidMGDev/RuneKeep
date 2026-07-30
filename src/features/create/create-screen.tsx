@@ -1,4 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
@@ -613,7 +615,10 @@ export function CreateScreen() {
 
   const pickPortrait = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead
-    if (!res.canceled && res.assets[0]) set({ portraitUri: res.assets[0].uri });
+    // v0.26.0: copy it somewhere the app owns first. The picker returns a path into the CACHE
+    // directory, which an app update is free to clear, and that is exactly why portraits kept
+    // disappearing from the roster after an update while the character file itself was fine.
+    if (!res.canceled && res.assets[0]) set({ portraitUri: await ownImage(res.assets[0].uri) });
   }, [set]);
 
   const locked = (k: DeckKey) =>

@@ -82,6 +82,8 @@ import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { emptyHistory, type CharacterHistory, readHistory, record, recoverableCards, type RecordIntent, restoreCard, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
@@ -1358,7 +1360,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onPortraitReplace = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
     if (res.canceled || !res.assets[0]) return;
-    const portraitUri = res.assets[0].uri;
+    // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
+    const portraitUri = await ownImage(res.assets[0].uri);
     const reset = { scale: 1, x: 0, y: 0 };
     setCharacter((c) => ({ ...c, portraitUri, portraitTransform: reset }));
     mutateFile({ portraitUri, portraitTransform: reset });

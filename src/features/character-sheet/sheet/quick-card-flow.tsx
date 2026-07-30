@@ -1,4 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, type NativeSyntheticEvent, Platform, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -63,7 +65,8 @@ export function QuickCardFlow({
 
   const pickImage = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-    if (!res.canceled && res.assets[0]) setDraft((d) => ({ ...d, imageUri: res.assets[0].uri, color: null }));
+    // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
+    if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null })); }
   }, []);
 
   // Enter on the title goes to the body; Enter on the body goes to the confirmation. `submitBehavior`

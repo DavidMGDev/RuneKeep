@@ -1,4 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { memo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
@@ -78,7 +80,8 @@ export function CompanionFacetCard({ facet, expIndex = 0, companion, onChange }:
 
   const pickImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-    if (!res.canceled && res.assets[0]) set({ imageUri: res.assets[0].uri });
+    // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
+    if (!res.canceled && res.assets[0]) set({ imageUri: await ownImage(res.assets[0].uri) });
   };
 
   return (

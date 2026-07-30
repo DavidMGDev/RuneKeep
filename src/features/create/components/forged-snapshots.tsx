@@ -48,25 +48,51 @@ type FS = typeof import('expo-file-system');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = (): FS => require('expo-file-system') as FS;
 
-let pruned = false;
-
 function forgedDir() {
   const { Directory, Paths } = fs();
   const dir = new Directory(Paths.document, 'forged');
   if (!dir.exists) dir.create({ intermediates: true });
-  // Once per launch, drop bitmaps from an older key. Without this the folder would keep a full set
-  // of PNGs per release forever, and these are 750x1050 each.
-  if (!pruned) {
-    pruned = true;
-    try {
-      for (const entry of dir.list()) {
-        if (!entry.name.includes(`-v${FORGE_RENDER_V}`)) entry.delete();
-      }
-    } catch {
-      // A failed prune only costs disk; never let it stop a card from rendering.
-    }
-  }
   return dir;
+}
+
+/**
+ * v0.26.0: STALE WHILE REVALIDATE.
+ *
+ * This used to sweep the whole folder on first use, deleting every bitmap that did not match the
+ * current render version. Since the version carries the app version, that meant a release deleted
+ * every card's artwork at once and then re-forged them one at a time, so the first minutes after an
+ * update showed a character with no pictures. The cache was doing its job and the player saw a
+ * broken app.
+ *
+ * Now an old bitmap is kept and SERVED until its replacement has actually been written, and only
+ * then deleted. Disk still settles at one set of PNGs, just never at zero.
+ */
+function previousVersion(dir: import('expo-file-system').Directory, key: string): ForgedSource | null {
+  const { File } = fs();
+  try {
+    // Names are `<key>-v<render>.png` and `<key>-v<render>_lod.png`. Find any older pair for this key.
+    const names = dir.list().map((e) => e.name);
+    const fulls = names.filter((n) => n.startsWith(`${key}-v`) && n.endsWith('.png') && !n.endsWith('_lod.png'));
+    for (const full of fulls) {
+      const lod = full.replace(/\.png$/, '_lod.png');
+      if (names.includes(lod)) return { full: { uri: new File(dir, full).uri }, thumb: { uri: new File(dir, lod).uri } };
+    }
+  } catch {
+    // Unreadable directory: no fallback, forge fresh.
+  }
+  return null;
+}
+
+/** Drop every bitmap for this key that is not the current version. Called only once the current one
+ *  is safely on disk, so there is never a moment with nothing to show. */
+function dropOlder(dir: import('expo-file-system').Directory, key: string): void {
+  try {
+    for (const entry of dir.list()) {
+      if (entry.name.startsWith(`${key}-v`) && !entry.name.includes(`-v${FORGE_RENDER_V}`)) entry.delete();
+    }
+  } catch {
+    // A failed prune only costs disk; never let it stop a card from rendering.
+  }
 }
 
 function cachedSource(key: string): ForgedSource | null {
@@ -74,7 +100,8 @@ function cachedSource(key: string): ForgedSource | null {
   const dir = forgedDir();
   const full = new File(dir, `${key}-v${FORGE_RENDER_V}.png`);
   const thumb = new File(dir, `${key}-v${FORGE_RENDER_V}_lod.png`);
-  return full.exists && thumb.exists ? { full: { uri: full.uri }, thumb: { uri: thumb.uri } } : null;
+  if (full.exists && thumb.exists) return { full: { uri: full.uri }, thumb: { uri: thumb.uri } };
+  return null;
 }
 
 /**
@@ -95,8 +122,14 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
     for (const j of jobs) {
       if (sources[j.key]) continue;
       const hit = cachedSource(j.key);
-      if (hit) found[j.key] = hit;
-      else missing.push(j);
+      if (hit) {
+        found[j.key] = hit;
+        continue;
+      }
+      // No current bitmap. Show the previous release's while this one re-forges, rather than nothing.
+      const stale = previousVersion(forgedDir(), j.key);
+      if (stale) found[j.key] = stale;
+      missing.push(j);
     }
     if (Object.keys(found).length) setSources((s) => ({ ...s, ...found }));
     if (!busy.current && missing.length) {
@@ -128,6 +161,7 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
           if (thumb.exists) thumb.delete();
           new File(fullTmp).move(full);
           new File(thumbTmp).move(thumb);
+          dropOlder(dir, job.key); // safe now: the replacement is on disk
           setSources((s) => ({ ...s, [job.key]: { full: { uri: full.uri }, thumb: { uri: thumb.uri } } }));
         } catch {
           // capture failed (low memory etc.) — live component stays in place; retries next mount
