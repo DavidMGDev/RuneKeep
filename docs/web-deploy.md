@@ -112,15 +112,48 @@ any redirect rules. Nothing extra to configure.
 
 ---
 
-## 3. Make it an app on the desktop
+## 2b. Cache headers, and the stale-build trap
 
-Already done, as of v0.24.3: `public/manifest.json` ships the PWA manifest and `src/app/+html.tsx`
-links it from the page head. Anything in `public/` is copied into `dist/` untouched.
+`public/_headers` ships with the build and both Cloudflare Pages and Netlify read it. Do not remove
+it. It says: never cache HTML, cache the content-hashed assets forever.
 
-Chrome and Edge therefore offer **Install app** in the address bar. It gets its own window, its own icon
-and no browser chrome, which is as close to a desktop app as this needs to be. Add a service worker
-later if you want it to work with the wifi off; without one it needs a connection to start, though
-the browser cache will make it fast.
+This matters more than it sounds. `index.html` names the JS bundle, and that name changes on every
+export. A browser holding an old `index.html` therefore runs an old build, forever, with nothing on
+screen to say so. That is exactly what happened right after v0.24.3 shipped: Chrome fetched the new
+page and showed the fixed card banners, Firefox served its cached copy and showed the broken ones,
+from the same URL at the same moment. It looked like a Firefox rendering bug and it was not.
+
+If you ever suspect it: hard reload (Ctrl+Shift+R), or compare the bundle filename in the network
+tab against the one in your `dist/index.html`.
+
+---
+
+## 3. Installing it as an app
+
+The site installs on Android, iPhone and desktop, and this is wired up as of v0.24.4:
+
+- `public/manifest.json` names it, points at `icon-192.png` and `icon-512.png`, and asks for
+  `display: standalone`.
+- `public/sw.js` is a service worker. **Android will not install a real app without one.** Chrome
+  only builds a WebAPK (its own icon, its own window, no address bar) for a site that registers a
+  service worker with a `fetch` handler. With a manifest alone, "Add to Home screen" makes a plain
+  bookmark that still opens in a browser tab, which is what it did before.
+- `src/app/+html.tsx` registers the worker, adds the `apple-mobile-web-app-*` tags iOS needs (it
+  ignores the manifest's display mode), and catches `beforeinstallprompt` before React mounts, since
+  the event is only usable if it was captured when it fired.
+- The welcome tour's FIRST page offers the install, on mobile web only: the real dialog on Android,
+  Share then Add to Home Screen on iOS, and the browser menu anywhere else. It never blocks; the
+  button reads "Not now". See `src/lib/pwa-install.ts`.
+
+The worker also makes the app work offline once it has been opened, which is the point at a table
+with bad wifi. Its rule: navigations and code are **network first** (so a deploy is picked up the
+moment it is reachable), art and fonts are **cache first** (they are content-hashed). `CACHE` carries
+the app version, so a release drops every old cache.
+
+Anything in `public/` is copied into `dist/` untouched.
+
+On a desktop, Chrome and Edge offer **Install app** in the address bar. It gets its own window, its
+own icon and no browser chrome.
 
 The tablet frame does the rest. A desktop reports well over 600dp, so the app draws itself as a
 phone-shaped column in the middle of the window with the margins filled, exactly as it does on a
