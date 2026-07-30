@@ -127,6 +127,46 @@ to clear the finial) < fullscreen overlay `5000`.
 - Per-frame math = module-scope worklets reading shared values. Finalize any decay with a `withSpring` snap.
 - Install Expo-tracked libs with `npx expo install …`, never plain `npm install`.
 
+## The web target: what a browser does differently (v0.26.0)
+Every fault below was reported as its own bug and several turned out to be one cause. The check that
+finds them is `scripts/web-probe.mjs`, and it must be run in **both** engines: `RK_FIREFOX=1` drives
+Firefox. Three of these never happened in Chrome, so a Chrome-only check could not see them.
+
+**Painting order is the big one.** CSS paints positioned elements above in-flow ones regardless of
+source order. `ChamferBox` draws its panel as an absolutely positioned overlay, and React Native views
+are `position: relative` so they sat above it safely, but a plain `<input>` and a `react-native-svg`
+element are NOT positioned. The panel fill painted over them. That single cause produced three
+separate reports: text fields that looked greyed out and looked like they refused input (the value was
+there, painted the same colour as its own background), washed-out icons, and pop-up fills that looked
+offset from their borders. The overlay carries `zIndex: -1`; zero is not enough, because only a
+negative index drops below in-flow content.
+
+Diagnose this class of bug with PIXELS, not `getComputedStyle`. It reported `rgb(250,248,242)` while
+the painted pixels were `(38,40,44)`.
+
+**Firefox collapses two history entries created in the same tick.** Tours are pushed from a mount
+effect on the screen they explain, so `router.back()` went back past that screen: opening the creator
+and dismissing its tour dropped the player on the empty character list, and creating a character
+looked like it had failed. The push is deferred a frame. Do not "fix" this with `router.replace` — that
+remounts the screen and loses everything the player had chosen.
+
+**Things react-native-web silently does not implement.** `adjustsFontSizeToFit` is a no-op, so it
+degrades to truncation (`RuneButton` shrinks by label length on web instead). `submitBehavior` is
+ignored and `onSubmitEditing` is unreliable, so Enter is caught by key.
+
+**The keyboard is the browser's job, half of it.** A phone browser shrinks the page itself when the
+keyboard opens; reserving space as well double-counts and pushes the content off the top. `src/lib/
+web-keyboard.ts` holds the rule: reserve nothing, scroll the field into view.
+
+**An SVG sized by width/height attributes needs an explicit `viewBox`** once it sits inside the phone
+frame's scale transform, or engines disagree about when it rasterises.
+
+**Picked images point into a cache the OS may clear** (`src/lib/owned-image.ts` copies them somewhere
+owned). This is why portraits vanished after an update while the character file was perfectly intact.
+
+**The boot screen lives in the HTML shell**, not the app: the gap it covers is the wait for the bundle,
+so anything inside the bundle is by definition too late.
+
 ## The web target (v0.24.3)
 The browser is not a small phone; it brings its own defaults, and four of them made the app look
 broken rather than merely different. All four fixes live outside the screens, so nothing has to
