@@ -1,11 +1,12 @@
 import { type ImageContentFit } from 'expo-image';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { type NativeSyntheticEvent, Text, type TextLayoutEventData, View } from 'react-native';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type NativeSyntheticEvent, Platform, Text, type TextLayoutEventData, View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
 import { PressableArt } from '@/components/pressable-art';
 import { Display } from '@/constants/theme';
 import { box } from '@/lib/design';
+import { fitFontSize, measureWeb } from './fit-text';
 import type { PipState } from '@/lib/pips';
 
 interface ArtBoxProps {
@@ -179,17 +180,39 @@ interface FillTextProps {
  * the glyphs — only sizes them. Used for the sheet's character name.
  */
 export function FillText({ left, top, width, height, color, family = Display.black, align = 'left', vAlign = 'center', uppercase, letterSpacing = 0, maxLines = 2, minSize = 13, maxSize = 56, children }: FillTextProps) {
-  const [size, setSize] = useState(maxSize);
-  const [ready, setReady] = useState(false);
+  /**
+   * v0.27.0: in a BROWSER the size is worked out before rendering, not after.
+   *
+   * The search below is driven by `onTextLayout`, which react-native-web does not implement, so it
+   * never took a step: the name stayed at `maxSize`, overflowed a box with `overflow: hidden`, and
+   * the sheet appeared to have no name on it at all. A canvas can measure text without rendering it,
+   * so on the web the answer is known up front. Null means no canvas was available (an old engine,
+   * a blocked context); the layout-driven path stays in place underneath for exactly that case.
+   */
+  const webSize = useMemo(() => {
+    if (Platform.OS !== 'web') return null;
+    const text = uppercase ? children.toUpperCase() : children;
+    const spec = { text, family, letterSpacing, lineHeightRatio: 1.04, width };
+    if (!measureWeb(spec, minSize)) return null;
+    return fitFontSize({ width, height, maxLines, minSize, maxSize, measure: (s) => measureWeb(spec, s) ?? { lines: 99, widest: 1e6, height: 1e6 } });
+  }, [children, family, letterSpacing, uppercase, width, height, maxLines, minSize, maxSize]);
+
+  const [size, setSize] = useState(webSize ?? maxSize);
+  const [ready, setReady] = useState(webSize !== null);
   const lo = useRef(minSize);
   const hi = useRef(maxSize);
   // Re-search whenever the text or box changes.
   useEffect(() => {
+    if (webSize !== null) {
+      setSize(webSize);
+      setReady(true);
+      return;
+    }
     lo.current = minSize;
     hi.current = maxSize;
     setReady(false);
     setSize(maxSize);
-  }, [children, width, height, minSize, maxSize, maxLines]);
+  }, [children, width, height, minSize, maxSize, maxLines, webSize]);
 
   const onTextLayout = useCallback(
     (e: NativeSyntheticEvent<TextLayoutEventData>) => {

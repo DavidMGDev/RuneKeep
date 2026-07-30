@@ -10,6 +10,7 @@
  */
 
 import { type ClassName } from '@/constants/identity';
+import { startingItemCardId } from './starting-items';
 
 export interface ClassInventory {
   take: string[];
@@ -53,7 +54,22 @@ export function itemTitle(name: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-/** Stable id for a suggested item option. */
-export function itemOptionId(name: string): string {
+/** The id a starting item has always had, when it is not an archive card. */
+export function authoredItemOptionId(name: string): string {
   return `inv-opt-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+}
+
+/**
+ * Stable id for a suggested item option.
+ *
+ * v0.27.0: an item that EXISTS in the archive is stored under the archive's id, so the potion every
+ * class guide offers is the printed consumable card ("Clear 1d4 HP") rather than a plain item that
+ * only repeats its own name. Anything with no printed card keeps the authored id it always had.
+ *
+ * Heroes made before this hold the authored id for their potion. Nothing rewrites them; the sheet
+ * accepts either id for the same item, so an existing character keeps the card it has and a new one
+ * gets the better card.
+ */
+export function itemOptionId(name: string): string {
+  return startingItemCardId(name) ?? authoredItemOptionId(name);
 }

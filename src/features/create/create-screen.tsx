@@ -29,7 +29,8 @@ import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
 import { featurePages, spellcastTraitForSubclass } from '@/data/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
+import { lootById } from '@/data/loot-data';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
 import { CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
@@ -312,11 +313,43 @@ export function CreateScreen() {
     }, [editingExperience]),
   );
 
-  // A forged equipment card item: the bitmap pair once captured, the live card meanwhile (#121).
+  /**
+   * A forged equipment card item: the bitmap pair once captured, the live card meanwhile (#121).
+   *
+   * v0.27.0: the returned object is CACHED, so a card that has not changed keeps the same identity.
+   *
+   * Cards forge one at a time, and each one finishing changes `sources`, which rebuilt the whole
+   * deck's item list. Every item was a brand new object, so every memoized carousel slot saw new
+   * props and re-rendered, and a deck of a hundred domain cards re-rendered a hundred times over the
+   * course of the forge. That is the stutter: it is at its worst on a fresh install, which is the
+   * first time anyone makes a character. Now only the card that actually gained a bitmap changes.
+   */
+  const itemCache = useRef(new Map<string, StraightItem>());
+  /**
+   * Keep one object per card, so a card that has not changed keeps its identity across rebuilds.
+   *
+   * The carousel's slots are memoized, which does nothing when every rebuild hands them a freshly
+   * built object. The cache key has to name everything the card's appearance depends on, so a card
+   * that DID change still gets a new object.
+   */
+  const keep = useCallback((cacheKey: string, make: () => StraightItem): StraightItem => {
+    const hit = itemCache.current.get(cacheKey);
+    if (hit) return hit;
+    const made = make();
+    itemCache.current.set(cacheKey, made);
+    return made;
+  }, []);
   const forgedItem = useCallback(
     (key: string, label: string, live: ReactNode): StraightItem => {
       const pre = sources[key];
-      return pre ? { id: key, label, thumb: pre.thumb, source: pre.full } : { id: key, label, custom: live };
+      const cacheKey = `${key}|${pre?.full.uri ?? ''}`;
+      const hit = itemCache.current.get(cacheKey);
+      if (hit) return hit;
+      const made: StraightItem = pre ? { id: key, label, thumb: pre.thumb, source: pre.full } : { id: key, label, custom: live };
+      // A card only ever moves from live to forged, so an entry is superseded rather than stale; the
+      // map is bounded by the number of cards on offer either way.
+      itemCache.current.set(cacheKey, made);
+      return made;
     },
     [sources],
   );
@@ -343,11 +376,17 @@ export function CreateScreen() {
       const cinv = draft.className ? CLASS_INVENTORY[draft.className] : null;
       const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
       const group = cinv?.choices[invChoice] ?? [];
-      const optionCards: StraightItem[] = group.map((name) => ({
-        id: itemOptionId(name),
-        label: name,
-        custom: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
-      }));
+      // v0.27.0: an option that exists in the ARCHIVE is offered as its archive card, so the player
+      // is choosing the printed potion ("Clear 1d4 HP") rather than a card that only names itself.
+      const optionCards: StraightItem[] = group.map((name) => {
+        const id = itemOptionId(name);
+        const archive = lootById(id);
+        return {
+          id,
+          label: name,
+          custom: archive ? <ForgedLootCard loot={archive} /> : <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
+        };
+      });
       // Homebrew inventory rides the first choice, so it is offered once rather than twice.
       const lib = invChoice === 0 ? (libContent?.inventory ?? []).map(libCardItem) : [];
       return [...optionCards, ...lib, skipInventoryCard(invChoice)];
@@ -360,37 +399,42 @@ export function CreateScreen() {
         return creationClassCards.map((c) => {
           const total = 1 + featurePages(c.key).length;
           const classPre = sources[`class-${c.key}`];
-          const classFace: StraightFace = classPre
-            ? { thumb: classPre.thumb, source: classPre.full }
-            : { custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${total}`} classKey={c.key} /> };
-          const featureFaces: StraightFace[] = featurePages(c.key).map((p) => {
-            const fpre = sources[`feat-${c.key}-${p.pageIndex}`];
-            return fpre
-              ? { thumb: fpre.thumb, source: fpre.full }
-              : {
-                  custom: (
-                    <ForgedTextCard
-                      title={c.title}
-                      kindLabel="Features"
-                      pageMark={`${p.pageIndex + 2}/${total}`}
-                      sections={p.sections}
-                      accentDeep={classColor(c.key).deep}
-                      Banner={c.Banner}
-                      classKey={c.key}
-                    />
-                  ),
-                };
+          // Every face this card would show, named by whether it has forged yet. Fifteen classes with
+          // several feature pages each rebuilt on every single forge before this.
+          const forgeKey = [classPre?.full.uri ?? '', ...featurePages(c.key).map((p) => sources[`feat-${c.key}-${p.pageIndex}`]?.full.uri ?? '')].join(',');
+          return keep(`class|${c.key}|${forgeKey}`, () => {
+            const classFace: StraightFace = classPre
+              ? { thumb: classPre.thumb, source: classPre.full }
+              : { custom: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${total}`} classKey={c.key} /> };
+            const featureFaces: StraightFace[] = featurePages(c.key).map((p) => {
+              const fpre = sources[`feat-${c.key}-${p.pageIndex}`];
+              return fpre
+                ? { thumb: fpre.thumb, source: fpre.full }
+                : {
+                    custom: (
+                      <ForgedTextCard
+                        title={c.title}
+                        kindLabel="Features"
+                        pageMark={`${p.pageIndex + 2}/${total}`}
+                        sections={p.sections}
+                        accentDeep={classColor(c.key).deep}
+                        Banner={c.Banner}
+                        classKey={c.key}
+                      />
+                    ),
+                  };
+            });
+            const faces = [classFace, ...featureFaces];
+            return { id: `class-${c.key}`, label: c.title, thumb: classFace.thumb, source: classFace.source, custom: classFace.custom, faces };
           });
-          const faces = [classFace, ...featureFaces];
-          return { id: `class-${c.key}`, label: c.title, thumb: classFace.thumb, source: classFace.source, custom: classFace.custom, faces };
         });
       case 'subclass':
         return [
-          ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
+          ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
           ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (!c.className || c.className === draft.className)).map(libCardItem),
         ];
       case 'ancestry': {
-        const base = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }));
+        const base = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })));
         // #265: the last card flips the mode — "Mixed Ancestry" enters mixed mode, "Single Ancestry" leaves it.
         const toggle: StraightItem = draft.mixedAncestry
           ? { id: SINGLE_ANCESTRY_ID, label: 'Single Ancestry', custom: <ForgedCard title="Single Ancestry" kindLabel="Ancestry" body="Go back to choosing a single ancestry." accentDeep={Rune.panel} colorArt="#2A3340" multilineTitle /> }
@@ -407,17 +451,17 @@ export function CreateScreen() {
         return [...base, ...(libContent?.ancestries ?? []).map((lc) => libCardItem(lc, struckIdx(lc))), toggle];
       }
       case 'community':
-        return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })), ...(libContent?.communities ?? []).map(libCardItem)];
+        return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))), ...(libContent?.communities ?? []).map(libCardItem)];
       case 'domains': {
         if (!draft.className) return [];
         const pair = classInfo(draft.className).domains;
         return [
-          ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })),
+          ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
           ...(libContent?.domains ?? []).map(libCardItem),
         ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, libContent, picked, creationClassCards]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, libContent, picked, creationClassCards]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {

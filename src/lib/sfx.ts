@@ -186,6 +186,32 @@ function armFirstGesture(): void {
 const buffers = new Map<number, AudioBuffer>();
 const decoding = new Map<number, Promise<AudioBuffer | null>>();
 
+/**
+ * v0.27.0: on ANDROID a sound is resolved to a real file before it is decoded.
+ *
+ * Handing the audio library a `require()` module id looks like the tidy option, and in development it
+ * is: the id resolves to a Metro URL and the library fetches it. In a RELEASE build the same call
+ * takes a different branch, the one for bundled Android assets, and that branch does not survive the
+ * release packaging here. It throws, the throw is swallowed by the catch below because a missing
+ * sound must never break a tap, and the app is silent with nothing said about it.
+ *
+ * The whole failure lives in a code path that only exists in a release APK, which is why it never
+ * showed up in Expo Go and why the app made noise everywhere except on the device people play on.
+ *
+ * `expo-asset` knows how to turn a module id into a real file on disk, on every platform and in both
+ * build types. One extra await the first time a sound is heard, and then it is cached like everything
+ * else. Web keeps passing the id straight through: there is no bundled-asset branch in a browser, the
+ * id resolves to a URL, and the round trip would only add a request.
+ */
+async function sourceFor(src: number): Promise<number | string> {
+  if (Platform.OS === 'web') return src;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Asset } = require('expo-asset') as typeof import('expo-asset');
+  const asset = Asset.fromModule(src);
+  if (!asset.localUri) await asset.downloadAsync();
+  return asset.localUri ?? asset.uri ?? src;
+}
+
 function decode(src: number): Promise<AudioBuffer | null> {
   const c = getCtx();
   if (!c) return Promise.resolve(null);
@@ -193,15 +219,18 @@ function decode(src: number): Promise<AudioBuffer | null> {
   if (cached) return Promise.resolve(cached);
   const inflight = decoding.get(src);
   if (inflight) return inflight;
-  const p = Promise.resolve()
-    .then(() => c.decodeAudioData(src))
+  const p = sourceFor(src)
+    .then((from) => c.decodeAudioData(from as never))
     .then((buf) => {
       buffers.set(src, buf);
       decoding.delete(src);
       return buf;
     })
-    .catch(() => {
+    .catch((e: unknown) => {
       decoding.delete(src);
+      // A sound that cannot be decoded is not worth a crash, but it IS worth knowing about: silence
+      // with nothing in the log is what let the release build ship without any sound at all.
+      if (__DEV__) console.warn('[sfx] could not decode a sound', src, e);
       return null;
     });
   decoding.set(src, p);
