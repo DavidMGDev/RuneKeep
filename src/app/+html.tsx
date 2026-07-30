@@ -38,12 +38,25 @@ export default function Root({ children }: { children: ReactNode }) {
         <meta name="description" content="A Daggerheart companion app. Your character, as cards." />
         <title>RuneKeep</title>
         <ScrollViewStyleReset />
-        <style dangerouslySetInnerHTML={{ __html: WEB_RESET }} />
+        <style dangerouslySetInnerHTML={{ __html: WEB_RESET + BOOT_STYLE }} />
         <script dangerouslySetInnerHTML={{ __html: NO_NATIVE_DRAG }} />
         <script dangerouslySetInnerHTML={{ __html: MOUSE_SCROLL }} />
         <script dangerouslySetInnerHTML={{ __html: SERVICE_WORKER }} />
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCREEN }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {/* v0.26.0: the boot screen, in the HTML itself.
+            The app's own LoadingScreen cannot cover this: it lives inside the bundle, and the gap
+            being covered is the wait for that bundle. So a browser opening RuneKeep sat on a blank
+            page and then had the whole interface appear at once, which is what "assets load in your
+            face" describes. This is plain markup, so it is on screen with the first byte, and the
+            app removes it once it has painted. */}
+        <div id="rk-boot" aria-hidden="true">
+          <div id="rk-boot-mark" />
+          <div id="rk-boot-label">Opening the keep</div>
+        </div>
+        {children}
+      </body>
     </html>
   );
 }
@@ -86,6 +99,65 @@ input, textarea, [contenteditable="true"] {
 :focus, :focus-visible {
   outline: none;
 }
+`;
+
+const BOOT_STYLE = `
+#rk-boot {
+  position: fixed; inset: 0; z-index: 99999;
+  background: #0B0E13;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  transition: opacity .28s ease;
+  font-family: system-ui, "Segoe UI", sans-serif;
+}
+#rk-boot.gone { opacity: 0; pointer-events: none; }
+/* The app's own loader is a breathing chamfered diamond; this is the same idea in plain CSS, so the
+   handover from the boot screen to the app is not a change of visual language. */
+#rk-boot-mark {
+  width: 46px; height: 46px; background: #DAA249;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  animation: rk-breathe 1.5s ease-in-out infinite;
+}
+#rk-boot-label {
+  color: #8C7A55; font-size: 11px; letter-spacing: 2.4px; text-transform: uppercase;
+}
+@keyframes rk-breathe { 0%,100% { opacity:.35; transform: scale(.86); } 50% { opacity:1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { #rk-boot-mark { animation: none; opacity: .85; } }
+`;
+
+/**
+ * Take the boot screen away once the app has actually painted something (v0.26.0).
+ *
+ * Watching for the root to gain children is the honest signal: a timer would either uncover a blank
+ * page on a slow phone or linger on a fast one. The timeout is a backstop, because a boot screen that
+ * never lifts is far worse than one that lifts early.
+ */
+const BOOT_SCREEN = `
+(function () {
+  // This script sits in <head>, so the boot markup in <body> does not exist yet. Wait for the
+  // document before looking for it, or the lift never arms and the splash stays up forever.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', arm);
+  } else {
+    arm();
+  }
+  function arm() {
+  var boot = document.getElementById('rk-boot');
+  if (!boot) return;
+  var done = false;
+  function lift() {
+    if (done) return;
+    done = true;
+    boot.className = 'gone';
+    setTimeout(function () { boot.parentNode && boot.parentNode.removeChild(boot); }, 320);
+  }
+  function ready() {
+    var root = document.getElementById('root');
+    return root && root.firstElementChild;
+  }
+  var poll = setInterval(function () { if (ready()) { clearInterval(poll); lift(); } }, 60);
+  setTimeout(function () { clearInterval(poll); lift(); }, 12000);
+  }
+})();
 `;
 
 /**
