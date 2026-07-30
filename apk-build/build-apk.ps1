@@ -148,7 +148,11 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
-$notes = "RuneKeep v0.24.3 - quick card creation, a prompt for where each card goes, and a web version that actually works. Offline Android APK (arm64-v8a, $mb MB), all data bundled, no download needed.`n`n- QUICK CARD: the Add Card button on your sheet now opens a faster editor. A name, what it does, and Enter moves you along: name, then description, then the finished card to accept. Tap the card art for a new colour, hold it to pick a picture. Everything else (effects, card type, the catalog) is still there under Advanced options, and your draft comes with you. New Card in the circle controls opens the full editor as before.`n- WHERE DOES IT GO: creating a card, or receiving one over NFC, now asks which deck it should join instead of dropping it into whichever deck you happened to be looking at.`n- SHEET EDGES: on tablets the strips either side of the character sheet were white. They match the screen edge now, like every other screen.`n- THE WEB VERSION: it was broken four different ways. Sounds threw errors constantly, lists would not scroll with a mouse (dragging a card gave you a ghost of the image instead), every class banner painted itself in the wrong colours, and opening a sheet left an invisible layer over the screen that ate your taps for several seconds. All four are fixed, and the site can now be installed as a desktop app.`n`nSideload: enable Install unknown apps, then open the APK."
+# Release notes live in apk-build/release-notes.md, NOT in this script. They were a literal here
+# once, and the v0.24.3 build shipped v0.24.2's notes because a string buried in a build script
+# is the thing nobody remembers to edit. `$mb` is substituted so the size stays accurate.
+$notesPath = Join-Path $PSScriptRoot 'release-notes.md'
+$notes = if (Test-Path $notesPath) { (Get-Content $notesPath -Raw).Replace('$mb', $mb) } else { "RuneKeep $ver (Android). Offline APK, arm64-v8a, $mb MB." }
 gh release delete $tag --yes --cleanup-tag 2>$null
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes $notes
 if ($LASTEXITCODE -ne 0) {
