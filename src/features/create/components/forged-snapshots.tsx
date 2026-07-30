@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { Platform, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
+import { bestName, groupNames, type NameIndex } from './forged-cache';
 import { FORGED_H, FORGED_W } from './forged-card';
 
 /**
@@ -66,21 +67,27 @@ function forgedDir() {
  *
  * Now an old bitmap is kept and SERVED until its replacement has actually been written, and only
  * then deleted. Disk still settles at one set of PNGs, just never at zero.
+ *
+ * v0.26.1: the whole folder is read ONCE per pass and every card answered from that listing.
+ *
+ * The first version asked the filesystem per card: two `exists` probes for the current bitmap, then a
+ * full directory listing to look for an older one. Since the pass re-runs each time a card finishes
+ * forging, and a release invalidates every card at once, that came to a directory listing per card
+ * per card, all of it synchronous and all of it on the JS thread. The app was at its slowest exactly
+ * when a player was most likely to be looking at it: the first minutes after an update. One read
+ * answers every question the pass has.
  */
-function previousVersion(dir: import('expo-file-system').Directory, key: string): ForgedSource | null {
-  const { File } = fs();
+function indexNames(dir: import('expo-file-system').Directory): NameIndex {
   try {
-    // Names are `<key>-v<render>.png` and `<key>-v<render>_lod.png`. Find any older pair for this key.
-    const names = dir.list().map((e) => e.name);
-    const fulls = names.filter((n) => n.startsWith(`${key}-v`) && n.endsWith('.png') && !n.endsWith('_lod.png'));
-    for (const full of fulls) {
-      const lod = full.replace(/\.png$/, '_lod.png');
-      if (names.includes(lod)) return { full: { uri: new File(dir, full).uri }, thumb: { uri: new File(dir, lod).uri } };
-    }
+    return groupNames(dir.list().map((e) => e.name));
   } catch {
-    // Unreadable directory: no fallback, forge fresh.
+    return new Map(); // unreadable folder: everything forges fresh
   }
-  return null;
+}
+
+function sourceFor(dir: import('expo-file-system').Directory, full: string): ForgedSource {
+  const { File } = fs();
+  return { full: { uri: new File(dir, full).uri }, thumb: { uri: new File(dir, full.replace(/\.png$/, '_lod.png')).uri } };
 }
 
 /** Drop every bitmap for this key that is not the current version. Called only once the current one
@@ -95,15 +102,6 @@ function dropOlder(dir: import('expo-file-system').Directory, key: string): void
   }
 }
 
-function cachedSource(key: string): ForgedSource | null {
-  const { File } = fs();
-  const dir = forgedDir();
-  const full = new File(dir, `${key}-v${FORGE_RENDER_V}.png`);
-  const thumb = new File(dir, `${key}-v${FORGE_RENDER_V}_lod.png`);
-  if (full.exists && thumb.exists) return { full: { uri: full.uri }, thumb: { uri: thumb.uri } };
-  return null;
-}
-
 /**
  * Renders each requested card offscreen, captures full + LOD bitmaps, persists, and returns the
  * uri pair per key. `sources[key]` stays undefined until that card is forged — callers render
@@ -114,27 +112,37 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
   const [active, setActive] = useState<PendingJob | null>(null);
   const shotRef = useRef<View>(null);
   const busy = useRef(false);
+  /**
+   * Keys whose CURRENT bitmap is on disk, so there is nothing left to do for them.
+   *
+   * This has to be its own set rather than "is it in `sources`", because a card being SERVED a stale
+   * bitmap is in `sources` and still needs forging. Reading the answer off `sources` meant that after
+   * an update exactly one card re-forged per launch and the rest kept their old artwork forever.
+   */
+  const settled = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const missing: PendingJob[] = [];
+    // One capture at a time. The finished capture updates `sources`, which runs this again.
+    if (busy.current) return;
+    if (jobs.every((j) => settled.current.has(j.key))) return; // nothing to read the folder for
+
+    const dir = forgedDir();
+    const index = indexNames(dir);
     const found: Record<string, ForgedSource> = {};
+    let next: PendingJob | null = null;
     for (const j of jobs) {
-      if (sources[j.key]) continue;
-      const hit = cachedSource(j.key);
-      if (hit) {
-        found[j.key] = hit;
-        continue;
-      }
-      // No current bitmap. Show the previous release's while this one re-forges, rather than nothing.
-      const stale = previousVersion(forgedDir(), j.key);
-      if (stale) found[j.key] = stale;
-      missing.push(j);
+      if (settled.current.has(j.key)) continue;
+      const { name, current } = bestName(index, j.key, FORGE_RENDER_V);
+      // A stale bitmap still goes on screen: the previous release's artwork beats an empty card.
+      if (name && !sources[j.key]) found[j.key] = sourceFor(dir, name);
+      if (current) settled.current.add(j.key);
+      else if (!next) next = j;
     }
     if (Object.keys(found).length) setSources((s) => ({ ...s, ...found }));
-    if (!busy.current && missing.length) {
+    if (next) {
       busy.current = true;
-      setActive(missing[0]);
+      setActive(next);
     }
   }, [jobs, sources]);
 
@@ -164,8 +172,12 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
           dropOlder(dir, job.key); // safe now: the replacement is on disk
           setSources((s) => ({ ...s, [job.key]: { full: { uri: full.uri }, thumb: { uri: thumb.uri } } }));
         } catch {
-          // capture failed (low memory etc.) — live component stays in place; retries next mount
+          // Capture failed (low memory etc.): the live component stays in place and this card is left
+          // alone until the next mount. Retrying here would pick the same card again the instant the
+          // pass re-ran, and a card that cannot be captured would forge in a loop for as long as the
+          // sheet stayed open.
         } finally {
+          settled.current.add(job.key);
           busy.current = false;
           setActive(null);
         }
