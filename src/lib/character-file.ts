@@ -7,6 +7,7 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { CATALOG, cardById } from '@/data/catalog';
+import { withRequiredExpansions } from '@/lib/expansion-membership';
 import type { CharacterHistory } from '@/lib/character-history';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
@@ -286,6 +287,10 @@ export function parseCharacterFile(raw: string): CharacterFile {
   }
   if (!Array.isArray(f.domainCardIds) || f.domainCardIds.some((id) => !known(id))) throw new Error('Unknown domain card');
   if (typeof f.className !== 'string' || !classInfo(f.className as ClassName)) throw new Error('Unknown class');
+  // v0.25.0: the official pack split in two, so a character saved before the split lists only 'void'
+  // while half its content is now tagged 'thevoid'. Derive what it actually needs and top the list up,
+  // or a Blood Hunter opens with no class. Additive and idempotent.
+  f.enabledExpansionIds = withRequiredExpansions(f);
   // v0.10.2 (Bug 3 backfill): older saves advanced `subclassTier` without ever gaining the matching
   // specialization/mastery card. Ensure every sibling up to the current tier is present so the deck shows
   // it. Idempotent (guarded by includes) and only touches non-multiclassed subclass upgraders.

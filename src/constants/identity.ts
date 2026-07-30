@@ -38,11 +38,39 @@ export type ClassName =
   | 'summoner'
   | 'brawler';
 
-/** The Void-expansion classes/domains, kept SEPARATE from the base set so callers can gate them
- *  (off by default globally; enabled per-character at creation). See [[runekeep_void_expansion]]. */
-export const VOID_EXPANSION_ID = 'void';
-export const VOID_CLASSES: ClassName[] = ['assassin', 'witch', 'warlock', 'bloodhunter', 'summoner', 'brawler'];
-export const VOID_DOMAINS: DomainName[] = ['blood', 'dread'];
+/**
+ * The two official expansions, kept SEPARATE from the base set so callers can gate them (off by
+ * default globally; enabled per-character at creation). See [[runekeep_void_expansion]].
+ *
+ * v0.25.0 splits what used to be one pack in two, because the printed release turned out to be a
+ * SUBSET of the pre-release sheet the app was built from:
+ *
+ * - **Hope and Fear** is what Darrington Press actually published. Its id stays `'void'`, which is
+ *   the pack's original internal name, because characters already store that id and renaming it
+ *   would strip their content. Only the display name ever changed.
+ * - **The Void** is the beta that tested most of Hope and Fear's content but not all of it. It holds
+ *   what no Hope and Fear book contains: the Blood Hunter and Summoner classes, their five
+ *   subclasses, and the 21 Blood domain cards, whose art is still watermarked "work in progress"
+ *   with the artists uncredited.
+ *
+ * The split is not a judgement call: `scripts/audit_expansion_vs_pdf.py` decides it by searching the
+ * four Hope and Fear PDFs, and can be re-run.
+ */
+export const VOID_EXPANSION_ID = 'void'; // display name: "Hope and Fear"
+export const THE_VOID_EXPANSION_ID = 'thevoid'; // display name: "The Void"
+
+/** Classes the published Hope and Fear book contains. */
+export const HOPE_AND_FEAR_CLASSES: ClassName[] = ['assassin', 'witch', 'warlock', 'brawler'];
+/** Classes only the beta ever had. */
+export const THE_VOID_CLASSES: ClassName[] = ['bloodhunter', 'summoner'];
+/** Every non-base class, whichever pack it now belongs to. */
+export const VOID_CLASSES: ClassName[] = [...HOPE_AND_FEAR_CLASSES, ...THE_VOID_CLASSES];
+
+/** Dread is printed in Hope and Fear; Blood exists only in the beta. */
+export const HOPE_AND_FEAR_DOMAINS: DomainName[] = ['dread'];
+export const THE_VOID_DOMAINS: DomainName[] = ['blood'];
+export const VOID_DOMAINS: DomainName[] = [...THE_VOID_DOMAINS, ...HOPE_AND_FEAR_DOMAINS];
+
 export const isVoidClass = (k: ClassName): boolean => VOID_CLASSES.includes(k);
 export const isVoidDomain = (d: DomainName): boolean => VOID_DOMAINS.includes(d);
 
