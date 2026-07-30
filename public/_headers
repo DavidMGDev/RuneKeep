@@ -1,0 +1,33 @@
+# Cache rules for Cloudflare Pages and Netlify, which both read this file verbatim out of the
+# deployed root. Other hosts ignore it, and the service worker's network-first rule still covers them.
+#
+# WHY: a browser that keeps index.html keeps pointing at the JS bundle named inside it, and that
+# bundle's name changes on every export. So a stale index.html means a player runs an old build with
+# no way to tell, and a hard reload is the only cure. That is exactly what happened after v0.24.3:
+# Chrome fetched the new page and showed the fixed card banners, Firefox served its cached copy and
+# showed the broken ones, from the same URL at the same moment.
+#
+# So: HTML and the service worker are never cached, everything content-hashed is cached forever.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Always revalidate: these name everything else.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+/manifest.json
+  Cache-Control: public, max-age=0, must-revalidate
+
+# The worker decides when to update the app; it must never be the stale thing itself.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+  Service-Worker-Allowed: /
+
+# Content-hashed by the export: the name changes when the bytes do, so this is safe forever.
+/_expo/static/*
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

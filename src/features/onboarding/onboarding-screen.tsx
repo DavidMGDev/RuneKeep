@@ -1,13 +1,15 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { finishTour, saveTourStep, type TourId, tourStep } from '@/lib/onboarding-store';
+import { useInstallMode } from '@/lib/pwa-install';
 import { playSfx } from '@/lib/sfx';
 
 import { CircleDemo, EquipDemo, HandDemo, HeartsDemo, WelcomeDemo, WheelDemo } from './demos';
+import { InstallDemo } from './install-demo';
 
 /**
  * The guided tours (v0.23.0).
@@ -29,6 +31,24 @@ interface Page {
   render: (ctx: { did: boolean; markDid: () => void }) => React.ReactElement;
   /** Next stays disabled until the page's gesture has been performed. */
   gate?: boolean;
+}
+
+/**
+ * v0.24.4: in a mobile browser the FIRST thing the welcome tour does is offer to install the app,
+ * before anything is explained. A browser tab spends the top and bottom of the screen on chrome that
+ * the app is not laid out for, and an installed copy is the version worth learning. It appears only
+ * when there is something to offer (see `lib/pwa-install`), so on Android, iOS and native the tour
+ * is otherwise unchanged.
+ */
+function installPage(mode: Exclude<ReturnType<typeof useInstallMode>, 'none'>, onInstalled: () => void): Page {
+  return {
+    title: 'Add it to your home screen',
+    body:
+      mode === 'ios'
+        ? 'RuneKeep runs better as an app than as a tab. Installed, it opens on its own with the whole screen, and it keeps working when the wifi at the table does not.\n\nSafari installs it from the Share menu, and your characters stay on this device either way.'
+        : 'RuneKeep runs better as an app than as a tab. Installed, it opens on its own with the whole screen, no address bar, and it keeps working when the wifi at the table does not.\n\nYour characters stay on this device either way.',
+    render: () => <InstallDemo mode={mode} onInstalled={onInstalled} />,
+  };
 }
 
 const WELCOME: Page[] = [
@@ -100,12 +120,23 @@ const TITLE: Record<TourId, string> = {
 };
 
 export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () => void }) {
-  const pages = TOURS[tour];
+  const installMode = useInstallMode();
+  const [installed, setInstalled] = useState(false);
+  // The install offer leads the welcome tour, and only there. It drops out the moment the app is
+  // installed (the browser stops offering it, and the page has nothing left to say).
+  const pages = useMemo(() => {
+    const base = TOURS[tour];
+    if (tour !== 'welcome' || installMode === 'none' || installed) return base;
+    return [installPage(installMode, () => setInstalled(true)), ...base];
+  }, [tour, installMode, installed]);
   const [step, setStep] = useState(() => Math.min(tourStep(tour), pages.length - 1));
   const [didSteps, setDidSteps] = useState<Set<number>>(new Set());
-  const page = pages[step];
-  const last = step === pages.length - 1;
-  const did = didSteps.has(step);
+  const safeStep = Math.min(step, pages.length - 1);
+  // Installing is never required: the first page's Next reads "Not now" so it is plainly optional.
+  const onInstallPage = tour === 'welcome' && installMode !== 'none' && !installed && safeStep === 0;
+  const page = pages[safeStep];
+  const last = safeStep === pages.length - 1;
+  const did = didSteps.has(safeStep);
   const blocked = !!page.gate && !did;
 
   const markDid = useCallback(() => {
@@ -129,11 +160,11 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
     if (blocked) return;
     playSfx('buttonTap');
     if (last) finish();
-    else go(step + 1);
-  }, [blocked, last, finish, go, step]);
+    else go(safeStep + 1);
+  }, [blocked, last, finish, go, safeStep]);
 
   return (
-    <AppScreen title={TITLE[tour]} onBack={step === 0 ? undefined : () => go(step - 1)}>
+    <AppScreen title={TITLE[tour]} onBack={safeStep === 0 ? undefined : () => go(safeStep - 1)}>
       {/* v0.23.0: real horizontal breathing room. AppScreen insets 18dp, which suits dense screens
           but left this prose almost against the border. */}
       <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 4 }}>
@@ -147,11 +178,11 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
           <View style={{ flexDirection: 'row', gap: 7, justifyContent: 'center' }}>
             {pages.map((_, i) => (
               <Pressable key={i} onPress={() => go(i)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Step ${i + 1} of ${pages.length}`}>
-                <View style={{ width: 8, height: 8, backgroundColor: i === step ? Rune.goldBright : 'rgba(218,162,73,0.3)', transform: [{ rotate: '45deg' }] }} />
+                <View style={{ width: 8, height: 8, backgroundColor: i === safeStep ? Rune.goldBright : 'rgba(218,162,73,0.3)', transform: [{ rotate: '45deg' }] }} />
               </Pressable>
             ))}
           </View>
-          <RuneButton label={last ? 'Got it' : blocked ? 'Try it first' : 'Next'} kind="primary" height={46} disabled={blocked} onPress={next} />
+          <RuneButton label={last ? 'Got it' : blocked ? 'Try it first' : onInstallPage ? 'Not now' : 'Next'} kind="primary" height={46} disabled={blocked} onPress={next} />
           <RuneButton label="Skip" kind="ghost" height={36} onPress={finish} />
         </View>
       </View>

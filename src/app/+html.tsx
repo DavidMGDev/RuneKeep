@@ -29,11 +29,18 @@ export default function Root({ children }: { children: ReactNode }) {
         {/* Installable from Chrome and Edge: its own window, its own icon, no browser chrome. */}
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#0B0E13" />
+        {/* iOS ignores the manifest's display mode. These three are what make an iPhone open it
+            full screen from the home screen instead of inside Safari. */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="RuneKeep" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
         <meta name="description" content="A Daggerheart companion app. Your character, as cards." />
         <title>RuneKeep</title>
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: WEB_RESET }} />
         <script dangerouslySetInnerHTML={{ __html: MOUSE_SCROLL }} />
+        <script dangerouslySetInnerHTML={{ __html: SERVICE_WORKER }} />
       </head>
       <body>{children}</body>
     </html>
@@ -167,4 +174,30 @@ const MOUSE_SCROLL = `
     e.preventDefault();
   }, { capture: true, passive: false });
 })();
+`;
+
+/**
+ * Register the service worker (see `public/sw.js` for what it does and why). Deferred to `load` so it
+ * never competes with the first paint, and wrapped because a browser with service workers disabled
+ * must still get a working app, just without offline or a real install.
+ */
+const SERVICE_WORKER = `
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
+// Chrome fires beforeinstallprompt within a moment of load, well before React has mounted, and the
+// event is only usable if it was captured when it fired. So it is stashed here and the app reads it
+// out of the global; preventDefault stops the browser's own mini-infobar so the offer is ours to make.
+window.__rkInstall = null;
+window.addEventListener('beforeinstallprompt', function (e) {
+  e.preventDefault();
+  window.__rkInstall = e;
+  window.dispatchEvent(new Event('rk-installable'));
+});
+window.addEventListener('appinstalled', function () {
+  window.__rkInstall = null;
+  window.dispatchEvent(new Event('rk-installed'));
+});
 `;
