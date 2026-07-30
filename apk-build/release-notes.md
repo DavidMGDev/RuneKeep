@@ -1,20 +1,29 @@
-RuneKeep v0.25.0 - the official pack splits in two, every card is re-cut, and cards can grant permanent benefits.
+RuneKeep v0.26.0 - the browser build catches up with the app, and the rest of the list.
 
-- THE VOID: the official pack was built from a pre-release sheet, and the printed Hope and Fear turned out to be a subset of it, so enabling it handed you material your book does not contain. Everything absent from the printed books now lives in a second official expansion, The Void: the Blood Hunter and Summoner classes, their five subclasses, and the 21 Blood domain cards, whose art is still stamped "work in progress" with the artists uncredited. Hope and Fear keeps the rest. Existing characters are untouched: a Blood Hunter quietly gains The Void when it loads, so nothing stops resolving.
-- CARD ART: every Hope and Fear card was cropped a fraction out of true, so each one carried a sliver of its neighbour down the left edge and a strip of page margin across the top. All 63 have been re-cut on a grid measured against the page itself.
-- ANCESTRIES: the six Hope and Fear ancestries are their real printed card faces now, like the base game's, instead of text the app drew itself. Mixed-ancestry cross-out lands exactly on the feature you did not take.
-- VITALITY: the card says "permanently gain two of the following benefits, then place this card in your vault permanently", and following those instructions used to switch the benefit off. Cards can now grant permanent benefits that survive being put away, and can ask which ones you want. Vitality asks, keeps working from your vault, and no longer counts against your five equipped domain cards.
-- OPTIONAL REST BONUS: the Elf's Celestial Trance was a rule buried in the rest code. It is a modifier now, so it shows in the Modifiers panel, and any card you make can grant an extra downtime move.
-- THE WARLOCK: the card modelled two Spheres of Influence with values that rose per tier. The printed card has one sphere, no values, and a Patron Die that follows your level. Anything you already typed is kept.
-- SOUND ON THE WEB: there was none. A browser will not let a page make noise before you touch it, and the app asked once at startup, which is the one moment that cannot work.
-- FIREFOX: dragging a card produced a ghost of the artwork instead of scrolling, so lists looked frozen. The fix Chrome uses relies on a CSS property Firefox never implemented.
-- TRAITS: the pool holds two +1s and two 0s, and tapping the second lit up the first. Each chip is its own chip now.
-- ONBOARDING: "this side clears" added a heart and "this side marks" removed one, exactly backwards, and the demo skipped the grow, shake and burst you meet on the real sheet. It is the sheet's own heart track now. The Circle Controls page showed the decoration behind the control rather than the control. Pages fade in and can be swiped.
-- CARD CREATION: tapping the art for a new colour no longer starts the hold animation, and the hold is shorter. The Ready step offers keep editing or create, without a third way out. A quickly made card is type Card rather than being labelled Ability by whichever deck it landed in.
-- NFC: a received card used to fall from the top of the screen, present itself and tuck away, after you had already read its name and chosen its deck. It is a checkmark naming the deck now.
-- EDIT MODE: Select All sits where Deselect All does, so equipping a new character is two taps.
-- FORGE: the button was bright from the first screen. It stays dim until the hero is finished, and tapping it early still takes you to whatever is missing.
+Most of this release is about the web version being as good as the installed one, on a phone or on a desktop. Several of the faults turned out to be one cause wearing different masks.
 
-Still outstanding, and listed here rather than quietly left out: the desktop keyboard controls, the pop-up background sitting offset from its border, focused cards riding too high, the greyed-looking text fields, keyboard handling in the browser, portraits disappearing from the roster after an update, the two-choice creation inventory, experiences going through the quick card flow, armor in the arsenal, the vertical modifiers panel, and loading screens.
+- TEXT FIELDS WERE NOT GREYED OUT: typing a character name produced letters the same colour as the box they sat in, so the field looked disabled and looked like it never took what you typed. The value was there the whole time, buried under its own background: panels draw their fill as an overlay, and a browser paints that above a text field rather than behind it. The same cause washed out icons and made pop-up backgrounds look offset from their borders. All three are gone.
+- THE CREATOR NO LONGER THROWS YOU OUT: on Firefox, opening character creation and dismissing its tour dropped you back on the character list, which is empty for a new player, so making a character looked like it had failed. Firefox merges two history entries created in the same instant; the tour now waits a frame before opening.
+- SOUND, ON A PHONE BROWSER: a browser will not let a page make noise before you touch it, and the app only ever asked once at startup, which is the one moment it cannot work.
+- THE KEYBOARD: a phone browser shrinks the page when the keyboard opens, and the app reserved space for it as well, so the card scrolled off the top. Fields are scrolled into view now instead.
+- FIREFOX DRAGGING: dragging a card produced a ghost of the artwork instead of scrolling, so lists looked frozen. The fix Chrome uses relies on a property Firefox never implemented.
+- PICTURES SURVIVE AN UPDATE: portraits vanished from the character list after updating. The picker hands back a path into a cache the system is free to clear; pictures are copied somewhere the app owns before that path is saved. Card artwork is also kept and shown while its replacement is being redrawn, rather than disappearing for the first few minutes after a release.
+- BUTTON LABELS FIT: they used to truncate to an ellipsis in the browser, because the shrink-to-fit the app asks for does nothing there.
+- SHORT SCREENS: on a phone browser with the address bar showing, the creation card overlapped the step tabs above it. It shrinks to fit now.
+- A LOADING SCREEN AT LAST: opening the site showed a blank page and then the whole interface at once. There is a proper one now, on screen with the first byte.
+- KEYBOARD CONTROLS ON A DESKTOP: arrows or WASD move along the cards, shift moves two, up and down open and close a card, space equips, E is edit mode, Enter confirms, Escape backs out. The welcome tour explains them, and only where there is a keyboard.
+
+And the rest of the list:
+
+- TRAITS: the pool holds two +1s and two 0s, and tapping the second lit up the first.
+- INVENTORY AT CREATION asks its two questions separately, Choice 1 and Choice 2, like primary and secondary weapons. Each offers "No items / Custom" for when you do not need it or your GM agreed something of your own. Potions arrive as consumables rather than generic items.
+- ARMOR IS EQUIPPED when you make a character, so a new sheet is not quietly missing its own Armor Score. The tour explains Select All then Equip for everything else, and moving the gear to Inventory afterwards.
+- SELECT ALL sits in edit mode where Deselect All does.
+- EXPERIENCES are made with the same quick flow as cards, Advanced still one tap away. Enter walks the whole flow: name, then description, then done.
+- MODIFIERS: the controls are laid out down the panel instead of crammed into a row, and a modifier can be marked permanent, kept whether or not the card is equipped and lost only by deleting the card everywhere.
+- THE FORGE BUTTON stays dim until the hero is finished.
+- FOCUSED CARDS sit in the middle of the screen rather than near the top.
+- NFC is a checkmark naming the deck, not a second and a half of animation.
+- ONBOARDING: the wheel page shows the portrait it sits under, pages fade and swipe, and the demos teach what the sheet actually does.
 
 Sideload: enable Install unknown apps, then open the APK.
