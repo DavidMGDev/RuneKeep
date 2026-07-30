@@ -1,5 +1,7 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { AppScreen } from '@/components/app-screen';
 import { RuneButton } from '@/components/rune-button';
@@ -163,16 +165,48 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
     else go(safeStep + 1);
   }, [blocked, last, finish, go, safeStep]);
 
+  /**
+   * v0.25.0: the page counter at the bottom promises swiping, so swiping has to work.
+   *
+   * Left goes forward, right goes back, matching every paged interface a player has already used. A
+   * page that gates on its gesture still refuses to advance, since the point of that gate is that you
+   * felt the gesture; swiping past it would defeat it.
+   */
+  const swipe = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-18, 18])
+        .failOffsetY([-24, 24])
+        .onEnd((e) => {
+          'worklet';
+          if (Math.abs(e.translationX) < 48 || Math.abs(e.velocityX) < 120) return;
+          if (e.translationX < 0) runOnJS(next)();
+          else if (safeStep > 0) runOnJS(go)(safeStep - 1);
+        }),
+    [next, go, safeStep],
+  );
+
+  /** Each page FADES in rather than appearing complete. Pages used to swap in one frame, which read
+   *  as a glitch next to the rest of the app. */
+  const fade = useSharedValue(1);
+  useEffect(() => {
+    fade.value = 0;
+    fade.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.quad) });
+  }, [safeStep, fade]);
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value, transform: [{ translateY: (1 - fade.value) * 10 }] }));
+
   return (
     <AppScreen title={TITLE[tour]} onBack={safeStep === 0 ? undefined : () => go(safeStep - 1)}>
       {/* v0.23.0: real horizontal breathing room. AppScreen insets 18dp, which suits dense screens
           but left this prose almost against the border. */}
       <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 4 }}>
-        <View>
-          {page.render({ did, markDid })}
-          <Text style={{ color: Rune.goldBright, fontSize: 21, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 14 }}>{page.title}</Text>
-          <Text style={{ color: Rune.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 21, marginTop: 10 }}>{page.body}</Text>
-        </View>
+        <GestureDetector gesture={swipe}>
+          <Animated.View style={fadeStyle}>
+            {page.render({ did, markDid })}
+            <Text style={{ color: Rune.goldBright, fontSize: 21, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 14 }}>{page.title}</Text>
+            <Text style={{ color: Rune.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 21, marginTop: 10 }}>{page.body}</Text>
+          </Animated.View>
+        </GestureDetector>
 
         <View style={{ gap: 14, paddingBottom: 10 }}>
           <View style={{ flexDirection: 'row', gap: 7, justifyContent: 'center' }}>

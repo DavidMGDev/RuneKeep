@@ -7,6 +7,7 @@ import Svg, { Path, Polygon } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, Rune } from '@/constants/theme';
+import { HeartTrack } from '@/features/character-sheet/components/heart-track';
 import { ArsenalIcon } from '@/features/character-sheet/sheet/deck-toggle-icon';
 import { playSfx } from '@/lib/sfx';
 
@@ -188,13 +189,19 @@ export function EquipDemo({ onDid, did }: { onDid: () => void; did: boolean }) {
 export function HeartsDemo({ onDid }: { onDid?: () => void }) {
   const [hp, setHp] = useState(4);
   const [touched, setTouched] = useState(false);
-  const MAX = 6;
+  const SLOTS = 6;
+  const PIP = 30;
+  const WIDTH = 210;
 
-  const change = (delta: number) => {
-    const next = Math.max(0, Math.min(MAX, hp + delta));
-    if (next === hp) return;
-    playSfx(delta > 0 ? 'cardSelect' : 'cardDeselect');
-    setHp(next);
+  // v0.25.0: this is the sheet's OWN heart track, not a drawing of one. The previous version was a
+  // row of static hearts with two buttons that stepped HP instantly, and it taught the wrong thing
+  // twice over: the labels were the wrong way round (the side marked "clears" added a heart), and
+  // nothing grew, shook or burst, so the first real hold on the sheet was a surprise.
+  //
+  // Reusing the component means the ceremony is the real ceremony, including the riser and the
+  // shards, and it cannot drift out of sync with the sheet again.
+  const onHp = (n: number) => {
+    setHp(n);
     if (!touched) {
       setTouched(true);
       onDid?.();
@@ -203,35 +210,11 @@ export function HeartsDemo({ onDid }: { onDid?: () => void }) {
 
   return (
     <Stage>
-      <View style={{ flexDirection: 'row', gap: 5 }}>
-        {Array.from({ length: MAX }, (_, i) => (
-          <Heart key={i} filled={i < hp} />
-        ))}
+      <View style={{ width: WIDTH, height: 120, justifyContent: 'center' }}>
+        <HeartTrack left={0} top={44} width={WIDTH} pip={PIP} hp={hp} slots={SLOTS} maxHp={SLOTS} accent={Rune.red} onHp={onHp} />
       </View>
-      <View style={{ flexDirection: 'row', marginTop: 16 }}>
-        <Pressable onPress={() => change(1)} accessibilityRole="button" accessibilityLabel="Clear a Hit Point" style={{ width: 104, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>This side clears</Text>
-        </Pressable>
-        <View style={{ width: 1, backgroundColor: DIM }} />
-        <Pressable onPress={() => change(-1)} accessibilityRole="button" accessibilityLabel="Mark a Hit Point" style={{ width: 104, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>This side marks</Text>
-        </Pressable>
-      </View>
-      <Prompt text="Tap either side of the row" done={touched} />
+      <Prompt text="Hold a heart at either end" done={touched} />
     </Stage>
-  );
-}
-
-function Heart({ filled }: { filled: boolean }) {
-  return (
-    <Svg width={30} height={30} viewBox="0 0 24 24">
-      <Path
-        d="M12 20 C6 15.5 3 12.5 3 9 A4.2 4.2 0 0 1 12 6.6 A4.2 4.2 0 0 1 21 9 C21 12.5 18 15.5 12 20 Z"
-        fill={filled ? Rune.red : 'none'}
-        stroke={Rune.red}
-        strokeWidth={1.6}
-      />
-    </Svg>
   );
 }
 
@@ -239,7 +222,10 @@ function Heart({ filled }: { filled: boolean }) {
 // 4. The circle controls. The sheet's own art, small, and STILL.
 // --------------------------------------------------------------------------------------------------
 
-const CIRCLE = require('../../../assets/art/gears/raster/U2.webp');
+// v0.25.0: U3, the smallest ring, is the one the sheet makes interactive (see gear-stack). U2 is the
+// spiky starburst BEHIND it, pure decoration, and showing that taught players to look for the wrong
+// thing entirely.
+const CIRCLE = require('../../../assets/art/gears/raster/U3.webp');
 
 export function CircleDemo() {
   const flash = useSharedValue(0);
@@ -258,7 +244,7 @@ export function CircleDemo() {
             </View>
           ))}
         </View>
-        <Image source={CIRCLE} style={{ width: 132, height: 66 }} contentFit="contain" />
+        <Image source={CIRCLE} style={{ width: 150, height: 75 }} contentFit="contain" />
         <Animated.View style={[{ position: 'absolute', bottom: -6 }, glow]}>
           <ChamferBox chamfer={5} fill="rgba(240,240,240,0.14)" stroke="#F2EDE2" strokeWidth={1.3} style={{ paddingHorizontal: 14, height: 26, justifyContent: 'center' }}>
             <Text style={{ color: '#F2EDE2', fontSize: 10, fontFamily: Display.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>Edit mode</Text>
