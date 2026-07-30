@@ -1062,7 +1062,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const classTrackerItems: CardItem[] = file.className === 'summoner'
       ? [{ id: SUMMONER_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <SummonerTrackerCard state={file.classTracker} subclass={trackerSubclass} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
       : file.className === 'warlock'
-      ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
+      ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
       : [];
     const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +

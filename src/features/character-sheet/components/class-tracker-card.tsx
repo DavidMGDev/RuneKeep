@@ -6,8 +6,9 @@
  *  • Summoner — Summon Entity: four summoning circles (Fate Spirit + the subclass's Foundation /
  *    Specialization / Mastery entities). Each circle is a counter; the shared cap is your level; the Fourth
  *    Circle holds at most one. Theurgy's Divine Manifestation adds a Hope-dice sub-track (starts at 3).
- *  • Warlock — Patron: a named patron, two Spheres of Influence (name + value, starting +2, +1 per tier),
- *    and a Favor track (starts at 3, printed as six).
+ *  • Warlock — Patron: a named patron, a Sphere of Influence, the level-driven Patron Die (d6, d8 from
+ *    level 5), and a Favor track (starts at 3, printed as six). v0.25.0 matched this to the printed
+ *    card, which has ONE sphere field and no per-sphere value.
  *
  * Each card explains its rule inline so it's understandable at a glance, and every control is a plain tap
  * (steppers / pips / text fields) writing back through onChange to file.classTracker.
@@ -119,18 +120,22 @@ export const SummonerTrackerCard = memo(function SummonerTrackerCard({ state, su
 
 const FAVOR_PRINTED = 6; // the printed track shows six circles (prose gives no hard cap)
 
-export const WarlockTrackerCard = memo(function WarlockTrackerCard({ state, onChange }: {
+/** The printed card: "Your Patron Die starts at a d6 and increases to a d8 at level 5." */
+export const patronDie = (level: number): 'd6' | 'd8' => (level >= 5 ? 'd8' : 'd6');
+
+export const WarlockTrackerCard = memo(function WarlockTrackerCard({ state, level, onChange }: {
   state: ClassTrackerState | undefined;
+  /** The Patron Die is level-driven, not a choice, so the card reads it rather than storing it. */
+  level: number;
   onChange: (patch: Partial<ClassTrackerState>) => void;
 }) {
   const patron = state?.patron ?? '';
-  const spheres = [0, 1].map((i) => state?.spheres?.[i] ?? { name: '', value: 2 });
+  // v0.25.0: the printed card has ONE Sphere of Influence field. Earlier builds modelled two named
+  // spheres with a numeric value each, which the card does not have. Anything a player already typed
+  // is folded into the single field rather than dropped.
+  const sphere = state?.sphere ?? (state?.spheres ?? []).map((x) => x.name).filter(Boolean).join(', ');
   const favor = Math.max(0, state?.favor ?? 3);
-  const setSphere = (i: number, patch: Partial<{ name: string; value: number }>) => {
-    const next = [spheres[0], spheres[1]].map((s) => ({ ...s }));
-    next[i] = { ...next[i], ...patch };
-    onChange({ spheres: next });
-  };
+  const die = patronDie(level);
   return (
     <CardFrame label="Patron" artFill="#221726" glyph={<PatronGlyph />}>
       <TextInput
@@ -141,21 +146,23 @@ export const WarlockTrackerCard = memo(function WarlockTrackerCard({ state, onCh
         maxLength={40}
         style={{ color: INK, fontSize: 13, fontFamily: Body.bold, borderBottomWidth: 1, borderBottomColor: BORDER, paddingBottom: 3, marginBottom: 8 }}
       />
-      {spheres.map((s, i) => (
-        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: INK, fontSize: 8, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 2 }}>Sphere of influence</Text>
           <TextInput
-            value={s.name}
-            onChangeText={(t) => setSphere(i, { name: t })}
-            placeholder={`Sphere ${i + 1}`}
+            value={sphere}
+            onChangeText={(t) => onChange({ sphere: t })}
+            placeholder="Nature, War, Death…"
             placeholderTextColor={Rune.inkMuted}
-            maxLength={20}
-            style={{ flex: 1, color: INK, fontSize: 11, fontFamily: Body.semibold, borderBottomWidth: 1, borderBottomColor: 'rgba(122,90,134,0.4)', paddingBottom: 2 }}
+            maxLength={48}
+            style={{ color: INK, fontSize: 11, fontFamily: Body.semibold, borderBottomWidth: 1, borderBottomColor: 'rgba(122,90,134,0.4)', paddingBottom: 2 }}
           />
-          <Step label="−" onPress={() => setSphere(i, { value: Math.max(0, s.value - 1) })} disabled={s.value <= 0} />
-          <Text style={{ width: 26, textAlign: 'center', color: INK, fontSize: 13, fontFamily: Display.black }}>+{s.value}</Text>
-          <Step label="+" onPress={() => setSphere(i, { value: s.value + 1 })} />
         </View>
-      ))}
+        <View style={{ alignItems: 'center', borderWidth: 1.4, borderColor: BORDER, backgroundColor: 'rgba(122,90,134,0.16)', paddingHorizontal: 8, paddingVertical: 3 }}>
+          <Text style={{ color: Rune.inkMuted, fontSize: 7, fontFamily: Body.bold, letterSpacing: 0.3 }}>PATRON DIE</Text>
+          <Text style={{ color: INK, fontSize: 15, fontFamily: Display.black }}>{die}</Text>
+        </View>
+      </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
         <Text style={{ color: INK, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>Favor</Text>
         <Text style={{ color: INK, fontSize: 14, fontFamily: Display.black }}>{favor}</Text>
@@ -168,9 +175,9 @@ export const WarlockTrackerCard = memo(function WarlockTrackerCard({ state, onCh
         ))}
       </View>
       <Text style={{ color: INK, fontSize: 8.5, lineHeight: 11.6, fontFamily: Body.regular, marginTop: 8 }}>
-        Spend a Favor to add a sphere{'’'}s value to a related roll. Start with 3; tithe at rest to gain Favor equal to your Presence.
+        Spend a Favor before an action roll in your patron{'’'}s sphere to roll your Patron Die and add it. Start with 3; tithe during a rest to gain Favor equal to your Spellcast trait.
       </Text>
-      <Text style={{ color: Rune.inkMuted, fontSize: 8, fontFamily: Body.medium, textAlign: 'center', marginTop: 'auto' }}>Tap a Favor pip · ± the sphere values at level up</Text>
+      <Text style={{ color: Rune.inkMuted, fontSize: 8, fontFamily: Body.medium, textAlign: 'center', marginTop: 'auto' }}>Tap a Favor pip to spend or regain</Text>
     </CardFrame>
   );
 });

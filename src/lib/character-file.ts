@@ -33,7 +33,10 @@ export interface ClassTrackerState {
   divineHope?: number;
   /** Warlock: the named patron. */
   patron?: string;
-  /** Warlock: exactly two spheres of influence, each a name + value (starts at +2, +1 per tier). */
+  /** Warlock: the patron's sphere of influence, as printed (one free-text field). v0.25.0. */
+  sphere?: string;
+  /** Warlock, DEPRECATED: two valued spheres, a shape the printed card does not have. Kept only so an
+   *  existing save's text can be folded into `sphere` instead of vanishing. */
   spheres?: { name: string; value: number }[];
   /** Warlock: Favor — spendable resource, starts at 3, printed track shows 6. */
   favor?: number;
