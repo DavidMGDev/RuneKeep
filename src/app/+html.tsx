@@ -39,6 +39,7 @@ export default function Root({ children }: { children: ReactNode }) {
         <title>RuneKeep</title>
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: WEB_RESET }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_NATIVE_DRAG }} />
         <script dangerouslySetInnerHTML={{ __html: MOUSE_SCROLL }} />
         <script dangerouslySetInnerHTML={{ __html: SERVICE_WORKER }} />
       </head>
@@ -57,7 +58,10 @@ body {
   margin: 0;
   -webkit-tap-highlight-color: transparent;
 }
-/* No image is ever a drag source: a drag on card art belongs to the app, not to the browser. */
+/* No image is ever a drag source: a drag on card art belongs to the app, not to the browser.
+   This handles WebKit and Blink. Gecko never implemented the property, whatever the -moz- prefix
+   below suggests, so Firefox needs the dragstart handler in NO_NATIVE_DRAG. Both are kept: the CSS
+   stops the drag before it starts, the handler catches what the CSS cannot reach. */
 img, svg, canvas, video {
   -webkit-user-drag: none;
   -khtml-user-drag: none;
@@ -82,6 +86,21 @@ input, textarea, [contenteditable="true"] {
 :focus, :focus-visible {
   outline: none;
 }
+`;
+
+/**
+ * No native drags, in any engine (v0.25.0).
+ *
+ * `user-drag: none` is a WebKit invention. Blink took it, Gecko never did, so in Firefox every card
+ * was still an HTML5 drag source: pressing a card and moving produced a translucent ghost of the
+ * artwork and no scroll, while Chrome behaved. It read as "Firefox is broken", and the reported
+ * symptom was that subclass cards could not be scrolled at all.
+ *
+ * Cancelling `dragstart` in the capture phase is the cross-engine version of the same rule: nothing in
+ * this app is ever a drag source, because every drag belongs to the app's own gesture handlers.
+ */
+const NO_NATIVE_DRAG = `
+document.addEventListener('dragstart', function (e) { e.preventDefault(); }, true);
 `;
 
 /**

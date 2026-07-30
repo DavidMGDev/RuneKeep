@@ -54,6 +54,9 @@ export interface Character {
   /** v0.13.0 SCARS: how many Hope slots (from the RIGHT) are scarred — greyed, disconnected, unusable.
    *  One per enabled "Add Scar" card; at hope.total scars the whole sheet desaturates. */
   scars?: number;
+  /** v0.25.0: extra downtime moves granted by cards (the Elf's Celestial Trance, or any homebrew card
+   *  carrying an Optional Rest Bonus). Added to the baseline two by `restMoveLimit`. */
+  restMoves?: number;
   stress: Track;
 
   /** Coin (#136): handfuls/bags/chest, capped 9/9/1 (the gold card carries the +/- controls). */

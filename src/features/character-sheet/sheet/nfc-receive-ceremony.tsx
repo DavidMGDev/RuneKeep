@@ -1,21 +1,22 @@
 /**
- * v0.13.2 (#359): sheet-side NFC card RECEIVING + its landing ceremony.
+ * Receiving a card over NFC.
  *
- * `SheetNfcReceiver` is a null-rendering controller (the SheetBackGuard pattern) that runs a persistent
- * `receiveNfc()` loop whenever `nfcReceiveActive` is true — always, except while a focused interface is
- * open. On a card tag it hands the card up; the sheet raises the confirmation ceremony.
+ * The sheet listens continuously (`SheetNfcReceiver`) and hands whatever arrives to
+ * `NfcReceiveCeremony`, which asks three questions in order: is this yours to keep, which deck does it
+ * join, and then confirms it landed.
  *
- * `NfcReceiveCeremony` is the full-screen overlay: a confirmation panel fades in and the carousel eases
- * to compact; on accept the card descends from the top of the screen with a particle sparkle, presents
- * at center as the focused card, then tucks into the hand while the commit happens UNDER the overlay
- * (so the carousel update never shows a wrong-order or empty frame — the Golden-Gear-Edit principle).
+ * v0.25.0 removed the animation. The card used to fall from above the screen, present itself at centre
+ * and tuck away into the hand, with a sparkle field, about a second and a half of it every time. By
+ * that point the player had already read the card's name and already chosen its deck, so the ceremony
+ * was re-staging a decision rather than telling them anything. A checkmark naming the deck says the
+ * same thing and gets out of the way.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
-import Animated, { Easing, interpolate, type SharedValue, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
+import Svg, { Circle, Path } from 'react-native-svg';
+import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
-import { ArtImage } from '@/components/art-image';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { cardById } from '@/data/catalog';
@@ -26,12 +27,9 @@ import { libraryCardKindLabel } from '@/lib/library-embed';
 import { focusHaptic } from '@/lib/haptics';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 
-import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
-import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
-import { useLayout } from '@/hooks/use-layout';
 import { useScreenDim } from '@/lib/screen-dim';
 import { type CardCategory } from '../card-data';
-import { type CustomCategory } from '../carousel-categories';
+import { categoryLabel, type CustomCategory } from '../carousel-categories';
 import { useCarousel } from '../carousel-context';
 import { CardDestination } from './card-destination';
 import { type NfcGateFlags, nfcReceiveActive } from './nfc-gate';
@@ -87,44 +85,15 @@ export function SheetNfcReceiver({ flags, present, onCard, onReject }: { flags: 
 }
 
 // ---- ceremony timing (design knobs — tune on device) ------------------------------------------------
-// v0.14.0: the descent was too quick to read as an arrival, so it's markedly slower and eased in-out —
-// the card gathers pace leaving the top of the screen and settles into the center rather than snapping.
-const DESCEND_MS = 1700; // above-screen → present at center (+ a beat holding there)
-const TUCK_MS = 620; //     present → tuck into the hand
-const LAND_AT = Math.round(DESCEND_MS * 0.66); // the beat the card reaches center — landing haptic
-const COMMIT_AT = DESCEND_MS - 40; // fire the file commit as the tuck begins (hidden under the card)
-
-/** Deterministic sparkle field (no Math.random — index-derived angles), radiating from the present point. */
-const SPARKS = Array.from({ length: 14 }, (_, i) => {
-  const ang = (i / 14) * Math.PI * 2 + (i % 2 ? 0.22 : 0);
-  return { ang, dist: 62 + (i % 4) * 26, size: 4 + (i % 3) * 2, delay: (i % 5) * 0.02, bright: i % 3 === 0 };
-});
-
-function Spark({ drop, cx, cy, s }: { drop: SharedValue<number>; cx: number; cy: number; s: (typeof SPARKS)[number] }) {
-  const style = useAnimatedStyle(() => {
-    const p = interpolate(drop.value, [0.4 + s.delay, 0.62, 0.82], [0, 1, 0], 'clamp');
-    const travel = interpolate(p, [0, 1], [0, s.dist]);
-    return {
-      position: 'absolute',
-      left: cx + Math.cos(s.ang) * travel - s.size / 2,
-      top: cy + Math.sin(s.ang) * travel - s.size / 2,
-      width: s.size,
-      height: s.size,
-      borderRadius: s.size / 2,
-      backgroundColor: s.bright ? Rune.goldBright : Rune.goldEdge,
-      opacity: Math.sin(Math.min(1, Math.max(0, p)) * Math.PI) * 0.9,
-      transform: [{ scale: 0.6 + p * 0.8 }],
-    };
-  });
-  return <Animated.View pointerEvents="none" style={style} />;
-}
-
 /**
  * The received-card ceremony. Reads the carousel so it can ease to compact; the sheet passes the commit
  * handler + the target category and clears `card` when done.
  */
+/** How long the checkmark stays up before the overlay closes itself. Long enough to read the deck
+ *  name, short enough that nobody waits for it. */
+const CONFIRM_MS = 1200;
+
 export function NfcReceiveCeremony({ card, onCommit, onDismiss, destinations = [], customCategories = [] }: { card: LibraryCard; onCommit: (card: LibraryCard, category: CardCategory) => void; onDismiss: () => void; destinations?: CardCategory[]; customCategories?: CustomCategory[] }) {
-  const { width, height } = useLayout();
   const { collapse, category } = useCarousel();
   const reduced = useReducedMotion();
   // A received card lands in the category being viewed — unless that's a locked/special deck it can't
@@ -134,19 +103,11 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss, destinations = [
   // between Accept and the drop, so the card still lands in the deck the player named.
   const [asking, setAsking] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  /** The deck it went to, once it has gone there. Drives the checkmark. */
+  const [landed, setLanded] = useState<CardCategory | null>(null);
   const panel = useSharedValue(0); // 0 → 1 confirmation panel in
-  const drop = useSharedValue(0); //  0 → 1 card descend → present → tuck
 
   // Card geometry in SCREEN space: falls from above, presents at center, tucks toward the hand (lower third).
-  const cardW = Math.min(220, width * 0.6);
-  const cardH = Math.round(cardW * (322 / 230));
-  const cardLeft = width / 2 - cardW / 2;
-  const cardScale = cardW / FORGED_W; // scale the 230×322 forged plane down rather than cropping it
-  const aboveY = -cardH - 90; // fully clear of the top edge, so the entry is never a pop
-  const presentY = height * 0.4 - cardH / 2;
-  const tuckY = height * 0.72 - cardH / 2;
-  const presentCx = width / 2;
-  const presentCy = height * 0.4;
 
   const catalog = card.catalogId ? cardById(card.catalogId) : undefined;
 
@@ -166,26 +127,24 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss, destinations = [
     land(target);
   };
 
+  /**
+   * v0.25.0: accept, commit, confirm. No descent.
+   *
+   * The card used to fall from the top of the screen, present itself and tuck into the hand, about a
+   * second and a half of ceremony every single time. The player has already been told what arrived
+   * and has already chosen where it goes, so the animation was repeating a decision rather than
+   * reporting one. A checkmark naming the deck says the same thing and gets out of the way.
+   */
   const land = (dest: CardCategory) => {
     if (accepted) return;
     setAsking(false);
-    // Reduced motion: skip the drop ceremony — just commit and dismiss.
-    if (reduced) {
-      onCommit(card, dest);
-      onDismiss();
-      return;
-    }
     setAccepted(true);
-    panel.value = withTiming(0, { duration: 160, easing: Easing.in(Easing.cubic) });
-    drop.value = withSequence(
-      // ease-IN-out: the card starts at rest above the screen, gathers pace, and settles at center.
-      withTiming(0.68, { duration: DESCEND_MS, easing: Easing.inOut(Easing.cubic) }),
-      withTiming(1, { duration: TUCK_MS, easing: Easing.in(Easing.cubic) }), // tuck into the hand
-    );
-    setTimeout(() => focusHaptic(), LAND_AT); // the card touching down
-    // Commit UNDER the descending card (as the tuck begins) so the carousel change is never a bare frame.
-    setTimeout(() => onCommit(card, dest), COMMIT_AT);
-    setTimeout(() => onDismiss(), DESCEND_MS + TUCK_MS + 40);
+    onCommit(card, dest);
+    setLanded(dest);
+    panel.value = withTiming(1, { duration: 140, easing: Easing.out(Easing.cubic) });
+    playSfx('cardEnable');
+    focusHaptic();
+    setTimeout(() => onDismiss(), CONFIRM_MS);
   };
 
   const decline = () => {
@@ -193,15 +152,9 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss, destinations = [
     setTimeout(() => onDismiss(), 170);
   };
 
-  const dimStyle = useAnimatedStyle(() => ({ opacity: interpolate(panel.value, [0, 1], [0, 0.88]) * (accepted ? interpolate(drop.value, [0, 0.85, 1], [1, 1, 0]) : 1) }));
+  // The dim follows the panel now that nothing descends through it.
+  const dimStyle = useAnimatedStyle(() => ({ opacity: interpolate(panel.value, [0, 1], [0, 0.88]) }));
   const panelStyle = useAnimatedStyle(() => ({ opacity: panel.value, transform: [{ translateY: interpolate(panel.value, [0, 1], [14, 0]) }] }));
-  const cardStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(drop.value, [0, 0.06, 0.86, 1], [0, 1, 1, 0], 'clamp'),
-    transform: [
-      { translateY: interpolate(drop.value, [0, 0.45, 0.68, 1], [aboveY, presentY, presentY, tuckY], 'clamp') },
-      { scale: interpolate(drop.value, [0, 0.45, 0.68, 1], [0.82, 1, 1, 0.4], 'clamp') },
-    ],
-  }));
 
   // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
   useScreenDim(0.88);
@@ -241,26 +194,18 @@ export function NfcReceiveCeremony({ card, onCommit, onDismiss, destinations = [
         </Animated.View>
       ) : null}
 
-      {/* The descending card + sparkle (only after accept). */}
-      {accepted ? (
-        <>
-          {SPARKS.map((s, i) => (
-            <Spark key={i} drop={drop} cx={presentCx} cy={presentCy} s={s} />
-          ))}
-          <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: cardLeft, top: 0, width: cardW, height: cardH }, cardStyle]}>
-            <ChamferBox chamfer={12} fill={Rune.panel} stroke={Rune.goldBright} strokeWidth={1.6} style={{ width: cardW, height: cardH, overflow: 'hidden' }}>
-              {catalog ? (
-                <ArtImage source={catalog.source} fit="contain" />
-              ) : (
-                // SCALE the forged plane down (the gallery idiom) — it used to be cropped, losing ~5px
-                // off each side and the footer watermark. LibraryForgedCard keeps weapon/armor decoration.
-                <View style={{ position: 'absolute', left: (cardW - FORGED_W) / 2, top: (cardH - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: cardScale }] }}>
-                  <LibraryForgedCard card={card} />
-                </View>
-              )}
-            </ChamferBox>
-          </Animated.View>
-        </>
+      {/* Landed: a checkmark naming the deck, then it closes itself. */}
+      {landed ? (
+        <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 }, panelStyle]} pointerEvents="none">
+          <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: '100%', maxWidth: 320, paddingHorizontal: 22, paddingVertical: 24, gap: 12, alignItems: 'center' }}>
+            <Svg width={44} height={44} viewBox="0 0 44 44">
+              <Circle cx={22} cy={22} r={20} fill="none" stroke={Rune.goldBright} strokeWidth={2} />
+              <Path d="M13 22.5 L19.5 29 L31 15" fill="none" stroke={Rune.goldBright} strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.7} style={{ color: Rune.ivory, fontSize: 18, lineHeight: 22, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{card.title || 'Card'}</Text>
+            <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase', textAlign: 'center' }}>Added to {categoryLabel(landed, customCategories)}</Text>
+          </ChamferBox>
+        </Animated.View>
       ) : null}
     </View>
   );

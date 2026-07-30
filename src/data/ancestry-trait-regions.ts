@@ -23,7 +23,27 @@ export const ANCESTRY_STRIKES: Record<string, { a: number[]; b: number[] }> = {
   'ancestry-orc': { a: [0.7185, 0.7493], b: [0.7916, 0.8192, 0.8518, 0.8826] },
   'ancestry-ribbet': { a: [0.6973, 0.7282], b: [0.7705, 0.7997, 0.8306, 0.8615] },
   'ancestry-simiah': { a: [0.7347, 0.7656], b: [0.8095, 0.8388] },
+
+  // v0.25.0: the Hope and Fear ancestries, now printed card faces like the base game's rather than
+  // app-rendered text. Read out of the publisher PDF's own text geometry by
+  // `scripts/ancestry_marker.py` and confirmed by the owner in the page it generates, so these are
+  // measured rather than eyeballed.
+  //
+  // These moved once already: the card crop was a point out in both axes, which put a sliver of the
+  // neighbouring card down the left edge of every face. Re-cutting the cards moved the text with them,
+  // so the marks were recomputed on the corrected grid. Any change to the faces means re-running
+  // `scripts/extract_hf_cards.py` AND the marker, in that order.
+  'ancestry-aetheris': { a: [0.7335, 0.764, 0.7946], b: [0.8364, 0.8669, 0.8975] },
+  'ancestry-skykin': { a: [0.6685, 0.6991, 0.7296, 0.7602], b: [0.802, 0.8325, 0.8631, 0.8937] },
+  'ancestry-earthkin': { a: [0.7283, 0.7589, 0.7894], b: [0.8312, 0.8618] },
+  'ancestry-tidekin': { a: [0.7323, 0.7628], b: [0.8046, 0.8352, 0.8657, 0.8963] },
+  'ancestry-emberkin': { a: [0.692, 0.7226], b: [0.7644, 0.7949, 0.8255, 0.856, 0.8866] },
+  'ancestry-gnome': { a: [0.733, 0.7636], b: [0.8054, 0.836] },
 };
+
+/** Whether this ancestry's cross-out is DRAWN over a printed face (measured strike lines) rather than
+ *  applied to app-rendered text. The two must never both run, or the feature is struck twice. */
+export const hasStrikeLines = (catalogId: string): boolean => !!ANCESTRY_STRIKES[catalogId];
 
 /** Horizontal extent of every strike (fraction of card width) — same for all so they line up. */
 export const STRIKE_X0 = 0.065;

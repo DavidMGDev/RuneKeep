@@ -40,7 +40,11 @@ function useSpellcastWarnings(spellcastLabel: string | null, spellcastMisplaced:
 }
 
 export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partial<Record<TraitKey, number>>; onTraits: (t: Partial<Record<TraitKey, number>>) => void; spellcastTrait?: TraitKey | null }) {
-  const [armed, setArmed] = useState<number | null>(null);
+  // v0.25.0: the armed chip is identified by its POSITION in the pool, not by its value. The pool
+  // holds two +1s and two 0s, so keying on the value meant tapping the second +1 armed "the +1", and
+  // `pool.indexOf(1)` then lit the FIRST one. It worked, but it lit up the wrong chip, which reads as
+  // the tap not registering.
+  const [armedIndex, setArmedIndex] = useState<number | null>(null);
 
   // v0.21.0 item 6: once a spellcasting subclass is chosen, mark its Spellcast trait and warn when the
   // best trait (+2, the pool's max) is placed elsewhere — an easy way to accidentally build a weaker caster.
@@ -57,6 +61,8 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
     if (i >= 0) pool.splice(i, 1);
   }
   const assignedCount = assignedValues.length;
+  // The pool is rebuilt every render, so an index left over from a previous one can dangle.
+  const armed = armedIndex != null && armedIndex < pool.length ? pool[armedIndex] : null;
 
   const placeOn = (key: TraitKey) => {
     // #258r2: creation traits play ONLY the assignment chime (the numpad tap sound belongs to the
@@ -64,7 +70,7 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
     const next = { ...traits };
     if (armed !== null) {
       next[key] = armed;
-      setArmed(null);
+      setArmedIndex(null);
       playSfx('cardSelect'); // assigning the armed modifier
     } else if (next[key] !== undefined) {
       delete next[key];
@@ -80,7 +86,7 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
     const p = [...TRAIT_POOL];
     const next: Partial<Record<TraitKey, number>> = {};
     for (const t of TRAIT_ORDER) next[t.key] = p.splice(Math.floor(Math.random() * p.length), 1)[0];
-    setArmed(null);
+    setArmedIndex(null);
     playSfx('cardSelect');
     onTraits(next);
   };
@@ -91,11 +97,11 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 8, minHeight: 40, alignItems: 'center' }}>
         {pool.length ? (
           pool.map((v, i) => {
-            const isArmed = armed === v && pool.indexOf(v) === i; // arm ONE instance of a duplicate
+            const isArmed = armedIndex === i;
             return (
               <Pressable
                 key={`${v}-${i}`}
-                onPress={() => { playSfx(isArmed ? 'floatMenuClose' : 'buttonTap'); setArmed(isArmed ? null : v); }}
+                onPress={() => { playSfx(isArmed ? 'floatMenuClose' : 'buttonTap'); setArmedIndex(isArmed ? null : i); }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isArmed }}
                 accessibilityLabel={`Modifier ${formatModifier(v)}${isArmed ? ', armed. Tap a trait to place it' : ''}`}>

@@ -243,12 +243,12 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     },
     features: [
       {
-        name: 'Patron’s Pact',
-        text: 'You have committed yourself to a supernatural entity, such as a god, fae, or demon, in exchange for power. Write their name on your character sheet, then work with your GM to determine their sphere of influence (such as Nature, Chaos, Wisdom, Mischief, Love, War, Justice, or Death). Before making an action roll that relates to your patron’s sphere of influence, you can spend a Favor to call upon their aid, rolling your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5.',
+        name: 'Warlock Patron',
+        text: 'You have committed yourself to a patron supernatural entity, such as a god, fae, or demon, in exchange for power. Write their name on your character sheet, then work with your GM to determine their sphere of influence (such as Nature, Chaos, Wisdom, Mischief, Love, War, Justice, or Death). Before making an action roll that relates to one of your patron’s spheres of influence, you can spend a Favor to call on their aid, rolling your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5.',
       },
       {
         name: 'Favor',
-        text: 'You start with 3 Favor. You can use a downtime move to show tribute to your patron. Describe how and gain Favor equal to your Spellcast trait. Additionally, when you succeed on an action roll with Hope, you can choose to gain a Favor instead of a Hope.',
+        text: 'Start with 3 Favor. During a rest, spend one of your downtime moves to show tribute to your patron. Describe how and gain Favor equal to your Spellcast trait. Additionally, when you succeed on an action roll with Hope, you can choose to gain a Favor instead of a Hope.',
       },
     ],
     summary: 'A life pledged to a patron, god, demon, or fae, in exchange for borrowed power. The warlock trades tithes and favor for might, and every gift carries the weight of the bargain that bought it.',

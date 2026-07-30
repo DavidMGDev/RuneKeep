@@ -100,9 +100,17 @@ describe('mixed ancestry effect filtering (#265)', () => {
     expect(effectsForCardId('ancestry-simiah', drop)).toEqual([]);
   });
   it('a no-passive ancestry contributes nothing either way', () => {
-    const file = baseFile({ mixedAncestry: { first: 'ancestry-drakona', second: 'ancestry-elf' } });
+    const file = baseFile({ mixedAncestry: { first: 'ancestry-drakona', second: 'ancestry-katari' } });
     expect(effectsForCardId('ancestry-drakona', file)).toEqual([]);
-    expect(effectsForCardId('ancestry-elf', file)).toEqual([]);
+    expect(effectsForCardId('ancestry-katari', file)).toEqual([]);
+  });
+  // v0.25.0: the Elf gained one. Celestial Trance was a hard-coded rule in rest.ts and is now an
+  // effect, so it has to obey the same mixed-ancestry rule as every other passive. It is feature 2.
+  it('the Elf keeps Celestial Trance as the SECOND pick and loses it as the first', () => {
+    const keep = baseFile({ mixedAncestry: { first: 'ancestry-drakona', second: 'ancestry-elf' } });
+    expect(effectsForCardId('ancestry-elf', keep)[0]).toMatchObject({ target: 'restMoves', delta: 1 });
+    const drop = baseFile({ mixedAncestry: { first: 'ancestry-elf', second: 'ancestry-drakona' } });
+    expect(effectsForCardId('ancestry-elf', drop)).toEqual([]);
   });
   it('single-ancestry characters are unaffected', () => {
     expect(effectsForCardId('ancestry-giant', baseFile())[0]).toMatchObject({ target: 'maxHp', delta: 1 });

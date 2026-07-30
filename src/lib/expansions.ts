@@ -7,14 +7,15 @@
  * in class-data), OFF by default. It shows read-only in the library's "Official Expansions" section.
  */
 import { CATALOG, type CatalogCard } from '@/data/catalog';
-import { VOID_EXPANSION_ID, VOID_CLASSES, type ClassName } from '@/constants/identity';
+import { VOID_EXPANSION_ID, THE_VOID_EXPANSION_ID } from '@/constants/identity';
 import { VOID_ANCESTRIES } from '@/data/void-ancestries';
-import { type Expansion, isEnabledForCreation } from './library';
+import { type Expansion, type LibraryCard, isEnabledForCreation } from './library';
 import { getExpansion, listExpansions, saveExpansion } from './library-store';
 
 /** Bump when bundled Void content (VOID_ANCESTRIES, …) changes so already-installed copies refresh in place. */
 // v4 (v0.19.2): renamed the pack "The Void" -> "Hope and Fear" (the official release), illustrated card art.
-export const VOID_BUNDLE_VERSION = 4;
+// v5 (v0.25.0): the pack SPLIT in two, and its ancestries became printed card faces.
+export const VOID_BUNDLE_VERSION = 5;
 
 /** Metadata for the bundled record (its CARDS live in the catalog; this holds the name + global toggle).
  *  NOTE: the internal id stays 'void' for back-compat with characters that already enabled it; only the
@@ -24,17 +25,25 @@ export const VOID_META = {
   name: 'Hope and Fear',
   author: 'Darrington Press',
   description:
-    'Official expansion, 6 classes (Assassin, Witch, Warlock, Blood Hunter, Summoner, Brawler), 2 domains (Blood, Dread), plus new ancestries, communities, transformations, and equipment. Illustrated card art.',
+    'Official expansion, 4 classes (Assassin, Witch, Warlock, Brawler), the Dread domain, plus new ancestries, communities, transformations, and equipment. Illustrated card art.',
+};
+
+/** The beta pack (v0.25.0). Its content was cut from the printed release, so it stands on its own. */
+export const THE_VOID_META = {
+  id: THE_VOID_EXPANSION_ID,
+  name: 'The Void',
+  author: 'Darrington Press',
+  description:
+    'The beta that tested most of Hope and Fear before release. Holds what the published book left out: the Blood Hunter and Summoner classes, their subclasses, and the Blood domain. Card art is unfinished.',
 };
 
 /** Official (bundled) expansion ids this build ships. Always listed FIRST in the library. */
-export const OFFICIAL_EXPANSION_IDS: string[] = [VOID_EXPANSION_ID];
+export const OFFICIAL_EXPANSION_IDS: string[] = [VOID_EXPANSION_ID, THE_VOID_EXPANSION_ID];
 export const isOfficialExpansion = (id: string): boolean => OFFICIAL_EXPANSION_IDS.includes(id);
 
-/** Which expansion a class belongs to (undefined = base game). */
-export function classExpansion(key: ClassName): string | undefined {
-  return VOID_CLASSES.includes(key) ? VOID_EXPANSION_ID : undefined;
-}
+// `classExpansion` lives in expansion-membership so the character-file parse path can use it
+// without dragging the library store in behind it.
+export { classExpansion } from './expansion-membership';
 
 /** Catalog cards visible for a set of enabled expansions: base cards (untagged) always, plus any card
  *  whose `expansion` is enabled. */
@@ -60,12 +69,19 @@ export function expansionCardCount(e: Expansion): number {
 /** Seed the bundled official-expansion record(s) into the library store if absent, so their global
  *  enable toggle persists next to user expansions. OFF by default (A2). Idempotent — call on library load. */
 export async function seedOfficialExpansions(): Promise<void> {
-  const existing = await getExpansion(VOID_META.id);
+  // The ancestries ride the Hope and Fear record; The Void's content is all catalog rows, so its
+  // record carries no cards of its own and exists purely to hold the name and the enable toggle.
+  await seedOne(VOID_META, VOID_ANCESTRIES);
+  await seedOne(THE_VOID_META, []);
+}
+
+async function seedOne(meta: { id: string; name: string; author: string; description: string }, cards: LibraryCard[]): Promise<void> {
+  const existing = await getExpansion(meta.id);
   if (!existing) {
-    const seed: Expansion = { ...VOID_META, official: true, enabled: false, version: VOID_BUNDLE_VERSION, createdAt: new Date().toISOString(), cards: VOID_ANCESTRIES };
+    const seed: Expansion = { ...meta, official: true, enabled: false, version: VOID_BUNDLE_VERSION, createdAt: new Date().toISOString(), cards };
     await saveExpansion(seed);
   } else if ((existing.version ?? 0) < VOID_BUNDLE_VERSION) {
     // refresh the bundled cards in place, preserving the user's global enable toggle + createdAt.
-    await saveExpansion({ ...existing, ...VOID_META, official: true, version: VOID_BUNDLE_VERSION, cards: VOID_ANCESTRIES });
+    await saveExpansion({ ...existing, ...meta, official: true, version: VOID_BUNDLE_VERSION, cards });
   }
 }

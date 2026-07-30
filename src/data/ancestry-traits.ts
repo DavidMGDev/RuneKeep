@@ -22,12 +22,16 @@ export interface MixedAncestry {
  *  - Human   → trait 1 "High Stamina" (+1 Stress)
  *  - Galapa  → trait 1 "Shell" (+Proficiency to damage thresholds)
  *  - Simiah  → trait 2 "Nimble" (+1 Evasion)
+ *  - Elf     → trait 2 "Celestial Trance" (an additional downtime move, v0.25.0)
  */
 export const ANCESTRY_EFFECT_TRAIT: Record<string, 1 | 2> = {
   'ancestry-giant': 1,
   'ancestry-human': 1,
   'ancestry-galapa': 1,
   'ancestry-simiah': 2,
+  // v0.25.0: Celestial Trance (an extra downtime move) became a modifier, so the mixed-ancestry rules
+  // have to know it is the Elf's SECOND feature, or an Elf taken FIRST would keep a struck-out benefit.
+  'ancestry-elf': 2,
 };
 
 /** The active trait for an ancestry card within a mixed pair: the FIRST-picked keeps trait 1, the

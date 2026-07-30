@@ -31,7 +31,7 @@ import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANC
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
-import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
+import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isPermanentCard, refOf, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
@@ -49,12 +49,15 @@ import { CategoryIconSvg } from './category-icons';
 import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/library';
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
-import { VOID_ANCESTRY_ART } from '@/data/void-ancestries';
+import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
+import { hasStrikeLines } from '@/data/ancestry-trait-regions';
+import { cardChoiceFor } from '@/data/card-choices';
 import { embedCardImageForNfc } from '@/lib/image-embed';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { NfcReceiveCeremony, SheetNfcReceiver } from './nfc-receive-ceremony';
+import { CardChoiceDialog } from './card-choice-dialog';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -539,7 +542,7 @@ function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel
 const EDIT_GRAY = '#C4C8D0';
 const EDIT_GRAY_DIM = '#9AA0AA';
 function EditHud() {
-  const { editing, editMode, raisedIds, decks, category, deselectAll } = useCarousel();
+  const { editing, editMode, raisedIds, decks, category, deselectAll, selectAll } = useCarousel();
   const total = decks[category]?.length ?? 0;
   const sel = raisedIds.size;
   const fade = useAnimatedStyle(() => ({ opacity: editMode.value }));
@@ -553,9 +556,18 @@ function EditHud() {
           {sel > 0 ? `${sel} / ${total} Cards` : `${total} Cards`}
         </Text>
       </View>
-      {sel > 0 ? (
-        <Pressable onPress={deselectAll} accessibilityRole="button" accessibilityLabel="Deselect all cards" hitSlop={8} style={({ pressed }) => ({ marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)' })}>
-          <Text style={{ color: EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Deselect All</Text>
+      {/* v0.25.0: one control, two jobs. With nothing selected it offers Select All, which is the
+          fast path for equipping a new character (select all, then Equip from the card menu); with a
+          selection it becomes Deselect All, as before. It never disappears, so the space below the
+          banner stops jumping. */}
+      {total > 0 ? (
+        <Pressable
+          onPress={sel > 0 ? deselectAll : selectAll}
+          accessibilityRole="button"
+          accessibilityLabel={sel > 0 ? 'Deselect all cards' : 'Select all cards'}
+          hitSlop={8}
+          style={({ pressed }) => ({ marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)' })}>
+          <Text style={{ color: EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel > 0 ? 'Deselect All' : 'Select All'}</Text>
         </Pressable>
       ) : null}
     </Animated.View>
@@ -873,7 +885,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // mixed-ancestry cross-out (v0.10.4): strike the feature the mix crosses out on THIS ancestry card.
       // v0.13.0: features can sit at ANY section index — resolve trait 1|2 through featureSectionIndexes.
       const crossed = lc.contentType === 'ancestry' ? mixedCrossedTrait(file, lc.id) : 0;
-      const struckIndex = crossed ? featureSectionIndexes(lc)[crossed - 1] : undefined;
+      // v0.25.0: an ancestry with a PRINTED FACE has no text blocks to strike; TraitCrossOut draws
+      // measured lines over the bitmap instead. Striking here as well would cross the feature twice.
+      const struckIndex = crossed && !hasStrikeLines(lc.id) ? featureSectionIndexes(lc)[crossed - 1] : undefined;
       // v0.13.0: order-sensitive section signature — re-arranging sections (same lengths) must NOT
       // serve the stale pre-arrange snapshot.
       const secSig = (lc.sections ?? []).reduce((a, s, i) => (a + (i + 1) * ((s.name?.length ?? 0) * 3 + s.body.length + (s.feature ? 5 : 0))) % 99991, 0);
@@ -883,7 +897,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
         // image-bearing card (avoids the async-art flicker, per the forged-card cache rules).
-        raster: !!lc.imageUri || !!VOID_ANCESTRY_ART[lc.id],
+        raster: !!lc.imageUri || !!VOID_ANCESTRY_FACE[lc.id],
       };
     });
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
@@ -1059,7 +1073,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const classTrackerItems: CardItem[] = file.className === 'summoner'
       ? [{ id: SUMMONER_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <SummonerTrackerCard state={file.classTracker} subclass={trackerSubclass} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
       : file.className === 'warlock'
-      ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
+      ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
       : [];
     const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
@@ -1792,6 +1806,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [deleteReq, setDeleteReq] = useState<string[] | null>(null);
   /** v0.14.1: the consumable instance just switched OFF, awaiting the "used it up?" prompt. */
   const [depletedId, setDepletedId] = useState<string | null>(null);
+  /** A card whose benefits the player has yet to choose. Set when they try to equip it. */
+  const [choiceReq, setChoiceReq] = useState<string | null>(null);
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
   const editableIds = useMemo(() => editableCardIds(file), [file]);
@@ -1903,14 +1919,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         // and onDeleteCards drops exactly one copy from the multiset.
         if (force === undefined && lootById(catalogIdOf(id))?.kind === 'consumable') setDepletedId(id);
       } else {
+        // v0.25.0: a card offering a CHOICE cannot be equipped until it is answered, because an
+        // unanswered card grants nothing and doing that silently is worse than asking. Vitality is
+        // the first: "permanently gain two of the following."
+        if (cardChoiceFor(catalogIdOf(ref)) && !file.cardChoices?.[ref]) { setChoiceReq(ref); return; }
         // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
         if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
         if (transformed && cidWeapon) { playSfx('floatMenuClose'); return; } // no weapons while transformed
         if (transformed && cidDomain && !(beastformDomainSnapshot ?? []).includes(ref)) { playSfx('floatMenuClose'); return; } // no NEW domain cards
         // #318: at most 5 ENABLED domain cards (any domain). A 6th is blocked with a "Maximum 5 Domain
         // Cards" notice; insisting 3× in a row (without leaving fullscreen) overrides it (debug).
-        if (cidDomain) {
-          const enabledDomains = [...cur].filter((x) => cardById(x)?.kind === 'domain').length;
+        // v0.25.0: permanent cards are exempt. Vitality's own text tells you to vault it, and it keeps
+        // working from there, so it is not occupying one of the five loadout slots. Cards ALREADY
+        // enabled that are permanent do not count towards the total either.
+        if (cidDomain && !isPermanentCard(ref, file)) {
+          const enabledDomains = [...cur].filter((x) => cardById(x)?.kind === 'domain' && !isPermanentCard(x, file)).length;
           if (enabledDomains >= 5) {
             if (force !== undefined) { playSfx('floatMenuClose'); return; } // bulk: respect the cap, skip this one
             domainOverrideRef.current += 1;
@@ -2244,6 +2267,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
             {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}
+            {/* v0.25.0: the card asks its question before it can be equipped. Answering stores the
+                pick and equips in one step, so the tap the player made is the tap that happens. */}
+            {choiceReq ? <CardChoicePrompt id={choiceReq} file={file} onCancel={() => setChoiceReq(null)} onPick={(options) => {
+              const cur = fileRef.current;
+              setChoiceReq(null);
+              if (!cur) return;
+              const next = { ...cur, cardChoices: { ...cur.cardChoices, [choiceReq]: options } };
+              setFile(next);
+              fileRef.current = next;
+              saveFileRef.current(next);
+              toggleOneFromRefs(choiceReq, 'on');
+            }} /> : null}
             {incoming ? <NfcReceiveCeremony card={incoming} destinations={moveTargets} customCategories={customCategories} onCommit={commitReceived} onDismiss={() => setIncoming(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
@@ -2279,7 +2314,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {floatKind === 'custom' ? (
             <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} quick={newCardEntry === 'card'} destinations={moveTargets} customCategories={customCategories} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
-            <RestPanel character={character} moveLimit={restMoveLimit(file ?? {})} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
+            <RestPanel character={character} moveLimit={restMoveLimit(character.restMoves)} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
             <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (
@@ -2373,4 +2408,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       </CarouselProvider>
     </AccentProvider>
   );
+}
+
+/** Resolves a card id to its choice and title, so the sheet's JSX stays a single line. */
+function CardChoicePrompt({ id, file, onPick, onCancel }: { id: string; file: CharacterFile | undefined; onPick: (options: number[]) => void; onCancel: () => void }) {
+  const choice = cardChoiceFor(catalogIdOf(id));
+  if (!choice) return null;
+  return <CardChoiceDialog choice={choice} cardTitle={sourceLabelForCardId(id, file ?? undefined)} onPick={onPick} onCancel={onCancel} />;
 }

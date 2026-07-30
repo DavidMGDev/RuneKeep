@@ -27,13 +27,21 @@ const anc = (id: string, title: string, color: string, sections: CardSection[], 
 });
 
 /**
- * v0.21.0 (items 1/2): the illustrated ancestry art, cropped from HOPEANDFEAR_Cards.pdf. Ancestries are
- * STRUCTURED text cards (so mixed-ancestry strike-through + the Earthkin passive keep working), so they
- * carry no `imageUri`; instead LibraryForgedCard looks the art up BY ID here and paints it in the card's
- * art band (via ForgedCard's `fallbackArt`), matching the illustrated communities. Keyed by ancestry id;
- * a bundled `require()` module number — deliberately NOT stored on the serializable LibraryCard.
+ * The WHOLE printed card face, cropped from HOPEANDFEAR_Cards.pdf at 750x1050 (v0.25.0).
+ *
+ * Up to v0.24.x these were art-band crops and the card around them was drawn by the app from the
+ * `sections` below. That was built so mixed-ancestry strike-through could strike a text block, but it
+ * left the Hope and Fear ancestries looking like homebrew next to the base game's ancestry cards,
+ * which are printed faces. Now they are printed faces too, and the cross-out goes back to the base
+ * game's model: measured strike lines from `ancestry-trait-regions`.
+ *
+ * The `sections` are KEPT rather than deleted. They still feed the plain-text fallback, the markdown
+ * body, search, sharing, and `ancestryEffectTrait`, none of which can read a bitmap.
+ *
+ * Keyed by ancestry id; a bundled `require()` module number, deliberately NOT stored on the
+ * serializable LibraryCard. Regenerate with `python scripts/ancestry_marker.py --faces <dir>`.
  */
-export const VOID_ANCESTRY_ART: Record<string, number> = {
+export const VOID_ANCESTRY_FACE: Record<string, number> = {
   'ancestry-earthkin': require('../../assets/extracted_cards/Void/Ancestry/earthkin.webp'),
   'ancestry-tidekin': require('../../assets/extracted_cards/Void/Ancestry/tidekin.webp'),
   'ancestry-emberkin': require('../../assets/extracted_cards/Void/Ancestry/emberkin.webp'),

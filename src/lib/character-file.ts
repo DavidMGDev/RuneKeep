@@ -7,9 +7,10 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { CATALOG, cardById } from '@/data/catalog';
+import { withRequiredExpansions } from '@/lib/expansion-membership';
 import type { CharacterHistory } from '@/lib/character-history';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
-import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
+import { effectsForCardId, sourceLabelForCardId, unequippedPermanentSources } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA, spellcastTraitForSubclass } from '@/data/class-data';
 import { activeWildshapeName } from '@/data/wildshape-data';
@@ -32,7 +33,10 @@ export interface ClassTrackerState {
   divineHope?: number;
   /** Warlock: the named patron. */
   patron?: string;
-  /** Warlock: exactly two spheres of influence, each a name + value (starts at +2, +1 per tier). */
+  /** Warlock: the patron's sphere of influence, as printed (one free-text field). v0.25.0. */
+  sphere?: string;
+  /** Warlock, DEPRECATED: two valued spheres, a shape the printed card does not have. Kept only so an
+   *  existing save's text can be folded into `sphere` instead of vanishing. */
   spheres?: { name: string; value: number }[];
   /** Warlock: Favor — spendable resource, starts at 3, printed track shows 6. */
   favor?: number;
@@ -199,6 +203,16 @@ export interface CharacterFile {
    *  INSTEAD of the card's code-defined effects. Lets players fix/add/remove modifiers on catalog cards
    *  (custom cards edit their own `effects`). Keyed by catalog id (so all copies share). Additive. */
   cardEffectOverrides?: Record<string, import('@/lib/modifiers').CardEffect[]>;
+  /**
+   * v0.25.0: which options the player took on a card that offers a CHOICE, keyed by the card's ref
+   * (so all copies share the pick, like effects do). Values are indexes into that card's
+   * `CardChoice.options`. Vitality is the first: "permanently gain two of the following."
+   *
+   * Kept ON THE FILE rather than derived, which is what makes history work: character history stores
+   * snapshots, so undoing the moment Vitality was taken restores the pick along with everything else,
+   * and re-equipping later finds it still there. No replay logic needed.
+   */
+  cardChoices?: Record<string, number[]>;
   /** Card copies (#277): extra deck instances of an existing card. Each has its own unique instance
    *  `id` (for position/category/tokens) but a `ref` to the underlying card (catalog id or custom-card
    *  id) — copies SHARE enable state + apply their effect once (enable is keyed by ref). Additive. */
@@ -286,6 +300,10 @@ export function parseCharacterFile(raw: string): CharacterFile {
   }
   if (!Array.isArray(f.domainCardIds) || f.domainCardIds.some((id) => !known(id))) throw new Error('Unknown domain card');
   if (typeof f.className !== 'string' || !classInfo(f.className as ClassName)) throw new Error('Unknown class');
+  // v0.25.0: the official pack split in two, so a character saved before the split lists only 'void'
+  // while half its content is now tagged 'thevoid'. Derive what it actually needs and top the list up,
+  // or a Blood Hunter opens with no class. Additive and idempotent.
+  f.enabledExpansionIds = withRequiredExpansions(f);
   // v0.10.2 (Bug 3 backfill): older saves advanced `subclassTier` without ever gaining the matching
   // specialization/mastery card. Ensure every sibling up to the current tier is present so the deck shows
   // it. Idempotent (guarded by includes) and only touches non-multiclassed subclass upgraders.
@@ -340,9 +358,15 @@ function enabledCardSources(file: CharacterFile): EffectSource[] {
     .filter((s) => s.effects.length > 0);
 }
 
-/** Full effect sources = the per-level threshold bonus (armored-aware, #320) + the enabled cards. */
+/**
+ * Full effect sources = the per-level threshold bonus (armored-aware, #320) + the enabled cards + any
+ * PERMANENT effect from a card the character holds but has not equipped (v0.25.0).
+ *
+ * That last group is what lets Vitality do what its own text says: gain the benefit permanently, then
+ * put the card in your vault. Before this, following the card's instructions turned its benefit off.
+ */
 function allEffectSources(file: CharacterFile): EffectSource[] {
-  const cards = enabledCardSources(file);
+  const cards = [...enabledCardSources(file), ...unequippedPermanentSources(file)];
   // "Armored" = some enabled card SETS a threshold (armor card, or Bare Bones). Then the level bonus is
   // +1/+1 (add-your-level on top of the set); otherwise the unarmored 1×/2× scaling applies.
   const armored = cards.some((s) => s.effects.some((e) => (e.target === 'majorThreshold' || e.target === 'severeThreshold') && e.mode === 'set'));
@@ -393,6 +417,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     majorThreshold: 0,
     severeThreshold: 0,
     scar: 0, // v0.13.0: scars come only from enabled "Add Scar" cards
+    restMoves: 0, // v0.25.0: the baseline two moves live in rest.ts; this counts only the extras
   };
   const sources = allEffectSources(file);
   // v0.21.0 item 5: the Spellcast trait (from the chosen subclass) powers the `spellcast` formula variable
@@ -438,6 +463,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     // Scarred slots ride the Track's `locked` convention, so every ±1/rest path caps at the usable slots.
     hope: { active: res ? clampRes(res.hope, usableHope) : Math.min(2, usableHope), total: sheet.hopeMax.total, locked: scars || undefined },
     scars,
+    restMoves: sheet.restMoves.total,
     gold: file.gold ?? { handfuls: 1, bags: 0, chest: 0 }, // the kit's handful of gold (#136)
     traits,
   };
@@ -467,6 +493,7 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     majorThreshold: 0, // #320: thresholds come entirely from per-level bonuses (see toSheetCharacter)
     severeThreshold: 0,
     scar: 0, // v0.13.0
+    restMoves: 0, // v0.25.0
   };
   const spellcastTrait = spellcastTraitForSubclass(cardById(file.subclassCardId)?.subclass);
   return computeSheet(base, file.level, allEffectSources(file), spellcastTrait);

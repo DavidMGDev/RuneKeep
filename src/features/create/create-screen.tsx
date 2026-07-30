@@ -20,6 +20,7 @@ import { newCharacterId } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { contentForCreation, type CreationContent, type Expansion, featureSectionIndexes, isEnabledForCreation, type LibraryCard, subclassFamilyKey } from '@/lib/library';
+import { hasStrikeLines } from '@/data/ancestry-trait-regions';
 import { LibraryForgedCard } from './components/library-forged-card';
 import { listExpansions } from '@/lib/library-store';
 import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
@@ -361,8 +362,10 @@ export function CreateScreen() {
         // the image cards. v0.13.0: the struck FEATURE resolves to its actual section index (features
         // can sit anywhere among the sections) via featureSectionIndexes.
         const mix = draft.mixedAncestry;
+        // v0.25.0: skip printed-face ancestries — StraightCarousel already draws TraitCrossOut's
+        // measured lines over those, and striking the text as well would cross the feature twice.
         const struckIdx = (lc: LibraryCard): number | undefined =>
-          mix?.first === lc.id ? featureSectionIndexes(lc)[1] : mix?.second === lc.id ? featureSectionIndexes(lc)[0] : undefined;
+          hasStrikeLines(lc.id) ? undefined : mix?.first === lc.id ? featureSectionIndexes(lc)[1] : mix?.second === lc.id ? featureSectionIndexes(lc)[0] : undefined;
         return [...base, ...(libContent?.ancestries ?? []).map((lc) => libCardItem(lc, struckIdx(lc))), toggle];
       }
       case 'community':
@@ -666,7 +669,11 @@ export function CreateScreen() {
     <AppScreen
       title="New hero"
       onBack={() => { if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); router.back(); } }}
-      headerRight={<RuneButton label="Forge" kind="primary" height={26} dense onPress={() => { if (complete) void forge(); else jumpToMissing(); }} accessibilityLabel="Create character" />}>
+      // v0.25.0: Forge is DIM until the character is finished, so the button reports readiness instead
+      // of claiming it from the first screen. It stays tappable on purpose: tapping it while
+      // incomplete jumps to the step that is missing, which is more use than a dead control, and a
+      // truly dead Forge with no explanation is the thing this replaced in the first place.
+      headerRight={<RuneButton label="Forge" kind={complete ? 'primary' : 'ghost'} height={26} dense onPress={() => { if (complete) void forge(); else jumpToMissing(); }} accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`} />}>
       <View style={{ flex: 1 }}>
         {/* ---- details ---- */}
         <SectionDivider label="Details" />
