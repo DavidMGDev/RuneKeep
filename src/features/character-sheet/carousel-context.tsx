@@ -99,6 +99,8 @@ interface CarouselContextValue {
   /** Spring the row so the given card centers (used to reveal freshly-duplicated cards). No-op if the
    *  id isn't in the current deck. */
   scrollToId: (id: string) => void;
+  /** Move N cards along the current deck (v0.26.0, keyboard). */
+  stepBy: (n: number) => void;
   /** Persist an in-edit drag-reorder (v0.9.8): move cards to a category at an explicit order. Same
    *  signature as the Cards panel's group reorder, so it inherits the override + order persistence. */
   onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
@@ -476,6 +478,23 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   }, []);
   // Center the row on a card by id (v0.11.0): spring the rotation so it lands centered. Reads the LIVE
   // deck (decksRef) so it's correct even called right after a Duplicate commits new cards.
+  /**
+   * v0.26.0: move N cards along the current deck, for the desktop keyboard. The carousel is driven by
+   * gestures everywhere else, so there was no way to ask it to advance by a count; `scrollToId` needs
+   * an id, and a keyboard only knows "the next one".
+   */
+  const stepBy = useCallback((n: number) => {
+    const d = decksRef.current[categoryRef.current] ?? [];
+    if (!d.length || !n) return;
+    const cur = Math.round(rotation.value / ANGLE_STEP);
+    const next = Math.max(0, Math.min(d.length - 1, cur + n));
+    if (next === cur) return;
+    cancelAnimation(rotation);
+    rotation.value = withSpring(snapRot(next * ANGLE_STEP, d.length), SNAP_SPRING);
+    focusIndex.value = next;
+    playSfx('carouselScroll');
+  }, [rotation, focusIndex]);
+
   const scrollToId = useCallback((id: string) => {
     const d = decksRef.current[categoryRef.current] ?? [];
     const i = d.findIndex((c) => c.id === id);
@@ -542,6 +561,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       toggleRaise,
       deselectAll,
       selectAll,
+      stepBy,
       scrollToId,
       onReorderCards,
       cardMenuOpen,
@@ -568,7 +588,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

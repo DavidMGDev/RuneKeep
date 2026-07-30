@@ -7,11 +7,13 @@ import { AppScreen } from '@/components/app-screen';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { finishTour, saveTourStep, type TourId, tourStep } from '@/lib/onboarding-store';
+import { isDesktopWeb } from '@/lib/pwa-install';
 import { useInstallMode } from '@/lib/pwa-install';
 import { playSfx } from '@/lib/sfx';
 
 import { CircleDemo, EquipDemo, HandDemo, HeartsDemo, WelcomeDemo, WheelDemo } from './demos';
 import { InstallDemo } from './install-demo';
+import { KeysDemo } from './keys-demo';
 
 /**
  * The guided tours (v0.23.0).
@@ -42,6 +44,13 @@ interface Page {
  * when there is something to offer (see `lib/pwa-install`), so on Android, iOS and native the tour
  * is otherwise unchanged.
  */
+/** v0.26.0: the keyboard page, shown only where there is a keyboard. */
+const KEYS_PAGE: Page = {
+  title: 'You can use the keyboard',
+  body: 'RuneKeep is built for thumbs, and on a desktop that means a lot of dragging. These do the same jobs without the mouse.\n\nThe arrow keys and WASD both work, whichever your hands already know.',
+  render: () => <KeysDemo />,
+};
+
 function installPage(mode: Exclude<ReturnType<typeof useInstallMode>, 'none'>, onInstalled: () => void): Page {
   return {
     title: 'Add it to your home screen',
@@ -128,8 +137,12 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
   // installed (the browser stops offering it, and the page has nothing left to say).
   const pages = useMemo(() => {
     const base = TOURS[tour];
-    if (tour !== 'welcome' || installMode === 'none' || installed) return base;
-    return [installPage(installMode, () => setInstalled(true)), ...base];
+    if (tour !== 'welcome') return base;
+    // The keyboard page closes the welcome tour on a desktop browser; the install offer opens it on a
+    // phone. The two audiences never overlap, so neither ever sees the other's page.
+    const withKeys = isDesktopWeb() ? [...base, KEYS_PAGE] : base;
+    if (installMode === 'none' || installed) return withKeys;
+    return [installPage(installMode, () => setInstalled(true)), ...withKeys];
   }, [tour, installMode, installed]);
   const [step, setStep] = useState(() => Math.min(tourStep(tour), pages.length - 1));
   const [didSteps, setDidSteps] = useState<Set<number>>(new Set());

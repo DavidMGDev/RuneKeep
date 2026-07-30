@@ -58,6 +58,7 @@ import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { NfcReceiveCeremony, SheetNfcReceiver } from './nfc-receive-ceremony';
 import { CardChoiceDialog } from './card-choice-dialog';
+import { useKeyboardControl } from './use-keyboard-control';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -2018,6 +2019,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     },
     [burstResources, pushToasts, pushNotice],
   );
+  // v0.26.0: is anything modal open? The keyboard scheme keeps its hands off the carousel when so.
+  const anyOverlay = !!(floatKind || cardInfoId || editCardId || emptyPanel || incoming || moveReq || depletedId || newCardCat || choiceReq);
   const onToggleCard = useCallback((id: string) => toggleOneFromRefs(id), [toggleOneFromRefs]);
   // item 8: bulk equip/unequip the raised selection. If every card is already equipped the whole set is
   // unequipped, otherwise the whole set is equipped — each firing 35ms after the last, LEFT→RIGHT in deck
@@ -2224,6 +2227,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               <EditHud />
+              {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the
+                  carousel; a no-op on a phone. */}
+              <KeyboardControl overlay={anyOverlay} />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
               {/* Unload the sheet carousel while Level-Up (#203) or the Cards panel (#227) is open —
@@ -2414,6 +2420,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
 }
 
 /** Resolves a card id to its choice and title, so the sheet's JSX stays a single line. */
+/**
+ * Mounts the keyboard scheme inside the carousel provider (v0.26.0). Renders nothing: it exists
+ * because the hook needs carousel context and the sheet's own body sits outside the provider.
+ */
+function KeyboardControl({ overlay }: { overlay: boolean }) {
+  useKeyboardControl({ overlay });
+  return null;
+}
+
 function CardChoicePrompt({ id, file, onPick, onCancel }: { id: string; file: CharacterFile | undefined; onPick: (options: number[]) => void; onCancel: () => void }) {
   const choice = cardChoiceFor(catalogIdOf(id));
   if (!choice) return null;

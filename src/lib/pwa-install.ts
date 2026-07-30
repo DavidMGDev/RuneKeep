@@ -109,3 +109,22 @@ export function useInstallMode(): InstallMode {
   }, []);
   return mode;
 }
+
+/**
+ * A browser on a machine with a keyboard (v0.26.0).
+ *
+ * Used to decide whether the welcome tour ends with the keyboard page. Deliberately the INVERSE of
+ * the install offer's audience rather than a separate notion of "desktop": if the app is worth
+ * installing because browser chrome is in the way, it is a phone and there is no keyboard to
+ * explain; if it is not, there is.
+ */
+export function isDesktopWeb(): boolean {
+  const w = win();
+  if (!w) return false;
+  const ua = w.navigator?.userAgent ?? '';
+  const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (w.navigator?.maxTouchPoints ?? 0) > 1);
+  if (ios || /Android/.test(ua)) return false;
+  // A touchscreen laptop still has a keyboard; a tablet reporting a desktop UA does not. The pointer
+  // query is what separates them, and it is the same signal the platform uses for hover styling.
+  return !!w.matchMedia?.('(pointer: fine)')?.matches;
+}
