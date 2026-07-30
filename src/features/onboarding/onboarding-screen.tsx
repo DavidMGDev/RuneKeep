@@ -115,6 +115,19 @@ const SHEET: Page[] = [
     body: 'The circles at the bottom of the screen, behind your cards, open and close your hand. Drag them sideways to skim the whole deck quickly.\n\nHold them still to enter Edit mode, where you can select several cards at once and equip, move, favourite or delete them all together.',
     render: () => <CircleDemo />,
   },
+  // v0.26.0: two things a new character needs doing once, neither of them discoverable. Equipping is
+  // a hold per card until you know Edit mode exists, and a fresh arsenal holds armor and starting
+  // gear that crowd out the cards you actually play with.
+  {
+    title: 'Equip everything at once',
+    body: 'A new character starts with nothing equipped except their armor, so most of their bonuses are not being counted yet.\n\nHold the circles for Edit mode, press Select All, then Equip from the card menu. That is every card in one go rather than a hold each.',
+    render: () => <CircleDemo />,
+  },
+  {
+    title: 'Tidy the arsenal afterwards',
+    body: 'Your armor and starting gear live in the arsenal to begin with, which works but gets crowded.\n\nOnce their bonuses are counted, move them to Inventory: Edit mode, select them, then Move. Your arsenal is then just the cards you play with.',
+    render: () => <CircleDemo />,
+  },
   {
     title: 'The wheel under your portrait',
     body: 'Press the emblem below your portrait and drag to a wedge.\n\nState shows your modifiers and everything that has happened to this character. Then Level Up, Rest, New Card, and Cards for the rest.',

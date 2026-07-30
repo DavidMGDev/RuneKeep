@@ -639,7 +639,14 @@ export function CreateScreen() {
       }
     }
     // enable custom origin/armor cards so their effects apply (armor score/thresholds, ancestry passive).
-    const enabledCustom = libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id);
+    // v0.26.0: the CHOSEN ARMOR is equipped too. A new character arrived with an armor card sitting
+    // inert in their arsenal and an Armor Score of zero, because equipping is a hold the player has
+    // not learned yet. Armor is the one starting card whose whole purpose is its numbers, so leaving
+    // it off made a fresh sheet simply wrong. Onboarding recommends tidying the rest away afterwards.
+    const enabledCustom = [
+      ...libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id),
+      ...(draft.armorId ? [draft.armorId] : []),
+    ];
     // v0.12.2: record which EXPANSIONS this hero was created with (real ids only — the implicit base is
     // dropped). Omitted when empty so a base-only save stays byte-identical / back-compat.
     const enabledExpansionIds = [...picked].filter((id) => id !== BASE_PICK_ID);

@@ -178,7 +178,15 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
     const d = index - pos.value;
     const ad = Math.abs(d);
     let x = d * SPACING * (1 - GRIND_TIGHTEN_L * g);
-    let scale = CARD_SCALE * (1 - Math.min(ad, 3.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
+    // v0.26.0: shrink to fit a short rail.
+    //
+    // The card is a fixed 322dp tall and sits at REST_FRAC down the rail, so on a short viewport its
+    // top edge rose past the top of the rail and overlapped the step tabs above it. That happens on
+    // mobile web whenever the browser's own chrome is showing, which is most of the time. The card
+    // gives way instead: it is never bigger than the space it has, and never smaller than half, since
+    // below that it stops being readable and something else has gone wrong.
+    const fit = railH.value > 0 ? Math.min(1, Math.max(0.5, railH.value / (FORGED_H * CARD_SCALE / REST_FRAC / 2))) : 1;
+    let scale = CARD_SCALE * fit * (1 - Math.min(ad, 3.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
     let y = 0;
     // visibility window: solid then a quick fade band; widens while grinding
     const cut = 2.9 + 2.6 * g;
