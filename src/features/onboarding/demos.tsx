@@ -269,7 +269,19 @@ export function WheelDemo({ onDid }: { onDid?: () => void }) {
   }, [open, p]);
   return (
     <Stage>
-      <View style={{ width: 250, height: 160, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 250, height: 190, alignItems: 'center', justifyContent: 'flex-end' }}>
+        {/* v0.26.0: the portrait above it, because the page is called "the wheel UNDER your
+            portrait" and the emblem alone gave no clue where to look. The icon itself was also
+            washed out until ChamferBox stopped painting its panel over its own contents. */}
+        <View style={{ position: 'absolute', top: 0, alignItems: 'center' }} pointerEvents="none">
+          <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={DIM} strokeWidth={1.3} style={{ width: 64, height: 78, alignItems: 'center', justifyContent: 'center' }}>
+            <Svg width={30} height={30} viewBox="0 0 24 24">
+              <Path d="M12 12.4a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Z" fill="none" stroke={DIM} strokeWidth={1.6} />
+              <Path d="M4.6 21c0-4 3.3-6.4 7.4-6.4s7.4 2.4 7.4 6.4" fill="none" stroke={DIM} strokeWidth={1.6} strokeLinecap="round" />
+            </Svg>
+          </ChamferBox>
+          <Text style={{ marginTop: 4, color: Rune.muted, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Your portrait</Text>
+        </View>
         {WEDGES.map((l, i) => (
           <WheelPuck key={l} label={l} i={i} p={p} />
         ))}
