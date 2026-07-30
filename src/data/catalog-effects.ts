@@ -5,12 +5,19 @@
  * grant none. See src/lib/modifiers.ts and src/features/cards/card-effects.ts.
  */
 import type { CardEffect } from '@/lib/modifiers';
+import { VITALITY_EFFECTS } from './card-choices';
 
 export const CATALOG_EFFECTS: Record<string, CardEffect[]> = {
   "ancestry-galapa": [{ target: "majorThreshold", dynamic: "proficiency", note: "Shell: bonus to thresholds = Proficiency" }, { target: "severeThreshold", dynamic: "proficiency", note: "Shell: bonus to thresholds = Proficiency" }],
   "ancestry-giant": [{ target: "maxHp", delta: 1, note: "Endurance: 'Gain an additional Hit Point slot at character creation.'" }],
   "ancestry-human": [{ target: "stressMax", delta: 1, note: "High Stamina: 'Gain an additional Stress slot at character creation.'" }],
   "ancestry-simiah": [{ target: "evasion", delta: 1, note: "Nimble: 'Gain a permanent +1 bonus to your Evasion at character creation.'" }],
+  // v0.25.0: Vitality asks the player which two of three permanent benefits it grants, so its effects
+  // live with the choice that gates them. See src/data/card-choices.ts.
+  "blade-05-2": VITALITY_EFFECTS,
+  // v0.25.0: Celestial Trance was a hard-coded rule in rest.ts; it is a modifier now, so homebrew can
+  // grant an extra downtime move too. It rides the Elf's SECOND feature, so a mix strikes it correctly.
+  "ancestry-elf": [{ target: "restMoves", delta: 1, note: "Celestial Trance: choose an additional downtime move" }],
   "blade-04-2": [{ target: "majorThreshold", delta: 2, note: "+2 to damage thresholds while wearing armor" }, { target: "severeThreshold", delta: 2, note: "+2 to damage thresholds while wearing armor" }],
   "blade-07-1": [{ target: "severeThreshold", delta: 4, note: "Blade-Touched: +4 Severe damage threshold while 4+ loadout cards are Blade-domain" }],
   "bone-01-3": [{ target: "evasion", dynamic: "halfAgility", note: "Untouchable: +half Agility to Evasion" }],

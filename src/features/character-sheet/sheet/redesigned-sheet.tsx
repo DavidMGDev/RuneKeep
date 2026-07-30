@@ -2282,7 +2282,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {floatKind === 'custom' ? (
             <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} quick={newCardEntry === 'card'} destinations={moveTargets} customCategories={customCategories} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
-            <RestPanel character={character} moveLimit={restMoveLimit(file ?? {})} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
+            <RestPanel character={character} moveLimit={restMoveLimit(character.restMoves)} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
             <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (

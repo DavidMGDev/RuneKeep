@@ -1,4 +1,6 @@
 import { SAMPLE_CHARACTER, type Character } from '@/features/character-sheet/character';
+import { effectsForCardId } from '@/features/cards/card-effects';
+
 import { applyRestMoves, movesFor, restMoveById, restMoveLimit, tierForLevel } from './rest';
 
 /** A wounded test character with room to heal/clear/repair on every track. */
@@ -102,30 +104,47 @@ describe('restMoveById', () => {
   });
 });
 
-describe('restMoveLimit — Celestial Trance (v0.22.0)', () => {
-  it('allows two moves for an ancestry with no rest feature', () => {
-    expect(restMoveLimit({ ancestryCardId: 'ancestry-human' })).toBe(2);
-    expect(restMoveLimit({})).toBe(2);
+describe('restMoveLimit (v0.25.0: driven by the Optional Rest Bonus modifier)', () => {
+  it('allows two moves with no bonus', () => {
+    expect(restMoveLimit(0)).toBe(2);
+    expect(restMoveLimit()).toBe(2);
   });
 
-  it('allows three for a pure elf — both features are live', () => {
-    expect(restMoveLimit({ ancestryCardId: 'ancestry-elf' })).toBe(3);
+  it('adds the bonus on top of the baseline', () => {
+    expect(restMoveLimit(1)).toBe(3);
+    expect(restMoveLimit(2)).toBe(4);
   });
 
-  it('allows three when elf is the SECOND mixed pick — it keeps feature 2', () => {
-    expect(restMoveLimit({ mixedAncestry: { first: 'ancestry-human', second: 'ancestry-elf' } })).toBe(3);
+  it('never goes below the baseline, however the bonus arrives', () => {
+    expect(restMoveLimit(-3)).toBe(2);
+  });
+});
+
+describe('Celestial Trance grants the bonus through the modifier engine', () => {
+  const rest = (e: { target: string }[]) => e.filter((x) => x.target === 'restMoves').length;
+
+  it('the Elf card carries an Optional Rest Bonus', () => {
+    expect(rest(effectsForCardId('ancestry-elf'))).toBe(1);
   });
 
-  it('drops back to two when elf is the FIRST mixed pick — Celestial Trance is struck', () => {
-    expect(restMoveLimit({ mixedAncestry: { first: 'ancestry-elf', second: 'ancestry-human' } })).toBe(2);
+  it('an ancestry with no rest feature carries none', () => {
+    expect(rest(effectsForCardId('ancestry-human'))).toBe(0);
   });
 
-  it('ignores ancestryCardId once a mix is set', () => {
-    // The sheet keeps ancestryCardId populated alongside mixedAncestry; the mix must win, or an elf
-    // demoted to the first slot would keep a bonus its card no longer grants.
-    expect(restMoveLimit({ ancestryCardId: 'ancestry-elf', mixedAncestry: { first: 'ancestry-elf', second: 'ancestry-human' } })).toBe(2);
+  // Celestial Trance is the Elf's SECOND feature, and a mix keeps the first pick's feature 1 and the
+  // second pick's feature 2. So an Elf taken FIRST has it struck out and rests like anyone else.
+  it('survives when the Elf is the SECOND pick in a mix', () => {
+    const file = { mixedAncestry: { first: 'ancestry-human', second: 'ancestry-elf' } } as never;
+    expect(rest(effectsForCardId('ancestry-elf', file))).toBe(1);
   });
 
+  it('is struck out when the Elf is the FIRST pick in a mix', () => {
+    const file = { mixedAncestry: { first: 'ancestry-elf', second: 'ancestry-human' } } as never;
+    expect(rest(effectsForCardId('ancestry-elf', file))).toBe(0);
+  });
+});
+
+describe('resting with fewer moves', () => {
   it('is a ceiling, not a requirement — resting with fewer moves still applies them', () => {
     const { log } = applyRestMoves(wounded(), 2, [{ moveId: 'tend', roll: 2 }]);
     expect(log).toHaveLength(1);

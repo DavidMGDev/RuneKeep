@@ -54,39 +54,18 @@ export const REST_MOVES: RestMove[] = [
 export const BASE_REST_MOVES = 2;
 
 /**
- * Which ancestry FEATURE (1 = first on the card, 2 = second) grants "choose an additional downtime
- * move". Elf's Celestial Trance is the second feature, which is what makes it interact with mixed
- * ancestry: a mix keeps feature 1 of the first pick and feature 2 of the second pick, so an elf
- * taken FIRST has Celestial Trance struck through and rests like anyone else.
+ * How many downtime moves this character MAY take. It is a ceiling, never a requirement.
  *
- * Deliberately separate from `ANCESTRY_EFFECT_TRAIT` (data/ancestry-traits): that map is only for
- * ancestries granting a permanent STAT passive, and this is a rules behaviour, not a modifier.
+ * v0.25.0: `bonus` comes from the `restMoves` modifier total rather than a hard-coded ancestry rule.
+ * The Elf's Celestial Trance used to be special-cased here, with its own mixed-ancestry handling
+ * duplicating what the modifier engine already does. It is now an effect on the Elf card like the
+ * Giant's extra Hit Point, which means it shows up in the Modifiers panel, obeys mixed ancestry
+ * through the normal path, and any homebrew card can grant one too.
+ *
+ * Like every other ancestry passive, it applies while the ancestry card is equipped.
  */
-export const ANCESTRY_REST_BONUS: Record<string, 1 | 2> = {
-  'ancestry-elf': 2,
-};
-
-/** The ancestry shape `restMoveLimit` needs — a subset of CharacterFile, so this stays pure. */
-export interface RestAncestry {
-  ancestryCardId?: string;
-  mixedAncestry?: { first: string; second: string };
-}
-
-/** Whether this character keeps an ancestry feature granting an extra downtime move. */
-export function hasExtraRestMove(a: RestAncestry): boolean {
-  const m = a.mixedAncestry;
-  if (m) {
-    // A mix keeps the FIRST pick's feature 1 and the SECOND pick's feature 2; the other half of each
-    // card is crossed out, and a crossed-out feature grants nothing.
-    return ANCESTRY_REST_BONUS[m.first] === 1 || ANCESTRY_REST_BONUS[m.second] === 2;
-  }
-  // Not in a mix: both features are live, so it doesn't matter which one carries the bonus.
-  return a.ancestryCardId != null && ANCESTRY_REST_BONUS[a.ancestryCardId] != null;
-}
-
-/** How many downtime moves this character MAY take. It is a ceiling, never a requirement. */
-export function restMoveLimit(a: RestAncestry): number {
-  return BASE_REST_MOVES + (hasExtraRestMove(a) ? 1 : 0);
+export function restMoveLimit(bonus = 0): number {
+  return BASE_REST_MOVES + Math.max(0, bonus);
 }
 
 /** Tier of play (#165): T1 = lvl 1, T2 = 2-4, T3 = 5-7, T4 = 8-10. */

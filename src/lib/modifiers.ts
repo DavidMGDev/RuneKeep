@@ -26,6 +26,10 @@ export type EffectTarget =
    *  rightmost available Hope slot (usable hope = hopeMax − scars, floored at 0); at hopeMax scars the
    *  whole sheet desaturates. Always `{ delta: 1 }` — the editor offers no formula/count for it. */
   | 'scar'
+  /** v0.25.0: extra downtime moves at a rest. Like `scar` this is a COUNT rather than a sheet number,
+   *  so it has no base value of its own; `restMoveLimit` adds the total to the baseline two. The Elf's
+   *  Celestial Trance is the first card to grant it, and any homebrew card can now grant it too. */
+  | 'restMoves'
   /** v0.14.0: a bonus on ONE of the character's Experiences (the Honing Relic). Unlike every other
    *  target this names an INSTANCE, carried by `experienceId` — so it has no sheet row and no base
    *  value, and `computeSheet` skips it. See `experienceBreakdown` for how these resolve. */
@@ -72,6 +76,27 @@ export interface CardEffect {
   mode?: 'set' | 'bonus';
   /** Optional human note (the rule text the effect came from) — shown in the Modifiers panel. */
   note?: string;
+  /**
+   * v0.25.0: the effect keeps applying whether or not the card is equipped, and stops ONLY when the
+   * card is deleted from every category.
+   *
+   * This is the rulebook's "permanently gain" wording, which the engine could not express before:
+   * every effect was tied to the equipped state, so a card granting a permanent benefit lost it the
+   * moment it was put away. Vitality is the clearest case, since the card itself instructs the player
+   * to place it in their vault afterwards.
+   *
+   * A card carrying one of these is also exempt from the equipped-domain-card limit, since it is not
+   * really equipped at all.
+   */
+  permanent?: boolean;
+  /**
+   * v0.25.0: this effect belongs to option N of the card's `CardChoice`, and applies only when the
+   * player has picked that option. Absent = always applies.
+   *
+   * Vitality grants two of three benefits, so it carries three optional effects and the player's pick
+   * decides which two are live.
+   */
+  option?: number;
   /** v0.14.0, `target: 'experience'` only: WHICH Experience this boosts. Absent = the character's first
    *  one, which is what makes a shipped card (the Honing Relic) work before the player picks. An id that
    *  no longer resolves (the Experience was deleted) contributes nothing. */
@@ -113,7 +138,7 @@ export type SheetBreakdown = Record<SheetTarget, StatBreakdown>;
 /** Every sheet target, in sheet-reading order (traits first). */
 export const EFFECT_TARGETS: SheetTarget[] = [
   'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge',
-  'evasion', 'armorScore', 'maxHp', 'stressMax', 'hopeMax', 'proficiency', 'majorThreshold', 'severeThreshold', 'scar',
+  'evasion', 'armorScore', 'maxHp', 'stressMax', 'hopeMax', 'proficiency', 'majorThreshold', 'severeThreshold', 'scar', 'restMoves',
 ];
 
 const TRAIT_TARGETS: EffectTarget[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
@@ -124,7 +149,7 @@ export const TARGET_LABEL: Record<EffectTarget, string> = {
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
   evasion: 'Evasion', armorScore: 'Armor Score', maxHp: 'Max Hit Points', stressMax: 'Max Stress', hopeMax: 'Max Hope',
   proficiency: 'Proficiency', majorThreshold: 'Major Threshold', severeThreshold: 'Severe Threshold', scar: 'Scar',
-  experience: 'Experience',
+  restMoves: 'Optional Rest Bonus', experience: 'Experience',
 };
 
 /** Game caps: HP, Stress, and Armor slots can never exceed 12 (rulebook). */

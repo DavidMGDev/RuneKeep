@@ -15,6 +15,7 @@ import { martialStanceById } from '@/data/martial-form-data';
 import { wildshapeById } from '@/data/wildshape-data';
 import { cardById } from '@/data/catalog';
 import { CATALOG_EFFECTS } from '@/data/catalog-effects';
+import { effectsForChoice } from '@/data/card-choices';
 import { isAncestryEffectDisabled } from '@/data/ancestry-traits';
 import { libraryCardById, libraryCardEffects, mixedCrossedTrait } from '@/lib/library-embed';
 
@@ -65,9 +66,20 @@ export function editableCardIds(file?: CharacterFile): Set<string> {
   return new Set(customCards(file).map((c) => c.id));
 }
 
-/** The structured effects a card applies when enabled. Empty when the card has none. */
+/**
+ * The structured effects a card applies when enabled. Empty when the card has none.
+ *
+ * v0.25.0: a card offering a CHOICE (Vitality) contributes only the options the player picked, so an
+ * unanswered card contributes nothing rather than everything.
+ */
 export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffect[] {
   const id = refOf(rawId, file); // resolve a copy (#277) or suffixed duplicate (#269) to its underlying card
+  return effectsForChoice(rawEffectsForCardId(id, file), file?.cardChoices?.[id]);
+}
+
+/** Everything the card COULD grant, before the player's choice narrows it. */
+export function rawEffectsForCardId(rawId: string, file?: CharacterFile): CardEffect[] {
+  const id = refOf(rawId, file);
   const custom = customCards(file).find((c) => c.id === id);
   if (custom?.effects?.length) return custom.effects;
   // v0.10.3: an embedded homebrew (library) card resolves its effects here — armor bakes in its score +
@@ -151,4 +163,58 @@ export function sourceLabelForCardId(rawId: string, file?: CharacterFile): strin
   const lib = libraryCardById(file, id);
   if (lib) return lib.title || id;
   return cardById(id)?.label ?? weaponById(id)?.name ?? armorById(id)?.name ?? lootById(id)?.name ?? wildshapeById(id)?.name ?? martialStanceById(id)?.name ?? id;
+}
+
+
+/**
+ * Every card id the character HOLDS, wherever it sits: equipped, in the vault, in the archive, in a
+ * pocket. Deliberately a superset, because it exists to answer one question, "does this character
+ * still have the card at all", which is what ends a permanent effect (v0.25.0).
+ *
+ * Ids are raw instance ids; callers resolve them through `refOf` as usual.
+ */
+export function heldCardIds(file?: CharacterFile): string[] {
+  if (!file) return [];
+  const ids: (string | null | undefined)[] = [
+    file.subclassCardId,
+    file.multiclassSubclassCardId,
+    file.ancestryCardId,
+    file.communityCardId,
+    file.weaponPrimaryId,
+    file.weaponSecondaryId,
+    file.armorId,
+    ...(file.domainCardIds ?? []),
+    ...(file.inventoryItemIds ?? []),
+    ...customCards(file).map((c) => c.id),
+    ...(file.libraryCards ?? []).map((c) => c.id),
+    ...(file.cardCopies ?? []).map((c) => c.id),
+  ];
+  return [...new Set(ids.filter((x): x is string => typeof x === 'string' && x.length > 0))];
+}
+
+/**
+ * Cards granting a PERMANENT effect that the character holds but has NOT equipped.
+ *
+ * The equipped ones already contribute through the normal path, so counting them here would double
+ * every permanent bonus. This is the other half: Vitality sitting in the vault, exactly as its own
+ * rules text instructs.
+ */
+export function unequippedPermanentSources(file: CharacterFile): { source: string; effects: CardEffect[] }[] {
+  const equipped = new Set((file.enabledCardIds ?? []).map((id) => refOf(id, file)));
+  const seen = new Set<string>();
+  const out: { source: string; effects: CardEffect[] }[] = [];
+  for (const rawId of heldCardIds(file)) {
+    const id = refOf(rawId, file);
+    if (equipped.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    const permanent = effectsForCardId(id, file).filter((e) => e.permanent);
+    if (permanent.length) out.push({ source: sourceLabelForCardId(id, file), effects: permanent });
+  }
+  return out;
+}
+
+/** Whether a card grants anything permanent, so the UI can mark it and exempt it from the loadout
+ *  limit. Reads the RAW effects: a card the player has not answered yet is still a permanent card. */
+export function isPermanentCard(id: string, file?: CharacterFile): boolean {
+  return rawEffectsForCardId(id, file).some((e) => e.permanent);
 }

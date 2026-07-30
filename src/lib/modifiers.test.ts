@@ -2,7 +2,7 @@ import { type BaseStats, type CardEffect, computeSheet, type EffectSource, STAT_
 
 const ZERO: BaseStats = {
   agility: 0, strength: 0, finesse: 0, instinct: 0, presence: 0, knowledge: 0,
-  evasion: 10, armorScore: 0, maxHp: 6, stressMax: 6, hopeMax: 6, proficiency: 1, majorThreshold: 0, severeThreshold: 0, scar: 0,
+  evasion: 10, armorScore: 0, maxHp: 6, stressMax: 6, hopeMax: 6, proficiency: 1, majorThreshold: 0, severeThreshold: 0, scar: 0, restMoves: 0,
 };
 const src = (source: string, effects: CardEffect[]): EffectSource => ({ source, effects });
 
