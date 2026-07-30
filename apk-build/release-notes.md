@@ -1,9 +1,20 @@
-RuneKeep v0.24.4 - the web version installs as a real app now, on Android and iPhone.
+RuneKeep v0.25.0 - the official pack splits in two, every card is re-cut, and cards can grant permanent benefits.
 
-- INSTALL IT: adding the site to your home screen used to make a bookmark that still opened inside the browser, address bar and all. It installs properly now: its own icon, its own window, the whole screen. On a phone the app offers this the first time you open it, before anything else, and you can say Not now.
-- IT WORKS OFFLINE: once you have opened it, it starts without a connection. Useful at a table with bad wifi.
-- ALWAYS THE LATEST VERSION: browsers were holding on to an old copy of the page, which is why the card banners looked wrong in some browsers and right in others at the same moment. The site now tells them not to.
+- THE VOID: the official pack was built from a pre-release sheet, and the printed Hope and Fear turned out to be a subset of it, so enabling it handed you material your book does not contain. Everything absent from the printed books now lives in a second official expansion, The Void: the Blood Hunter and Summoner classes, their five subclasses, and the 21 Blood domain cards, whose art is still stamped "work in progress" with the artists uncredited. Hope and Fear keeps the rest. Existing characters are untouched: a Blood Hunter quietly gains The Void when it loads, so nothing stops resolving.
+- CARD ART: every Hope and Fear card was cropped a fraction out of true, so each one carried a sliver of its neighbour down the left edge and a strip of page margin across the top. All 63 have been re-cut on a grid measured against the page itself.
+- ANCESTRIES: the six Hope and Fear ancestries are their real printed card faces now, like the base game's, instead of text the app drew itself. Mixed-ancestry cross-out lands exactly on the feature you did not take.
+- VITALITY: the card says "permanently gain two of the following benefits, then place this card in your vault permanently", and following those instructions used to switch the benefit off. Cards can now grant permanent benefits that survive being put away, and can ask which ones you want. Vitality asks, keeps working from your vault, and no longer counts against your five equipped domain cards.
+- OPTIONAL REST BONUS: the Elf's Celestial Trance was a rule buried in the rest code. It is a modifier now, so it shows in the Modifiers panel, and any card you make can grant an extra downtime move.
+- THE WARLOCK: the card modelled two Spheres of Influence with values that rose per tier. The printed card has one sphere, no values, and a Patron Die that follows your level. Anything you already typed is kept.
+- SOUND ON THE WEB: there was none. A browser will not let a page make noise before you touch it, and the app asked once at startup, which is the one moment that cannot work.
+- FIREFOX: dragging a card produced a ghost of the artwork instead of scrolling, so lists looked frozen. The fix Chrome uses relies on a CSS property Firefox never implemented.
+- TRAITS: the pool holds two +1s and two 0s, and tapping the second lit up the first. Each chip is its own chip now.
+- ONBOARDING: "this side clears" added a heart and "this side marks" removed one, exactly backwards, and the demo skipped the grow, shake and burst you meet on the real sheet. It is the sheet's own heart track now. The Circle Controls page showed the decoration behind the control rather than the control. Pages fade in and can be swiped.
+- CARD CREATION: tapping the art for a new colour no longer starts the hold animation, and the hold is shorter. The Ready step offers keep editing or create, without a third way out. A quickly made card is type Card rather than being labelled Ability by whichever deck it landed in.
+- NFC: a received card used to fall from the top of the screen, present itself and tuck away, after you had already read its name and chosen its deck. It is a checkmark naming the deck now.
+- EDIT MODE: Select All sits where Deselect All does, so equipping a new character is two taps.
+- FORGE: the button was bright from the first screen. It stays dim until the hero is finished, and tapping it early still takes you to whatever is missing.
 
-Nothing above changes the Android app, which was already a real app. This build keeps the version numbers matched.
+Still outstanding, and listed here rather than quietly left out: the desktop keyboard controls, the pop-up background sitting offset from its border, focused cards riding too high, the greyed-looking text fields, keyboard handling in the browser, portraits disappearing from the roster after an update, the two-choice creation inventory, experiences going through the quick card flow, armor in the arsenal, the vertical modifiers panel, and loading screens.
 
 Sideload: enable Install unknown apps, then open the APK.
