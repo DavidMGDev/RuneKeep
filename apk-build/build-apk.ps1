@@ -169,8 +169,12 @@ $notes = if (Test-Path $notesPath) { (Get-Content $notesPath -Raw).Replace('$mb'
 # arrived at gh as several arguments, and the build failed at the last step with an error naming a
 # word from the middle of a sentence. Both v0.25.0 and v0.26.0 were uploaded by hand because of it.
 $notesFile = Join-Path $env:TEMP "rk-notes-$($ver -replace '[^\w.]', '').md"
-Set-Content -Path $notesFile -Value $notes -Encoding utf8
-gh release delete $tag --yes --cleanup-tag   # nothing to delete on a first upload; the exit code is not checked
+# WriteAllText, not Set-Content: PS 5.1's `-Encoding utf8` writes a BYTE ORDER MARK, and GitHub
+# renders it as an invisible character at the very start of the release notes.
+[System.IO.File]::WriteAllText($notesFile, $notes, (New-Object System.Text.UTF8Encoding $false))
+# Nothing to delete on a first upload, so this prints "release not found" and that is fine; the exit
+# code is deliberately not checked.
+gh release delete $tag --yes --cleanup-tag
 gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes-file $notesFile
 Remove-Item -Force $notesFile -ErrorAction SilentlyContinue
 if ($LASTEXITCODE -ne 0) {
