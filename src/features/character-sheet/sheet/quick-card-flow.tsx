@@ -2,7 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, type NativeSyntheticEvent, Platform, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -12,7 +12,12 @@ import { ART_H, FORGED_H, FORGED_W, ForgedCard } from '@/features/create/compone
 import { DimScreen } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
 
-const HOLD_MS = 620;
+// v0.25.0: shorter, because the waterline no longer starts filling the instant you touch down, so
+// the hold has to complete sooner to still feel brief.
+const HOLD_MS = 460;
+/** How long a press must last before it LOOKS like a hold. Under this it is a tap, and a tap must not
+ *  flash the picker's waterline: the tap does something else entirely (it rerolls the colour). */
+const HOLD_GRACE_MS = 150;
 
 /**
  * QUICK CARD (v0.24.3) — the sheet's Add Card badge opens this, not the full editor.
@@ -167,10 +172,12 @@ export function QuickCardFlow({
                 kind="primary"
                 height={44}
                 style={{ flex: 1.3 }}
-                onPress={() => onSave({ ...draft, title: draft.title.trim() })}
+                // v0.25.0: quick cards are type "Card". Leaving typeLabel unset let the destination
+                // decide, so a card sent to the Arsenal came out labelled "Ability", which is a
+                // choice the player never made. Changing the type is what Advanced is for.
+                onPress={() => onSave({ ...draft, title: draft.title.trim(), typeLabel: draft.typeLabel ?? 'Card' })}
               />
             </View>
-            <RuneButton label="Cancel" kind="ghost" dense height={34} onPress={onCancel} />
           </View>
         )}
       </ScrollView>
@@ -194,10 +201,12 @@ function ArtGesture({ onTap, onHold, reduced, children }: { onTap: () => void; o
           .minDuration(reduced ? 1 : HOLD_MS)
           .maxDistance(30)
           .onBegin(() => {
-            if (!reduced) charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+            // Delayed, not immediate: a tap releases inside the grace window and the waterline never
+            // appears at all, so tapping for a new colour stops looking like a half-finished hold.
+            if (!reduced) charge.value = withDelay(HOLD_GRACE_MS, withTiming(1, { duration: HOLD_MS - HOLD_GRACE_MS, easing: Easing.out(Easing.cubic) }));
           })
           .onStart(() => runOnJS(fire)())
-          .onFinalize((_e, ok) => { if (!ok) charge.value = withTiming(0, { duration: 160 }); }),
+          .onFinalize((_e, ok) => { if (!ok) { cancelAnimation(charge); charge.value = withTiming(0, { duration: 160 }); } }),
         Gesture.Tap().maxDistance(16).onEnd((_e, ok) => { if (ok) runOnJS(onTap)(); }),
       ),
     [charge, fire, onTap, reduced],
