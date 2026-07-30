@@ -55,7 +55,15 @@ export const FS_OPEN_DIST = 150;
 // Focus (fullscreen) targets — the SAME card slot grows in place to these, no separate object (#8c).
 // #95 A: the handle chip is gone and the border dims with the veil, so the card can take nearly the
 // whole design width and sit closer to true screen centre, clear of the gear arc at the bottom.
-export const FS_CENTER_Y = 420; // y the focused card eases to
+/**
+ * Where a focused card settles.
+ *
+ * v0.26.0: 446, the true middle of the 892 design space, rather than 420. At FS_FOCUS_SCALE the card
+ * is 576 tall, so centring puts it at 158..734, comfortably clear of the gear arc below. The old
+ * value predated the current bottom layout and left it visibly high, which reads as the card having
+ * flown to the top rather than come forward.
+ */
+export const FS_CENTER_Y = 446;
 export const FS_FOCUS_SCALE = 1.79; // focused card spans the FULL design width (230 * 1.79 ≈ 412px)
 
 // Fling model (issue #30 A): NO free decay. A release predicts its landing detent from the capped

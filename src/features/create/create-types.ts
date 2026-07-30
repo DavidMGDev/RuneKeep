@@ -54,6 +54,10 @@ export interface Draft {
    *  armor / no inventory picks. Selecting a real item clears the matching flag. */
   weaponsSkipped?: boolean;
   armorSkipped?: boolean;
+  /** DEPRECATED by `inventorySkips` (v0.26.0). Kept so a saved draft from an older build still loads. */
   inventorySkipped?: boolean;
+  /** v0.26.0: which of the class guide's two inventory choices the player deliberately took nothing
+   *  from. Per choice, because the two are separate questions. */
+  inventorySkips?: number[];
   gold: GoldAmount;
 }

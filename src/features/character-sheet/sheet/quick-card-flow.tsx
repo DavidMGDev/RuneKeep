@@ -1,4 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, type NativeSyntheticEvent, Platform, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -11,6 +13,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { ART_H, FORGED_H, FORGED_W, ForgedCard } from '@/features/create/components/forged-card';
 import { DimScreen } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
+import { scrollFieldIntoView } from '@/lib/web-keyboard';
 
 // v0.25.0: shorter, because the waterline no longer starts filling the instant you touch down, so
 // the hold has to complete sooner to still feel brief.
@@ -40,8 +43,12 @@ export function QuickCardFlow({
   onSave,
   onCancel,
   onAdvanced,
+  kindLabel = 'Card',
 }: {
   initial?: CardDraft;
+  /** What this flow is making, for the heading and the card's own plaque. Character creation reuses
+   *  it for Experiences (v0.26.0), and calling one of those a "card" would be quietly wrong. */
+  kindLabel?: string;
   onSave: (draft: CardDraft) => void;
   onCancel: () => void;
   /** Hand the draft to the full editor. */
@@ -63,7 +70,8 @@ export function QuickCardFlow({
 
   const pickImage = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-    if (!res.canceled && res.assets[0]) setDraft((d) => ({ ...d, imageUri: res.assets[0].uri, color: null }));
+    // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
+    if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null })); }
   }, []);
 
   // Enter on the title goes to the body; Enter on the body goes to the confirmation. `submitBehavior`
@@ -80,6 +88,20 @@ export function QuickCardFlow({
   // react-native-web ignores `submitBehavior`, so on web Enter in the body typed a newline and the
   // flow stopped dead at the one step that matters most. Catch the key instead. Shift+Enter still
   // makes a new line, which is the web convention and the only way to get a second paragraph here.
+  /** Enter on the TITLE goes to the description. `onSubmitEditing` is not dependable in a browser,
+   *  which is why the flow stalled on "Name it" no matter how many times Enter was pressed. */
+  const webEnterTitle =
+    Platform.OS === 'web'
+      ? {
+          onKeyPress: (e: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+            const ev = e as unknown as { nativeEvent: { key: string; shiftKey?: boolean }; preventDefault?: () => void };
+            if (ev.nativeEvent.key !== 'Enter' || ev.nativeEvent.shiftKey) return;
+            ev.preventDefault?.();
+            toBody();
+          },
+        }
+      : {};
+
   const webEnter =
     Platform.OS === 'web'
       ? {
@@ -102,7 +124,7 @@ export function QuickCardFlow({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
         <Text style={{ color: Rune.goldText, fontSize: 15, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-          {step === 'confirm' ? 'Ready?' : 'Quick card'}
+          {step === 'confirm' ? 'Ready?' : `Quick ${kindLabel.toLowerCase()}`}
         </Text>
         <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.5, marginTop: 4, marginBottom: 12, textAlign: 'center' }}>
           {step === 'confirm' ? 'This is the card you are making.' : 'Tap the art for a new color, hold it for a picture.'}
@@ -111,7 +133,7 @@ export function QuickCardFlow({
         <ArtGesture onTap={rollColor} onHold={pickImage} reduced={reduced}>
           <ForgedCard
             title={draft.title.trim()}
-            kindLabel={draft.typeLabel ?? 'Card'}
+            kindLabel={draft.typeLabel ?? kindLabel}
             body={draft.text}
             accentDeep={Rune.panel}
             imageUri={draft.imageUri}
@@ -134,6 +156,8 @@ export function QuickCardFlow({
                 returnKeyType="next"
                 submitBehavior="submit"
                 onSubmitEditing={toBody}
+                onFocus={scrollFieldIntoView}
+                {...webEnterTitle}
                 maxLength={70}
                 style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0 }}
                 accessibilityLabel="Card title"
@@ -151,6 +175,7 @@ export function QuickCardFlow({
                 returnKeyType="done"
                 submitBehavior="submit"
                 onSubmitEditing={toConfirm}
+                onFocus={scrollFieldIntoView}
                 {...webEnter}
                 maxLength={280}
                 style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, flex: 1, textAlignVertical: 'top' }}
@@ -168,14 +193,14 @@ export function QuickCardFlow({
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <RuneButton label="Keep editing" kind="ghost" height={44} style={{ flex: 1 }} onPress={() => { playSfx('panelClose'); setStep('edit'); }} />
               <RuneButton
-                label="Create card"
+                label={`Create ${kindLabel.toLowerCase()}`}
                 kind="primary"
                 height={44}
                 style={{ flex: 1.3 }}
                 // v0.25.0: quick cards are type "Card". Leaving typeLabel unset let the destination
                 // decide, so a card sent to the Arsenal came out labelled "Ability", which is a
                 // choice the player never made. Changing the type is what Advanced is for.
-                onPress={() => onSave({ ...draft, title: draft.title.trim(), typeLabel: draft.typeLabel ?? 'Card' })}
+                onPress={() => onSave({ ...draft, title: draft.title.trim(), typeLabel: draft.typeLabel ?? kindLabel })}
               />
             </View>
           </View>

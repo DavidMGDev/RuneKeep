@@ -32,7 +32,7 @@ import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isPermanentCard, refOf, sourceLabelForCardId } from '@/features/cards/card-effects';
-import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
+import { CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
@@ -58,6 +58,7 @@ import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { NfcReceiveCeremony, SheetNfcReceiver } from './nfc-receive-ceremony';
 import { CardChoiceDialog } from './card-choice-dialog';
+import { useKeyboardControl } from './use-keyboard-control';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -82,6 +83,8 @@ import { TraitBanners } from '../components/trait-banners';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { emptyHistory, type CharacterHistory, readHistory, record, recoverableCards, type RecordIntent, restoreCard, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
@@ -855,7 +858,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
     const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const chosenIds = file.inventoryItemIds ?? [];
-    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
+    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
       key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
       id: it.id,
@@ -1358,7 +1361,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onPortraitReplace = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
     if (res.canceled || !res.assets[0]) return;
-    const portraitUri = res.assets[0].uri;
+    // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
+    const portraitUri = await ownImage(res.assets[0].uri);
     const reset = { scale: 1, x: 0, y: 0 };
     setCharacter((c) => ({ ...c, portraitUri, portraitTransform: reset }));
     mutateFile({ portraitUri, portraitTransform: reset });
@@ -2015,6 +2019,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     },
     [burstResources, pushToasts, pushNotice],
   );
+  // v0.26.0: is anything modal open? The keyboard scheme keeps its hands off the carousel when so.
+  const anyOverlay = !!(floatKind || cardInfoId || editCardId || emptyPanel || incoming || moveReq || depletedId || newCardCat || choiceReq);
   const onToggleCard = useCallback((id: string) => toggleOneFromRefs(id), [toggleOneFromRefs]);
   // item 8: bulk equip/unequip the raised selection. If every card is already equipped the whole set is
   // unequipped, otherwise the whole set is equipped — each firing 35ms after the last, LEFT→RIGHT in deck
@@ -2221,6 +2227,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               <EditHud />
+              {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the
+                  carousel; a no-op on a phone. */}
+              <KeyboardControl overlay={anyOverlay} />
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
               {/* Unload the sheet carousel while Level-Up (#203) or the Cards panel (#227) is open —
@@ -2411,6 +2420,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
 }
 
 /** Resolves a card id to its choice and title, so the sheet's JSX stays a single line. */
+/**
+ * Mounts the keyboard scheme inside the carousel provider (v0.26.0). Renders nothing: it exists
+ * because the hook needs carousel context and the sheet's own body sits outside the provider.
+ */
+function KeyboardControl({ overlay }: { overlay: boolean }) {
+  useKeyboardControl({ overlay });
+  return null;
+}
+
 function CardChoicePrompt({ id, file, onPick, onCancel }: { id: string; file: CharacterFile | undefined; onPick: (options: number[]) => void; onCancel: () => void }) {
   const choice = cardChoiceFor(catalogIdOf(id));
   if (!choice) return null;

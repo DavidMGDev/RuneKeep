@@ -93,7 +93,7 @@ export const ChamferFrame = memo(function ChamferFrame({
 
   return (
     <View style={box(left, top, w, h)} pointerEvents="none">
-      <Svg width={w} height={h}>
+      <Svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
         <Polygon points={points} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="miter" />
       </Svg>
     </View>

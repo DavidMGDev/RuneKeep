@@ -243,30 +243,35 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
         const pv = preview ? preview(e) : null;
         return (
           <View key={i} style={{ borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)', borderRadius: 6, backgroundColor: 'rgba(20,24,31,0.5)', padding: 7, gap: 6 }}>
+            {/* v0.26.0: laid out DOWN the panel rather than crammed across one line. The target, the
+                shape and the amount were three unrelated controls fighting for one row, so the
+                target truncated and ±N / fx / T sat as three unlabelled glyphs. There is plenty of
+                vertical space here; using it costs nothing. */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Pressable onPress={() => onRequestPick(i)} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Modifier ${effectLabel(e, experiences)}, tap to choose`}>
-                <View style={{ height: 34, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 5, backgroundColor: 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
-                  <Text numberOfLines={1} style={{ color: Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>{effectLabel(e, experiences)}</Text>
+                <View style={{ height: 36, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 5, backgroundColor: 'rgba(14,17,22,0.6)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+                  <Text numberOfLines={2} style={{ color: Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>{effectLabel(e, experiences)}</Text>
                 </View>
               </Pressable>
-              {/* #325: flat / formula / by-tier selector. v0.13.0: a SCAR has no amount or formula —
-                  the row is just the pick + remove. */}
-              {e.target !== 'scar' ? (
-                <>
-                  <ModeBtn label="±N" on={mode === 'flat'} onPress={() => setMode(i, 'flat')} a11y="Flat amount" />
-                  {/* An experience bonus is always a flat amount — no formula or per-tier shapes. */}
-                  {e.target !== 'experience' ? (
-                    <>
-                      <ModeBtn label="ƒx" on={mode === 'formula'} onPress={() => setMode(i, 'formula')} a11y="Scaling formula" />
-                      <ModeBtn label="T" on={mode === 'byTier'} onPress={() => setMode(i, 'byTier')} a11y="Per-tier value" />
-                    </>
-                  ) : null}
-                </>
-              ) : null}
               <Pressable onPress={() => onChange(effects.filter((_, j) => j !== i))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove effect" style={{ padding: 3 }}>
                 <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
               </Pressable>
             </View>
+            {/* #325: flat / formula / by-tier selector, now on its own line and named. v0.13.0: a
+                SCAR has no amount or formula, so it gets neither. */}
+            {e.target !== 'scar' ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                <Text style={{ width: 52, color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Amount</Text>
+                <ModeBtn label="±N" on={mode === 'flat'} onPress={() => setMode(i, 'flat')} a11y="Flat amount" />
+                {/* An experience bonus is always a flat amount — no formula or per-tier shapes. */}
+                {e.target !== 'experience' ? (
+                  <>
+                    <ModeBtn label="ƒx" on={mode === 'formula'} onPress={() => setMode(i, 'formula')} a11y="Scaling formula" />
+                    <ModeBtn label="T" on={mode === 'byTier'} onPress={() => setMode(i, 'byTier')} a11y="Per-tier value" />
+                  </>
+                ) : null}
+              </View>
+            ) : null}
             {e.target === 'scar' ? (
               <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular }}>While this card is equipped, the character&apos;s rightmost open Hope slot is scarred and can&apos;t be used.</Text>
             ) : mode === 'formula' ? (
@@ -304,6 +309,26 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
                 <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular, flex: 1 }}>{set ? 'absolute value' : 'flat ± amount'}</Text>
               </View>
             )}
+            {/* v0.26.0: PERMANENT. Some rulebook cards give you something once and you keep it, and
+                the card then tells you to put it away (Vitality is the clearest). Without this the
+                benefit died the moment you followed the card's own instructions.
+                The warning is here, at the moment of choosing, rather than later when unequipping
+                mysteriously does nothing. */}
+            {e.target !== 'scar' && e.target !== 'experience' ? (
+              <View style={{ gap: 4, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.18)', paddingTop: 6 }}>
+                <Pressable onPress={() => setAt(i, { permanent: e.permanent ? undefined : true })} accessibilityRole="switch" accessibilityState={{ checked: !!e.permanent }} accessibilityLabel="Permanent">
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ width: 18, height: 18, borderRadius: 3, borderWidth: 1.6, borderColor: e.permanent ? Rune.goldBright : 'rgba(218,162,73,0.45)', backgroundColor: e.permanent ? Rune.goldBright : 'transparent' }} />
+                    <Text style={{ color: e.permanent ? Rune.goldBright : Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>Permanent</Text>
+                  </View>
+                </Pressable>
+                <Text style={{ color: Rune.muted, fontSize: 10, lineHeight: 14, fontFamily: Body.regular }}>
+                  {e.permanent
+                    ? 'Kept whether or not the card is equipped. To lose it you must delete this card from every category it appears in.'
+                    : 'Applies only while the card is equipped.'}
+                </Text>
+              </View>
+            ) : null}
           </View>
         );
       })}

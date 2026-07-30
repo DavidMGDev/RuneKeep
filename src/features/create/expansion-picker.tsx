@@ -31,7 +31,7 @@ function PickRow({ name, subtitle, checked, locked, onToggle }: { name: string; 
           </ChamferBox>
           <View style={{ flex: 1, opacity: locked ? 0.6 : checked ? 1 : 0.75 }}>
             <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase' }}>{name}</Text>
-            <Text numberOfLines={1} style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.3, marginTop: 2 }}>{subtitle}</Text>
+            <Text numberOfLines={2} style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.3, marginTop: 2 }}>{subtitle}</Text>
           </View>
           {locked ? <Text style={{ color: Rune.muted, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Always on</Text> : null}
         </ChamferBox>

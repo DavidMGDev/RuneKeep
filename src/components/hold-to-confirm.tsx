@@ -77,7 +77,7 @@ export function HoldToConfirm({
             {points ? (
               <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, clipStyle]}>
                 <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: w, height }, shapeStyle]}>
-                  <Svg width={w} height={height}>
+                  <Svg width={w} height={height} viewBox={`0 0 ${w} ${height}`}>
                     <Polygon points={points} fill={color} />
                   </Svg>
                 </Animated.View>

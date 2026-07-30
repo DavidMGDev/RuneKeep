@@ -1,4 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
+
+import { ownImage } from '@/lib/owned-image';
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
@@ -6,7 +8,7 @@ import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequen
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
-import { CardEditor } from '@/components/card-editor';
+import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { ChamferedImage } from './components/chamfered-image';
 import { PopupDialog } from '@/components/popup-dialog';
@@ -29,7 +31,7 @@ import { CLASS_CARDS } from './components/class-cards';
 import { featurePages, spellcastTraitForSubclass } from '@/data/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
-import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
+import { CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 
 import { useForgedSnapshots } from './components/forged-snapshots';
@@ -43,6 +45,8 @@ import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
 import { DeckTab, SectionDivider, Segmented } from './create-ui';
 import { ExperiencesTab } from './experiences-tab';
+import { QuickCardFlow } from '@/features/character-sheet/sheet/quick-card-flow';
+import type { CardEffect } from '@/lib/modifiers';
 import { TraitsTab } from './traits-tab';
 
 // ---------- screen ----------
@@ -59,7 +63,28 @@ import { TraitsTab } from './traits-tab';
 // `items` memo keeps a stable reference.
 const SKIP_WEAPONS: StraightItem = { id: 'weapons-skip', label: 'Skip weapons', custom: <ForgedCard title="No weapon" kindLabel="Weapon" body="Skip, start with no weapon equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
 const SKIP_ARMOR: StraightItem = { id: 'armor-skip', label: 'Skip armor', custom: <ForgedCard title="No armor" kindLabel="Armor" body="Skip, start with no armor equipped." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
-const SKIP_INVENTORY: StraightItem = { id: 'inventory-skip', label: 'Skip inventory', custom: <ForgedCard title="No items" kindLabel="Item" body="Skip, start with no chosen inventory items." accentDeep={Rune.panel} colorArt="#262A32" multilineTitle /> };
+/**
+ * The "take nothing here" card, one per inventory choice (v0.26.0).
+ *
+ * Worth spelling out rather than just saying "skip": a player who leaves a choice empty has usually
+ * either decided they do not need it or agreed something else with their GM, and both are perfectly
+ * ordinary. Saying so stops the option reading like a mistake.
+ */
+const skipInventoryCard = (choice: 0 | 1): StraightItem => ({
+  id: `inventory-skip-${choice}`,
+  label: 'No items / Custom',
+  custom: (
+    <ForgedCard
+      title="No items / Custom"
+      kindLabel="Item"
+      body="Take nothing for this choice, either because you do not need it or because your GM has agreed you carry something of your own instead. You can add your own cards later."
+      accentDeep={Rune.panel}
+      colorArt="#262A32"
+      multilineTitle
+    />
+  ),
+});
+
 
 // v0.10.3 (B4): a homebrew library card as a creation carousel item — rendered live (no webp) like the
 // other forged cards. Stats for weapon/armor are folded into the body.
@@ -243,10 +268,17 @@ export function CreateScreen() {
 
   const [centerIdx, setCenterIdx] = useState(0);
   const [editingExperience, setEditingExperience] = useState<number | null>(null);
+  /** The draft handed to the full editor when the player asks for Advanced, or null while quick. */
+  const [expAdvanced, setExpAdvanced] = useState<CardDraft | null>(null);
   // Weapons deck UI (#121): which kind of primary to browse, and whether we're picking the primary
   // or the (optional, 1H-only) secondary.
   const [weaponKind, setWeaponKind] = useState<WeaponKind>('physical');
   const [weaponSlot, setWeaponSlot] = useState<'primary' | 'secondary'>('primary');
+  // v0.26.0: the class guides offer TWO separate choices (a potion, then a keepsake), and the step
+  // showed all four cards at once as "pick any two". That let a player take two potions and no
+  // keepsake, which is not a choice the book offers, and it never said the two picks were separate
+  // questions. Presented like primary and secondary weapons now: one carousel per choice.
+  const [invChoice, setInvChoice] = useState<0 | 1>(0);
   const primaryWeapon = draft.weaponPrimaryId ? weaponById(draft.weaponPrimaryId) : null;
   const secondaryAllowed = primaryWeapon?.burden === 'One-Handed';
   // a 2H primary (or no primary) can't have a secondary — snap the toggle back to primary
@@ -302,17 +334,23 @@ export function CreateScreen() {
       return [...TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), ...(libContent?.armor ?? []).map(libCardItem), SKIP_ARMOR];
     }
     if (deck === 'inventory') {
-      // Creation inventory shows ONLY the player's per-class CHOICES (#136): pick two of four, or Skip
-      // (v0.10.2). Custom in-creation items were removed — homebrew items come from Library expansions.
-      // The default kit (torch/rope/supplies) and gold are NOT shown here — they belong to the sheet.
+      // Creation inventory shows ONLY the player's per-class CHOICES (#136). The default kit
+      // (torch/rope/supplies) and gold are NOT shown here — they belong to the sheet. Custom
+      // in-creation items were removed; homebrew items come from Library expansions.
+      //
+      // v0.26.0: ONE choice at a time. `invChoice` selects which of the guide's two groups is on
+      // screen, so choice 1 offers the first pair and choice 2 the second.
       const cinv = draft.className ? CLASS_INVENTORY[draft.className] : null;
       const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
-      const optionCards: StraightItem[] = (cinv?.choices.flat() ?? []).map((name) => ({
+      const group = cinv?.choices[invChoice] ?? [];
+      const optionCards: StraightItem[] = group.map((name) => ({
         id: itemOptionId(name),
         label: name,
-        custom: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
+        custom: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
       }));
-      return [...optionCards, ...(libContent?.inventory ?? []).map(libCardItem), SKIP_INVENTORY];
+      // Homebrew inventory rides the first choice, so it is offered once rather than twice.
+      const lib = invChoice === 0 ? (libContent?.inventory ?? []).map(libCardItem) : [];
+      return [...optionCards, ...lib, skipInventoryCard(invChoice)];
     }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
@@ -379,7 +417,7 @@ export function CreateScreen() {
         ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, forgedItem, libContent, picked, creationClassCards]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, libContent, picked, creationClassCards]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
@@ -388,7 +426,11 @@ export function CreateScreen() {
       return id ? [id] : [];
     }
     if (deck === 'armor') return draft.armorSkipped ? ['armor-skip'] : draft.armorId ? [draft.armorId] : [];
-    if (deck === 'inventory') return draft.inventorySkipped ? ['inventory-skip'] : [...draft.inventoryItemIds, ...draft.inventoryLibIds]; // gold/start kit are not counted (#128)
+    if (deck === 'inventory') {
+      // Only THIS choice's answer is highlighted, since only this choice is on screen.
+      const skipped = (draft.inventorySkips ?? []).includes(invChoice) || (draft.inventorySkipped ?? false);
+      return skipped ? [`inventory-skip-${invChoice}`] : [...draft.inventoryItemIds, ...draft.inventoryLibIds];
+    }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
@@ -404,7 +446,7 @@ export function CreateScreen() {
       case 'domains':
         return draft.domainCardIds;
     }
-  }, [deck, draft, weaponSlot]);
+  }, [deck, draft, weaponSlot, invChoice]);
 
   // #265: live cross-out while picking a mix — the 1st pick keeps trait 1 (cross its trait 2), the 2nd
   // keeps trait 2 (cross its trait 1).
@@ -452,7 +494,16 @@ export function CreateScreen() {
         return;
       }
       if (deck === 'inventory') {
-        if (id === 'inventory-skip') { set({ inventorySkipped: !draft.inventorySkipped, inventoryItemIds: [] }); return; }
+        // v0.26.0: taking nothing answers THIS choice, and clears whatever it had chosen.
+        if (id.startsWith('inventory-skip')) {
+          const skips = new Set(draft.inventorySkips ?? []);
+          const group = CLASS_INVENTORY[draft.className!]?.choices[invChoice] ?? [];
+          const ids = new Set(group.map(itemOptionId));
+          if (skips.has(invChoice)) skips.delete(invChoice);
+          else skips.add(invChoice);
+          set({ inventorySkips: [...skips], inventorySkipped: false, inventoryItemIds: draft.inventoryItemIds.filter((x) => !ids.has(x)) });
+          return;
+        }
         // v0.10.3: a homebrew inventory card toggles into the loose picks (no 2-item cap; clears skip).
         if ((libContent?.inventory ?? []).some((c) => c.id === id)) {
           const had = draft.inventoryLibIds.includes(id);
@@ -460,10 +511,17 @@ export function CreateScreen() {
           return;
         }
         // optional items: pick up to TWO (#136), replacing the oldest like domains. Any pick clears skip.
+        // One pick per choice: choosing replaces whatever this choice held, rather than filling a
+        // shared pool of two. That pool let a player take both potions and no keepsake.
+        const group = CLASS_INVENTORY[draft.className!]?.choices[invChoice] ?? [];
+        const ids = new Set(group.map(itemOptionId));
+        const others = draft.inventoryItemIds.filter((x) => !ids.has(x));
         const has = draft.inventoryItemIds.includes(id);
-        if (has) set({ inventoryItemIds: draft.inventoryItemIds.filter((x) => x !== id) });
-        else if (draft.inventoryItemIds.length < 2) set({ inventoryItemIds: [...draft.inventoryItemIds, id], inventorySkipped: false });
-        else set({ inventoryItemIds: [draft.inventoryItemIds[1], id], inventorySkipped: false });
+        set({
+          inventoryItemIds: has ? others : [...others, id],
+          inventorySkips: (draft.inventorySkips ?? []).filter((c) => c !== invChoice),
+          inventorySkipped: false,
+        });
         return;
       }
       if (!isCardDeck(deck)) return;
@@ -506,12 +564,25 @@ export function CreateScreen() {
         }
       }
     },
-    [deck, draft, set, weaponSlot, secondaryAllowed, libContent],
+    [deck, draft, set, weaponSlot, invChoice, secondaryAllowed, libContent],
   );
 
   // v0.23.0: teach the creator when the creator opens, not on first launch.
   useEffect(() => {
-    if (shouldShow('creation')) router.push('/onboarding?tour=creation' as Href);
+    // v0.26.0: DEFERRED out of the mount tick, deliberately.
+    //
+    // Pushing the tour while the creator's own navigation is still settling made both history
+    // entries in the same tick, and Firefox collapses those into one. Going back from the tour then
+    // went back PAST the creator and landed on the character list, which is empty for a new player,
+    // so making a character looked like it had failed. Chrome kept both entries, which is why it only
+    // ever happened in one browser.
+    //
+    // One frame is enough for the creator's entry to exist in its own right. Returning still uses
+    // back(), which keeps the creator mounted with everything the player has already chosen; sending
+    // them forward to a fresh copy instead would re-ask which expansions they wanted.
+    if (!shouldShow('creation')) return;
+    const t = setTimeout(() => router.push('/onboarding?tour=creation' as Href), 0);
+    return () => clearTimeout(t);
   }, [router]);
 
   useEffect(() => {
@@ -568,7 +639,14 @@ export function CreateScreen() {
       }
     }
     // enable custom origin/armor cards so their effects apply (armor score/thresholds, ancestry passive).
-    const enabledCustom = libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id);
+    // v0.26.0: the CHOSEN ARMOR is equipped too. A new character arrived with an armor card sitting
+    // inert in their arsenal and an Armor Score of zero, because equipping is a hold the player has
+    // not learned yet. Armor is the one starting card whose whole purpose is its numbers, so leaving
+    // it off made a fresh sheet simply wrong. Onboarding recommends tidying the rest away afterwards.
+    const enabledCustom = [
+      ...libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id),
+      ...(draft.armorId ? [draft.armorId] : []),
+    ];
     // v0.12.2: record which EXPANSIONS this hero was created with (real ids only — the implicit base is
     // dropped). Omitted when empty so a base-only save stays byte-identical / back-compat.
     const enabledExpansionIds = [...picked].filter((id) => id !== BASE_PICK_ID);
@@ -611,9 +689,21 @@ export function CreateScreen() {
     router.replace({ pathname: '/sheet', params: { id } });
   }, [complete, draft, router, libContent, picked]);
 
+  /** Write an experience into its slot. Shared so the quick flow and the full editor cannot drift. */
+  const saveExperience = useCallback((slot: number, d: { title: string; imageUri: string | null; color: string | null; effects?: CardEffect[] }) => {
+    const next = [...draft.experiences];
+    const existing = next[slot];
+    next[slot] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: '', imageUri: d.imageUri, color: d.color, effects: d.effects, modifier: existing?.modifier ?? 2 };
+    set({ experiences: next.filter(Boolean) });
+    setEditingExperience(null);
+  }, [draft.experiences, set]);
+
   const pickPortrait = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead
-    if (!res.canceled && res.assets[0]) set({ portraitUri: res.assets[0].uri });
+    // v0.26.0: copy it somewhere the app owns first. The picker returns a path into the CACHE
+    // directory, which an app update is free to clear, and that is exactly why portraits kept
+    // disappearing from the roster after an update while the character file itself was fine.
+    if (!res.canceled && res.assets[0]) set({ portraitUri: await ownImage(res.assets[0].uri) });
   }, [set]);
 
   const locked = (k: DeckKey) =>
@@ -657,13 +747,13 @@ export function CreateScreen() {
       case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
       case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind && (!x.expansion || picked.has(x.expansion)))); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
       case 'armor': { const id = pick(TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => a.id)); if (id) { set({ armorId: id, armorSkipped: false }); focusId = id; } break; }
-      case 'inventory': { if (!draft.className) break; const opts = (CLASS_INVENTORY[draft.className]?.choices.flat() ?? []).map(itemOptionId); const picks = two(opts); set({ inventoryItemIds: picks, inventorySkipped: false }); focusId = picks[picks.length - 1]; break; }
+      case 'inventory': { if (!draft.className) break; const groups = CLASS_INVENTORY[draft.className]?.choices ?? []; const picks = groups.map((g) => itemOptionId(g[Math.floor(Math.random() * g.length)])); set({ inventoryItemIds: picks, inventorySkips: [], inventorySkipped: false }); focusId = picks[invChoice] ?? picks[picks.length - 1]; break; }
     }
     if (focusId) {
       const idx = items.findIndex((it) => it.id === focusId);
       if (idx >= 0) carouselRef.current?.scrollTo(idx);
     }
-  }, [deck, draft.className, draft.mixedAncestry, weaponKind, items, set, picked, creationClassCards]);
+  }, [deck, draft.className, draft.mixedAncestry, weaponKind, invChoice, items, set, picked, creationClassCards]);
 
   return (
     <AppScreen
@@ -786,11 +876,25 @@ export function CreateScreen() {
               />
             </View>
           ) : null}
+          {/* v0.26.0: the guide's two inventory choices, one at a time, presented exactly like the
+              weapon slots above so the pattern is already familiar by the time it appears. */}
+          {deck === 'inventory' && (draft.className ? CLASS_INVENTORY[draft.className].choices.length > 1 : false) ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 4, paddingHorizontal: 4 }}>
+              <Segmented
+                options={[
+                  { key: '0', label: 'Choice 1' },
+                  { key: '1', label: 'Choice 2' },
+                ]}
+                value={String(invChoice)}
+                onChange={(k) => setInvChoice(k === '1' ? 1 : 0)}
+              />
+            </View>
+          ) : null}
           {isCarouselDeck(deck) && items.length > 0 ? (
             <Animated.View style={[{ flex: 1 }, modeFadeStyle]}>
               <StraightCarousel
                 ref={carouselRef}
-                key={deck + (deck === 'weapons' ? `${weaponKind}-${weaponSlot}` : deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
+                key={deck + (deck === 'weapons' ? `${weaponKind}-${weaponSlot}` : deck === 'inventory' ? String(invChoice) : deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
                 items={items}
                 selectedIds={selectedIds}
                 crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
@@ -809,21 +913,29 @@ export function CreateScreen() {
         {pendingDeck ? <DeckLoader /> : null}
         </View>
       </View>
+      {/* v0.26.0: experiences are authored through the SAME quick flow as cards on the sheet.
+          Two ways to make a thing was one too many, and the quick flow is the better one here: an
+          experience is a short phrase, which is exactly what it is built for. Advanced is one tap
+          away and carries the draft, so nothing that was possible before has been taken away. */}
       {editingExperience != null ? (
-        <CardEditor
-          kindLabel="Experience"
-          experienceMode
-          modifier={draft.experiences[editingExperience]?.modifier ?? 2}
-          initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null, effects: draft.experiences[editingExperience].effects ?? [] } : undefined}
-          onCancel={() => setEditingExperience(null)}
-          onSave={(d) => {
-            const next = [...draft.experiences];
-            const existing = next[editingExperience];
-            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: '', imageUri: d.imageUri, color: d.color, effects: d.effects, modifier: existing?.modifier ?? 2 };
-            set({ experiences: next.filter(Boolean) });
-            setEditingExperience(null);
-          }}
-        />
+        expAdvanced ? (
+          <CardEditor
+            kindLabel="Experience"
+            experienceMode
+            modifier={draft.experiences[editingExperience]?.modifier ?? 2}
+            initial={expAdvanced}
+            onCancel={() => { setExpAdvanced(null); setEditingExperience(null); }}
+            onSave={(d) => { saveExperience(editingExperience, d); setExpAdvanced(null); }}
+          />
+        ) : (
+          <QuickCardFlow
+            kindLabel="Experience"
+            initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null, effects: draft.experiences[editingExperience].effects ?? [] } : undefined}
+            onCancel={() => setEditingExperience(null)}
+            onAdvanced={(d) => setExpAdvanced(d)}
+            onSave={(d) => saveExperience(editingExperience, d)}
+          />
+        )
       ) : null}
       {/* ---- THE select controls: the screen's TOP layer (#106) — above the carousel veil AND
           the features reader, never dimmed, always tappable, one spot. Card decks only. Hierarchy
