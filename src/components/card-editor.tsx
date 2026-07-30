@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { scrollFieldIntoView, RESERVES_KEYBOARD_SPACE } from '@/lib/web-keyboard';
 import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -317,14 +318,17 @@ export function CardEditor({
   const targetScale = fadeCard ? 0.2 : Math.max(0.32, Math.min(1, cardRoom / FORGED_H));
 
   const KB = { duration: 240, easing: Easing.out(Easing.cubic) };
-  const onFieldFocus = useCallback(() => {
+  const onFieldFocus = useCallback((e: unknown) => {
     if (!reduced) kb.value = withTiming(1, KB);
+    scrollFieldIntoView(e); // web: the browser shrank the page, so aim at the field rather than pad
   }, [kb, reduced]);
   // Drive compaction off the keyboard itself (item 1): re-tapping an already-focused field re-opens
   // the keyboard (no onFocus fires) but DOES fire keyboardDidShow — so the UI re-compacts; hiding it
   // (Back / dismiss) animates back even though the field keeps its cursor.
   useEffect(() => {
-    if (reduced) return;
+    // v0.26.0: never on web. A browser shrinks the page itself when the keyboard opens, so reserving
+    // space here as well raised the editor by roughly two keyboards and pushed the card off the top.
+    if (reduced || !RESERVES_KEYBOARD_SPACE) return;
     const show = Keyboard.addListener('keyboardDidShow', (e) => {
       kb.value = withTiming(1, KB);
       // v0.24.0: the keyboard reports PHYSICAL dp. Inside the tablet frame the spacer that reserves

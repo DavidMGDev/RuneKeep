@@ -8,7 +8,7 @@ import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequen
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
-import { CardEditor } from '@/components/card-editor';
+import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { ChamferedImage } from './components/chamfered-image';
 import { PopupDialog } from '@/components/popup-dialog';
@@ -45,6 +45,8 @@ import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
 import { DeckTab, SectionDivider, Segmented } from './create-ui';
 import { ExperiencesTab } from './experiences-tab';
+import { QuickCardFlow } from '@/features/character-sheet/sheet/quick-card-flow';
+import type { CardEffect } from '@/lib/modifiers';
 import { TraitsTab } from './traits-tab';
 
 // ---------- screen ----------
@@ -266,6 +268,8 @@ export function CreateScreen() {
 
   const [centerIdx, setCenterIdx] = useState(0);
   const [editingExperience, setEditingExperience] = useState<number | null>(null);
+  /** The draft handed to the full editor when the player asks for Advanced, or null while quick. */
+  const [expAdvanced, setExpAdvanced] = useState<CardDraft | null>(null);
   // Weapons deck UI (#121): which kind of primary to browse, and whether we're picking the primary
   // or the (optional, 1H-only) secondary.
   const [weaponKind, setWeaponKind] = useState<WeaponKind>('physical');
@@ -678,6 +682,15 @@ export function CreateScreen() {
     router.replace({ pathname: '/sheet', params: { id } });
   }, [complete, draft, router, libContent, picked]);
 
+  /** Write an experience into its slot. Shared so the quick flow and the full editor cannot drift. */
+  const saveExperience = useCallback((slot: number, d: { title: string; imageUri: string | null; color: string | null; effects?: CardEffect[] }) => {
+    const next = [...draft.experiences];
+    const existing = next[slot];
+    next[slot] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: '', imageUri: d.imageUri, color: d.color, effects: d.effects, modifier: existing?.modifier ?? 2 };
+    set({ experiences: next.filter(Boolean) });
+    setEditingExperience(null);
+  }, [draft.experiences, set]);
+
   const pickPortrait = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead
     // v0.26.0: copy it somewhere the app owns first. The picker returns a path into the CACHE
@@ -893,21 +906,29 @@ export function CreateScreen() {
         {pendingDeck ? <DeckLoader /> : null}
         </View>
       </View>
+      {/* v0.26.0: experiences are authored through the SAME quick flow as cards on the sheet.
+          Two ways to make a thing was one too many, and the quick flow is the better one here: an
+          experience is a short phrase, which is exactly what it is built for. Advanced is one tap
+          away and carries the draft, so nothing that was possible before has been taken away. */}
       {editingExperience != null ? (
-        <CardEditor
-          kindLabel="Experience"
-          experienceMode
-          modifier={draft.experiences[editingExperience]?.modifier ?? 2}
-          initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null, effects: draft.experiences[editingExperience].effects ?? [] } : undefined}
-          onCancel={() => setEditingExperience(null)}
-          onSave={(d) => {
-            const next = [...draft.experiences];
-            const existing = next[editingExperience];
-            next[editingExperience] = { id: existing?.id ?? `exp-${Date.now().toString(36)}`, title: d.title, text: '', imageUri: d.imageUri, color: d.color, effects: d.effects, modifier: existing?.modifier ?? 2 };
-            set({ experiences: next.filter(Boolean) });
-            setEditingExperience(null);
-          }}
-        />
+        expAdvanced ? (
+          <CardEditor
+            kindLabel="Experience"
+            experienceMode
+            modifier={draft.experiences[editingExperience]?.modifier ?? 2}
+            initial={expAdvanced}
+            onCancel={() => { setExpAdvanced(null); setEditingExperience(null); }}
+            onSave={(d) => { saveExperience(editingExperience, d); setExpAdvanced(null); }}
+          />
+        ) : (
+          <QuickCardFlow
+            kindLabel="Experience"
+            initial={draft.experiences[editingExperience] ? { title: draft.experiences[editingExperience].title, text: draft.experiences[editingExperience].text, imageUri: draft.experiences[editingExperience].imageUri, color: draft.experiences[editingExperience].color ?? null, effects: draft.experiences[editingExperience].effects ?? [] } : undefined}
+            onCancel={() => setEditingExperience(null)}
+            onAdvanced={(d) => setExpAdvanced(d)}
+            onSave={(d) => saveExperience(editingExperience, d)}
+          />
+        )
       ) : null}
       {/* ---- THE select controls: the screen's TOP layer (#106) — above the carousel veil AND
           the features reader, never dimmed, always tappable, one spot. Card decks only. Hierarchy
