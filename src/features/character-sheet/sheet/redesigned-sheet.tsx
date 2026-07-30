@@ -32,7 +32,7 @@ import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isPermanentCard, refOf, sourceLabelForCardId } from '@/features/cards/card-effects';
-import { CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
+import { authoredItemOptionId, CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
@@ -858,7 +858,25 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
     const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const chosenIds = file.inventoryItemIds ?? [];
-    const chosenJobs: Job[] = cinv.choices.flat().filter((n) => chosenIds.includes(itemOptionId(n))).map((name) => ({ key: itemOptionId(name), node: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
+    /**
+     * The chosen starting items.
+     *
+     * v0.27.0: an item that exists in the ARCHIVE renders as its archive card, so the Minor Health
+     * Potion every class guide offers arrives saying "Clear 1d4 HP" instead of repeating its own
+     * name. Both ids are accepted: heroes made before this hold the authored id, and rewriting their
+     * files to chase a nicer card would be a migration for a cosmetic gain.
+     */
+    const chosenJobs: Job[] = cinv.choices
+      .flat()
+      .map((name): Job | null => {
+        const held = [itemOptionId(name), authoredItemOptionId(name)].find((id) => chosenIds.includes(id));
+        if (!held) return null;
+        const archive = lootById(held);
+        return archive
+          ? { key: held, id: held, node: <ForgedLootCard loot={archive} /> }
+          : { key: held, id: held, node: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> };
+      })
+      .filter((j): j is Job => j !== null);
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
       key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
       id: it.id,
@@ -982,6 +1000,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const c = cardById(id);
       return c ? { id: c.id, source: c.source, thumb: c.thumb } : undefined;
     };
+    /**
+     * A forged job as a card, using its bitmap when there is one and the LIVE component when there
+     * is not.
+     *
+     * v0.27.0: the fallback is the whole point. This used to drop any job whose bitmap was missing,
+     * which on a phone meant a card appeared a moment late, and in a BROWSER meant it never appeared
+     * at all: nothing is ever forged there, so experiences, the class feature card, weapons, armor
+     * and the entire starting inventory were silently absent from a hero made in a browser. The
+     * embedded-homebrew path above already fell back this way; now every category does, through one
+     * helper, so a new one cannot be added without inheriting it.
+     */
+    const forgedItem = (j: { key: string; node: ReactNode; id?: string }): CardItem => {
+      const src = featureSources[j.key];
+      const id = j.id ?? j.key;
+      return src ? { id, source: src.full, thumb: src.thumb } : { id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: j.node };
+    };
+    const forgedItems = (jobs: { key: string; node: ReactNode; id?: string }[]) => jobs.map(forgedItem);
     const ids = [file.subclassCardId, file.ancestryCardId, file.communityCardId];
     const structItems = ids.map((id) => catItem(id) ?? libItem(id));
     if (structItems.some((c) => !c)) return none; // a structural id in neither catalog nor libraryCards → bail (as before)
@@ -1002,10 +1037,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       .filter((x): x is { level: number; domain: string; item: CardItem } => !!x)
       .sort((a, b) => a.level - b.level || a.domain.localeCompare(b.domain)) // by level (then domain) (#157)
       .map((x) => x.item);
-    const expItems = expJobs
-      .map((j) => ({ key: j.key, id: j.id ?? j.key, src: featureSources[j.key] }))
-      .filter((x) => x.src)
-      .map((x) => ({ id: x.id, source: x.src!.full, thumb: x.src!.thumb }));
+    const expItems = forgedItems(expJobs);
     // Faces in STABLE order [class, ...features] — an un-forged face keeps its slot and renders its
     // live node (no .filter that dropped pages and shifted indices, the #110 missing-page bug).
     const faceJobs = classJob ? [classJob, ...featJobs] : featJobs;
@@ -1013,25 +1045,28 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const src = featureSources[j.key];
       return src ? { source: src.full, thumb: src.thumb } : { custom: j.node };
     });
-    const firstForged = faces.find((f) => f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
-    const featItem =
-      faces.length > 1 && firstForged
-        ? [{ id: `features-${file.className}`, source: firstForged.source, thumb: firstForged.thumb, faces }]
-        : [];
+    /**
+     * The cover of a multi-page card: the first forged face if there is one, else the live first page.
+     *
+     * v0.27.0: this used to REQUIRE a forged face and return nothing without one, so the class
+     * feature card did not exist at all in a browser.
+     */
+    const coverOf = (id: string, pages: { source?: { uri: string }; thumb?: { uri: string }; custom?: ReactNode }[]): CardItem[] => {
+      if (pages.length < 2) return [];
+      const forged = pages.find((f) => f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
+      return forged
+        ? [{ id, source: forged.source, thumb: forged.thumb, faces: pages }]
+        : [{ id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: pages[0].custom, faces: pages }];
+    };
+    const featItem = coverOf(`features-${file.className}`, faces);
     // Multiclass (#311): the additional class's feature card (multi-page), assembled exactly like the
     // primary's, plus the chosen subclass FOUNDATION card. Both ride the arsenal next to the originals.
     const mcFaceJobs = mcClassJob ? [mcClassJob, ...mcFeatJobs] : mcFeatJobs;
     const mcFaces = mcFaceJobs.map((j) => { const src = featureSources[j.key]; return src ? { source: src.full, thumb: src.thumb } : { custom: j.node }; });
-    const mcFirstForged = mcFaces.find((f) => f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
-    const mcFeatItem = file.multiclassName && mcFaces.length > 1 && mcFirstForged
-      ? [{ id: `mc-features-${file.multiclassName}`, source: mcFirstForged.source, thumb: mcFirstForged.thumb, faces: mcFaces }]
-      : [];
+    const mcFeatItem = file.multiclassName ? coverOf(`mc-features-${file.multiclassName}`, mcFaces) : [];
     const mcSubclass = file.multiclassSubclassCardId ? cardById(file.multiclassSubclassCardId) : null;
     const mcSubclassItem = mcSubclass ? [{ id: mcSubclass.id, source: mcSubclass.source, thumb: mcSubclass.thumb }] : [];
-    // Equipment (#121): weapons + armor appear once forged. Weapons ride BOTH the abilities hand and
-    // inventory; armor is inventory only.
-    const forgedItems = (jobs: { key: string; node: ReactNode; id?: string }[]) =>
-      jobs.map((j) => ({ j, src: featureSources[j.key] })).filter((x) => x.src).map((x) => ({ id: x.j.id ?? x.j.key, source: x.src!.full, thumb: x.src!.thumb }));
+    // Equipment (#121): weapons ride BOTH the abilities hand and inventory; armor is inventory only.
     const weaponItems = forgedItems(weaponJobs);
     const armorItems = armorJob ? forgedItems([armorJob]) : [];
     const [subclassC, ancestryC, communityC] = structItems as [CardItem, CardItem, CardItem];
@@ -1059,7 +1094,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           return src ? { source: src.full, thumb: src.thumb } : { custom: acqClassJobs.find((j) => j.key === key)?.node };
         });
         const first = faces.find((f) => 'source' in f && f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
-        if (!first) return null;
+        // v0.27.0: a single-page acquired class card still needs a card, and in a browser NONE of
+        // these are forged, so requiring a bitmap dropped every acquired class outright.
+        if (!first) return { id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: faces[0]?.custom, faces: faces.length > 1 ? faces : undefined };
         return { id, source: first.source, thumb: first.thumb, faces: faces.length > 1 ? faces : undefined };
       })
       .filter((c): c is CardItem => c !== null);

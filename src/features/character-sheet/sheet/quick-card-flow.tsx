@@ -7,6 +7,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
+import { isExperienceType } from '@/features/character-sheet/card-types';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -60,8 +61,23 @@ export function QuickCardFlow({
   const textRef = useRef<TextInput>(null);
   const reduced = useReducedMotion();
 
-  // A card is worth keeping if it has a name OR a body (#318's rule, unchanged).
-  const canSave = draft.title.trim().length > 0 || draft.text.trim().length > 0;
+  /**
+   * v0.27.0: an Experience is a PHRASE, and nothing else.
+   *
+   * "Sailor for a decade", "Never tell me the odds". The rulebook gives them no description, so
+   * asking for one invited players to invent prose the game has no use for, and the card then printed
+   * it. The advanced editor already knew this; the quick flow did not, so the same Experience got a
+   * body depending on which door it came through. Both now read the type, and the type is re-read as
+   * the player changes it, so switching an in-progress card to Experience takes its description away.
+   *
+   * A description already stored on one is IGNORED rather than deleted: an older card keeps working
+   * and simply stops showing it.
+   */
+  const expMode = isExperienceType(draft.typeLabel ?? kindLabel);
+
+  // A card is worth keeping if it has a name OR a body (#318's rule, unchanged). An Experience has
+  // only its phrase, so the phrase is the whole requirement.
+  const canSave = expMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || draft.text.trim().length > 0;
 
   const rollColor = useCallback(() => {
     playSfx('tokenCopyColor');
@@ -85,6 +101,8 @@ export function QuickCardFlow({
   }, [canSave]);
   const toConfirmRef = useRef(toConfirm);
   toConfirmRef.current = toConfirm;
+  const expModeRef = useRef(expMode);
+  expModeRef.current = expMode;
   // react-native-web ignores `submitBehavior`, so on web Enter in the body typed a newline and the
   // flow stopped dead at the one step that matters most. Catch the key instead. Shift+Enter still
   // makes a new line, which is the web convention and the only way to get a second paragraph here.
@@ -97,7 +115,9 @@ export function QuickCardFlow({
             const ev = e as unknown as { nativeEvent: { key: string; shiftKey?: boolean }; preventDefault?: () => void };
             if (ev.nativeEvent.key !== 'Enter' || ev.nativeEvent.shiftKey) return;
             ev.preventDefault?.();
-            toBody();
+            // No description to move to when the card is an Experience: Enter finishes it.
+            if (expModeRef.current) toConfirmRef.current();
+            else toBody();
           },
         }
       : {};
@@ -134,7 +154,7 @@ export function QuickCardFlow({
           <ForgedCard
             title={draft.title.trim()}
             kindLabel={draft.typeLabel ?? kindLabel}
-            body={draft.text}
+            body={expMode ? '' : draft.text}
             accentDeep={Rune.panel}
             imageUri={draft.imageUri}
             colorArt={draft.color}
@@ -149,13 +169,13 @@ export function QuickCardFlow({
                 ref={titleRef}
                 value={draft.title}
                 onChangeText={(title) => setDraft((d) => ({ ...d, title }))}
-                placeholder="Name it"
+                placeholder={expMode ? 'Say it in a phrase' : 'Name it'}
                 placeholderTextColor={Rune.muted}
                 selectionColor={Rune.goldBright}
                 autoFocus
-                returnKeyType="next"
+                returnKeyType={expMode ? 'done' : 'next'}
                 submitBehavior="submit"
-                onSubmitEditing={toBody}
+                onSubmitEditing={expMode ? toConfirm : toBody}
                 onFocus={scrollFieldIntoView}
                 {...webEnterTitle}
                 maxLength={70}
@@ -163,6 +183,7 @@ export function QuickCardFlow({
                 accessibilityLabel="Card title"
               />
             </ChamferBox>
+            {expMode ? null : (
             <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
               <TextInput
                 ref={textRef}
@@ -182,6 +203,7 @@ export function QuickCardFlow({
                 accessibilityLabel="Card text"
               />
             </ChamferBox>
+            )}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
               <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
               <RuneButton label="Next" kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={toConfirm} />

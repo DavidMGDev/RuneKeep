@@ -48,7 +48,9 @@ if (process.env.SEED) {
       communityCardId: 'community-highborne',
       domainCardIds: ['blade-01-1', 'blade-01-2', 'bone-01-1', 'blade-02-1', 'bone-02-1'],
       enabledCardIds: ['blade-01-1', 'blade-01-2', 'bone-01-1', 'blade-02-1', 'bone-02-1'],
-      weaponPrimaryId: 'broadsword', armorId: 'gambeson-armor', level: 5,
+      weaponPrimaryId: 'wpn-broadsword', armorId: 'arm-gambeson', level: 5,
+      inventoryItemIds: ['consumable-minor-health-potion', 'inv-opt-a-sharpening-stone'],
+      experiences: [{ id: 'exp-1', title: 'Sailor for a decade', text: '', imageUri: null, color: '#3A6E8F', modifier: 2 }],
     };
     const req = indexedDB.open('runekeep', 1);
     req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('kv')) req.result.createObjectStore('kv'); };
@@ -105,6 +107,17 @@ for (const s of steps) {
   else if (cmd === 'xy') { const [x, y] = arg.split(',').map(Number); await page.mouse.click(x, y); await new Promise((r) => setTimeout(r, 900)); }
   else if (cmd === 'swipe') { const [a, b, c, d] = arg.split(',').map(Number); await swipe(a, b, c, d); }
   else if (cmd === 'wait') await new Promise((r) => setTimeout(r, Number(arg)));
+  else if (cmd === 'key') {
+    const [spec, n] = arg.split('@');
+    const shift = spec.startsWith('Shift+');
+    const k = shift ? spec.slice(6) : spec;
+    for (let i = 0; i < Number(n || 1); i++) {
+      if (shift) await page.keyboard.down('Shift');
+      await page.keyboard.press(k);
+      if (shift) await page.keyboard.up('Shift');
+      await new Promise((r) => setTimeout(r, 320));
+    }
+  }
   else if (cmd === 'fps') {
     const out = await page.evaluate((ms) => new Promise((res) => {
       const t = []; let last = performance.now(); const end = last + ms;

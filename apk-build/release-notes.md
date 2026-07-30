@@ -1,11 +1,10 @@
-RuneKeep v0.26.1 - the app stopped asking the same question a million times.
+RuneKeep v0.27.0 - sound on Android, every card in the browser, and the potion is a real potion.
 
-A performance release. One bug, and it was the app's own card cache.
-
-- THE APP IS FAST AGAIN. Every card in RuneKeep is drawn once and kept as a picture, and a new release redraws all of them. While that was happening, the app asked storage where each card's picture was and then asked again from scratch every time one card finished, over and over. On a full roster that came to millions of pointless lookups, all of them holding up the screen. Worse, it never finished: a card showing the previous release's picture was treated as done, so after the first launch exactly one card was ever redrawn and the app stayed in its slowest state instead of settling out of it. It now looks once, remembers the answer, and finishes.
-- A CARD THAT FAILS TO DRAW is left until next time rather than retried the instant it fails, which used to spin for as long as the sheet was open.
-- SCROLLING WITH A MOUSE in the browser build got cheaper: it worked out what to scroll twice per element on every tick of the wheel.
-
-Nothing else changed. Everything in v0.26.0 is still here.
+- SOUND ON ANDROID. The installed app was silent, and said nothing about it. A sound is loaded one way while the app is being developed and another way once it is packaged for release, and the second way was broken here, so the version everyone actually plays was the only version with no audio. It loads them the same way now, whichever build it is.
+- A HERO MADE IN A BROWSER HAS ALL THEIR CARDS. Experiences, the class card, weapons, armor and the whole starting inventory were missing from the arsenal. Every card in RuneKeep is drawn once and kept as a picture, and the browser cannot draw them that way, so the sheet quietly left out anything it had no picture for. It now shows the card itself when there is no picture yet.
+- YOUR NAME IS ON YOUR SHEET IN A BROWSER. It grows to fill its space and shrinks when it is long, and the measurement that decides which never ran in a browser, so the name rendered far too big inside a box that cuts it off.
+- THE STARTING POTION IS THE REAL CARD. Every class offers a Minor Health or Minor Stamina Potion, and both are printed cards with printed text. You were getting a plain item that only repeated its own name. Now it is the consumable, it says what drinking it does, and it sits with your consumables. Heroes you already made keep the card they have.
+- AN EXPERIENCE IS A PHRASE. It has no description in the rulebook and should not be asked for one. The advanced editor knew that, the quick one did not, so the same Experience got a description depending on how you made it. Changing a card's type to Experience now takes its description away, wherever you do it.
+- CHARACTER CREATION STOPPED STUTTERING. Cards are drawn one at a time, and each one finishing was making the app rebuild every other card on the screen. On a deck of a hundred domain cards that is a hundred rebuilds of a hundred cards, which is exactly the spike you felt. Only the card that changed is rebuilt now.
 
 Sideload: enable Install unknown apps, then open the APK.
