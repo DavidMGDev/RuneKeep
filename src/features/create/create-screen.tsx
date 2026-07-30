@@ -669,7 +669,11 @@ export function CreateScreen() {
     <AppScreen
       title="New hero"
       onBack={() => { if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); router.back(); } }}
-      headerRight={<RuneButton label="Forge" kind="primary" height={26} dense onPress={() => { if (complete) void forge(); else jumpToMissing(); }} accessibilityLabel="Create character" />}>
+      // v0.25.0: Forge is DIM until the character is finished, so the button reports readiness instead
+      // of claiming it from the first screen. It stays tappable on purpose: tapping it while
+      // incomplete jumps to the step that is missing, which is more use than a dead control, and a
+      // truly dead Forge with no explanation is the thing this replaced in the first place.
+      headerRight={<RuneButton label="Forge" kind={complete ? 'primary' : 'ghost'} height={26} dense onPress={() => { if (complete) void forge(); else jumpToMissing(); }} accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`} />}>
       <View style={{ flex: 1 }}>
         {/* ---- details ---- */}
         <SectionDivider label="Details" />

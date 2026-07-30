@@ -94,6 +94,8 @@ interface CarouselContextValue {
   toggleRaise: (id: string) => void;
   /** Clear the whole edit selection (the "Deselect All" control + after a Duplicate). */
   deselectAll: () => void;
+  /** Raise every card in the current deck (v0.25.0). */
+  selectAll: () => void;
   /** Spring the row so the given card centers (used to reveal freshly-duplicated cards). No-op if the
    *  id isn't in the current deck. */
   scrollToId: (id: string) => void;
@@ -464,6 +466,14 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     setRaisedIds((s) => (s.size ? new Set() : s));
     playSfx('cardDeselect');
   }, []);
+  /** v0.25.0: raise every card in the deck on screen. Equipping a fresh character used to be one hold
+   *  per card; with this it is select all, then Equip from the card menu. */
+  const selectAll = useCallback(() => {
+    const deck = decksRef.current[categoryRef.current] ?? [];
+    if (!deck.length) return;
+    setRaisedIds(new Set(deck.map((c) => c.id)));
+    playSfx('cardSelect');
+  }, []);
   // Center the row on a card by id (v0.11.0): spring the rotation so it lands centered. Reads the LIVE
   // deck (decksRef) so it's correct even called right after a Duplicate commits new cards.
   const scrollToId = useCallback((id: string) => {
@@ -531,6 +541,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       gearFlash,
       toggleRaise,
       deselectAll,
+      selectAll,
       scrollToId,
       onReorderCards,
       cardMenuOpen,
@@ -557,7 +568,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

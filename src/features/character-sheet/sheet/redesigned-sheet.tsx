@@ -542,7 +542,7 @@ function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel
 const EDIT_GRAY = '#C4C8D0';
 const EDIT_GRAY_DIM = '#9AA0AA';
 function EditHud() {
-  const { editing, editMode, raisedIds, decks, category, deselectAll } = useCarousel();
+  const { editing, editMode, raisedIds, decks, category, deselectAll, selectAll } = useCarousel();
   const total = decks[category]?.length ?? 0;
   const sel = raisedIds.size;
   const fade = useAnimatedStyle(() => ({ opacity: editMode.value }));
@@ -556,9 +556,18 @@ function EditHud() {
           {sel > 0 ? `${sel} / ${total} Cards` : `${total} Cards`}
         </Text>
       </View>
-      {sel > 0 ? (
-        <Pressable onPress={deselectAll} accessibilityRole="button" accessibilityLabel="Deselect all cards" hitSlop={8} style={({ pressed }) => ({ marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)' })}>
-          <Text style={{ color: EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Deselect All</Text>
+      {/* v0.25.0: one control, two jobs. With nothing selected it offers Select All, which is the
+          fast path for equipping a new character (select all, then Equip from the card menu); with a
+          selection it becomes Deselect All, as before. It never disappears, so the space below the
+          banner stops jumping. */}
+      {total > 0 ? (
+        <Pressable
+          onPress={sel > 0 ? deselectAll : selectAll}
+          accessibilityRole="button"
+          accessibilityLabel={sel > 0 ? 'Deselect all cards' : 'Select all cards'}
+          hitSlop={8}
+          style={({ pressed }) => ({ marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)' })}>
+          <Text style={{ color: EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel > 0 ? 'Deselect All' : 'Select All'}</Text>
         </Pressable>
       ) : null}
     </Animated.View>
