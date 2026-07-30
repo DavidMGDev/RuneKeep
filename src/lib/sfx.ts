@@ -15,6 +15,7 @@
  *   otherwise the normal OnLoseHP-Default (with variation).
  */
 
+import { Platform } from 'react-native';
 import type { AudioBuffer, AudioContext, GainNode } from 'react-native-audio-api';
 
 import { DEFAULT_CENTS, DEFAULT_VOLUME, SFX_PITCH_CENTS, SFX_VOLUME } from './sfx-config';
@@ -121,7 +122,10 @@ let ctx: AnyCtx | null = null;
 let unavailable = false;
 
 function getCtx(): AnyCtx | null {
-  if (ctx) return ctx;
+  if (ctx) {
+    wake(ctx);
+    return ctx;
+  }
   if (unavailable) return null;
   try {
     if (!AudioContextCtor) {
@@ -130,12 +134,49 @@ function getCtx(): AnyCtx | null {
     }
     if (!AudioContextCtor) throw new Error('no AudioContext');
     ctx = new AudioContextCtor();
-    void ctx.resume?.();
+    wake(ctx);
+    armFirstGesture();
+    // Dev only, stripped from release builds: the browser check in scripts/web-probe.mjs needs a way
+    // to see whether the context actually left the suspended state, which is invisible otherwise.
+    if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined') (window as unknown as { __rkAudio?: unknown }).__rkAudio = ctx;
   } catch {
     unavailable = true;
     ctx = null;
   }
   return ctx;
+}
+
+/**
+ * v0.25.0: a browser will not let a page make noise until the user has interacted with it.
+ *
+ * An AudioContext created before that starts SUSPENDED, and every later `start()` is a silent no-op
+ * rather than an error, which is why the web build had no sound at all and nothing in the console to
+ * say so. Resuming once at creation, as this used to, is exactly the moment it cannot work: the app
+ * warms the context on load, long before the first tap.
+ *
+ * So resume on two occasions instead. Every play attempt, since a play usually IS the gesture, and
+ * once on the first pointer or key event, so the context is awake before the first sound is asked for.
+ * Native contexts are never suspended, so both are harmless there.
+ */
+function wake(c: AnyCtx): void {
+  try {
+    if ((c as { state?: string }).state === 'suspended') void c.resume?.();
+  } catch {
+    // A context that refuses to resume is not worth breaking a tap over.
+  }
+}
+
+let gestureArmed = false;
+function armFirstGesture(): void {
+  if (gestureArmed || Platform.OS !== 'web' || typeof document === 'undefined') return;
+  gestureArmed = true;
+  const once = () => {
+    if (ctx) wake(ctx);
+    document.removeEventListener('pointerdown', once, true);
+    document.removeEventListener('keydown', once, true);
+  };
+  document.addEventListener('pointerdown', once, true);
+  document.addEventListener('keydown', once, true);
 }
 
 // ---------------------------------------------------------------------------

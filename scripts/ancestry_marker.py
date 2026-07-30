@@ -58,15 +58,11 @@ except ImportError:  # pragma: no cover - operator-facing
 
 PAGE = 5  # 0-based; page 6 of HOPEANDFEAR_Cards.pdf holds ancestries + communities
 
-COL_X = [35.2, 214.7, 394.7]
-ROW_Y = [17.2, 269.2]
-# The art plates overlap their neighbours by a couple of points, so the plate width (182.1) crops a
-# sliver of the next card in. The cards are flush in both directions, so the real face is the column
-# pitch by the row pitch: 179.5 x 252, which is a 2.5:3.5 card to within a rounding error.
-CARD_W = 179.5
-CARD_H = 252.0
+# The card grid is owned by extract_hf_cards, which measures it against the rendered page. Importing
+# it rather than repeating it means the marks and the faces can never be cut on different grids, which
+# would slide every strike off its line.
+from extract_hf_cards import CARD_H, CARD_W, COL_X, ROW_Y, card_rect  # noqa: E402
 
-# Grid order is column-major: reading down each column, then across.
 CARDS = [
     ("ancestry-aetheris", "Aetheris", 0, 0),
     ("ancestry-skykin", "Skykin", 0, 1),
@@ -79,9 +75,6 @@ CARDS = [
 DPI = 250  # 182pt wide card -> ~630px, plenty to mark against and small enough to inline
 
 
-def card_rect(col: int, row: int) -> fitz.Rect:
-    x, y = COL_X[col], ROW_Y[row]
-    return fitz.Rect(x, y, x + CARD_W, y + CARD_H)
 
 
 def write_faces(page: fitz.Page, out_dir: pathlib.Path) -> None:

@@ -27,13 +27,18 @@ export const ANCESTRY_STRIKES: Record<string, { a: number[]; b: number[] }> = {
   // v0.25.0: the Hope and Fear ancestries, now printed card faces like the base game's rather than
   // app-rendered text. Read out of the publisher PDF's own text geometry by
   // `scripts/ancestry_marker.py` and confirmed by the owner in the page it generates, so these are
-  // measured rather than eyeballed. Any change to the faces means re-running that script.
-  'ancestry-aetheris': { a: [0.7382, 0.7688, 0.7993], b: [0.8411, 0.8717, 0.9022] },
-  'ancestry-skykin': { a: [0.6733, 0.7038, 0.7344, 0.7649], b: [0.8068, 0.8373, 0.8679, 0.8984] },
-  'ancestry-earthkin': { a: [0.7331, 0.7636, 0.7942], b: [0.836, 0.8665] },
-  'ancestry-tidekin': { a: [0.737, 0.7676], b: [0.8094, 0.8399, 0.8705, 0.9011] },
-  'ancestry-emberkin': { a: [0.6968, 0.7273], b: [0.7691, 0.7997, 0.8303, 0.8608, 0.8914] },
-  'ancestry-gnome': { a: [0.7378, 0.7684], b: [0.8102, 0.8407] },
+  // measured rather than eyeballed.
+  //
+  // These moved once already: the card crop was a point out in both axes, which put a sliver of the
+  // neighbouring card down the left edge of every face. Re-cutting the cards moved the text with them,
+  // so the marks were recomputed on the corrected grid. Any change to the faces means re-running
+  // `scripts/extract_hf_cards.py` AND the marker, in that order.
+  'ancestry-aetheris': { a: [0.7335, 0.764, 0.7946], b: [0.8364, 0.8669, 0.8975] },
+  'ancestry-skykin': { a: [0.6685, 0.6991, 0.7296, 0.7602], b: [0.802, 0.8325, 0.8631, 0.8937] },
+  'ancestry-earthkin': { a: [0.7283, 0.7589, 0.7894], b: [0.8312, 0.8618] },
+  'ancestry-tidekin': { a: [0.7323, 0.7628], b: [0.8046, 0.8352, 0.8657, 0.8963] },
+  'ancestry-emberkin': { a: [0.692, 0.7226], b: [0.7644, 0.7949, 0.8255, 0.856, 0.8866] },
+  'ancestry-gnome': { a: [0.733, 0.7636], b: [0.8054, 0.836] },
 };
 
 /** Whether this ancestry's cross-out is DRAWN over a printed face (measured strike lines) rather than
