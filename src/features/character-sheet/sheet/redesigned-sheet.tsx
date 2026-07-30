@@ -31,7 +31,7 @@ import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANC
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
-import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, refOf } from '@/features/cards/card-effects';
+import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isPermanentCard, refOf, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { CLASS_INVENTORY, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
@@ -51,11 +51,13 @@ import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { hasStrikeLines } from '@/data/ancestry-trait-regions';
+import { cardChoiceFor } from '@/data/card-choices';
 import { embedCardImageForNfc } from '@/lib/image-embed';
 import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { NfcReceiveCeremony, SheetNfcReceiver } from './nfc-receive-ceremony';
+import { CardChoiceDialog } from './card-choice-dialog';
 
 // A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
@@ -1795,6 +1797,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [deleteReq, setDeleteReq] = useState<string[] | null>(null);
   /** v0.14.1: the consumable instance just switched OFF, awaiting the "used it up?" prompt. */
   const [depletedId, setDepletedId] = useState<string | null>(null);
+  /** A card whose benefits the player has yet to choose. Set when they try to equip it. */
+  const [choiceReq, setChoiceReq] = useState<string | null>(null);
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
   const editableIds = useMemo(() => editableCardIds(file), [file]);
@@ -1906,14 +1910,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         // and onDeleteCards drops exactly one copy from the multiset.
         if (force === undefined && lootById(catalogIdOf(id))?.kind === 'consumable') setDepletedId(id);
       } else {
+        // v0.25.0: a card offering a CHOICE cannot be equipped until it is answered, because an
+        // unanswered card grants nothing and doing that silently is worse than asking. Vitality is
+        // the first: "permanently gain two of the following."
+        if (cardChoiceFor(catalogIdOf(ref)) && !file.cardChoices?.[ref]) { setChoiceReq(ref); return; }
         // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
         if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
         if (transformed && cidWeapon) { playSfx('floatMenuClose'); return; } // no weapons while transformed
         if (transformed && cidDomain && !(beastformDomainSnapshot ?? []).includes(ref)) { playSfx('floatMenuClose'); return; } // no NEW domain cards
         // #318: at most 5 ENABLED domain cards (any domain). A 6th is blocked with a "Maximum 5 Domain
         // Cards" notice; insisting 3× in a row (without leaving fullscreen) overrides it (debug).
-        if (cidDomain) {
-          const enabledDomains = [...cur].filter((x) => cardById(x)?.kind === 'domain').length;
+        // v0.25.0: permanent cards are exempt. Vitality's own text tells you to vault it, and it keeps
+        // working from there, so it is not occupying one of the five loadout slots. Cards ALREADY
+        // enabled that are permanent do not count towards the total either.
+        if (cidDomain && !isPermanentCard(ref, file)) {
+          const enabledDomains = [...cur].filter((x) => cardById(x)?.kind === 'domain' && !isPermanentCard(x, file)).length;
           if (enabledDomains >= 5) {
             if (force !== undefined) { playSfx('floatMenuClose'); return; } // bulk: respect the cap, skip this one
             domainOverrideRef.current += 1;
@@ -2247,6 +2258,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
             {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}
+            {/* v0.25.0: the card asks its question before it can be equipped. Answering stores the
+                pick and equips in one step, so the tap the player made is the tap that happens. */}
+            {choiceReq ? <CardChoicePrompt id={choiceReq} file={file} onCancel={() => setChoiceReq(null)} onPick={(options) => {
+              const cur = fileRef.current;
+              setChoiceReq(null);
+              if (!cur) return;
+              const next = { ...cur, cardChoices: { ...cur.cardChoices, [choiceReq]: options } };
+              setFile(next);
+              fileRef.current = next;
+              saveFileRef.current(next);
+              toggleOneFromRefs(choiceReq, 'on');
+            }} /> : null}
             {incoming ? <NfcReceiveCeremony card={incoming} destinations={moveTargets} customCategories={customCategories} onCommit={commitReceived} onDismiss={() => setIncoming(null)} /> : null}
             {/* Gold border is a full-bleed overlay ON TOP of the scaled content (stretched to the
                 screen edges). The card hand is clipped to the design box, so it stays behind it. */}
@@ -2376,4 +2399,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       </CarouselProvider>
     </AccentProvider>
   );
+}
+
+/** Resolves a card id to its choice and title, so the sheet's JSX stays a single line. */
+function CardChoicePrompt({ id, file, onPick, onCancel }: { id: string; file: CharacterFile | undefined; onPick: (options: number[]) => void; onCancel: () => void }) {
+  const choice = cardChoiceFor(catalogIdOf(id));
+  if (!choice) return null;
+  return <CardChoiceDialog choice={choice} cardTitle={sourceLabelForCardId(id, file ?? undefined)} onPick={onPick} onCancel={onCancel} />;
 }
