@@ -36,7 +36,9 @@ export default function Sheet() {
   useEffect(() => {
     if (!state.loaded || !state.file || tourChecked) return;
     setTourChecked(true);
-    if (shouldShow('sheet')) router.push('/onboarding?tour=sheet' as Href);
+    // The sheet's id has to travel with the return address, or dismissing the tour would come back
+    // to a sheet with no character.
+    if (shouldShow('sheet')) router.push(`/onboarding?tour=sheet&from=${encodeURIComponent(id ? `/sheet?id=${id}` : '/sheet')}` as Href);
   }, [state.loaded, state.file, tourChecked, router]);
 
   if (!state.loaded) return <LoadingScreen label="Unrolling the sheet" />;

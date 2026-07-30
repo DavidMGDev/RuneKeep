@@ -50,7 +50,13 @@ function ChamferBoxImpl({
     <View style={style} onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
       {size && size.w > 2 * c && size.h > 2 * c ? (
         <View style={{ position: 'absolute', left: 0, top: 0, width: size.w, height: size.h }} pointerEvents="none">
-          <Svg width={size.w} height={size.h}>
+          {/* v0.26.0: an explicit viewBox. Without one the polygon's coordinates are interpreted in
+              CSS pixels, which is fine until the whole app sits inside the phone frame's scale
+              transform: engines disagree about whether an attribute-sized svg rasterises before or
+              after that transform, and Firefox drew the outline offset from the fill it belongs to.
+              With a viewBox the coordinate system is stated rather than inferred, so it scales the
+              same everywhere. */}
+          <Svg width={size.w} height={size.h} viewBox={`0 0 ${size.w} ${size.h}`}>
             <Polygon points={points} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="miter" />
           </Svg>
         </View>

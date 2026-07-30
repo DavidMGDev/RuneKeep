@@ -36,6 +36,24 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const puppeteer = require('puppeteer-core');
 
+/**
+ * v0.26.0: Firefox as well as Chrome, because the two disagree in ways that matter here. The drag
+ * ghost, the offset panel outline and the washed-out icons were all reported against Firefox and all
+ * looked fine in Chrome, so a check that only drives Chrome cannot see the bugs being reported.
+ *
+ *   RK_FIREFOX=1 node scripts/web-probe.mjs http://localhost:8081 ./out shot:x
+ */
+const FIREFOX = !!process.env.RK_FIREFOX;
+
+const FIREFOX_CANDIDATES = [
+  process.env.FIREFOX_PATH,
+  'C:/Program Files/Mozilla Firefox/firefox.exe',
+  'C:/Program Files (x86)/Mozilla Firefox/firefox.exe',
+  'C:/Program Files/Zen Browser/zen.exe',
+  '/usr/bin/firefox',
+  '/Applications/Firefox.app/Contents/MacOS/firefox',
+].filter(Boolean);
+
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -48,7 +66,7 @@ const CHROME_CANDIDATES = [
 const [url = 'http://localhost:8081', out = '.', ...steps] = process.argv.slice(2);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const executablePath = CHROME_CANDIDATES.find((p) => {
+const executablePath = (FIREFOX ? FIREFOX_CANDIDATES : CHROME_CANDIDATES).find((p) => {
   try {
     return require('node:fs').existsSync(p);
   } catch {
@@ -56,17 +74,18 @@ const executablePath = CHROME_CANDIDATES.find((p) => {
   }
 });
 if (!executablePath) {
-  console.error('No Chrome or Edge found. Set CHROME_PATH.');
+  console.error(FIREFOX ? 'No Firefox found. Set FIREFOX_PATH.' : 'No Chrome or Edge found. Set CHROME_PATH.');
   process.exit(2);
 }
 
 const browser = await puppeteer.launch({
   executablePath,
+  ...(FIREFOX ? { browser: 'firefox', protocol: 'webDriverBiDi' } : {}),
   headless: process.env.RK_HEADED ? false : true,
   // A persistent profile keeps IndexedDB between runs, so a character made in one run is still there
   // in the next. Leave it unset for a first-run (onboarding) check.
   userDataDir: process.env.RK_PROFILE || undefined,
-  args: ['--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required'],
+  args: FIREFOX ? [] : ['--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required'],
 });
 const page = await browser.newPage();
 await page.setViewport({ width: 1200, height: 1000, deviceScaleFactor: 1 });

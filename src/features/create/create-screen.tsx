@@ -513,7 +513,7 @@ export function CreateScreen() {
 
   // v0.23.0: teach the creator when the creator opens, not on first launch.
   useEffect(() => {
-    if (shouldShow('creation')) router.push('/onboarding?tour=creation' as Href);
+    if (shouldShow('creation')) router.push('/onboarding?tour=creation&from=/create' as Href);
   }, [router]);
 
   useEffect(() => {
