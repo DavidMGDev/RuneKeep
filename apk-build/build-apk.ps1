@@ -152,6 +152,12 @@ Section "Rename APK to a friendly asset name"
 $niceApk = Join-Path (Split-Path $apk.FullName -Parent) "Runekeep $ver.apk"
 Copy-Item -Force $apk.FullName $niceApk
 Write-Host "ASSET: $niceApk" -ForegroundColor Green
+# A SECOND copy under a name that never changes, uploaded alongside the versioned one. GitHub serves
+# /releases/latest/download/<name> only for an asset whose name is stable, so this is what lets the
+# website's /android-app link keep working without being edited every release. The versioned name
+# stays, because that is the one a player ends up with in their downloads folder.
+$latestApk = Join-Path (Split-Path $apk.FullName -Parent) 'RuneKeep-android.apk'
+Copy-Item -Force $apk.FullName $latestApk
 
 if ($NoRelease) {
   Write-Host "`n===ALL DONE=== APK $mb MB at $niceApk (not published: -NoRelease)" -ForegroundColor Green
@@ -179,7 +185,7 @@ $notesFile = Join-Path $env:TEMP "rk-notes-$($ver -replace '[^\w.]', '').md"
 # Nothing to delete on a first upload, so this prints "release not found" and that is fine; the exit
 # code is deliberately not checked.
 gh release delete $tag --yes --cleanup-tag
-gh release create $tag "$niceApk" --target main --title "RuneKeep $ver (Android)" --notes-file $notesFile
+gh release create $tag "$niceApk" "$latestApk" --target main --title "RuneKeep $ver (Android)" --notes-file $notesFile
 Remove-Item -Force $notesFile -ErrorAction SilentlyContinue
 if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow

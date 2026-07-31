@@ -1,0 +1,12 @@
+# Redirects for Cloudflare Pages (and Netlify), read verbatim from the deployed root.
+#
+# The APK is ~88 MB and Cloudflare Pages refuses any single file over 25 MiB, so the app cannot be
+# hosted here. It does not need to be: it already lives on the GitHub release. This is a signpost.
+#
+# It points at `latest` rather than a version, and the build uploads an asset whose name never
+# changes (RuneKeep-android.apk) precisely so that this line does not have to be edited on every
+# release. A redirect that needs remembering is a redirect that eventually points at an old build.
+#
+# 302, not 301: browsers cache a permanent redirect indefinitely, and this target moves every release.
+
+/android-app  https://github.com/DavidMGDev/RuneKeep/releases/latest/download/RuneKeep-android.apk  302
