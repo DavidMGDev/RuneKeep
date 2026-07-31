@@ -86,3 +86,25 @@ describe('keeping out of the way', () => {
     expect(intentFor({ key: 'Tab' }, ctx())).toBeNull();
   });
 });
+
+describe('edit mode', () => {
+  const editing = { typing: false, overlay: false, focused: false, editing: true };
+
+  it('ignores up and down, which have nothing to act on in a flat row', () => {
+    expect(intentFor({ key: 'ArrowUp' }, editing)).toBeNull();
+    expect(intentFor({ key: 'ArrowDown' }, editing)).toBeNull();
+    expect(intentFor({ key: 'w' }, editing)).toBeNull();
+    expect(intentFor({ key: 's' }, editing)).toBeNull();
+  });
+
+  it('still moves along the row and across categories', () => {
+    expect(intentFor({ key: 'ArrowLeft' }, editing)).toEqual({ kind: 'move', step: -1 });
+    expect(intentFor({ key: 'ArrowUp', shift: true }, editing)).toEqual({ kind: 'category', step: -1 });
+  });
+
+  it('hands both keys back once edit mode is off', () => {
+    const normal = { ...editing, editing: false };
+    expect(intentFor({ key: 'ArrowUp' }, normal)).toEqual({ kind: 'focus' });
+    expect(intentFor({ key: 'ArrowDown' }, normal)).toEqual({ kind: 'unfocus' });
+  });
+});

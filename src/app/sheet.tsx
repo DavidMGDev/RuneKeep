@@ -1,7 +1,10 @@
-import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { PopupDialog } from '@/components/popup-dialog';
+import { Rune } from '@/constants/theme';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RedesignedSheet } from '@/features/character-sheet/sheet/redesigned-sheet';
 import { type CharacterFile } from '@/lib/character-file';
@@ -51,6 +54,26 @@ export default function Sheet() {
     return () => clearTimeout(t);
   }, [state.loaded, state.file, router]);
 
+  /**
+   * Cover the hand-back from the tour (v0.29.0).
+   *
+   * The sheet is mounted the whole time the tour is over it, so dismissing the tour is a hard cut
+   * from a dark full-screen overlay to bright parchment, with a white frame in between on the web
+   * while the route swaps. It reads as a flash rather than as arriving somewhere. This holds an ink
+   * cover over the sheet for a moment when focus comes back and fades it out, so the brightness
+   * arrives instead of hitting. It only ever runs after the tour has actually been offered, so a
+   * normal open from the roster is untouched.
+   */
+  const cover = useSharedValue(0);
+  const coverStyle = useAnimatedStyle(() => ({ opacity: cover.value }));
+  useFocusEffect(
+    useCallback(() => {
+      if (!tourPushed.current) return;
+      cover.value = 1;
+      cover.value = withTiming(0, { duration: 420, easing: Easing.out(Easing.quad) });
+    }, [cover]),
+  );
+
   if (!state.loaded) return <LoadingScreen label="Unrolling the sheet" />;
   // v0.22.0: an id that doesn't resolve used to fall through to the SAMPLE character silently, so a
   // player could spend a session editing a demo without knowing. Say so and send them back.
@@ -66,5 +89,12 @@ export default function Sheet() {
       />
     );
   }
-  return <RedesignedSheet characterFile={state.file ?? undefined} />;
+  return (
+    <View style={{ flex: 1 }}>
+      <RedesignedSheet characterFile={state.file ?? undefined} />
+      {/* Above everything, untouchable, and transparent except for the moment after the tour hands
+          back. See `cover` above. */}
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: Rune.ink, zIndex: 100000 }, coverStyle]} />
+    </View>
+  );
 }

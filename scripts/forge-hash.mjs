@@ -51,9 +51,17 @@ const SOURCES = [
   'src/lib/card-markdown.ts',
 ];
 
-/** Every file under a path, sorted, so the hash never depends on directory order. */
+/**
+ * Every file under a path, sorted, so the hash never depends on directory order.
+ *
+ * Tests are excluded. A test cannot change what a card looks like, but `src/data` is included whole,
+ * so without this every test added beside the game data would invalidate every cached card bitmap on
+ * every device: the exact cost this signature exists to avoid.
+ */
+const isTest = (name) => /\.test\.[jt]sx?$/.test(name);
+
 function walk(abs) {
-  if (!statSync(abs).isDirectory()) return [abs];
+  if (!statSync(abs).isDirectory()) return isTest(abs) ? [] : [abs];
   return readdirSync(abs)
     .sort()
     .flatMap((name) => walk(join(abs, name)));

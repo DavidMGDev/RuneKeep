@@ -22,7 +22,7 @@ import { TraitCrossOut } from '@/features/character-sheet/components/trait-cross
 import { playSfx } from '@/lib/sfx';
 import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
-import { useLayout } from '@/hooks/use-layout';
+import { useFrame, useLayout, windowToFrameY } from '@/hooks/use-layout';
 import { useStageScale } from '@/components/design-stage';
 import { useScreenDim } from '@/lib/screen-dim';
 import { FORGED_H, FORGED_W } from './forged-card';
@@ -306,6 +306,12 @@ export interface StraightCarouselHandle {
    *  is a mirror that lags (it is suppressed while the gear grinds, and React commits a frame later), so
    *  anything that COMMITS a choice must resolve the card through this — never through the mirror. */
   centerIndex: () => number;
+  /** Move `n` cards along the deck (v0.29.0, keyboard). */
+  stepBy: (n: number) => void;
+  /** Open the centred card full screen (v0.29.0, keyboard). */
+  focusCentre: () => void;
+  /** Whether a card is currently full screen (v0.29.0, keyboard). */
+  isFullscreen: () => boolean;
 }
 
 export const StraightCarousel = forwardRef<
@@ -350,6 +356,8 @@ export const StraightCarousel = forwardRef<
   itemsRef.current = items;
   const insets = useScreenInsets();
   const { height: screenH } = useLayout();
+  // The frame's magnification, which useLayout().scale deliberately reports as 1.
+  const frame = useFrame();
   const railRef = useRef<View>(null);
   const [width, setWidth] = useState(0);
   const heightSV = useSharedValue(0);
@@ -357,6 +365,8 @@ export const StraightCarousel = forwardRef<
   const railTopWin = useSharedValue(insets.top + 200); // sane default until measured
   const pos = useSharedValue(clampIdx(initialIndex, count));
   const grind = useSharedValue(0);
+  /** Where the last keyboard step was aimed, or -1 when nothing is in flight. */
+  const keyAim = useSharedValue(-1);
   const fs = useSharedValue(0);
   const focusIdx = useSharedValue(clampIdx(initialIndex, count));
   const startPos = useSharedValue(0);
@@ -464,8 +474,40 @@ export const StraightCarousel = forwardRef<
         pos.value = withSpring(clampIdx(index, count), SNAP_SPRING);
       },
       centerIndex: () => clampIdx(Math.round(pos.value), count),
+      /**
+       * Move `n` cards along the deck (v0.29.0, keyboard).
+       *
+       * The aim is held in a shared value rather than re-read from the live position, for the same
+       * reason the sheet's does: mid-spring the deck sits BETWEEN detents, so rounding it gives back
+       * the card being left, and a quick second press then advances one card instead of two.
+       */
+      stepBy: (n: number) => {
+        if (!count || !n) return;
+        if (fsOpen) closeFs();
+        const base = keyAim.value >= 0 ? keyAim.value : Math.round(pos.value);
+        const next = clampIdx(base + n, count);
+        if (next === base) return;
+        cancelAnimation(pos);
+        keyAim.value = next;
+        pos.value = withSpring(next, SNAP_SPRING, () => {
+          'worklet';
+          // Whoever still owns the aim clears it. Not gated on finishing: a drag that interrupts a
+          // keyboard step must drop the aim too, or the next press measures from a phantom.
+          if (keyAim.value === next) keyAim.value = -1;
+        });
+        playSfx('carouselScroll');
+      },
+      /** Open the CENTRED card full screen. No-op when one already is. */
+      focusCentre: () => {
+        if (fsOpen || !count) return;
+        focusIdx.value = clampIdx(Math.round(pos.value), count);
+        fs.value = withSpring(1, FS_SPRING);
+        setFsOpenJS(true);
+      },
+      /** Whether a card is currently full screen, so a caller can pick the right key meaning. */
+      isFullscreen: () => fsOpen,
     }),
-    [fsOpen, closeFs, pos, count],
+    [fsOpen, closeFs, pos, count, keyAim, focusIdx, fs, setFsOpenJS],
   );
 
   const onTapCard = useCallback(
@@ -613,7 +655,13 @@ export const StraightCarousel = forwardRef<
               // measure the rail's absolute window Y so the fullscreen target lands at a
               // screen-anchored spot (the rail itself starts below the header, #108)
               railRef.current?.measureInWindow((_x, y) => {
-                if (y > 0) railTopWin.value = y;
+                // v0.29.0: measureInWindow reports PHYSICAL window pixels, but every other term of the
+                // fullscreen target (insetTop, screenH, railH, FS_TOP_PAD) is frame dp. On a tablet, and
+                // in every desktop browser window, PhoneFrame magnifies the whole app, so leaving this
+                // one term scaled made `cardCenterScreen - railTopWin` short by railTop * (scale - 1)
+                // and lifted the focused card clean off the top of the screen. A no-op wherever the
+                // frame is 1:1, which is every phone.
+                if (y > 0) railTopWin.value = windowToFrameY(y, frame);
               });
             }}>
             {/* the gear rides the bottom edge BEHIND the dim now (#110, owner): NOT hidden in

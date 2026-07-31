@@ -130,7 +130,7 @@ const SHEET: Page[] = [
   },
   {
     title: 'The wheel under your portrait',
-    body: 'Press the emblem below your portrait and drag to a wedge.\n\nState shows your modifiers and everything that has happened to this character. Then Level Up, Rest, New Card, and Cards for the rest.',
+    body: 'Press the emblem below your portrait and drag to a wedge.\n\nState shows your modifiers and everything that has happened to this character. Then Level Up, Rest, New Card, and Cards for the rest.\n\nOne last thing: your sheet is bright parchment and this tour is dark, so Got it is a jump in brightness.',
     render: ({ markDid }) => <WheelDemo onDid={markDid} />,
   },
 ];
@@ -250,7 +250,10 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
               </Pressable>
             ))}
           </View>
-          <RuneButton label={last ? 'Got it' : blocked ? 'Try it first' : onInstallPage ? 'Not now' : 'Next'} kind="primary" height={46} disabled={blocked} onPress={next} />
+          {/* muteSfx (v0.29.0): `next` plays the tap itself, because it is also the SWIPE handler and a
+              swipe has no button to make the sound. Without this the button's own tap and next's land
+              in the same millisecond and the click is heard twice. */}
+          <RuneButton label={last ? 'Got it' : blocked ? 'Try it first' : onInstallPage ? 'Not now' : 'Next'} kind="primary" height={46} disabled={blocked} muteSfx onPress={next} />
           <RuneButton label="Skip" kind="ghost" height={36} onPress={finish} />
         </View>
       </View>

@@ -19,6 +19,7 @@ import { useCarousel } from '../carousel-context';
 import { CategoryGlyph, CompanionIcon } from './deck-toggle-icon';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg, DEFAULT_CATEGORY_ICON } from './category-icons';
 import { CenterDialog, FullScreenPanel } from './full-screen-panel';
+import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
 
 const SCRIM = 'rgba(20,24,31,0.7)';
 const GOLD_BORDER = 'rgba(218,162,73,0.4)';
@@ -139,9 +140,40 @@ function CompanionTile() {
   );
 }
 
-/** The right placeholder for a LIVE card (#306/#311): companion vs gold. */
+/**
+ * A LIVE card in a gallery tile: the card itself, shrunk to fit (v0.29.0).
+ *
+ * This used to draw one of two flat placeholders, gold or companion, and that was right when `live`
+ * meant exactly those two cards. v0.27.0 changed what it means: a card whose bitmap has not been
+ * forged yet now carries its live node so it is never missing, and a BROWSER forges nothing at all.
+ * So in the web build the class feature card, weapons, armour, experiences, notes, loot and the whole
+ * starting inventory all arrived here carrying `live`, and every one of them drew as GOLD. The same
+ * thing happens briefly on a phone while a fresh character is still forging, which is why it was not
+ * obviously wrong before the browser build existed.
+ *
+ * The live node IS the card, so draw it. Touches are off so the card's own controls (the gold card's
+ * plus and minus, the companion's name field) can never swallow the tile's tap-to-select or its
+ * hold-to-drag.
+ */
 function LiveTile({ item }: { item: CardItem }) {
-  return (item.ref ?? item.id).startsWith('companion') ? <CompanionTile /> : <GoldTile />;
+  const kind = item.ref ?? item.id;
+  // The two cards that genuinely have no art of their own keep their purpose-built tiles.
+  if (kind.startsWith('companion')) return <CompanionTile />;
+  if (!item.live) return <GoldTile />;
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: (TILE_W - FORGED_W) / 2,
+        top: (TILE_H - FORGED_H) / 2,
+        width: FORGED_W,
+        height: FORGED_H,
+        transform: [{ scale: TILE_W / FORGED_W }],
+      }}>
+      {item.live}
+    </View>
+  );
 }
 
 /**
