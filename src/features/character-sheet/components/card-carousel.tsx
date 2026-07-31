@@ -1,5 +1,5 @@
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChamferBox } from '@/components/chamfer-box';
 // (useState/useCallback/useMemo/useEffect/useRef used by the multi-face flip slot, #108/#110)
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -114,6 +114,18 @@ const RISE_DIST = 340;
 const HOLD_MS = 760;
 /** Stationary time before the hold "arms" with a light haptic (past the tap window, #189). */
 const ARM_MS = 200;
+/**
+ * Pointer travel allowed before the fan decides you are scrolling (v0.27.3).
+ *
+ * 2 is right for a finger: a touch screen reports a filtered contact point that barely moves while
+ * you hold still. A browser compares raw CSS pixels from a mouse or trackpad, where 2px is inside the
+ * noise of a resting hand -- so on web the pan activated almost immediately and cancelled the
+ * hold-to-toggle every time, long before the hold's own maxDistance(12) was anywhere near. 10 keeps
+ * it under that 12, so the hold's limit is the real limit again. Native is unchanged.
+ */
+const PAN_SLOP = Platform.OS === 'web' ? 10 : 2;
+/** A press that never activated the pan is a tap. Tracks PAN_SLOP so the two meet with no dead band. */
+const TAP_SLOP = Math.max(8, PAN_SLOP);
 
 /**
  * The 3D flip element (#110) — only mounted/visible when a multi-face card is FOCUSED (the parent
@@ -1050,7 +1062,7 @@ export function CardCarousel() {
       }
     };
     return Gesture.Pan()
-        .minDistance(2)
+        .minDistance(PAN_SLOP)
         .onBegin((e) => {
           if (switching.value === 1) return; // a switch is in flight — deck isn't grabbable yet (#239)
           // v0.9.8 Golden Gear Edit: a fully separate path — prep a card grab / row scroll, and NONE of
@@ -1385,7 +1397,7 @@ export function CardCarousel() {
               return;
             }
             // item 7: a still TAP on the gear pad exits edit mode → close the whole hand to COMPACT.
-            if (editPadTouch.value === 1 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
+            if (editPadTouch.value === 1 && Math.abs(e.translationX) < TAP_SLOP && Math.abs(e.translationY) < TAP_SLOP) {
               editPadTouch.value = 0;
               runOnJS(exitEdit)(true);
               editDecided.value = 0;
@@ -1410,7 +1422,7 @@ export function CardCarousel() {
           // collapse — that would compact the hand while edit mode is turning on.
           if (enteringEdit.value === 1) { enteringEdit.value = 0; padTouch.value = false; return; }
           gearFlash.value = withTiming(0, { duration: 220 }); // item 2: didn't enter edit → white fades to gold
-          const stillTap = Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8;
+          const stillTap = Math.abs(e.translationX) < TAP_SLOP && Math.abs(e.translationY) < TAP_SLOP;
           // Focused: a tap on the gear closes the card AND collapses the whole hand (#62 D);
           // a downward swipe (or flick) returns the card; otherwise settle it back open.
           if (machineState.value === 'fullscreen') {
@@ -1506,7 +1518,7 @@ export function CardCarousel() {
             // (editHandledSV===1). Otherwise onFinalize would kill the in-flight drop → never commits.
             if (editGrabbed.value === 1 && editHandledSV.value === 0) { editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0; grabAnim.value = 0; autoScroll.value = 0; cancelAnimation(shake); shake.value = 0.5; }
             // Still gear tap that never activated the pan → exit edit to COMPACT (item 7).
-            if (editDecided.value === 0 && editPadTouch.value === 1 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
+            if (editDecided.value === 0 && editPadTouch.value === 1 && Math.abs(e.translationX) < TAP_SLOP && Math.abs(e.translationY) < TAP_SLOP) {
               runOnJS(exitEdit)(true);
             }
             editPadTouch.value = 0;
@@ -1520,7 +1532,7 @@ export function CardCarousel() {
           gearFlash.value = withTiming(0, { duration: 220 }); // item 2: didn't enter edit → white fades to gold
           // v0.9.8: a still gear tap that never activated the pan toggles the hand — but NOT in edit mode
           // (the dwell-enter ends with the finger still down; a tap must not collapse the flattened deck).
-          if (!success && padTouch.value && editMode.value < 0.5 && Math.abs(e.translationX) < 8 && Math.abs(e.translationY) < 8) {
+          if (!success && padTouch.value && editMode.value < 0.5 && Math.abs(e.translationX) < TAP_SLOP && Math.abs(e.translationY) < TAP_SLOP) {
             if (machineState.value === 'fullscreen') {
               runOnJS(closeFullscreen)();
               runOnJS(collapse)();

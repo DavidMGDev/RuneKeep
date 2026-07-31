@@ -62,6 +62,16 @@ describe('a collapsed group', () => {
     expect(after.collapsed).toContain('__ungrouped');
   });
 
+  it('opens ungrouped when a deleted folder tips characters into it', () => {
+    let idx = addFolder(EMPTY_INDEX, 'Bin');
+    const bin = idx.folders[0];
+    idx = assign(idx, 'ch-1', bin.id);
+    idx = setCollapsed(idx, '__ungrouped', true);
+    const after = removeFolder(idx, bin.id);
+    expect(after.collapsed).not.toContain('__ungrouped');
+    expect(after.assignments['ch-1']).toBeUndefined();
+  });
+
   it('forgets the folder that was deleted', () => {
     let idx = addFolder(EMPTY_INDEX, 'Bin');
     const bin = idx.folders[0];

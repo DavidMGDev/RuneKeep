@@ -230,6 +230,20 @@ export function record(history: CharacterHistory, prev: CharacterFile | null, ne
   const at = now.toISOString();
   const snapshot = stripHistory(next);
 
+  /**
+   * A save that wrote nothing is not "the player changed something" (v0.27.3).
+   *
+   * The sheet funnels every write through one choke point, and it reaches here unprompted: once on
+   * mount, again on the debounced resource write, and again on the unmount/background flush. Each of
+   * those counted as an edit, so the moment you rewound to look at an earlier state the app itself
+   * triggered a save and destroyed the future you had just been told was safe to browse. The panel
+   * was not lying; the app was overwriting the history behind it.
+   *
+   * Returning the history untouched keeps both the entries and `rewoundTo`, so browsing stays free.
+   * The first genuine edit still truncates, which is the owner's rule and stays covered by the test.
+   */
+  if (prev && same(prev, snapshot)) return history;
+
   // Truncate any rewound-away future BEFORE appending.
   let entries = history.rewoundTo != null ? history.entries.slice(0, history.rewoundTo + 1) : history.entries;
 

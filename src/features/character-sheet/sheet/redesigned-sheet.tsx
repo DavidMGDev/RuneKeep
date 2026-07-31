@@ -698,9 +698,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     if (!live) return [];
     const r = rewindHistory(historyRef.current, index, live);
     historyRef.current = r.history;
-    lastSavedRef.current = stripHistory(r.file);
+    const d = toSheetCharacter(r.file);
+    // Remember the restored state in the SAME shape a save produces (v0.27.3): stamped with live
+    // resources and gold. Without the stamp the very next automatic save looks like a real edit to
+    // the no-op guard in `record`, and truncates the future the player was only browsing.
+    lastSavedRef.current = stripHistory({ ...r.file, resources: { hp: d.hp, stress: d.stress.active, hope: d.hope.active, armor: d.armor.active }, gold: d.gold });
     setFile(r.file);
-    setCharacter(toSheetCharacter(r.file));
+    setCharacter(d);
     void saveCharacter({ ...r.file, history: r.history });
     setHistoryRev((n) => n + 1);
     return r.repairs;

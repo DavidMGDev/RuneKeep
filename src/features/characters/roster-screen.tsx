@@ -163,7 +163,11 @@ export function RosterScreen() {
     return { key: folder.id, folder, all, data: collapsed.has(folder.id) ? [] : all };
   });
   const ungrouped = files.filter((f) => { const fid = index.assignments[f.id]; return !fid || !folderIds.has(fid); });
-  if (ungrouped.length || sections.length) sections.push({ key: '__ungrouped', folder: null, all: ungrouped, data: collapsed.has('__ungrouped') ? [] : ungrouped });
+  // A group whose header is not drawn must not be able to hide anything (v0.27.3). Ungrouped has no
+  // header when there are no folders at all -- which is exactly the state you land in after deleting
+  // your last folder -- so a leftover collapse flag hid every character with nothing left to tap.
+  const ungroupedShut = index.folders.length > 0 && collapsed.has('__ungrouped');
+  if (ungrouped.length || sections.length) sections.push({ key: '__ungrouped', folder: null, all: ungrouped, data: ungroupedShut ? [] : ungrouped });
 
   // v0.23.0: persisted, so a roster you tidied stays tidy when you come back.
   const toggle = (key: string) => {

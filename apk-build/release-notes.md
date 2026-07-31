@@ -1,14 +1,32 @@
-RuneKeep v0.27.2 - your folders stay shut, the pop-ups line up, and the archive stops rendering a thousand cards at once.
+RuneKeep v0.27.3 - the creator stops seizing up, sound comes back, and the browser stops fighting your fingers.
 
-- YOUR FOLDERS STAY CLOSED. Collapse a folder and it stays collapsed, through leaving the screen, opening a character, closing the app and updating it. The setting was being saved correctly the whole time and simply never read back, so the roster opened everything again on arrival and then saved that over your choice. Deleting one folder also used to re-open all the others; it does not now.
-- POP-UPS LINE UP WITH THEIR BORDERS. The gold frame was one piece of artwork stretched over the panel, and the background behind it was a separate rectangle inset by a fixed amount. Those two never agreed: the frame's edge sat at a percentage of the panel, so there was a see-through moat inside the border that changed size with every dialog, and the square background cut across the frame's angled corners. The frame is drawn now, the same way the buttons are, so the outline and the fill are literally the same shape.
-- THE CARD ARCHIVE IS FASTER. The grid was building roughly ten screens of cards in every direction over a list of a thousand, and every cell re-rendered whenever anything on the screen changed, including opening the filter drawer. It builds what it needs now.
-- THE FILTERS ARE READABLE. Four labelled bands, Type, Domain, Level and Tier, each one line you can scroll sideways, instead of nine unlabelled ragged rows that pushed the cards off the bottom of the screen. Levels are numbers under "Level" rather than "L1", tiers under "Tier".
-- THE CREATION CAROUSEL HAS ROOM ABOVE IT. Trimmed the stack above and moved the resting card down a fraction, which is the half that actually shows.
-- CARDS LOAD WITHOUT DRAGGING THE APP DOWN. A card that has not been drawn yet renders itself live, which is what put the missing cards back in the browser. On a phone that meant a whole deck of them at once during the first load of a character. Now only the ones near the middle do, exactly as the pictures already worked.
-- CHARACTER CREATION: homebrew and inventory cards were being rebuilt on every card that finished drawing. They are not now.
-- "SOUND OFF" FITS ITS BUTTON.
+THE CREATION SCREEN
 
-SOUND ON ANDROID: your readout said suspended, which means the app opened its audio output once at startup, that failed, and nothing ever re-opened it. It now notices and builds a fresh one, up to three times, asking for a different sample rate each try. Hold the speaker again: if it says running, you have sound; if it still says suspended, the line now includes the rate it asked for, and that tells me the next thing to try.
+- THE CREATOR NO LONGER LOCKS UP AFTER A LOT OF SCROLLING. This is the one that mattered. The carousel rebuilt its entire gesture setup every time a card finished drawing and again on every card you scrolled past, and swapping a drag handler in the middle of a drag means the old one never finds out the drag ended. The gear grind was left switched on forever, and while it is on the app deliberately stops publishing which card is centred. That single stuck flag is all three symptoms you described: the middle card keeps its low resolution preview because nothing tells it that it is the middle card, and SELECT and RANDOM act on whatever card was centred when it froze. It never recovered because nothing else turns that flag off. The gestures are now built once, and a leftover grind is unwound the next time you touch the screen.
+- SWITCHING SECTIONS IS FAST AGAIN. Tapping Ancestry used to queue behind about ninety card snapshots for decks you were not even looking at, including every weapon and every armour from expansions you had not picked. Only the deck on screen is prepared now. Coming back to a deck re-prepares nothing.
+- SCROLLING IS SMOOTHER. Every card that finished drawing handed all the visible slots new work and rebuilt their touch handling. It does not now.
+- A HALF FINISHED SECTION SWITCH CANNOT STRAND THE SCREEN. If the fade between decks was interrupted, nothing cleared the flag that says a switch is in progress, so every later tap on a section did nothing and the loading pulse stayed up with the controls faded out. The switch now completes either way.
+- THE GOLDEN GEAR SITS ABOVE THE BUTTONS. The SELECT and RANDOM cluster moves down a little and the gear rises a little, which is about eight points of clearance. It costs roughly two points of the headroom above the card that the last release added.
+
+SOUND
+
+- ANDROID. Your readout said suspended with nothing failing, which was the clue. On Android the audio system starts asleep and one wake-up call opens the speaker. A change in v0.25.0 made the app send that call before every single sound, on the assumption that Android never sleeps. It does. Android refuses a second start on a speaker that is already starting, the audio library remembers that refusal, and from then on it plays silence while still reporting itself asleep. The app was the thing breaking its own sound. It asks once now and believes the answer. The readout also reports what the answer was.
+- IN THE BROWSER, MOST SOUNDS WERE SILENT. Buttons, the carousel tick, the float menu and the second stage of a filling or draining icon all set a small pitch variation before playing. In the browser the audio library hands back a stand-in object that does not carry the pitch control, so setting it threw an error, and the error was caught somewhere that discarded it, before the sound was ever asked to play. The one sound you could hear, entering the character sheet, is one of the few that plays at a flat pitch. All of them play now.
+
+THE BROWSER
+
+- THE PAGE NO LONGER SCROLLS OFF THE APP. Parts of the app are drawn deliberately outside the phone frame, so the page had somewhere to scroll to. Anything that moved the page, such as focusing a text field, could slide the whole app away and leave you looking at the background.
+- HOLDING AN ICON NO LONGER OFFERS TO SAVE THE PICTURE. Holding is how you equip a card, spend a token and open the float menu, but the browser saw an image and offered its own menu. Text fields keep theirs, which is where paste lives.
+- HOLDING A CARD SURVIVES A SLIGHT WOBBLE. Two pixels of movement used to hand the touch to the scroller, which on a mouse is less than holding still. It takes ten now, still under the point where a hold gives up.
+- THE READY STEP SHOWS THE CARD. Filling in a field scrolls the page to centre it, and nothing put the page back, so the card you were being asked to approve sat above the top of the window.
+
+CHARACTERS AND HISTORY
+
+- REWINDING NO LONGER DESTROYS THE REST OF YOUR HISTORY. The panel told you that later changes stay listed until you change something else. That was true, and then the app changed something itself: it saves when the sheet opens, when a resource settles and when you leave, and every one of those counted as an edit even when nothing was different. A save that wrote nothing is no longer a change.
+- YOU CAN GO FORWARD AGAIN. Holding a greyed out entry did nothing at all, which is the opposite of what the message promised. It takes you there.
+- TIMELINE ENTRIES SHOW THE HOLD. They grow while you hold and settle back if you let go, so you can see how far along you are.
+- DELETING A FOLDER NO LONGER HIDES EVERYONE. Its characters move to Ungrouped, and if Ungrouped happened to be shut they arrived already hidden. Worse, deleting your last folder removes the Ungrouped heading entirely, so there was nothing left to tap to open it. Characters are never tipped into a shut pile, and a group with no heading can no longer hide anything.
+
+Hold the speaker on the main menu to see the sound readout. It now ends with what the speaker answered when the app asked it to start.
 
 Sideload: enable Install unknown apps, then open the APK.

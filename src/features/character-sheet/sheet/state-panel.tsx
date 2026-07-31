@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { HoldToConfirm } from '@/components/hold-to-confirm';
@@ -11,6 +12,42 @@ import { playSfx } from '@/lib/sfx';
 
 import { ModifiersPanel } from './modifiers-panel';
 import { OverlayShell } from './overlay-shell';
+
+/** How long a hold on a timeline entry takes to open the rewind prompt. */
+const HOLD_MS = 380;
+
+/**
+ * A timeline entry you can hold (v0.27.3).
+ *
+ * The row used to be a bare Pressable with `delayLongPress`, so a hold looked exactly like a press
+ * that had not done anything yet and there was no way to know how long to keep holding. It grows
+ * steadily over the hold instead, which is the same language the rest of the app's holds use, and
+ * eases back if you let go early. Kept on Pressable rather than a gesture handler on purpose: these
+ * rows live inside a plain ScrollView, and gesture handlers in plain lists have bitten this app
+ * before.
+ */
+function HoldRow({ onPress, onHold, label, hint, children }: { onPress: () => void; onHold: () => void; label: string; hint: string; children: ReactNode }) {
+  const charge = useSharedValue(0);
+  const reduced = useReducedMotion();
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: 1 + charge.value * 0.035 }] }));
+  return (
+    <Pressable
+      onPressIn={() => {
+        if (!reduced) charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+      }}
+      onPressOut={() => {
+        charge.value = withTiming(0, { duration: 160 });
+      }}
+      onPress={onPress}
+      onLongPress={onHold}
+      delayLongPress={HOLD_MS}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}>
+      <Animated.View style={style}>{children}</Animated.View>
+    </Pressable>
+  );
+}
 
 /**
  * The State interface (v0.22.0) — the float menu's north slot, replacing Modifiers.
@@ -181,14 +218,15 @@ function TimelineView({
         const open = expanded === entry.id;
         const tint = KIND_TINT[entry.kind] ?? Rune.muted;
         return (
-          <Pressable
+          <HoldRow
             key={entry.id}
             onPress={() => { playSfx('buttonTap'); setExpanded(open ? null : entry.id); }}
-            onLongPress={() => { if (!discarded) setConfirm({ entry, index, discards: rows.filter((r) => r.index > index).length }); }}
-            delayLongPress={380}
-            accessibilityRole="button"
-            accessibilityLabel={`${entry.label}, ${timeLabel(entry.at)}`}
-            accessibilityHint="Tap for detail, hold to rewind to this point">
+            // A greyed-out row is still a place you can go (v0.27.3): the confirm copy promises the
+            // discarded changes stay reachable until you change something else, and holding one was
+            // the only way to keep that promise. It was doing nothing.
+            onHold={() => setConfirm({ entry, index, discards: rows.filter((r) => r.index > index).length })}
+            label={`${entry.label}, ${timeLabel(entry.at)}`}
+            hint="Tap for detail, hold to rewind to this point">
             <ChamferBox
               chamfer={entry.milestone ? 9 : 6}
               fill={entry.milestone ? 'rgba(218,162,73,0.10)' : 'rgba(20,24,31,0.55)'}
@@ -211,11 +249,11 @@ function TimelineView({
               ) : null}
               {open ? (
                 <Text style={{ color: discarded ? Rune.muted : Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, marginTop: 7, paddingLeft: 17 }}>
-                  {discarded ? 'Discarded, change anything and this is gone' : 'Hold this entry to rewind here'}
+                  {discarded ? 'Discarded, hold to return here, or change anything and this is gone' : 'Hold this entry to rewind here'}
                 </Text>
               ) : null}
             </ChamferBox>
-          </Pressable>
+          </HoldRow>
         );
       })}
     </OverlayShell>
