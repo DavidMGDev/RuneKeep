@@ -1,8 +1,8 @@
-import Constants from 'expo-constants';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 
+import { FORGE_CONTENT_HASH } from './forge-hash';
 import { bestName, groupNames, type NameIndex } from './forged-cache';
 import { FORGED_H, FORGED_W } from './forged-card';
 
@@ -19,18 +19,22 @@ import { FORGED_H, FORGED_W } from './forged-card';
 const FORGE_LAYOUT_V = 19;
 
 /**
- * v0.24.0: the cache key now carries the APP VERSION as well as the layout version.
+ * v0.24.0 keyed the cache on the APP VERSION as well as the layout version, because bumping
+ * `FORGE_LAYOUT_V` by hand kept getting forgotten, and a forgotten bump is invisible to whoever
+ * forgot it: their device has no cache for the card they just changed, so it forges fresh and looks
+ * right, while every existing install keeps serving a bitmap of the old card forever. That is what
+ * happened to the Hope and Fear cards.
  *
- * Bumping `FORGE_LAYOUT_V` by hand is a step that gets forgotten, and when it is forgotten the
- * failure is invisible to whoever forgot it: their device has no cache for the card they just
- * changed, so it forges fresh and looks right, while every existing install keeps serving a bitmap
- * of the old card forever. That is exactly what happened to the Hope and Fear cards, which kept
- * showing their pre-illustration text-only faces for anyone who had opened them before.
+ * v0.27.4 keeps that guarantee and drops its cost. Keying on the release meant EVERY release threw
+ * away every bitmap, so after each update a phone re-captured a character's entire deck, two
+ * screen-sized PNG encodes at a time, on the UI thread. A browser forges nothing ever, which is a
+ * large part of why the web build feels faster than the app it was ported from.
  *
- * Keying on the app version makes a release the invalidation, which is a thing that cannot be
- * forgotten. `FORGE_LAYOUT_V` stays for local iteration between releases.
+ * `FORGE_CONTENT_HASH` is a signature of the things a card is actually made of: the card components,
+ * the palette, and all of the game data. It changes exactly when a card's look or text changes, and
+ * `forge-hash.test.ts` fails if it is out of date, so it still cannot be forgotten.
  */
-export const FORGE_RENDER_V = `${FORGE_LAYOUT_V}-${(Constants.expoConfig?.version ?? '0').replace(/[^\w.]/g, '')}`;
+export const FORGE_RENDER_V = `${FORGE_LAYOUT_V}-${FORGE_CONTENT_HASH}`;
 
 export interface ForgedSource {
   full: { uri: string };
@@ -90,15 +94,23 @@ function sourceFor(dir: import('expo-file-system').Directory, full: string): For
   return { full: { uri: new File(dir, full).uri }, thumb: { uri: new File(dir, full.replace(/\.png$/, '_lod.png')).uri } };
 }
 
-/** Drop every bitmap for this key that is not the current version. Called only once the current one
- *  is safely on disk, so there is never a moment with nothing to show. */
-function dropOlder(dir: import('expo-file-system').Directory, key: string): void {
-  try {
-    for (const entry of dir.list()) {
-      if (entry.name.startsWith(`${key}-v`) && !entry.name.includes(`-v${FORGE_RENDER_V}`)) entry.delete();
+/**
+ * Drop the superseded bitmaps for one key, by NAME.
+ *
+ * v0.27.4: this used to walk the whole folder. Together with the pass's own listing that came to two
+ * full directory reads per card forged, and since the pass re-runs each time a card lands, forging a
+ * character's worth of cards walked the folder a hundred-odd times, synchronously, on the JS thread.
+ * The names are already known, so ask for those files and nothing else.
+ */
+function dropNames(dir: import('expo-file-system').Directory, names: string[]): void {
+  const { File } = fs();
+  for (const n of names) {
+    try {
+      const f = new File(dir, n);
+      if (f.exists) f.delete();
+    } catch {
+      // A failed prune only costs disk; never let it stop a card from rendering.
     }
-  } catch {
-    // A failed prune only costs disk; never let it stop a card from rendering.
   }
 }
 
@@ -120,6 +132,15 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
    * an update exactly one card re-forged per launch and the rest kept their old artwork forever.
    */
   const settled = useRef<Set<string>>(new Set());
+  /**
+   * The folder listing, read ONCE and then kept current in memory (v0.27.4).
+   *
+   * The pass re-runs every time a card lands, and it used to re-read the whole folder each time. That
+   * is a synchronous directory walk per card, over a folder that holds two files per card, so the
+   * cost grew with the square of the deck. It is also pure waste: this hook is the only thing that
+   * writes to that folder, so it already knows every change that happens to it.
+   */
+  const listing = useRef<NameIndex | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -128,7 +149,8 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
     if (jobs.every((j) => settled.current.has(j.key))) return; // nothing to read the folder for
 
     const dir = forgedDir();
-    const index = indexNames(dir);
+    if (!listing.current) listing.current = indexNames(dir);
+    const index = listing.current;
     const found: Record<string, ForgedSource> = {};
     let next: PendingJob | null = null;
     for (const j of jobs) {
@@ -163,13 +185,19 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
           const fullTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 750, height: 1050 });
           const thumbTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 188, height: 263 });
           const dir = forgedDir();
-          const full = new File(dir, `${job.key}-v${FORGE_RENDER_V}.png`);
-          const thumb = new File(dir, `${job.key}-v${FORGE_RENDER_V}_lod.png`);
+          const name = `${job.key}-v${FORGE_RENDER_V}.png`;
+          const lod = `${job.key}-v${FORGE_RENDER_V}_lod.png`;
+          const full = new File(dir, name);
+          const thumb = new File(dir, lod);
           if (full.exists) full.delete();
           if (thumb.exists) thumb.delete();
           new File(fullTmp).move(full);
           new File(thumbTmp).move(thumb);
-          dropOlder(dir, job.key); // safe now: the replacement is on disk
+          // Safe now: the replacement is on disk. Superseded names come from the in-memory listing,
+          // so pruning costs two file probes rather than a walk of the whole folder.
+          const stale = (listing.current?.get(job.key) ?? []).filter((n) => n !== name);
+          dropNames(dir, [...stale, ...stale.map((n) => n.replace(/\.png$/, '_lod.png'))]);
+          listing.current?.set(job.key, [name]);
           setSources((s) => ({ ...s, [job.key]: { full: { uri: full.uri }, thumb: { uri: thumb.uri } } }));
         } catch {
           // Capture failed (low memory etc.): the live component stays in place and this card is left

@@ -39,6 +39,47 @@ function webWrite(all: CharacterFile[]) {
   webSet(WEB_KEY, JSON.stringify(all));
 }
 
+/**
+ * Writes waiting to reach the disk (v0.27.4).
+ *
+ * expo-file-system's modern API has no asynchronous write, so persisting a character means
+ * `JSON.stringify` plus a whole-file write, on the JS thread, with nothing else able to run. A
+ * character carries its history, and history is up to 120 SNAPSHOTS of the whole character, so that
+ * is commonly a few hundred kilobytes. It used to happen on every save: every tap on the HP track
+ * (after its debounce), every card toggled, every item equipped.
+ *
+ * The browser build pays none of it. It swaps a value in an in-memory map and persists in the
+ * background, which is a fair part of why the same character feels quicker in a browser than in the
+ * app built for the device.
+ *
+ * So do what the browser does: keep the newest version in memory, answer reads from there, and write
+ * once the writes stop. Everything that reads goes through this module, so an unflushed character is
+ * never visible as stale. `flushCharacters()` forces it out, and the app calls that when it goes to
+ * the background, which is where a process gets killed.
+ */
+const pending = new Map<string, CharacterFile>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+const FLUSH_MS = 300;
+
+function writeNow(file: CharacterFile): void {
+  try {
+    new (fs().File)(charactersDir(), `${file.id}.json`).write(serializeCharacterFile(file));
+  } catch {
+    // Keep it queued rather than lose it: the next flush tries again.
+    return;
+  }
+  if (pending.get(file.id) === file) pending.delete(file.id);
+}
+
+/** Write every queued character out now. Safe to call at any time; a no-op when nothing is queued. */
+export function flushCharacters(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  for (const file of [...pending.values()]) writeNow(file);
+}
+
 export async function listCharacters(): Promise<CharacterFile[]> {
   if (Platform.OS === 'web') return webList();
   const { File } = fs();
@@ -53,7 +94,11 @@ export async function listCharacters(): Promise<CharacterFile[]> {
       // A corrupt/foreign file never takes the roster down; it is simply not listed.
     }
   }
-  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // A character whose newest version has not reached the disk yet must not be listed as it was.
+  const merged = out.map((c) => pending.get(c.id) ?? c);
+  const known = new Set(merged.map((c) => c.id));
+  for (const [id, c] of pending) if (!known.has(id)) merged.push(c);
+  return merged.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function saveCharacter(file: CharacterFile): Promise<void> {
@@ -61,11 +106,19 @@ export async function saveCharacter(file: CharacterFile): Promise<void> {
     webWrite([...webList().filter((c) => c.id !== file.id), file]);
     return;
   }
-  new (fs().File)(charactersDir(), `${file.id}.json`).write(serializeCharacterFile(file));
+  pending.set(file.id, file);
+  if (!flushTimer) {
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      for (const queued of [...pending.values()]) writeNow(queued);
+    }, FLUSH_MS);
+  }
 }
 
 export async function getCharacter(id: string): Promise<CharacterFile | null> {
   if (Platform.OS === 'web') return webList().find((c) => c.id === id) ?? null;
+  const queued = pending.get(id);
+  if (queued) return queued;
   const f = new (fs().File)(charactersDir(), `${id}.json`);
   if (!f.exists) return null;
   try {
@@ -80,6 +133,7 @@ export async function deleteCharacter(id: string): Promise<void> {
     webWrite(webList().filter((c) => c.id !== id));
     return;
   }
+  pending.delete(id); // a queued write must never resurrect a deleted character
   const f = new (fs().File)(charactersDir(), `${id}.json`);
   if (f.exists) f.delete();
 }
