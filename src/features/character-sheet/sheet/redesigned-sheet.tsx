@@ -65,7 +65,7 @@ import { useKeyboardControl } from './use-keyboard-control';
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
 import { Art } from '../art';
-import { chipWidth, trackBounds, wildshapeSummary } from './sheet-utils';
+import { chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
 import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
 import { OverlayShell } from './overlay-shell';
@@ -2295,6 +2295,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               )}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
+              {/* v0.28.0: DOWNED, at 0 hit points. The sheet wears the same colourless wash a fully
+                  scarred character does, because being down should look like it, but the two things
+                  the player needs to READ while down keep their colour: the hit points panel, so the
+                  way back up is legible, and their own portrait. A blend layer can only take colour
+                  away, so sparing a region means the layer has a hole in it. Inside the stage, where
+                  the coordinates are design pixels; the fully-scarred wash below stays a single
+                  full-screen layer with no holes. */}
+              {character.hp <= 0 && (character.scars ?? 0) < character.hope.total ? (
+                <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 99999 }}>
+                  {washBands(412, 892, [
+                    ...(character.portraitUri ? [{ left: 16, top: 15, width: 148, height: 222 }] : []),
+                    { left: 21, top: 301, width: 373, height: 84 },
+                  ]).map((b, i) => (
+                    <View key={i} style={{ position: 'absolute', left: b.left, top: b.top, width: b.width, height: b.height, backgroundColor: '#8A8A8A', mixBlendMode: 'saturation' }} />
+                  ))}
+                </View>
+              ) : null}
             </DesignStage>
             {/* Stat-change toasts (#233): pinned at the top, UNDER the gold border (rendered before
                 SheetFrame) so the border overlays them — layer + position per owner. */}

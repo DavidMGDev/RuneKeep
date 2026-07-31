@@ -1,5 +1,5 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { PopupDialog } from '@/components/popup-dialog';
 import { LoadingScreen } from '@/components/loading-screen';
@@ -32,17 +32,24 @@ export default function Sheet() {
 
   // v0.23.0: teach the sheet's gestures once there is a character to try them on, rather than on
   // first launch before the player has one.
-  const [tourChecked, setTourChecked] = useState(false);
+  // v0.28.0: the "already offered" mark is a REF flipped INSIDE the timer, not state set before it.
+  // As state it was also a dependency of this effect, so setting it re-ran the effect, and the first
+  // run's cleanup cleared the pending timer before it could ever fire. The tour was scheduled and
+  // then cancelled, every time. The creator's tour sets no state, which is why only this one looked
+  // broken.
+  const tourPushed = useRef(false);
   useEffect(() => {
-    if (!state.loaded || !state.file || tourChecked) return;
-    setTourChecked(true);
+    if (!state.loaded || !state.file || tourPushed.current) return;
     // The sheet's id has to travel with the return address, or dismissing the tour would come back
     // to a sheet with no character.
     // Deferred for the same reason as the creator's tour: two history entries in one tick collapse
     // in Firefox, and going back then overshoots the screen the tour is about.
-    const t = setTimeout(() => { if (shouldShow('sheet')) router.push('/onboarding?tour=sheet' as Href); }, 0);
+    const t = setTimeout(() => {
+      tourPushed.current = true; // only once it has actually been offered
+      if (shouldShow('sheet')) router.push('/onboarding?tour=sheet' as Href);
+    }, 0);
     return () => clearTimeout(t);
-  }, [state.loaded, state.file, tourChecked, router]);
+  }, [state.loaded, state.file, router]);
 
   if (!state.loaded) return <LoadingScreen label="Unrolling the sheet" />;
   // v0.22.0: an id that doesn't resolve used to fall through to the SAMPLE character silently, so a

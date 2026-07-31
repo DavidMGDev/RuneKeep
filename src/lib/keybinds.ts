@@ -110,10 +110,10 @@ export function intentFor(press: KeyPress, ctx: KeyContext): Intent | null {
 
 /** Every binding, for the onboarding page. Kept beside the resolver so the two cannot drift. */
 export const KEYBIND_HELP: { keys: string; what: string }[] = [
-  { keys: 'A / D  or  ← →', what: 'Move along the cards' },
+  { keys: 'A / D  or  ← →', what: 'Fan the cards out and move along them' },
   { keys: 'Shift + move', what: 'Move two at a time' },
   { keys: 'W  or  ↑', what: 'Open the card full screen' },
-  { keys: 'S  or  ↓', what: 'Close it again' },
+  { keys: 'S  or  ↓', what: 'Close it, or bundle the cards back up' },
   { keys: 'Shift + ↑ ↓', what: 'Change category' },
   { keys: 'Space', what: 'Equip or unequip' },
   { keys: 'E', what: 'Edit mode' },

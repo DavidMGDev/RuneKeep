@@ -18,7 +18,17 @@ export const OY = 1531;
 /** Resting rotation that centers the middle of a deck (a balanced fan, not a lopsided end).
  *  Plain JS (called in React render, not in a worklet) — do NOT mark 'worklet'. */
 export function middleRotation(count: number): number {
-  return (Math.max(0, count - 1) / 2) * ANGLE_STEP;
+  /**
+   * v0.28.0: round to a DETENT.
+   *
+   * An even-length deck has no middle card, and (count - 1) / 2 parked the hand exactly halfway
+   * between the two that straddle it, which is a pose no card rests at: every card sits tilted and
+   * two slots rest at half alpha, because the opacity curve assumes whole-step distances at rest.
+   * It showed up on Add Gear because adding a card flips the deck's parity, and while that panel is
+   * open the carousel is unmounted, so the compact recentre here is the only thing positioning the
+   * hand. The same wrong pose was being seeded on load for any even-length deck.
+   */
+  return Math.round(Math.max(0, count - 1) / 2) * ANGLE_STEP;
 }
 
 export const CARD_W = 230; // centermost expanded card width (~56% of the 412 design); ~20% smaller
@@ -48,6 +58,31 @@ export const WINDOW_HALF = 3;
  *  center cards (see imageOpacityAt); the ±2 boundary mounts it at alpha 0 so it decodes before
  *  it can ever fade in. Everything further lives on its always-mounted thumb. */
 export const IMG_MOUNT_HALF = 2;
+
+/**
+ * How many cards each side of center mount their LIVE body (v0.28.0).
+ *
+ * This is deliberately WIDER than IMG_MOUNT_HALF, and the difference matters. A printed card can be
+ * dropped past ±2 because its always-mounted LOD thumb is still underneath it, so all that is lost is
+ * resolution. A LIVE card — an armour, weapon or class card the app draws itself — has nothing
+ * underneath, so the same cut deletes it outright: the deck showed printed cards out to the edge of
+ * the visible band with holes punched where the drawn ones were.
+ *
+ * So it has to cover the whole band that is ever DRAWN. That is not WINDOW_HALF: a compact hand
+ * draws cards out to about 6.5 steps (see slotOpacityAt), which is why fast scrolling made cards
+ * blink for a frame or two. Plus half a bucket of tracking slack, giving 8.
+ */
+export const LIVE_MOUNT_HALF = 8;
+
+/**
+ * How coarsely the live window's centre follows the scroll (v0.28.0).
+ *
+ * The window tracks the LIVE rotation in buckets rather than the settled detent. The settled detent
+ * is deliberately frozen while the gear grinds, and it lands a commit or two late during a fast
+ * scroll; on a phone that only costs resolution, because a bitmap thumb is always underneath, but a
+ * live card is the only thing it draws, so the same lag deleted cards that were still on screen.
+ */
+export const LIVE_BUCKET = 2;
 
 /** Upward drag (design px) to fully open the center card to full-screen (live-drag distance). */
 export const FS_OPEN_DIST = 150;

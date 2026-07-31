@@ -9,7 +9,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { finishTour, saveTourStep, type TourId, tourStep } from '@/lib/onboarding-store';
 import { isDesktopWeb } from '@/lib/pwa-install';
 import { useInstallMode } from '@/lib/pwa-install';
-import { playSfx } from '@/lib/sfx';
+import { beginLoading, endLoading, playSfx } from '@/lib/sfx';
 
 import { CircleDemo, EquipDemo, HandDemo, HeartsDemo, WelcomeDemo, WheelDemo } from './demos';
 import { InstallDemo } from './install-demo';
@@ -144,6 +144,14 @@ const TITLE: Record<TourId, string> = {
 };
 
 export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () => void }) {
+  // A tour covers the screen it is teaching, so an arrival chime playing underneath belongs to
+  // something the player cannot see yet (v0.28.0). Reuse the loading-screen guard: the sound is
+  // DEFERRED rather than dropped, so it lands the moment the tour is dismissed and the screen it
+  // announces is actually in front of them.
+  useEffect(() => {
+    beginLoading();
+    return endLoading;
+  }, []);
   const installMode = useInstallMode();
   const [installed, setInstalled] = useState(false);
   // The install offer leads the welcome tour, and only there. It drops out the moment the app is

@@ -101,6 +101,8 @@ interface CarouselContextValue {
   scrollToId: (id: string) => void;
   /** Move N cards along the current deck (v0.26.0, keyboard). */
   stepBy: (n: number) => void;
+  /** The index of the card in the MIDDLE of the hand right now, read live off the rotation. */
+  centerIndex: () => number;
   /** Persist an in-edit drag-reorder (v0.9.8): move cards to a category at an explicit order. Same
    *  signature as the Cards panel's group reorder, so it inherits the override + order persistence. */
   onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
@@ -483,17 +485,49 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
    * gestures everywhere else, so there was no way to ask it to advance by a count; `scrollToId` needs
    * an id, and a keyboard only knows "the next one".
    */
+  /**
+   * Where the last keyboard step was aimed, or -1 when nothing is in flight (v0.28.0).
+   *
+   * A step used to measure from `rotation.value`, which mid-spring sits BETWEEN two detents, so
+   * `Math.round` gave back the card being left rather than the one being travelled to. Two quick
+   * presses of the same arrow therefore advanced one card and a bit, not two, and the deck appeared
+   * to stagger. Measuring from the last commanded target instead makes a burst of presses land
+   * exactly as many cards along as there were presses, retargeting the spring each time.
+   */
+  const stepTarget = useSharedValue(-1);
+
   const stepBy = useCallback((n: number) => {
     const d = decksRef.current[categoryRef.current] ?? [];
     if (!d.length || !n) return;
-    const cur = Math.round(rotation.value / ANGLE_STEP);
-    const next = Math.max(0, Math.min(d.length - 1, cur + n));
-    if (next === cur) return;
+    // Moving is browsing, and browsing a bundled deck should open it (owner, v0.28.0): the keyboard
+    // now fans the hand the way picking it up with a thumb does. It also keeps the deck out of the
+    // `compact` recentre below, which used to be free to yank a keyboard-driven scroll back to the
+    // middle of the deck the moment anything re-rendered.
+    if (machineState.value === 'compact') expand();
+    const base = stepTarget.value >= 0 ? stepTarget.value : Math.round(rotation.value / ANGLE_STEP);
+    const next = Math.max(0, Math.min(d.length - 1, base + n));
+    if (next === base) return;
     cancelAnimation(rotation);
-    rotation.value = withSpring(snapRot(next * ANGLE_STEP, d.length), SNAP_SPRING);
+    stepTarget.value = next;
+    rotation.value = withSpring(snapRot(next * ANGLE_STEP, d.length), SNAP_SPRING, (finished) => {
+      'worklet';
+      // Only the animation still owning the target may clear it, or a cancelled earlier step would
+      // wipe the aim of the one that replaced it. Deliberately NOT gated on `finished`: a drag that
+      // interrupts a keyboard step must also drop the aim, or the next press would measure from
+      // wherever the keyboard was headed rather than from where the hand actually is.
+      void finished;
+      if (stepTarget.value === next) stepTarget.value = -1;
+    });
     focusIndex.value = next;
     playSfx('carouselScroll');
-  }, [rotation, focusIndex]);
+  }, [rotation, focusIndex, stepTarget, machineState, expand]);
+
+  /** The card actually in the middle of the hand right now, which is what a key press acts on. */
+  const centerIndex = useCallback(() => {
+    const d = decksRef.current[categoryRef.current] ?? [];
+    if (!d.length) return 0;
+    return Math.max(0, Math.min(d.length - 1, Math.round(rotation.value / ANGLE_STEP)));
+  }, [rotation]);
 
   const scrollToId = useCallback((id: string) => {
     const d = decksRef.current[categoryRef.current] ?? [];
@@ -562,6 +596,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       deselectAll,
       selectAll,
       stepBy,
+      centerIndex,
       scrollToId,
       onReorderCards,
       cardMenuOpen,
@@ -588,7 +623,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
