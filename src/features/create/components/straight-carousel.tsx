@@ -76,17 +76,36 @@ const CARD_SCALE = 0.70; // resting center card (#108: a touch smaller so it cle
 /**
  * The resting card's centre, as a fraction of the rail height (#108: pushed up).
  *
+ * v0.29.1: 0.38 -> 0.43. The owner reported the growing centre card colliding with the step tabs
+ * above it, and separately that there is too much space between the cards and the gear below. Both are
+ * the same number: the card rests at a FRACTION down the rail, so moving the fraction down grows the
+ * gap above and closes the one below in a single change, without touching the rail's own height.
+ *
  * v0.27.2: 0.36 -> 0.38, for headroom above the card. Note this is a FRACTION of the rail, which is
  * what makes trimming the header alone disappointing: every pixel reclaimed above makes the rail one
  * pixel taller, and the card's rest centre moves down by 0.36 of it, so only about a third of any trim
  * survives as visible gap. Moving the fraction is the half that lands in full.
  */
-const REST_FRAC = 0.38;
+const REST_FRAC = 0.43;
 const SIDE_FALLOFF = 0.085; // per-step shrink
 const GRIND_TIGHTEN_L = 0.52; // straight-line grind: tighter…
 const GRIND_SHRINK_L = 0.45; // …and smaller, never curved
 const GEAR_SWIPE_L = 200; // grind: this many px sweep the whole deck
 const GEAR_DEG_PER_STEP = 52; // gear rotation per detent (#110: spins as the deck moves)
+/** Visible height of the gear strip riding the rail's bottom edge (it clips a 150dp gear). */
+const GEAR_BAND = 36;
+/** v0.29.1 (owner): the strip rides this far BELOW the rail edge, closer to the buttons under it. */
+const GEAR_DROP = 3;
+/**
+ * The grind pad, measured from the RAIL's bottom edge: this far above it and this far below.
+ *
+ * It used to be measured from the OUTER container, which is where the bug was: since v0.23.0 the
+ * creator reserves a band at the bottom for the select buttons, so the rail stops 102dp short and the
+ * pad named a strip 30dp BELOW the gear, underneath the buttons painted over it. The gear could not
+ * be grabbed at all, on any platform. Below is kept small so the buttons are never swallowed.
+ */
+const GEAR_PAD_ABOVE = 52;
+const GEAR_PAD_BELOW = 4;
 const IMG_HALF = 2;
 /** Slots kept mounted either side of the window centre, and how coarsely that centre tracks the
  *  scroll. The visible band is about six cards, so this is generous by design: it has to cover the
@@ -362,6 +381,14 @@ export const StraightCarousel = forwardRef<
   const [width, setWidth] = useState(0);
   const heightSV = useSharedValue(0);
   const railHSV = useSharedValue(0);
+  /**
+   * Design-px divisor for the pan's own y (web only), the same fault v0.28.0 fixed in the sheet.
+   *
+   * Gesture-handler divides e.y by the TARGET's own transform, and the magnifying transform is an
+   * ancestor, so the worklet is handed raw CSS pixels. This screen is not inside a DesignStage, so
+   * the frame is the whole factor. A phone is 1:1 either way.
+   */
+  const panCoordScale = Platform.OS === 'web' ? frame.scale : 1;
   const railTopWin = useSharedValue(insets.top + 200); // sane default until measured
   const pos = useSharedValue(clampIdx(initialIndex, count));
   const grind = useSharedValue(0);
@@ -546,8 +573,12 @@ export const StraightCarousel = forwardRef<
           cancelAnimation(pos);
           startPos.value = pos.value;
           scrolled.value = false;
+          // The gear pad, measured from the RAIL's bottom edge (v0.29.1). See GEAR_PAD_ABOVE for why
+          // measuring from the outer container made this dead in the creator but not in the sheet
+          // panels, which mount this carousel with no reserved band.
           // The gear is INERT while a card is focused (#104: fullscreen taps were grinding it).
-          padTouch.value = fs.value < 0.5 && heightSV.value > 0 && e.y > heightSV.value - 72;
+          const padY = e.y / panCoordScale;
+          padTouch.value = fs.value < 0.5 && railHSV.value > 0 && padY > railHSV.value - GEAR_PAD_ABOVE && padY < railHSV.value + GEAR_PAD_BELOW;
           // Self-heal (v0.27.3): a grind that is still wound up as a NEW touch begins away from the
           // gear pad is left over from a gesture that never finalized. Left alone it freezes index
           // publication for good. Nothing legitimately holds it up across touches, so unwind it.
@@ -627,7 +658,7 @@ export const StraightCarousel = forwardRef<
           if (grind.value !== 0) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, flip],
+    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, railHSV, panCoordScale, flip],
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
@@ -668,7 +699,9 @@ export const StraightCarousel = forwardRef<
                 fullscreen — the rising dim fades it down and the focused card sits above it.
                 zIndex 199 keeps it above the rail cards (~100, peeks as before) but UNDER the dim
                 (200) so fullscreen fades it down. */}
-            <View style={{ position: 'absolute', left: -18, right: -18, bottom: 0, height: 36, overflow: 'hidden', alignItems: 'center', zIndex: 199 }} pointerEvents="none">
+            {/* v0.29.1: the strip rides GEAR_DROP px lower, closer to the buttons beneath it, which is
+                the owner's "too much space between the gear and the cards" made concrete. */}
+            <View style={{ position: 'absolute', left: -18, right: -18, bottom: -GEAR_DROP, height: GEAR_BAND, overflow: 'hidden', alignItems: 'center', zIndex: 199 }} pointerEvents="none">
               <Animated.View style={[{ width: 150, height: 150 }, gearStyle]}>
                 <ArtImage source={INNER_GEAR} fit="contain" />
               </Animated.View>

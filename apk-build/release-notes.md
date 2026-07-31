@@ -1,28 +1,31 @@
-RuneKeep v0.29.0 - the creator answers the keyboard, mixed ancestry can be reversed, and being down looks like being down.
+RuneKeep v0.29.1 - the timeline reads like a history, the golden gear works in the creator, and rewinding finally stops eating your future.
 
-NEW
+TIMELINE
 
-- MIXED ANCESTRY CAN BE REVERSED. A small button on the ancestry step swaps which ancestry gives its first feature and which gives its second. It stays greyed out until you have picked both, because until then there is no pair to reverse. Giant and Faerie keeps Giant's extra Hit Point slot; press reverse and it is Faerie and Giant, Giant's slot is gone and its second feature is the one you have. Everything follows from that one swap: the modifiers, the lines struck through each card, and which card sits first on your sheet.
+- REWINDING NO LONGER REWRITES YOUR HISTORY. This is the one I got wrong twice, and the real cause was not where I was looking. Your sheet seeds a welcome note the first time it opens, and the "was created" entry is recorded a moment BEFORE that note exists. So rewinding to it handed the sheet a character with no note, the sheet dutifully seeded one again, and THAT counted as you changing something, which threw away everything after the point you rewound to. It was the app editing your character and blaming you for it. Writes the app makes for itself are now marked as such and can never appear in your timeline or discard anything.
+- ENTRIES SAY WHAT ACTUALLY CHANGED. "Changed cards" now lists the cards, on the row, without opening anything: (+) Bone 1 for something equipped, (-) Backpack for something put away.
+- DAY HEADINGS, LIKE A CHAT APP. Today, Yesterday, then the weekday for the rest of the week, then a date like July 6th. A column of times tells you nothing about whether something happened this afternoon or last month.
+- HOLDING AN ENTRY SHOWS A PROGRESS BAR. Before, the only sign anything was happening was the row growing, and growing made its own border clip against the row above it, which looks like a fault rather than progress.
+- ROWS ARE BIGGER AND NO LONGER HIDE THINGS BEHIND A TAP. Nothing indicated an entry could be expanded, so almost nobody did. What was hidden in there is on the face of the row now, and every row says plainly that holding it rewinds to that point.
 
 CHARACTER CREATION
 
-- THE KEYBOARD WORKS IN THE CREATOR. It only ever worked on the character sheet, which meant the one screen where you look through a hundred cards was the one screen you had to drag through with a mouse. Left and right move, W and S open and close a card, Space picks the one in the middle, Shift with up or down crosses between sections. Same keys as the sheet, because they are the same list of keys.
-- A FOCUSED CARD NO LONGER FLIES OFF THE TOP OF THE SCREEN. One measurement in the maths that positions an opened card was in physical pixels while everything around it was in the app's own units, so on any window the app magnifies, which is every desktop browser, the card was placed well above where it should be.
-- THE LOADING SCREEN COMES FIRST. It was appearing over a creator that had already finished loading and was fully visible underneath, then fading, which looked like a flash for no reason. The creator is now hidden until the loading screen lifts, and it is the lift that reveals it.
+- THE GOLDEN GEAR WORKS. Dragging it sweeps the whole deck, the same as on the character sheet. It has been dead since the creator started reserving space at the bottom for the select buttons: the gear moved up with the cards, but the strip that listens for your finger stayed at the bottom of the screen, underneath the buttons. So the gear was drawn in one place and listening in another, and the only live part was hidden behind the buttons.
+- THE CARDS SIT LOWER. The centre card grows as it becomes the middle one, and it was growing up into the step tabs above it. It rests lower now, which also closes the gap between the cards and the gear that you flagged. Both were the same number.
+- THE GEAR SITS A LITTLE LOWER TOO, closer to the buttons beneath it.
 
-THE CHARACTER SHEET
+THE FLOAT MENU
 
-- 0 HIT POINTS ACTUALLY DESATURATES NOW. What shipped last release was not a desaturation at all. It was a flat grey slab with two rectangles cut out of it, which is my fault: the effect only works when the layer can see the sheet underneath it, and I had put it inside a wrapper that hid the sheet from it. Same mistake would have shown on the phone. The sheet loses its colour properly now, and the hit points panel and your portrait keep theirs.
-- THE CARDS PANEL SHOWS YOUR CARDS. Most of them were drawing as a gold placeholder. That placeholder was correct back when it only ever stood in for the gold card, but since the browser build a card that has not been drawn to a picture yet carries itself along instead, and in a browser that is nearly every card. So class features, weapons, armour, experiences, notes, loot and your whole inventory all showed up as GOLD.
-- UP AND DOWN DO NOTHING IN EDIT MODE. Edit mode is a flat row being rearranged: there is no card to open and no hand to bundle, so those keys were leaving it in a state it has no drawing for. Sideways still moves along the row, and both keys come back the moment you leave edit mode.
+- CARDS AND NEW CARD HAVE SWAPPED, and the bottom wedge is now CHARACTERS: the way back to your character list. It asks first, using the same confirmation the back button already used, and covers the trip with a loading screen. New Card is not gone from the app: the Add Card badge on the sheet is still there and is still the quickest way in.
 
-SOUND AND ONBOARDING
+THE BROWSER
 
-- THE BROWSER IS QUIETER. Everything on web plays at about a third of the volume it did. A phone speaker held at arm's length and a pair of desktop speakers a foot from your face are not the same thing.
-- THE TOUR NO LONGER CLICKS TWICE. Next was making the sound itself and the button was making it too, in the same instant.
-- THE KEYBOARD PAGE IS READABLE. It was two loose columns of text, and because a couple of the descriptions ran onto a second line the two columns drifted out of step, so working out which key did what meant tracing across the gap with a finger. Every key is drawn as a key now, on its own row.
-- LEAVING THE TOUR NO LONGER FLASHES. The last page warns you that the sheet is bright, and the handover fades instead of cutting.
+- THE CARDS LIST SCROLLS FROM ANYWHERE. It only scrolled at the very edges, because every card in that grid told the browser it owned the touch outright, so a finger landing on a card could never scroll the list underneath it. Only the gutter beside the last column was still live.
+- THE BACK BUTTON ASKS BEFORE LEAVING. It was Android only, so in a browser back, the back gesture and Alt+Left all walked straight out of your sheet with no confirmation and any open panel abandoned rather than closed.
+- EDIT MODE NO LONGER SOFTLOCKS WHEN YOU LET GO. Dropping a card could leave the whole row hanging in the air with no way out. The commit was reachable from exactly one place, and a browser does not always release a drag through it, so an interrupted drop left a flag raised that makes every later drag do nothing.
 
-Known: at 0 hit points the cards in your hand keep their colour. They sit above the sheet rather than on it, and reaching over them would put colour windows through a card you had opened full screen. Say if you want them included.
+SOUND
+
+- QUIETER AGAIN, on both, by about a third from where they were.
 
 Sideload: enable Install unknown apps, then open the APK.

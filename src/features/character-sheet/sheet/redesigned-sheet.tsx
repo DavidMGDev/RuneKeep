@@ -42,6 +42,7 @@ import { companionOf, companionPicksPerLevel, hasCompanion } from '@/lib/compani
 import { addFavorite, FAVORITES_CATEGORY, hasFavorites as fileHasFavorites, isFavorited, orphanedFavoriteIds, removeFavoriteByRef, removeFavoriteCopies } from '@/lib/favorites';
 import { RuneLoader } from '@/components/rune-loader';
 import { ChamferBox } from '@/components/chamfer-box';
+import { LoadingScreen } from '@/components/loading-screen';
 import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
@@ -516,7 +517,34 @@ function SheetBackGuard(props: BackGuardState) {
         return true;
       };
       const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
-      return () => sub.remove();
+      /**
+       * The same guard for a BROWSER's back button (v0.29.1).
+       *
+       * `BackHandler` is Android's hardware key and nothing else, so on the web the back button, the
+       * back gesture and Alt+Left all sailed straight out of the sheet: no confirm, and any open
+       * overlay abandoned rather than closed.
+       *
+       * A page cannot veto a back navigation, so the standard shape is to push one spare history
+       * entry on arrival and let the first back consume it. `popstate` then fires with the sheet
+       * still mounted, we run exactly the same handler the hardware key runs, and push the spare
+       * entry again so the next press is caught too. When the handler decides it is genuinely time
+       * to leave it raises the confirm, and the Leave button navigates properly.
+       */
+      let popGuard: (() => void) | undefined;
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.history.pushState({ rkSheet: true }, '');
+        const onPop = () => {
+          onBack();
+          // Re-arm. The entry we just consumed has to be replaced or the next back leaves for real.
+          window.history.pushState({ rkSheet: true }, '');
+        };
+        window.addEventListener('popstate', onPop);
+        popGuard = () => window.removeEventListener('popstate', onPop);
+      }
+      return () => {
+        sub.remove();
+        popGuard?.();
+      };
     }, [machineState, closeFullscreen, collapse, closeMenu, exitEdit]),
   );
   return null;
@@ -753,11 +781,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Default note (#248 item 4): a brand-new character (notes never touched) is seeded with ONE real,
   // deletable note with a random colour. Guarded on `notes === undefined`, so deleting it (→ []) never
   // re-seeds. Replaces the old synthetic placeholder that used the now-deleted temp item image.
+  //
+  // v0.29.1: seeded ONCE, from the file as it arrived, and tagged as the app's own write.
+  //
+  // Reacting to `file` is what broke rewind twice. The creator never writes `notes`, so every
+  // character's "was created" snapshot has none. Rewinding to it set `notes` back to undefined, this
+  // effect fired again, and THAT write recorded a "Changed cards" entry which truncated the future
+  // the panel had just promised was safe to browse. The v0.27.3 no-op guard could never catch it,
+  // because the write is real: it even randomises the colour, so it is not idempotent.
+  const noteSeeded = useRef(false);
   useEffect(() => {
-    if (file && file.notes === undefined) {
-      mutateFile({ notes: [{ id: 'note-welcome', title: '', text: 'Use the button below the character portrait to open the cards menu, there you can delete this note and add new ones.', imageUri: null, color: randomCardColor() }] });
-    }
-  }, [file, mutateFile]);
+    if (noteSeeded.current || !file) return;
+    noteSeeded.current = true;
+    if (file.notes !== undefined) return;
+    withIntent({ system: true }); // the app's doing, not the player's: never a timeline entry
+    mutateFile({ notes: [{ id: 'note-welcome', title: '', text: 'Use the button below the character portrait to open the cards menu, there you can delete this note and add new ones.', imageUri: null, color: randomCardColor() }] });
+  }, [file, mutateFile, withIntent]);
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
@@ -1295,7 +1334,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
-  const [leaveConfirm, setLeaveConfirm] = useState(false); // #297: device-back leave confirmation
+  const [leaveConfirm, setLeaveConfirm] = useState(false);
+  // Covers the hand-off to the character list while the route changes (v0.29.1).
+  const [leaving, setLeaving] = useState(false); // #297: device-back leave confirmation
   // v0.13.0: empty-category panel — 'root' = "There is nothing here", 'cats' = the category chooser.
   const [emptyPanel, setEmptyPanel] = useState<'root' | 'cats' | null>(null);
   // v0.13.2 (#359): a card received over NFC, awaiting the confirmation + landing ceremony.
@@ -2219,7 +2260,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   return (
     <AccentProvider>
       <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
-       <FloatMenuProvider onOpenInterface={(k) => { if (k === 'custom') setNewCardEntry('menu'); setFloatKind(k); }}>
+       {/* v0.29.1: the south wedge is CHARACTERS, the way out. It is not an interface, it raises the
+           SAME leave confirm the back button already uses rather than adding a second prompt that
+           could drift from it. */}
+       <FloatMenuProvider onOpenInterface={(k) => { if (k === 'characters') { setLeaveConfirm(true); return; } if (k === 'custom') setNewCardEntry('menu'); setFloatKind(k); }}>
         <SheetBackGuard
           leaveConfirm={leaveConfirm}
           editCardId={editCardId}
@@ -2478,9 +2522,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             </OverlayShell>
           ) : null}
           {/* leave-to-character-selection confirmation (#297): device back on the bare sheet */}
+          {/* Covers the trip back to the character list, so the sheet does not sit there looking
+              live while the route changes underneath it (v0.29.1). */}
+          {leaving ? (
+            <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 100001 }}>
+              <LoadingScreen label="Rolling up the sheet" />
+            </View>
+          ) : null}
           {leaveConfirm ? (
             <LeaveConfirm
-              onConfirm={() => { setLeaveConfirm(false); if (router.canGoBack()) router.back(); else router.replace('/'); }}
+              onConfirm={() => {
+                setLeaveConfirm(false);
+                // v0.29.1: cover the trip back. The roster reads its characters from disk, and on a
+                // slow device that is a beat of bright parchment giving way to nothing.
+                setLeaving(true);
+                requestAnimationFrame(() => { if (router.canGoBack()) router.back(); else router.replace('/'); });
+              }}
               onCancel={() => setLeaveConfirm(false)}
             />
           ) : null}

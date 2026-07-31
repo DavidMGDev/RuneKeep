@@ -1,5 +1,5 @@
 import type { CharacterFile } from './character-file';
-import { capEntries, classify, recoverableCards, restoreCard, COALESCE_MS, emptyHistory, HISTORY_CAP, preview, readHistory, record, repair, rewind, stripHistory, timeline } from './character-history';
+import { cardMoves, capEntries, classify, recoverableCards, restoreCard, COALESCE_MS, emptyHistory, HISTORY_CAP, preview, readHistory, record, repair, rewind, stripHistory, timeline } from './character-history';
 
 /** A minimal but realistic character file. Only the fields a test touches need to be meaningful. */
 function mk(over: Partial<CharacterFile> = {}): CharacterFile {
@@ -348,5 +348,74 @@ describe('the card trash is derived from history, not stored', () => {
     const rec = recoverableCards(h, gone)[0];
     const once = restoreCard(gone, rec);
     expect((restoreCard(once, rec).customCards as unknown as unknown[]).length).toBe(1);
+  });
+});
+
+describe('a write the app made itself', () => {
+  it('is never recorded and never truncates a rewind', () => {
+    let h = record(emptyHistory(), null, mk(), {}, T0);
+    h = record(h, mk(), mk({ level: 2 }), {}, at(60_000));
+    h = record(h, mk({ level: 2 }), mk({ level: 3 }), {}, at(120_000));
+    const browsing = { ...h, rewoundTo: 0 };
+    // The welcome-note seeding is exactly this shape: a REAL change (so the no-op guard cannot help)
+    // that the player did not make, fired by restoring a snapshot from before the note existed.
+    const after = record(browsing, mk(), mk({ name: 'seeded' }), { system: true }, at(180_000));
+    expect(after).toBe(browsing);
+    expect(after.entries).toHaveLength(3);
+    expect(after.rewoundTo).toBe(0);
+  });
+
+  it('does not stop the player from truncating with their own next edit', () => {
+    let h = record(emptyHistory(), null, mk(), {}, T0);
+    h = record(h, mk(), mk({ level: 2 }), {}, at(60_000));
+    const after = record({ ...h, rewoundTo: 0 }, mk(), mk({ level: 9 }), {}, at(120_000));
+    expect(after.entries).toHaveLength(2);
+    expect(after.rewoundTo).toBeNull();
+  });
+});
+
+describe('which cards an entry moved', () => {
+  it('reports nothing when nothing moved', () => {
+    expect(cardMoves(mk(), mk())).toEqual({ added: [], removed: [] });
+  });
+
+  it('names an equipped card and an unequipped one', () => {
+    const before = mk({ enabledCardIds: ['blade-01-1'] } as Partial<CharacterFile>);
+    const after = mk({ enabledCardIds: ['bone-01-1'] } as Partial<CharacterFile>);
+    expect(cardMoves(before, after)).toEqual({ added: ['bone-01-1'], removed: ['blade-01-1'] });
+  });
+
+  it('counts a card the player authored', () => {
+    const after = mk({ customCards: [{ id: 'cc-1', title: 'Backpack' }] } as unknown as Partial<CharacterFile>);
+    expect(cardMoves(mk(), after).added).toEqual(['cc-1']);
+  });
+
+  it('treats a tombstoned card as gone, since that is what the player saw', () => {
+    // A system card is never spliced out of its array; it is listed in removedCardIds instead.
+    const before = mk({ domainCardIds: ['d1', 'd2'] } as Partial<CharacterFile>);
+    const after = mk({ domainCardIds: ['d1', 'd2'], removedCardIds: ['d2'] } as unknown as Partial<CharacterFile>);
+    expect(cardMoves(before, after)).toEqual({ added: [], removed: ['d2'] });
+  });
+
+  it('treats restoring one as a return', () => {
+    const before = mk({ domainCardIds: ['d1'], removedCardIds: ['d1'] } as unknown as Partial<CharacterFile>);
+    const after = mk({ domainCardIds: ['d1'] } as Partial<CharacterFile>);
+    expect(cardMoves(before, after)).toEqual({ added: ['d1'], removed: [] });
+  });
+
+  it('follows a single-slot field like a weapon', () => {
+    const before = mk({ weaponPrimaryId: 'wpn-broadsword' } as Partial<CharacterFile>);
+    const after = mk({ weaponPrimaryId: 'wpn-axe' } as Partial<CharacterFile>);
+    expect(cardMoves(before, after)).toEqual({ added: ['wpn-axe'], removed: ['wpn-broadsword'] });
+  });
+
+  it('survives a missing snapshot', () => {
+    // From nothing, every card the character holds counts as arriving, which is correct: the fixture
+    // has an ancestry, a subclass and two domain cards before anything is added to it.
+    const fromNothing = cardMoves(null, mk({ enabledCardIds: ['x'] } as Partial<CharacterFile>));
+    expect(fromNothing.added).toContain('x');
+    expect(fromNothing.removed).toEqual([]);
+    expect(cardMoves(mk(), null).added).toEqual([]);
+    expect(cardMoves(mk(), null).removed).toContain('ancestry-elf');
   });
 });
