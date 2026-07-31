@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Image, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
@@ -102,7 +102,19 @@ export function RosterScreen() {
   const router = useRouter();
   const [files, setFiles] = useState<CharacterFile[] | null>(null);
   const [index, setIndex] = useState<FolderIndex>(EMPTY_INDEX);
-  const [collapsed, setCollapsedState] = useState<Set<string>>(new Set());
+  /**
+   * Which groups are collapsed, DERIVED from the persisted index (v0.27.2).
+   *
+   * This used to be a second copy of the same fact, held in component state and initialised to an
+   * empty Set on every mount. The folder store had been saving the collapsed flag correctly since
+   * v0.23.0; nothing ever read it back. So every arrival at this screen, from the menu, from a
+   * character sheet, from a fresh launch, drew every group open, and the first toggle after that
+   * wrote that wrong state back over the good one. A roster the player had tidied would not stay
+   * tidy for the length of one navigation.
+   *
+   * One source of truth, and the thing on disk is it.
+   */
+  const collapsed = useMemo(() => new Set(index.collapsed ?? []), [index.collapsed]);
   const [actionsFor, setActionsFor] = useState<CharacterFile | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CharacterFile | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -156,7 +168,6 @@ export function RosterScreen() {
   // v0.23.0: persisted, so a roster you tidied stays tidy when you come back.
   const toggle = (key: string) => {
     const next = !collapsed.has(key);
-    setCollapsedState((s) => { const n = new Set(s); if (next) n.add(key); else n.delete(key); return n; });
     setIndex((cur) => { const n = setCollapsedIn(cur, key, next); void saveFolders(n); return n; });
   };
 

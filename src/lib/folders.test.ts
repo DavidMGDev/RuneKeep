@@ -1,4 +1,4 @@
-import { addFolder, assign, EMPTY_INDEX, membersOf, removeFolder, renameFolder } from './folders';
+import { addFolder, assign, EMPTY_INDEX, membersOf, removeFolder, renameFolder, setCollapsed } from './folders';
 
 describe('folders', () => {
   it('adds a folder with a name and a colour', () => {
@@ -32,5 +32,40 @@ describe('folders', () => {
     expect(idx.folders).toEqual([]);
     expect(membersOf(idx, fid)).toEqual([]);
     expect(idx.assignments.c1).toBeUndefined();
+  });
+});
+
+/**
+ * v0.27.2: collapsing a group is a preference and has to survive everything.
+ *
+ * The flag was being written correctly and never read back, so a tidied roster came back open every
+ * time the player left the screen. These pin the two halves of that: the round trip, and the fact
+ * that deleting one folder must not re-open the others.
+ */
+describe('a collapsed group', () => {
+  it('round-trips through the index', () => {
+    const idx = setCollapsed(EMPTY_INDEX, 'fd-1', true);
+    expect(idx.collapsed).toContain('fd-1');
+    expect(setCollapsed(idx, 'fd-1', false).collapsed).not.toContain('fd-1');
+  });
+
+  it('records the ungrouped section like any other group', () => {
+    expect(setCollapsed(EMPTY_INDEX, '__ungrouped', true).collapsed).toEqual(['__ungrouped']);
+  });
+
+  it('survives another folder being deleted', () => {
+    let idx = addFolder(addFolder(EMPTY_INDEX, 'Keep'), 'Bin');
+    const [keep, bin] = idx.folders;
+    idx = setCollapsed(setCollapsed(idx, keep.id, true), '__ungrouped', true);
+    const after = removeFolder(idx, bin.id);
+    expect(after.collapsed).toContain(keep.id);
+    expect(after.collapsed).toContain('__ungrouped');
+  });
+
+  it('forgets the folder that was deleted', () => {
+    let idx = addFolder(EMPTY_INDEX, 'Bin');
+    const bin = idx.folders[0];
+    idx = setCollapsed(idx, bin.id, true);
+    expect(removeFolder(idx, bin.id).collapsed).not.toContain(bin.id);
   });
 });

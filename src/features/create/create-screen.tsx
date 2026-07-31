@@ -339,6 +339,17 @@ export function CreateScreen() {
     itemCache.current.set(cacheKey, made);
     return made;
   }, []);
+  /**
+   * A LIBRARY card item, cached by everything that changes how it looks.
+   *
+   * v0.27.2: these were allocated fresh on every rebuild, which is every time any card finishes
+   * forging, so a homebrew-heavy deck re-rendered all of its slots throughout the forge even though
+   * the v0.27.0 cache was already sparing the catalog ones.
+   */
+  const keepLib = useCallback(
+    (lc: LibraryCard, struckIndex?: number) => keep(`lib|${lc.id}|${lc.title}|${(lc.sections ?? []).length}|${struckIndex ?? ''}`, () => libCardItem(lc, struckIndex)),
+    [keep],
+  );
   const forgedItem = useCallback(
     (key: string, label: string, live: ReactNode): StraightItem => {
       const pre = sources[key];
@@ -364,7 +375,7 @@ export function CreateScreen() {
       return weaponSlot === 'primary' ? [...cards, SKIP_WEAPONS] : cards;
     }
     if (deck === 'armor') {
-      return [...TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), ...(libContent?.armor ?? []).map(libCardItem), SKIP_ARMOR];
+      return [...TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => forgedItem(a.id, a.name, <ForgedArmorCard armor={a} />)), ...(libContent?.armor ?? []).map((lc) => keepLib(lc)), SKIP_ARMOR];
     }
     if (deck === 'inventory') {
       // Creation inventory shows ONLY the player's per-class CHOICES (#136). The default kit
@@ -381,15 +392,15 @@ export function CreateScreen() {
       const optionCards: StraightItem[] = group.map((name) => {
         const id = itemOptionId(name);
         const archive = lootById(id);
-        return {
+        return keep(`inv|${id}`, () => ({
           id,
           label: name,
           custom: archive ? <ForgedLootCard loot={archive} /> : <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
-        };
+        }));
       });
       // Homebrew inventory rides the first choice, so it is offered once rather than twice.
-      const lib = invChoice === 0 ? (libContent?.inventory ?? []).map(libCardItem) : [];
-      return [...optionCards, ...lib, skipInventoryCard(invChoice)];
+      const lib = invChoice === 0 ? (libContent?.inventory ?? []).map((c) => keepLib(c)) : [];
+      return [...optionCards, ...lib, keep(`invskip|${invChoice}`, () => skipInventoryCard(invChoice))];
     }
     if (!isCardDeck(deck)) return [];
     switch (deck) {
@@ -431,7 +442,7 @@ export function CreateScreen() {
       case 'subclass':
         return [
           ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
-          ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (!c.className || c.className === draft.className)).map(libCardItem),
+          ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (!c.className || c.className === draft.className)).map((lc) => keepLib(lc)),
         ];
       case 'ancestry': {
         const base = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })));
@@ -448,20 +459,20 @@ export function CreateScreen() {
         // measured lines over those, and striking the text as well would cross the feature twice.
         const struckIdx = (lc: LibraryCard): number | undefined =>
           hasStrikeLines(lc.id) ? undefined : mix?.first === lc.id ? featureSectionIndexes(lc)[1] : mix?.second === lc.id ? featureSectionIndexes(lc)[0] : undefined;
-        return [...base, ...(libContent?.ancestries ?? []).map((lc) => libCardItem(lc, struckIdx(lc))), toggle];
+        return [...base, ...(libContent?.ancestries ?? []).map((lc) => keepLib(lc, struckIdx(lc))), toggle];
       }
       case 'community':
-        return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))), ...(libContent?.communities ?? []).map(libCardItem)];
+        return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))), ...(libContent?.communities ?? []).map((lc) => keepLib(lc))];
       case 'domains': {
         if (!draft.className) return [];
         const pair = classInfo(draft.className).domains;
         return [
           ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
-          ...(libContent?.domains ?? []).map(libCardItem),
+          ...(libContent?.domains ?? []).map((lc) => keepLib(lc)),
         ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, libContent, picked, creationClassCards]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, picked, creationClassCards]);
 
   const selectedIds = useMemo(() => {
     if (deck === 'weapons') {
@@ -856,13 +867,13 @@ export function CreateScreen() {
         </View>
 
         {/* ---- cards ---- */}
-        <View style={{ marginTop: 12 }}>
+        <View style={{ marginTop: 6 }}>
           <SectionDivider label="Cards" />
         </View>
         {/* v0.22.0: aggregate progress. The rail carried per-step ticks but nothing said how close
             you were overall, and the NAME requirement wasn't on the rail at all — so ten gold ticks
             plus a dead Forge button had no explanation. */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, marginBottom: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, marginBottom: 2 }}>
           <Text style={{ color: complete ? Rune.goldBright : Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>
             {stepsDone} / {steps}
           </Text>
@@ -893,7 +904,7 @@ export function CreateScreen() {
         {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
         {/* a relative container so the deck-swap loader can sit AT the card rest position, not the
             top of the content (#150 follow-up) */}
-        <View style={{ flex: 1, marginTop: 2 }}>
+        <View style={{ flex: 1, marginTop: 0 }}>
         <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }, fadeStyle]}>
           {/* weapons filter toggles (#121): physical/magic primaries, plus primary/secondary slot.
               flexWrap so the two controls can NEVER overflow the screen margins onto the SVG border

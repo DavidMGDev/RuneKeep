@@ -171,7 +171,7 @@ function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onTo
         {/* v0.27.1: when it is off, SAY so. A crossed-out speaker is the convention and it was still
             being misread as a styling quirk, which is a bad way to spend a week wondering why the app
             is silent. The word only appears in the state worth explaining. */}
-        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, width: muted ? 96 : 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, minWidth: 44, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', paddingHorizontal: muted ? 12 : 0 }}>
           <Svg width={20} height={20} viewBox="0 0 24 24">
             <Polygon points="4,9 8,9 13,4 13,20 8,15 4,15" fill="none" stroke={glyph} strokeWidth={1.8} strokeLinejoin="round" />
             {muted ? (
@@ -182,7 +182,7 @@ function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onTo
             {muted ? <Polyline points="22,9 17,15" fill="none" stroke={glyph} strokeWidth={2} strokeLinecap="round" /> : null}
           </Svg>
           {muted ? (
-            <Text style={{ color: glyph, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Sound off</Text>
+            <Text numberOfLines={1} style={{ color: glyph, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 0.9, textTransform: 'uppercase' }}>Sound off</Text>
           ) : null}
         </ChamferBox>
       </Pressable>
