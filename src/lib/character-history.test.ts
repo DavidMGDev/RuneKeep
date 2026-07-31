@@ -257,6 +257,34 @@ describe('retention', () => {
   });
 });
 
+describe('a save that changed nothing', () => {
+  it('is not recorded', () => {
+    const h = record(emptyHistory(), null, mk(), {}, T0);
+    expect(record(h, mk(), mk(), {}, at(60_000))).toBe(h);
+  });
+
+  it('leaves a rewind in place instead of truncating the future', () => {
+    let h = record(emptyHistory(), null, mk(), {}, T0);
+    h = record(h, mk(), mk({ level: 2 }), {}, at(60_000));
+    h = record(h, mk({ level: 2 }), mk({ level: 3 }), {}, at(120_000));
+    const browsing = { ...h, rewoundTo: 0 };
+    // The sheet saves on mount and on unmount without the player touching anything; those must not
+    // count as "you changed something", or browsing the timeline destroys it.
+    const after = record(browsing, mk(), mk(), {}, at(180_000));
+    expect(after.entries).toHaveLength(3);
+    expect(after.rewoundTo).toBe(0);
+  });
+
+  it('still truncates on the first real change after a rewind', () => {
+    let h = record(emptyHistory(), null, mk(), {}, T0);
+    h = record(h, mk(), mk({ level: 2 }), {}, at(60_000));
+    h = record(h, mk({ level: 2 }), mk({ level: 3 }), {}, at(120_000));
+    const after = record({ ...h, rewoundTo: 0 }, mk(), mk({ level: 5 }), {}, at(180_000));
+    expect(after.entries).toHaveLength(2);
+    expect(after.rewoundTo).toBeNull();
+  });
+});
+
 describe('storage hygiene', () => {
   it('strips nested history from a snapshot', () => {
     const withHistory = { ...mk(), history: { version: 1, entries: [1, 2, 3], rewoundTo: null } } as unknown as CharacterFile;
@@ -265,7 +293,7 @@ describe('storage hygiene', () => {
 
   it('never nests a chain inside a snapshot', () => {
     let h = record(emptyHistory(), null, mk(), {}, T0);
-    const withH = { ...mk(), history: h } as CharacterFile;
+    const withH = { ...mk({ level: 2 }), history: h } as CharacterFile;
     h = record(h, mk(), withH, {}, at(60_000));
     expect('history' in h.entries[1].snapshot).toBe(false);
   });

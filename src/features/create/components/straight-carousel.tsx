@@ -320,6 +320,27 @@ export const StraightCarousel = forwardRef<
   }
 >(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0 }, ref) {
   const count = items.length;
+  /**
+   * v0.27.3: the deck, read through a ref so the GESTURES never re-identify.
+   *
+   * `items` is a fresh array every time a card finishes forging, and `center` changes on every
+   * detent. `flip` closed over both, `onTapCard` closed over `flip`, and the master `Pan` closed over
+   * `onTapCard` -- so the whole gesture graph was rebuilt roughly ninety times during a first
+   * creation and again on every card you scrolled past. Two costs, and the second is the bad one:
+   *
+   *   - every mounted Slot got a new `onTap`, defeating its `memo` and rebuilding its `Gesture.Tap`,
+   *     which is the per-detent stutter;
+   *   - swapping the Pan handler MID-DRAG means the outgoing one never sees `onEnd` or `onFinalize`,
+   *     so `grind` was left latched above the 0.05 threshold that freezes index publication below.
+   *     A frozen index is exactly the reported break: the centred card keeps its low-res thumb
+   *     because `center` never advances, and the parent's mirror goes stale so SELECT and RANDOM act
+   *     on the wrong card. It never recovers, because nothing else unwinds `grind`. This is the same
+   *     failure the v0.14.0 note further down describes, arriving by a route that fix never covered.
+   *
+   * Reading through a ref is one frame fresher than the old closure, never staler.
+   */
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const insets = useScreenInsets();
   const { height: screenH } = useLayout();
   const railRef = useRef<View>(null);
@@ -407,14 +428,14 @@ export const StraightCarousel = forwardRef<
   const flip = useCallback(
     (delta: number) => {
       if (flipBusy.current) return;
-      const n = items[center]?.faces?.length ?? 0;
+      const n = itemsRef.current[clampIdx(Math.round(pos.value), count)]?.faces?.length ?? 0;
       if (n <= 1) return;
       flipBusy.current = true;
       flipDir.current = delta;
       playSfx('gearScroll2', { volume: PAGE_FLIP_VOLUME }); // #258: quiet gear swoosh on page flip
       setFaceIdx((i) => (i + delta + n) % n);
     },
-    [items, center],
+    [pos, count],
   );
   const onFlipSettle = useCallback(() => {
     flipBusy.current = false;
@@ -445,8 +466,8 @@ export const StraightCarousel = forwardRef<
       if (fs.value > 0.5) {
         // Focused: an interactive card (#128 gold) keeps its own taps — close it by swipe/veil only.
         // A multi-face card flips (left half = back, right half = forward). Else tap closes.
-        if (items[index]?.interactive) return;
-        const n = items[index]?.faces?.length ?? 0;
+        if (itemsRef.current[index]?.interactive) return;
+        const n = itemsRef.current[index]?.faces?.length ?? 0;
         if (n > 1) {
           flip(x < FORGED_W / 2 ? -1 : 1);
           return;
@@ -463,7 +484,7 @@ export const StraightCarousel = forwardRef<
         pos.value = withSpring(clampIdx(index, count), SNAP_SPRING);
       }
     },
-    [fs, pos, focusIdx, count, closeFs, setFsOpenJS, items, flip],
+    [fs, pos, focusIdx, count, closeFs, setFsOpenJS, flip],
   );
 
   // gear pad: bottom strip; grinding sweeps the whole deck across ~GEAR_SWIPE_L px, straight.
@@ -478,6 +499,10 @@ export const StraightCarousel = forwardRef<
           scrolled.value = false;
           // The gear is INERT while a card is focused (#104: fullscreen taps were grinding it).
           padTouch.value = fs.value < 0.5 && heightSV.value > 0 && e.y > heightSV.value - 72;
+          // Self-heal (v0.27.3): a grind that is still wound up as a NEW touch begins away from the
+          // gear pad is left over from a gesture that never finalized. Left alone it freezes index
+          // publication for good. Nothing legitimately holds it up across touches, so unwind it.
+          if (!padTouch.value && grind.value !== 0) grind.value = withTiming(0, { duration: 120 });
           if (padTouch.value) {
             grind.value = withTiming(1, { duration: 160 });
             gearPrevTX.value = 0; // #258: reset swoosh tracking for the new grind

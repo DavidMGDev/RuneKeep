@@ -211,21 +211,58 @@ function rebuildCtx(): void {
   // still holding the device, and asking again in the same tick asks the same question.
   setTimeout(() => {
     rebuilding = false;
-    const fresh = getCtx();
-    if (fresh) void fresh.resume?.();
+    // `getCtx()` wakes the fresh context itself. Resuming it again here was a guaranteed second
+    // start in the same tick, which is precisely what breaks the stream on Android.
+    getCtx();
   }, 400);
 }
+
+/**
+ * The context we have already asked to start, and what it answered (v0.27.3).
+ *
+ * On Android the context is BORN suspended and one `resume()` opens the output stream. `state` is a
+ * live probe of that stream, so it still reads suspended while the stream is starting -- and v0.25.0
+ * changed `wake` from "resume once at creation" to "resume whenever state is suspended", on the
+ * stated premise that native contexts are never suspended. They are. So every sound asked the stream
+ * to start again, AAudio rejects a start on an already started stream, and the library stores that
+ * rejection: its render callback then emits silence and `state` is pinned at suspended for good.
+ * That is the exact readout the owner sent, restarts and all: the restarts were the app fighting
+ * itself.
+ */
+let resumed: AnyCtx | null = null;
+let lastResume = '';
 
 function wake(c: AnyCtx): void {
   try {
     if (stateOf(c) !== 'suspended') return;
+    if (Platform.OS !== 'web') {
+      // Ask once, and believe the answer rather than re-reading `state`.
+      if (resumed === c) return;
+      resumed = c;
+      const started = c.resume?.() as Promise<boolean> | undefined;
+      if (!started?.then) return;
+      void started
+        .then((ok) => {
+          lastResume = ok === false ? 'refused' : 'ok';
+          if (ok === false && ctx === c) rebuildCtx();
+        })
+        .catch(() => {
+          lastResume = 'threw';
+          if (ctx === c) rebuildCtx();
+        });
+      return;
+    }
+    // Web: a browser context legitimately suspends again (tab hidden, autoplay policy), so resuming
+    // per sound is correct there and resume() resolves with nothing.
     const p = c.resume?.() as Promise<unknown> | undefined;
     if (!p?.then) return;
     void p
       .then(() => {
+        lastResume = 'ok';
         if (ctx === c && stateOf(c) === 'suspended') rebuildCtx();
       })
       .catch(() => {
+        lastResume = 'threw';
         if (ctx === c) rebuildCtx();
       });
   } catch {
@@ -354,7 +391,7 @@ export function sfxDiagnostics(): string {
   if (unavailable) return 'Audio engine unavailable on this device.';
   if (!ctx) return 'Audio engine not started yet.';
   const rate = Math.round((ctx as { sampleRate?: number }).sampleRate ?? 0);
-  const head = `Audio ${stateOf(ctx)} @${rate}, ${decoded} ready, ${failed.size} failed${rebuilds ? `, ${rebuilds} restart${rebuilds > 1 ? 's' : ''}` : ''}${muted ? ', MUTED' : ''}.`;
+  const head = `Audio ${stateOf(ctx)} @${rate}, ${decoded} ready, ${failed.size} failed, start ${lastResume || 'pending'}${rebuilds ? `, ${rebuilds} restart${rebuilds > 1 ? 's' : ''}` : ''}${muted ? ', MUTED' : ''}.`;
   return failed.size && lastError ? `${head} ${lastError.slice(0, 110)}` : head;
 }
 
@@ -394,6 +431,26 @@ export interface PlayOpts {
 // truthy on web, selecting the pitch-stretcher, whose WASM never loads in a bundled app — so EVERY
 // sound threw "window[globalTag] is not a function". Calling it with NO argument is correct on both:
 // native gets `undefined` options, web gets `undefined` pitchCorrection. Do not "restore" the object.
+/**
+ * Set a source node's pitch offset, whatever shape the platform's node is (v0.27.3).
+ *
+ * On web, `react-native-audio-api` hands back a FACADE whose only job is to forward calls to the
+ * real node underneath. It forwards `buffer`, `loop`, `start` and friends -- but not `detune`, which
+ * exists only on the inner node. So `node.detune.value = cents` threw, inside the swallow-everything
+ * catch below, and took the whole play with it BEFORE `start()` was ever reached. Every sound with
+ * pitch variation was therefore silent in the browser, which is most of them: buttons, the carousel
+ * tick, the float menu, and the second stage of a stat icon. The one sound that still played on
+ * entering the sheet is one of the few asked for at a flat pitch.
+ *
+ * Native nodes carry `detune` directly, so they take the first branch and behave exactly as before.
+ */
+type Detunable = { detune?: { value: number }; asAudioBufferSourceNodeWeb?: () => { detune?: { value: number } } | undefined };
+function detuneBy(node: unknown, cents: number): void {
+  const n = node as Detunable;
+  const param = n.detune ?? n.asAudioBufferSourceNodeWeb?.()?.detune;
+  if (param) param.value = cents;
+}
+
 function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) {
   const c = getCtx();
   if (!c) return;
@@ -404,7 +461,7 @@ function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) 
       node.buffer = buf;
       const vary = opts?.vary === false ? 0 : jitter() * varyCents;
       const cents = (opts?.cents ?? 0) + vary;
-      if (cents) node.detune.value = cents;
+      if (cents) detuneBy(node, cents);
       const gain: GainNode = c.createGain();
       gain.gain.value = (muted ? 0 : 1) * master * baseVol * (opts?.volume ?? 1);
       node.connect(gain);
@@ -496,7 +553,7 @@ export function playRiser(id: SfxId, opts?: RiserOpts): RiserHandle {
   try {
     const node = c.createBufferSource();
     node.buffer = buf;
-    if (opts?.cents) node.detune.value = opts.cents;
+    if (opts?.cents) detuneBy(node, opts.cents);
     const gain: GainNode = c.createGain();
     const vol = (muted ? 0 : 1) * master * (opts?.volume ?? 0.7);
     const now = c.currentTime;

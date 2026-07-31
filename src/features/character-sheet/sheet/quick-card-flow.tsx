@@ -98,6 +98,10 @@ export function QuickCardFlow({
     Keyboard.dismiss();
     playSfx('panelOpen');
     setStep('confirm');
+    // v0.27.3: put the page back before showing the card. Focusing a field centres it with
+    // scrollIntoView, which scrolls the document as well as this list; the fields are gone by now, so
+    // without this the preview you are being asked to accept sits above the top of the window.
+    if (Platform.OS === 'web') requestAnimationFrame(() => window.scrollTo({ top: 0 }));
   }, [canSave]);
   const toConfirmRef = useRef(toConfirm);
   toConfirmRef.current = toConfirm;

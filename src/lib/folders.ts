@@ -57,12 +57,21 @@ export function assign(idx: FolderIndex, charId: string, folderId: string | null
   return { ...idx, assignments };
 }
 
+/** The group holding every character with no folder. Collapsible like a folder, but it has no name. */
+export const UNGROUPED_KEY = '__ungrouped';
+
 /** Remove a folder; its members fall back to ungrouped. */
 export function removeFolder(idx: FolderIndex, id: string): FolderIndex {
+  const hadMembers = Object.values(idx.assignments).some((fid) => fid === id);
   const assignments = Object.fromEntries(Object.entries(idx.assignments).filter(([, fid]) => fid !== id));
   // v0.27.2: SPREAD. Rebuilding the index from its two named fields quietly dropped `collapsed`, so
   // deleting any one folder re-opened every other group the player had tidied away.
-  return { ...idx, folders: idx.folders.filter((f) => f.id !== id), assignments, collapsed: (idx.collapsed ?? []).filter((k) => k !== id) };
+  //
+  // v0.27.3: and never tip characters into a group that is shut. Deleting a folder moves its members
+  // to Ungrouped, so if Ungrouped happened to be collapsed they arrived already hidden, which reads
+  // as the whole roster vanishing.
+  const collapsed = (idx.collapsed ?? []).filter((k) => k !== id && !(hadMembers && k === UNGROUPED_KEY));
+  return { ...idx, folders: idx.folders.filter((f) => f.id !== id), assignments, collapsed };
 }
 
 /** Character ids assigned to a folder. */

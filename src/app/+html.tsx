@@ -62,10 +62,19 @@ export default function Root({ children }: { children: ReactNode }) {
 }
 
 const WEB_RESET = `
+/* The app is a fixed 412x892 stage and nothing outside it is content (v0.27.3).
+   Several things are deliberately laid out PAST that stage -- the sheet's dim sits 240px beyond it on
+   every side, the float menu's scrim is 852x1332, and carousel cards rest off-screen -- so the
+   document acquires a real scrollable area around the app. Expo's own reset puts overflow:hidden on
+   the body, which stops the scrollbar but leaves the region scrollable programmatically: any
+   scrollIntoView (the card editor focusing a field) then slid the whole app off-screen and left the
+   player looking at the ink background. It must be clip, not hidden: hidden only moves the scroll
+   container down to #root, which slides just as far. */
 html, body, #root {
   height: 100%;
   background-color: #0B0E13;
   overscroll-behavior: none;
+  overflow: clip;
 }
 body {
   margin: 0;
@@ -170,9 +179,19 @@ const BOOT_SCREEN = `
  *
  * Cancelling `dragstart` in the capture phase is the cross-engine version of the same rule: nothing in
  * this app is ever a drag source, because every drag belongs to the app's own gesture handlers.
+ *
+ * v0.27.3: the same rule for `contextmenu`. Holding is how this app equips a card, spends a token and
+ * opens the float menu, but react-native-web renders every icon as a real <img>, so a hold on one
+ * offered the browser's copy-image menu instead and killed the gesture. Text inputs keep their menu,
+ * which is where paste lives.
  */
 const NO_NATIVE_DRAG = `
 document.addEventListener('dragstart', function (e) { e.preventDefault(); }, true);
+document.addEventListener('contextmenu', function (e) {
+  var t = e.target, n = t && t.tagName;
+  if (n === 'INPUT' || n === 'TEXTAREA' || (t && t.isContentEditable)) return;
+  e.preventDefault();
+}, true);
 `;
 
 /**

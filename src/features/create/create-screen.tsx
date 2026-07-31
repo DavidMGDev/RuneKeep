@@ -113,7 +113,18 @@ function draftHasContent(d: unknown): boolean {
  * (the biggest one) grew down into the buttons. Weapons no longer needs its own smaller offset --
  * reserving the band handles the taller filter row for free.
  */
-const CONTROLS_BAND = 96;
+/**
+ * v0.27.3: 96 -> 102, and the cluster itself moved from `bottom: 20` to 14.
+ *
+ * The SELECT / RANDOM cluster is an absolute child, so it ignores AppScreen's padding and its top
+ * edge landed a few dp INSIDE the rail, painting over the bottom of the golden gear that rides the
+ * rail's edge. 14 is the floor for the cluster: AppScreen reserves 14 at the bottom to clear the
+ * frame's gold line. Between the two the gear clears the buttons by about 8dp.
+ *
+ * Known cost, since the last release bought headroom above the card: the rail is 6dp shorter, and the
+ * card rests at a FRACTION of the rail, so roughly 2dp of that headroom goes back.
+ */
+const CONTROLS_BAND = 102;
 
 export function CreateScreen() {
   const router = useRouter();
@@ -188,14 +199,36 @@ export function CreateScreen() {
       setPendingDeck(next);
       const apply = () => finishFade(next);
       // fade EVERYTHING (cards + the SELECT controls) out before the swap so no button morphs (#150)
-      fade.value = withTiming(0, { duration: 140, easing: Easing.in(Easing.quad) }, (finished) => {
-        if (finished) runOnJS(apply)();
+      //
+      // v0.27.3: run `apply` whether or not the fade FINISHED. `finished` is false whenever the
+      // animation is interrupted, and on that path nothing cleared `pendingDeck` -- so `switchDeck`
+      // returned early for every later tap, the loader stayed mounted, and `fade` never came back to
+      // 1. Since `fade` drives both the carousel and the SELECT/RANDOM cluster, one interrupted
+      // 140ms fade left the creator looking half-dead with no way back. There is nothing to skip on
+      // an interrupt: the swap still has to happen.
+      fade.value = withTiming(0, { duration: 140, easing: Easing.in(Easing.quad) }, () => {
+        runOnJS(apply)();
       });
     },
     [deck, pendingDeck, fade, finishFade],
   );
 
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
+
+  /**
+   * v0.27.3: hoisted out of the carousel's props. As an inline arrow it was a new function on every
+   * render of this screen, which made the carousel's own `onCenter` new too, and reanimated builds a
+   * derived value's dependencies from its worklet closure -- so the mapper that publishes the centred
+   * index was torn down and restarted on every single render, and each restart forces a re-sort of
+   * every mapper in the app on the next UI frame.
+   */
+  const onCenterIdx = useCallback(
+    (i: number) => {
+      deckIndexes.current[deck] = i;
+      setCenterIdx(i);
+    },
+    [deck],
+  );
 
   // v0.12.2: the class list the creator offers, gated by the PICKED expansions (base classes always; a
   // Void class only when 'void' is picked). Replaces the old base-only CREATION_CLASS_CARDS module const.
@@ -207,16 +240,29 @@ export function CreateScreen() {
   // Pre-render every forged card to a bitmap pair on device (#104 perf): the live components
   // double as the loading state and swap to image cards as each capture lands. Class-card jobs follow the
   // picked set (base-only creation never forges a Void class — no extra work until The Void is chosen).
+  /**
+   * v0.27.3: forge only the deck that is ON SCREEN.
+   *
+   * This used to queue every class card, every feature page and every tier-1 weapon and armour at
+   * once -- about ninety captures -- regardless of which step the player was looking at. Since
+   * v0.24.0 the cache key carries the app version, so a release re-runs the whole queue, and each
+   * capture is two `captureRef` calls on the UI thread. Tapping Ancestry therefore queued the deck
+   * switch behind sixty unrelated snapshots, which is the long wait.
+   *
+   * `settled` in useForgedSnapshots is a ref keyed by job, so coming back to a deck re-captures
+   * nothing, and a deck never opened costs nothing. Equipment follows `picked` the way the carousel
+   * items already do, so an expansion the player did not choose is not forged either.
+   */
   const snapshotJobs = useMemo(
     () => [
-      ...creationClassCards.map((c) => ({
+      ...(deck !== 'class' ? [] : creationClassCards.map((c) => ({
         key: `class-${c.key}`,
         // deck-wide mark (#110): the class card is page 1 of (1 class + feature pages)
         node: <ForgedCard title={c.title} kindLabel="Class" body={c.body} accentDeep={classColor(c.key).deep} Banner={c.Banner} pageMark={`1/${1 + featurePages(c.key).length}`} classKey={c.key} />,
         // Void banners are expo-image rasters (async decode) — settle before capture or the art zone forges blank.
         raster: isVoidClass(c.key),
-      })),
-      ...creationClassCards.flatMap((c) => {
+      }))),
+      ...(deck !== 'class' ? [] : creationClassCards.flatMap((c) => {
         const total = 1 + featurePages(c.key).length;
         return featurePages(c.key).map((p) => ({
           key: `feat-${c.key}-${p.pageIndex}`,
@@ -233,13 +279,18 @@ export function CreateScreen() {
             />
           ),
         }));
-      }),
+      })),
       // weapon + armor cards (#121) — vector (no raster settle), forged for LOD perf in the carousel
-      ...PRIMARY_WEAPONS.map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> })),
-      ...SECONDARY_WEAPONS.map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> })),
-      ...TIER1_ARMOR.map((a) => ({ key: a.id, node: <ForgedArmorCard armor={a} /> })),
+      ...(deck !== 'weapons'
+        ? []
+        : [...PRIMARY_WEAPONS, ...SECONDARY_WEAPONS]
+            .filter((w) => !w.expansion || picked.has(w.expansion))
+            .map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> }))),
+      ...(deck !== 'armor'
+        ? []
+        : TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => ({ key: a.id, node: <ForgedArmorCard armor={a} /> }))),
     ],
-    [creationClassCards],
+    [deck, picked, creationClassCards],
   );
   const { sources, stage } = useForgedSnapshots(snapshotJobs);
 
@@ -250,11 +301,14 @@ export function CreateScreen() {
   const firstClassKey = `class-${creationClassCards[0].key}`;
   useEffect(() => {
     if (loaderDone) return;
-    if (Platform.OS === 'web' || sources[firstClassKey]) {
+    // `deck !== 'class'` (v0.27.3): now that the forge is scoped to the deck on screen, a resumed
+    // draft that opens on some other deck never forges the first class card, so waiting on it would
+    // hold the veil for the whole 2200ms fallback.
+    if (Platform.OS === 'web' || deck !== 'class' || sources[firstClassKey]) {
       const t = setTimeout(() => setLoaderDone(true), 260);
       return () => clearTimeout(t);
     }
-  }, [sources, loaderDone, firstClassKey]);
+  }, [sources, loaderDone, firstClassKey, deck]);
   useEffect(() => {
     const t = setTimeout(() => setLoaderDone(true), 2200);
     return () => clearTimeout(t);
@@ -955,10 +1009,7 @@ export function CreateScreen() {
                 crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
                 reserveBottom={CONTROLS_BAND}
                 initialIndex={deckIndexes.current[deck] ?? Math.floor(items.length / 2)}
-                onIndexChange={(i) => {
-                  deckIndexes.current[deck] = i;
-                  setCenterIdx(i);
-                }}
+                onIndexChange={onCenterIdx}
               />
             </Animated.View>
           ) : null}
@@ -998,7 +1049,7 @@ export function CreateScreen() {
       {isCarouselDeck(deck) ? (
         // Weapons sits its cluster lower (the filter toggles push its carousel down, so the cards
         // reach further into this band) — the buttons must never overlap the carousel (owner).
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 20, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 14, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
             label={centerSelected ? 'Deselect' : `Select ${centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun}`}
             kind={centerSelected ? 'ghost' : 'primary'}
