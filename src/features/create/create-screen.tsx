@@ -5,11 +5,12 @@ import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
+import { intentFor } from '@/lib/keybinds';
 import { ChamferedImage } from './components/chamfered-image';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
@@ -125,6 +126,45 @@ function draftHasContent(d: unknown): boolean {
  * card rests at a FRACTION of the rail, so roughly 2dp of that headroom goes back.
  */
 const CONTROLS_BAND = 102;
+
+/**
+ * Reverse the mixed-ancestry pair (v0.29.0).
+ *
+ * Two arrows passing each other, which is the plainest way to draw "these two change places". It is
+ * disabled, and visibly so, until BOTH ancestries are chosen: with one or none there is no pair to
+ * reverse, and the control would be a promise the screen cannot keep.
+ */
+function MixReverseButton({ mixed, onReverse }: { mixed: { first: string | null; second: string | null }; onReverse: () => void }) {
+  const ready = !!mixed.first && !!mixed.second;
+  const tint = ready ? Rune.goldBright : 'rgba(147,142,136,0.45)';
+  return (
+    <Pressable
+      onPress={ready ? onReverse : undefined}
+      disabled={!ready}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !ready }}
+      accessibilityLabel="Reverse the ancestry order"
+      accessibilityHint={ready ? 'Swaps which ancestry gives its first feature and which gives its second' : 'Pick both ancestries first'}>
+      {({ pressed }) => (
+        <ChamferBox
+          chamfer={6}
+          fill={pressed ? 'rgba(218,162,73,0.22)' : 'rgba(20,24,31,0.7)'}
+          stroke={ready ? Rune.goldEdge : 'rgba(147,142,136,0.3)'}
+          strokeWidth={1}
+          style={{ width: 34, height: 30, alignItems: 'center', justifyContent: 'center', opacity: ready ? 1 : 0.55 }}>
+          <Svg width={18} height={18} viewBox="0 0 24 24">
+            {/* upper arrow pointing right, lower arrow pointing left */}
+            <Polyline points="4,9 20,9" fill="none" stroke={tint} strokeWidth={2} strokeLinecap="round" />
+            <Polyline points="16,5 20,9 16,13" fill="none" stroke={tint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            <Polyline points="20,17 4,17" fill="none" stroke={tint} strokeWidth={2} strokeLinecap="round" />
+            <Polyline points="8,13 4,17 8,21" fill="none" stroke={tint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </ChamferBox>
+      )}
+    </Pressable>
+  );
+}
 
 export function CreateScreen() {
   const router = useRouter();
@@ -320,6 +360,26 @@ export function CreateScreen() {
     const t = setTimeout(() => setLoaderUp(false), 380);
     return () => clearTimeout(t);
   }, [loaderDone]);
+
+  /**
+   * The body is INVISIBLE until the veil lifts, and is revealed BY the veil lifting (v0.29.0).
+   *
+   * The loader only ever COVERED the body, it never hid it, so "loader first" was a property of paint
+   * order rather than something this screen guaranteed. In a browser that is a race with nothing
+   * holding it: nothing is forged on web, so the wait collapses to a plain timer, while the body
+   * underneath is finished and fully drawn the whole time. Anything that covers the screen while that
+   * clock runs, and the creation tour is pushed one tick after mount and does exactly that, spends the
+   * loader out of sight and then uncovers a body the loader was supposed to be hiding. What the owner
+   * saw was the loader flashing on over a creator that was already there.
+   *
+   * Cross-fading the body in on the same flag that fades the veil out makes the order structural
+   * rather than incidental: there is nothing underneath to see early.
+   */
+  const entry = useSharedValue(0);
+  useEffect(() => {
+    if (loaderDone) entry.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.quad) });
+  }, [loaderDone, entry]);
+  const entryStyle = useAnimatedStyle(() => ({ opacity: entry.value }));
 
   const [centerIdx, setCenterIdx] = useState(0);
   const [editingExperience, setEditingExperience] = useState<number | null>(null);
@@ -823,9 +883,110 @@ export function CreateScreen() {
   const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'domain card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
+  // Live mirrors for the keyboard listener, which is registered once and must never close over a
+  // stale render. `overlayUp` is everything that covers the creator and therefore owns the keyboard.
+  const overlayUpRef = useRef(false);
+  overlayUpRef.current = leaveConfirm || !!resumeOffer || pickerOpen || editingExperience !== null || !!expAdvanced || loaderUp;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
+  const onToggleRef = useRef(onToggle);
+  onToggleRef.current = onToggle;
+  const deckRef = useRef(deck);
+  deckRef.current = deck;
+  const switchDeckRef = useRef(switchDeck);
+  switchDeckRef.current = switchDeck;
+
+  /**
+   * Keyboard control for the creator (v0.29.0). Web only, and a no-op on a phone.
+   *
+   * The sheet has had this since v0.26.0 and the creator never did, so on a desktop the one screen
+   * where you look through a hundred cards was the one screen you had to drag through with a mouse.
+   * The meaning of each key comes from the same pure resolver the sheet uses (`intentFor`), so the
+   * two screens cannot drift apart and every awkward case stays a table test.
+   *
+   * The intents map onto what a creator can actually do: move along the deck, open and close a card,
+   * SELECT the centred card (Space, the same key that equips on the sheet), and cross sections with
+   * Shift plus up or down, which is what changing category means here.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      const intent = intentFor(
+        { key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey },
+        {
+          typing: tag === 'INPUT' || tag === 'TEXTAREA' || !!t?.isContentEditable,
+          // Anything covering the creator owns the keyboard: a card editor, the expansion picker,
+          // the leave prompt, the tour.
+          overlay: overlayUpRef.current,
+          focused: !!carouselRef.current?.isFullscreen(),
+          editing: false, // the creator has no edit mode
+        },
+      );
+      if (!intent) return;
+      const car = carouselRef.current;
+      switch (intent.kind) {
+        case 'move':
+          car?.stepBy(intent.step);
+          break;
+        case 'focus':
+          car?.focusCentre();
+          break;
+        case 'unfocus':
+          car?.closeIfFullscreen();
+          break;
+        case 'toggle': {
+          // Space picks the card in the middle, which is the creator's whole job.
+          const it = itemsRef.current[Math.min(car?.centerIndex() ?? 0, Math.max(0, itemsRef.current.length - 1))];
+          if (it) {
+            playSfx(selectedIdsRef.current.includes(it.id) ? 'cardDeselect' : 'cardSelect');
+            onToggleRef.current(it.id);
+          }
+          break;
+        }
+        case 'category': {
+          const order = DECKS.filter((d) => !d.stub).map((d) => d.key);
+          const at = order.indexOf(deckRef.current);
+          const to = order[Math.min(order.length - 1, Math.max(0, at + intent.step))];
+          if (to && to !== deckRef.current) switchDeckRef.current(to);
+          break;
+        }
+        case 'dismiss':
+          if (!car?.closeIfFullscreen()) return; // nothing of ours was open; let the app handle it
+          break;
+        default:
+          return; // confirm and the rest belong to whatever is on top
+      }
+      e.preventDefault();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   // v0.10.2 (Feature 2): a per-section Random button. Picks a valid random choice for the CURRENT deck,
   // honoring dependencies (subclass/domains follow the class). Experiences stay manual (freeform text).
+  /**
+   * Swap which mixed ancestry keeps its FIRST trait and which keeps its SECOND (v0.29.0).
+   *
+   * The whole selection is derived from this one pair: which effects survive
+   * (`isAncestryEffectDisabled` compares the slot against ANCESTRY_EFFECT_TRAIT), which half of each
+   * card is struck through, and which card is the origin card on the sheet. So the swap is the swap,
+   * and everything else follows on the next render. Nothing is baked into a card bitmap either: the
+   * cross-out is drawn as an overlay over the card, so no cached picture goes stale.
+   *
+   * Guarded on both slots being filled, which is also what greys the button out. Swapping a half-made
+   * pair would move the one pick to the far slot, which is a confusing way to lose your place.
+   */
+  const reverseMix = useCallback(() => {
+    const m = draftRef.current.mixedAncestry;
+    if (!m?.first || !m?.second) return;
+    playSfx('cardSelect');
+    set({ mixedAncestry: { first: m.second, second: m.first } });
+  }, [set]);
+
   const randomize = useCallback(() => {
     const pick = <T,>(a: T[]): T | undefined => (a.length ? a[Math.floor(Math.random() * a.length)] : undefined);
     const two = <T,>(a: T[]): T[] => { const p = [...a]; const o: T[] = []; while (p.length && o.length < 2) o.push(p.splice(Math.floor(Math.random() * p.length), 1)[0]); return o; };
@@ -873,7 +1034,7 @@ export function CreateScreen() {
       // incomplete jumps to the step that is missing, which is more use than a dead control, and a
       // truly dead Forge with no explanation is the thing this replaced in the first place.
       headerRight={<RuneButton label="Forge" kind={complete ? 'primary' : 'ghost'} height={26} dense onPress={() => { if (complete) void forge(); else jumpToMissing(); }} accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`} />}>
-      <View style={{ flex: 1 }}>
+      <Animated.View style={[{ flex: 1 }, entryStyle]}>
         {/* ---- details ---- */}
         <SectionDivider label="Details" />
         <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
@@ -1018,7 +1179,7 @@ export function CreateScreen() {
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
         </View>
-      </View>
+      </Animated.View>
       {/* v0.26.0: experiences are authored through the SAME quick flow as cards on the sheet.
           Two ways to make a thing was one too many, and the quick flow is the better one here: an
           experience is a short phrase, which is exactly what it is built for. Advanced is one tap
@@ -1064,7 +1225,14 @@ export function CreateScreen() {
             accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
           {/* v0.10.2 (Feature 2): roll a random valid choice for this section. */}
-          <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
+          {/* v0.29.0: on the ancestry step in MIXED mode, the reverse control sits BESIDE Random rather
+              than under it. The controls band is a fixed 102dp and the existing stack already uses 95
+              of it, so a new row would push the cards up; a 30dp square next to a 30dp dense button
+              costs nothing. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
+            {deck === 'ancestry' && draft.mixedAncestry ? <MixReverseButton mixed={draft.mixedAncestry} onReverse={reverseMix} /> : null}
+          </View>
           {/* v0.10.6: the class/weapons hint tooltips were removed — they pushed these buttons up into
               the card carousel (owner). */}
           <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>

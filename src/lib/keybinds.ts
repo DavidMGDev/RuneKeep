@@ -96,8 +96,19 @@ export function intentFor(press: KeyPress, ctx: KeyContext): Intent | null {
 
   // Up focuses, down unfocuses. Shifted, they cross CATEGORIES instead, which is the same
   // "sideways is within, up and down is between" idea the carousel already uses.
-  if (UP.has(key)) return press.shift ? { kind: 'category', step: -1 } : { kind: 'focus' };
-  if (DOWN.has(key)) return press.shift ? { kind: 'category', step: 1 } : { kind: 'unfocus' };
+  //
+  // v0.29.0: neither is ours in EDIT MODE. Edit mode is a flat row being rearranged, with no card to
+  // open and no hand to bundle, so focusing or collapsing from under it left the deck in a state edit
+  // mode does not have a drawing for. Sideways still moves along the row, shifted still changes
+  // category, and both keys come back the moment edit mode is off.
+  if (UP.has(key)) {
+    if (press.shift) return { kind: 'category', step: -1 };
+    return ctx.editing ? null : { kind: 'focus' };
+  }
+  if (DOWN.has(key)) {
+    if (press.shift) return { kind: 'category', step: 1 };
+    return ctx.editing ? null : { kind: 'unfocus' };
+  }
 
   // Space equips, which on a phone is a hold. In edit mode it raises the card instead, because that
   // is what a tap does there.
@@ -108,15 +119,23 @@ export function intentFor(press: KeyPress, ctx: KeyContext): Intent | null {
   return null;
 }
 
-/** Every binding, for the onboarding page. Kept beside the resolver so the two cannot drift. */
-export const KEYBIND_HELP: { keys: string; what: string }[] = [
-  { keys: 'A / D  or  ← →', what: 'Fan the cards out and move along them' },
-  { keys: 'Shift + move', what: 'Move two at a time' },
-  { keys: 'W  or  ↑', what: 'Open the card full screen' },
-  { keys: 'S  or  ↓', what: 'Close it, or bundle the cards back up' },
-  { keys: 'Shift + ↑ ↓', what: 'Change category' },
-  { keys: 'Space', what: 'Equip or unequip' },
-  { keys: 'E', what: 'Edit mode' },
-  { keys: 'Enter', what: 'Confirm' },
-  { keys: 'Esc', what: 'Close or go back' },
+/**
+ * Every binding, for the onboarding page. Kept beside the resolver so the two cannot drift.
+ *
+ * v0.29.0: the keys are a LIST of individual caps rather than one pre-formatted string, so the help
+ * page can draw each one as a key instead of printing a line of punctuation. `what` is deliberately
+ * short: it has to fit on one line beside the caps, and a wrapped description was what made the old
+ * table impossible to read down.
+ */
+export const KEYBIND_HELP: { caps: string[]; what: string }[] = [
+  { caps: ['A', 'D'], what: 'Move along the cards' },
+  { caps: ['←', '→'], what: 'The same, with arrows' },
+  { caps: ['Shift', 'A', 'D'], what: 'Move two at a time' },
+  { caps: ['W'], what: 'Open the card' },
+  { caps: ['S'], what: 'Close it, or bundle up' },
+  { caps: ['Shift', '↑', '↓'], what: 'Change category' },
+  { caps: ['Space'], what: 'Equip or unequip' },
+  { caps: ['E'], what: 'Edit mode' },
+  { caps: ['Enter'], what: 'Confirm' },
+  { caps: ['Esc'], what: 'Close or go back' },
 ];

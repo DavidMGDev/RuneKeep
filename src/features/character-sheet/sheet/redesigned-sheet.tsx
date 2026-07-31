@@ -2295,23 +2295,34 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               )}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}
               <FloatMenuOverlay />
-              {/* v0.28.0: DOWNED, at 0 hit points. The sheet wears the same colourless wash a fully
-                  scarred character does, because being down should look like it, but the two things
-                  the player needs to READ while down keep their colour: the hit points panel, so the
-                  way back up is legible, and their own portrait. A blend layer can only take colour
-                  away, so sparing a region means the layer has a hole in it. Inside the stage, where
-                  the coordinates are design pixels; the fully-scarred wash below stays a single
-                  full-screen layer with no holes. */}
-              {character.hp <= 0 && (character.scars ?? 0) < character.hope.total ? (
-                <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 99999 }}>
-                  {washBands(412, 892, [
+              {/* DOWNED, at 0 hit points. The sheet wears the same colourless wash a fully scarred
+                  character does, because being down should look like it, but the two things a player
+                  needs to READ while down keep their colour: the hit points panel, so the way back up
+                  is legible, and their own portrait.
+
+                  v0.29.0: the bands are DIRECT children of the stage. They were wrapped in a plain
+                  positioned View before, and that is the whole bug: a blend mode blends with the
+                  backdrop of the nearest ancestor forming an isolated group, and a wrapper is always
+                  one. On web react-native-web gives EVERY View `position: relative; z-index: 0`, and
+                  on Android any group holding a blended child gets its own saveLayer. So the bands
+                  were blending against an empty layer, and grey blended with nothing is just grey:
+                  the sheet came out as a flat opaque slab with rectangles cut out of it.
+
+                  zIndex 25 is the gap the sheet's stacking contract already leaves between the expand
+                  veil (20) and the cards (30). The body washes; a focused card or the float menu
+                  drawn above it does not get a colour window punched through it. */}
+              {character.hp <= 0 && (character.scars ?? 0) < character.hope.total
+                ? washBands(412, 892, [
                     ...(character.portraitUri ? [{ left: 16, top: 15, width: 148, height: 222 }] : []),
                     { left: 21, top: 301, width: 373, height: 84 },
                   ]).map((b, i) => (
-                    <View key={i} style={{ position: 'absolute', left: b.left, top: b.top, width: b.width, height: b.height, backgroundColor: '#8A8A8A', mixBlendMode: 'saturation' }} />
-                  ))}
-                </View>
-              ) : null}
+                    <View
+                      key={i}
+                      pointerEvents="none"
+                      style={{ position: 'absolute', left: b.left, top: b.top, width: b.width, height: b.height, backgroundColor: '#8A8A8A', mixBlendMode: 'saturation', zIndex: 25 }}
+                    />
+                  ))
+                : null}
             </DesignStage>
             {/* Stat-change toasts (#233): pinned at the top, UNDER the gold border (rendered before
                 SheetFrame) so the border overlays them — layer + position per owner. */}

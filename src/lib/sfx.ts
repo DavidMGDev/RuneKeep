@@ -399,6 +399,19 @@ export function sfxDiagnostics(): string {
 // Volume / mute (no settings UI yet — these back a future control)
 // ---------------------------------------------------------------------------
 
+/**
+ * Platform loudness (v0.29.0).
+ *
+ * The browser build came out far louder than the phone at the same nominal levels: a phone speaker is
+ * small and usually held at arm's length, a desktop is a pair of speakers or headphones a foot from
+ * your face, and the same gain is not the same experience. Everything on web plays at 35% of the
+ * level the sounds were tuned at, which is the owner's number.
+ *
+ * It multiplies INTO master rather than replacing it, so the mute toggle and any future volume
+ * control keep working untouched.
+ */
+const PLATFORM_GAIN = Platform.OS === 'web' ? 0.35 : 1;
+
 let master = 1;
 let muted = false;
 export function setSfxVolume(v: number) {
@@ -463,7 +476,7 @@ function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) 
       const cents = (opts?.cents ?? 0) + vary;
       if (cents) detuneBy(node, cents);
       const gain: GainNode = c.createGain();
-      gain.gain.value = (muted ? 0 : 1) * master * baseVol * (opts?.volume ?? 1);
+      gain.gain.value = (muted ? 0 : 1) * master * PLATFORM_GAIN * baseVol * (opts?.volume ?? 1);
       node.connect(gain);
       gain.connect(c.destination);
       node.onEnded = () => {
@@ -558,7 +571,7 @@ export function playRiser(id: SfxId, opts?: RiserOpts): RiserHandle {
     node.buffer = buf;
     if (opts?.cents) detuneBy(node, opts.cents);
     const gain: GainNode = c.createGain();
-    const vol = (muted ? 0 : 1) * master * (opts?.volume ?? 0.7);
+    const vol = (muted ? 0 : 1) * master * PLATFORM_GAIN * (opts?.volume ?? 0.7);
     const now = c.currentTime;
     const fadeIn = (opts?.fadeInMs ?? 40) / 1000;
     gain.gain.setValueAtTime(0.0001, now);

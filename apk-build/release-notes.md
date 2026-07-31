@@ -1,29 +1,28 @@
-RuneKeep v0.28.0 - the browser build learns to behave, the first run warms itself up, and being down looks like it.
+RuneKeep v0.29.0 - the creator answers the keyboard, mixed ancestry can be reversed, and being down looks like being down.
 
-FIRST RUN
+NEW
 
-- THE APP WARMS ITSELF UP ONCE, UP FRONT. Everything expensive used to be built while you were already using the app: sounds decoded on the first tap that wanted one, card pictures fetched as each card scrolled into view, expansions prepared on the way into the creator. Small things, all landing at once, which is why the first few minutes felt worse than every session after them. There is a short load screen on a fresh install now that does all of it with a progress bar, and you never see it again. What it warms was measured rather than guessed: sound is the single largest thing the app fetches on a first run, larger than the app's own code.
-- ARRIVAL SOUNDS WAIT FOR THE SCREEN THEY ANNOUNCE. A tour covers the screen it is teaching, so a chime playing underneath belonged to something you could not see yet. They are held back rather than dropped, so they land the moment you dismiss the tour.
+- MIXED ANCESTRY CAN BE REVERSED. A small button on the ancestry step swaps which ancestry gives its first feature and which gives its second. It stays greyed out until you have picked both, because until then there is no pair to reverse. Giant and Faerie keeps Giant's extra Hit Point slot; press reverse and it is Faerie and Giant, Giant's slot is gone and its second feature is the one you have. Everything follows from that one swap: the modifiers, the lines struck through each card, and which card sits first on your sheet.
 
-THE CAROUSEL, EVERYWHERE
+CHARACTER CREATION
 
-- TAPPING NO LONGER LEAVES THE CARDS STREWN ACROSS THE SCREEN. Touching the deck cancels whatever throw is in flight, because your finger has taken over. But a tap is not a drag, and the step that settles the deck onto a card only ran for drags, so a tap mid-scroll froze the deck between cards: two or three of them scattered with nothing in the middle. Tapping a card showed it worst, because the card opened over the mess and revealed it on the way out. It bites hardest with a mouse, which moves no pixels at all.
-- DRAWN CARDS NO LONGER LEAVE HOLES. Armour, weapons and class cards are drawn by the app rather than scanned, and they were being dropped three cards from the middle while the scanned ones stayed visible further out, so the hand had gaps in it. My mistake, from the last release: a scanned card can be dropped early because a small copy of it is still underneath, and a drawn card has nothing underneath at all.
-- CARDS NO LONGER FLICKER WHILE SCROLLING FAST. The window that decides which cards to draw followed the settled position, which deliberately stops updating during a fast gear scroll. It follows the live one now.
-- A CARD ADDED FROM THE CATALOG LANDS IN ITS PLACE. A deck with an even number of cards has no middle card, and the hand was being parked exactly halfway between the two that straddle it, which is a resting position no card actually sits at, so everything ended up slightly tilted and offset. Adding a card flips a deck between odd and even, which is why it showed up there.
+- THE KEYBOARD WORKS IN THE CREATOR. It only ever worked on the character sheet, which meant the one screen where you look through a hundred cards was the one screen you had to drag through with a mouse. Left and right move, W and S open and close a card, Space picks the one in the middle, Shift with up or down crosses between sections. Same keys as the sheet, because they are the same list of keys.
+- A FOCUSED CARD NO LONGER FLIES OFF THE TOP OF THE SCREEN. One measurement in the maths that positions an opened card was in physical pixels while everything around it was in the app's own units, so on any window the app magnifies, which is every desktop browser, the card was placed well above where it should be.
+- THE LOADING SCREEN COMES FIRST. It was appearing over a creator that had already finished loading and was fully visible underneath, then fading, which looked like a flash for no reason. The creator is now hidden until the loading screen lifts, and it is the lift that reveals it.
 
-THE BROWSER
+THE CHARACTER SHEET
 
-- THE GOLDEN GEAR CONTROLS ARE BACK, EDIT MODE INCLUDED. They were never missing. They were drawn, the right size, and on top of everything, but whether a touch counts as "on the gear" is worked out by arithmetic, and in a browser those numbers arrive in a different scale than the one the app measures in. So the gear responded at exactly one window size and was inert at every other. The same mistake, in the same place, is why the halves of a card that turn its pages were wrong.
-- CLASS CARDS TURN THEIR PAGES AGAIN. On top of the above, the browser was rendering page one as a flat picture and never building the pager at all, because a card that has not been drawn to a picture yet carries both a live version and its pages, and the live one was winning. Turning a page still ran, found nothing to turn, and left a latch set, so after one attempt every tap and swipe was ignored too.
-- KEYBOARD CONTROL FEELS LIKE CONTROL. Left and right fan the hand open as they move, down bundles it back up when nothing is open, and pressing a direction twice quickly now goes two cards instead of staggering (each press was measuring from a deck in mid-flight, so it kept aiming at the card it was leaving). Moving with the keyboard and then touching the mouse no longer snaps you back to where you started.
-- SPACEBAR EQUIPS THE CARD YOU ARE LOOKING AT. It was acting on the last card you opened full screen, which is usually scrolled well off the side, so it played its sound and applied its effects to a card you could not see. That is why it seemed to do nothing.
-- THE SHEET TOUR ACTUALLY APPEARS. It was being scheduled and then cancelled a moment later, every single time, on every route into the sheet.
+- 0 HIT POINTS ACTUALLY DESATURATES NOW. What shipped last release was not a desaturation at all. It was a flat grey slab with two rectangles cut out of it, which is my fault: the effect only works when the layer can see the sheet underneath it, and I had put it inside a wrapper that hid the sheet from it. Same mistake would have shown on the phone. The sheet loses its colour properly now, and the hit points panel and your portrait keep theirs.
+- THE CARDS PANEL SHOWS YOUR CARDS. Most of them were drawing as a gold placeholder. That placeholder was correct back when it only ever stood in for the gold card, but since the browser build a card that has not been drawn to a picture yet carries itself along instead, and in a browser that is nearly every card. So class features, weapons, armour, experiences, notes, loot and your whole inventory all showed up as GOLD.
+- UP AND DOWN DO NOTHING IN EDIT MODE. Edit mode is a flat row being rearranged: there is no card to open and no hand to bundle, so those keys were leaving it in a state it has no drawing for. Sideways still moves along the row, and both keys come back the moment you leave edit mode.
 
-EVERYWHERE
+SOUND AND ONBOARDING
 
-- THE DOMAIN CHIPS HAVE NO SEAMS. The little red plates that say BONE or VALOR are built from five separate pieces, and every place two pieces met, the background bled back through as a hairline.
-- THE CATALOG ADDS CARDS INSTEAD OF SELECTING THEM. The button says ADD CARD and closes the catalog. If you want several, turn on MULTI-CARD MODE at the bottom and it stays open. Opening the catalog from the card editor still takes you back to the editor when you close it.
-- AT 0 HIT POINTS THE SHEET GOES COLD. The same colourless treatment a fully scarred character wears, with two exceptions: your hit points panel keeps its colour so the way back up is legible, and so does your portrait.
+- THE BROWSER IS QUIETER. Everything on web plays at about a third of the volume it did. A phone speaker held at arm's length and a pair of desktop speakers a foot from your face are not the same thing.
+- THE TOUR NO LONGER CLICKS TWICE. Next was making the sound itself and the button was making it too, in the same instant.
+- THE KEYBOARD PAGE IS READABLE. It was two loose columns of text, and because a couple of the descriptions ran onto a second line the two columns drifted out of step, so working out which key did what meant tracing across the gap with a finger. Every key is drawn as a key now, on its own row.
+- LEAVING THE TOUR NO LONGER FLASHES. The last page warns you that the sheet is bright, and the handover fades instead of cutting.
+
+Known: at 0 hit points the cards in your hand keep their colour. They sit above the sheet rather than on it, and reaching over them would put colour windows through a card you had opened full screen. Say if you want them included.
 
 Sideload: enable Install unknown apps, then open the APK.
