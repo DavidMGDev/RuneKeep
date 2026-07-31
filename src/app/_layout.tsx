@@ -10,12 +10,13 @@ import {
 } from '@expo-google-fonts/archivo';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Rune } from '@/constants/theme';
+import { flushCharacters } from '@/lib/character-store';
 import { PhoneFrame } from '@/components/phone-frame';
 import { ToastHost } from '@/components/toast';
 import { IncomingFileGate } from '@/features/share/incoming-file';
@@ -35,6 +36,16 @@ export default function RootLayout() {
   const [stored, setStored] = useState(Platform.OS !== 'web');
   useEffect(() => {
     void hydrateWebStore().then(() => setStored(true));
+  }, []);
+
+  // Character writes are queued and coalesced (character-store), because each one serializes and
+  // writes the whole file synchronously on the JS thread. Going to the background is where a process
+  // gets killed, so that is where the queue has to reach the disk.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') flushCharacters();
+    });
+    return () => sub.remove();
   }, []);
 
   const [fontsLoaded, fontError] = useFonts({

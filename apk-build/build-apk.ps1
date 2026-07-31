@@ -129,6 +129,10 @@ Section 'Prebuild (regenerate android/ from app.json)'
 # app.json change since -- intent filters, permissions, orientation -- is silently dropped from the
 # APK. v0.22.0 shipped its .rkp file association this way and it did nothing.
 Push-Location $repo
+# The forged-card cache signature (v0.27.4). It decides whether installs re-capture every card
+# bitmap on device, so it is regenerated as part of the build rather than trusted to be current.
+node scripts/forge-hash.mjs
+if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'forge hash generation failed' }
 npx expo prebuild -p android --no-install
 if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'expo prebuild failed' }
 Pop-Location

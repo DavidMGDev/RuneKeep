@@ -955,13 +955,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
 
   // Entry loader (#150): cover the WHOLE sheet until every forged card is captured (so nothing is
   // seen popping in one-by-one), then fade in. A hard fallback guarantees it can't hang.
-  const expectedKeys = useMemo(() => allJobs.map((j) => j.key), [allJobs]);
-  // v0.24.3: on WEB nothing is ever forged — `useForgedSnapshots` skips capture there and the cards
-  // render as live components instead. So `allForged` could never become true, and the sheet sat
-  // behind the OPAQUE veil for the full 7.5s fallback on every single open, swallowing every tap in
-  // the meantime. It looked like the app had hung, and a player tapping Add Card got nothing. There
-  // is nothing to wait for on web, so say so.
-  const allForged = Platform.OS === 'web' || expectedKeys.length === 0 || expectedKeys.every((k) => featureSources[k]);
+  /**
+   * v0.27.4: the veil no longer waits for the forge, on any platform.
+   *
+   * It used to hold until EVERY card the character owns had been captured to a bitmap. On web that
+   * is nothing at all, which is why the browser opens a sheet promptly. On a phone it is dozens of
+   * captures, and since a release invalidates the whole cache it happened again after every update,
+   * so the same character opened in a couple of seconds in a browser and took the full seven and a
+   * half second fallback on the device it was built for. That is most of what "the web app is faster
+   * than the native app" means.
+   *
+   * There is nothing to wait for. A card that has not been forged yet renders as the live component,
+   * which is what the bitmap is a picture OF, so the swap is invisible when it lands. The veil's real
+   * job (#168) is to stop the sheet being seen assembling, and that is what the minimum display and
+   * the paint grace below do. Forging continues behind the sheet, one card at a time, as it always
+   * did.
+   */
   const [sheetReady, setSheetReady] = useState(false);
   const [loaderUp, setLoaderUp] = useState(true);
   // The loader was lifting before the body + cards had actually painted (#168): allForged goes true
@@ -975,11 +984,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, []);
   useEffect(() => {
     if (sheetReady) return;
-    if (allForged && minDone) {
+    if (minDone) {
       const t = setTimeout(() => setSheetReady(true), 1800); // ~1.5s+ of overhead so nothing pops in after the veil lifts
       return () => clearTimeout(t);
     }
-  }, [allForged, minDone, sheetReady]);
+  }, [minDone, sheetReady]);
   useEffect(() => {
     const t = setTimeout(() => setSheetReady(true), 7500);
     return () => clearTimeout(t);
