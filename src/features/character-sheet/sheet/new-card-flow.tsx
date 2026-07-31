@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Text } from 'react-native';
 
@@ -40,6 +40,9 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   // v0.9.8: the sheet's "Add Gear" badge opens straight in catalog mode. v0.13.2 (#359): "Add Card" now
   // also passes onAcquire, so the "Add card from catalog" button shows in the author flow too (parity).
   const [mode, setMode] = useState<'author' | 'catalog'>(initialMode);
+  // Whether the catalogue was reached from the card editor, so closing it can go back there
+  // instead of discarding the flow (v0.28.0).
+  const cameFromEditor = useRef(false);
   // v0.24.3: quick mode until the player asks for Advanced (which carries the draft across).
   const [simple, setSimple] = useState(quick);
   const [handoff, setHandoff] = useState<CardDraft | undefined>(undefined);
@@ -87,7 +90,10 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   if (mode === 'catalog' && onAcquire) {
     // #328: route the catalog card to the category being added to (the Cards-panel per-category Add
     // button, or the current carousel category from the float menu) — not a hardcoded deck.
-    return <GearBrowser acquiredIds={acquiredIds ?? new Set()} enabledExpansionIds={enabledExpansionIds} onAdd={(id) => onAcquire(id, category)} onAddCustom={onAcquireCustom ? (card) => onAcquireCustom(card, category) : undefined} onBack={() => setMode('author')} onClose={onCancel} />;
+    // v0.28.0: the catalogue's bottom button is the Multi-Card toggle now, so the way BACK has to be
+    // the close control. When the catalogue was opened from the card editor, closing returns to the
+    // editor rather than throwing the whole flow away; opened directly, it closes as before.
+    return <GearBrowser acquiredIds={acquiredIds ?? new Set()} enabledExpansionIds={enabledExpansionIds} onAdd={(id) => onAcquire(id, category)} onAddCustom={onAcquireCustom ? (card) => onAcquireCustom(card, category) : undefined} onClose={cameFromEditor.current ? () => { cameFromEditor.current = false; setMode('author'); } : onCancel} />;
   }
   if (simple) {
     return (
@@ -104,7 +110,7 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   // The catalog (system gear/loot) suits the gear-bearing decks + custom categories, not Notes.
   const showsCatalog = onAcquire && category !== 'notes';
   const catalogBtn = showsCatalog
-    ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => setMode('catalog')} />
+    ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => { cameFromEditor.current = true; setMode('catalog'); }} />
     : undefined;
   return <CardEditor initial={handoff} kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" experiences={experiences} onSave={finish} onCancel={onCancel} />;
 }

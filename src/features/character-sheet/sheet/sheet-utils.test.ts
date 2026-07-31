@@ -1,5 +1,5 @@
 import { type Wildshape } from '@/data/wildshape-data';
-import { chipWidth, trackBounds, wildshapeSummary } from './sheet-utils';
+import { chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
 
 describe('trackBounds', () => {
   it('points to the next markable slot and the last marked slot', () => {
@@ -32,5 +32,34 @@ describe('wildshapeSummary', () => {
       ],
     } as Wildshape;
     expect(wildshapeSummary(w)).toBe('+2 Strength · +1 Evasion · +2 Thresholds');
+  });
+});
+
+describe('the desaturation wash', () => {
+  it('is one full rect when nothing is spared', () => {
+    expect(washBands(412, 892, [])).toEqual([{ left: 0, top: 0, width: 412, height: 892 }]);
+  });
+
+  it('never covers a hole', () => {
+    const hole = { left: 16, top: 15, width: 148, height: 222 };
+    for (const b of washBands(412, 892, [hole])) {
+      const overlaps = b.left < hole.left + hole.width && b.left + b.width > hole.left && b.top < hole.top + hole.height && b.top + b.height > hole.top;
+      expect(overlaps).toBe(false);
+    }
+  });
+
+  it('still covers everything else', () => {
+    const holes = [
+      { left: 16, top: 15, width: 148, height: 222 },
+      { left: 21, top: 301, width: 373, height: 84 },
+    ];
+    const bands = washBands(412, 892, holes);
+    const covered = (x: number, y: number) => bands.some((b) => x >= b.left && x < b.left + b.width && y >= b.top && y < b.top + b.height);
+    expect(covered(206, 5)).toBe(true); // above the portrait
+    expect(covered(300, 100)).toBe(true); // beside the portrait
+    expect(covered(206, 500)).toBe(true); // below the hit points panel
+    expect(covered(5, 340)).toBe(true); // left of the hit points panel
+    expect(covered(100, 100)).toBe(false); // the portrait itself
+    expect(covered(200, 340)).toBe(false); // the hit points panel itself
   });
 });

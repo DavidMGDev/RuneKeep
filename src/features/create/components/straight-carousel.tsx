@@ -1,5 +1,5 @@
 import { forwardRef, memo, type ReactNode, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -23,6 +23,7 @@ import { playSfx } from '@/lib/sfx';
 import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
 import { MAX_FLING_VEL, FLING_TIME, OVERSCROLL_RESIST, SNAP_SPRING, FS_SPRING } from '@/features/character-sheet/carousel-geometry';
 import { useLayout } from '@/hooks/use-layout';
+import { useStageScale } from '@/components/design-stage';
 import { useScreenDim } from '@/lib/screen-dim';
 import { FORGED_H, FORGED_W } from './forged-card';
 
@@ -187,6 +188,8 @@ interface SlotProps {
 }
 
 const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
+  const slotStageScale = useStageScale();
+  const coordScale = Platform.OS === 'web' ? slotStageScale : 1;
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
@@ -236,9 +239,13 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
       Gesture.Tap()
         .maxDuration(260)
         .onEnd((e) => {
-          runOnJS(onTap)(index, e.x);
+          // Web hands gesture x back in CSS pixels, not design pixels, because the stage's scale sits
+          // on an ancestor of the gesture target (v0.28.0). Left un-converted, the left/right half
+          // that decides which way a multi-page class card turns landed at about a quarter of the
+          // card, so pages turned the wrong way or not at all.
+          runOnJS(onTap)(index, e.x / coordScale);
         }),
-    [index, onTap],
+    [index, onTap, coordScale],
   );
 
   const hasFaces = (item.faces?.length ?? 0) > 0;
@@ -557,7 +564,19 @@ export const StraightCarousel = forwardRef<
           if (padTouch.value) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         })
-        .onFinalize(() => {
+        .onFinalize((_e, success) => {
+          /**
+           * Always leave the deck on a detent (v0.28.0), same as the sheet's hand.
+           *
+           * `onBegin` cancels the spring that is carrying the deck, because a touch takes it over. A
+           * TAP never activates the pan, so `onEnd` — which is what springs to a landing detent —
+           * never runs, and the deck stayed frozen between cards with nothing centred. A mouse click
+           * moves no pixels at all, so in a browser this happened on nearly every tap.
+           */
+          if (!success && fs.value < 0.5) {
+            const settled = clampIdx(Math.round(pos.value), count);
+            if (Math.abs(settled - pos.value) > 0.0001) pos.value = withSpring(settled, SNAP_SPRING);
+          }
           // v0.14.0: ALWAYS unwind the grind here. The old `&& !scrolled.value` guard left an uncovered
           // quadrant — a gear-strip drag that moved and was then CANCELLED (onEnd never ran) latched
           // `grind` above the 0.05 freeze threshold forever, which silently froze index publication in

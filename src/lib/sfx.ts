@@ -484,7 +484,10 @@ function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) 
 // Loading-screen guard (#258): NEVER play an "enter" sound while a loading screen is up. The latest
 // such request is DEFERRED and fires when the last loader clears (so the sheet/panel chime lands as
 // the UI becomes visible, not behind the loader). Other sounds don't fire during loaders anyway.
-const ENTER_SOUNDS = new Set<SfxId>(['sheetEnter', 'panelOpen', 'enterCardViewer']);
+// v0.28.0: `appStartup` joins them. It is the arrival chime for the menu, and with the first-run
+// warmup and the welcome tour both in front of the menu it was landing behind whatever was covering
+// it. Deferring means it plays when the player actually arrives, which is what it is for.
+const ENTER_SOUNDS = new Set<SfxId>(['appStartup', 'sheetEnter', 'panelOpen', 'enterCardViewer']);
 let loadingCount = 0;
 let deferredEnter: SfxId | null = null;
 export function beginLoading() {
@@ -609,4 +612,20 @@ export function preloadSfx() {
   preloaded = true;
   if (!getCtx()) return;
   for (const id of PRELOAD) void decode(FILES[id]);
+}
+
+/**
+ * How far the preload has got, as decoded-so-far over the number asked for (v0.28.0).
+ *
+ * The warmup screen reports this. Sound is the single largest thing the app fetches on a first run,
+ * larger than the JavaScript bundle itself, so it is the step most worth showing progress for.
+ */
+export function preloadProgress(): { done: number; total: number } {
+  return { done: Math.min(decoded, PRELOAD.length), total: PRELOAD.length };
+}
+
+/** Decode every remaining sound, not just the latency-sensitive ones. Fire and forget. */
+export function preloadAllSfx() {
+  if (!getCtx()) return;
+  for (const id of Object.keys(FILES) as SfxId[]) void decode(FILES[id]);
 }

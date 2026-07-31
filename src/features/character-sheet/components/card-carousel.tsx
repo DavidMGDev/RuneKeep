@@ -23,6 +23,7 @@ import Animated, {
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { box } from '@/lib/design';
+import { useStageScale } from '@/components/design-stage';
 import { Body, Rune } from '@/constants/theme';
 import { type CardCategory, type CardItem } from '../card-data';
 import { CATEGORY_LABEL, nextCategory } from '../carousel-categories';
@@ -59,6 +60,8 @@ import {
   pickWedgeFull,
   imageOpacityAt,
   IMG_MOUNT_HALF,
+  LIVE_BUCKET,
+  LIVE_MOUNT_HALF,
   MAX_FLING_VEL,
   PAD_H,
   PAD_W,
@@ -167,6 +170,9 @@ interface SlotProps {
   count: number;
   /** Mount the FULL-RES layer (within ±IMG_MOUNT_HALF of center). Far slots are thumb-only (#78). */
   withImage: boolean;
+  /** Mount the LIVE body (within ±LIVE_MOUNT_HALF). Wider than withImage: a live card has no thumb
+   *  under it, so cutting it at the image band left holes in the hand (v0.28.0). */
+  withLive: boolean;
   rotation: SharedValue<number>;
   expandProgress: SharedValue<number>;
   fullscreenProgress: SharedValue<number>;
@@ -247,7 +253,12 @@ interface SlotProps {
   menuBounce: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLive, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+  // Web reports gesture x in CSS pixels, not design pixels (see coordScale in CardCarousel):
+  // without this the left/right half that decides which way a multi-page card turns lands at about a
+  // quarter of the card instead of the middle.
+  const slotStageScale = useStageScale();
+  const coordScale = Platform.OS === 'web' ? slotStageScale : 1;
   // v0.9.8: animate the raised/selected lift (no highlight — the lift itself is the selection cue).
   const raiseSV = useSharedValue(raised ? 1 : 0);
   useEffect(() => { raiseSV.value = withTiming(raised ? 1 : 0, { duration: 220, easing: Easing.out(Easing.cubic) }); }, [raised, raiseSV]);
@@ -454,7 +465,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           if (editMode.value > 0.5) { runOnJS(onRaise)(item.id); return; }
           if (machineState.value === 'fullscreen') {
             if (item.interactive) return; // live card (#136 gold) keeps its taps; close via swipe/gear
-            if (hasFaces) runOnJS(pageBy)(e.x < CARD_W / 2 ? -1 : 1);
+            if (hasFaces) runOnJS(pageBy)(e.x / coordScale < CARD_W / 2 ? -1 : 1);
             else runOnJS(closeFullscreen)();
             return;
           }
@@ -565,7 +576,14 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
     <Animated.View style={[{ position: 'absolute', left: 0, top: 0 }, style]}>
       <GestureDetector gesture={slotGesture}>
         <View style={{ position: 'absolute', left: -CARD_W / 2, top: -CARD_H / 2, width: CARD_W, height: CARD_H }}>
-          {item.live ? (
+          {/* v0.28.0: a multi-page card is a PAGE DECK first, live body second.
+              In a browser nothing is ever forged, so a class card arrives carrying BOTH a live node
+              and its `faces`, and testing `live` first meant the browser rendered page 1 as a static
+              picture and never mounted the pager at all. Tapping still ran the page logic, which
+              latched its busy flag on a component that was not there, so after one attempt every tap
+              and swipe was ignored too. On a phone the forged item has no `live`, which is why this
+              only ever showed in the browser. */}
+          {item.live && !hasFaces ? (
             // a LIVE interactive card (#136 gold): rendered as-is; its controls only take touches
             // once focused (else they'd eat the compact expand tap).
             //
@@ -578,7 +596,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
             // Far slots are a plain panel, exactly as they are for images, and become themselves as
             // they approach. Deck membership is untouched, so instance ids and ordering cannot shift.
             <View style={StyleSheet.absoluteFill} pointerEvents={liveActive ? 'auto' : 'none'}>
-              {withImage ? item.live : null}
+              {withLive ? item.live : null}
             </View>
           ) : hasFaces ? (
             <>
@@ -750,6 +768,26 @@ export function CardCarousel() {
   const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, onEmptyOpen } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
+
+  /**
+   * Design-px conversion for the pan's own x and y (web only, v0.28.0).
+   *
+   * On a phone react-native-gesture-handler reports `e.x` / `e.y` in the handler view's OWN
+   * untransformed coordinate space, which IS the 412x892 design space every hit test below is
+   * written in. On the web it does not: it divides by the target's own computed transform, and the
+   * DesignStage scale lives on an ancestor, so the divisor is 1 and the worklets are handed raw CSS
+   * pixels instead.
+   *
+   * That is why the golden gear looked MISSING in a browser. It was drawn, correctly sized and on
+   * top, but whether a touch "is" the gear is decided arithmetically against PAD_X/PAD_Y, and those
+   * constants only line up when the stage happens to render at scale 1. At any other window size the
+   * gear simply never responded, which is indistinguishable from not being there.
+   *
+   * Only x and y are wrong. Translations and velocities are screen pixels on both platforms, so they
+   * are deliberately left alone.
+   */
+  const stageScale = useStageScale();
+  const coordScale = Platform.OS === 'web' ? stageScale : 1;
   // v0.11.1: the card-hold wheel is spray-select (like the float menu) again — the pan needs the option
   // count to hit-test the wheel; re-memoizes when the category / NFC availability change.
   const menuOptCount = cardMenuOptions(category === 'favorites', nfcAvailable).length;
@@ -951,6 +989,24 @@ export function CardCarousel() {
   const gearPanR = GEAR_SWIPE_PX / Math.max(ANGLE_STEP, maxRotation(count));
 
   const [center, setCenter] = useState(middle);
+  /**
+   * The LIVE window's own centre (v0.28.0).
+   *
+   * `center` is the settled detent, and it is frozen on purpose while the gear grinds. A phone can
+   * afford that, because every slot keeps a bitmap thumb underneath and only resolution is at stake.
+   * In a browser nothing is ever forged, so a card's live body is all it draws, and the same freeze
+   * (or merely a commit landing a couple of frames late in a fast scroll) blanked cards that were
+   * still on screen. This follows the live rotation instead: it never freezes, and it is never more
+   * than half a bucket behind.
+   */
+  const [liveCentre, setLiveCentre] = useState(middle);
+  useAnimatedReaction(
+    () => Math.round(rotation.value / ANGLE_STEP / LIVE_BUCKET),
+    (bucket: number, prev: number | null) => {
+      if (bucket !== prev) runOnJS(setLiveCentre)(bucket * LIVE_BUCKET);
+    },
+    [],
+  );
   // On a category SWITCH the deck changes (#227): snap `center` to the landed index right away so the
   // new center card mounts its full-res from the first frame. Otherwise `center` lingers on the old
   // deck's index (the live tracker is frozen while the grind relaxes), so the landed card shows its
@@ -1072,12 +1128,12 @@ export function CardCarousel() {
             pendingOrderSV.value = null; // v0.12.5: a fresh touch ends the drop-commit bridge window (props are live by now)
             startRot.value = rotation.value;
             const cp = rotation.value / ANGLE_STEP;
-            const idx = Math.round(cp + (e.x - OX) / EDIT_GAP);
-            const onRow = e.y > EDIT_ROW_Y - 120 && e.y < EDIT_ROW_Y + 120;
+            const idx = Math.round(cp + (e.x / coordScale - OX) / EDIT_GAP);
+            const onRow = e.y / coordScale > EDIT_ROW_Y - 120 && e.y / coordScale < EDIT_ROW_Y + 120;
             editStartIdx.value = onRow && idx >= 0 && idx < count ? idx : -1;
             const ord = editStartIdx.value >= 0 ? raiseOrderSV.value[editStartIdx.value] : -1;
             editStartRaised.value = ord != null && ord >= 0 ? 1 : 0;
-            editPadTouch.value = e.x >= PAD_X && e.x <= PAD_X + PAD_W && e.y >= PAD_Y && e.y <= PAD_Y + PAD_H ? 1 : 0;
+            editPadTouch.value = e.x / coordScale >= PAD_X && e.x / coordScale <= PAD_X + PAD_W && e.y / coordScale >= PAD_Y && e.y / coordScale <= PAD_Y + PAD_H ? 1 : 0;
             editGrabbed.value = 0;
             editDecided.value = 0;
             grabIsGroup.value = 0;
@@ -1129,10 +1185,10 @@ export function CardCarousel() {
           transitioned.value = false;
           // Touch began on the inner-gear pad? (coords are design px — the container IS the
           // 412x892 design box.) Grinding tightens the fan only from the expanded hand.
-          padTouch.value = e.x >= PAD_X && e.x <= PAD_X + PAD_W && e.y >= PAD_Y && e.y <= PAD_Y + PAD_H;
+          padTouch.value = e.x / coordScale >= PAD_X && e.x / coordScale <= PAD_X + PAD_W && e.y / coordScale >= PAD_Y && e.y / coordScale <= PAD_Y + PAD_H;
           // Never treat a touch on the focused card's Modifiers button as a gear-pad tap (#248 item 2):
           // it would otherwise close+collapse the card alongside opening the modifiers.
-          if (machineState.value === 'fullscreen' && e.x >= 106 && e.x <= 306 && e.y >= 768 && e.y <= 814) padTouch.value = false;
+          if (machineState.value === 'fullscreen' && e.x / coordScale >= 106 && e.x / coordScale <= 306 && e.y / coordScale >= 768 && e.y / coordScale <= 814) padTouch.value = false;
           padWasExpanded.value = machineState.value === 'expanded';
           if (padTouch.value && padWasExpanded.value) {
             grindProgress.value = withTiming(1, { duration: 160 });
@@ -1560,6 +1616,23 @@ export function CardCarousel() {
             osHold.value = withTiming(0, { duration: 200 });
           }
           if (grindProgress.value !== 0 && !scrolled.value) grindProgress.value = withTiming(0, { duration: 220 });
+          /**
+           * Always leave the deck on a detent (v0.28.0).
+           *
+           * `onBegin` cancels whatever spring is in flight, because a touch takes the deck over. But a
+           * TAP never activates the pan, so `onEnd` — the only place that springs to a landing detent —
+           * never runs, and the deck was left frozen wherever the fling had got to: two or three cards
+           * strewn across the screen with nothing in the middle. Tapping a card mid-scroll showed it
+           * best, because the card opened over the mess and revealed it on the way out.
+           *
+           * It bites hardest with a mouse. A finger drifts a few pixels and activates the pan, so the
+           * phone usually got its snap by accident; a click does not move at all, and the web slop is
+           * wider still, so on the browser it happened nearly every time.
+           */
+          if (!success && switching.value !== 1 && machineState.value !== 'fullscreen') {
+            const settled = snapRot(rotation.value, count);
+            if (Math.abs(settled - rotation.value) > 0.0001) rotation.value = withSpring(settled, SNAP_SPRING);
+          }
           padTouch.value = false;
         });
     },
@@ -1567,6 +1640,7 @@ export function CardCarousel() {
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
+  const liveC = Math.min(count - 1, Math.max(0, liveCentre)); // same clamp for the live window
   // Every slot mounts forever on its tiny LOD thumb (#78) — no virtualization churn, no unmount
   // pops, and the whole deck of thumbs composites for less than two full cards. Only the
   // full-res LAYER windows around the center.
@@ -1579,6 +1653,7 @@ export function CardCarousel() {
         item={deck[i]}
         count={count}
         withImage={Math.abs(i - c) <= IMG_MOUNT_HALF}
+        withLive={Math.abs(i - liveC) <= LIVE_MOUNT_HALF}
         rotation={rotation}
         expandProgress={expandProgress}
         fullscreenProgress={fullscreenProgress}

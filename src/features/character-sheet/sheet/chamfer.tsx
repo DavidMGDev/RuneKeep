@@ -30,12 +30,26 @@ const isNone = (c?: string) => !c || c === 'none' || c === 'transparent';
  * scales cleanly with its slot. Used for the many static stress pips / chips / sheet ground that were
  * each a live SVG canvas compositing under the float-menu + expand dims.
  */
+/**
+ * How far the bands reach into the corner squares (v0.28.0).
+ *
+ * The octagon is five separate views, and two of them meeting exactly along a line is not the same
+ * as one shape: each is anti-aliased against what is behind it, independently, so the shared edge
+ * blends the background back in and leaves a hairline. On the domain chips that read as seams
+ * running off every corner into the sides.
+ *
+ * Half a pixel of overlap gives the compositor something to cover the join with. The only thing it
+ * costs is a sliver of fill at the very tip of each cut, half a pixel across, which is well under
+ * the width of the seam it removes.
+ */
+const SEAM = 0.5;
+
 function ViewChamferFill({ w, h, c, fill }: { w: number; h: number; c: number; fill: string }) {
   return (
     <>
       {/* plus-shaped body: full-width middle band + full-height middle band (overlap is invisible) */}
-      <View style={{ position: 'absolute', left: 0, right: 0, top: c, bottom: c, backgroundColor: fill }} />
-      <View style={{ position: 'absolute', top: 0, bottom: 0, left: c, right: c, backgroundColor: fill }} />
+      <View style={{ position: 'absolute', left: 0, right: 0, top: c - SEAM, bottom: c - SEAM, backgroundColor: fill }} />
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: c - SEAM, right: c - SEAM, backgroundColor: fill }} />
       {/* four corner triangles (border trick) filling the inner half of each cut, in the fill colour */}
       <View style={{ position: 'absolute', top: 0, left: 0, width: 0, height: 0, borderTopWidth: c, borderTopColor: 'transparent', borderRightWidth: c, borderRightColor: fill }} />
       <View style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0, borderTopWidth: c, borderTopColor: 'transparent', borderLeftWidth: c, borderLeftColor: fill }} />

@@ -5,6 +5,7 @@ import { type SvgProps } from 'react-native-svg';
 import { LoadingScreen } from '@/components/loading-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
+import { playSfx } from '@/lib/sfx';
 import { Body, Rune } from '@/constants/theme';
 import { classColor } from '@/constants/identity';
 import { ALL_ARMOR, ALL_PRIMARY_WEAPONS, ALL_SECONDARY_WEAPONS } from '@/data/equipment-data';
@@ -46,7 +47,7 @@ function recordItem(lc: LibraryCard): StraightItem {
   return { id: lc.id, custom: <LibraryForgedCard card={lc} /> };
 }
 
-export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCustom, onBack, onClose }: { acquiredIds: Set<string>; enabledExpansionIds?: string[]; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onBack: () => void; onClose: () => void }) {
+export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCustom, onClose }: { acquiredIds: Set<string>; enabledExpansionIds?: string[]; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onClose: () => void }) {
   const [cat, setCat] = useState<Cat>('domain');
   const [tier, setTier] = useState<1 | 2 | 3 | 4>(1);
   // v0.12.2: ADD GEAR only offers content from THIS character's enabled expansions (base always).
@@ -55,6 +56,17 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   const [domain, setDomain] = useState<string>(DOMAINS[0]); // v0.13.2: string, not the catalog union — custom expansions add their own domain names
   const [centerIdx, setCenterIdx] = useState(0);
   const carRef = useRef<StraightCarouselHandle>(null);
+  /**
+   * v0.28.0: adding a card CLOSES the catalogue, unless you are shopping.
+   *
+   * The primary button used to read "Select this card" and leave the panel open, which reads as a
+   * picker waiting for a second confirm that never comes. It is "Add Card" now and it closes. Multi
+   * card mode opts back into staying open for the case where several cards are being added at once.
+   *
+   * The state is local on purpose: the panel is remounted every time it opens, so a bulk session can
+   * never leak into the next visit.
+   */
+  const [multi, setMulti] = useState(false);
   // v0.13.2 (#359): ALL record-stored cards from globally-enabled expansions (Void + homebrew live on the
   // expansion RECORD, not the bundled catalog). v0.13.1 only surfaced ancestries; now every content type
   // is bucketed so custom domain/community/subclass/class cards appear in their tabs too.
@@ -97,6 +109,14 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   }, [cat, domain, homebrew, recordAncestries, recordDomains, recordCommunities, recordSubclasses, recordClasses, allowed, allowedExp]);
   const centerId = items[Math.min(centerIdx, items.length - 1)]?.id;
   const centerAcquired = !!centerId && acquiredIds.has(centerId);
+  const addCard = useCallback(() => {
+    if (!centerId) return;
+    const lc = records.find((c) => c.id === centerId);
+    if (lc) onAddCustom?.(lc);
+    else onAdd(centerId);
+    if (!multi) onClose();
+  }, [centerId, records, onAddCustom, onAdd, multi, onClose]);
+
 
   type Row = { id: string; name: string; sub: string; effects?: CardEffect[] };
   // v0.19.2 item 5: HF (Hope and Fear) equipment shows only when the pack is enabled for this character.
@@ -123,15 +143,15 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   return (
     <FullScreenPanel
       title="Add card from catalog"
-      subtitle={isCardKind ? 'Swipe the cards, then Select the one you want.' : 'Pick a piece of gear.'}
+      subtitle={isCardKind ? 'Swipe the cards, then add the one you want.' : 'Pick a piece of gear.'}
       onClose={onClose}
       footer={
         <View style={{ gap: 8 }}>
           {isCardKind && items.length > 0 ? (
             // #269: a card can be added more than once — each copy becomes an individual card.
-            <RuneButton label={centerAcquired ? 'Add another copy' : 'Select this card'} kind="primary" height={46} onPress={() => { if (!centerId) return; const lc = records.find((c) => c.id === centerId); if (lc) onAddCustom?.(lc); else onAdd(centerId); }} />
+            <RuneButton label={centerAcquired ? 'Add another copy' : 'Add Card'} kind="primary" height={46} onPress={addCard} />
           ) : null}
-          <RuneButton label="← Author a custom card instead" kind="ghost" dense height={36} onPress={onBack} />
+          <RuneButton label={`Multi-Card mode: ${multi ? 'On' : 'Off'}`} kind={multi ? 'secondary' : 'ghost'} dense height={36} onPress={() => { playSfx('buttonTap'); setMulti((m) => !m); }} />
         </View>
       }>
       {/* tabs */}

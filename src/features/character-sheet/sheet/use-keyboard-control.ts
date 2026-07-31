@@ -21,7 +21,7 @@ export function useKeyboardControl({ overlay, onConfirm, onDismiss }: {
   /** Close whatever is open. Returning false means nothing was open to close. */
   onDismiss?: () => boolean;
 }) {
-  const { stepBy, openCardAt, closeFullscreen, focusIndex, machineState, editing, enterEdit, exitEdit, toggleCard, toggleRaise, decks, category, cycleCategory } = useCarousel();
+  const { stepBy, openCardAt, closeFullscreen, collapse, centerIndex, focusIndex, machineState, editing, enterEdit, exitEdit, toggleCard, toggleRaise, decks, category, cycleCategory } = useCarousel();
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -39,7 +39,18 @@ export function useKeyboardControl({ overlay, onConfirm, onDismiss }: {
       if (!intent) return;
 
       const deck = decks[category] ?? [];
-      const current = () => deck[Math.max(0, Math.min(deck.length - 1, Math.round(focusIndex.value)))];
+      /**
+       * The card a key press acts on (v0.28.0).
+       *
+       * This used to read `focusIndex`, which is not the middle of the hand: it is the index of the
+       * card most recently flown FULL SCREEN, and it only moves when the keyboard moves. So spacebar
+       * equipped whatever card had last been opened, commonly one scrolled well off screen, and the
+       * card you were looking at never changed. It played its sound and applied its modifiers to a
+       * card you could not see, which is why it read as doing nothing at all.
+       *
+       * A focused card is the exception: then the card on screen IS `focusIndex`.
+       */
+      const current = () => deck[machineState.value === 'fullscreen' ? Math.max(0, Math.min(deck.length - 1, Math.round(focusIndex.value))) : centerIndex()];
 
       switch (intent.kind) {
         case 'move':
@@ -49,7 +60,10 @@ export function useKeyboardControl({ overlay, onConfirm, onDismiss }: {
           if (machineState.value !== 'fullscreen') openCardAt(Math.round(focusIndex.value));
           break;
         case 'unfocus':
+          // Down closes a focused card, and with nothing focused it bundles the hand back up, which
+          // is the reverse of a movement key fanning it out (owner, v0.28.0).
           if (machineState.value === 'fullscreen') closeFullscreen();
+          else if (machineState.value === 'expanded') collapse();
           break;
         case 'toggle': {
           const card = current();
@@ -83,5 +97,5 @@ export function useKeyboardControl({ overlay, onConfirm, onDismiss }: {
 
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [overlay, onConfirm, onDismiss, stepBy, openCardAt, closeFullscreen, focusIndex, machineState, editing, enterEdit, exitEdit, toggleCard, toggleRaise, decks, category, cycleCategory]);
+  }, [overlay, onConfirm, onDismiss, stepBy, openCardAt, closeFullscreen, collapse, centerIndex, focusIndex, machineState, editing, enterEdit, exitEdit, toggleCard, toggleRaise, decks, category, cycleCategory]);
 }

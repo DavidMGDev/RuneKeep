@@ -12,7 +12,7 @@ import { beginLoading, endLoading } from '@/lib/sfx';
  * diamond breathing, a tracked label. Never a bare spinner. Use full-screen while a route's data
  * loads, or inline (height-bounded) inside a panel.
  */
-export function LoadingScreen({ label = 'Preparing', dm }: { label?: string; dm?: boolean }) {
+export function LoadingScreen({ label = 'Preparing', dm, progress }: { label?: string; dm?: boolean; progress?: number }) {
   // v0.22.0: DM screens get the desaturated sigil. This is the first thing a DM sees on every one
   // of their screens, so a gold diamond here alone was enough to undo the mode's identity.
   const edge = dm ? DmRune.accent : Rune.goldEdge;
@@ -43,6 +43,14 @@ export function LoadingScreen({ label = 'Preparing', dm }: { label?: string; dm?
         </Svg>
       </Animated.View>
       <Text style={{ color: text, fontSize: 12, fontFamily: Body.bold, letterSpacing: 3, textTransform: 'uppercase' }}>{label}</Text>
+      {/* A determinate bar, only where one was asked for (v0.28.0). The first run is the one wait long
+          enough that a breathing diamond on its own starts to read as a hang. Not a percentage: the
+          steps are not the same length as each other, and claiming otherwise would be a lie. */}
+      {typeof progress === 'number' ? (
+        <View style={{ width: 168, height: 2, backgroundColor: edge, opacity: 0.28 }}>
+          <View style={{ width: `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%`, height: 2, backgroundColor: fill }} />
+        </View>
+      ) : null}
     </View>
   );
 }
