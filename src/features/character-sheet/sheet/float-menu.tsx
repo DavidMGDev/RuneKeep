@@ -1,5 +1,5 @@
 import { createContext, memo, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { type GestureResponderEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polyline, Rect } from 'react-native-svg';
@@ -75,6 +75,13 @@ const POS = SLOTS.map((_, i) => {
  *  per-button hitboxes, so there are no dead gaps between options (the spray-wheel feel). */
 function pickWedge(fx: number, fy: number): number {
   'worklet';
+  // v0.27.1: a point we could not work out is a CANCEL, not a selection.
+  //
+  // Without this the whole hit-test sails past its own guards on a NaN, because every comparison
+  // against NaN is false, and then indexes SLOTS with one and throws. In a browser that is exactly
+  // what happened on every tap outside the wheel: the press handler died, the tap did nothing, and
+  // the only way out of the menu was to pick something.
+  if (!Number.isFinite(fx) || !Number.isFinite(fy)) return -1;
   const dx = fx - T.x;
   const dy = fy - T.y;
   // (v0.9.7) Gate by RADIUS, not just angle: a tap/release inside the dead-zone OR beyond the wedge
@@ -89,6 +96,31 @@ function pickWedge(fx: number, fy: number): number {
   if (i >= N) i = N - 1;
   if (SLOTS[i].disabled) return -1;
   return i;
+}
+
+/** The tap-scrim's box in design px. Named because the press-point maths has to agree with it. */
+const SCRIM = { left: -220, top: -220, w: 852, h: 1332 };
+
+/**
+ * Where a press on the tap-scrim landed, in DESIGN px, or null if it cannot be worked out.
+ *
+ * v0.27.1: `locationX` / `locationY` are not populated on a react-native-web press, so the browser
+ * got `undefined` here and the maths downstream produced NaN. The fallback derives the point from the
+ * DOM: the scrim's own rectangle gives both its position and how much it has been scaled on the way
+ * to the screen, which is the one measurement that is true whatever the phone frame and the design
+ * stage are doing between design px and pixels.
+ */
+function pressPoint(e: GestureResponderEvent): { x: number; y: number } | null {
+  const n = e.nativeEvent;
+  if (Number.isFinite(n.locationX) && Number.isFinite(n.locationY)) {
+    return { x: n.locationX + SCRIM.left, y: n.locationY + SCRIM.top };
+  }
+  const rect = (e.target as unknown as { getBoundingClientRect?: () => DOMRect } | undefined)?.getBoundingClientRect?.();
+  if (!rect || !rect.width || !rect.height || !Number.isFinite(n.pageX) || !Number.isFinite(n.pageY)) return null;
+  return {
+    x: ((n.pageX - rect.left) * SCRIM.w) / rect.width + SCRIM.left,
+    y: ((n.pageY - rect.top) * SCRIM.h) / rect.height + SCRIM.top,
+  };
 }
 
 interface FloatMenuContextValue {
@@ -401,9 +433,10 @@ export function FloatMenuOverlay() {
           The scrim sits at design (-220,-220), so design coords = local locationX/Y - 220. */}
       {pinned ? (
         <Pressable
-          style={box(-220, -220, 852, 1332)}
+          style={box(SCRIM.left, SCRIM.top, SCRIM.w, SCRIM.h)}
           onPress={(e) => {
-            const w = pickWedge(e.nativeEvent.locationX - 220, e.nativeEvent.locationY - 220);
+            const p = pressPoint(e);
+            const w = p ? pickWedge(p.x, p.y) : -1;
             if (w >= 0) select(w);
             else closeMenu();
           }}

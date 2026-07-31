@@ -203,38 +203,92 @@ const decoding = new Map<number, Promise<AudioBuffer | null>>();
  * else. Web keeps passing the id straight through: there is no bundled-asset branch in a browser, the
  * id resolves to a URL, and the round trip would only add a request.
  */
-async function sourceFor(src: number): Promise<number | string> {
-  if (Platform.OS === 'web') return src;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Asset } = require('expo-asset') as typeof import('expo-asset');
-  const asset = Asset.fromModule(src);
-  if (!asset.localUri) await asset.downloadAsync();
-  return asset.localUri ?? asset.uri ?? src;
+async function assetUri(src: number): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Asset } = require('expo-asset') as typeof import('expo-asset');
+    const asset = Asset.fromModule(src);
+    if (!asset.localUri) await asset.downloadAsync();
+    return asset.localUri ?? asset.uri ?? null;
+  } catch {
+    return null;
+  }
 }
 
+/**
+ * Sounds that could not be decoded, so they are not attempted again (v0.27.1).
+ *
+ * The failure path used to delete its in-flight entry and leave nothing behind, so a sound that could
+ * not be decoded was retried on EVERY press for the life of the app. With a file resolution in front
+ * of the decode that meant a filesystem round trip per button tap, which is a stutter you can feel,
+ * and it made a silent app a slow one as well.
+ */
+const failed = new Set<number>();
+
+/** What went wrong, kept for the diagnostic readout. Cleared when a decode finally works. */
+let lastError = '';
+let decoded = 0;
+
+/**
+ * Decode a sound, trying BOTH routes to the file (v0.27.1).
+ *
+ * Which route works depends on the build. A `require()` id resolves to a Metro URL in development and
+ * takes the bundled-Android-asset branch in a release APK; resolving through `expo-asset` gives a real
+ * file instead. Rather than reason about which applies, try the file first and fall back to the id.
+ * Whichever one the device is happy with, wins, and the app is not silent because a guess was wrong.
+ */
 function decode(src: number): Promise<AudioBuffer | null> {
   const c = getCtx();
   if (!c) return Promise.resolve(null);
   const cached = buffers.get(src);
   if (cached) return Promise.resolve(cached);
+  if (failed.has(src)) return Promise.resolve(null);
   const inflight = decoding.get(src);
   if (inflight) return inflight;
-  const p = sourceFor(src)
-    .then((from) => c.decodeAudioData(from as never))
+  const attempt = async (): Promise<AudioBuffer> => {
+    const uri = await assetUri(src);
+    if (!uri) return c.decodeAudioData(src as never);
+    try {
+      return await c.decodeAudioData(uri as never);
+    } catch (e) {
+      lastError = `file: ${String(e)}`;
+      return c.decodeAudioData(src as never); // the module id, the way it worked before
+    }
+  };
+  const p = attempt()
     .then((buf) => {
       buffers.set(src, buf);
       decoding.delete(src);
+      decoded += 1;
       return buf;
     })
     .catch((e: unknown) => {
       decoding.delete(src);
+      failed.add(src);
+      lastError = String(e);
       // A sound that cannot be decoded is not worth a crash, but it IS worth knowing about: silence
-      // with nothing in the log is what let the release build ship without any sound at all.
+      // with nothing said is what let a release build ship with no sound at all.
       if (__DEV__) console.warn('[sfx] could not decode a sound', src, e);
       return null;
     });
   decoding.set(src, p);
   return p;
+}
+
+/**
+ * One line describing what the audio engine is actually doing (v0.27.1).
+ *
+ * There is no console on the device people play on, and a sound that fails is deliberately silent, so
+ * a release with no audio looks exactly like a release with the volume down. This is the readout: hold
+ * the speaker on the main menu to see it.
+ */
+export function sfxDiagnostics(): string {
+  if (unavailable) return 'Audio engine unavailable on this device.';
+  if (!ctx) return 'Audio engine not started yet.';
+  const state = (ctx as { state?: string }).state ?? 'unknown';
+  const head = `Audio ${state}, ${decoded} sounds ready, ${failed.size} failed${muted ? ', MUTED' : ''}.`;
+  return failed.size && lastError ? `${head} ${lastError.slice(0, 120)}` : head;
 }
 
 // ---------------------------------------------------------------------------

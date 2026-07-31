@@ -19,6 +19,7 @@ import { resetTours, shouldShow } from '@/lib/onboarding-store';
 import { useLayout } from '@/hooks/use-layout';
 import { playSfx, preloadSfx } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
+import { sfxDiagnostics } from '@/lib/sfx';
 
 const THUMB_W = 76;
 const THUMB_H = Math.round(THUMB_W * (263 / 188));
@@ -145,7 +146,13 @@ function ModeToggle({ dm, onToggle }: { dm: boolean; onToggle: () => void }) {
   );
 }
 
-/** The main-menu UI-sound mute (v0.19.1 item 6): a speaker glyph that gains a slash when muted. */
+/**
+ * The main-menu UI-sound mute (v0.19.1 item 6): a speaker glyph that gains a slash when muted.
+ *
+ * v0.27.1: HOLD it to see what the audio engine is doing. There is no console on the device people
+ * play on, and a sound that fails to load is deliberately silent, so an app with broken audio looks
+ * exactly like one with the volume down. Reporting "no sound" should not be the only way to find out.
+ */
 function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onToggle: () => void }) {
   const press = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
@@ -155,12 +162,16 @@ function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onTo
     <Animated.View style={anim}>
       <Pressable
         onPress={onToggle}
+        onLongPress={() => showToast(sfxDiagnostics(), 'info')}
         onPressIn={() => { press.value = withSpring(0.95, { damping: 22, stiffness: 320, mass: 0.6 }); }}
         onPressOut={() => { press.value = withSpring(1, { damping: 22, stiffness: 320, mass: 0.6 }); }}
         accessibilityRole="button"
         accessibilityLabel={muted ? 'Unmute UI sounds' : 'Mute UI sounds'}
         accessibilityState={{ selected: muted }}>
-        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, width: 44, alignItems: 'center', justifyContent: 'center' }}>
+        {/* v0.27.1: when it is off, SAY so. A crossed-out speaker is the convention and it was still
+            being misread as a styling quirk, which is a bad way to spend a week wondering why the app
+            is silent. The word only appears in the state worth explaining. */}
+        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, width: muted ? 96 : 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
           <Svg width={20} height={20} viewBox="0 0 24 24">
             <Polygon points="4,9 8,9 13,4 13,20 8,15 4,15" fill="none" stroke={glyph} strokeWidth={1.8} strokeLinejoin="round" />
             {muted ? (
@@ -170,6 +181,9 @@ function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onTo
             )}
             {muted ? <Polyline points="22,9 17,15" fill="none" stroke={glyph} strokeWidth={2} strokeLinecap="round" /> : null}
           </Svg>
+          {muted ? (
+            <Text style={{ color: glyph, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>Sound off</Text>
+          ) : null}
         </ChamferBox>
       </Pressable>
     </Animated.View>
