@@ -6,6 +6,7 @@ import Animated, {
   Easing,
   runOnJS,
   type SharedValue,
+  useAnimatedReaction,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -78,6 +79,11 @@ const GRIND_SHRINK_L = 0.45; // …and smaller, never curved
 const GEAR_SWIPE_L = 200; // grind: this many px sweep the whole deck
 const GEAR_DEG_PER_STEP = 52; // gear rotation per detent (#110: spins as the deck moves)
 const IMG_HALF = 2;
+/** Slots kept mounted either side of the window centre, and how coarsely that centre tracks the
+ *  scroll. The visible band is about six cards, so this is generous by design: it has to cover the
+ *  bucket's own rounding as well as the fade band. */
+const WIN_HALF = 16;
+const WIN_BUCKET = 8;
 // Fullscreen layout (#108): the card sits CENTERED with a real gap below the screen border (never
 // off-screen) and a reserved band at the bottom for the fixed select controls.
 const FS_TOP_PAD = 58; // gap from the screen border (inset top) to the card top
@@ -326,6 +332,30 @@ export const StraightCarousel = forwardRef<
   const gearPipIdx = useSharedValue(0); // #258r2: last detent seen while grinding (for the pip)
   const lastCenter = useSharedValue(clampIdx(initialIndex, count));
   const [center, setCenter] = useState(() => Math.min(count - 1, Math.max(0, initialIndex)));
+  /**
+   * Which slots are actually mounted (v0.27.1).
+   *
+   * Every card in the deck used to be mounted at once, and a deck is up to eighty domain cards, each
+   * one an animated view with its own gesture detector and card body. Changing section therefore
+   * mounted the lot in a single commit, which is the stutter you feel when the step changes.
+   *
+   * At most a dozen are ever visible: the slot's own visibility window fades everything past about
+   * six out either side. So the rest are mounted for nothing.
+   *
+   * The window follows a COARSE bucket of the scroll position rather than the settled centre. The
+   * settled centre deliberately stops updating while the gear grinds, to keep that fast scroll off
+   * the JS thread entirely, and a window that froze with it would leave the cards you were grinding
+   * past unmounted. A bucket of eight costs one cheap state update per eight cards instead of one per
+   * card, and stays well ahead of what is on screen.
+   */
+  const [winCentre, setWinCentre] = useState(() => clampIdx(initialIndex, count));
+  useAnimatedReaction(
+    () => Math.round(pos.value / WIN_BUCKET),
+    (bucket: number, prev: number | null) => {
+      if (bucket !== prev) runOnJS(setWinCentre)(bucket * WIN_BUCKET);
+    },
+    [],
+  );
   const [fsOpen, setFsOpen] = useState(false);
   // Flip-deck paging (#110): the focused card's current face, and the last turn direction so the
   // flip spins the way the tap implied (left = back, right = forward).
@@ -552,7 +582,8 @@ export const StraightCarousel = forwardRef<
               <Pressable style={{ position: 'absolute', top: -480, bottom: -160, left: -60, right: -60, zIndex: 201 }} onPress={closeFs} accessibilityRole="button" accessibilityLabel="Close card" />
             ) : null}
             {width > 0
-              ? items.map((item, i) => (
+              ? items.map((item, i) =>
+                  Math.abs(i - winCentre) > WIN_HALF ? null : (
                   <Slot
                     key={item.id}
                     index={i}
@@ -577,7 +608,8 @@ export const StraightCarousel = forwardRef<
                     onFlipSettle={onFlipSettle}
                     onTap={onTapCard}
                   />
-                ))
+                  ),
+                )
               : null}
           </View>
         </View>
