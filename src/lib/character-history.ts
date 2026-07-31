@@ -149,6 +149,16 @@ export interface RecordIntent {
   label?: string;
   /** Force a fresh entry even if the previous one would otherwise coalesce. */
   separate?: boolean;
+  /**
+   * A write the APP made, not the player: seeding and normalisation that runs off an effect rather
+   * than off a gesture. It never appears in the timeline and never truncates a rewound future,
+   * because the player did not do it.
+   *
+   * The no-op guard below cannot stand in for this, which is why v0.27.3 did not hold: these writes
+   * genuinely change the file, so the snapshots differ and the guard lets them straight through.
+   * Attribution has to come from the writer, which knows. A diff never can.
+   */
+  system?: boolean;
 }
 
 export interface Classified {
@@ -243,6 +253,13 @@ export function record(history: CharacterHistory, prev: CharacterFile | null, ne
    * The first genuine edit still truncates, which is the owner's rule and stays covered by the test.
    */
   if (prev && same(prev, snapshot)) return history;
+
+  /**
+   * An app-initiated write is not a player edit. Returning the history untouched keeps `rewoundTo`
+   * intact, so a first-run affordance or a normalisation pass that fires while the player is
+   * browsing an earlier state cannot discard the future.
+   */
+  if (intent.system) return history;
 
   // Truncate any rewound-away future BEFORE appending.
   let entries = history.rewoundTo != null ? history.entries.slice(0, history.rewoundTo + 1) : history.entries;
@@ -415,4 +432,62 @@ export function restoreCard(file: CharacterFile, rec: RecoverableCard): Characte
   const existing = cardsIn(file, rec.collection);
   if (existing.some((c) => c.id === rec.id)) return file; // already back; restoring twice is a no-op
   return { ...file, [rec.collection]: [...existing, rec.card] } as CharacterFile;
+}
+
+/**
+ * Which cards an entry brought in, and which it let go (v0.29.1).
+ *
+ * History is snapshots, not events, so nothing records "you equipped Bone 1". But the snapshots are
+ * whole characters, and the difference between two of them is exactly that fact. "Changed cards" on
+ * its own asks the player to remember what they did; a list of what actually moved does not.
+ *
+ * Ids only. Turning an id into a title needs the catalog and the character's own authored cards, and
+ * that belongs to the screen rendering the row, not to the history model.
+ */
+const ID_LISTS: readonly string[] = ['enabledCardIds', 'domainCardIds', 'inventoryItemIds', 'acquiredCardIds'];
+const OBJECT_LISTS: readonly string[] = [...AUTHORED, 'libraryCards'];
+const SLOT_FIELDS: readonly string[] = ['weaponPrimaryId', 'weaponSecondaryId', 'armorId', 'subclassCardId', 'multiclassSubclassCardId', 'ancestryCardId', 'communityCardId'];
+
+/**
+ * Every card id a snapshot counts as HELD.
+ *
+ * `removedCardIds` is SUBTRACTED rather than added. A system card is never spliced out of its array
+ * when a player removes it, because that would corrupt the file's structure; it is tombstoned in that
+ * list instead. Read inverted, entering the list is a removal and leaving it is a restore, which is
+ * what the player actually saw happen.
+ */
+function cardMembership(file: CharacterFile | null | undefined): Set<string> {
+  const out = new Set<string>();
+  if (!file) return out;
+  const rec = file as unknown as Record<string, unknown>;
+  for (const k of ID_LISTS) {
+    const v = rec[k];
+    if (Array.isArray(v)) for (const id of v) if (typeof id === 'string' && id) out.add(id);
+  }
+  for (const k of OBJECT_LISTS) {
+    const v = rec[k];
+    if (Array.isArray(v)) for (const c of v as { id?: string }[]) if (c?.id) out.add(c.id);
+  }
+  for (const k of SLOT_FIELDS) {
+    const v = rec[k];
+    if (typeof v === 'string' && v) out.add(v);
+  }
+  const gone = rec.removedCardIds;
+  if (Array.isArray(gone)) for (const id of gone) out.delete(id as string);
+  return out;
+}
+
+export interface CardMoves {
+  added: string[];
+  removed: string[];
+}
+
+/** The cards that came and went between two snapshots. Order follows the newer snapshot. */
+export function cardMoves(prev: CharacterFile | null | undefined, next: CharacterFile | null | undefined): CardMoves {
+  const before = cardMembership(prev);
+  const after = cardMembership(next);
+  return {
+    added: [...after].filter((id) => !before.has(id)),
+    removed: [...before].filter((id) => !after.has(id)),
+  };
 }

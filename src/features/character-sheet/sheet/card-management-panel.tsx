@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import Animated, { runOnJS, type SharedValue, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
@@ -483,6 +483,25 @@ function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCatego
 }
 
 // ---------------- Cards gallery view ----------------
+
+/**
+ * Hand VERTICAL panning back to the browser on a gesture target (web only, v0.29.1).
+ *
+ * react-native-gesture-handler's web delegate stamps `touch-action: none` inline on every element a
+ * GestureDetector wraps, because on a phone the handler owns the touch outright. In a browser that one
+ * property is the only switch for native panning, and it is latched from whatever is under the finger
+ * when the touch starts. Every card in this gallery is a gesture target, so a finger landing on a card
+ * could never scroll the list it sits in: the only live places left were the gutter beside the last
+ * column and the gaps between rows. That is exactly the reported "it only scrolls at the very edges".
+ *
+ * `pan-y` gives vertical panning back and keeps everything else ours, so hold-to-drag still reads a
+ * clean intent. Both gestures need it: they attach to the same element and whichever initialises last
+ * wins. Native is untouched, the delegate is web only.
+ */
+function letBrowserScroll<T extends GestureType>(gesture: T): T {
+  if (Platform.OS === 'web') (gesture as unknown as { config: { touchAction?: string } }).config.touchAction = 'pan-y';
+  return gesture;
+}
 function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBeginDrag, onEndDrag, onHover, setRef, setCat, ghostX, ghostY, ghostOn }: {
   item: CardItem; cat: string; selected: boolean; dimmed: boolean; insertBar: 'before' | 'after' | null;
   onToggleSelect: (id: string) => void; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void; onHover: (x: number, y: number) => void;
@@ -490,9 +509,10 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
   ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
 }) {
   const frame = useFrame();
-  const tap = useMemo(() => Gesture.Tap().maxDuration(260).onEnd(() => runOnJS(onToggleSelect)(item.id)), [onToggleSelect, item.id]);
+  const tap = useMemo(() => letBrowserScroll(Gesture.Tap().maxDuration(260).onEnd(() => runOnJS(onToggleSelect)(item.id))), [onToggleSelect, item.id]);
   const drag = useMemo(
     () =>
+      letBrowserScroll(
       Gesture.Pan()
         .activateAfterLongPress(420)
         .onStart((e) => {
@@ -505,7 +525,7 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
         })
         .onUpdate((e) => { 'worklet'; ghostX.value = windowToFrameX(e.absoluteX, frame); ghostY.value = windowToFrameY(e.absoluteY, frame); runOnJS(onHover)(e.absoluteX, e.absoluteY); })
         .onEnd((e) => { 'worklet'; runOnJS(onEndDrag)(e.absoluteX, e.absoluteY); })
-        .onFinalize(() => { 'worklet'; ghostOn.value = 0; }),
+        .onFinalize(() => { 'worklet'; ghostOn.value = 0; })),
     [item.id, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn, frame],
   );
   const gesture = useMemo(() => Gesture.Race(drag, tap), [drag, tap]);

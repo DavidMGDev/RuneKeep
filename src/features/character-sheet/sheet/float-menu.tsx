@@ -23,7 +23,11 @@ import { DeckToggleIcon } from './deck-toggle-icon';
  * Built with /impeccable craft, product register.
  */
 
-export type PlaceholderKind = 'custom' | 'level' | 'rest' | 'modifiers' | 'cards';
+/**
+ * v0.29.1: 'characters' is a wedge but NOT an interface. It leaves the sheet, so the sheet answers it
+ * by raising its existing leave confirm rather than mounting a panel.
+ */
+export type PlaceholderKind = 'custom' | 'level' | 'rest' | 'modifiers' | 'cards' | 'characters';
 type SlotKind = PlaceholderKind;
 
 interface Slot {
@@ -53,14 +57,19 @@ const SVG_R = 230; // half the wedge SVG canvas (covers C ± SVG_R)
 const TAP_SLOP = 12;
 
 const SLOTS: Slot[] = [
-  // Order (#282): N = Modifiers, then Level Up, Rest, New Card, S = Cards.
+  // Order (#282): N = Modifiers, then Level Up, Rest, then the two that changed in v0.29.1.
+  //
+  // v0.29.1 (owner): Cards and New Card swapped, which put New Card due-SOUTH, and that slot is now
+  // CHARACTERS: the way back out of the sheet. New Card is not lost with it, because the Add Card
+  // badge on the sheet has always been the primary way in and still is. South is the easiest wedge
+  // to reach with a thumb, which is the right home for "leave".
   // v0.22.0: the north slot is now STATE — the modifier breakdown (unchanged) plus the character's
   // full rewindable timeline. Same `kind` so every existing route to it keeps working.
   { kind: 'modifiers', label: 'State' }, // due-NORTH
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
-  { kind: 'custom', label: 'New Card' },
-  { kind: 'cards', label: 'Cards' }, // due-SOUTH (#227) — opens the category-toggle panel
+  { kind: 'cards', label: 'Cards' }, // was New Card
+  { kind: 'characters', label: 'Characters' }, // due-SOUTH (#227) — opens the category-toggle panel
   // Switch (inv/arsenal) is gone (#174): it now lives on the gear over-scroll at the carousel edge.
   // Wild Shape (#214) is NOT here — it's a Druid-only carousel category, not a float-menu slot.
 ];
@@ -315,6 +324,16 @@ const MenuIcon = memo(function MenuIcon({ kind }: { kind: SlotKind }) {
           <Path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5Z" {...common} />
         </Svg>
       );
+    case 'characters':
+      // v0.29.1: two figures, a roster. The way back out of the sheet to the character list.
+      return (
+        <Svg width={24} height={24} viewBox="0 0 24 24">
+          <Circle cx={9} cy={8} r={3.2} {...common} />
+          <Path d="M3.5 19.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5" {...common} />
+          <Circle cx={17} cy={7.5} r={2.4} {...common} />
+          <Path d="M15.5 13.2c2.6-.5 5 1.4 5 4.3" {...common} />
+        </Svg>
+      );
     case 'cards':
       // a small stack of cards — the category-toggle panel
       return (
@@ -478,7 +497,7 @@ export function FloatMenuOverlay() {
 /** Stub interface for any not-yet-built option. Opens an empty on-brand panel; replaced by the real
  *  interface in its own PR (#161). */
 export function FloatPlaceholder({ kind, onClose }: { kind: PlaceholderKind; onClose: () => void }) {
-  const TITLE: Record<PlaceholderKind, string> = { custom: 'New Card', level: 'Level Up', rest: 'Rest', modifiers: 'Modifiers', cards: 'Cards' };
+  const TITLE: Record<PlaceholderKind, string> = { custom: 'New Card', level: 'Level Up', rest: 'Rest', modifiers: 'Modifiers', cards: 'Cards', characters: 'Characters' };
   const W = 320;
   const H = 220;
   const c = 18;

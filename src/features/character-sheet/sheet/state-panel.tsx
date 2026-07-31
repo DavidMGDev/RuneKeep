@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -7,7 +7,9 @@ import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import type { CharacterFile } from '@/lib/character-file';
-import { type CharacterHistory, type HistoryEntry, type HistoryKind, timeline } from '@/lib/character-history';
+import { cardMoves, type CharacterHistory, type HistoryEntry, type HistoryKind, timeline } from '@/lib/character-history';
+import { clockLabel, dayLabel, groupByDay } from '@/lib/day-label';
+import { sourceLabelForCardId } from '@/features/cards/card-effects';
 import { playSfx } from '@/lib/sfx';
 
 import { ModifiersPanel } from './modifiers-panel';
@@ -15,39 +17,6 @@ import { OverlayShell } from './overlay-shell';
 
 /** How long a hold on a timeline entry takes to open the rewind prompt. */
 const HOLD_MS = 380;
-
-/**
- * A timeline entry you can hold (v0.27.3).
- *
- * The row used to be a bare Pressable with `delayLongPress`, so a hold looked exactly like a press
- * that had not done anything yet and there was no way to know how long to keep holding. It grows
- * steadily over the hold instead, which is the same language the rest of the app's holds use, and
- * eases back if you let go early. Kept on Pressable rather than a gesture handler on purpose: these
- * rows live inside a plain ScrollView, and gesture handlers in plain lists have bitten this app
- * before.
- */
-function HoldRow({ onPress, onHold, label, hint, children }: { onPress: () => void; onHold: () => void; label: string; hint: string; children: ReactNode }) {
-  const charge = useSharedValue(0);
-  const reduced = useReducedMotion();
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: 1 + charge.value * 0.035 }] }));
-  return (
-    <Pressable
-      onPressIn={() => {
-        if (!reduced) charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
-      }}
-      onPressOut={() => {
-        charge.value = withTiming(0, { duration: 160 });
-      }}
-      onPress={onPress}
-      onLongPress={onHold}
-      delayLongPress={HOLD_MS}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}>
-      <Animated.View style={style}>{children}</Animated.View>
-    </Pressable>
-  );
-}
 
 /**
  * The State interface (v0.22.0) — the float menu's north slot, replacing Modifiers.
@@ -61,6 +30,80 @@ function HoldRow({ onPress, onHold, label, hint, children }: { onPress: () => vo
  * moment anything changes afterwards the discarded future is gone with no fast-forward. The
  * confirmation says all of that in plain language before the hold, because it cannot be taken back.
  */
+/**
+ * One entry in the timeline (v0.29.1).
+ *
+ * Rewritten from a row you could tap to expand into a row that just says what it is. Expanding was a
+ * secret: nothing indicated a row could be opened, and the payoff was a couple of lines most players
+ * never saw. What they actually want to know is which cards moved, so that is on the face of the row
+ * now and the expand is gone.
+ *
+ * Holding it draws a real progress bar. Before, the only feedback was the row growing, and growing
+ * made its own chamfered border clip against the row above, which reads as a rendering fault rather
+ * than as progress.
+ */
+function TimelineRow({ entry, file, prevSnapshot, discarded, onRewind }: { entry: HistoryEntry; file: CharacterFile; prevSnapshot?: CharacterFile; discarded: boolean; onRewind: () => void }) {
+  const charge = useSharedValue(0);
+  const reduced = useReducedMotion();
+  const fill = useAnimatedStyle(() => ({ width: `${charge.value * 100}%` }));
+  const tint = KIND_TINT[entry.kind] ?? Rune.muted;
+  // What moved, named. Ids are meaningless to a player: "bone-01-1" is "Bone 1" on the card.
+  const moves = useMemo(() => cardMoves(prevSnapshot, entry.snapshot), [prevSnapshot, entry.snapshot]);
+  const named = useMemo(
+    () => [
+      ...moves.added.map((id) => ({ sign: '+', title: sourceLabelForCardId(id, file) || id })),
+      ...moves.removed.map((id) => ({ sign: '-', title: sourceLabelForCardId(id, file) || id })),
+    ],
+    [moves, file],
+  );
+  return (
+    <Pressable
+      onPressIn={() => {
+        if (!reduced) charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.linear });
+      }}
+      onPressOut={() => {
+        charge.value = withTiming(0, { duration: 160 });
+      }}
+      onLongPress={onRewind}
+      delayLongPress={HOLD_MS}
+      accessibilityRole="button"
+      accessibilityLabel={`${entry.label}, ${dayLabel(entry.at, new Date())} at ${clockLabel(entry.at)}`}
+      accessibilityHint="Hold to rewind the character to this point">
+      <ChamferBox
+        chamfer={entry.milestone ? 9 : 6}
+        fill={entry.milestone ? 'rgba(218,162,73,0.10)' : 'rgba(20,24,31,0.55)'}
+        stroke={entry.milestone ? Rune.goldEdge : 'rgba(218,162,73,0.28)'}
+        strokeWidth={entry.milestone ? 1.4 : 1}
+        style={{ paddingVertical: 11, paddingHorizontal: 12, marginBottom: 8, opacity: discarded ? 0.42 : 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+          <View style={{ width: 8, height: 8, backgroundColor: tint, transform: [{ rotate: '45deg' }] }} />
+          <Text style={{ flex: 1, color: Rune.sheet, fontSize: 13.5, fontFamily: entry.milestone ? Display.bold : Body.bold }}>{entry.label}</Text>
+          <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.medium }}>{clockLabel(entry.at)}</Text>
+        </View>
+        {named.length ? (
+          <View style={{ marginTop: 6, paddingLeft: 17, gap: 2 }}>
+            {named.slice(0, 6).map((m) => (
+              <Text key={`${m.sign}${m.title}`} style={{ color: m.sign === '+' ? Rune.goldText : Rune.muted, fontSize: 11.5, fontFamily: Body.medium }}>
+                ({m.sign}) {m.title}
+              </Text>
+            ))}
+            {named.length > 6 ? (
+              <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>and {named.length - 6} more</Text>
+            ) : null}
+          </View>
+        ) : null}
+        <Text style={{ color: discarded ? Rune.muted : 'rgba(218,162,73,0.75)', fontSize: 10, fontFamily: Body.medium, marginTop: 7, paddingLeft: 17, letterSpacing: 0.4 }}>
+          {discarded ? 'Discarded. Hold to return here.' : 'Hold to rewind here'}
+        </Text>
+        {/* The hold, drawn. Sits along the bottom edge so it never changes the row's size. */}
+        <View style={{ height: 2, marginTop: 8, backgroundColor: 'rgba(218,162,73,0.16)' }}>
+          <Animated.View style={[{ height: 2, backgroundColor: Rune.goldBright }, fill]} />
+        </View>
+      </ChamferBox>
+    </Pressable>
+  );
+}
+
 export function StatePanel({
   file,
   history,
@@ -84,7 +127,7 @@ export function StatePanel({
       />
     );
   }
-  return <TimelineView history={history} onRewind={onRewind} onClose={onClose} header={<Tabs tab={tab} onTab={setTab} count={history.entries.length} />} />;
+  return <TimelineView file={file} history={history} onRewind={onRewind} onClose={onClose} header={<Tabs tab={tab} onTab={setTab} count={history.entries.length} />} />;
 }
 
 function Tabs({ tab, onTab, count }: { tab: 'modifiers' | 'timeline'; onTab: (t: 'modifiers' | 'timeline') => void; count: number }) {
@@ -131,29 +174,22 @@ const KIND_TINT: Record<HistoryKind, string> = {
   other: Rune.muted,
 };
 
-function timeLabel(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  const hh = `${d.getHours()}`.padStart(2, '0');
-  const mm = `${d.getMinutes()}`.padStart(2, '0');
-  return sameDay ? `${hh}:${mm}` : `${d.getDate()}/${d.getMonth() + 1} · ${hh}:${mm}`;
-}
 
 function TimelineView({
+  file,
   history,
   onRewind,
   onClose,
   header,
 }: {
+  /** Needed to turn a card id into the title the player actually sees on the card. */
+  file: CharacterFile;
   history: CharacterHistory;
   onRewind: (index: number) => string[];
   onClose: () => void;
   header: React.ReactNode;
 }) {
   const rows = useMemo(() => timeline(history), [history]);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ entry: HistoryEntry; index: number; discards: number } | null>(null);
   const [repairs, setRepairs] = useState<string[] | null>(null);
 
@@ -190,7 +226,7 @@ function TimelineView({
     return (
       <OverlayShell title="Rewind character?" subtitle={entry.label} onClose={() => setConfirm(null)}>
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
-          Your character goes back to how it was at {timeLabel(entry.at)}
+          Your character goes back to how it was on {dayLabel(entry.at, new Date())} at {clockLabel(entry.at)}
           {entry.milestone ? ', a milestone.' : '.'}
         </Text>
         {discards > 0 ? (
@@ -214,48 +250,27 @@ function TimelineView({
           Nothing recorded yet. From here on, everything you do to this character is listed here and can be rewound.
         </Text>
       ) : null}
-      {rows.map(({ entry, index, discarded }) => {
-        const open = expanded === entry.id;
-        const tint = KIND_TINT[entry.kind] ?? Rune.muted;
-        return (
-          <HoldRow
-            key={entry.id}
-            onPress={() => { playSfx('buttonTap'); setExpanded(open ? null : entry.id); }}
-            // A greyed-out row is still a place you can go (v0.27.3): the confirm copy promises the
-            // discarded changes stay reachable until you change something else, and holding one was
-            // the only way to keep that promise. It was doing nothing.
-            onHold={() => setConfirm({ entry, index, discards: rows.filter((r) => r.index > index).length })}
-            label={`${entry.label}, ${timeLabel(entry.at)}`}
-            hint="Tap for detail, hold to rewind to this point">
-            <ChamferBox
-              chamfer={entry.milestone ? 9 : 6}
-              fill={entry.milestone ? 'rgba(218,162,73,0.10)' : 'rgba(20,24,31,0.55)'}
-              stroke={entry.milestone ? Rune.goldEdge : 'rgba(218,162,73,0.28)'}
-              strokeWidth={entry.milestone ? 1.4 : 1}
-              style={{ paddingVertical: 9, paddingHorizontal: 11, marginBottom: 6, opacity: discarded ? 0.38 : 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-                <View style={{ width: 8, height: 8, backgroundColor: tint, transform: [{ rotate: '45deg' }] }} />
-                <Text style={{ flex: 1, color: Rune.sheet, fontSize: 13, fontFamily: entry.milestone ? Display.bold : Body.bold }}>{entry.label}</Text>
-                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium }}>{timeLabel(entry.at)}</Text>
-              </View>
-              {open && entry.steps.length > 1 ? (
-                <View style={{ marginTop: 7, paddingLeft: 17, gap: 3 }}>
-                  {entry.steps.map((st, i) => (
-                    <Text key={`${entry.id}-${i}`} style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>
-                      {st}
-                    </Text>
-                  ))}
-                </View>
-              ) : null}
-              {open ? (
-                <Text style={{ color: discarded ? Rune.muted : Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, marginTop: 7, paddingLeft: 17 }}>
-                  {discarded ? 'Discarded, hold to return here, or change anything and this is gone' : 'Hold this entry to rewind here'}
-                </Text>
-              ) : null}
-            </ChamferBox>
-          </HoldRow>
-        );
-      })}
+      {groupByDay(rows, (r) => r.entry.at, new Date()).map((group) => (
+        <View key={group.label}>
+          {/* Day heading, the way every chat app does it. A column of times tells you nothing about
+              whether something happened this afternoon or last month. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 8 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.22)' }} />
+            <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{group.label}</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.22)' }} />
+          </View>
+          {group.items.map(({ entry, index, discarded }) => (
+            <TimelineRow
+              key={entry.id}
+              entry={entry}
+              file={file}
+              prevSnapshot={rows.find((r) => r.index === index - 1)?.entry.snapshot}
+              discarded={discarded}
+              onRewind={() => setConfirm({ entry, index, discards: rows.filter((r) => r.index > index).length })}
+            />
+          ))}
+        </View>
+      ))}
     </OverlayShell>
   );
 }

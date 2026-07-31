@@ -409,8 +409,12 @@ export function sfxDiagnostics(): string {
  *
  * It multiplies INTO master rather than replacing it, so the mute toggle and any future volume
  * control keep working untouched.
+ *
+ * v0.29.1: both down another 35% of where they were, owner's call. Web 0.35 -> 0.2275, native 1 ->
+ * 0.65. Web stays roughly a third of native, which is the ratio that was right; everything is simply
+ * quieter than the sounds were originally tuned at.
  */
-const PLATFORM_GAIN = Platform.OS === 'web' ? 0.35 : 1;
+const PLATFORM_GAIN = Platform.OS === 'web' ? 0.2275 : 0.65;
 
 let master = 1;
 let muted = false;

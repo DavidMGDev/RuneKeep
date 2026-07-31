@@ -1572,7 +1572,16 @@ export function CardCarousel() {
             }
             // item 8c: only tear down a grab that onEnd did NOT already hand to the staged drop
             // (editHandledSV===1). Otherwise onFinalize would kill the in-flight drop → never commits.
-            if (editGrabbed.value === 1 && editHandledSV.value === 0) { editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0; grabAnim.value = 0; autoScroll.value = 0; cancelAnimation(shake); shake.value = 0.5; }
+            //
+            // v0.29.1: `settling` is cleared here too, and that is the softlock. It is raised by the
+            // staged commit in onEnd and lowered only at the very END of it, by resetDrag. Every link
+            // in that commit chain is a reanimated completion callback with no else branch, so a
+            // commit that is interrupted, which a browser does by taking pointer capture on a node
+            // this row unmounts as it autoscrolls under the drag, abandons the drop with `settling`
+            // left at 1. The per-frame drag worklet is inert while that is set (see its guard), so
+            // the NEXT grab does nothing at all and the row reads as frozen with no way out. A
+            // release that reaches finalize without a commit in flight must leave nothing latched.
+            if (editGrabbed.value === 1 && editHandledSV.value === 0) { editGrabbed.value = 0; grabIndex.value = -1; grabIsGroup.value = 0; gapWidth.value = 1; dropSpread.value = 0; grabAnim.value = 0; autoScroll.value = 0; settling.value = 0; cancelAnimation(shake); shake.value = 0.5; }
             // Still gear tap that never activated the pan → exit edit to COMPACT (item 7).
             if (editDecided.value === 0 && editPadTouch.value === 1 && Math.abs(e.translationX) < TAP_SLOP && Math.abs(e.translationY) < TAP_SLOP) {
               runOnJS(exitEdit)(true);
@@ -1636,7 +1645,7 @@ export function CardCarousel() {
           padTouch.value = false;
         });
     },
-    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, onEmptyOpen, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGearScroll, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, menuDwell, menuCardIdx, menuBounce, shake, pendingOrderSV, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
+    [count, ringLen, gearPanR, rotation, expandProgress, fullscreenProgress, machineState, focusIndex, closeFullscreen, collapse, cycleCategory, onEmptyOpen, flipFocused, startRot, anchorY, prevX, prevY, scrolled, transitioned, padTouch, padWasExpanded, grindProgress, gearPrevTX, gearDirX, gearPipIdx, overscrollX, osDir, osProgress, osHold, osHolding, osArmed, switching, editMode, enterEdit, exitEdit, gearDwell, gearScrolled, enteringEdit, gearFlash, dwellAX, dwellAY, finishDrop, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverIndex, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGearScroll, autoScroll, editStartIdx, editStartRaised, editGrabbed, grabIsGroup, editDecided, editPadTouch, editHandledSV, settling, menuDwell, menuCardIdx, menuBounce, shake, pendingOrderSV, raiseOrderSV, raiseCountSV, menuOptCount, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, selectIfEmpty],
   );
 
   const c = Math.min(count - 1, Math.max(0, center)); // clamp: deck may have shrunk on a category switch
