@@ -117,9 +117,20 @@ const MEMES: number[] = [
 // ---------------------------------------------------------------------------
 
 type AnyCtx = AudioContext;
-let AudioContextCtor: (new () => AnyCtx) | null = null;
+type CtorOpts = { sampleRate?: number } | undefined;
+let AudioContextCtor: (new (opts?: CtorOpts) => AnyCtx) | null = null;
 let ctx: AnyCtx | null = null;
 let unavailable = false;
+
+/**
+ * What to build the context with, per attempt (v0.27.2).
+ *
+ * The first attempt takes the device's own preferred rate, which is what the library does when asked
+ * for nothing and is right almost everywhere. A retry asks for a standard rate instead: if the reason
+ * the output stream would not open is the rate the device claims to prefer, repeating the request
+ * unchanged only repeats the failure.
+ */
+const CTX_ATTEMPTS: CtorOpts[] = [undefined, { sampleRate: 48000 }, { sampleRate: 44100 }, undefined];
 
 function getCtx(): AnyCtx | null {
   if (ctx) {
@@ -133,7 +144,7 @@ function getCtx(): AnyCtx | null {
       AudioContextCtor = require('react-native-audio-api').AudioContext;
     }
     if (!AudioContextCtor) throw new Error('no AudioContext');
-    ctx = new AudioContextCtor();
+    ctx = new AudioContextCtor(CTX_ATTEMPTS[Math.min(rebuilds, CTX_ATTEMPTS.length - 1)]);
     wake(ctx);
     armFirstGesture();
     // Dev only, stripped from release builds: the browser check in scripts/web-probe.mjs needs a way
@@ -158,9 +169,65 @@ function getCtx(): AnyCtx | null {
  * once on the first pointer or key event, so the context is awake before the first sound is asked for.
  * Native contexts are never suspended, so both are harmless there.
  */
+function stateOf(c: AnyCtx): string {
+  return (c as { state?: string }).state ?? 'unknown';
+}
+
+/**
+ * v0.27.2: a context that will not leave `suspended` is REBUILT.
+ *
+ * On Android the output stream is opened ONCE, when the context is constructed. If that fails, and it
+ * can, because the app warms its audio the instant the menu appears and the device may not be ready to
+ * hand out an exclusive stream that early, then the player has no stream and every later resume fails
+ * silently. The context sits in `suspended` for the rest of the session and no sound is ever heard,
+ * while decoding carries on working perfectly, which is exactly the shape of what was reported: the
+ * engine says suspended, nothing failed, and nothing plays.
+ *
+ * There is no recovery through that context, because nothing re-opens the stream. A new context is the
+ * recovery. Decoded buffers belong to the old one, so they go with it.
+ *
+ * Bounded, because a device that genuinely cannot give this app an audio stream should be left alone
+ * rather than asked forever.
+ */
+const MAX_REBUILDS = 3;
+let rebuilds = 0;
+let rebuilding = false;
+
+function rebuildCtx(): void {
+  if (rebuilding || rebuilds >= MAX_REBUILDS) return;
+  rebuilding = true;
+  rebuilds += 1;
+  const old = ctx;
+  ctx = null;
+  buffers.clear(); // an AudioBuffer belongs to the context that decoded it
+  decoding.clear();
+  failed.clear();
+  try {
+    void old?.close?.();
+  } catch {
+    // Closing a context that never opened is not interesting.
+  }
+  // A beat before rebuilding: the reason the first attempt failed is usually that something else was
+  // still holding the device, and asking again in the same tick asks the same question.
+  setTimeout(() => {
+    rebuilding = false;
+    const fresh = getCtx();
+    if (fresh) void fresh.resume?.();
+  }, 400);
+}
+
 function wake(c: AnyCtx): void {
   try {
-    if ((c as { state?: string }).state === 'suspended') void c.resume?.();
+    if (stateOf(c) !== 'suspended') return;
+    const p = c.resume?.() as Promise<unknown> | undefined;
+    if (!p?.then) return;
+    void p
+      .then(() => {
+        if (ctx === c && stateOf(c) === 'suspended') rebuildCtx();
+      })
+      .catch(() => {
+        if (ctx === c) rebuildCtx();
+      });
   } catch {
     // A context that refuses to resume is not worth breaking a tap over.
   }
@@ -286,9 +353,9 @@ function decode(src: number): Promise<AudioBuffer | null> {
 export function sfxDiagnostics(): string {
   if (unavailable) return 'Audio engine unavailable on this device.';
   if (!ctx) return 'Audio engine not started yet.';
-  const state = (ctx as { state?: string }).state ?? 'unknown';
-  const head = `Audio ${state}, ${decoded} sounds ready, ${failed.size} failed${muted ? ', MUTED' : ''}.`;
-  return failed.size && lastError ? `${head} ${lastError.slice(0, 120)}` : head;
+  const rate = Math.round((ctx as { sampleRate?: number }).sampleRate ?? 0);
+  const head = `Audio ${stateOf(ctx)} @${rate}, ${decoded} ready, ${failed.size} failed${rebuilds ? `, ${rebuilds} restart${rebuilds > 1 ? 's' : ''}` : ''}${muted ? ', MUTED' : ''}.`;
+  return failed.size && lastError ? `${head} ${lastError.slice(0, 110)}` : head;
 }
 
 // ---------------------------------------------------------------------------

@@ -60,7 +60,9 @@ export function assign(idx: FolderIndex, charId: string, folderId: string | null
 /** Remove a folder; its members fall back to ungrouped. */
 export function removeFolder(idx: FolderIndex, id: string): FolderIndex {
   const assignments = Object.fromEntries(Object.entries(idx.assignments).filter(([, fid]) => fid !== id));
-  return { folders: idx.folders.filter((f) => f.id !== id), assignments };
+  // v0.27.2: SPREAD. Rebuilding the index from its two named fields quietly dropped `collapsed`, so
+  // deleting any one folder re-opened every other group the player had tidied away.
+  return { ...idx, folders: idx.folders.filter((f) => f.id !== id), assignments, collapsed: (idx.collapsed ?? []).filter((k) => k !== id) };
 }
 
 /** Character ids assigned to a folder. */

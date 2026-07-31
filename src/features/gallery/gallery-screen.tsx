@@ -1,12 +1,12 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, Text, View } from 'react-native';
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { FlatList, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
-import { AppScreen } from '@/components/app-screen';
+import { AppScreen, SectionLabel } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { gridColumns, useLayout } from '@/hooks/use-layout';
@@ -321,6 +321,58 @@ function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem,
  * LOD thumbs in the grid; full-res only in the reader. Accepts initial filters via route params
  * (the creation flow deep-links here with all level-1 domain cards preselected).
  */
+/**
+ * One card in the grid, memoized (v0.27.2).
+ *
+ * `renderItem` was an inline arrow, so every mounted cell in a list of a thousand re-rendered
+ * whenever anything on the screen changed: opening the drawer, tapping a chip, the count in the
+ * header. The equipment and class cells are the expensive ones, since each is a live forged card
+ * rather than a picture, so the whole archive was paying that price for a state change that had
+ * nothing to do with any of them.
+ */
+const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, onOpen }: { item: GalleryItem; cellW: number; cellH: number; onOpen: (item: GalleryItem) => void }) {
+  return (
+    <Pressable onPress={() => onOpen(item)} accessibilityRole="button" accessibilityLabel={`${item.label}, open card`} style={{ width: cellW }}>
+      <View style={{ width: cellW, height: cellH }}>
+        {item.type === 'card' ? (
+          <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
+        ) : item.type === 'class' ? (
+          <ScaledCard width={cellW}>
+            <ForgedCard title={item.def.title} kindLabel="Class" body={item.def.body} accentDeep={classColor(item.def.key).deep} Banner={item.def.Banner} classKey={item.def.key} />
+          </ScaledCard>
+        ) : (
+          <ScaledForged item={item} width={cellW} />
+        )}
+      </View>
+      <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
+        {item.label}
+      </Text>
+    </Pressable>
+  );
+});
+
+/**
+ * One filter axis: a name, then its chips on a single line you can scroll sideways (v0.27.2).
+ *
+ * The drawer used to be four unlabelled bands of wrapped chips, about 344 dp of them, which left less
+ * than two rows of cards visible underneath: you could not see what a chip had done without closing
+ * the thing you had just used. Nothing said what any band was for either, and a level chip sat beside
+ * a tier chip looking identical.
+ *
+ * Naming the axes lets the numbers lose their prefixes ("L1" and "Tier 1" become 1 and 1 under
+ * "Level" and "Tier"), which is what makes each band fit on one line in the first place.
+ */
+function FilterBand({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={{ gap: 5 }}>
+      <SectionLabel style={{ fontSize: 9.5, letterSpacing: 1.6 }}>{label}</SectionLabel>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingRight: 8 }} keyboardShouldPersistTaps="handled">
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
 export function GalleryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ kinds?: string; levels?: string; domains?: string }>();
@@ -361,7 +413,10 @@ export function GalleryScreen() {
     return () => { live = false; };
   }, []);
   useEffect(() => {
-    const t = setTimeout(() => setReady(true), 250);
+    // v0.27.2: a frame, not a quarter of a second. The delay was there to let the grid build behind a
+    // loader, but with the list windowed there is no longer a burst of work to hide, and a fixed wait
+    // is a cost every single visit pays whether or not there was anything to wait for.
+    const t = setTimeout(() => setReady(true), 16);
     return () => clearTimeout(t);
   }, []);
 
@@ -384,6 +439,21 @@ export function GalleryScreen() {
   const cols = gridColumns(gridW, isTablet);
   const cellW = Math.floor((gridW - 36 - (cols - 1) * 10) / cols);
   const cellH = Math.round(cellW * 1.4);
+  /**
+   * Virtualisation (v0.27.2).
+   *
+   * The grid is a FlatList over six hundred to a thousand cards and it carried no windowing
+   * configuration at all, so it kept React Native's defaults: roughly ten screens of cells mounted in
+   * each direction. Telling it the row height up front is what lets it skip straight to a scroll
+   * position instead of measuring its way there, and the rest simply bounds how far ahead it builds.
+   */
+  const rowH = cellH + 12 + 17; // cell + list gap + the label under it
+  const getRowLayout = useCallback((_: unknown, i: number) => ({ length: rowH, offset: rowH * i, index: i }), [rowH]);
+  const openCard = useCallback((item: GalleryItem) => setReading(item), []);
+  const renderCard = useCallback(
+    ({ item }: { item: GalleryItem }) => <GalleryCell item={item} cellW={cellW} cellH={cellH} onOpen={openCard} />,
+    [cellW, cellH, openCard],
+  );
 
   if (!ready || !enabledExp) return <LoadingScreen label="Opening the archive" />;
 
@@ -431,13 +501,13 @@ export function GalleryScreen() {
         ) : null}
       </View>
       {drawerOpen ? (
-        <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 8 }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 9 }}>
+          <FilterBand label="Type">
             {KINDS.map((k) => (
               <RuneChip key={k.key} label={k.label} active={filters.kinds.has(k.key)} onPress={() => setFilters((f) => ({ ...f, kinds: toggle(f.kinds, k.key) }))} />
             ))}
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          </FilterBand>
+          <FilterBand label="Domain">
             {domainChips.map((d) => (
               <RuneChip
                 key={d}
@@ -447,23 +517,23 @@ export function GalleryScreen() {
                 onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('domain'), domains: toggle(f.domains, d) }))}
               />
             ))}
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          </FilterBand>
+          <FilterBand label="Level">
             {LEVELS.map((l) => (
-              <RuneChip key={l} label={`L${l}`} active={filters.levels.has(l)} onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('domain'), levels: toggle(f.levels, l) }))} />
+              <RuneChip key={l} label={String(l)} active={filters.levels.has(l)} onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('domain'), levels: toggle(f.levels, l) }))} />
             ))}
-          </View>
+          </FilterBand>
           {/* tier chips narrow weapons/armor (equipment only); tapping one switches the grid to equipment */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          <FilterBand label="Tier">
             {TIERS.map((t) => (
               <RuneChip
                 key={`tier-${t}`}
-                label={`Tier ${t}`}
+                label={String(t)}
                 active={filters.tiers.has(t)}
                 onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('weapon').add('armor'), tiers: toggle(f.tiers, t) }))}
               />
             ))}
-          </View>
+          </FilterBand>
         </ChamferBox>
       ) : null}
 
@@ -474,6 +544,12 @@ export function GalleryScreen() {
         columnWrapperStyle={{ gap: 10 }}
         contentContainerStyle={{ gap: 12, paddingBottom: 28, paddingTop: 2 }}
         showsVerticalScrollIndicator={false}
+        windowSize={5}
+        initialNumToRender={12}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews={Platform.OS === 'android'}
+        getItemLayout={getRowLayout}
         ListHeaderComponent={
           <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.medium, letterSpacing: 0.6, marginBottom: 2 }}>
             {cards.length} card{cards.length === 1 ? '' : 's'}
@@ -485,24 +561,7 @@ export function GalleryScreen() {
             <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>Loosen a filter to see more of the archive.</Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable onPress={() => setReading(item)} accessibilityRole="button" accessibilityLabel={`${item.label}, open card`} style={{ width: cellW }}>
-            <View style={{ width: cellW, height: cellH }}>
-              {item.type === 'card' ? (
-                <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
-              ) : item.type === 'class' ? (
-                <ScaledCard width={cellW}>
-                  <ForgedCard title={item.def.title} kindLabel="Class" body={item.def.body} accentDeep={classColor(item.def.key).deep} Banner={item.def.Banner} classKey={item.def.key} />
-                </ScaledCard>
-              ) : (
-                <ScaledForged item={item} width={cellW} />
-              )}
-            </View>
-            <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
-              {item.label}
-            </Text>
-          </Pressable>
-        )}
+        renderItem={renderCard}
       />
 
       {reading ? (

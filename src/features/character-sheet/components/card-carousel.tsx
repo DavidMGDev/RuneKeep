@@ -556,8 +556,17 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, rotatio
           {item.live ? (
             // a LIVE interactive card (#136 gold): rendered as-is; its controls only take touches
             // once focused (else they'd eat the compact expand tap).
+            //
+            // v0.27.2: only NEAR THE CENTRE, on the same window the full-res image layer already uses.
+            // A live card is two or three svg canvases plus a stack of auto-sizing text, which is the
+            // whole reason cards are captured to bitmaps in the first place. Since v0.27.0 a card with
+            // no bitmap yet renders live instead of being dropped, which is what put the cards back on
+            // the browser build; on a phone it meant that during the first forge of a fresh character
+            // the ENTIRE deck was live svg at once, every one of them re-rendering after each capture.
+            // Far slots are a plain panel, exactly as they are for images, and become themselves as
+            // they approach. Deck membership is untouched, so instance ids and ordering cannot shift.
             <View style={StyleSheet.absoluteFill} pointerEvents={liveActive ? 'auto' : 'none'}>
-              {item.live}
+              {withImage ? item.live : null}
             </View>
           ) : hasFaces ? (
             <>

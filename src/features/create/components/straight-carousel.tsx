@@ -72,7 +72,15 @@ export interface StraightItem {
 
 const SPACING = 148; // px between detents
 const CARD_SCALE = 0.70; // resting center card (#108: a touch smaller so it clears the controls)
-const REST_FRAC = 0.36; // resting card centre, as a fraction of the rail height (#108: pushed up)
+/**
+ * The resting card's centre, as a fraction of the rail height (#108: pushed up).
+ *
+ * v0.27.2: 0.36 -> 0.38, for headroom above the card. Note this is a FRACTION of the rail, which is
+ * what makes trimming the header alone disappointing: every pixel reclaimed above makes the rail one
+ * pixel taller, and the card's rest centre moves down by 0.36 of it, so only about a third of any trim
+ * survives as visible gap. Moving the fraction is the half that lands in full.
+ */
+const REST_FRAC = 0.38;
 const SIDE_FALLOFF = 0.085; // per-step shrink
 const GRIND_TIGHTEN_L = 0.52; // straight-line grind: tighter…
 const GRIND_SHRINK_L = 0.45; // …and smaller, never curved
