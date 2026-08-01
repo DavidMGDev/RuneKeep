@@ -14,14 +14,29 @@
 import type { ArmorDef, WeaponDef } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
+import { authoredSections } from '@/lib/card-form';
+import { composeSections } from '@/lib/card-markdown';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
 import { Rune } from '@/constants/theme';
 
 import { ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
 
-/** The equipment cards print ONE feature line. Homebrew keeps it in the body as `**Name:** text`
- *  (that's what the share path writes), so unwrap it back into the shape those cards expect. */
+/**
+ * The equipment cards print ONE feature line. Homebrew keeps it in the body as `**Name:** text`
+ * (that's what the share path writes), so unwrap it back into the shape those cards expect.
+ *
+ * v0.30.0: the card's DETAIL FORM also writes a block into the body now, and on a weapon or armor
+ * card that block is the trait / range / damage / burden the stat block above already prints. So the
+ * author's own words are what reaches the feature line; printing the stats twice would be worse than
+ * not printing them at all. Everywhere else the block is the only place those facts appear, and it
+ * stays.
+ */
+function authoredText(card: LibraryCard): string {
+  const own = authoredSections(card.sections);
+  return card.sections ? composeSections(own) : card.text;
+}
+
 function specFeature(text: string): { name: string; text: string } | undefined {
   const t = text.trim();
   if (!t) return undefined;
@@ -53,7 +68,7 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
       burden: w.burden,
       kind: w.kind,
       slot: w.slot,
-      feature: specFeature(card.text),
+      feature: specFeature(authoredText(card)),
       effects: card.effects,
     };
     return <ForgedWeaponCard weapon={def} />;
@@ -65,7 +80,7 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
       tier: card.armor.tier,
       thresholds: card.armor.thresholds,
       baseScore: card.armor.baseScore,
-      feature: specFeature(card.text),
+      feature: specFeature(authoredText(card)),
       effects: card.effects,
     };
     return <ForgedArmorCard armor={def} />;

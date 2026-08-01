@@ -69,8 +69,8 @@ export function friendlyError(raw: string): string {
   if (m.includes('older version')) {
     return "That file is from an older version RuneKeep can no longer read.";
   }
-  if (m.includes('not a runekeep') || m.includes('unknown .rkp content kind')) {
-    return "That isn't a RuneKeep file. RuneKeep opens .rkp files, characters, cards and expansions.";
+  if (m.includes('not a runekeep') || m.includes('content kind')) {
+    return "That isn't a RuneKeep file. RuneKeep opens .rune files, characters, cards and expansions.";
   }
   if (m.includes('card') && m.includes('missing')) {
     return 'That expansion has a damaged card in it, so it cannot be installed. Ask whoever made it to export it again.';

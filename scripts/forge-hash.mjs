@@ -49,6 +49,8 @@ const SOURCES = [
   'src/features/create/components/gold-card.tsx',
   'src/features/create/components/chamfered-image.tsx',
   'src/lib/card-markdown.ts',
+  // v0.30.0: the card text now picks its own size from this, so it decides how a card looks.
+  'src/lib/fit-text.ts',
 ];
 
 /**

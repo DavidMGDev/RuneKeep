@@ -324,6 +324,10 @@ export function MenuScreen() {
               </ChamferBox>
             </Pressable>
           </View>
+          {/* v0.30.0: the people who made it. Under the controls, quiet enough to stay out of the way. */}
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 1.4, textTransform: 'uppercase', textAlign: 'center', marginTop: -4 }}>
+            Created by Koy and David
+          </Text>
         </View>
       </View>
     </AppScreen>

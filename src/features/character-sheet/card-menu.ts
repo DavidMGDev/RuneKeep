@@ -20,12 +20,15 @@ export interface CardMenuOption {
  */
 export function cardMenuOptions(isFavorites: boolean, nfcAvailable: boolean, allFavorited = false): CardMenuOption[] {
   if (isFavorites) return [{ kind: 'unfavorite', label: 'Unfavorite' }];
-  const opts: CardMenuOption[] = [
+  return [
     { kind: 'bulkEquip', label: 'Equip All' },
     { kind: 'favorite', label: allFavorited ? 'Unfavorite' : 'Favorite' },
     { kind: 'move', label: 'Move' },
     { kind: 'delete', label: 'Delete' },
+    // v0.30.0: always present. It used to appear only where the NFC radio did, which meant a browser
+    // had no way to share a card at all; the panel it opens exports a `.rune` file when there is no
+    // radio to tap. `nfcAvailable` now only decides what to CALL it, so the wedge count is constant
+    // across platforms and the index→kind mapping the dispatcher relies on never shifts.
+    { kind: 'nfc', label: nfcAvailable ? 'Share' : 'Export' },
   ];
-  if (nfcAvailable) opts.push({ kind: 'nfc', label: 'Send NFC' });
-  return opts;
 }

@@ -6,8 +6,8 @@
  */
 import { Platform } from 'react-native';
 
-import { type Expansion, mergeDecision } from './library';
-import { parseRkp, type RkpContent, serializeRkp } from './rkp';
+import { type Expansion, type LibraryCard, mergeDecision } from './library';
+import { parseRkp, type RkpContent, RUNE_EXT, serializeRkp } from './rkp';
 import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.library';
@@ -86,14 +86,29 @@ export async function deleteExpansion(id: string): Promise<void> {
   if (f.exists) f.delete();
 }
 
-/** Share an expansion (or any RkpContent) as a `.rkp` file via the OS share sheet. */
+/**
+ * Share an expansion (or any RkpContent) as a `.rune` file (v0.30.0, both platforms).
+ *
+ * Native goes through the OS share sheet, so the file can go straight into WhatsApp or Drive. A
+ * browser has no share sheet worth the name, so it downloads: one anchor, one object URL, no library.
+ * The browser path is why the web build can share cards at all now that NFC is not the only way out.
+ */
 export async function exportRkp(content: RkpContent, filename: string): Promise<void> {
-  if (Platform.OS === 'web') return; // no share target in the verify pipeline
-  const { File, Paths } = fs();
   const safe = filename.replace(/[^\w-]+/g, '_').slice(0, 40) || 'runekeep';
-  const out = new File(Paths.cache, `${safe}.rkp`);
+  const text = serializeRkp(content);
+  if (Platform.OS === 'web') {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = `${safe}.${RUNE_EXT}`;
+    a.click();
+    // Revoking immediately can cancel the download in Safari; a tick is enough everywhere.
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    return;
+  }
+  const { File, Paths } = fs();
+  const out = new File(Paths.cache, `${safe}.${RUNE_EXT}`);
   if (out.exists) out.delete();
-  out.write(serializeRkp(content));
+  out.write(text);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Sharing = require('expo-sharing') as typeof import('expo-sharing');
   await Sharing.shareAsync(out.uri, { mimeType: 'application/octet-stream', dialogTitle: `Share ${filename}` });
@@ -113,7 +128,7 @@ export interface ImportExpansionResult {
 export async function importExpansionRkp(force = false): Promise<ImportExpansionResult | null> {
   const content = await pickRkp();
   if (!content) return null;
-  if (content.kind !== 'expansion') throw new Error(`That .rkp is a ${content.kind}, not an expansion.`);
+  if (content.kind !== 'expansion') throw new Error(`That file is a ${content.kind}, not an expansion.`);
   const incoming = content.payload;
   const existing = (await getExpansion(incoming.id)) ?? undefined;
   const decision = mergeDecision(existing, incoming);
@@ -124,14 +139,35 @@ export async function importExpansionRkp(force = false): Promise<ImportExpansion
   return { expansion: existing!, decision: 'skip' };
 }
 
-/** Open the document picker and parse the chosen file as `.rkp`. Returns null if cancelled. */
+/** Open the document picker and parse the chosen file. Returns null if cancelled. Both platforms
+ *  since v0.30.0: a browser hands back a `File`, a phone hands back a cached path. */
 export async function pickRkp(): Promise<RkpContent | null> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const DocumentPicker = require('expo-document-picker') as typeof import('expo-document-picker');
-  // .rkp has no registered MIME on Android (resolves to octet-stream) so we accept any file and
-  // validate by content — restricting to application/json would grey out .rkp files in the picker.
+  // .rune has no registered MIME on Android (resolves to octet-stream) so we accept any file and
+  // validate by content — restricting to application/json would grey out the files in the picker.
   const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
   if (res.canceled || !res.assets[0]) return null;
-  if (Platform.OS === 'web') return null; // device-only flow
-  return parseRkp(new (fs().File)(res.assets[0].uri).textSync());
+  const asset = res.assets[0] as { uri: string; file?: { text: () => Promise<string> } };
+  if (Platform.OS === 'web') return parseRkp(asset.file ? await asset.file.text() : await (await fetch(asset.uri)).text());
+  return parseRkp(new (fs().File)(asset.uri).textSync());
+}
+
+/**
+ * Pick a file and read the CARDS out of it (v0.30.0), for importing straight onto a character.
+ *
+ * Any RuneKeep file that carries cards works, whether it holds one or a whole expansion, because the
+ * person sending it should not have to know which kind they exported. A character file is the one
+ * thing this cannot use: it is a hero, not a stack of cards, and saying so is more use than a
+ * validation error.
+ */
+export async function pickCards(): Promise<LibraryCard[] | null> {
+  const content = await pickRkp();
+  if (!content) return null;
+  if (content.kind === 'card') return [content.payload];
+  if (content.kind === 'expansion') {
+    if (!content.payload.cards.length) throw new Error('That file has no cards in it.');
+    return content.payload.cards;
+  }
+  throw new Error('That file is a character, not cards. Import it from the Characters screen.');
 }

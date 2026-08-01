@@ -24,7 +24,6 @@ import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/cla
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { focusHaptic } from '@/lib/haptics';
 import { type LibraryCard, type LibraryContentType } from '@/lib/library';
-import { nfcModulesPresent } from '@/lib/nfc';
 import { type RkpContent } from '@/lib/rkp';
 import { useScreenDim } from '@/lib/screen-dim';
 
@@ -390,10 +389,8 @@ export function GalleryScreen() {
   const onHoldShare = useCallback(() => {
     const r = reading;
     if (!r || r.type === 'class') return;
-    if (!nfcModulesPresent()) {
-      setNotice('NFC sharing needs the installed app on an NFC-capable phone.');
-      return;
-    }
+    // v0.30.0: no longer refused without an NFC radio. The panel offers a `.rune` export instead,
+    // which is the only way a browser could ever share one of these.
     const payload = toShareCard(r);
     setNfcSend({ content: { kind: 'card', payload }, label: payload.title || 'card' });
   }, [reading]);

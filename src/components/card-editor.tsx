@@ -1,16 +1,18 @@
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { scrollFieldIntoView, RESERVES_KEYBOARD_SPACE } from '@/lib/web-keyboard';
 import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { FORGED_H, ForgedCard } from '@/features/create/components/forged-card';
+import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
 import { type CardEffect } from '@/lib/modifiers';
@@ -101,6 +103,11 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
         <ChamferBox key={i} chamfer={8} fill="rgba(14,17,22,0.96)" stroke={rank ? Rune.goldEdge : 'rgba(218,162,73,0.5)'} strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
           {rank ? (
             <Text style={{ color: Rune.bronze, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{`Feature ${rank} · always on the card`}</Text>
+          ) : null}
+          {/* v0.30.0: say where this text came from, and that the form owns it. Editing it is allowed;
+              the editor asks before a later detail change overwrites what you wrote. */}
+          {r.generated ? (
+            <Text style={{ color: Rune.bronze, fontSize: 9, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Written from the card details</Text>
           ) : null}
           <TextInput
             value={r.name ?? ''}
@@ -225,6 +232,7 @@ export function CardEditor({
   scrimless = false,
   sectioned = false,
   sectionsConfig,
+  generatedBody,
 }: {
   kindLabel: string;
   /** v0.14.0: the centered line under the title in the LIVE preview — the subclass tier word, so an
@@ -241,6 +249,11 @@ export function CardEditor({
   /** v0.10.2: fixed minimum rows + their placeholder names. v0.13.0: `ancestryFeatures` = two mandatory
    *  movable feature rows (Feature 1/2 identity = relative order), description-first default. */
   sectionsConfig?: { minRows?: number; fixedLabels?: string[]; ancestryFeatures?: boolean };
+  /** v0.30.0: markdown written from the card's DETAIL FORM (weapon stats, domain + level, and so on),
+   *  kept as the leading section so the author can read back what they filled in. Recomputed by the
+   *  caller as the form changes; this editor keeps it in step with the draft and asks first when
+   *  doing so would discard hand-edits. Absent = the card has no form worth printing. */
+  generatedBody?: string;
   /** Drop the editor's own dark scrim (#239 item 9): used inside the sheet, where the shared SheetDim
    *  already darkens the screen — keeping a second scrim caused a double-dim that popped on open/close.
    *  A transparent tap-catcher still closes on outside tap. Standalone (creation) keeps its dark scrim. */
@@ -280,6 +293,41 @@ export function CardEditor({
   // chip itself stays tappable (it's gated on the prop, not this), so the choice is reversible.
   const expMode = experienceMode || (!!typeGroups?.length && isExperienceType(draft.typeLabel));
   const canSave = expMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || (sectioned ? hasSectionContent : draft.text.trim().length > 0);
+  /**
+   * v0.30.0: keep the form-written section in step with the form.
+   *
+   * `lastGen` is what the form produced LAST time, which is the only way to tell an author's edit
+   * apart from a form change: if the section on the card no longer matches what the form last wrote,
+   * somebody has been typing in it, and rewriting would throw that away. So the rewrite is offered
+   * rather than performed, and declining leaves their text alone (the form still saves its values;
+   * only the printed block stays as they left it).
+   */
+  const lastGen = useRef<string | undefined>(undefined);
+  const seeded = useRef(false);
+  const handEdited = useRef(false);
+  const [askRewrite, setAskRewrite] = useState<string | null>(null);
+  useEffect(() => {
+    if (generatedBody == null) return;
+    const onCard = generatedSection(draft.sections)?.body;
+    if (!seeded.current) {
+      seeded.current = true;
+      lastGen.current = generatedBody;
+      // On OPEN, `generatedBody` is what the form produces from the config this card was SAVED with.
+      // So a block that does not match it is one somebody typed over in an earlier session, and it
+      // must survive being reopened, which is the whole promise.
+      handEdited.current = onCard != null && onCard !== generatedBody;
+      if (onCard != null) return;
+      setDraft((d) => ({ ...d, sections: withGenerated(d.sections, generatedBody) }));
+      return;
+    }
+    // After that, an edit is the block drifting from the last thing the form wrote into it.
+    if (onCard != null && lastGen.current != null && onCard !== lastGen.current) handEdited.current = true;
+    if (lastGen.current === generatedBody) return;
+    lastGen.current = generatedBody;
+    if (handEdited.current) { setAskRewrite(generatedBody); return; }
+    setDraft((d) => ({ ...d, sections: withGenerated(d.sections, generatedBody) }));
+  }, [generatedBody, draft.sections]);
+
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
   const [pickEffect, setPickEffect] = useState<number | null>(null);
@@ -468,6 +516,17 @@ export function CardEditor({
             setPickVar(null);
           }}
           onClose={() => setPickVar(null)}
+        />
+      ) : null}
+      {askRewrite != null ? (
+        <PopupDialog
+          title="Rewrite the details block?"
+          body="You have edited the block the card details wrote, and changing a detail rewrites the whole block. Rewrite it and your edits there are lost. Keep it and the card prints what you wrote, while the details you just changed still apply."
+          confirmLabel="Rewrite it"
+          cancelLabel="Keep my text"
+          destructive
+          onConfirm={() => { handEdited.current = false; setDraft((d) => ({ ...d, sections: withGenerated(d.sections, askRewrite) })); setAskRewrite(null); }}
+          onCancel={() => setAskRewrite(null)}
         />
       ) : null}
       {pickType && typeGroups ? (

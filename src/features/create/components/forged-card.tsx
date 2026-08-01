@@ -1,6 +1,6 @@
 import { type FC } from 'react';
 import { Image as ExpoImage } from 'expo-image';
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
 
 import { CardMarkdownBody } from '@/components/card-markdown';
@@ -9,6 +9,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
 import { type ArmorDef, type WeaponDef } from '@/data/equipment-data';
 import { type LootDef, lootTable } from '@/data/loot-data';
+import { fitText, wrapLines } from '@/lib/fit-text';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
@@ -53,6 +54,43 @@ export function PlaqueLabel({ text, textColor }: { text: string; textColor: stri
         {text}
       </Text>
     </View>
+  );
+}
+
+const BODY_TEXT_W = FORGED_W - 30; // paddingHorizontal 15 either side
+const BODY_LINE_RATIO = 14 / 10.5; // the v0.13.0 typeset, kept as the text shrinks
+
+/**
+ * The generic card's description, sized to what is left under its own title (v0.30.0).
+ *
+ * The title is the variable: a three-line homebrew title leaves half the room a one-line title does,
+ * so the space has to be worked out per card rather than assumed. Title lines are counted at the
+ * UNSHRUNK size even though native may auto-fit it smaller, because over-estimating the title only
+ * makes the body a shade smaller, and under-estimating it puts the body through the footer.
+ */
+function BodyText({ body, title, hasSubtitle, multiline }: { body: string; title: string; hasSubtitle: boolean; multiline: boolean }) {
+  const named = !!title.trim();
+  const titleLines = named ? Math.min(multiline ? 4 : 1, wrapLines(title, Math.floor(BODY_TEXT_W / (17 * 0.53)))) : 0;
+  const room =
+    FORGED_H - ART_H - 20 - 24 // lower body, less paddingTop / paddingBottom
+    - titleLines * 21 // the title block at 17pt
+    - (hasSubtitle ? 14 : 0)
+    - (named ? 6 : 0) // the body's own marginTop
+    - 2; // slack, for the same reason the equipment cards carry some
+  const fit = fitText(body, { width: BODY_TEXT_W, height: room, base: 10.5, lineRatio: BODY_LINE_RATIO });
+  // Native keeps its auto-shrink under the computed size as a second net; a browser has none, and a
+  // line count there could only truncate. See FeatureLine.
+  const native = Platform.OS !== 'web' && multiline;
+  return (
+    <CardMarkdownBody
+      body={body}
+      numberOfLines={native ? Math.max(fit.lines, 1) : undefined}
+      adjustsFontSizeToFit={native}
+      minimumFontScale={0.6}
+      // v0.13.0 typeset vs the DH scans: LEFT aligned like the prints (justify opened rivers at this
+      // measure), black-weight title above.
+      style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: named ? 6 : 0, flexShrink: 1 }}
+    />
   );
 }
 
@@ -172,15 +210,10 @@ export function ForgedCard({
               {subtitle}
             </Text>
           ) : null}
-          <CardMarkdownBody
-            body={body}
-            numberOfLines={multilineTitle ? 9 : undefined}
-            adjustsFontSizeToFit={multilineTitle}
-            minimumFontScale={0.6}
-            // v0.13.0 typeset vs the DH scans: bigger body (10.5/14), LEFT aligned like the prints
-            // (justify opened rivers at this measure), black-weight title above.
-            style={{ color: Rune.inkText, fontSize: 10.5, lineHeight: 14, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: title.trim() ? 6 : 0, flexShrink: 1 }}
-          />
+          {/* v0.30.0: sized to the room actually left under this card's own title, so a long
+              description shrinks instead of running into the footer. A body that already fits keeps
+              the 10.5/14 typeset exactly, which is most of them. */}
+          <BodyText body={body} title={title} hasSubtitle={!!subtitle} multiline={!!multilineTitle} />
         </View>
       )}
       <ForgedFooter />
@@ -287,6 +320,47 @@ function EquipGlyph({ kind }: { kind: 'physical' | 'magic' | 'armor' }) {
   );
 }
 
+/**
+ * The feature line at the bottom of an equipment card, sized so it can never reach the footer.
+ *
+ * Weapons and armor print their feature under a fixed stat block, so exactly how much room is left is
+ * known before anything renders. It was simply not being used: the text was typeset at one size and
+ * allowed to run, which is why the Katana's last word sat on top of the "RuneKeep" watermark. The
+ * text is never shortened; the type is.
+ *
+ * `numberOfLines` is native-only on purpose. There it pairs with `adjustsFontSizeToFit` as a second
+ * safety net under the computed size, and it CANNOT cut, because the count is the one the size was
+ * chosen for. In a browser neither prop shrinks anything, so a count could only ever truncate, and a
+ * card that hides half a rule is worse than one that looks slightly tight.
+ */
+const EQUIP_TEXT_W = FORGED_W - 32; // paddingHorizontal 16 either side
+const EQUIP_LINE_RATIO = 12.5 / 8.5; // the typeset leading, kept as the text shrinks
+
+/**
+ * How much vertical room is left for the feature, under a stat block of `rows`.
+ *
+ * Every term is a number from the layout right above: the lower body, its padding, the title, the
+ * stat block's own margin and row rhythm, and the gap over the feature. The 2px at the end is slack,
+ * because a row's height comes from the font's own metrics rather than from anything declared here,
+ * and the cost of guessing a shade too generous is text on the footer.
+ */
+function equipFeatureRoom(rows: number): number {
+  const box = FORGED_H - ART_H - 19 - 24; // lower body, less paddingTop / paddingBottom
+  const stats = 8 + rows * 16.6 + (rows - 1) * 3; // marginTop + rows at their measured height + gaps
+  return box - 21 /* title */ - stats - 9 /* the feature's own marginTop */ - 2;
+}
+
+function FeatureLine({ feature, room }: { feature: { name: string; text: string }; room: number }) {
+  const fit = fitText(`${feature.name}: ${feature.text}`, { width: EQUIP_TEXT_W, height: room, base: 8.5, lineRatio: EQUIP_LINE_RATIO });
+  const lineProps = Platform.OS === 'web' ? {} : { numberOfLines: fit.lines, adjustsFontSizeToFit: true, minimumFontScale: 0.55 };
+  return (
+    <Text {...lineProps} style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
+      <Text style={{ fontFamily: Body.bold }}>{feature.name}: </Text>
+      {feature.text}
+    </Text>
+  );
+}
+
 /** One label/value row of an equipment card's stat block. */
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
@@ -323,12 +397,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
           <StatRow label="Damage" value={`${weapon.damage} ${weapon.damageType}`} />
           <StatRow label="Burden" value={weapon.burden} />
         </View>
-        {weapon.feature ? (
-          <Text style={{ color: Rune.inkText, fontSize: 8.5, lineHeight: 12.5, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
-            <Text style={{ fontFamily: Body.bold }}>{weapon.feature.name}: </Text>
-            {weapon.feature.text}
-          </Text>
-        ) : null}
+        {weapon.feature ? <FeatureLine feature={weapon.feature} room={equipFeatureRoom(4)} /> : null}
       </View>
       <ForgedFooter />
     </View>
@@ -462,12 +531,7 @@ export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
           <StatRow label="Thresholds" value={armor.thresholds} />
           <StatRow label="Base Score" value={String(armor.baseScore)} />
         </View>
-        {armor.feature ? (
-          <Text style={{ color: Rune.inkText, fontSize: 8.5, lineHeight: 12.5, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
-            <Text style={{ fontFamily: Body.bold }}>{armor.feature.name}: </Text>
-            {armor.feature.text}
-          </Text>
-        ) : null}
+        {armor.feature ? <FeatureLine feature={armor.feature} room={equipFeatureRoom(2)} /> : null}
       </View>
       <ForgedFooter />
     </View>

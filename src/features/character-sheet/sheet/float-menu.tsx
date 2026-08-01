@@ -69,7 +69,7 @@ const SLOTS: Slot[] = [
   { kind: 'level', label: 'Level Up' },
   { kind: 'rest', label: 'Rest' },
   { kind: 'cards', label: 'Cards' }, // was New Card
-  { kind: 'characters', label: 'Characters' }, // due-SOUTH (#227) — opens the category-toggle panel
+  { kind: 'characters', label: 'Exit' }, // due-SOUTH — leaves the sheet ("Characters" clipped to "Charac...")
   // Switch (inv/arsenal) is gone (#174): it now lives on the gear over-scroll at the carousel edge.
   // Wild Shape (#214) is NOT here — it's a Druid-only carousel category, not a float-menu slot.
 ];
@@ -325,13 +325,13 @@ const MenuIcon = memo(function MenuIcon({ kind }: { kind: SlotKind }) {
         </Svg>
       );
     case 'characters':
-      // v0.29.1: two figures, a roster. The way back out of the sheet to the character list.
+      // v0.30.0: a doorway with an arrow leaving through it. The two-figure roster glyph read as
+      // "manage characters" rather than "leave", and the label under it had to be cut to "Charac...".
       return (
         <Svg width={24} height={24} viewBox="0 0 24 24">
-          <Circle cx={9} cy={8} r={3.2} {...common} />
-          <Path d="M3.5 19.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5" {...common} />
-          <Circle cx={17} cy={7.5} r={2.4} {...common} />
-          <Path d="M15.5 13.2c2.6-.5 5 1.4 5 4.3" {...common} />
+          <Path d="M13.5 4H6.5a1.5 1.5 0 0 0-1.5 1.5v13A1.5 1.5 0 0 0 6.5 20h7" {...common} />
+          <Path d="M17.5 12H10" {...common} />
+          <Polyline points="14.5,8.5 18.5,12 14.5,15.5" {...common} />
         </Svg>
       );
     case 'cards':
@@ -497,7 +497,7 @@ export function FloatMenuOverlay() {
 /** Stub interface for any not-yet-built option. Opens an empty on-brand panel; replaced by the real
  *  interface in its own PR (#161). */
 export function FloatPlaceholder({ kind, onClose }: { kind: PlaceholderKind; onClose: () => void }) {
-  const TITLE: Record<PlaceholderKind, string> = { custom: 'New Card', level: 'Level Up', rest: 'Rest', modifiers: 'Modifiers', cards: 'Cards', characters: 'Characters' };
+  const TITLE: Record<PlaceholderKind, string> = { custom: 'New Card', level: 'Level Up', rest: 'Rest', modifiers: 'Modifiers', cards: 'Cards', characters: 'Exit' };
   const W = 320;
   const H = 220;
   const c = 18;

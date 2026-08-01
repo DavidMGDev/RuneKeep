@@ -16,7 +16,9 @@ describe('isFilePayload', () => {
     expect(isFilePayload('content://media/external/file/12345')).toBe(true);
   });
 
-  it('accepts file URIs that name a .rkp', () => {
+  it('accepts file URIs that name a .rune, and the .rkp files sent before the rename', () => {
+    expect(isFilePayload('file:///storage/emulated/0/Download/Aeliana.rune')).toBe(true);
+    expect(isFilePayload('file:///storage/emulated/0/Download/Aeliana.RUNE')).toBe(true);
     expect(isFilePayload('file:///storage/emulated/0/Download/Aeliana.rkp')).toBe(true);
     expect(isFilePayload('file:///data/user/0/com.davidmgdev.runekeep/cache/x.rkp?v=2')).toBe(true);
   });
