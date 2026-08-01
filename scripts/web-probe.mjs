@@ -22,6 +22,7 @@
  *   shot:NAME          screenshot to NAME.png
  *   text               dump the visible text
  *   eval:EXPR          evaluate EXPR in the page and log the result
+ *   pick:PATH          hand PATH to the next file picker the app opens (arm it BEFORE the tap)
  *   wait:MS            pause
  *
  * Example, a full character from an empty browser:
@@ -32,6 +33,7 @@
  */
 import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const puppeteer = require('puppeteer-core');
@@ -118,6 +120,9 @@ const find = (text, nth) =>
 await page.goto(url, { waitUntil: 'networkidle2', timeout: 240000 });
 await wait(3500);
 
+/** A file chooser armed by a `pick:` step, waiting for whatever opens it next. */
+let armed = null;
+
 for (const step of steps) {
   const [kind, ...rest] = step.split(':');
   const arg = rest.join(':');
@@ -169,6 +174,14 @@ for (const step of steps) {
     log.push(`text:\n${(await page.evaluate(() => document.body.innerText)).slice(0, 1600)}`);
   } else if (kind === 'wait') {
     await wait(Number(arg));
+  } else if (kind === 'pick') {
+    // v0.30.1: hand a real file to the NEXT file picker the app opens, so import can be tested from
+    // here at all. Arm it BEFORE the step that opens the picker; a chooser cannot be answered after
+    // the fact, and an unanswered one blocks the page.
+    const chooser = page.waitForFileChooser({ timeout: 15000 });
+    armed = chooser.then((c) => c.accept([resolve(arg)]));
+    armed.catch(() => {});
+    log.push(`pick armed with ${arg}`);
   } else if (kind === 'eval') {
     log.push(`eval ${arg}\n  => ${JSON.stringify(await page.evaluate(arg))}`);
   } else {

@@ -75,7 +75,13 @@ export function computeHash() {
     for (const file of walk(join(ROOT, entry))) {
       // The path goes in as well as the contents, so a rename counts as a change.
       h.update(relative(ROOT, file).replace(/\\/g, '/'));
-      h.update(readFileSync(file));
+      // Line endings are NORMALIZED before hashing (v0.30.1). Hashing the raw bytes meant the
+      // signature depended on how git happened to check the file out: on Windows, `core.autocrlf`
+      // rewrites every LF on the way to disk, so merging a branch and pulling it back changed the
+      // hash of files nobody had touched. That is a full re-forge of every cached card bitmap on
+      // every device, for nothing, which is the exact cost this signature exists to avoid. A card
+      // does not look different because a file has different line endings.
+      h.update(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'));
     }
   }
   return h.digest('hex').slice(0, 12);

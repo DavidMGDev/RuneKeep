@@ -138,11 +138,25 @@ export async function deleteCharacter(id: string): Promise<void> {
   if (f.exists) f.delete();
 }
 
-/** Share the character as a `.rkp` file through the OS share sheet (the export path, v0.10.0). */
+/**
+ * Share the character as a `.rune` file through the OS share sheet (the export path, v0.10.0).
+ *
+ * v0.30.1: a browser downloads it instead, the same way card and expansion exports do. It returned
+ * silently before, so Export did nothing and said nothing, and a browser player had no way to get a
+ * character off the machine at all. Art is left as it is on web: the images are already stored in the
+ * browser rather than behind a `file://` that means nothing elsewhere.
+ */
 export async function exportCharacter(file: CharacterFile): Promise<void> {
-  if (Platform.OS === 'web') return; // no share target in the verify pipeline
-  const { File, Paths } = fs();
   const safe = file.name.replace(/[^\w-]+/g, '_').slice(0, 40) || 'character';
+  if (Platform.OS === 'web') {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([serializeRkp({ kind: 'character', payload: file })], { type: 'application/json' }));
+    a.download = `${safe}.${RUNE_EXT}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    return;
+  }
+  const { File, Paths } = fs();
   const out = new File(Paths.cache, `${safe}.${RUNE_EXT}`);
   if (out.exists) out.delete();
   // v0.22.0: history travels WITH the file (owner). A shared character carries its whole story, so
@@ -172,15 +186,26 @@ export function readCharacterText(text: string): CharacterFile {
   }
 }
 
-/** Pick a .rkp/.json, validate it, save it into the roster. Returns the imported character or null if cancelled. */
+/**
+ * Pick a `.rune` (or the older `.rkp`/`.json`), validate it, save it into the roster. Returns the
+ * imported character, or null if the picker was cancelled.
+ *
+ * v0.30.1: this WORKS in a browser. It used to open the picker, take the file, and return null the
+ * moment it saw web, which is the worst shape a failure can have: the roster simply carried on as if
+ * nothing had been chosen, and there was nothing to report because nothing had gone wrong. A browser
+ * hands the picked file back as a `File` object rather than a path, which is all the difference
+ * amounted to.
+ */
 export async function importCharacter(): Promise<CharacterFile | null> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const DocumentPicker = require('expo-document-picker') as typeof import('expo-document-picker');
-  // accept any file (.rkp has no registered MIME) and validate by content
+  // accept any file (.rune has no registered MIME) and validate by content
   const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
   if (res.canceled || !res.assets[0]) return null;
-  if (Platform.OS === 'web') return null; // import is a device flow; the web shim has no picker file API
-  const file = readCharacterText(new (fs().File)(res.assets[0].uri).textSync());
+  const asset = res.assets[0] as { uri: string; file?: { text: () => Promise<string> } };
+  // `fetch` covers the blob: URL a browser gives when the asset carries no File handle.
+  const text = Platform.OS === 'web' ? (asset.file ? await asset.file.text() : await (await fetch(asset.uri)).text()) : new (fs().File)(asset.uri).textSync();
+  const file = readCharacterText(text);
   await saveCharacter(file);
   return file;
 }
