@@ -44,6 +44,7 @@ export function QuickCardFlow({
   onSave,
   onCancel,
   onAdvanced,
+  onImport,
   kindLabel = 'Card',
 }: {
   initial?: CardDraft;
@@ -54,6 +55,8 @@ export function QuickCardFlow({
   onCancel: () => void;
   /** Hand the draft to the full editor. */
   onAdvanced: (draft: CardDraft) => void;
+  /** v0.30.0: bring cards in from a `.rune` file instead of authoring one. Absent = not offered. */
+  onImport?: () => void;
 }) {
   const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [] });
   const [step, setStep] = useState<'edit' | 'confirm'>('edit');
@@ -213,6 +216,9 @@ export function QuickCardFlow({
               <RuneButton label="Next" kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={toConfirm} />
             </View>
             <RuneButton label="Advanced options" kind="ghost" dense height={34} onPress={() => onAdvanced(draft)} />
+            {/* v0.30.0: the other way to get a card, for one somebody already made. Takes a single
+                card or a whole stack, from anywhere in the app that exports. */}
+            {onImport ? <RuneButton label="Import from a file" kind="ghost" dense height={34} onPress={onImport} /> : null}
           </View>
         ) : (
           <View style={{ width: 320, marginTop: 18, gap: 9 }}>

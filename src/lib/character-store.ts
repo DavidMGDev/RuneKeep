@@ -9,7 +9,7 @@ import { Platform } from 'react-native';
 
 import { type CharacterFile, parseCharacterFile, serializeCharacterFile } from './character-file';
 import { embedCharacterImages } from './image-embed';
-import { parseRkp, serializeRkp } from './rkp';
+import { parseRkp, RUNE_EXT, serializeRkp } from './rkp';
 import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.characters';
@@ -143,7 +143,7 @@ export async function exportCharacter(file: CharacterFile): Promise<void> {
   if (Platform.OS === 'web') return; // no share target in the verify pipeline
   const { File, Paths } = fs();
   const safe = file.name.replace(/[^\w-]+/g, '_').slice(0, 40) || 'character';
-  const out = new File(Paths.cache, `${safe}.rkp`);
+  const out = new File(Paths.cache, `${safe}.${RUNE_EXT}`);
   if (out.exists) out.delete();
   // v0.22.0: history travels WITH the file (owner). A shared character carries its whole story, so
   // a friend importing it — or you restoring your own backup — gets the timeline too, not just the
@@ -164,7 +164,7 @@ export function readCharacterText(text: string): CharacterFile {
   try {
     const content = parseRkp(text);
     if (content.kind === 'character') return content.payload;
-    throw new Error(`That .rkp is a ${content.kind}, not a character.`);
+    throw new Error(`That file is a ${content.kind}, not a character.`);
   } catch (e) {
     // Not an rkp envelope — fall back to the legacy `.runekeep.json` (bare CharacterFile) format.
     if (e instanceof Error && /not a character/i.test(e.message)) throw e;

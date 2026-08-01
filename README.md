@@ -48,7 +48,7 @@ The same app runs in a browser, built from the same source. Each release ships a
 It is a **PWA**, so on Android you can install it to your home screen and it behaves like an app,
 service worker and all. Characters live in **IndexedDB** on that browser and that device, which means:
 
-- clearing site data deletes your characters, so export anything you care about (`.rkp` files);
+- clearing site data deletes your characters, so export anything you care about (`.rune` files);
 - private/incognito windows start empty and forget everything on close;
 - characters do not sync between the browser build and the Android build. Move them with export/import.
 

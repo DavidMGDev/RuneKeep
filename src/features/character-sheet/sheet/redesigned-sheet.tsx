@@ -1844,7 +1844,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       id: `nfc-${Date.now().toString(36)}`,
       name: `${file.name || 'Hero'}'s cards`,
       author: file.name || '',
-      description: `${cards.length} cards shared over NFC`,
+      description: `${cards.length} cards from ${file.name || 'a hero'}`,
       version: 1,
       createdAt: new Date().toISOString(),
       cards,

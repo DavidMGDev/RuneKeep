@@ -35,6 +35,7 @@ import {
   SUBCLASS_TIER_LABEL,
   subclassFamilyName,
 } from '@/lib/library';
+import { formMarkdown } from '@/lib/card-form';
 import { cardById } from '@/data/catalog';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
@@ -386,6 +387,8 @@ export function LibraryScreen() {
         initial={initial}
         sectioned
         sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
+        // v0.30.0: the details block, rewritten as the form below is filled in.
+        generatedBody={formMarkdown(cfg)}
         extraField={<ContentConfig config={cfg} onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))} />}
         onCancel={() => setEditingCard(null)}
         onSave={(d) => {
@@ -483,11 +486,12 @@ export function LibraryScreen() {
                     {/* v0.14.0: INLINE the art. `imageUri` is a device-local file path — it serialized
                         fine but resolved to nothing on the receiving phone, so every shared card with an
                         uploaded image arrived blank. The sheet's send path always did this. */}
-                    {nfcOn ? (
-                      <Pressable onPress={() => { playSfx('buttonTap'); void embedCardImageForNfc(c).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Send ${c.title || 'card'} by NFC`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
-                      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>NFC</Text>
+                    {/* v0.30.0: always here. It said NFC and only appeared on a phone with the radio;
+                        the panel it opens exports a .rune file everywhere else, so a browser can share
+                        a card too. */}
+                    <Pressable onPress={() => { playSfx('buttonTap'); void embedCardImageForNfc(c).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Share ${c.title || 'card'}`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+                      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>{nfcOn ? 'SHARE' : 'EXPORT'}</Text>
                     </Pressable>
-                    ) : null}
                     <Pressable onPress={() => setConfirmDeleteCard(i)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${c.title || 'card'}`} style={{ padding: 4 }}>
                       <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
                     </Pressable>

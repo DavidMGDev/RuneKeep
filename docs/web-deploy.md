@@ -14,7 +14,7 @@ Three things are true of the web build. The first is the one that will surprise 
 
 **Everything is stored in the browser, on that device.** There is no server and no account. A
 character made on your laptop does not appear on a player's phone. Sharing happens the way it already
-does: export a `.rkp`, send it, import it. That is not a limitation of the hosting, it is how the app
+does: export a `.rune`, send it, import it. That is not a limitation of the hosting, it is how the app
 works, and it stays true wherever you put it.
 
 **Storage is IndexedDB, so portraits are fine** (since v0.24.2). It used to be `localStorage`, capped
@@ -26,7 +26,8 @@ falls back to `localStorage` and its old limit, which is the worst case rather t
 Existing browser data migrates on first load, and the old `localStorage` copy is deliberately left in
 place so rolling back a deploy does not strand anyone.
 
-**NFC card sharing does not exist in a browser**, and neither does the `.rkp` file association. Import
+**NFC card sharing does not exist in a browser**, and neither does the `.rune` file association. Sharing a
+card from a browser exports it as a file instead (v0.30.0). Import
 becomes a file picker, export becomes a download. Everything else, including sound, works.
 
 ---

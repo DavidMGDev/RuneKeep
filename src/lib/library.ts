@@ -30,6 +30,11 @@ export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
 export interface CardSection {
   name?: string;
   body: string;
+  /** v0.30.0: this section was WRITTEN BY the card's detail form (a weapon's stat rows, a domain
+   *  card's domain and level), not by the author. It is rewritten whenever the form changes, so it is
+   *  the one section the app may replace, and the one renderers can drop where the card already
+   *  prints those facts itself. See `lib/card-form`. */
+  generated?: boolean;
   /** v0.13.0: this section IS one of an ancestry's two mandatory features. Features can sit anywhere
    *  among the sections (description first, etc.); their 1/2 identity is their RELATIVE order — the
    *  upper flagged section is always "Feature 1". Cards without any flags (legacy + bundled Void
@@ -243,7 +248,7 @@ export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
     sections: Array.isArray(c.sections)
       ? (c.sections as unknown[]).map((s) => {
           const o = (s ?? {}) as Record<string, unknown>;
-          return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '', feature: o.feature === true ? true : undefined };
+          return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '', feature: o.feature === true ? true : undefined, generated: o.generated === true ? true : undefined };
         })
       : undefined,
     weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,

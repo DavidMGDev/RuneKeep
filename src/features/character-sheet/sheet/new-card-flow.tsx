@@ -1,13 +1,17 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { Text } from 'react-native';
 
 import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { type ExperienceRef } from '@/components/effects-editor';
 import { RuneButton } from '@/components/rune-button';
+import { showToast } from '@/components/toast';
 import { Body, Rune } from '@/constants/theme';
 
+import { cardById } from '@/data/catalog';
+import { lootById } from '@/data/loot-data';
 import { type LibraryCard } from '@/lib/library';
+import { pickCards } from '@/lib/library-store';
 
 import { type CardCategory } from '../card-data';
 import { type CustomCategory } from '../carousel-categories';
@@ -48,6 +52,22 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   const [handoff, setHandoff] = useState<CardDraft | undefined>(undefined);
   // A finished draft waiting on its destination. Held here so BOTH editors ask the same question.
   const [pending, setPending] = useState<CardDraft | null>(null);
+  // v0.30.0: cards read out of a `.rune`, waiting on the same destination question an authored card
+  // gets. One card or fifty, the flow is identical, because the person sending them should not have
+  // to know which kind of file they exported.
+  const [imported, setImported] = useState<LibraryCard[] | null>(null);
+  const doImport = useCallback(() => {
+    void (async () => {
+      try {
+        const cards = await pickCards();
+        if (!cards) return; // cancelled
+        if (!onAcquireCustom) { showToast('Cards cannot be imported here.', 'error'); return; }
+        setImported(cards);
+      } catch (e) {
+        showToast(e instanceof Error ? e.message : 'That file could not be read.', 'error');
+      }
+    })();
+  }, [onAcquireCustom]);
   // Beastform is Druid-only and not player-authored (#242 item 5): block New Card here.
   if (category === 'wildshape') {
     return (
@@ -87,6 +107,32 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
       />
     );
   }
+  if (imported) {
+    // The whole stack lands in one deck. Asking per card would be a wall of the same question, and
+    // moving one afterwards is a hold away.
+    return (
+      <CardDestination
+        cardTitle={imported.length === 1 ? imported[0].title.trim() || undefined : `${imported.length} cards`}
+        categories={destinations.length ? destinations : [category]}
+        customCategories={customCategories}
+        suggested={destinations.includes(category) ? category : undefined}
+        cancelLabel="Back"
+        onPick={(key) => {
+          const cards = imported;
+          setImported(null);
+          for (const c of cards) {
+            // A system card travels as a tiny reference, never as bytes, so resolve it back to the
+            // real bundled card (true art, working modifiers) exactly as the NFC ceremony does.
+            // Without this it would arrive as a flat copy of its text.
+            if (c.catalogId && onAcquire && (cardById(c.catalogId) || lootById(c.catalogId))) onAcquire(c.catalogId, key);
+            else onAcquireCustom?.(c, key);
+          }
+          onCancel();
+        }}
+        onCancel={() => setImported(null)}
+      />
+    );
+  }
   if (mode === 'catalog' && onAcquire) {
     // #328: route the catalog card to the category being added to (the Cards-panel per-category Add
     // button, or the current carousel category from the float menu) — not a hardcoded deck.
@@ -102,6 +148,7 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
         onSave={finish}
         onCancel={onCancel}
         onAdvanced={(d) => { setHandoff(d); setSimple(false); }}
+        onImport={onAcquireCustom ? doImport : undefined}
       />
     );
   }

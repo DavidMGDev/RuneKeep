@@ -30,7 +30,9 @@ export function isFilePayload(url: string | null | undefined): boolean {
   const u = url.toLowerCase();
   if (u.startsWith('runekeep://')) return false; // the app's own deep links are routes
   if (u.startsWith('content://')) return true;
-  if (u.startsWith('file://')) return /\.rkp($|[?#])/i.test(url);
+  // v0.30.0: `.rune` is the extension now; `.rkp` still opens, because files sent before the rename
+  // are on people's phones and in their chat histories.
+  if (u.startsWith('file://')) return /\.(rune|rkp)($|[?#])/i.test(url);
   return false;
 }
 

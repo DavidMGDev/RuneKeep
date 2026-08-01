@@ -64,14 +64,33 @@ export function isStandalone(): boolean {
   return iosStandalone || !!w.matchMedia?.('(display-mode: standalone)')?.matches || !!w.matchMedia?.('(display-mode: fullscreen)')?.matches;
 }
 
+/**
+ * Is this a phone or a tablet, given what the browser says about itself? Pure, so the awkward cases
+ * are table tests rather than something you can only find on a device you own.
+ *
+ * The user agent alone is not enough, and v0.29.1 proved it: Chrome on an Android tablet requests
+ * desktop sites by default on a large screen, so a Galaxy Tab reports `X11; Linux x86_64` with no
+ * "Android" anywhere in it. The install offer read that as a desktop and stayed quiet on the one
+ * device where browser chrome costs the most room.
+ *
+ * `coarse` is the honest discriminator: it is the browser's own answer to "is the primary pointer a
+ * finger?". A touchscreen laptop still reports `fine`, because its primary pointer is the trackpad,
+ * so a desktop is never prompted, which is what the owner asked for.
+ */
+export function isMobileLike(ua: string, maxTouchPoints: number, coarsePointer: boolean): boolean {
+  const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && maxTouchPoints > 1);
+  return ios || /Android/.test(ua) || (coarsePointer && maxTouchPoints > 1);
+}
+
 export function readFacts(): InstallFacts {
   const w = win();
   if (!w) return { web: false, standalone: false, mobile: false, ios: false, deferred: false };
   const ua = w.navigator?.userAgent ?? '';
+  const touch = w.navigator?.maxTouchPoints ?? 0;
   // iPadOS reports itself as a Mac; the touch-point count is what separates it from a desktop.
-  const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (w.navigator?.maxTouchPoints ?? 0) > 1);
-  const android = /Android/.test(ua);
-  return { web: true, standalone: isStandalone(), mobile: ios || android, ios, deferred: !!w.__rkInstall };
+  const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && touch > 1);
+  const coarse = !!w.matchMedia?.('(pointer: coarse)')?.matches;
+  return { web: true, standalone: isStandalone(), mobile: isMobileLike(ua, touch, coarse), ios, deferred: !!w.__rkInstall };
 }
 
 /** Fire the browser's install dialog. Resolves true if they went through with it. */
