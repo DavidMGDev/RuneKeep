@@ -1,31 +1,27 @@
-RuneKeep v0.29.1 - the timeline reads like a history, the golden gear works in the creator, and rewinding finally stops eating your future.
+RuneKeep v0.30.0 - cards print their own details, no card text lands on the footer any more, sharing works without NFC, and the file extension is .rune.
 
-TIMELINE
+CARDS
 
-- REWINDING NO LONGER REWRITES YOUR HISTORY. This is the one I got wrong twice, and the real cause was not where I was looking. Your sheet seeds a welcome note the first time it opens, and the "was created" entry is recorded a moment BEFORE that note exists. So rewinding to it handed the sheet a character with no note, the sheet dutifully seeded one again, and THAT counted as you changing something, which threw away everything after the point you rewound to. It was the app editing your character and blaming you for it. Writes the app makes for itself are now marked as such and can never appear in your timeline or discard anything.
-- ENTRIES SAY WHAT ACTUALLY CHANGED. "Changed cards" now lists the cards, on the row, without opening anything: (+) Bone 1 for something equipped, (-) Backpack for something put away.
-- DAY HEADINGS, LIKE A CHAT APP. Today, Yesterday, then the weekday for the rest of the week, then a date like July 6th. A column of times tells you nothing about whether something happened this afternoon or last month.
-- HOLDING AN ENTRY SHOWS A PROGRESS BAR. Before, the only sign anything was happening was the row growing, and growing made its own border clip against the row above it, which looks like a fault rather than progress.
-- ROWS ARE BIGGER AND NO LONGER HIDE THINGS BEHIND A TAP. Nothing indicated an entry could be expanded, so almost nobody did. What was hidden in there is on the face of the row now, and every row says plainly that holding it rewinds to that point.
+- TEXT NEVER PRINTS OVER THE FOOTER. The Katana is the card that made this necessary: its feature runs to three lines, a weapon card has room for two and a half, and nothing was stopping the overflow, so the word "range." sat on top of the "RuneKeep" watermark. Card text now works out its own size from the text itself, shrinking only as much as it has to. Nothing is ever cut, and a card that already fits looks exactly as it did. Armor and long homebrew descriptions were doing the same thing and are fixed by the same change.
+- THE DETAILS YOU FILL IN GO ON THE CARD. Authoring homebrew asks for a lot: a weapon's trait, range, damage and burden, which domain and level a card is, which tier a subclass card is. All of it was collected and then went nowhere you could read it. The form now writes itself into the description as markdown, laid out the way the printed cards lay the same facts out, so you can check what you filled in and so can anyone you send the card to.
+- YOU CAN EDIT THAT BLOCK, AND IT ASKS BEFORE OVERWRITING IT. Changing a detail rewrites the whole block. If you have typed in it, you are asked first, and keeping your text is one of the two answers. Reopening a card never quietly rewrites what you wrote.
+- WEAPONS AND ARMOR LEAVE IT OFF, because their stat block already prints those exact rows and printing them twice would be worse than not printing them at all.
 
-CHARACTER CREATION
+SHARING
 
-- THE GOLDEN GEAR WORKS. Dragging it sweeps the whole deck, the same as on the character sheet. It has been dead since the creator started reserving space at the bottom for the select buttons: the gear moved up with the cards, but the strip that listens for your finger stayed at the bottom of the screen, underneath the buttons. So the gear was drawn in one place and listening in another, and the only live part was hidden behind the buttons.
-- THE CARDS SIT LOWER. The centre card grows as it becomes the middle one, and it was growing up into the step tabs above it. It rests lower now, which also closes the gap between the cards and the gear that you flagged. Both were the same number.
-- THE GEAR SITS A LITTLE LOWER TOO, closer to the buttons beneath it.
+- SHARE WORKS WITHOUT NFC. Every send panel can EXPORT the card as a file. Where there is no NFC radio, which is every browser and some phones, the panel says so plainly and puts the export button in the middle, because there it is the whole point rather than a fallback.
+- THE SHARE OPTION IS BACK IN EDIT MODE IN A BROWSER. It only ever appeared on hardware with an NFC radio, so the web build had no way to share a card at all. It is always there now, named for what your device can actually do.
+- THE CARD ARCHIVE AND THE CARD LIBRARY SHARE THE SAME WAY. Holding a card in the archive no longer refuses when there is no radio.
+- ADD CARD CAN IMPORT A FILE. Under Advanced options: pick a file holding one card or a whole stack, and choose which deck they land in. Anything exported anywhere in the app can come back in this way. A system card comes back as the real card, art and all, not a flat copy of its text.
 
-THE FLOAT MENU
+FILES
 
-- CARDS AND NEW CARD HAVE SWAPPED, and the bottom wedge is now CHARACTERS: the way back to your character list. It asks first, using the same confirmation the back button already used, and covers the trip with a loading screen. New Card is not gone from the app: the Add Card badge on the sheet is still there and is still the quickest way in.
+- THE EXTENSION IS .RUNE. Everything writes .rune from now on, and Android opens them from WhatsApp, a file manager, Gmail or a download the same as before. Files you were sent as .rkp still open, and a .rune exported here still opens on a phone that has not updated yet, so nothing at your table has to upgrade in step.
 
-THE BROWSER
+ELSEWHERE
 
-- THE CARDS LIST SCROLLS FROM ANYWHERE. It only scrolled at the very edges, because every card in that grid told the browser it owned the touch outright, so a finger landing on a card could never scroll the list underneath it. Only the gutter beside the last column was still live.
-- THE BACK BUTTON ASKS BEFORE LEAVING. It was Android only, so in a browser back, the back gesture and Alt+Left all walked straight out of your sheet with no confirmation and any open panel abandoned rather than closed.
-- EDIT MODE NO LONGER SOFTLOCKS WHEN YOU LET GO. Dropping a card could leave the whole row hanging in the air with no way out. The commit was reachable from exactly one place, and a browser does not always release a drag through it, so an interrupted drop left a flag raised that makes every later drag do nothing.
-
-SOUND
-
-- QUIETER AGAIN, on both, by about a third from where they were.
+- ANDROID TABLETS ARE OFFERED THE INSTALL AGAIN. Chrome asks for desktop sites on a large screen, so a Galaxy Tab reports itself with no "Android" in it anywhere and was read as a desktop, on the device with the most browser chrome to lose. Desktops are still left alone: a touchscreen laptop is not a tablet, and the browser can tell you which one it is.
+- THE FLOAT MENU'S BOTTOM WEDGE IS EXIT, with a doorway glyph. "Characters" was too long and clipped to "Charac...".
+- CREATED BY KOY AND DAVID, on the main menu.
 
 Sideload: enable Install unknown apps, then open the APK.

@@ -59,6 +59,10 @@ export function PlaqueLabel({ text, textColor }: { text: string; textColor: stri
 
 const BODY_TEXT_W = FORGED_W - 30; // paddingHorizontal 15 either side
 const BODY_LINE_RATIO = 14 / 10.5; // the v0.13.0 typeset, kept as the text shrinks
+/** Pinned, like the equipment cards' rows: an unset line height is taller on Android than in a
+ *  browser, which is how a card can fit on one platform and print over its footer on the other. */
+const BODY_TITLE_H = 21;
+const BODY_SUB_H = 11;
 
 /**
  * The generic card's description, sized to what is left under its own title (v0.30.0).
@@ -73,10 +77,9 @@ function BodyText({ body, title, hasSubtitle, multiline }: { body: string; title
   const titleLines = named ? Math.min(multiline ? 4 : 1, wrapLines(title, Math.floor(BODY_TEXT_W / (17 * 0.53)))) : 0;
   const room =
     FORGED_H - ART_H - 20 - 24 // lower body, less paddingTop / paddingBottom
-    - titleLines * 21 // the title block at 17pt
-    - (hasSubtitle ? 14 : 0)
-    - (named ? 6 : 0) // the body's own marginTop
-    - 2; // slack, for the same reason the equipment cards carry some
+    - titleLines * BODY_TITLE_H
+    - (hasSubtitle ? BODY_SUB_H + 3 : 0) // its own marginTop rides with it
+    - (named ? 6 : 0); // the body's marginTop
   const fit = fitText(body, { width: BODY_TEXT_W, height: room, base: 10.5, lineRatio: BODY_LINE_RATIO });
   // Native keeps its auto-shrink under the computed size as a second net; a browser has none, and a
   // line count there could only truncate. See FeatureLine.
@@ -197,7 +200,7 @@ export function ForgedCard({
                 numberOfLines={multilineTitle ? 4 : 1}
                 adjustsFontSizeToFit
                 minimumFontScale={multilineTitle ? 0.42 : 0.55}
-                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>
+                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, lineHeight: BODY_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>
                 {title}
               </Text>
               {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
@@ -206,7 +209,7 @@ export function ForgedCard({
             <Text style={{ alignSelf: 'flex-end', color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text>
           ) : null}
           {subtitle ? (
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.inkMuted, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'center', marginTop: 3 }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.inkMuted, fontSize: 8.5, lineHeight: BODY_SUB_H, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'center', marginTop: 3 }}>
               {subtitle}
             </Text>
           ) : null}
@@ -336,18 +339,21 @@ function EquipGlyph({ kind }: { kind: 'physical' | 'magic' | 'armor' }) {
 const EQUIP_TEXT_W = FORGED_W - 32; // paddingHorizontal 16 either side
 const EQUIP_LINE_RATIO = 12.5 / 8.5; // the typeset leading, kept as the text shrinks
 
+/** The equipment cards' title, pinned for the same reason the stat rows are. */
+const EQUIP_TITLE_H = 19;
+
 /**
  * How much vertical room is left for the feature, under a stat block of `rows`.
  *
- * Every term is a number from the layout right above: the lower body, its padding, the title, the
- * stat block's own margin and row rhythm, and the gap over the feature. The 2px at the end is slack,
- * because a row's height comes from the font's own metrics rather than from anything declared here,
- * and the cost of guessing a shade too generous is text on the footer.
+ * Every term is a number declared in the layout right below: the lower body, its padding, the title,
+ * the stat block's own margin and row rhythm, and the gap over the feature. It is exact rather than
+ * approximate because the title and the rows now have pinned heights; before that, the answer was
+ * different on each platform and nobody was asking the question anyway.
  */
 function equipFeatureRoom(rows: number): number {
   const box = FORGED_H - ART_H - 19 - 24; // lower body, less paddingTop / paddingBottom
-  const stats = 8 + rows * 16.6 + (rows - 1) * 3; // marginTop + rows at their measured height + gaps
-  return box - 21 /* title */ - stats - 9 /* the feature's own marginTop */ - 2;
+  const stats = 8 + rows * STAT_ROW_H + (rows - 1) * 3; // marginTop + rows + gaps
+  return box - EQUIP_TITLE_H - stats - 9 /* the feature's own marginTop */;
 }
 
 function FeatureLine({ feature, room }: { feature: { name: string; text: string }; room: number }) {
@@ -361,12 +367,23 @@ function FeatureLine({ feature, room }: { feature: { name: string; text: string 
   );
 }
 
-/** One label/value row of an equipment card's stat block. */
+/**
+ * One label/value row of an equipment card's stat block.
+ *
+ * The line heights are PINNED (v0.30.0), and that is the actual reason the Katana printed over its
+ * footer on a phone and not in a browser. Left unset, a row is as tall as the font's own metrics say,
+ * and Android's are noticeably taller than Chrome's: the same four rows took about 21dp more there,
+ * which is most of a line of feature text, and it came out of the bottom of the card. Pinned, the
+ * card has the same shape on both, and how much room is left for the feature is a number rather than
+ * a guess. See `equipFeatureRoom`.
+ */
+const STAT_ROW_H = 13;
+
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-      <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
-      <Text style={{ color: Rune.inkText, fontSize: 10, fontFamily: Body.semibold }}>{value}</Text>
+      <Text style={{ color: Rune.inkMuted, fontSize: 7.5, lineHeight: STAT_ROW_H, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+      <Text style={{ color: Rune.inkText, fontSize: 10, lineHeight: STAT_ROW_H, fontFamily: Body.semibold }}>{value}</Text>
     </View>
   );
 }
@@ -390,7 +407,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Trait" value={weapon.trait} />
           <StatRow label="Range" value={weapon.range} />
@@ -451,7 +468,7 @@ export function ForgedLootCard({ loot }: { loot: LootDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{loot.name}</Text>
+        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{loot.name}</Text>
         {/* v0.19.2 item 5: roll + which table it's from (Table 1 = base game, Table 2 = Hope and Fear). */}
         <View style={{ marginTop: 8 }}>
           <StatRow label="Roll" value={`${loot.roll}  ·  Table ${lootTable(loot)}`} />
@@ -526,7 +543,7 @@ export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Thresholds" value={armor.thresholds} />
           <StatRow label="Base Score" value={String(armor.baseScore)} />
