@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useMemo, useRef } from 'react';
 import { Platform, StatusBar as RNStatusBar, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -36,8 +36,32 @@ import { useDimLevel, useEdgeColor } from '@/lib/screen-dim';
  *
  * Phones return the children untouched, with no context and no extra views.
  */
+/**
+ * The height the frame's MAGNIFICATION is picked from, ignoring the soft keyboard (v0.31.0).
+ *
+ * A browser shortens the window when its keyboard opens. On a phone that is fine, because the frame
+ * is not running; on a tablet the scale comes from the window height, so every time a field was
+ * focused the WHOLE app re-magnified smaller mid-sentence, border and all, and grew back on dismiss.
+ * Native Android keeps the app the size it was and simply has less of it visible, which is the
+ * behaviour the owner asked for.
+ *
+ * Only the scale is held. The frame's HEIGHT still follows the live window, so the visible column
+ * shrinks around the keyboard exactly as it does on a phone and nothing overflows the viewport.
+ *
+ * A keyboard resize is a SHRINK that happens while a field has focus, which is what is tested for.
+ * Dragging a desktop window shorter is not, so that still re-scales as it always did.
+ */
+function useKeyboardFreeHeight(width: number, height: number): number {
+  const held = useRef({ width, height });
+  if (Platform.OS !== 'web') return height;
+  const typing = typeof document !== 'undefined' && /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName ?? '');
+  if (!typing || width !== held.current.width || height > held.current.height) held.current = { width, height };
+  return held.current.height;
+}
+
 export function PhoneFrame({ children }: { children: ReactNode }) {
   const { width, height } = useWindowDimensions();
+  const scaleH = useKeyboardFreeHeight(width, height);
   const isTablet = Math.min(width, height) >= TABLET_MIN_SW;
   const dim = useDimLevel();
   // Ink is the app's own background, and what every screen but the character sheet paints to its edges.
@@ -45,9 +69,9 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
 
   const frame = useMemo(() => {
-    const scale = Math.min(width / DESIGN_W, height / DESIGN_H);
+    const scale = Math.min(width / DESIGN_W, scaleH / DESIGN_H);
     return { width: DESIGN_W, height: height / scale, scale, offsetX: Math.max(0, (width - DESIGN_W * scale) / 2) };
-  }, [width, height]);
+  }, [width, height, scaleH]);
 
   if (!isTablet) return <>{children}</>;
 

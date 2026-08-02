@@ -570,6 +570,9 @@ function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel
 /** v0.11.1 items 3 + 6: the Golden Gear Edit heading — a full-bleed DESATURATED banner (only top + bottom
  *  rules; the left/right edges run under the screen border) holding "Edit Mode" + a live "X / Y Cards"
  *  count, with a subtle Deselect All below. Sits mid-screen (the row now rides low at the grind height). */
+/** Gap between the steps of a bulk equip/unequip. See `onBulkEquip` for why it is this long. */
+const BULK_STEP_MS = 130;
+
 const EDIT_GRAY = '#C4C8D0';
 const EDIT_GRAY_DIM = '#9AA0AA';
 function EditHud() {
@@ -681,7 +684,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const historyRef = useRef<CharacterHistory>(emptyHistory());
   const lastSavedRef = useRef<CharacterFile | null>(null);
   // One-shot intent for changes a diff cannot identify: a rest only moves resources, so it is
-  // indistinguishable from a tap on the HP track; a bulk equip arrives as N writes 35ms apart and
+  // indistinguishable from a tap on the HP track; a bulk equip arrives as N staggered writes and
   // has to collapse by intent rather than by timing.
   const intentRef = useRef<RecordIntent>({});
   const [historyRev, setHistoryRev] = useState(0);
@@ -1899,10 +1902,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // raised selection the carousel passes in.
   const [moveReq, setMoveReq] = useState<string[] | null>(null);
   const [deleteReq, setDeleteReq] = useState<string[] | null>(null);
-  /** v0.14.1: the consumable instance just switched OFF, awaiting the "used it up?" prompt. */
-  const [depletedId, setDepletedId] = useState<string | null>(null);
-  /** A card whose benefits the player has yet to choose. Set when they try to equip it. */
-  const [choiceReq, setChoiceReq] = useState<string | null>(null);
+  /**
+   * The prompts a toggle can raise, as QUEUES (v0.31.0).
+   *
+   * A bulk toggle is N toggles, and any of them can want to ask something: a spent consumable asks
+   * whether to bin the card, an unanswered card asks which benefit it grants. Held as one id each,
+   * every question but the last was overwritten before it was ever seen, so unequipping four potions
+   * offered to discard one. The head of the queue is what shows; answering it uncovers the next.
+   */
+  const [depletedIds, setDepletedIds] = useState<string[]>([]);
+  const [choiceReqs, setChoiceReqs] = useState<string[]>([]);
+  const depletedId = depletedIds[0] ?? null;
+  const choiceReq = choiceReqs[0] ?? null;
+  const queueDepleted = useCallback((id: string) => setDepletedIds((q) => [...q, id]), []);
+  const nextDepleted = useCallback(() => setDepletedIds((q) => q.slice(1)), []);
+  // Never queue the same card twice: a bulk equip that is blocked on one card's question would
+  // otherwise ask it again on every later attempt.
+  const queueChoice = useCallback((id: string) => setChoiceReqs((q) => (q.includes(id) ? q : [...q, id])), []);
+  const nextChoice = useCallback(() => setChoiceReqs((q) => q.slice(1)), []);
   // Editable (player-authored) card ids (#264 item 5): the gallery + fullscreen action offer EDIT only
   // for these; everything else (catalog) is delete-only.
   const editableIds = useMemo(() => editableCardIds(file), [file]);
@@ -1976,12 +1993,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
   const enabledIds = useMemo(() => new Set(file?.enabledCardIds ?? []), [file]);
   // v0.19.1 item 8: ONE ref-based toggle implementation, shared by manual taps AND bulk equip. Reading +
-  // writing fileRef/characterRef synchronously lets a 35ms-staggered bulk sequence compose correctly (a
+  // writing fileRef/characterRef synchronously lets a staggered bulk sequence compose correctly (a
   // stale `file` closure would make every step start from the same original file). `force` makes it
   // directional for bulk: 'on' only equips, 'off' only unequips; a card already in the target state is
   // skipped so nothing toggles the wrong way — the result is byte-for-byte the same as manual selection.
   const toggleOneFromRefs = useCallback(
-    (id: string, force?: 'on' | 'off') => {
+    // v0.31.0: `cents` pitches this step's equip/unequip sound. A bulk run walks it up as cards come
+    // on and down as they go off, so a cascade reads as one rising (or falling) run rather than the
+    // same click N times. Zero for a single tap, which is unchanged.
+    (id: string, force?: 'on' | 'off', cents = 0) => {
       const file = fileRef.current;
       if (!file) return;
       // #277: enable + effects key by the card's REF (its catalog/custom id), so all copies of a card
@@ -2008,16 +2028,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           beastformDomainSnapshot = undefined;
         }
         domainOverrideRef.current = 0; // #318: any non-blocked toggle ends an exceed streak
-        playSfx(isWs ? 'disableBeastform' : 'cardDisable');
+        playSfx(isWs ? 'disableBeastform' : 'cardDisable', { cents });
         // v0.14.1: a CONSUMABLE is used up the moment you switch it off — offer to bin the depleted
         // card. Only offered, never automatic: the player may be holding several of the same potion,
         // and onDeleteCards drops exactly one copy from the multiset.
-        if (force === undefined && lootById(catalogIdOf(id))?.kind === 'consumable') setDepletedId(id);
+        // v0.31.0: bulk asks too, one prompt after another, instead of staying silent about it.
+        if (lootById(catalogIdOf(id))?.kind === 'consumable') queueDepleted(id);
       } else {
         // v0.25.0: a card offering a CHOICE cannot be equipped until it is answered, because an
         // unanswered card grants nothing and doing that silently is worse than asking. Vitality is
         // the first: "permanently gain two of the following."
-        if (cardChoiceFor(catalogIdOf(ref)) && !file.cardChoices?.[ref]) { setChoiceReq(ref); return; }
+        if (cardChoiceFor(catalogIdOf(ref)) && !file.cardChoices?.[ref]) { queueChoice(ref); return; }
         // #279 equip rules while transformed — blocked actions play the negative (float-menu-close) sound.
         if (isWs && transformed) { playSfx('floatMenuClose'); return; } // can't switch forms — exit first
         if (transformed && cidWeapon) { playSfx('floatMenuClose'); return; } // no weapons while transformed
@@ -2040,7 +2061,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         } else {
           domainOverrideRef.current = 0;
         }
-        playSfx(isWs ? 'activateBeastform' : 'cardEnable');
+        playSfx(isWs ? 'activateBeastform' : 'cardEnable', { cents });
         // Martial Form (#357): one active stance at a time — shifting into a stance ends the previous
         // one (the sheet rule: "…until you shift into another stance"). Direct switching is allowed.
         if (isMartialStanceId(ref)) for (const x of [...cur]) if (x !== ref && isMartialStanceId(x)) cur.delete(x);
@@ -2108,13 +2129,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       setCharacter(result);
       characterRef.current = result; // keep fresh for the next staggered bulk step
     },
-    [burstResources, pushToasts, pushNotice],
+    [burstResources, pushToasts, pushNotice, queueChoice, queueDepleted],
   );
   // v0.26.0: is anything modal open? The keyboard scheme keeps its hands off the carousel when so.
   const anyOverlay = !!(floatKind || cardInfoId || editCardId || emptyPanel || incoming || moveReq || depletedId || newCardCat || choiceReq);
   const onToggleCard = useCallback((id: string) => toggleOneFromRefs(id), [toggleOneFromRefs]);
   // item 8: bulk equip/unequip the raised selection. If every card is already equipped the whole set is
-  // unequipped, otherwise the whole set is equipped — each firing 35ms after the last, LEFT→RIGHT in deck
+  // unequipped, otherwise the whole set is equipped — each firing BULK_STEP_MS after the last, LEFT→RIGHT in deck
   // order, so they cascade on visibly. When the queue drains, the selection clears all at once.
   const onBulkEquip = useCallback((ids: string[]) => {
     const cur = fileRef.current;
@@ -2127,8 +2148,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Each toggle is its own disk write; tag every one with the SAME intent so history folds them
     // into a single "Equipped 8 cards" rather than eight entries for one gesture.
     const label = `${target === 'on' ? 'Equipped' : 'Unequipped'} ${order.length} card${order.length === 1 ? '' : 's'}`;
-    order.forEach((cid, i) => setTimeout(() => { withIntent({ kind: 'equip', label }); toggleOneFromRefs(cid, target); }, i * 35));
-    setTimeout(() => carouselApiRef.current?.deselectAll(), order.length * 35 + 90);
+    // v0.31.0: 130ms apart, not 35. At 35 the clicks piled into one smeared noise; at this spacing
+    // each card lands as its own sound. The pitch walks a semitone-and-a-half per step, UP as cards
+    // come on and DOWN as they go off, capped so a long selection does not climb out of the register.
+    order.forEach((cid, i) =>
+      setTimeout(() => {
+        withIntent({ kind: 'equip', label });
+        toggleOneFromRefs(cid, target, (target === 'on' ? 1 : -1) * Math.min(i, 8) * 150);
+      }, i * BULK_STEP_MS),
+    );
+    setTimeout(() => carouselApiRef.current?.deselectAll(), order.length * BULK_STEP_MS + 90);
   }, [carouselDecks, toggleOneFromRefs]);
   // v0.10.7 Golden Gear Edit card-hold radial → action. Move/Delete open their sheets; Bulk Equip runs the
   // staggered equip; the rest fire immediately. Operates on the raised selection the carousel passes in.
@@ -2391,8 +2420,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   title="Used it up?"
                   body={`${lootById(catalogIdOf(depletedId))?.name ?? 'That consumable'} is spent. Discard the card, or keep it if you're still carrying another.`}
                   confirmLabel="Discard"
-                  onCancel={() => setDepletedId(null)}
-                  onConfirm={() => { onDeleteCards([depletedId]); setDepletedId(null); }}
+                  onCancel={nextDepleted}
+                  onConfirm={() => { onDeleteCards([depletedId]); nextDepleted(); }}
                 />
               </Animated.View>
             ) : null}
@@ -2400,9 +2429,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}
             {/* v0.25.0: the card asks its question before it can be equipped. Answering stores the
                 pick and equips in one step, so the tap the player made is the tap that happens. */}
-            {choiceReq ? <CardChoicePrompt id={choiceReq} file={file} onCancel={() => setChoiceReq(null)} onPick={(options) => {
+            {/* Keyed on the card, so the next queued question starts from a clean selection. */}
+            {choiceReq ? <CardChoicePrompt key={choiceReq} id={choiceReq} file={file} onCancel={nextChoice} onPick={(options) => {
               const cur = fileRef.current;
-              setChoiceReq(null);
+              nextChoice();
               if (!cur) return;
               const next = { ...cur, cardChoices: { ...cur.cardChoices, [choiceReq]: options } };
               setFile(next);

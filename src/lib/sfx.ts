@@ -11,7 +11,7 @@
  * - Every sound gets a subtle per-play pitch variation EXCEPT the OnLoseHP-1in10chance memes and the
  *   consistency sounds (app startup, sheet enter, level-up / rest complete) whose `cents` is 0.
  * - Risers play once (no loop), fading to silence over a short ramp at the visual climax — never cut.
- * - `playLoseHp()` rolls a 1/10 chance to fire a random meme from the folder (no pitch variation),
+ * - `playLoseHp()` rolls a 1/20 chance to fire a random meme from the folder (no pitch variation),
  *   otherwise the normal OnLoseHP-Default (with variation).
  */
 
@@ -77,8 +77,9 @@ const FILES = {
 
 export type SfxId = keyof typeof FILES;
 
-// The OnLoseHP-1in10chance folder: a random one fires ~10% of the time a heart is lost. No pitch
-// variation here — these are intentional gags whose character should be preserved.
+// The OnLoseHP-1in10chance folder: a random one fires ~5% of the time a heart is lost (v0.31.0 —
+// the folder name is the original odds, kept so the asset paths stay put). No pitch variation here:
+// these are intentional gags whose character should be preserved.
 const MEMES: number[] = [
   require('../../assets/sounds/UI/OnLoseHP-1in10chance/Amogus.mp3'),
   require('../../assets/sounds/UI/OnLoseHP-1in10chance/Fortnite1.mp3'),
@@ -528,9 +529,10 @@ export function playSfx(id: SfxId, opts?: PlayOpts) {
   fire(FILES[id], SFX_VOLUME[id] ?? DEFAULT_VOLUME, SFX_PITCH_CENTS[id] ?? DEFAULT_CENTS, opts);
 }
 
-/** Lose-HP impact: ~10% of the time a random meme (no variation), else OnLoseHP-Default (varied). */
+/** Lose-HP impact: ~5% of the time a random meme (no variation), else OnLoseHP-Default (varied). */
 export function playLoseHp(opts?: PlayOpts) {
-  if (MEMES.length && Math.random() < 0.1) {
+  // v0.31.0: halved from 1-in-10, owner's call. A gag that lands every tenth heart stops being one.
+  if (MEMES.length && Math.random() < 0.05) {
     const meme = MEMES[Math.floor(Math.random() * MEMES.length)];
     fire(meme, 1, 0, { ...opts, vary: false });
     return;
