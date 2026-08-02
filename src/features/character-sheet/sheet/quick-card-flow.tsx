@@ -2,11 +2,11 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, type NativeSyntheticEvent, Platform, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
+import { Keyboard, type NativeSyntheticEvent, Platform, Pressable, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
-import { type CardDraft, randomCardColor } from '@/components/card-editor';
+import { type CardDraft, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
 import { isExperienceType } from '@/features/character-sheet/card-types';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -45,6 +45,7 @@ export function QuickCardFlow({
   onCancel,
   onAdvanced,
   onImport,
+  typeGroups,
   kindLabel = 'Card',
 }: {
   initial?: CardDraft;
@@ -57,9 +58,12 @@ export function QuickCardFlow({
   onAdvanced: (draft: CardDraft) => void;
   /** v0.30.0: bring cards in from a `.rune` file instead of authoring one. Absent = not offered. */
   onImport?: () => void;
+  /** v0.31.0: the types the plaque may be set to. Absent = the plaque is not a control (Experiences). */
+  typeGroups?: { label: string; types: string[] }[];
 }) {
   const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [] });
   const [step, setStep] = useState<'edit' | 'confirm'>('edit');
+  const [pickType, setPickType] = useState(false);
   const titleRef = useRef<TextInput>(null);
   const textRef = useRef<TextInput>(null);
   const reduced = useReducedMotion();
@@ -77,6 +81,9 @@ export function QuickCardFlow({
    * and simply stops showing it.
    */
   const expMode = isExperienceType(draft.typeLabel ?? kindLabel);
+  const plaqueLabel = draft.typeLabel ?? kindLabel;
+  /** v0.31.0: the plaque is a control here too, not only in the full editor. */
+  const typeable = !!typeGroups?.length;
 
   // A card is worth keeping if it has a name OR a body (#318's rule, unchanged). An Experience has
   // only its phrase, so the phrase is the whole requirement.
@@ -154,19 +161,34 @@ export function QuickCardFlow({
           {step === 'confirm' ? 'Ready?' : `Quick ${kindLabel.toLowerCase()}`}
         </Text>
         <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.5, marginTop: 4, marginBottom: 12, textAlign: 'center' }}>
-          {step === 'confirm' ? 'This is the card you are making.' : 'Tap the art for a new color, hold it for a picture.'}
+          {step === 'confirm'
+            ? 'This is the card you are making.'
+            : typeable
+              ? 'Tap the art for a new color, hold it for a picture. Tap the type to change it.'
+              : 'Tap the art for a new color, hold it for a picture.'}
         </Text>
 
         <ArtGesture onTap={rollColor} onHold={pickImage} reduced={reduced}>
           <ForgedCard
             title={draft.title.trim()}
-            kindLabel={draft.typeLabel ?? kindLabel}
+            kindLabel={plaqueLabel}
             body={expMode ? '' : draft.text}
             accentDeep={Rune.panel}
             imageUri={draft.imageUri}
             colorArt={draft.color}
             multilineTitle
           />
+          {/* The type plaque, as its own control (v0.31.0). It sits on the seam BELOW the art
+              gesture's band, so tapping the type can never also reroll the color, and the two
+              targets never race for the same touch. Same band the full editor uses. */}
+          {typeable ? (
+            <Pressable
+              onPress={() => { playSfx('buttonTap'); setPickType(true); }}
+              accessibilityRole="button"
+              accessibilityLabel={`Card type: ${plaqueLabel}. Tap to change`}
+              style={{ position: 'absolute', left: 0, right: 0, top: PLAQUE_TOP, height: PLAQUE_H }}
+            />
+          ) : null}
         </ArtGesture>
 
         {step === 'edit' ? (
@@ -185,7 +207,7 @@ export function QuickCardFlow({
                 onSubmitEditing={expMode ? toConfirm : toBody}
                 onFocus={scrollFieldIntoView}
                 {...webEnterTitle}
-                maxLength={70}
+                maxLength={TITLE_MAX}
                 style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0 }}
                 accessibilityLabel="Card title"
               />
@@ -205,7 +227,7 @@ export function QuickCardFlow({
                 onSubmitEditing={toConfirm}
                 onFocus={scrollFieldIntoView}
                 {...webEnter}
-                maxLength={280}
+                maxLength={TEXT_MAX}
                 style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, flex: 1, textAlignVertical: 'top' }}
                 accessibilityLabel="Card text"
               />
@@ -238,14 +260,31 @@ export function QuickCardFlow({
           </View>
         )}
       </ScrollView>
+      {pickType && typeGroups ? (
+        <TypePicker
+          groups={typeGroups}
+          current={plaqueLabel}
+          onPick={(t) => { setDraft((d) => ({ ...d, typeLabel: t })); setPickType(false); }}
+          onClose={() => setPickType(false)}
+        />
+      ) : null}
     </View>
   );
 }
 
+/** The type plaque's hit band, matching the seam the divider is drawn on. Same numbers as the full
+ *  editor's chip, so the control is in the same place whichever door the card came through. */
+const PLAQUE_TOP = Math.round(FORGED_H * 0.4) - 16;
+const PLAQUE_H = 32;
+
 /**
  * The card's ART ZONE as one control: tap rerolls the color, hold charges a gold waterline over the
- * art and opens the picker. Only the art band is live, so the body text below stays selectable and
- * the card is still just a card.
+ * art and opens the picker.
+ *
+ * v0.31.0: the live band now STOPS at the type plaque, instead of covering the whole card. It has to,
+ * because the plaque became a control of its own, and a tap that both changed the type and rerolled
+ * the art would be one of them too many. Everything below the seam is inert, which is what the card
+ * always looked like anyway.
  */
 function ArtGesture({ onTap, onHold, reduced, children }: { onTap: () => void; onHold: () => void; reduced: boolean; children: React.ReactNode }) {
   const charge = useSharedValue(0);
@@ -276,15 +315,21 @@ function ArtGesture({ onTap, onHold, reduced, children }: { onTap: () => void; o
   const edgeStyle = useAnimatedStyle(() => ({ opacity: charge.value > 0.02 ? 1 : 0, transform: [{ translateY: -charge.value * ART_H }] }));
 
   return (
-    <GestureDetector gesture={gesture}>
-      <View style={{ width: FORGED_W, height: FORGED_H }} accessibilityRole="button" accessibilityLabel="Card art" accessibilityHint="Tap for a new color, hold to choose a picture">
-        {children}
-        {/* The charge rides the art band only, bottom-up, like every other hold in the app. */}
-        <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: ART_H, overflow: 'hidden' }} pointerEvents="none">
-          <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Rune.goldBright }, fillStyle]} />
-          <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2.5, backgroundColor: Rune.goldBright }, edgeStyle]} />
-        </View>
+    <View style={{ width: FORGED_W, height: FORGED_H }}>
+      {children}
+      <GestureDetector gesture={gesture}>
+        <View
+          style={{ position: 'absolute', left: 0, right: 0, top: 0, height: PLAQUE_TOP }}
+          accessibilityRole="button"
+          accessibilityLabel="Card art"
+          accessibilityHint="Tap for a new color, hold to choose a picture"
+        />
+      </GestureDetector>
+      {/* The charge rides the art band only, bottom-up, like every other hold in the app. */}
+      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: ART_H, overflow: 'hidden' }} pointerEvents="none">
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Rune.goldBright }, fillStyle]} />
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2.5, backgroundColor: Rune.goldBright }, edgeStyle]} />
       </View>
-    </GestureDetector>
+    </View>
   );
 }

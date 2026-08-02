@@ -141,6 +141,8 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
     // editor rather than throwing the whole flow away; opened directly, it closes as before.
     return <GearBrowser acquiredIds={acquiredIds ?? new Set()} enabledExpansionIds={enabledExpansionIds} onAdd={(id) => onAcquire(id, category)} onAddCustom={onAcquireCustom ? (card) => onAcquireCustom(card, category) : undefined} onClose={cameFromEditor.current ? () => { cameFromEditor.current = false; setMode('author'); } : onCancel} />;
   }
+  const defaultType = defaultTypeForCategory(category);
+  const typeGroups = typePickerGroups(customTypes);
   if (simple) {
     return (
       <QuickCardFlow
@@ -149,11 +151,12 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
         onCancel={onCancel}
         onAdvanced={(d) => { setHandoff(d); setSimple(false); }}
         onImport={onAcquireCustom ? doImport : undefined}
+        // v0.31.0: the quick flow can set the type too. The DEFAULT is still "Card" (see its own
+        // save handler) — this only gives the player somewhere to say otherwise without leaving.
+        typeGroups={typeGroups}
       />
     );
   }
-  const defaultType = defaultTypeForCategory(category);
-  const typeGroups = typePickerGroups(customTypes);
   // The catalog (system gear/loot) suits the gear-bearing decks + custom categories, not Notes.
   const showsCatalog = onAcquire && category !== 'notes';
   const catalogBtn = showsCatalog

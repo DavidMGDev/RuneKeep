@@ -1227,15 +1227,19 @@ export function CardCarousel() {
           if (editMode.value > 0.5) {
             // item 6: the radial is a SPRAY wheel (like the float menu) — track the finger + highlight.
             if (editDecided.value === 3) {
-              cardMenuFingerX.value = e.x;
-              cardMenuFingerY.value = e.y;
-              cardMenuHighlight.value = pickWedgeFull(cardMenuAnchorX.value, cardMenuAnchorY.value, e.x, e.y, menuOptCount);
+              // v0.31.0: through coordScale, like every other hit test here. The wheel's anchor is in
+              // design px and the finger was not, so in a browser at any stage scale but 1 the dot
+              // jumped away from the finger the instant it moved: on a tablet, straight to the
+              // bottom-right. A phone browser renders the stage at ~1, which is why it looked fine.
+              cardMenuFingerX.value = e.x / coordScale;
+              cardMenuFingerY.value = e.y / coordScale;
+              cardMenuHighlight.value = pickWedgeFull(cardMenuAnchorX.value, cardMenuAnchorY.value, e.x / coordScale, e.y / coordScale, menuOptCount);
               return;
             }
             if (editGrabbed.value === 1) {
               // Just feed the raw finger; the frame callback smooths the pile + gap + autoscroll (item 5).
-              grabX.value = e.x;
-              grabY.value = e.y;
+              grabX.value = e.x / coordScale;
+              grabY.value = e.y / coordScale;
               return;
             }
             if (editDecided.value === 0) {
@@ -1249,8 +1253,8 @@ export function CardCarousel() {
                 grabIsGroup.value = 1;
                 grabIndex.value = editStartIdx.value;
                 if (editStartRaised.value === 0) runOnJS(selectIfEmpty)(editStartIdx.value); // grab selects it
-                grabX.value = e.x;
-                grabY.value = e.y;
+                grabX.value = e.x / coordScale;
+                grabY.value = e.y / coordScale;
                 // Seed the smoothed pile at the grabbed card's row slot so it EASES up to the finger.
                 grabXAnim.value = OX + (editStartIdx.value - rotation.value / ANGLE_STEP) * EDIT_GAP;
                 grabYAnim.value = EDIT_ROW_Y;

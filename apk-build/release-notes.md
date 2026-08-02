@@ -1,28 +1,19 @@
-RuneKeep v0.30.0 - cards print their own details, no card text lands on the footer any more, sharing works without NFC, and the file extension is .rune.
+RuneKeep v0.31.0 - the card type is a control in quick creation, cards hold far more text, bulk toggling sounds like a run instead of a pile-up, and the tablet browser stops resizing the whole app when you type.
 
 CARDS
 
-- TEXT NEVER PRINTS OVER THE FOOTER. On the Katana the word "range." sat on top of the "RuneKeep" watermark, and only on a phone. The feature was never too long; the STAT BLOCK above it was too tall. Nothing set a line height on those rows, so each was as tall as the font itself made it, and Android draws them noticeably taller than a browser does: about a line's worth across the four rows, taken out of the bottom of the card. The rows are pinned now, so the card is laid out the same on both and the Katana simply fits at the size it was designed at.
-- AND IF TEXT REALLY IS TOO LONG, IT SHRINKS RATHER THAN SPILLING. Card text works out its own size from the text itself, shrinking only as far as it has to, never cutting a word. Armor and long homebrew descriptions get the same treatment. A card that already fits is untouched.
-- THE DETAILS YOU FILL IN GO ON THE CARD. Authoring homebrew asks for a lot: a weapon's trait, range, damage and burden, which domain and level a card is, which tier a subclass card is. All of it was collected and then went nowhere you could read it. The form now writes itself into the description as markdown, laid out the way the printed cards lay the same facts out, so you can check what you filled in and so can anyone you send the card to.
-- YOU CAN EDIT THAT BLOCK, AND IT ASKS BEFORE OVERWRITING IT. Changing a detail rewrites the whole block. If you have typed in it, you are asked first, and keeping your text is one of the two answers. Reopening a card never quietly rewrites what you wrote.
-- WEAPONS AND ARMOR LEAVE IT OFF, because their stat block already prints those exact rows and printing them twice would be worse than not printing them at all.
+- QUICK CARD CAN SET THE TYPE. Tap the plaque on the card, pick from the same list the full editor offers, and the card stays the color it was. The art zone and the plaque are separate targets now, so changing the type never rerolls the art and tapping the art never opens the picker.
+- YOU CAN WRITE A LOT MORE ON A CARD. Titles go to 120 characters and descriptions to 600, up from 70 and 280. The old limits were set when a card printed at one fixed size and anything longer ran off the bottom; since v0.30.0 the description picks its own size from the room left under the title, so a long one shrinks to fit. The new numbers are what stays readable, not what stays inside the box.
 
-SHARING
+EDIT MODE
 
-- SHARE WORKS WITHOUT NFC. Every send panel can EXPORT the card as a file. Where there is no NFC radio, which is every browser and some phones, the panel says so plainly and puts the export button in the middle, because there it is the whole point rather than a fallback.
-- THE SHARE OPTION IS BACK IN EDIT MODE IN A BROWSER. It only ever appeared on hardware with an NFC radio, so the web build had no way to share a card at all. It is always there now, named for what your device can actually do.
-- THE CARD ARCHIVE AND THE CARD LIBRARY SHARE THE SAME WAY. Holding a card in the archive no longer refuses when there is no radio.
-- ADD CARD CAN IMPORT A FILE. Under Advanced options: pick a file holding one card or a whole stack, and choose which deck they land in. Anything exported anywhere in the app can come back in this way. A system card comes back as the real card, art and all, not a flat copy of its text.
-
-FILES
-
-- THE EXTENSION IS .RUNE. Everything writes .rune from now on, and Android opens them from WhatsApp, a file manager, Gmail or a download the same as before. Files you were sent as .rkp still open, and a .rune exported here still opens on a phone that has not updated yet, so nothing at your table has to upgrade in step.
+- THE CARD WHEEL FOLLOWS YOUR FINGER IN A TABLET BROWSER. Holding a card opened the wheel correctly and then, the moment you moved, the marker jumped to the bottom-right corner and every wedge was picked from the wrong place. The wheel's centre was measured in the app's own coordinates and your finger was not, and on a tablet the browser scales the app up, so the two disagreed by exactly that much. Dragging a card had the same offset. A phone browser draws at roughly scale 1, which is why it only showed up on the tablet; phones and the Android app were never affected.
+- BULK EQUIP SOUNDS LIKE A RUN. The cards toggled 35 milliseconds apart, close enough that the clicks smeared into one noise. They are 130 apart now, and the pitch climbs a step per card as they come on and falls a step per card as they go off, so a long selection reads as one rising or falling run.
+- BULK EQUIP ASKS ITS QUESTIONS, ALL OF THEM. If several cards each wanted to ask something, a spent consumable offering to be discarded or a card asking which benefit it grants, only the last question ever appeared and the rest were lost. They queue now, one after another. Unequipping four potions offers to discard four.
 
 ELSEWHERE
 
-- ANDROID TABLETS ARE OFFERED THE INSTALL AGAIN. Chrome asks for desktop sites on a large screen, so a Galaxy Tab reports itself with no "Android" in it anywhere and was read as a desktop, on the device with the most browser chrome to lose. Desktops are still left alone: a touchscreen laptop is not a tablet, and the browser can tell you which one it is.
-- THE FLOAT MENU'S BOTTOM WEDGE IS EXIT, with a doorway glyph. "Characters" was too long and clipped to "Charac...".
-- CREATED BY KOY AND DAVID, on the main menu.
+- TYPING IN A TABLET BROWSER NO LONGER SHRINKS THE APP. Opening the keyboard shortened the window, the app re-magnified itself to the new height, and everything including the border jumped upward and got small, then grew back on dismiss. The magnification is held while a field has focus, so the view simply has less of it showing, the way the Android app behaves. Resizing a desktop window still rescales as before.
+- THE LOSE-HP GAG IS HALF AS LIKELY, roughly one heart in twenty rather than one in ten.
 
 Sideload: enable Install unknown apps, then open the APK.

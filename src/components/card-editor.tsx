@@ -37,6 +37,21 @@ export interface CardDraft {
   sections?: CardSection[];
 }
 
+/**
+ * How much a player may write on a card (v0.31.0).
+ *
+ * These used to be 70 and 280, set when the card printed at one fixed size and anything longer ran
+ * off the bottom. v0.30.0 made the description choose its own size from the room left under the
+ * title (`lib/fit-text`), so a long one now shrinks to fit instead of overflowing, and the old caps
+ * were stopping people well short of what the card can actually hold.
+ *
+ * The new numbers are what stays READABLE, not what stays inside the box: 600 characters fills the
+ * lower body at roughly 7.5pt, and past that the type is too small to be worth typing. They are the
+ * same in the quick flow and the full editor, because it is the same card either way.
+ */
+export const TITLE_MAX = 120;
+export const TEXT_MAX = 600;
+
 /** A tiny markdown-toolbar button (Bold / Italic / bullet / reorder). */
 function MarkBtn({ label, onPress }: { label: string; onPress: () => void }) {
   return (
@@ -136,7 +151,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
             placeholderTextColor={Rune.muted}
             selectionColor={Rune.goldBright}
             multiline
-            maxLength={400}
+            maxLength={TEXT_MAX}
             style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, minHeight: 48, textAlignVertical: 'top' }}
             accessibilityLabel={`Section ${i + 1} text`}
           />
@@ -152,7 +167,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
  * Full-screen card-TYPE picker (#246) — same shape as the modifier picker. Lists the grouped built-in
  * types plus the player's custom types; picking sets the card's middle-ribbon label.
  */
-function TypePicker({ groups, current, onPick, onClose }: { groups: { label: string; types: string[] }[]; current?: string; onPick: (t: string) => void; onClose: () => void }) {
+export function TypePicker({ groups, current, onPick, onClose }: { groups: { label: string; types: string[] }[]; current?: string; onPick: (t: string) => void; onClose: () => void }) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
@@ -458,7 +473,7 @@ export function CardEditor({
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
               multiline={expMode}
-              maxLength={expMode ? 160 : 70}
+              maxLength={expMode ? 160 : TITLE_MAX}
               style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0, textAlignVertical: expMode ? 'top' : 'center' }}
               accessibilityLabel={expMode ? 'Experience' : 'Card title'}
             />
@@ -475,7 +490,7 @@ export function CardEditor({
                 placeholderTextColor={Rune.muted}
                 selectionColor={Rune.goldBright}
                 multiline
-                maxLength={280}
+                maxLength={TEXT_MAX}
                 style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, flex: 1, textAlignVertical: 'top' }}
                 accessibilityLabel="Card text"
               />
