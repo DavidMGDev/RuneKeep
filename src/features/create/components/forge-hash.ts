@@ -4,4 +4,4 @@
 // palette, and all of src/data. It changes when a card's appearance or text changes, and only then,
 // so an ordinary release keeps every cached bitmap instead of re-capturing the lot on the device.
 // forge-hash.test.ts fails if this is out of date, so it cannot be forgotten.
-export const FORGE_CONTENT_HASH = 'dd53ed2dd148';
+export const FORGE_CONTENT_HASH = 'ab4c7ce71b86';

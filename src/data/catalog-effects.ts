@@ -61,7 +61,10 @@ export const CATALOG_EFFECTS: Record<string, CardEffect[]> = {
   // Blade 8. Frenzy: while raging you cannot use Armor Slots, and you deal +10 damage. The sheet
   // number is the Armor Score going to nothing, which is what Armor Slots are. Mute the card between
   // rages.
-  "blade-08-2": [{ target: "armorScore", delta: 0, overwrite: true, note: "Frenzy: while raging you can't use Armor Slots" }],
+  "blade-08-2": [
+    { target: "armorScore", delta: 0, overwrite: true, note: "Frenzy: while Frenzied you can't use Armor Slots" },
+    { target: "severeThreshold", mode: "bonus", delta: 8, note: "Frenzy: +8 to your Severe damage threshold while Frenzied" },
+  ],
   // Blade 4. Deadly Focus: while focused on one target, +2 to any roll against them. Proficiency is
   // the only sheet number that carries a roll bonus, so that is where it lands; mute when the focus ends.
   "blade-04-1": [{ target: "proficiency", delta: 2, note: "Deadly Focus: +2 to rolls against the target you are focused on" }],

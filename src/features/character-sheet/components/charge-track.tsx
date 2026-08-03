@@ -562,7 +562,9 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
             const zl = zone.left;
             const zr = zone.left + zone.width;
             const zones: { from: number; to: number; index: number; dir: Dir }[] = [];
-            if (upIndex >= 0 && downIndex >= 0) {
+            // Same guard as the animations below: a boundary that is no longer a rendered slot has
+            // no rectangle to split the zone on.
+            if (upIndex >= 0 && downIndex >= 0 && slots[upIndex] && slots[downIndex]) {
               const ux = slots[upIndex].x;
               const dx = slots[downIndex].x;
               const barrier = (Math.min(ux, dx) + w + Math.max(ux, dx)) / 2;
@@ -586,7 +588,14 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
             ));
           })()
         : null}
-      {anims.map((a) => (
+      {/* v0.32.2: an animation whose slot no longer exists is DROPPED, not indexed.
+          The armor track's slot count became dynamic in v0.32.0 (five big shields or twelve small
+          ones), so equipping something that changes your Armor Score can shrink the array while a
+          shield is still animating. `slots[a.index].x` on the missing slot threw, and an uncaught
+          throw in render closes the app: that is the crash on equipping armor next to Frenzy, which
+          sets Armor Score to zero. Nothing else here could ever change the count, which is why it
+          survived this long. */}
+      {anims.filter((a) => slots[a.index]).map((a) => (
         <ChargeFxView
           key={a.id}
           anim={a}

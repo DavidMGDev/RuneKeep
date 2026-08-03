@@ -24,6 +24,9 @@ import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/cla
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { focusHaptic } from '@/lib/haptics';
 import { type LibraryCard, type LibraryContentType } from '@/lib/library';
+import { listExpansions } from '@/lib/library-store';
+import { isEnabledForCreation } from '@/lib/library';
+import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { type RkpContent } from '@/lib/rkp';
 import { useScreenDim } from '@/lib/screen-dim';
 
@@ -35,6 +38,9 @@ import { useScreenDim } from '@/lib/screen-dim';
 type GalleryKind = CatalogKind | 'weapon' | 'armor' | 'class' | 'loot' | 'consumable';
 type GalleryItem =
   | { type: 'card'; id: string; label: string; card: CatalogCard }
+  /** v0.32.2: a card from an installed expansion. It lives in whichever kind its content is, not in a
+   *  Homebrew corner of its own, so a custom weapon is found by looking under Weapons. */
+  | { type: 'lib'; id: string; label: string; lib: LibraryCard }
   | { type: 'weapon'; id: string; label: string; weapon: WeaponDef }
   | { type: 'armor'; id: string; label: string; armor: ArmorDef }
   | { type: 'loot'; id: string; label: string; loot: LootDef }
@@ -60,16 +66,25 @@ interface Filters {
   domains: Set<DomainName>;
   levels: Set<number>;
   tiers: Set<number>; // tier 1–4, equipment only
+  /** v0.32.2: where the card came from. Empty = both, which is the default and stays it. */
+  sources: Set<'official' | 'homebrew'>;
 }
 
-function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string>): GalleryItem[] {
+/** The gallery kind an installed expansion card belongs under. `generic` has no macro home of its own,
+ *  so it joins Loot, the archive's bucket for what you carry (v0.32.2). */
+export function libraryKind(t: LibraryContentType): GalleryKind {
+  return t === 'weapon' ? 'weapon' : t === 'armor' ? 'armor' : t === 'inventory' || t === 'generic' ? 'loot' : (t as GalleryKind);
+}
+
+function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string>, library: LibraryCard[] = []): GalleryItem[] {
   const wantKind = (k: GalleryKind) => !f.kinds.size || f.kinds.has(k);
+  const wantSource = (src: 'official' | 'homebrew') => !f.sources.size || f.sources.has(src);
   // domains/levels are catalog-domain dimensions; tiers is an equipment dimension. Selecting one set
   // narrows to that family (mirrors the existing level→domain behavior).
   const catalogDim = f.domains.size > 0 || f.levels.size > 0;
   const equipDim = f.tiers.size > 0;
   const out: GalleryItem[] = [];
-  if (!equipDim) {
+  if (!equipDim && wantSource('official')) {
     for (const c of catalog) {
       if (!wantKind(c.kind)) continue;
       if (f.domains.size && (c.kind !== 'domain' || !f.domains.has(c.domain!))) continue;
@@ -80,21 +95,21 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
   // Class cards (v0.10.2): forged multi-page cards, not in CATALOG. They're neither a catalog-domain nor
   // an equipment dimension, so they show only when no domain/level/tier filter is narrowing the grid.
   // v0.13.0: expansion classes (the Void six) show only when their pack is globally enabled.
-  if (!catalogDim && !equipDim && wantKind('class')) {
+  if (!catalogDim && !equipDim && wantKind('class') && wantSource('official')) {
     for (const c of CLASS_CARDS) {
       const exp = classExpansion(c.key);
       if (exp && !enabledExp.has(exp)) continue;
       out.push({ type: 'class', id: `class-${c.key}`, label: c.title, def: c });
     }
   }
-  if (!catalogDim && wantKind('weapon')) {
+  if (!catalogDim && wantKind('weapon') && wantSource('official')) {
     for (const w of ALL_WEAPONS) {
       if (w.expansion && !enabledExp.has(w.expansion)) continue; // v0.19.2 item 5: HF gear needs its pack enabled
       if (f.tiers.size && !f.tiers.has(w.tier)) continue;
       out.push({ type: 'weapon', id: w.id, label: w.name, weapon: w });
     }
   }
-  if (!catalogDim && wantKind('armor')) {
+  if (!catalogDim && wantKind('armor') && wantSource('official')) {
     for (const a of ALL_ARMOR) {
       if (a.expansion && !enabledExp.has(a.expansion)) continue;
       if (f.tiers.size && !f.tiers.has(a.tier)) continue;
@@ -103,11 +118,26 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
   }
   // v0.14.1: loot has NO tier and no domain/level (the rulebook indexes it by table roll), so it shows
   // only when neither dimension is narrowing the grid — the same guard the class cards use.
-  if (!catalogDim && !equipDim) {
+  if (!catalogDim && !equipDim && wantSource('official')) {
     for (const l of ALL_LOOT) {
       if (l.expansion && !enabledExp.has(l.expansion)) continue;
       if (!wantKind(l.kind)) continue;
       out.push({ type: 'loot', id: l.id, label: l.name, loot: l });
+    }
+  }
+  // Installed expansions, filed under the kind their content belongs to (v0.32.2). Tier applies to
+  // custom gear the same way it does to published gear; the domain/level axes apply to custom domains.
+  if (wantSource('homebrew')) {
+    for (const c of library) {
+      const k = libraryKind(c.contentType);
+      if (!wantKind(k)) continue;
+      if (f.tiers.size) {
+        const t = c.weapon?.tier ?? c.armor?.tier;
+        if (t == null || !f.tiers.has(t)) continue;
+      } else if (equipDim) continue;
+      if (f.domains.size && (c.contentType !== 'domain' || !c.domain || !f.domains.has(c.domain as DomainName))) continue;
+      if (f.levels.size && (c.contentType !== 'domain' || c.level == null || !f.levels.has(c.level))) continue;
+      out.push({ type: 'lib', id: c.id, label: c.title || 'Untitled', lib: c });
     }
   }
   return out;
@@ -233,7 +263,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Fullscreen reader: full-res card over a dim veil; tap or swipe-down closes (the sheet's focus feel).
  *  v0.13.1: hold the card to share it via NFC (`onHoldShare`) — the carousel's bottom-to-top gold fill. */
-function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem, { type: 'card' | 'weapon' | 'armor' | 'loot' }>; onClose: () => void; onHoldShare: () => void }) {
+function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem, { type: 'card' | 'lib' | 'weapon' | 'armor' | 'loot' }>; onClose: () => void; onHoldShare: () => void }) {
   const p = useSharedValue(0);
   const dragY = useSharedValue(0);
   useEffect(() => {
@@ -304,7 +334,13 @@ function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem,
           pointerEvents="box-only"
           style={[{ position: 'absolute', alignSelf: 'center', top: '50%', marginTop: -(w * 1.4) / 2, width: w, height: w * 1.4 }, cardStyle]}>
           <Pressable style={{ flex: 1 }} onPress={close}>
-            {card.type === 'card' ? <ArtImage source={card.card.source} fit="contain" /> : <ScaledForged item={card} width={w} />}
+            {card.type === 'card' ? (
+              <ArtImage source={card.card.source} fit="contain" />
+            ) : card.type === 'lib' ? (
+              <ScaledCard width={w}><LibraryForgedCard card={card.lib} /></ScaledCard>
+            ) : (
+              <ScaledForged item={card} width={w} />
+            )}
           </Pressable>
           <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.26)' }, fillStyle]}>
             <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 2.5, backgroundColor: Rune.goldBright }} />
@@ -335,6 +371,8 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, onOpen }: { 
       <View style={{ width: cellW, height: cellH }}>
         {item.type === 'card' ? (
           <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
+        ) : item.type === 'lib' ? (
+          <ScaledCard width={cellW}><LibraryForgedCard card={item.lib} /></ScaledCard>
         ) : item.type === 'class' ? (
           <ScaledCard width={cellW}>
             <ForgedCard title={item.def.title} kindLabel="Class" body={item.def.body} accentDeep={classColor(item.def.key).deep} Banner={item.def.Banner} classKey={item.def.key} />
@@ -391,16 +429,17 @@ export function GalleryScreen() {
     if (!r || r.type === 'class') return;
     // v0.30.0: no longer refused without an NFC radio. The panel offers a `.rune` export instead,
     // which is the only way a browser could ever share one of these.
-    const payload = toShareCard(r);
+    const payload = r.type === 'lib' ? r.lib : toShareCard(r);
     setNfcSend({ content: { kind: 'card', payload }, label: payload.title || 'card' });
   }, [reading]);
   const [filters, setFilters] = useState<Filters>(() => ({
+    sources: new Set(),
     kinds: new Set((params.kinds?.split(',').filter(Boolean) as GalleryKind[]) ?? []),
     domains: new Set((params.domains?.split(',').filter(Boolean) as DomainName[]) ?? []),
     levels: new Set(params.levels?.split(',').filter(Boolean).map(Number) ?? []),
     tiers: new Set<number>(),
   }));
-  const clearFilters = useCallback(() => setFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set() }), []);
+  const clearFilters = useCallback(() => setFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set(), sources: new Set() }), []);
   // v0.13.0: the archive respects the GLOBAL expansion toggles — Void cards (and their Blood/Dread
   // filter chips) appear only while The Void is enabled in the Card Library.
   const [enabledExp, setEnabledExp] = useState<Set<string> | null>(null);
@@ -420,7 +459,15 @@ export function GalleryScreen() {
   const gated = useMemo(() => catalogFor(enabledExp ?? new Set()), [enabledExp]);
   // Domain chips derive from the gated catalog (base order preserved; Void domains join at the end).
   const domainChips = useMemo(() => [...new Set(gated.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!))], [gated]);
-  const cards = useMemo(() => applyFilters(filters, gated, enabledExp ?? new Set()), [filters, gated, enabledExp]);
+  // v0.32.2: the archive shows INSTALLED EXPANSIONS too, filed under the kind their content belongs
+  // to. It only ever listed bundled cards, so a homebrew weapon was invisible here however you filtered.
+  const [library, setLibrary] = useState<LibraryCard[]>([]);
+  useEffect(() => {
+    let live = true;
+    void listExpansions().then((exps) => { if (live) setLibrary(exps.filter(isEnabledForCreation).flatMap((e) => e.cards)); });
+    return () => { live = false; };
+  }, []);
+  const cards = useMemo(() => applyFilters(filters, gated, enabledExp ?? new Set(), library), [filters, gated, enabledExp, library]);
   const toggle = useCallback(<T,>(set: Set<T>, v: T): Set<T> => {
     const next = new Set(set);
     if (next.has(v)) next.delete(v);
@@ -499,6 +546,12 @@ export function GalleryScreen() {
       </View>
       {drawerOpen ? (
         <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 9 }}>
+          {/* v0.32.2: SOURCE is a filter inside the archive, not a category of its own. Neither chip
+              lit shows both, which is why there is no "All". */}
+          <FilterBand label="Source">
+            <RuneChip label="Official" active={filters.sources.has('official')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'official' as const) }))} />
+            <RuneChip label="Homebrew" active={filters.sources.has('homebrew')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'homebrew' as const) }))} />
+          </FilterBand>
           <FilterBand label="Type">
             {KINDS.map((k) => (
               <RuneChip key={k.key} label={k.label} active={filters.kinds.has(k.key)} onPress={() => setFilters((f) => ({ ...f, kinds: toggle(f.kinds, k.key) }))} />

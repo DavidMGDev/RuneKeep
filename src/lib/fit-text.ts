@@ -22,9 +22,24 @@
  * because being a quarter-point too small is invisible and being a line too big is the bug.
  */
 
-/** How wide an average glyph is, as a fraction of the font size, in the app's body face.
- *  Derived from real rendered lines on the weapon cards; see the header on why it errs high. */
+/**
+ * How wide an average glyph is, as a fraction of the font size, in the app's body face.
+ *
+ * MEASURED (v0.32.2): summing Archivo Regular's `hmtx` advances over a page of real card text gives
+ * **0.438 em**. This is deliberately 0.53, about 21% wider, so the line count always errs high and the
+ * text is chosen a shade small rather than a line too big. Do not "correct" it to the measured value.
+ */
 const CHAR_RATIO = 0.53;
+
+/**
+ * The tightest leading worth asking any platform for, as a fraction of the font size.
+ *
+ * MEASURED (v0.32.2): Archivo's own line box is 1.088 em (hhea and typo agree, and the font sets
+ * USE_TYPO_METRICS, so Android reads the same 1.088 a browser does rather than the 1.51 win metrics).
+ * Asking for less than the font's own box is where renderers start to disagree, so the floor sits
+ * just above it. v0.32.0 allowed 1.05, which was under it.
+ */
+export const MIN_LINE_RATIO = 1.12;
 
 export interface FitBox {
   /** Usable width in design px (the container minus its horizontal padding). */
@@ -103,7 +118,9 @@ const round = (n: number) => Math.round(n * 100) / 100;
 const HARD_MIN = 3.5;
 
 export function fitText(text: string, box: FitBox): Fit {
-  const { width, height, base, lineRatio, min = 6, minRatio = lineRatio } = box;
+  const { width, height, base, lineRatio, min = 6 } = box;
+  // Never ask for tighter leading than the face's own line box, however tight the caller asked for.
+  const minRatio = Math.max(box.minRatio ?? lineRatio, MIN_LINE_RATIO);
   const body = (text ?? '').trim();
   if (!body) return { fontSize: base, lineHeight: round(base * lineRatio), lines: 0 };
   for (let size = base; size >= Math.min(min, HARD_MIN); size -= 0.25) {
