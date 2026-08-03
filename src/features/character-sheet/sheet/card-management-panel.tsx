@@ -21,6 +21,17 @@ import { CATEGORY_ICON_KEYS, CategoryIconSvg, DEFAULT_CATEGORY_ICON } from './ca
 import { CenterDialog, FullScreenPanel } from './full-screen-panel';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
 
+/**
+ * The category row's colours (v0.34.0).
+ *
+ * "On" used to be the app's heraldic red, which is the colour it uses for damage and for delete. On a
+ * control whose whole job is to switch between decks that reads as a warning about a harmless action.
+ * A muted bronze-gold says "lit" without saying "careful", and the CURRENT category gets the bright
+ * gold, so the two states are told apart by hue rather than by a word in small print.
+ */
+const ON_FILL = 'rgba(160,124,60,0.16)';
+const ON_BORDER = 'rgba(218,162,73,0.5)';
+const CURRENT_FILL = 'rgba(224,181,99,0.2)';
 const SCRIM = 'rgba(20,24,31,0.7)';
 const GOLD_BORDER = 'rgba(218,162,73,0.4)';
 /** Categories whose cards are LOCKED to them (#279/#311/v0.9.8): Beastform cards can't be moved out, and
@@ -54,6 +65,8 @@ interface Props {
   /** v0.22.0 card trash: authored cards that used to exist, derived from the character's history. */
   trash?: { id: string; title: string; at: string }[];
   onRestoreCard?: (id: string) => void;
+  /** v0.34.0: a short message when a control cannot do what it looks like it should. */
+  onNotice?: (text: string) => void;
   isDruid: boolean;
   /** #311: the character has a Beastbound companion → the Companion category is available here. */
   hasCompanion: boolean;
@@ -390,7 +403,7 @@ export function CardManagementPanel(props: Props) {
         {view === 'trash' ? (
           <TrashView trash={props.trash ?? []} onRestore={props.onRestoreCard} />
         ) : view === 'categories' ? (
-          <CategoriesView ordered={ordered} decks={decks} hiddenSet={hiddenSet} enabledCount={enabledCount} currentCategory={currentCategory} customCategories={customCategories} onToggle={onToggle} onQuickSwitch={quickSwitch} onMoveUpDown={moveCat} onEdit={setEditing} onAskDelete={setConfirmDelCat} onCreate={() => setCreateOpen(true)} onManageTypes={() => setView('types')} />
+          <CategoriesView ordered={ordered} decks={decks} hiddenSet={hiddenSet} enabledCount={enabledCount} currentCategory={currentCategory} customCategories={customCategories} onToggle={onToggle} onQuickSwitch={quickSwitch} onMoveUpDown={moveCat} onEdit={setEditing} onAskDelete={setConfirmDelCat} onCreate={() => setCreateOpen(true)} onManageTypes={() => setView('types')} onEmpty={(label) => props.onNotice?.(`${label} has no cards yet, so it stays off.`)} onLastOne={() => props.onNotice?.('One category has to stay on, or your hand has nothing to show.')} />
         ) : view === 'cards' ? (
           <CardsView
             ordered={ordered}
@@ -442,10 +455,12 @@ export function CardManagementPanel(props: Props) {
 }
 
 // ---------------- Categories view ----------------
-function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCategory, customCategories, onToggle, onQuickSwitch, onMoveUpDown, onEdit, onAskDelete, onCreate, onManageTypes }: {
+function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCategory, customCategories, onToggle, onQuickSwitch, onMoveUpDown, onEdit, onAskDelete, onCreate, onManageTypes, onEmpty, onLastOne }: {
   ordered: string[]; decks: Record<string, CardItem[]>; hiddenSet: Set<string>; enabledCount: number; currentCategory: string; customCategories: CustomCategory[];
   onToggle: (c: string) => void; onQuickSwitch: (c: string) => void; onMoveUpDown: (key: string, dir: -1 | 1) => void;
   onEdit: (c: CustomCategory) => void; onAskDelete: (c: CustomCategory) => void; onCreate: () => void; onManageTypes: () => void;
+  /** v0.34.0: say why a category cannot be switched to or turned on. */
+  onEmpty: (label: string) => void; onLastOne: () => void;
 }) {
   return (
     <>
@@ -457,12 +472,22 @@ function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCatego
         const locked = empty || (on && enabledCount <= 1);
         const isCurrent = key === currentCategory;
         return (
-          <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 7, backgroundColor: on ? 'rgba(200,27,24,0.13)' : SCRIM, borderWidth: 1, borderColor: on ? 'rgba(200,27,24,0.55)' : GOLD_BORDER }}>
-            <Pressable onPress={() => { if (!empty) onQuickSwitch(key); }} disabled={empty} accessibilityRole="button" accessibilityLabel={`Switch to ${categoryLabel(key, customCategories)}`} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9, opacity: empty ? 0.6 : 1 }}>
+          <View key={key} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 7, backgroundColor: isCurrent ? CURRENT_FILL : on ? ON_FILL : SCRIM, borderWidth: 1, borderColor: isCurrent ? Rune.goldBright : on ? ON_BORDER : GOLD_BORDER }}>
+            {/* v0.34.0: the CURRENT category is marked by a gold spine down its left edge, not by a
+                word alone. The row already knew which one it was and only said so in small print. */}
+            {isCurrent ? <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 4, bottom: 4, width: 3, borderRadius: 2, backgroundColor: Rune.goldBright }} /> : null}
+            <Pressable
+              onPress={() => { if (empty) { playSfx('buttonTap'); onEmpty(categoryLabel(key, customCategories)); return; } onQuickSwitch(key); }}
+              accessibilityRole="button"
+              accessibilityLabel={`Switch to ${categoryLabel(key, customCategories)}`}
+              accessibilityState={{ selected: isCurrent, disabled: empty }}
+              // v0.34.0: it is a button, so it presses. Tapping a category used to teleport you to it
+              // with no acknowledgement at all, which reads as a list rather than as a control.
+              style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9, opacity: empty ? 0.55 : pressed ? 0.55 : 1, transform: [{ scale: pressed ? 0.985 : 1 }] })}>
               <CatTile categoryKey={key} />
               <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 14.5, fontFamily: Body.bold }}>{categoryLabel(key, customCategories)}</Text>
-                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium }}>{builtin ? 'Built-in' : 'Custom'}{empty ? '  ·  empty' : isCurrent ? '  ·  current' : ''}</Text>
+                <Text numberOfLines={1} style={{ color: isCurrent ? Rune.goldBright : on ? Rune.ivory : Rune.muted, fontSize: 14.5, fontFamily: Body.bold }}>{categoryLabel(key, customCategories)}</Text>
+                <Text style={{ color: isCurrent ? Rune.goldText : Rune.muted, fontSize: 10, fontFamily: Body.medium }}>{builtin ? 'Built-in' : 'Custom'}{empty ? '  ·  empty' : isCurrent ? '  ·  current' : ''}</Text>
               </View>
             </Pressable>
             <View style={{ gap: 2 }}>
@@ -475,7 +500,20 @@ function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCatego
                 <Pressable onPress={() => onAskDelete(custom)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Delete category" style={{ padding: 4 }}><TrashIcon color="#E2705A" /></Pressable>
               </View>
             ) : null}
-            <Pressable onPress={() => { if (!locked) { playSfx(on ? 'categoryToggleOff' : 'categoryToggleOn'); onToggle(key); } }} disabled={locked} accessibilityRole="switch" accessibilityState={{ checked: on, disabled: locked }}><Switch on={on} /></Pressable>
+            {/* v0.34.0: a dead switch explains itself. Empty is the common case and the one the owner
+                hit; the last-one-standing case was already silent for the same reason. */}
+            <Pressable
+              onPress={() => {
+                if (empty) { playSfx('buttonTap'); onEmpty(categoryLabel(key, customCategories)); return; }
+                if (locked) { playSfx('buttonTap'); onLastOne(); return; }
+                playSfx(on ? 'categoryToggleOff' : 'categoryToggleOn');
+                onToggle(key);
+              }}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: on, disabled: locked }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+              <Switch on={on} />
+            </Pressable>
           </View>
         );
       })}
@@ -731,14 +769,15 @@ function TrashView({ trash, onRestore }: { trash: { id: string; title: string; a
   if (trash.length === 0) {
     return (
       <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
-        Nothing deleted recently. Cards you author and then delete show up here so you can put them back.
+        Nothing deleted recently. Any card you delete shows up here so you can put it back.
       </Text>
     );
   }
   return (
     <>
       <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 17, marginBottom: 4 }}>
-        Cards you wrote and later deleted. They stay recoverable for as long as they remain in this character&apos;s history.
+        Cards you have deleted, the ones you wrote and the ones that came with the game. Restoring asks which deck to
+        put it back in. They stay recoverable for as long as they remain in this character&apos;s history.
       </Text>
       {trash.map((t) => (
         <ChamferBox key={t.id} chamfer={6} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.3)" strokeWidth={1} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, paddingVertical: 9 }}>

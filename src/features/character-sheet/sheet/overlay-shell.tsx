@@ -25,6 +25,7 @@ export function OverlayShell({
   scroll = true,
   dismissOnScrim = true,
   mute = false,
+  onEndReached,
 }: {
   title: string;
   subtitle?: string;
@@ -39,6 +40,14 @@ export function OverlayShell({
   dismissOnScrim?: boolean;
   /** v0.13.0: no open/close sounds (the empty-category panel must appear silently, owner item 10). */
   mute?: boolean;
+  /**
+   * Called as the scroll approaches the bottom, for a panel that pages its content in (v0.34.0).
+   *
+   * It lives on the shell rather than in each panel because the shell owns the scroll view. The
+   * Timeline is the caller that needed it: at a hundred entries it built every row up front, and each
+   * row diffs two whole character snapshots to say which cards moved.
+   */
+  onEndReached?: () => void;
 }) {
   const { scale } = useLayout();
   // The body ScrollView is capped to a real pixel height (#233): a flex-shrink ScrollView inside a
@@ -87,7 +96,21 @@ export function OverlayShell({
         </View>
         {header}
         {scroll ? (
-          <ScrollView style={{ maxHeight: scrollMax }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 2 }} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            style={{ maxHeight: scrollMax }}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10, paddingBottom: 2 }}
+            keyboardShouldPersistTaps="handled"
+            scrollEventThrottle={64}
+            onScroll={
+              onEndReached
+                ? (e) => {
+                    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+                    // One screen of slack, so the next page is ready before the current one runs out.
+                    if (contentOffset.y + layoutMeasurement.height >= contentSize.height - layoutMeasurement.height) onEndReached();
+                  }
+                : undefined
+            }>
             {children}
           </ScrollView>
         ) : (

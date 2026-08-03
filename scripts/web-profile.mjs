@@ -105,6 +105,7 @@ for (const s of steps) {
   console.log('step', s);
   if (cmd === 'tap') { const [l, n] = arg.split('@'); await tap(l, Number(n || 1)); }
   else if (cmd === 'xy') { const [x, y] = arg.split(',').map(Number); await page.mouse.click(x, y); await new Promise((r) => setTimeout(r, 900)); }
+  else if (cmd === 'xy2') { const [x, y] = arg.split(',').map(Number); await page.mouse.click(x, y, { delay: 25 }); await new Promise((r) => setTimeout(r, 90)); await page.mouse.click(x, y, { delay: 25 }); await new Promise((r) => setTimeout(r, 900)); }
   else if (cmd === 'swipe') { const [a, b, c, d] = arg.split(',').map(Number); await swipe(a, b, c, d); }
   else if (cmd === 'wait') await new Promise((r) => setTimeout(r, Number(arg)));
   else if (cmd === 'hold') { const [x, y, ms] = arg.split(',').map(Number); await page.mouse.move(x, y); await page.mouse.down(); await new Promise((r) => setTimeout(r, ms || 800)); await page.mouse.up(); await new Promise((r) => setTimeout(r, 600)); }

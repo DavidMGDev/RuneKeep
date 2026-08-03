@@ -17,6 +17,7 @@ import { CATALOG } from '@/data/catalog';
 import { catalogFor, classExpansion } from '@/lib/expansions';
 import { isEnabledForCreation, type LibraryCard } from '@/lib/library';
 import { libraryCardEffects } from '@/lib/library-embed';
+import { hasHomebrew, keepSource, type SourceFilter } from '@/lib/homebrew-filter';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { listExpansions } from '@/lib/library-store';
 import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
@@ -37,7 +38,7 @@ type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'transfo
  * narrowed to either. Weapons and Armor get a single Homebrew toggle instead, because their tier tabs
  * already separate the official gear.
  */
-type Source = 'all' | 'official' | 'homebrew';
+type Source = SourceFilter;
 
 /** One source filter chip. Tapping the lit one clears it, which is how "show me both" is expressed
  *  without a third button that says so. */
@@ -121,6 +122,16 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   const domains = useMemo(() => [...new Set([...allowed.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!), ...(recordDomains.map((c) => c.domain).filter(Boolean) as string[])])], [allowed, recordDomains]);
   const isCardKind = (CARD_KINDS as string[]).includes(cat);
   const [source, setSource] = useState<Source>('all');
+  /**
+   * The Homebrew chip exists only where it would find something (v0.34.0).
+   *
+   * `records` arrives asynchronously, so this is derived rather than stored: the chip appears the
+   * moment the expansions load, and a homebrew selection that the new category cannot satisfy is
+   * dropped on the way in rather than left lit over an empty list.
+   */
+  const homebrewHere = useMemo(() => hasHomebrew(cat, records), [cat, records]);
+  const kept = keepSource(source, cat, records);
+  if (kept !== source) setSource(kept);
   /** Nothing selected shows everything, which is why 'all' is the default and stays it. */
   const wantOfficial = source !== 'homebrew';
   const wantHomebrew = source !== 'official';
@@ -232,14 +243,17 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
             </Pressable>
           ))}
           {/* Gear needs no Official chip: the tier tabs already separate the published gear, so one
-              Homebrew toggle is the whole filter (v0.32.2). */}
-          <SourceChip label="Homebrew" on={source === 'homebrew'} onPress={() => setSource((v) => (v === 'homebrew' ? 'all' : 'homebrew'))} />
+              Homebrew toggle is the whole filter (v0.32.2), and it only appears when there is any
+              (v0.34.0). */}
+          {homebrewHere ? <SourceChip label="Homebrew" on={source === 'homebrew'} onPress={() => setSource((v) => (v === 'homebrew' ? 'all' : 'homebrew'))} /> : null}
         </View>
       ) : (
+        homebrewHere ? (
         <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
           <SourceChip label="Official" on={source === 'official'} onPress={() => setSource((v) => (v === 'official' ? 'all' : 'official'))} />
           <SourceChip label="Homebrew" on={source === 'homebrew'} onPress={() => setSource((v) => (v === 'homebrew' ? 'all' : 'homebrew'))} />
         </View>
+        ) : null
       )}
 
       {isCardKind ? (

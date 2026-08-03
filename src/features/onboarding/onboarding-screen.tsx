@@ -128,6 +128,13 @@ const SHEET: Page[] = [
     body: 'Your armor and starting gear live in the arsenal to begin with, which works but gets crowded.\n\nOnce their bonuses are counted, move them to Inventory: Edit mode, select them, then Move. Your arsenal is then just the cards you play with.',
     render: () => <CircleDemo />,
   },
+  // v0.34.0: the moodboard is opened by a gesture on a thing that already had two other gestures, so
+  // it is the least discoverable feature in the app. It gets a page.
+  {
+    title: 'Double tap your portrait',
+    body: 'Two taps on your portrait open this character’s moodboard: a blank canvas that belongs to them, for faces, places, armour, anything you have collected.\n\nDrag with one finger, use two to resize and turn, and double tap an image for its menu. It opens locked, so hold the lock for a second before you move anything.',
+    render: () => <WheelDemo />,
+  },
   {
     title: 'The wheel under your portrait',
     body: 'Press the emblem below your portrait and drag to a wedge.\n\nState shows your modifiers and everything that has happened to this character. Then Level Up, Rest, New Card, and Cards for the rest.\n\nOne last thing: your sheet is bright parchment and this tour is dark, so Got it is a jump in brightness.',

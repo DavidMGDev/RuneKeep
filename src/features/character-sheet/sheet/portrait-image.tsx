@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedProps, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
@@ -19,18 +19,49 @@ const MASK_D =
  * so the tap visibly registers (owner v0.9.8 — the picker alone felt unresponsive). Mirrors the shine
  * the set-photo PortraitImage gives, kept as a cheap flash since the placeholder is about to be replaced.
  */
-export function PortraitTapButton({ onPress, children, accessibilityLabel, style }: { onPress?: () => void; children?: ReactNode; accessibilityLabel?: string; style?: StyleProp<ViewStyle> }) {
+export function PortraitTapButton({ onPress, onOpenBoard, children, accessibilityLabel, style }: { onPress?: () => void; onOpenBoard?: () => void; children?: ReactNode; accessibilityLabel?: string; style?: StyleProp<ViewStyle> }) {
   const flash = useSharedValue(0);
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
   const trigger = () => {
     flash.value = withSequence(withTiming(0.4, { duration: 90 }), withTiming(0, { duration: 280 }));
     onPress?.();
   };
+  /**
+   * v0.34.0: the moodboard is reachable from the EMPTY portrait too.
+   *
+   * The gesture lives on the portrait, and a character with no photo yet has a placeholder here
+   * instead. Gating a whole feature on having picked a picture would be an arbitrary lock on the one
+   * screen most likely to want it: a character you have not finished imagining.
+   *
+   * The flash still fires on touch, so the single tap that opens the picker is answered immediately
+   * even though it now waits out the double-tap window before it resolves.
+   */
+  const gesture = useMemo(() => {
+    const flashNow = () => { flash.value = withSequence(withTiming(0.4, { duration: 90 }), withTiming(0, { duration: 280 })); };
+    const two = Gesture.Tap().numberOfTaps(2).maxDuration(260).maxDistance(20).onStart(() => { 'worklet'; if (onOpenBoard) runOnJS(onOpenBoard)(); });
+    const one = Gesture.Tap()
+      .maxDuration(260)
+      .maxDistance(16)
+      .onTouchesDown(() => { 'worklet'; runOnJS(flashNow)(); })
+      .onEnd(() => { 'worklet'; if (onPress) runOnJS(onPress)(); });
+    return Gesture.Exclusive(two, one);
+  }, [flash, onOpenBoard, onPress]);
+
+  if (!onOpenBoard) {
+    return (
+      <Pressable style={style} onPress={trigger} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
+        {children}
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#ffffff' }, flashStyle]} />
+      </Pressable>
+    );
+  }
   return (
-    <Pressable style={style} onPress={trigger} accessibilityRole="button" accessibilityLabel={accessibilityLabel}>
-      {children}
-      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#ffffff' }, flashStyle]} />
-    </Pressable>
+    <GestureDetector gesture={gesture}>
+      <View style={style} accessible accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityHint="Double tap to open the moodboard">
+        {children}
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#ffffff' }, flashStyle]} />
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -56,6 +87,7 @@ export function PortraitImage({
   transform,
   onTransform,
   onReplace,
+  onOpenBoard,
 }: {
   uri: string;
   width: number;
@@ -63,6 +95,8 @@ export function PortraitImage({
   transform?: PortraitTransform;
   onTransform?: (t: PortraitTransform) => void;
   onReplace?: () => void;
+  /** v0.34.0: a double tap opens this character's moodboard. */
+  onOpenBoard?: () => void;
 }) {
   const scale = useSharedValue(transform?.scale ?? 1);
   const ox = useSharedValue(transform?.x ?? 0);
@@ -119,23 +153,54 @@ export function PortraitImage({
     })
     .onEnd(() => runOnJS(persist)());
 
-  // tap: a quick top-to-bottom shine so a tap visibly registers (no feedback before v0.9.8)
+  /**
+   * Tap feedback, on TOUCH rather than on release (v0.34.0).
+   *
+   * The shine used to start in `onStart`, which for a tap means when the gesture RESOLVES. Adding a
+   * double tap this release would have made that worse still, because a single tap then has to wait
+   * out the double-tap window before it can resolve at all. Firing on touch-down decouples the two:
+   * the portrait answers the instant it is touched, and which gesture it turns out to be is decided
+   * afterwards. The sweep is quicker too, because feedback that outlasts the interaction reads as an
+   * animation rather than as a response.
+   */
   const tap = Gesture.Tap()
     .maxDuration(260)
     .maxDistance(16)
-    .onStart(() => {
+    .onTouchesDown(() => {
+      'worklet';
       shine.value = 0;
-      shine.value = withTiming(1, { duration: 480, easing: Easing.inOut(Easing.quad) });
+      shine.value = withTiming(1, { duration: 300, easing: Easing.inOut(Easing.quad) });
     });
 
-  // hold: feedback starts at 0.5s, fill completes (replace prompt) ~1.5s; release before = cancel. The
-  // fill is the "upward shine" the owner asked to run twice as fast (was 2000ms).
+  /**
+   * The MOODBOARD (v0.34.0): two taps on the portrait open the character's canvas.
+   *
+   * Resolved ahead of the single tap so the two can never both fire. The shine still lands on the
+   * first touch, so a double tap feels answered from its first contact.
+   */
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .maxDuration(260)
+    .maxDistance(20)
+    .onStart(() => {
+      'worklet';
+      if (onOpenBoard) runOnJS(onOpenBoard)();
+    });
+
+  /**
+   * Hold to replace (v0.34.0: feedback is immediate).
+   *
+   * It used to show nothing for the first half second and then take another second, so the first half
+   * of every hold was indistinguishable from the app ignoring you. The gold now starts climbing
+   * almost at once and completes sooner; the total is close to what it was, but you can see it
+   * working from the beginning, which is the part that was missing.
+   */
   const hold = Gesture.LongPress()
-    .minDuration(500)
+    .minDuration(140)
     .maxDistance(16)
     .onStart(() => {
       fired.value = false;
-      fill.value = withTiming(1, { duration: 1000, easing: Easing.linear }, (done) => {
+      fill.value = withTiming(1, { duration: 900, easing: Easing.linear }, (done) => {
         if (done && !fired.value) {
           fired.value = true;
           runOnJS(fireReplace)();
@@ -147,7 +212,7 @@ export function PortraitImage({
       fill.value = withTiming(0, { duration: 220 });
     });
 
-  const gesture = Gesture.Simultaneous(pinch, Gesture.Exclusive(hold, pan, tap));
+  const gesture = Gesture.Simultaneous(pinch, Gesture.Exclusive(doubleTap, hold, pan, tap));
 
   const imgProps = useAnimatedProps(() => ({ x: ox.value, y: oy.value, width: VW * scale.value, height: VH * scale.value }));
   const fillProps = useAnimatedProps(() => ({ y: VH * (1 - fill.value), height: VH * fill.value }));

@@ -548,10 +548,15 @@ export function GalleryScreen() {
         <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 9 }}>
           {/* v0.32.2: SOURCE is a filter inside the archive, not a category of its own. Neither chip
               lit shows both, which is why there is no "All". */}
-          <FilterBand label="Source">
-            <RuneChip label="Official" active={filters.sources.has('official')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'official' as const) }))} />
-            <RuneChip label="Homebrew" active={filters.sources.has('homebrew')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'homebrew' as const) }))} />
-          </FilterBand>
+          {/* v0.34.0: with no expansions installed there is no homebrew to filter to, and a lit chip
+              over an empty archive reads as a broken catalogue. The whole band goes, because with
+              only official cards there is nothing to choose between. */}
+          {library.length ? (
+            <FilterBand label="Source">
+              <RuneChip label="Official" active={filters.sources.has('official')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'official' as const) }))} />
+              <RuneChip label="Homebrew" active={filters.sources.has('homebrew')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'homebrew' as const) }))} />
+            </FilterBand>
+          ) : null}
           <FilterBand label="Type">
             {KINDS.map((k) => (
               <RuneChip key={k.key} label={k.label} active={filters.kinds.has(k.key)} onPress={() => setFilters((f) => ({ ...f, kinds: toggle(f.kinds, k.key) }))} />

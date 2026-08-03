@@ -462,3 +462,60 @@ describe('inline images never enter a snapshot (v0.33.1)', () => {
     expect(r.file.portraitUri).toBe(PHOTO);
   });
 });
+
+describe('the card trash (v0.34.0)', () => {
+  const note = { id: 'note-1', title: 'Session notes', text: '' };
+
+  it('offers a deleted authored card back', () => {
+    const had = mk({ notes: [note] } as Partial<CharacterFile>);
+    const gone = mk({ notes: [], removedCardIds: ['note-1'] } as Partial<CharacterFile>);
+    const h = record(record(emptyHistory(), null, stripHistory(had), {}, T0), stripHistory(had), stripHistory(gone), {}, at(1));
+    const trash = recoverableCards(h, gone);
+    expect(trash.map((t) => t.id)).toContain('note-1');
+  });
+
+  // The reported bug: restoring put the object back and the tombstone went on hiding it.
+  it('lifts the tombstone as well as putting the card back, or the restore does nothing at all', () => {
+    const had = mk({ notes: [note] } as Partial<CharacterFile>);
+    const gone = mk({ notes: [], removedCardIds: ['note-1'] } as Partial<CharacterFile>);
+    const h = record(record(emptyHistory(), null, stripHistory(had), {}, T0), stripHistory(had), stripHistory(gone), {}, at(1));
+    const rec = recoverableCards(h, gone).find((t) => t.id === 'note-1')!;
+    const back = restoreCard(gone, rec, 'notes');
+    expect(back.notes).toHaveLength(1);
+    expect(back.removedCardIds ?? []).not.toContain('note-1');
+  });
+
+  it('files the restored card in the deck the player chose', () => {
+    const had = mk({ notes: [note] } as Partial<CharacterFile>);
+    const gone = mk({ notes: [], removedCardIds: ['note-1'] } as Partial<CharacterFile>);
+    const h = record(record(emptyHistory(), null, stripHistory(had), {}, T0), stripHistory(had), stripHistory(gone), {}, at(1));
+    const rec = recoverableCards(h, gone).find((t) => t.id === 'note-1')!;
+    expect(restoreCard(gone, rec, 'inventory').cardCategory?.['note-1']).toBe('inventory');
+  });
+
+  // The other half: a deleted armor never reached the trash, because it is hidden rather than spliced.
+  it('lists a tombstoned system card, which nothing removed from the file', () => {
+    const had = mk({ armorId: 'armor-gambeson' } as Partial<CharacterFile>);
+    const gone = mk({ armorId: 'armor-gambeson', removedCardIds: ['armor-gambeson'] } as Partial<CharacterFile>);
+    const h = record(record(emptyHistory(), null, stripHistory(had), {}, T0), stripHistory(had), stripHistory(gone), {}, at(1));
+    const rec = recoverableCards(h, gone).find((t) => t.id === 'armor-gambeson');
+    expect(rec).toBeTruthy();
+    expect(rec!.collection).toBeNull();
+  });
+
+  it('restores a system card by lifting its tombstone and nothing else', () => {
+    const gone = mk({ armorId: 'armor-gambeson', removedCardIds: ['armor-gambeson'] } as Partial<CharacterFile>);
+    const rec = { id: 'armor-gambeson', title: 'Gambeson', collection: null as null, at: T0.toISOString() };
+    const back = restoreCard(gone, rec, 'inventory');
+    expect(back.removedCardIds).toEqual([]);
+    expect(back.armorId).toBe('armor-gambeson');
+    expect(back.cardCategory?.['armor-gambeson']).toBe('inventory');
+  });
+
+  it('never mutates the character it restores into', () => {
+    const gone = mk({ notes: [], removedCardIds: ['x'] } as Partial<CharacterFile>);
+    const before = JSON.stringify(gone);
+    restoreCard(gone, { id: 'x', title: 'x', collection: null, at: T0.toISOString() }, 'notes');
+    expect(JSON.stringify(gone)).toBe(before);
+  });
+});
