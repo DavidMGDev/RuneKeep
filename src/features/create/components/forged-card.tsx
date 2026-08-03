@@ -1,6 +1,6 @@
 import { type FC } from 'react';
 import { Image as ExpoImage } from 'expo-image';
-import { Platform, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
 
 import { CardMarkdownBody } from '@/components/card-markdown';
@@ -9,7 +9,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
 import { type ArmorDef, type WeaponDef } from '@/data/equipment-data';
 import { type LootDef, lootTable } from '@/data/loot-data';
-import { fitText, wrapLines } from '@/lib/fit-text';
+import { fitText, MIN_LINE_RATIO, wrapLines } from '@/lib/fit-text';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
@@ -63,6 +63,15 @@ const BODY_LINE_RATIO = 14 / 10.5; // the v0.13.0 typeset, kept as the text shri
  *  browser, which is how a card can fit on one platform and print over its footer on the other. */
 const BODY_TITLE_H = 21;
 const BODY_SUB_H = 11;
+/**
+ * Room kept clear ABOVE the footer watermark (v0.32.2).
+ *
+ * The body box ends 24px from the card's bottom edge and the footer sits 8px from it, so there were
+ * only about 9px between the last line of a description and the word RuneKeep. Any disagreement at
+ * all between what the size calculation expects and what a renderer draws landed inside that gap.
+ * Six of the nine are now reserved, which costs a fraction of a point of type and buys the clearance.
+ */
+const FOOTER_GUARD = 6;
 
 /**
  * The generic card's description, sized to what is left under its own title (v0.30.0).
@@ -83,16 +92,10 @@ function BodyText({ body, title, hasSubtitle, multiline }: { body: string; title
   // v0.32.0: the leading may tighten to 1.05 before the font gives way. A description full of blank
   // lines is the case that needed it: it could not fit at the old fixed leading, so it fell through
   // to a truncated line count and printed over the footer on Android.
-  const fit = fitText(body, { width: BODY_TEXT_W, height: room, base: 10.5, lineRatio: BODY_LINE_RATIO, minRatio: 1.05 });
-  // Native keeps its auto-shrink under the computed size as a second net; a browser has none, and a
-  // line count there could only truncate. See FeatureLine.
-  const native = Platform.OS !== 'web' && multiline;
+  const fit = fitText(body, { width: BODY_TEXT_W, height: room - FOOTER_GUARD, base: 10.5, lineRatio: BODY_LINE_RATIO, minRatio: MIN_LINE_RATIO });
   return (
     <CardMarkdownBody
       body={body}
-      numberOfLines={native ? Math.max(fit.lines, 1) : undefined}
-      adjustsFontSizeToFit={native}
-      minimumFontScale={0.6}
       // v0.13.0 typeset vs the DH scans: LEFT aligned like the prints (justify opened rivers at this
       // measure), black-weight title above.
       style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: named ? 6 : 0, flexShrink: 1 }}
@@ -360,10 +363,9 @@ function equipFeatureRoom(rows: number): number {
 }
 
 function FeatureLine({ feature, room }: { feature: { name: string; text: string }; room: number }) {
-  const fit = fitText(`${feature.name}: ${feature.text}`, { width: EQUIP_TEXT_W, height: room, base: 8.5, lineRatio: EQUIP_LINE_RATIO });
-  const lineProps = Platform.OS === 'web' ? {} : { numberOfLines: fit.lines, adjustsFontSizeToFit: true, minimumFontScale: 0.55 };
+  const fit = fitText(`${feature.name}: ${feature.text}`, { width: EQUIP_TEXT_W, height: room - FOOTER_GUARD, base: 8.5, lineRatio: EQUIP_LINE_RATIO });
   return (
-    <Text {...lineProps} style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
+    <Text style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
       <Text style={{ fontFamily: Body.bold }}>{feature.name}: </Text>
       {feature.text}
     </Text>

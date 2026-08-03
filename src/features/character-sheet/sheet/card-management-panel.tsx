@@ -110,11 +110,14 @@ function Switch({ on }: { on: boolean }) {
 
 function TabButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={{ flex: 1 }} accessibilityRole="tab" accessibilityState={{ selected: active }}>
+    // v0.32.2: the three tabs shared the row in equal thirds, and "CATEGORIES" does not fit a third
+    // of this panel at 13px, so it read "CATEGO". They size to their CONTENT now and share what is
+    // left over, which is what a tab row should do when one label is twice the length of another.
+    <Pressable onPress={onPress} style={{ flexGrow: 1, flexShrink: 1, flexBasis: 'auto' }} accessibilityRole="tab" accessibilityState={{ selected: active }}>
       {/* v0.23.0: horizontal padding (the label was flush to the edges) and a chamfer instead of a
           border radius, which DESIGN.md rules out everywhere but circular emblems and pips. */}
-      <ChamferBox chamfer={6} fill={active ? Rune.red : 'rgba(20,24,31,0.6)'} stroke={active ? 'transparent' : GOLD_BORDER} strokeWidth={1} style={{ height: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
-        <Text numberOfLines={1} style={{ color: active ? Rune.ivory : Rune.muted, fontSize: 13, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
+      <ChamferBox chamfer={6} fill={active ? Rune.red : 'rgba(20,24,31,0.6)'} stroke={active ? 'transparent' : GOLD_BORDER} strokeWidth={1} style={{ height: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 }}>
+        <Text numberOfLines={1} style={{ color: active ? Rune.ivory : Rune.muted, fontSize: 12, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
     </Pressable>
   );
@@ -185,7 +188,9 @@ function LiveTile({ item }: { item: CardItem }) {
 export function CardManagementPanel(props: Props) {
   const { isDruid, hasCompanion, hasMartialForm, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onFavorite, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
-  const [view, setView] = useState<'categories' | 'cards' | 'types' | 'trash'>('cards'); // #297: open on Cards
+  // v0.32.2 (owner): open on CATEGORIES. It is what the panel is mostly used for, and Cards is one
+  // tap away. #297 opened on Cards; this supersedes it.
+  const [view, setView] = useState<'categories' | 'cards' | 'types' | 'trash'>('categories');
 
   const hiddenSet = useMemo(() => new Set(hidden), [hidden]);
   // v0.9.8: surface the Favorites section once it has cards (it's not a normal available category).
@@ -372,7 +377,7 @@ export function CardManagementPanel(props: Props) {
           </View>
         ) : undefined
       }>
-      {/* #297: Cards is the first/left tab and the default view. */}
+      {/* Cards is the first/left tab; CATEGORIES is the default view (v0.32.2). */}
       <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
         <TabButton label="Cards" active={view === 'cards'} onPress={() => setView('cards')} />
         <TabButton label="Categories" active={view === 'categories'} onPress={() => setView('categories')} />

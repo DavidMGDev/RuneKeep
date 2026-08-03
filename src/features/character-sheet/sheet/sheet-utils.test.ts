@@ -64,20 +64,14 @@ describe('the desaturation wash', () => {
   });
 });
 
-describe('armorTrackLayout (v0.32.1)', () => {
-  it('shows exactly the shields you have, in one bigger row, at five or fewer', () => {
-    for (const n of [1, 2, 3, 4, 5]) {
+describe('armorTrackLayout (v0.32.2)', () => {
+  it('drops the SECOND ROW at five or fewer, keeping five bigger shields', () => {
+    for (const n of [0, 1, 2, 3, 4, 5]) {
       const l = armorTrackLayout(n);
-      expect(l.count).toBe(n);
-      expect(l.size).toBe(26);
+      expect(l.count).toBe(5);
+      expect(l.size).toBeGreaterThan(17); // bigger than the two-row shields
       expect(new Set(l.slots.map((s) => s.y)).size).toBe(1); // one row
     }
-  });
-
-  it('keeps one shield at zero armor, so the band never reads as broken', () => {
-    const l = armorTrackLayout(0);
-    expect(l.count).toBe(1);
-    expect(l.slots).toHaveLength(1);
   });
 
   it('falls back to the full twelve in two rows at six or more', () => {
@@ -89,9 +83,11 @@ describe('armorTrackLayout (v0.32.1)', () => {
     }
   });
 
-  it('never lets the one-row layout overflow the armor band', () => {
-    const l = armorTrackLayout(5);
-    const right = Math.max(...l.slots.map((s) => s.x)) + l.size;
-    expect(right).toBeLessThanOrEqual(142); // the zone the shields are allowed
+  it('lines the one-row band up with the two-row one it replaces', () => {
+    const one = armorTrackLayout(3);
+    const two = armorTrackLayout(9);
+    const right = (l: { size: number; slots: { x: number }[] }) => Math.max(...l.slots.map((s) => s.x)) + l.size;
+    expect(right(one)).toBe(right(two)); // same width, so the panel around it never shifts
+    expect(new Set(one.slots.slice(1).map((s, i) => s.x - one.slots[i].x)).size).toBe(1); // evenly spaced
   });
 });

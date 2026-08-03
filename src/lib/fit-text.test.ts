@@ -1,4 +1,4 @@
-import { fitText, wrapLines } from './fit-text';
+import { fitText, MIN_LINE_RATIO, wrapLines } from './fit-text';
 
 // The weapon card's feature box, in design px: 230 wide less 16 each side, with what is left under
 // the pinned title and the four pinned stat rows. Typeset at 8.5/12.5. Keep in step with
@@ -98,5 +98,24 @@ describe('fitting card text', () => {
   it('has nothing to do with an empty feature', () => {
     expect(fitText('', WEAPON).lines).toBe(0);
     expect(fitText('   ', WEAPON).fontSize).toBe(WEAPON.base);
+  });
+});
+
+describe('the leading floor (v0.32.2)', () => {
+  const BODY = { width: 200, height: 122, base: 10.5, lineRatio: 14 / 10.5 };
+
+  it('never asks for tighter leading than the face can draw, whatever the caller passes', () => {
+    // Archivo's own line box is 1.088 em. v0.32.0 let a caller ask for 1.05, which is under it, and
+    // that is where renderers start disagreeing about how tall a line actually is.
+    const fit = fitText(Array.from({ length: 18 }, (_, i) => `Line ${i}`).join('\n'), { ...BODY, minRatio: 0.5 });
+    expect(fit.lineHeight / fit.fontSize).toBeGreaterThanOrEqual(MIN_LINE_RATIO - 0.001);
+  });
+
+  it('still fits the box with the floor in place', () => {
+    for (const n of [4, 8, 14, 20]) {
+      const body = Array.from({ length: n }, (_, i) => `Line ${i}`).join('\n');
+      const fit = fitText(body, { ...BODY, minRatio: MIN_LINE_RATIO });
+      expect(fit.lines * fit.lineHeight).toBeLessThanOrEqual(BODY.height + 0.5);
+    }
   });
 });

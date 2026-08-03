@@ -1,16 +1,19 @@
-RuneKeep v0.32.1 - the die grows once instead of twice, thrown tokens are visible for longer than a blink, the buttons under a card have the hitbox they look like they have, and the armor track sizes itself to your armor.
+RuneKeep v0.32.2 - Frenzy gives its Severe bonus, armor equips without closing the app, homebrew lives inside the category it belongs to, and the armor row is five shields again.
 
-TOKENS AND DICE
+FIXES
 
-- HOLDING A DIE IS ONE CONTINUOUS GROWTH. It grew as you held it, then snapped back to its normal size at the exact moment the sound played, then grew a second time to show the number change. Worse, a die held past the end of its roll jumped to full size and stayed there until you let go. It is one motion now: it swells as you hold, keeps swelling into the roll, and settles back to its resting size whether or not your finger is still on it.
-- THROWN TOKENS TRAVEL AT A SPEED YOU CAN SEE. The throw covered sixteen token-widths in six hundred milliseconds, which is about four frames of screen time.
-- ANY TOKEN CAN BE THROWN, not only dice. Hold a token and it leaves the card as it always did; keep holding and swipe, and it goes that way instead. The swipe does not interrupt the animation or restart it, it adds a direction to wherever the token already is, so holding and holding-then-swiping are the same motion with two endings. Dice still roll on a hold, so a swipe is the only way to be rid of one.
+- FRENZY GRANTS +8 TO YOUR SEVERE DAMAGE THRESHOLD. It had the Armor Slots half of its rule and not the other half.
+- EQUIPPING ARMOR NO LONGER CLOSES THE APP. The armor track's shield count became dynamic in v0.32.0, and nothing had ever changed it before, so an animating shield could outlive the slot it was drawn in. Reaching for a slot that was no longer there threw during a render, which on Android closes the app outright. Frenzy made it easy to hit, because it takes your Armor Score to zero. Any track can shrink safely now.
+- THE ARMOR ROW IS FIVE SHIELDS, NOT HOWEVER MANY YOU HAVE. v0.32.1 read the request backwards and showed only the shields you owned. At five or fewer it is the SECOND ROW that goes: five shields on one line, scaled up to use the space both rows used to take, spaced to line up with the twelve-shield row exactly. Six or more is the two rows of twelve, unchanged.
 
-THE CHARACTER SHEET
+CARDS
 
-- THE BUTTONS UNDER A FOCUSED CARD HAVE REAL HITBOXES. Tapping a button anywhere but directly on its text fell through to the card behind and closed it. The gaps between them did the same. Nothing in that row reaches the card any more, and the buttons are 4px taller, which they needed once there were three of them.
-- THE ARMOR TRACK SIZES ITSELF TO YOUR ARMOR. At five or fewer it shows exactly the shields you have, in one row, large enough to be worth looking at. Twelve small shields for a character with three was a wall of grey with the live ones lost in it. At six or more it is the two rows of twelve as before.
-- UNFILLED HOPE IS OPAQUE. The empty diamonds were hollow, which never showed until you held one to gain Hope: it scaled up over the gold rule behind the track and the rule showed straight through the middle of it. They have a parchment core now, the way an unfilled Stress box always has.
-- OPENING THE CARD TYPE PICKER PUTS THE KEYBOARD AWAY. Choosing a type while writing a quick card left the title field focused underneath a full-screen list.
+- HOMEBREW IS A FILTER INSIDE EACH CATEGORY, NOT A CATEGORY OF ITS OWN. Three custom weapons now appear under Weapons, with a Homebrew chip beside the tier tabs to narrow to them. Everything else gets an Official and a Homebrew chip; with neither lit you see both, which is the default. Weapons and Armor need only the Homebrew chip, because their tiers already separate the published gear.
+- THE CARD ARCHIVE SHOWS YOUR EXPANSIONS. It only ever listed the bundled cards, so a homebrew card was invisible there however you filtered. Installed expansions now file under the type their content belongs to, and the archive has the same Source filter.
+- CARD DESCRIPTIONS SHOULD NO LONGER REACH THE FOOTER ON ANDROID. The description was measured one way and drawn another: the size was worked out in code, and then the platform's own auto-shrink was also switched on, but only on the phone. Two mechanisms deciding one layout is one too many, so the auto-shrink is gone and both platforms now draw from the same calculation. Six pixels above the watermark are also kept clear, and the line spacing never goes below what the typeface itself asks for, which v0.32.0 allowed.
+
+ELSEWHERE
+
+- THE CARDS PANEL OPENS ON CATEGORIES, and the word Categories fits inside its button instead of reading "Catego".
 
 Sideload: enable Install unknown apps, then open the APK.

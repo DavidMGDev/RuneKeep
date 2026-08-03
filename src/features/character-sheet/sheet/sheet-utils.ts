@@ -61,28 +61,34 @@ export function washBands(w: number, h: number, holes: WashRect[]): WashRect[] {
 }
 
 /**
- * How the armor shields are laid out (v0.32.1).
+ * How the armor shields are laid out (v0.32.1, corrected v0.32.2).
  *
  * The track was always twelve 17px shields in two rows of six, because twelve is the ceiling. Almost
- * nobody is at the ceiling: an unarmoured character has none and ordinary armor gives three to five,
- * so the usual sight was a wall of small grey shields with two or three live ones lost among them.
+ * nobody is at the ceiling, so the usual sight was two rows of small shields with the second one
+ * entirely dead.
  *
- * Five or fewer: show exactly those, in ONE row, big enough to be worth looking at. Six or more: the
- * original two rows, because that many at the larger size does not fit the band.
+ * At five or fewer, the SECOND ROW is what goes: five shields on one line, scaled up to use the space
+ * both rows used to take. Still five, not "however many you have" — the empty ones say how far the
+ * track can go, exactly as the twelve always did. Six or more keeps the original two rows of twelve
+ * unchanged, because that many at the larger size does not fit the band.
  *
- * Zero is the exception that keeps one shield: an empty band under the word ARMOR reads as a bug, and
- * a single locked shield says "none" clearly. Pure so the geometry can be checked without a screen.
+ * Pure, so the geometry can be checked without a screen.
  */
 export const ARMOR_ONE_ROW_MAX = 5;
+/** The band the shields live in, in design px: as wide as the two-row layout, as tall as both rows. */
+const ARMOR_BAND_W = 122; // 5 * 21 + 17, the twelve-shield row
+const ARMOR_BAND_H = 39; // 22 + 17, both rows
 export function armorTrackLayout(unlocked: number): { count: number; size: number; slots: { x: number; y: number }[] } {
   const safe = Math.max(0, Math.floor(unlocked));
   if (safe > ARMOR_ONE_ROW_MAX) {
     return { count: 12, size: 17, slots: Array.from({ length: 12 }, (_, i) => ({ x: (i % 6) * 21, y: Math.floor(i / 6) * 22 })) };
   }
-  const count = Math.min(Math.max(safe, 1), ARMOR_ONE_ROW_MAX);
-  const size = 26;
-  // Centred vertically in the band the two-row layout occupies (0..39), so the label above and the
-  // panel below keep their spacing whichever layout is showing.
-  const y = Math.round((39 - size) / 2);
-  return { count, size, slots: Array.from({ length: count }, (_, i) => ({ x: i * 28, y })) };
+  // Five shields spanning the band exactly, centred in its height. The SIZE is as large as five will
+  // go with a small gap; the PITCH is then whatever makes the last one land on the band's right edge,
+  // so the row lines up with the twelve-shield one it replaces and the panel never shifts.
+  const count = ARMOR_ONE_ROW_MAX;
+  const size = Math.floor((ARMOR_BAND_W - 2 * (count - 1)) / count);
+  const pitch = (ARMOR_BAND_W - size) / (count - 1);
+  const y = Math.round((ARMOR_BAND_H - size) / 2);
+  return { count, size, slots: Array.from({ length: count }, (_, i) => ({ x: i * pitch, y })) };
 }

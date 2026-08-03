@@ -16,6 +16,7 @@ import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from
 import { CATALOG } from '@/data/catalog';
 import { catalogFor, classExpansion } from '@/lib/expansions';
 import { isEnabledForCreation, type LibraryCard } from '@/lib/library';
+import { libraryCardEffects } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { listExpansions } from '@/lib/library-store';
 import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
@@ -25,7 +26,30 @@ import { FullScreenPanel } from './full-screen-panel';
 // #252: character cards (domain/ancestry/community/subclass/class) browsed as the creation carousel
 // (card ART, no names); weapons/armor stay a list. v0.14.0: Loot + Consumables are back as list tabs —
 // the rulebook's 120 items had no acquisition path at all, so none of them were reachable in play.
-type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'transformation' | 'weapon' | 'armor' | 'loot' | 'consumable' | 'homebrew';
+type Cat = 'domain' | 'ancestry' | 'community' | 'subclass' | 'class' | 'transformation' | 'weapon' | 'armor' | 'loot' | 'consumable';
+
+/**
+ * Where a card came from, as a FILTER INSIDE each category (v0.32.2).
+ *
+ * Homebrew used to be a category of its own, which filed a custom weapon somewhere other than
+ * Weapons. Finding one meant knowing it was homebrew before you could look for it, which is
+ * backwards: what you know is that you want a weapon. Every tab now shows both by default and can be
+ * narrowed to either. Weapons and Armor get a single Homebrew toggle instead, because their tier tabs
+ * already separate the official gear.
+ */
+type Source = 'all' | 'official' | 'homebrew';
+
+/** One source filter chip. Tapping the lit one clears it, which is how "show me both" is expressed
+ *  without a third button that says so. */
+function SourceChip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${label} only`}>
+      <ChamferBox chamfer={6} fill={on ? 'rgba(200,27,24,0.18)' : 'rgba(20,24,31,0.6)'} stroke={on ? Rune.red : 'rgba(218,162,73,0.35)'} strokeWidth={1} style={{ height: 30, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: on ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{label}</Text>
+      </ChamferBox>
+    </Pressable>
+  );
+}
 const CARD_KINDS: Cat[] = ['domain', 'ancestry', 'community', 'subclass', 'class', 'transformation'];
 const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -84,29 +108,37 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
     });
     return () => { live = false; };
   }, [allowedExp]);
-  // v0.10.3 (B4): loose homebrew cards (generic/inventory/weapon/armor) ride their own "Homebrew" tab.
-  const homebrew = useMemo(() => records.filter((c) => c.contentType === 'generic' || c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'), [records]);
+  // v0.32.2: loose homebrew goes to the tab its CONTENT belongs to. A custom weapon is a weapon.
+  // `generic` has no macro home of its own, so it joins Loot, the catalogue's bucket for what you carry.
+  const recordWeapons = useMemo(() => records.filter((c) => c.contentType === 'weapon'), [records]);
+  const recordArmor = useMemo(() => records.filter((c) => c.contentType === 'armor'), [records]);
+  const recordLoose = useMemo(() => records.filter((c) => c.contentType === 'inventory' || c.contentType === 'generic'), [records]);
   const recordAncestries = useMemo(() => records.filter((c) => c.contentType === 'ancestry'), [records]);
   const recordDomains = useMemo(() => records.filter((c) => c.contentType === 'domain'), [records]);
   const recordCommunities = useMemo(() => records.filter((c) => c.contentType === 'community'), [records]);
   const recordSubclasses = useMemo(() => records.filter((c) => c.contentType === 'subclass'), [records]);
   const recordClasses = useMemo(() => records.filter((c) => c.contentType === 'class'), [records]);
   const domains = useMemo(() => [...new Set([...allowed.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!), ...(recordDomains.map((c) => c.domain).filter(Boolean) as string[])])], [allowed, recordDomains]);
-  const isCardKind = (CARD_KINDS as string[]).includes(cat) || cat === 'homebrew';
+  const isCardKind = (CARD_KINDS as string[]).includes(cat);
+  const [source, setSource] = useState<Source>('all');
+  /** Nothing selected shows everything, which is why 'all' is the default and stays it. */
+  const wantOfficial = source !== 'homebrew';
+  const wantHomebrew = source !== 'official';
 
   // carousel items (character-card kinds) — card ART only, NO names rendered by StraightCarousel
   const items: StraightItem[] = useMemo(() => {
-    if (cat === 'class') return [...CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || allowedExp.has(e); }).map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) })), ...recordClasses.map(recordItem)];
-    if (cat === 'domain') return [...allowed.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source })), ...recordDomains.filter((c) => c.domain === domain).map(recordItem)];
+    const off = (xs: StraightItem[]) => (wantOfficial ? xs : []);
+    const hb = (xs: LibraryCard[]) => (wantHomebrew ? xs : []);
+    if (cat === 'class') return [...off(CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || allowedExp.has(e); }).map((c) => ({ id: `class-${c.key}`, custom: classCardNode(c.key, c.title, c.Banner, c.body) }))), ...hb(recordClasses).map(recordItem)];
+    if (cat === 'domain') return [...off(allowed.filter((c) => c.kind === 'domain' && c.domain === domain).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }))), ...hb(recordDomains.filter((c) => c.domain === domain)).map(recordItem)];
     if (cat === 'ancestry' || cat === 'community' || cat === 'subclass' || cat === 'transformation') {
       const catalog = allowed.filter((c) => c.kind === cat).map((c) => ({ id: c.id, thumb: c.thumb, source: c.source }));
       // transformations can't be authored (no LibraryContentType) — catalog only; the rest merge records.
       const rec = cat === 'ancestry' ? recordAncestries : cat === 'community' ? recordCommunities : cat === 'subclass' ? recordSubclasses : [];
-      return [...catalog, ...rec.map(recordItem)];
+      return [...off(catalog), ...hb(rec).map(recordItem)];
     }
-    if (cat === 'homebrew') return homebrew.map(recordItem);
     return [];
-  }, [cat, domain, homebrew, recordAncestries, recordDomains, recordCommunities, recordSubclasses, recordClasses, allowed, allowedExp]);
+  }, [cat, domain, recordAncestries, recordDomains, recordCommunities, recordSubclasses, recordClasses, allowed, allowedExp, wantOfficial, wantHomebrew]);
   const centerId = items[Math.min(centerIdx, items.length - 1)]?.id;
   const centerAcquired = !!centerId && acquiredIds.has(centerId);
   const addCard = useCallback(() => {
@@ -118,16 +150,32 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   }, [centerId, records, onAddCustom, onAdd, multi, onClose]);
 
 
-  type Row = { id: string; name: string; sub: string; effects?: CardEffect[] };
+  /** `card` is set for a HOMEBREW row, which is added through onAddCustom rather than by catalog id. */
+  type Row = { id: string; name: string; sub: string; effects?: CardEffect[]; card?: LibraryCard };
   // v0.19.2 item 5: HF (Hope and Fear) equipment shows only when the pack is enabled for this character.
   const expOk = useCallback((exp?: string) => !exp || allowedExp.has(exp), [allowedExp]);
   const rows: Row[] = useMemo(() => {
-    if (cat === 'weapon') return [...ALL_PRIMARY_WEAPONS, ...ALL_SECONDARY_WEAPONS].filter((w) => w.tier === tier && expOk(w.expansion)).map((w) => ({ id: w.id, name: w.name, sub: `${w.slot === 'secondary' ? 'Secondary · ' : ''}${w.trait} · ${w.range} · ${w.damage} ${w.damageType}`, effects: w.effects }));
-    if (cat === 'armor') return ALL_ARMOR.filter((a) => a.tier === tier && expOk(a.expansion)).map((a) => ({ id: a.id, name: a.name, sub: `Thresholds ${a.thresholds} · Score ${a.baseScore}`, effects: a.effects }));
+    const custom = (c: LibraryCard, sub: string): Row => ({ id: c.id, name: c.title || 'Untitled', sub, effects: libraryCardEffects(c), card: c });
+    if (cat === 'weapon') {
+      const official = wantOfficial ? [...ALL_PRIMARY_WEAPONS, ...ALL_SECONDARY_WEAPONS].filter((w) => w.tier === tier && expOk(w.expansion)).map((w) => ({ id: w.id, name: w.name, sub: `${w.slot === 'secondary' ? 'Secondary · ' : ''}${w.trait} · ${w.range} · ${w.damage} ${w.damageType}`, effects: w.effects })) : [];
+      // A homebrew weapon carries a tier of its own, so it files under the same tier tabs.
+      const mine = wantHomebrew ? recordWeapons.filter((c) => (c.weapon?.tier ?? 1) === tier).map((c) => custom(c, c.weapon ? `Homebrew · ${c.weapon.trait} · ${c.weapon.range} · ${c.weapon.damage} ${c.weapon.damageType}` : 'Homebrew weapon')) : [];
+      return [...official, ...mine];
+    }
+    if (cat === 'armor') {
+      const official = wantOfficial ? ALL_ARMOR.filter((a) => a.tier === tier && expOk(a.expansion)).map((a) => ({ id: a.id, name: a.name, sub: `Thresholds ${a.thresholds} · Score ${a.baseScore}`, effects: a.effects })) : [];
+      const mine = wantHomebrew ? recordArmor.filter((c) => (c.armor?.tier ?? 1) === tier).map((c) => custom(c, c.armor ? `Homebrew · Thresholds ${c.armor.thresholds} · Score ${c.armor.baseScore}` : 'Homebrew armor')) : [];
+      return [...official, ...mine];
+    }
     // Loot has no tier — the rulebook indexes it by table roll (Table 1 = base, Table 2 = Hope and Fear).
-    if (cat === 'loot' || cat === 'consumable') return ALL_LOOT.filter((l) => l.kind === cat && expOk(l.expansion)).map((l) => ({ id: l.id, name: l.name, sub: `Roll ${l.roll} · Table ${lootTable(l)} · ${l.text.split('\n')[0]}`, effects: l.effects }));
+    if (cat === 'loot' || cat === 'consumable') {
+      const official = wantOfficial ? ALL_LOOT.filter((l) => l.kind === cat && expOk(l.expansion)).map((l) => ({ id: l.id, name: l.name, sub: `Roll ${l.roll} · Table ${lootTable(l)} · ${l.text.split('\n')[0]}`, effects: l.effects })) : [];
+      // Loose homebrew (an item, or a card with no other home) rides Loot rather than a tab of its own.
+      const mine = wantHomebrew && cat === 'loot' ? recordLoose.map((c) => custom(c, `Homebrew · ${(c.text ?? '').split('\n')[0] || 'Card'}`)) : [];
+      return [...official, ...mine];
+    }
     return [];
-  }, [cat, tier, expOk]);
+  }, [cat, tier, expOk, wantOfficial, wantHomebrew, recordWeapons, recordArmor, recordLoose]);
 
   const hasTransforms = useMemo(() => allowed.some((c) => c.kind === 'transformation'), [allowed]);
   const TABS: { key: Cat; label: string }[] = [
@@ -137,7 +185,6 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
     { key: 'community', label: 'Community' },
     { key: 'subclass', label: 'Subclass' }, { key: 'class', label: 'Class' }, { key: 'weapon', label: 'Weapons' }, { key: 'armor', label: 'Armor' },
     { key: 'loot', label: 'Loot' }, { key: 'consumable', label: 'Consumables' },
-    ...(homebrew.length ? [{ key: 'homebrew' as Cat, label: 'Homebrew' }] : []),
   ];
 
   return (
@@ -184,8 +231,16 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
               </ChamferBox>
             </Pressable>
           ))}
+          {/* Gear needs no Official chip: the tier tabs already separate the published gear, so one
+              Homebrew toggle is the whole filter (v0.32.2). */}
+          <SourceChip label="Homebrew" on={source === 'homebrew'} onPress={() => setSource((v) => (v === 'homebrew' ? 'all' : 'homebrew'))} />
         </View>
-      ) : null}
+      ) : (
+        <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+          <SourceChip label="Official" on={source === 'official'} onPress={() => setSource((v) => (v === 'official' ? 'all' : 'official'))} />
+          <SourceChip label="Homebrew" on={source === 'homebrew'} onPress={() => setSource((v) => (v === 'homebrew' ? 'all' : 'homebrew'))} />
+        </View>
+      )}
 
       {isCardKind ? (
         <View style={{ flex: 1, minHeight: 260 }}>
@@ -214,7 +269,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
                   {eff ? <Text numberOfLines={1} style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, marginTop: 2 }}>{eff}</Text> : null}
                 </View>
                 {/* #269: allow several copies — each becomes an individual card */}
-                <RuneButton label={has ? 'Add again' : 'Add'} kind="secondary" dense height={32} style={{ paddingHorizontal: 14 }} onPress={() => onAdd(r.id)} />
+                <RuneButton label={has ? 'Add again' : 'Add'} kind="secondary" dense height={32} style={{ paddingHorizontal: 14 }} onPress={() => (r.card ? onAddCustom?.(r.card) : onAdd(r.id))} />
               </View>
             );
           })}
