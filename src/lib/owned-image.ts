@@ -10,11 +10,33 @@
  * So a picked image is COPIED somewhere the app owns before its path is written to a character. The
  * documents directory is not cleared by an update.
  *
- * On web there is no cache directory and no copy to make: the picker returns a `data:` URI, which is
- * the bytes themselves, and IndexedDB stores it with the rest of the character. So this is a no-op
- * there rather than a special case scattered through the callers.
+ * On web there is no cache directory and no copy to make, but there is a worse version of the same
+ * problem. v0.32.2 and earlier assumed the browser picker returned a `data:` URI. It does not: it
+ * returns a `blob:` URL, which is a handle into ONE page session's memory. So a portrait picked in a
+ * browser survived exactly until the tab was reloaded, and a character exported from the browser
+ * carried `blob:https://runekeep.pages.dev/7eae6fc5-…` into the file, which means nothing anywhere
+ * else. That is the blank white portrait the owner saw after importing a web export on their phone.
+ *
+ * A blob is read out to a `data:` URI here instead, once, at the moment it is picked, so everything
+ * downstream stores and ships the actual bytes.
  */
 import { Platform } from 'react-native';
+
+/** Read a browser `blob:` URL out into a `data:` URI. Web only; native never sees one. */
+export async function blobUriToData(uri: string): Promise<string | null> {
+  try {
+    const blob = await (await fetch(uri)).blob();
+    return await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error ?? new Error('read failed'));
+      r.readAsDataURL(blob);
+    });
+  } catch {
+    // A revoked or cross-origin blob. The caller keeps whatever it had; there is nothing to recover.
+    return null;
+  }
+}
 
 /** Where owned images live, under the documents directory. */
 const DIR = 'images';
@@ -40,7 +62,8 @@ export function isOwned(uri: string | null | undefined): boolean {
  */
 export async function ownImage(uri: string | null | undefined): Promise<string | null> {
   if (!uri) return null;
-  if (Platform.OS === 'web' || isOwned(uri) || !uri.startsWith('file:')) return uri;
+  if (Platform.OS === 'web') return uri.startsWith('blob:') ? ((await blobUriToData(uri)) ?? uri) : uri;
+  if (isOwned(uri) || !uri.startsWith('file:')) return uri;
   try {
     const { File, Directory, Paths } = fs();
     const dir = new Directory(Paths.document, DIR);

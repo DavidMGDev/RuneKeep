@@ -297,6 +297,30 @@ function migrateInPlace(f: Partial<CharacterFile>): void {
   }
 }
 
+/**
+ * Strip `blob:` image references on the way in (v0.33.0).
+ *
+ * A browser's image picker hands back a `blob:` URL, which addresses one page session's memory and
+ * nothing else. Exports written before v0.33.0 carry those handles verbatim, so importing one on a
+ * phone gave a character a portrait that could never load: a white rectangle with no explanation and
+ * no way to tell it apart from an image that simply had not decoded yet.
+ *
+ * Dropping the reference makes it an empty portrait, which the sheet already handles and offers to
+ * fill. Exports written from v0.33.0 onward carry the bytes, so this only ever fires on old files.
+ */
+function dropBlobUris(f: Partial<CharacterFile>): void {
+  const dead = (u: unknown): boolean => typeof u === 'string' && u.startsWith('blob:');
+  if (dead(f.portraitUri)) f.portraitUri = null;
+  for (const key of ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards'] as const) {
+    const arr = (f as unknown as Record<string, unknown>)[key];
+    if (!Array.isArray(arr)) continue;
+    for (const card of arr) {
+      const c = card as { imageUri?: string | null };
+      if (c && dead(c.imageUri)) c.imageUri = null;
+    }
+  }
+}
+
 export function parseCharacterFile(raw: string): CharacterFile {
   let data: unknown;
   try {
@@ -307,6 +331,7 @@ export function parseCharacterFile(raw: string): CharacterFile {
   const f = data as Partial<CharacterFile>;
   if (typeof f !== 'object' || f === null) throw new Error('Not a character file');
   migrateInPlace(f);
+  dropBlobUris(f);
   if (typeof f.id !== 'string' || typeof f.name !== 'string' || !f.name.trim()) throw new Error('Missing name');
   // v0.10.3: normalize embedded homebrew cards (trust boundary for imported characters), then let the
   // structural/domain ids resolve against them as well as the catalog. No `libraryCards` = old behavior.

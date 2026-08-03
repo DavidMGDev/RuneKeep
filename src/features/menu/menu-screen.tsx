@@ -256,6 +256,9 @@ export function MenuScreen() {
     });
   }, []);
 
+  /** The update confirmation, hoisted so its scrim covers the screen border too (v0.33.0). */
+  const [updateDialog, setUpdateDialog] = useState<React.ReactNode>(null);
+
   const rows = useMemo(() => {
     const domains = CATALOG.filter((c) => c.kind === 'domain');
     const pick = (offset: number) => Array.from({ length: 9 }, (_, i) => domains[(offset + i * 23) % domains.length]);
@@ -265,7 +268,7 @@ export function MenuScreen() {
   if (!ready) return <LoadingScreen label="Stoking the forge" />;
 
   return (
-    <AppScreen dm={dm}>
+    <AppScreen dm={dm} overlay={updateDialog}>
       <View style={{ flex: 1 }}>
         {/* ambient deck, dim, behind everything — rows fill the gap BETWEEN the title and the
             actions (owner #102: never behind the title; the bottom row's spot is approved). */}
@@ -327,7 +330,7 @@ export function MenuScreen() {
           </View>
           {/* v0.32.0: told about a newer build, on the one screen nobody is mid-anything on. Renders
               nothing at all when this version is current, which is nearly always. */}
-          <UpdateBanner />
+          <UpdateBanner onDialog={setUpdateDialog} />
           {/* v0.30.0: the people who made it. Under the controls, quiet enough to stay out of the way. */}
           <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 1.4, textTransform: 'uppercase', textAlign: 'center', marginTop: -4 }}>
             Created by Koy and David

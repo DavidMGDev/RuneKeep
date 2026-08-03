@@ -74,6 +74,22 @@ const BODY_SUB_H = 11;
 const FOOTER_GUARD = 6;
 
 /**
+ * Android's own extra height, switched off (v0.33.0).
+ *
+ * MEASURED: Archivo's line box is 1.088 em and its win metrics are 1.51 em. Android's `Text` defaults
+ * to `includeFontPadding: true`, which pads a text block out to the WIN metrics whatever its line
+ * height says, so every block on a phone is about 0.42 em taller than the same block in a browser.
+ * At 10.5pt that is 4.4dp, appearing at the bottom of the block, in the 9dp between the body box and
+ * the footer watermark.
+ *
+ * That is why a description could bleed into the footer on a phone and not on the web, and it is the
+ * one native-only term left in the card's vertical budget. The size calculation aims to fill the box
+ * exactly, so any extra at all lands outside it. With this off, both platforms draw what the
+ * arithmetic asked for. iOS and web ignore the prop.
+ */
+const NO_FONT_PAD = { includeFontPadding: false } as const;
+
+/**
  * The generic card's description, sized to what is left under its own title (v0.30.0).
  *
  * The title is the variable: a three-line homebrew title leaves half the room a one-line title does,
@@ -98,7 +114,7 @@ function BodyText({ body, title, hasSubtitle, multiline }: { body: string; title
       body={body}
       // v0.13.0 typeset vs the DH scans: LEFT aligned like the prints (justify opened rivers at this
       // measure), black-weight title above.
-      style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: named ? 6 : 0, flexShrink: 1 }}
+      style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: named ? 6 : 0, flexShrink: 1, ...NO_FONT_PAD }}
     />
   );
 }
@@ -206,7 +222,7 @@ export function ForgedCard({
                 numberOfLines={multilineTitle ? 4 : 1}
                 adjustsFontSizeToFit
                 minimumFontScale={multilineTitle ? 0.42 : 0.55}
-                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, lineHeight: BODY_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>
+                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, lineHeight: BODY_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>
                 {title}
               </Text>
               {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
@@ -215,7 +231,7 @@ export function ForgedCard({
             <Text style={{ alignSelf: 'flex-end', color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text>
           ) : null}
           {subtitle ? (
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.inkMuted, fontSize: 8.5, lineHeight: BODY_SUB_H, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'center', marginTop: 3 }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.inkMuted, fontSize: 8.5, lineHeight: BODY_SUB_H, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'center', marginTop: 3, ...NO_FONT_PAD }}>
               {subtitle}
             </Text>
           ) : null}
@@ -291,7 +307,7 @@ export function ForgedTextCard({
             pagination (featurePages) is fit-tuned and this container CLIPS overflow. */}
         <View style={{ marginTop: 5, gap: 5, overflow: 'hidden', flex: 1 }}>
           {sections.map((s) => (
-            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13.2, fontFamily: Body.regular, textAlign: 'left' }}>
+            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13.2, fontFamily: Body.regular, textAlign: 'left', ...NO_FONT_PAD }}>
               <Text style={{ fontFamily: Body.bold }}>{s.name}: </Text>
               {s.text}
             </Text>
@@ -365,7 +381,7 @@ function equipFeatureRoom(rows: number): number {
 function FeatureLine({ feature, room }: { feature: { name: string; text: string }; room: number }) {
   const fit = fitText(`${feature.name}: ${feature.text}`, { width: EQUIP_TEXT_W, height: room - FOOTER_GUARD, base: 8.5, lineRatio: EQUIP_LINE_RATIO });
   return (
-    <Text style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9 }}>
+    <Text style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9, ...NO_FONT_PAD }}>
       <Text style={{ fontFamily: Body.bold }}>{feature.name}: </Text>
       {feature.text}
     </Text>
@@ -387,8 +403,8 @@ const STAT_ROW_H = 13;
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-      <Text style={{ color: Rune.inkMuted, fontSize: 7.5, lineHeight: STAT_ROW_H, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
-      <Text style={{ color: Rune.inkText, fontSize: 10, lineHeight: STAT_ROW_H, fontFamily: Body.semibold }}>{value}</Text>
+      <Text style={{ color: Rune.inkMuted, fontSize: 7.5, lineHeight: STAT_ROW_H, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', ...NO_FONT_PAD }}>{label}</Text>
+      <Text style={{ color: Rune.inkText, fontSize: 10, lineHeight: STAT_ROW_H, fontFamily: Body.semibold, ...NO_FONT_PAD }}>{value}</Text>
     </View>
   );
 }
@@ -412,7 +428,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{weapon.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{weapon.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Trait" value={weapon.trait} />
           <StatRow label="Range" value={weapon.range} />
@@ -473,7 +489,7 @@ export function ForgedLootCard({ loot }: { loot: LootDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{loot.name}</Text>
+        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{loot.name}</Text>
         {/* v0.19.2 item 5: roll + which table it's from (Table 1 = base game, Table 2 = Hope and Fear). */}
         <View style={{ marginTop: 8 }}>
           <StatRow label="Roll" value={`${loot.roll}  ·  Table ${lootTable(loot)}`} />
@@ -483,7 +499,7 @@ export function ForgedLootCard({ loot }: { loot: LootDef }) {
           numberOfLines={11}
           adjustsFontSizeToFit
           minimumFontScale={0.55}
-          style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: 8, flexShrink: 1 }}
+          style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: 8, flexShrink: 1, ...NO_FONT_PAD }}
         />
       </View>
       <ForgedFooter />
@@ -548,7 +564,7 @@ export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center' }}>{armor.name}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{armor.name}</Text>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Thresholds" value={armor.thresholds} />
           <StatRow label="Base Score" value={String(armor.baseScore)} />

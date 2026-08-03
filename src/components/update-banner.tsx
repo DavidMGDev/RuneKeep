@@ -25,8 +25,13 @@ function appVersion(): string | undefined {
  * The menu is the right place for it: it is the one screen nobody is mid-anything on. It never
  * interrupts, it never downloads on its own, and it checks once per launch rather than on a timer,
  * because a version does not change while you are looking at it.
+ *
+ * v0.33.0 splits the strip from its confirmation. The dialog dims the screen, and a dialog rendered
+ * down here can only dim the column the menu's content sits in, leaving the gold border bright around
+ * a grey rectangle. It goes in `AppScreen`'s `overlay` slot instead, which is drawn over everything.
+ * The strip owns the state and hands the dialog back through `render`.
  */
-export function UpdateBanner() {
+export function UpdateBanner({ onDialog }: { onDialog?: (dialog: React.ReactNode) => void }) {
   const [tag, setTag] = useState<string | null>(null); // native: the newer release
   const [webReady, setWebReady] = useState(false); // web: a new build is cached and waiting
   const [asking, setAsking] = useState(false);
@@ -57,19 +62,10 @@ export function UpdateBanner() {
     else void Linking.openURL(ANDROID_DOWNLOAD_URL);
   }, []);
 
-  const showing = Platform.OS === 'web' ? webReady : !!tag;
-  if (!showing) return null;
-  const label = Platform.OS === 'web' ? 'A newer version is ready' : `RuneKeep ${tag?.replace(/^v/, '')} is out`;
-  return (
-    <>
-      <Pressable onPress={open} accessibilityRole="button" accessibilityLabel={`${label}. Tap to update`}>
-        <ChamferBox chamfer={8} fill="rgba(20,24,31,0.9)" stroke={Rune.goldBright} strokeWidth={1.3} style={{ paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: Rune.goldBright }} />
-          <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
-          <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Display.bold }}>{Platform.OS === 'web' ? 'RELOAD' : 'GET IT'}</Text>
-        </ChamferBox>
-      </Pressable>
-      {asking ? (
+  // The dialog is rendered by whoever owns the screen, so it can cover the border too.
+  useEffect(() => {
+    onDialog?.(
+      asking ? (
         <PopupDialog
           title={Platform.OS === 'web' ? 'Reload RuneKeep?' : 'Download the new version?'}
           body={
@@ -81,7 +77,20 @@ export function UpdateBanner() {
           onConfirm={confirm}
           onCancel={() => setAsking(false)}
         />
-      ) : null}
-    </>
+      ) : null,
+    );
+  }, [asking, confirm, onDialog]);
+
+  const showing = Platform.OS === 'web' ? webReady : !!tag;
+  if (!showing) return null;
+  const label = Platform.OS === 'web' ? 'A newer version is ready' : `RuneKeep ${tag?.replace(/^v/, '')} is out`;
+  return (
+    <Pressable onPress={open} accessibilityRole="button" accessibilityLabel={`${label}. Tap to update`}>
+      <ChamferBox chamfer={8} fill="rgba(20,24,31,0.9)" stroke={Rune.goldBright} strokeWidth={1.3} style={{ paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: Rune.goldBright }} />
+        <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
+        <Text style={{ color: Rune.bronze, fontSize: 11, fontFamily: Display.bold }}>{Platform.OS === 'web' ? 'RELOAD' : 'GET IT'}</Text>
+      </ChamferBox>
+    </Pressable>
   );
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { HoldToConfirm } from '@/components/hold-to-confirm';
@@ -15,8 +16,18 @@ import { playSfx } from '@/lib/sfx';
 import { ModifiersPanel } from './modifiers-panel';
 import { OverlayShell } from './overlay-shell';
 
-/** How long a hold on a timeline entry takes to open the rewind prompt. */
-const HOLD_MS = 380;
+/**
+ * How long a hold on a timeline entry takes to open the rewind prompt, and how far the finger may
+ * stray while it does (v0.33.0).
+ *
+ * 380ms with no distance limit was a scroll. `Pressable` starts its long-press timer on touch-down
+ * and does not care what the finger does next, so any flick that began on a row and took longer than
+ * a third of a second to get moving opened the rewind prompt instead. Longer alone would not have
+ * fixed it, because a slow drag is exactly the case that failed; the distance is what tells a hold
+ * apart from the start of a scroll, and 10dp is small enough that a still finger never trips it.
+ */
+const HOLD_MS = 620;
+const HOLD_SLOP = 10;
 
 /**
  * The State interface (v0.22.0) — the float menu's north slot, replacing Modifiers.
@@ -56,19 +67,41 @@ function TimelineRow({ entry, file, prevSnapshot, discarded, onRewind }: { entry
     ],
     [moves, file],
   );
+  /**
+   * A gesture-handler LongPress rather than `Pressable`'s, for `maxDistance` (v0.33.0).
+   *
+   * That one property is the whole fix: it cancels the hold the moment the finger travels, so a
+   * scroll that starts on a row stays a scroll. It also composes with the panel's scroll view
+   * properly, where `Pressable`'s timer was simply running in parallel with it.
+   */
+  const hold = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(HOLD_MS)
+        .maxDistance(HOLD_SLOP)
+        .onBegin(() => {
+          'worklet';
+          if (!reduced) charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.linear });
+        })
+        .onStart(() => {
+          'worklet';
+          runOnJS(onRewind)();
+        })
+        .onFinalize(() => {
+          'worklet';
+          charge.value = withTiming(0, { duration: 160 });
+        }),
+    [charge, reduced, onRewind],
+  );
   return (
-    <Pressable
-      onPressIn={() => {
-        if (!reduced) charge.value = withTiming(1, { duration: HOLD_MS, easing: Easing.linear });
-      }}
-      onPressOut={() => {
-        charge.value = withTiming(0, { duration: 160 });
-      }}
-      onLongPress={onRewind}
-      delayLongPress={HOLD_MS}
-      accessibilityRole="button"
-      accessibilityLabel={`${entry.label}, ${dayLabel(entry.at, new Date())} at ${clockLabel(entry.at)}`}
-      accessibilityHint="Hold to rewind the character to this point">
+    <GestureDetector gesture={hold}>
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={`${entry.label}, ${dayLabel(entry.at, new Date())} at ${clockLabel(entry.at)}`}
+        accessibilityHint="Hold to rewind the character to this point"
+        accessibilityActions={[{ name: 'activate' }]}
+        onAccessibilityAction={onRewind}>
       <ChamferBox
         chamfer={entry.milestone ? 9 : 6}
         fill={entry.milestone ? 'rgba(218,162,73,0.10)' : 'rgba(20,24,31,0.55)'}
@@ -92,6 +125,18 @@ function TimelineRow({ entry, file, prevSnapshot, discarded, onRewind }: { entry
             ) : null}
           </View>
         ) : null}
+        {/* v0.33.0: what a milestone actually WAS. A level-up records the domain card, the
+            advancements and the traits it took; anything else keeps a single step that only repeats
+            the label, and shows nothing. */}
+        {entry.milestone && (entry.steps?.length ?? 0) > 1 ? (
+          <View style={{ marginTop: 6, paddingLeft: 17, gap: 2 }}>
+            {entry.steps.map((s, i) => (
+              <Text key={`${i}-${s}`} style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular }}>
+                · {s}
+              </Text>
+            ))}
+          </View>
+        ) : null}
         <Text style={{ color: discarded ? Rune.muted : 'rgba(218,162,73,0.75)', fontSize: 10, fontFamily: Body.medium, marginTop: 7, paddingLeft: 17, letterSpacing: 0.4 }}>
           {discarded ? 'Discarded. Hold to return here.' : 'Hold to rewind here'}
         </Text>
@@ -100,7 +145,8 @@ function TimelineRow({ entry, file, prevSnapshot, discarded, onRewind }: { entry
           <Animated.View style={[{ height: 2, backgroundColor: Rune.goldBright }, fill]} />
         </View>
       </ChamferBox>
-    </Pressable>
+      </View>
+    </GestureDetector>
   );
 }
 

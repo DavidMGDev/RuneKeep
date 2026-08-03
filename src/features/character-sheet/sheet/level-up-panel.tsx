@@ -126,7 +126,8 @@ export function LevelUpPanel({
    *  this level-up grants (0 = no companion / no step). */
   companion?: CompanionState;
   companionPicks?: number;
-  onApply: (next: CharacterFile) => void;
+  /** v0.33.0: the second argument is what the player chose, for the timeline entry. */
+  onApply: (next: CharacterFile, steps: string[]) => void;
   onClose: () => void;
 }) {
   const insets = useScreenInsets();
@@ -274,8 +275,38 @@ export function LevelUpPanel({
       advancements: advs,
       companionOptions: hasCompanionStep ? companionTakes : undefined,
     };
-    onApply(applyLevelUp(file, plan, defaults));
+    onApply(applyLevelUp(file, plan, defaults), planSteps(plan));
   };
+
+  /**
+   * What this level-up actually WAS, in the player's words (v0.33.0).
+   *
+   * The timeline recorded "Levelled up to 5" and nothing else, so the one entry anyone would ever
+   * want to read was the one that said the least: which card, which advancements, which traits. It is
+   * written here rather than derived from the file diff because every label is already on screen —
+   * the card's title, the advancement's name, the trait's name — and re-deriving them from ids in a
+   * pure module would mean teaching that module the whole catalog.
+   */
+  function planSteps(p: LevelUpPlan): string[] {
+    const cardTitle = (id: string) => domainOptions.find((d) => d.id === id)?.title ?? id;
+    const out = [`Domain card: ${cardTitle(p.domainCardId)}`];
+    if (p.experienceTitle) out.push(`New Experience: ${p.experienceTitle}`);
+    for (const a of p.advancements) {
+      const opt = advOption(a.key);
+      if (a.key === 'trait') {
+        const names = (a.traits ?? []).map((k) => TRAIT_ORDER.find((t) => t.key === k)?.label ?? k);
+        out.push(names.length ? `+1 to ${names.join(' and ')}` : opt.label);
+      } else if (a.key === 'domain' && a.domainCardId) {
+        out.push(`Extra domain card: ${cardTitle(a.domainCardId)}`);
+      } else if (a.key === 'multiclass' && a.multiclass) {
+        out.push(`Multiclassed into ${classOptions.find((c) => c.key === a.multiclass)?.label ?? a.multiclass}`);
+      } else {
+        out.push(opt.label);
+      }
+    }
+    if (p.companionOptions?.length) out.push(`Companion training: ${p.companionOptions.length} chosen`);
+    return out;
+  }
 
   const addable = availableAdvancements(file, newLevel).filter((o) => canAdd(o.key));
 
