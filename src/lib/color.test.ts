@@ -106,3 +106,34 @@ describe('surprise me', () => {
     }
   });
 });
+describe('naming the greys (owner, v0.34.5)', () => {
+  const grey = (h: number) => hslToHex({ h, s: 14, l: 34 });
+
+  it('gives DIFFERENT names to different hues of the same washed-out tone', () => {
+    // The old nearest-in-RGB answered "Dark Slate Gray" for every one of these.
+    const names = new Set([0, 60, 120, 200, 280].map((h) => nearestColorName(grey(h))));
+    expect(names.size).toBeGreaterThanOrEqual(4);
+  });
+
+  it('says which colour it is, not just that it is grey', () => {
+    expect(nearestColorName(hslToHex({ h: 130, s: 16, l: 30 }))).toContain('Green');
+    expect(nearestColorName(hslToHex({ h: 240, s: 16, l: 30 }))).toContain('Blue');
+  });
+
+  it('drops the hue word from a TRUE neutral, which does not have one', () => {
+    expect(nearestColorName(hslToHex({ h: 200, s: 0, l: 50 }))).toBe('Muted Gray');
+  });
+
+  it('keeps the CSS name for anything with real colour in it', () => {
+    expect(nearestColorName('#ff69b4')).toBe('Hot Pink');
+    expect(nearestColorName('#2e8b57')).toBe('Sea Green');
+  });
+
+  it('has a real black and a real white at the ends', () => {
+    expect(nearestColorName('#000000')).toBe('Black');
+    expect(nearestColorName('#ffffff')).toBe('White');
+    // and the ladder actually reaches one
+    const darkest = shadesForHue(200)[shadesForHue(200).length - 1];
+    expect(hexToHsl(darkest).l).toBeLessThan(5);
+  });
+});

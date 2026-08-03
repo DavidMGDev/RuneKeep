@@ -125,10 +125,20 @@ describe('computeSheet', () => {
     const base = { ...ZERO, agility: 3 };
     const s = computeSheet(base, 1, [
       src('Buff', [{ target: 'agility', delta: 1 }]), // agility -> 4
-      src('Untouchable', [{ target: 'evasion', dynamic: 'halfAgility' }]), // floor(4/2) = 2
+      src('Untouchable', [{ target: 'evasion', dynamic: 'halfAgility' }]), // ceil(4/2) = 2
     ]);
     expect(s.agility.total).toBe(4);
     expect(s.evasion.total).toBe(12); // 10 + 2
+  });
+
+  // v0.34.5: half of an ODD number rounds UP, and must agree with the formula the Modifiers panel
+  // rewrites this effect into. Disagreeing is what made Untouchable change value once you saved it.
+  it('rounds halfAgility UP, the same way the equivalent formula does', () => {
+    const base = { ...ZERO, agility: 3 };
+    const legacy = computeSheet(base, 1, [src('Untouchable', [{ target: 'evasion', dynamic: 'halfAgility' }])]);
+    const edited = computeSheet(base, 1, [src('Untouchable', [{ target: 'evasion', dynamic: 'formula', formula: { variable: 'agility', divide: 2 } }])]);
+    expect(legacy.evasion.total).toBe(12); // 10 + ceil(3/2)
+    expect(edited.evasion.total).toBe(legacy.evasion.total);
   });
 
   it('clamps capped stats (maxHp/stressMax/armorScore) at 12', () => {

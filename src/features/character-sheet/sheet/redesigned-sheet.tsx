@@ -31,7 +31,7 @@ import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANC
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
-import { cardToLibraryCard, cardTakesNumberInput, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
+import { cardHasEffects, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
 import { equipNoticeFor } from '@/data/card-notices';
 import { showToast } from '@/components/toast';
 import { NumberKeypad } from './number-keypad';
@@ -51,7 +51,7 @@ import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/library';
-import { mixedCrossedTrait } from '@/lib/library-embed';
+import { libraryCardById, mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { contentSig } from '@/lib/content-sig';
@@ -2112,19 +2112,55 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * to put it in.
    */
   const cardStates = useMemo(() => {
+    /**
+     * Built from `deckFile`, not `file` (v0.34.5).
+     *
+     * This walks every card the character has and asks three questions of each, and each of those
+     * resolves that card's effects. Hanging it off `file` meant every die roll and every token drop
+     * redid the lot, which is part of what made a die feel like treacle in a browser. `deckFile` is
+     * the same object unless something other than the cosmetic token fields changed.
+     */
+    const file = deckFile;
     const permanent = new Set<string>();
     const numberInput = new Set<string>();
     const domain = new Set<string>();
+    const toggleable = new Set<string>();
     if (file) {
-      for (const raw of heldCardIds(file)) {
+      /**
+       * Every card ON SCREEN, not every card the character holds (v0.34.5).
+       *
+       * `heldCardIds` is a list of the slots a character fills, and it is not the same list as the
+       * deck: a card acquired at a level-up, a copy, a card moved into a custom category, all of them
+       * ride the carousel without being in it. Their action row was therefore built from nothing, so
+       * they lost the Toggle and the "#" that their own modifiers had earned. Reading the decks makes
+       * the row true for whatever the carousel is actually showing, by construction.
+       */
+      const seen = new Set<string>(heldCardIds(file));
+      for (const deck of Object.values(carouselDecks ?? {})) for (const c of deck) seen.add(c.ref ?? c.id);
+      for (const raw of seen) {
         const ref = refOf(raw, file);
         if (isPermanentCard(ref, file)) permanent.add(ref);
         if (cardTakesNumberInput(ref, file)) numberInput.add(ref);
-        if (cardById(catalogIdOf(ref))?.kind === 'domain') domain.add(ref);
+        const kind = cardById(catalogIdOf(ref))?.kind;
+        if (kind === 'domain') domain.add(ref);
+        /**
+         * What may be switched off (owner, v0.34.5).
+         *
+         * It used to be domain cards alone, which left every homebrew ability and every authored card
+         * with modifiers no way to be quiet for a scene. The rule is now the owner's: anything that
+         * carries a modifier can be toggled, EXCEPT the cards that say who you are. An ancestry, a
+         * community, a class or a subclass is not a thing you switch off.
+         */
+        // A homebrew ancestry or community is an identity card too, and it has no catalog kind to
+        // read: the Void's ancestries are library cards. Ask the embedded card what it is.
+        const libKind = libraryCardById(file, ref)?.contentType;
+        const identity = kind === 'ancestry' || kind === 'community' || kind === 'subclass'
+          || libKind === 'ancestry' || libKind === 'community' || libKind === 'subclass' || libKind === 'class';
+        if (!identity && cardHasEffects(ref, file)) toggleable.add(ref);
       }
     }
-    return { permanent, numberInput, domain, modsOff: new Set(file?.modifiersOffCardIds ?? []) };
-  }, [file]);
+    return { permanent, numberInput, domain, toggleable, modsOff: new Set(file?.modifiersOffCardIds ?? []) };
+  }, [deckFile, carouselDecks]);
   // v0.19.1 item 8: ONE ref-based toggle implementation, shared by manual taps AND bulk equip. Reading +
   // writing fileRef/characterRef synchronously lets a staggered bulk sequence compose correctly (a
   // stale `file` closure would make every step start from the same original file). `force` makes it
@@ -2409,7 +2445,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     });
   }, []);
   // #293: patch a single placed token (a die's value cycling on tap).
+  /**
+   * A die's face changing is not a moment in the character's story (v0.34.5).
+   *
+   * Every roll and every tap on a die used to append a whole-character SNAPSHOT to the history and
+   * then re-serialize the lot, mid-animation, on the JS thread. That is the browser's freeze, and it
+   * got worse with every roll because the file it had to write grew each time. Placing and removing
+   * a token are still recorded; what a die happens to be showing is not.
+   */
   const updateToken = useCallback((cardId: string, tokenId: string, patch: Partial<PlacedToken>) => {
+    intentRef.current = { system: true };
     setFile((f) => {
       if (!f) return f;
       const cur = (f.cardTokens ?? {})[cardId];

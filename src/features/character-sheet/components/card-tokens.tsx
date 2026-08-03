@@ -112,10 +112,10 @@ export const DieNumber = memo(function DieNumber({ size, dieType, value }: { siz
  * scaled. `spin` and `swell` are applied by the CALLER around this, because the two dice roll 50ms
  * apart and about separate centres.
  */
-export const DualityDieFace = memo(function DualityDieFace({ size, side }: { size: number; side: 'hope' | 'fear' }) {
+export const DualityDieFace = memo(function DualityDieFace({ size, side, white }: { size: number; side: 'hope' | 'fear'; /** v0.34.5: the critical's white wash, drawn OVER the face at rising opacity. */ white?: boolean }) {
   const gid = useId();
   const geo = dualityGeometry()[side];
-  const fill = side === 'hope' ? HOPE_GOLD : FEAR_PURPLE;
+  const fill = white ? '#FFFFFF' : side === 'hope' ? HOPE_GOLD : FEAR_PURPLE;
   const rim = shade(fill, side === 'hope' ? -0.34 : -0.3);
   const inset = (pad: number) => geo.points.split(' ').map((p) => { const [x, y] = p.split(',').map(Number); return `${geo.cx + (x - geo.cx) * (1 - pad / 31)},${geo.cy + (y - geo.cy) * (1 - pad / 31)}`; }).join(' ');
   return (

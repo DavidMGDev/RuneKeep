@@ -151,7 +151,15 @@ export interface DualityDie {
   numberY: number;
 }
 
-const DUALITY_SPAN = 62;
+/**
+ * How big each duality die is, and how far apart they sit (owner, v0.34.5).
+ *
+ * They used to sit diagonally, 51 units apart, which read as one die photobombing another. They are
+ * LEVEL now, a quarter further apart, and a little smaller so the gap between them is real: two dice
+ * side by side on the table. The span is bounded by the box, because a die turns about its own centre
+ * and its corners sweep out to its circumradius (about 0.53 of the span for a pentagon).
+ */
+const DUALITY_SPAN = 54;
 
 function pentagon(span: number, cx: number, cy: number): DualityDie {
   const raw: [number, number][] = [];
@@ -169,9 +177,9 @@ function pentagon(span: number, cx: number, cy: number): DualityDie {
   return { points: pts.join(' '), cx, cy, numberY: cy - bcy };
 }
 
-/** Hope (left, high) and Fear (right, low). Both fit inside the box with room for their rotation. */
+/** Hope left, Fear right, LEVEL with each other and clear of each other (v0.34.5). */
 export function dualityGeometry(): { hope: DualityDie; fear: DualityDie } {
-  return { hope: pentagon(DUALITY_SPAN, 42, 46), fear: pentagon(DUALITY_SPAN, 82, 78) };
+  return { hope: pentagon(DUALITY_SPAN, 30, DIE_C), fear: pentagon(DUALITY_SPAN, 94, DIE_C) };
 }
 
 /** The three default button materials (a new "material" palette — no Rune entry fits sewing buttons). */

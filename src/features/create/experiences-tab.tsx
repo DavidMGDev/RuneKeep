@@ -20,7 +20,10 @@ export function ExperiencesTab({ experiences, onEdit }: { experiences: Experienc
             {exp ? (
               <>
                 <View style={{ transform: [{ scale: CARD_SCALE_X }], width: 230, height: 322, marginLeft: (230 * (CARD_SCALE_X - 1)) / 2, marginTop: (322 * (CARD_SCALE_X - 1)) / 2 }}>
-                  <ForgedCard title={exp.title} kindLabel="Experience" body={exp.text} accentDeep={Rune.panel} imageUri={exp.imageUri} colorArt={exp.color} multilineTitle />
+                  {/* v0.34.5: the SAME layout the sheet and the editor preview use for an
+                      experience, which centres the phrase in the lower body. Without the flag this
+                      fell through to the ordinary card body, whose title starts at the top. */}
+                  <ForgedCard title={exp.title} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={exp.imageUri} colorArt={exp.color} experience modifier={exp.modifier ?? 2} />
                 </View>
                 {/* the lower-left EDIT control */}
                 <Pressable

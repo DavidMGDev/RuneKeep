@@ -1,23 +1,33 @@
-RuneKeep v0.34.4 - A colour picker worth the name, the Hope and Fear dice, and a d100.
-
-THE COLOUR PICKER, REBUILT
-
-- PICK A HUE ON A SLIDER, then scroll an endless carousel of that hue's shades. It moves the way the card carousel does, because it is the same motion: one to one with your finger, a flick lands on a square, and it never runs out.
-- THE CENTRED SQUARE NAMES ITSELF. Cornflower Blue, Sea Green, Firebrick. Only the middle one, and the ink flips to stay readable on the colour underneath it.
-- A HEX FIELD AT THE TOP reads the centred square and accepts one back. Type a colour and the hue and the whole carousel move to it.
-- SURPRISE ME IS STILL THERE, inside the picker, so a random is something you see before you take it.
-- The grid of forty fixed swatches is gone. It was an assortment of colours, not a picker.
+RuneKeep v0.34.5 - The dice crash is fixed, the Toggle is on every card that earns it, and the greys have real names.
 
 DICE
 
-- A d100, twenty sides and near enough a disc, rolling 1 to 100.
-- THE HOPE AND FEAR DICE, as one token holding two d12s. They are placed together and removed together, and they roll together: the one you pressed goes first and the other follows a heartbeat later, each turning about its own centre. Whichever lands higher shakes. Hope sways, Fear jerks.
-- Hope is gold with dark purple numbers, Fear is dark purple with light gold numbers.
-- HOLD THE DICE BUTTON to drop down every die at once and pick one, instead of tapping through eight.
-- RuneKeep still does not roll for you. These are dice you put on a card and press, for tables with no dice on them.
+- PLACING THE HOPE AND FEAR DICE NO LONGER CLOSES THE APP. The pair's animation called an ordinary helper from the animation thread, which is fatal on Android and fine in a browser, which is how it shipped. Third time this fault has landed, and the rule is now written down where the next one would go.
+- THE TWO DICE STAND LEVEL, side by side and a quarter further apart, instead of one sitting behind the other.
+- THE SECOND DIE ROLLS 300ms AFTER THE FIRST, up from 50. You can see it go now, which is the point of them being two dice.
+- DOUBLES ARE A CRITICAL: both dice swell, rattle apart and flash white. Nothing can interrupt it, and nothing can start a new roll underneath it.
+- A TAP NEVER ROLLS THE PAIR. It is a hold, always. Tapping one die of a pair used to step its number, which read as the pair rolling itself again.
 
-FIXES
+DICE ON THE WEB
 
-- DRAGGING A MOODBOARD IMAGE NO LONGER LEAVES A TRAIL of thin lines behind it. The board is drawn at a fractional scale, so the rectangle being repainted rounded inwards and left a sliver of the old frame every time.
+- A ROLL NO LONGER FREEZES IN MID-AIR. The face was written to your character the moment the roll started, which put a whole-character save and a full re-render in the middle of the animation. It is written when the dice land instead.
+- A DIE'S FACE IS NOT A MOMENT IN YOUR STORY. Every roll and every tap used to file a complete snapshot of the character into the timeline and then write all of it out again, so it got slower with every roll. Placing and removing a token are still recorded; what a die is showing is not.
+- THE ROSTER IS READ ONCE, not re-parsed on every save.
+
+CARDS
+
+- THE TOGGLE IS ON EVERY CARD THAT CARRIES A MODIFIER, not only domain cards. Ancestries, communities and subclasses never get one: those are not things you switch off.
+- THE "#" BUTTON APPEARS WHEREVER IT SHOULD. Both buttons were built from the character's slots rather than from the cards actually on screen, so a card that arrived any other way lost them.
+- HALVED MODIFIERS ROUND UP EVERYWHERE. Untouchable was worth one number until you opened its modifiers and saved, and a different number afterwards, because the two paths disagreed about rounding.
+
+COLOUR
+
+- THE GREYS HAVE THEIR OWN NAMES. Every dark or washed-out colour used to answer "Dark Slate Gray" whatever hue it was, because nearest-match cannot tell them apart down there. They are described now: Deep Green Gray, Muted Blue Gray, Near Black Violet Gray.
+- THE SHADE LADDER REACHES A REAL BLACK at the bottom.
+- ROLLING A RANDOM COLOUR SAYS ITS NAME, fading up over the art for a moment. Quick cards, the full editor and card editing.
+
+ELSEWHERE
+
+- EXPERIENCE TITLES SIT WHERE THEY SHOULD during character creation, centred in the card rather than pinned to the top.
 
 Sideload: enable Install unknown apps, then open the APK.

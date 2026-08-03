@@ -29,15 +29,36 @@ function charactersDir() {
 }
 
 // --- web shim (verify pipeline + dev in browser) ---
+/**
+ * The parsed roster, held (v0.34.5).
+ *
+ * Every save on the web re-read the whole roster out of the store and re-parsed it, purely to put one
+ * character back into it, and a roster carries every character's history. That parse ran on the JS
+ * thread in the middle of whatever was animating. This module is the only writer of that key, so the
+ * copy it already has is always the current one; the write still serializes, because something has
+ * to.
+ */
+let cachedRaw: string | null = null;
+let cachedRoster: CharacterFile[] = [];
 function webList(): CharacterFile[] {
+  const raw = webGet(WEB_KEY) ?? '[]';
+  // Keyed on the STORED STRING, not on "we wrote last". Anything that replaces the roster behind
+  // this module (hydration finishing, a test clearing the store) changes the string, so the cache
+  // cannot go stale by construction.
+  if (raw === cachedRaw) return cachedRoster;
   try {
-    return JSON.parse(webGet(WEB_KEY) ?? '[]') as CharacterFile[];
+    cachedRoster = JSON.parse(raw) as CharacterFile[];
   } catch {
-    return [];
+    cachedRoster = [];
   }
+  cachedRaw = raw;
+  return cachedRoster;
 }
 function webWrite(all: CharacterFile[]) {
-  webSet(WEB_KEY, JSON.stringify(all));
+  const raw = JSON.stringify(all);
+  cachedRaw = raw;
+  cachedRoster = all;
+  webSet(WEB_KEY, raw);
 }
 
 /**

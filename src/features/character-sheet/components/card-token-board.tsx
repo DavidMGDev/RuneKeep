@@ -117,11 +117,11 @@ const ROLL_TURNS = 1;
 /**
  * How far behind the first duality die the second one rolls (owner, v0.34.4).
  *
- * Small on purpose. They are one token and they answer one press, so they must not read as two
- * separate rolls: 50ms is enough to see that they are independent objects and too little to look like
- * you pressed twice. The die the finger was ON goes first, because that is the one you pressed.
+ * The die the finger was ON goes first, because that is the one you pressed, and the other follows
+ * this far behind. 50ms was too subtle to read as two dice (owner, v0.34.5): at 300ms you see the
+ * second one go, which is the whole point of them being two dice and not one glyph.
  */
-const DUALITY_LAG_MS = 50;
+const DUALITY_LAG_MS = 300;
 
 /**
  * A placed, interactive token.
@@ -138,7 +138,7 @@ const DUALITY_LAG_MS = 50;
  * mid-flight steering possible at all: the gesture and the thing it steers are the same view. The
  * token comes off the card when the animation ENDS, not when it starts.
  */
-const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, coordScale, onEyedrop, onCycleDie, onRoll, onLeave, reduced }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; /** Design px per gesture px for e.x/e.y: the stage scale on web, 1 on a phone. */ coordScale: number; onEyedrop: (color: string) => void; onCycleDie: (t: PlacedToken, side?: 'hope' | 'fear') => void; onRoll: (t: PlacedToken) => { value: number; value2?: number }; /** Called once the token has finished leaving: take it off the card. */ onLeave: (t: PlacedToken) => void; reduced: boolean }) {
+const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, coordScale, onEyedrop, onCycleDie, onRoll, onRolled, onLeave, reduced }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; /** Design px per gesture px for e.x/e.y: the stage scale on web, 1 on a phone. */ coordScale: number; onEyedrop: (color: string) => void; onCycleDie: (t: PlacedToken, side?: 'hope' | 'fear') => void; onRoll: (t: PlacedToken) => { value: number; value2?: number }; /** v0.34.5: the roll LANDED; store the faces now that nothing is animating. */ onRolled: (t: PlacedToken, value: number, value2?: number) => void; /** Called once the token has finished leaving: take it off the card. */ onLeave: (t: PlacedToken) => void; reduced: boolean }) {
   const fill = tokenFill(token); // computed on JS — NEVER call tokenFill() inside a worklet (crashes)
   const isDie = token.kind === 'die';
   const dieType = token.dieType ?? 'd6';
@@ -195,8 +195,21 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
   /** Which half the finger came down on: the one that rolls first. */
   const heldFear = useSharedValue(false);
   const [pairTo, setPairTo] = useState<{ value: number; value2: number } | null>(null);
+  /**
+   * The critical (owner, v0.34.5): both dice showing the same face.
+   *
+   * 0 at rest, 1 at the height of it. It drives an extra swell, a shake on BOTH dice and a white
+   * wash over each face, and while it is running `phase` stays at 3 so a new hold cannot start a roll
+   * underneath it. That guard is the whole reason it is a phase and not just an animation: without it
+   * the finger that is still down from the roll would begin the next one over the top of the
+   * flourish.
+   */
+  const crit = useSharedValue(0);
 
   const done = useCallback(() => onLeave(token), [onLeave, token]);
+  /** Store a landed roll. Called from the animation's completion, so it never runs mid-motion. */
+  const landed = useCallback((value: number) => onRolled(token, value), [onRolled, token]);
+  const landedPair = useCallback((value: number, value2: number) => onRolled(token, value, value2), [onRolled, token]);
 
   // Per-token randomness, from its id, so the same token always tumbles the same way.
   const h = hashStr(token.id);
@@ -228,13 +241,43 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
       roll.value = withDelay(delay, withTiming(1, { duration: reduced ? 160 : ROLL_MS, easing: Easing.inOut(Easing.cubic) }, (f) => {
         'worklet';
         // Only the die that lands LAST clears the phase, or the first one would end the roll early.
-        if (f && last && phase.value === 1) { phase.value = 0; runOnJS(setPairTo)(null); }
+        // Phase 3 is the critical flourish, which owns the token until IT finishes; the faces are
+        // stored either way, the moment the dice stop.
+        if (!f || !last) return;
+        runOnJS(landedPair)(hope, fear);
+        if (phase.value === 1) { phase.value = 0; runOnJS(setPairTo)(null); }
       }));
     };
     spin(turnH, swellH, rollH, fearFirst ? lag : 0, fearFirst);
     spin(turnF, swellF, rollF, fearFirst ? 0 : lag, !fearFirst);
-    if (reduced || hope === fear) return;
     const settled = ROLL_MS + lag;
+    if (hope === fear) {
+      // A critical. Both dice, together, and nothing may interrupt it.
+      phase.value = 3;
+      crit.value = withDelay(settled, withSequence(
+        withTiming(1, { duration: reduced ? 80 : 260, easing: Easing.out(Easing.back(2)) }),
+        withTiming(0.82, { duration: reduced ? 40 : 420, easing: Easing.inOut(Easing.sin) }),
+        // NOT gated on `finished`: phase 3 makes the token inert on purpose, so the one thing that
+        // clears it must run even if this animation is ever cut short. A stuck flourish would be a
+        // die that can never be rolled or removed again.
+        withTiming(0, { duration: reduced ? 80 : 320, easing: Easing.in(Easing.cubic) }, () => {
+          'worklet';
+          if (phase.value === 3) { phase.value = 0; runOnJS(setPairTo)(null); }
+        }),
+      ));
+      if (reduced) return;
+      const rattle = (dir: number) =>
+        withDelay(settled, withSequence(
+          withTiming(9 * dir, { duration: 90, easing: Easing.out(Easing.quad) }),
+          withTiming(-7 * dir, { duration: 85, easing: Easing.inOut(Easing.sin) }),
+          withTiming(5 * dir, { duration: 80, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 120, easing: Easing.out(Easing.sin) }),
+        ));
+      shakeH.value = rattle(1);
+      shakeF.value = rattle(-1); // opposite ways, so they read as two dice and not one object
+      return;
+    }
+    if (reduced) return;
     if (hope > fear) {
       // Hope sways: wide, soft, and it comes to rest rather than stopping.
       shakeH.value = withDelay(settled, withSequence(
@@ -253,12 +296,13 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         withTiming(0, { duration: 40, easing: Easing.linear }),
       ));
     }
-  }, [onRoll, token, heldFear, reduced, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, phase]);
+  }, [onRoll, token, heldFear, reduced, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, phase, crit, landedPair]);
 
   /** Grow on from wherever the hold got to, spin once, cross-fade the number, settle back. */
   const beginRoll = useCallback(() => {
     if (isPair) { beginPairRoll(); return; }
-    setRollTo(onRoll(token).value);
+    const to = onRoll(token).value;
+    setRollTo(to);
     rollP.value = 0;
     // Continuous: `swell` is already at 1 from the hold, so it carries on up and then comes back down.
     swell.value = withSequence(
@@ -271,9 +315,9 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
     rollP.value = withTiming(1, { duration: reduced ? 160 : ROLL_MS, easing: Easing.inOut(Easing.cubic) }, (f) => {
       'worklet';
       // Settled, and the finger may still be down. Back to idle at RESTING size, not at full swell.
-      if (f && phase.value === 1) { phase.value = 0; runOnJS(setRollTo)(null); }
+      if (f && phase.value === 1) { phase.value = 0; runOnJS(landed)(to); runOnJS(setRollTo)(null); }
     });
-  }, [onRoll, token, rollP, swell, turn, phase, reduced, isPair, beginPairRoll]);
+  }, [onRoll, token, rollP, swell, turn, phase, reduced, isPair, beginPairRoll, landed]);
 
   /**
    * Start leaving the card. `dx`/`dy` (a swipe) throw it that way; without them it simply drops.
@@ -326,7 +370,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         .manualActivation(true)
         .onTouchesDown((e) => {
           'worklet';
-          if (phase.value === 2) return; // already on its way out
+          if (phase.value === 2 || phase.value === 3) return; // leaving, or mid-critical
           startX.value = e.allTouches[0]?.absoluteX ?? 0;
           startY.value = e.allTouches[0]?.absoluteY ?? 0;
           // Which duality die is under the finger, so that one rolls first (owner). `x` is view-local
@@ -393,13 +437,17 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         .maxDuration(260)
         .onEnd((e) => {
           'worklet';
-          if (phase.value === 2) return;
+          if (phase.value === 2 || phase.value === 3) return;
           // #293: tapping a placed DIE cycles its number; a regular token eyedrops its colour (drawer open).
           // v0.34.4: on a pair, the half you tapped is the half that steps.
-          if (isDie) runOnJS(onCycleDie)(token, isPair ? (e.x / coordScale > size / 2 ? 'fear' : 'hope') : undefined);
+          // v0.34.5: a PAIR ignores taps entirely. Stepping one die of a pair by hand reads as the
+          // pair having rolled again, which is the owner's "they keep rolling by just tapping them".
+          // The pair is rolled by holding it, and by nothing else.
+          if (isPair) return;
+          if (isDie) runOnJS(onCycleDie)(token);
           else if (drawerOpen) runOnJS(onEyedrop)(fill);
         }),
-    [drawerOpen, onEyedrop, fill, isDie, isPair, onCycleDie, token, phase, coordScale, size],
+    [drawerOpen, onEyedrop, fill, isDie, isPair, onCycleDie, token, phase],
   );
   const gesture = useMemo(() => Gesture.Race(pan, tap), [pan, tap]);
 
@@ -438,7 +486,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
       <Animated.View style={[{ position: 'absolute', left, top, width: size, height: size }, style]}>
         {!reduced ? SPARKS.map((s, i) => <SparkBit key={i} ang={s.ang} dist={s.dist} center={size / 2} grow={pop} />) : null}
         {isPair ? (
-          <DualityPair size={size} hope={shownValue} fear={shownValue2} rolled={pairTo} turnH={turnH} turnF={turnF} swellH={swellH} swellF={swellF} rollH={rollH} rollF={rollF} shakeH={shakeH} shakeF={shakeF} />
+          <DualityPair size={size} hope={shownValue} fear={shownValue2} rolled={pairTo} turnH={turnH} turnF={turnF} swellH={swellH} swellF={swellF} rollH={rollH} rollF={rollF} shakeH={shakeH} shakeF={shakeF} crit={crit} />
         ) : isDie && rollTo != null ? (
           <>
             <DieButton size={size} dieType={dieType} value={shownValue} hideNumber />
@@ -468,7 +516,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
  * `shake` is added to the same rotation rather than being a transform of its own, so the winner's
  * flourish continues from exactly where its roll stopped.
  */
-function DualityPair({ size, hope, fear, rolled, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF }: {
+function DualityPair({ size, hope, fear, rolled, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, crit }: {
   size: number;
   hope: number;
   fear: number;
@@ -478,44 +526,63 @@ function DualityPair({ size, hope, fear, rolled, turnH, turnF, swellH, swellF, r
   swellH: SharedValue<number>; swellF: SharedValue<number>;
   rollH: SharedValue<number>; rollF: SharedValue<number>;
   shakeH: SharedValue<number>; shakeF: SharedValue<number>;
+  /** 0 at rest, 1 at the height of a critical: both dice grow and wash white. */
+  crit: SharedValue<number>;
 }) {
   const geo = dualityGeometry();
-  const off = (v: number) => ((v - DIE_BOX / 2) / DIE_BOX) * size;
+  /**
+   * The pivots, resolved to PLAIN NUMBERS before any worklet sees them (v0.34.5).
+   *
+   * This was a `const off = (v) => …` called from inside `useAnimatedStyle`, and a worklet that
+   * reaches an ordinary function is fatal on Android: placing a duality token closed the app the
+   * instant it landed. It ran fine in a browser, where worklets execute on the JS thread anyway,
+   * which is exactly how it got shipped. This is the THIRD time this fault has landed (v0.34.1
+   * `clampCentre`, v0.34.2 `delta`), so the rule is worth stating plainly: a worklet may capture
+   * numbers and shared values, and nothing else.
+   */
+  const hopeX = ((geo.hope.cx - DIE_BOX / 2) / DIE_BOX) * size;
+  const hopeY = ((geo.hope.cy - DIE_BOX / 2) / DIE_BOX) * size;
+  const fearX = ((geo.fear.cx - DIE_BOX / 2) / DIE_BOX) * size;
+  const fearY = ((geo.fear.cy - DIE_BOX / 2) / DIE_BOX) * size;
   // Written out twice rather than through a helper: two `useAnimatedStyle` calls from a shared
   // closure is a hooks-rule violation waiting to be edited into a real one.
   const hopeStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: off(geo.hope.cx) },
-      { translateY: off(geo.hope.cy) },
+      { translateX: hopeX },
+      { translateY: hopeY },
       { rotate: `${turnH.value * 360 + shakeH.value}deg` },
-      { scale: 1 + swellH.value * SWELL },
-      { translateX: -off(geo.hope.cx) },
-      { translateY: -off(geo.hope.cy) },
+      { scale: 1 + swellH.value * SWELL + crit.value * 0.22 },
+      { translateX: -hopeX },
+      { translateY: -hopeY },
     ],
   }));
   const fearStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: off(geo.fear.cx) },
-      { translateY: off(geo.fear.cy) },
+      { translateX: fearX },
+      { translateY: fearY },
       { rotate: `${turnF.value * 360 + shakeF.value}deg` },
-      { scale: 1 + swellF.value * SWELL },
-      { translateX: -off(geo.fear.cx) },
-      { translateY: -off(geo.fear.cy) },
+      { scale: 1 + swellF.value * SWELL + crit.value * 0.22 },
+      { translateX: -fearX },
+      { translateY: -fearY },
     ],
   }));
   const oldH = useAnimatedStyle(() => ({ opacity: rolled == null ? 1 : Math.max(0, 1 - rollH.value * 2.4) }));
   const newH = useAnimatedStyle(() => ({ opacity: rolled == null ? 0 : Math.max(0, (rollH.value - 0.5) * 2.4) }));
   const oldF = useAnimatedStyle(() => ({ opacity: rolled == null ? 1 : Math.max(0, 1 - rollF.value * 2.4) }));
   const newF = useAnimatedStyle(() => ({ opacity: rolled == null ? 0 : Math.max(0, (rollF.value - 0.5) * 2.4) }));
+  /** The white wash. Drawn over each face rather than recolouring it, so nothing has to re-render. */
+  const critStyle = useAnimatedStyle(() => ({ opacity: crit.value * 0.85 }));
   return (
     <View style={{ width: size, height: size }} pointerEvents="none">
       <Animated.View style={[StyleSheet.absoluteFill, hopeStyle]}>
         <DualityDieFace size={size} side="hope" />
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, critStyle]}><DualityDieFace size={size} side="hope" white /></Animated.View>
         <Animated.View style={[StyleSheet.absoluteFill, oldH]}><DualityNumber size={size} side="hope" value={hope} /></Animated.View>
         {rolled ? <Animated.View style={[StyleSheet.absoluteFill, newH]}><DualityNumber size={size} side="hope" value={rolled.value} /></Animated.View> : null}
       </Animated.View>
       <Animated.View style={[StyleSheet.absoluteFill, fearStyle]}>
         <DualityDieFace size={size} side="fear" />
+        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, critStyle]}><DualityDieFace size={size} side="fear" white /></Animated.View>
         <Animated.View style={[StyleSheet.absoluteFill, oldF]}><DualityNumber size={size} side="fear" value={fear} /></Animated.View>
         {rolled ? <Animated.View style={[StyleSheet.absoluteFill, newF]}><DualityNumber size={size} side="fear" value={rolled.value2} /></Animated.View> : null}
       </Animated.View>
@@ -647,18 +714,26 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
    * cross-fade to it. Stored immediately rather than at the end of the animation, so a die thrown
    * mid-roll still leaves the right number behind on any other copy of the card.
    */
-  const rollDie = useCallback(
-    (t: PlacedToken) => {
-      const dt = t.dieType ?? 'd6';
-      const to = 1 + Math.floor(Math.random() * DIE_MAX[dt]);
-      // v0.34.4: a duality token is TWO dice, so it rolls two numbers and stores both. They are
-      // written immediately, like a single die's, so a pair thrown mid-roll still leaves the right
-      // faces behind on every other copy of the card.
-      const to2 = dt === 'duality' ? 1 + Math.floor(Math.random() * DIE_MAX.duality) : undefined;
-      onUpdate?.(t.id, to2 == null ? { dieValue: to } : { dieValue: to, dieValue2: to2 });
-      focusHaptic();
-      playSfx('placeToken');
-      return { value: to, value2: to2 };
+  /**
+   * Pick the faces a roll is heading for. It does NOT write them (v0.34.5).
+   *
+   * Writing here put a whole-character save and a sheet re-render into the MIDDLE of the roll, which
+   * on the web is the freeze the owner described: the die stopped in mid-air about two thirds through
+   * and then jumped to its final face with nothing in between. The value is committed by
+   * `commitRoll` once the animation has landed, which is also the only moment anything else needs it.
+   */
+  const rollDie = useCallback((t: PlacedToken) => {
+    const dt = t.dieType ?? 'd6';
+    const to = 1 + Math.floor(Math.random() * DIE_MAX[dt]);
+    const to2 = dt === 'duality' ? 1 + Math.floor(Math.random() * DIE_MAX.duality) : undefined;
+    focusHaptic();
+    playSfx('placeToken');
+    return { value: to, value2: to2 };
+  }, []);
+  /** The roll has landed: store what it landed on. ONE write per roll, after the motion. */
+  const commitRoll = useCallback(
+    (t: PlacedToken, value: number, value2?: number) => {
+      onUpdate?.(t.id, value2 == null ? { dieValue: value } : { dieValue: value, dieValue2: value2 });
     },
     [onUpdate],
   );
@@ -707,6 +782,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
             onEyedrop={eyedrop}
             onCycleDie={cycleDie}
             onRoll={rollDie}
+            onRolled={commitRoll}
             onLeave={leaveDone}
             reduced={reduced}
           />

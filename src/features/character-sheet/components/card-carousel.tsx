@@ -717,16 +717,20 @@ const ACTION_H = 44;
  *
  * "Modifiers" has been here since #175. Two neighbours join it, and only when they mean something:
  *
- *  - TOGGLE, on domain cards only. A card like Frenzy is true for one scene and false for the rest
- *    of the session, but it holds one of your five loadout slots either way. Unequipping it to turn
- *    the bonus off was the only lever there was, and it lied about your loadout. Lit = applying.
+ *  - TOGGLE, on anything carrying a modifier that is not an identity card (v0.34.5, owner). A card
+ *    like Frenzy is true for one scene and false for the rest of the session, but it holds one of
+ *    your five loadout slots either way. Unequipping it to turn the bonus off was the only lever
+ *    there was, and it lied about your loadout. Lit = applying. An ancestry, a community or a
+ *    subclass never gets it: those are not things you switch off.
  *  - "#", only on a card whose modifiers actually read a typed number (Ferocity). A button that did
  *    nothing on every other card would be worse than no button.
  */
 function FocusedCardActions({ cardId, instanceId }: { cardId: string; instanceId: string }) {
   const { showCardInfo, toggleCardModifiers, editNumberInput, enabledIds, cardStates } = useCarousel();
-  const isDomain = cardStates.domain.has(cardId);
+  const canToggle = cardStates.toggleable.has(cardId);
   const equipped = enabledIds.has(cardId);
+  // A permanent card applies from the vault, so it can be switched off there too.
+  const applying = equipped || cardStates.permanent.has(cardId);
   const live = !cardStates.modsOff.has(cardId);
   const takesNumber = cardStates.numberInput.has(cardId);
   return (
@@ -737,7 +741,7 @@ function FocusedCardActions({ cardId, instanceId }: { cardId: string; instanceId
       onStartShouldSetResponder={() => true}
       onResponderRelease={() => {}}>
       <ActionBtn label="Modifiers" wide a11y="View this card's modifiers" onPress={() => showCardInfo(instanceId)} />
-      {isDomain && equipped ? (
+      {canToggle && applying ? (
         <ActionBtn
           label="Toggle"
           on={live}
