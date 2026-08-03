@@ -1,5 +1,5 @@
 import { type Wildshape } from '@/data/wildshape-data';
-import { chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
+import { armorTrackLayout, chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
 
 describe('trackBounds', () => {
   it('points to the next markable slot and the last marked slot', () => {
@@ -61,5 +61,37 @@ describe('the desaturation wash', () => {
     expect(covered(5, 340)).toBe(true); // left of the hit points panel
     expect(covered(100, 100)).toBe(false); // the portrait itself
     expect(covered(200, 340)).toBe(false); // the hit points panel itself
+  });
+});
+
+describe('armorTrackLayout (v0.32.1)', () => {
+  it('shows exactly the shields you have, in one bigger row, at five or fewer', () => {
+    for (const n of [1, 2, 3, 4, 5]) {
+      const l = armorTrackLayout(n);
+      expect(l.count).toBe(n);
+      expect(l.size).toBe(26);
+      expect(new Set(l.slots.map((s) => s.y)).size).toBe(1); // one row
+    }
+  });
+
+  it('keeps one shield at zero armor, so the band never reads as broken', () => {
+    const l = armorTrackLayout(0);
+    expect(l.count).toBe(1);
+    expect(l.slots).toHaveLength(1);
+  });
+
+  it('falls back to the full twelve in two rows at six or more', () => {
+    for (const n of [6, 9, 12]) {
+      const l = armorTrackLayout(n);
+      expect(l.count).toBe(12);
+      expect(l.size).toBe(17);
+      expect(new Set(l.slots.map((s) => s.y)).size).toBe(2);
+    }
+  });
+
+  it('never lets the one-row layout overflow the armor band', () => {
+    const l = armorTrackLayout(5);
+    const right = Math.max(...l.slots.map((s) => s.x)) + l.size;
+    expect(right).toBeLessThanOrEqual(142); // the zone the shields are allowed
   });
 });

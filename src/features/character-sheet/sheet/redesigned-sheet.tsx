@@ -69,7 +69,7 @@ import { useKeyboardControl } from './use-keyboard-control';
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
 import { Art } from '../art';
-import { chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
+import { armorTrackLayout, chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
 import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
 import { OverlayShell } from './overlay-shell';
@@ -151,6 +151,27 @@ function StressPip({ state, red }: { state: PipState; red: string }) {
 
 /** Hope's THIN gold line stopping at the last filled diamond — the diamonds themselves live in a
  *  ChargeTrack now (#89 D). */
+/**
+ * An UNFILLED Hope rhombus (v0.32.1): the gold outline over an opaque parchment core.
+ *
+ * The art is a hollow diamond, so an empty slot was see-through. That was invisible at rest, because
+ * what is behind it is the parchment anyway, and obvious the moment one grew: holding a slot to gain
+ * Hope scales it up over the gold rule that runs behind the track, and the rule showed straight
+ * through the middle of it. Filling the core with the sheet's own parchment is the cheapest fix that
+ * survives the scale, and it matches what an unfilled Stress pip has always done.
+ *
+ * The core is a square rotated 45° and inset 17%, which lands just inside the outline's inner edge:
+ * any smaller leaves a visible transparent ring, any larger pokes out at the corners.
+ */
+function HopeEmpty() {
+  return (
+    <View style={{ flex: 1 }}>
+      <View pointerEvents="none" style={{ position: 'absolute', left: '17%', top: '17%', right: '17%', bottom: '17%', backgroundColor: SHEET, transform: [{ rotate: '45deg' }] }} />
+      <ArtImage source={Art.hopeDepleted} fit="contain" />
+    </View>
+  );
+}
+
 function HopeRule({ left, top, width, count, active, pip }: { left: number; top: number; width: number; count: number; active: number; pip: number }) {
   const step = (width - pip) / (count - 1);
   const lastFilled = Math.max(0, Math.min(count, active) - 1);
@@ -245,6 +266,8 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
   const stress = resolvePips({ total: character.stress.total, active: character.stress.active, locked: character.stress.locked, depletedRemainder: true });
   const armor = resolvePips({ total: character.armor.total, active: character.armor.active, locked: character.armor.locked, depletedRemainder: true });
   const hope = resolvePips({ total: character.hope.total, active: character.hope.active, depletedRemainder: true });
+  // v0.32.1: the shields size and lay themselves out from how many the character actually has.
+  const armorRow = armorTrackLayout(character.armor.total - (character.armor.locked ?? 0));
   // v0.13.0 SCARS: the rightmost `scars` Hope slots are dead — greyed, disconnected, never markable.
   // Flat count from the modifier engine (one per enabled "Add Scar" card); acts like trailing locked slots.
   const scars = Math.max(0, Math.min(character.hope.total, character.scars ?? 0));
@@ -345,18 +368,21 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* Armor (#89 E): zone mode — the shields are too small to hunt, so two big halves split at
           the barrier after the LAST filled shield own the gestures: left of it clears, right of it
           marks, verticality irrelevant. Each shield still charges/animates individually. */}
+      {/* v0.32.1: at five armor or fewer the shields are a single, bigger row of exactly the ones you
+          have. Twelve small shields for a character with three was a wall of grey with the live ones
+          lost in it. See armorTrackLayout. */}
       <ChargeTrack
         ref={armorRef}
         left={262}
         top={234}
-        slots={armor.map((_, i) => ({ x: (i % 6) * 21, y: Math.floor(i / 6) * 22 }))}
-        w={17}
-        h={17}
+        slots={armorRow.slots}
+        w={armorRow.size}
+        h={armorRow.size}
         upIndex={trackBounds(character.armor).up}
         downIndex={trackBounds(character.armor).down}
         onUp={() => onTrack('armor', character.armor.active + 1)}
         onDown={() => onTrack('armor', character.armor.active - 1)}
-        renderSlot={(i) => <ArtImage source={armorArt(armor[i])} fit="contain" tint={lockedGray(armor[i])} />}
+        renderSlot={(i) => <ArtImage source={armorArt(armor[i] ?? 'locked')} fit="contain" tint={lockedGray(armor[i] ?? 'locked')} />}
         renderFilled={() => <ArtImage source={armorArt('active')} fit="contain" />}
         renderEmpty={() => <ArtImage source={armorArt('depleted')} fit="contain" />}
         flavor="armor"
@@ -447,12 +473,14 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
           i >= character.hope.total - scars ? (
             // a scarred slot: permanently tainted grey silhouette, dimmed, no gold rule reaches it
             <ArtImage source={Art.hopeDepleted} fit="contain" tint="#6E6E72" style={{ opacity: 0.45 }} />
+          ) : hope[i] === 'active' ? (
+            <ArtImage source={Art.hope} fit="contain" />
           ) : (
-            <ArtImage source={hope[i] === 'active' ? Art.hope : Art.hopeDepleted} fit="contain" />
+            <HopeEmpty />
           )
         }
         renderFilled={() => <ArtImage source={Art.hope} fit="contain" />}
-        renderEmpty={() => <ArtImage source={Art.hopeDepleted} fit="contain" />}
+        renderEmpty={() => <HopeEmpty />}
         flavor="hope"
         accent={Rune.goldBright}
         grow={3.0}
