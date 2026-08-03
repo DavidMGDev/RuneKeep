@@ -14,7 +14,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Polygon, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Display } from '@/constants/theme';
-import { DIE_BOX, DIE_COLOR, DIE_MAX, type DieType, dieGeometry, dieNumberFrac, dieNumberOffset, placedKindScale, type PlacedToken, type TokenKind, TOKEN_FRAC, tokenFill } from './card-tokens-data';
+import { DIE_BOX, DIE_COLOR, DIE_INK, DIE_MAX, type DieType, dieGeometry, dieNumberFrac, dieNumberOffset, dualityGeometry, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK, placedKindScale, type PlacedToken, type TokenKind, TOKEN_FRAC, tokenFill } from './card-tokens-data';
 
 export * from './card-tokens-data';
 
@@ -98,13 +98,83 @@ export const DieNumber = memo(function DieNumber({ size, dieType, value }: { siz
   return (
     <Text
       allowFontScaling={false}
-      style={{ color: '#F2ECDC', fontFamily: Display.black, fontSize: size * dieNumberFrac(dieType), textAlign: 'center', textShadowColor: rim, textShadowRadius: 1, textShadowOffset: { width: 0, height: 1 }, transform: [{ translateX: (noff.dx / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2 + noff.dy) / DIE_BOX) * size }] }}>
+      style={{ color: DIE_INK[dieType] ?? '#F2ECDC', fontFamily: Display.black, fontSize: size * dieNumberFrac(dieType), textAlign: 'center', textShadowColor: rim, textShadowRadius: 1, textShadowOffset: { width: 0, height: 1 }, transform: [{ translateX: (noff.dx / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2 + noff.dy) / DIE_BOX) * size }] }}>
       {value}
     </Text>
   );
 });
 
-export const DieButton = memo(function DieButton({ size, dieType, value, hideNumber }: { size: number; dieType: DieType; value: number; /** v0.32.0: the roll draws its own cross-fading numbers over the face. */ hideNumber?: boolean }) {
+/**
+ * ONE die of a duality pair (v0.34.4), drawn on its own so the caller can animate it on its own.
+ *
+ * Its whole face lives inside the shared {@link DIE_BOX} viewBox rather than a box of its own, which
+ * is what keeps the two halves in the right places relative to each other however the token is
+ * scaled. `spin` and `swell` are applied by the CALLER around this, because the two dice roll 50ms
+ * apart and about separate centres.
+ */
+export const DualityDieFace = memo(function DualityDieFace({ size, side }: { size: number; side: 'hope' | 'fear' }) {
+  const gid = useId();
+  const geo = dualityGeometry()[side];
+  const fill = side === 'hope' ? HOPE_GOLD : FEAR_PURPLE;
+  const rim = shade(fill, side === 'hope' ? -0.34 : -0.3);
+  const inset = (pad: number) => geo.points.split(' ').map((p) => { const [x, y] = p.split(',').map(Number); return `${geo.cx + (x - geo.cx) * (1 - pad / 31)},${geo.cy + (y - geo.cy) * (1 - pad / 31)}`; }).join(' ');
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${DIE_BOX} ${DIE_BOX}`} style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Defs>
+        <RadialGradient id={gid} cx="36%" cy="30%" r="80%">
+          <Stop offset="0" stopColor={shade(fill, side === 'hope' ? 0.45 : 0.35)} />
+          <Stop offset="0.6" stopColor={fill} />
+          <Stop offset="1" stopColor={shade(fill, -0.16)} />
+        </RadialGradient>
+      </Defs>
+      <G transform="translate(0 4)"><Polygon points={geo.points} fill="rgba(0,0,0,0.30)" /></G>
+      <Polygon points={geo.points} fill={rim} strokeLinejoin="round" />
+      <Polygon points={inset(6)} fill={`url(#${gid})`} stroke={shade(fill, -0.42)} strokeWidth={2} strokeLinejoin="round" />
+    </Svg>
+  );
+});
+
+/** A duality die's number, positioned on ITS pentagon rather than on the token's centre. */
+export const DualityNumber = memo(function DualityNumber({ size, side, value }: { size: number; side: 'hope' | 'fear'; value: number }) {
+  const geo = dualityGeometry()[side];
+  return (
+    <Text
+      allowFontScaling={false}
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: size,
+        textAlign: 'center',
+        color: side === 'hope' ? HOPE_INK : FEAR_INK,
+        fontFamily: Display.black,
+        fontSize: size * 0.17,
+        transform: [{ translateX: ((geo.cx - DIE_BOX / 2) / DIE_BOX) * size }, { translateY: ((geo.numberY - 8) / DIE_BOX) * size }],
+      }}>
+      {value}
+    </Text>
+  );
+});
+
+export const DieButton = memo(function DieButton({ size, dieType, value, value2, hideNumber }: { size: number; dieType: DieType; value: number; /** v0.34.4: the Fear die of a duality token. */ value2?: number; /** v0.32.0: the roll draws its own cross-fading numbers over the face. */ hideNumber?: boolean }) {
+  if (dieType === 'duality') {
+    return (
+      <View style={{ width: size, height: size }} pointerEvents="none">
+        <DualityDieFace size={size} side="hope" />
+        <DualityDieFace size={size} side="fear" />
+        {hideNumber ? null : (
+          <>
+            <DualityNumber size={size} side="hope" value={value} />
+            <DualityNumber size={size} side="fear" value={value2 ?? value} />
+          </>
+        )}
+      </View>
+    );
+  }
+  return <SingleDie size={size} dieType={dieType} value={value} hideNumber={hideNumber} />;
+});
+
+const SingleDie = memo(function SingleDie({ size, dieType, value, hideNumber }: { size: number; dieType: DieType; value: number; hideNumber?: boolean }) {
   const gid = useId();
   const fill = DIE_COLOR[dieType];
   const rim = shade(fill, -0.34);
@@ -138,10 +208,10 @@ export const DieButton = memo(function DieButton({ size, dieType, value, hideNum
 /** Render any token at `size`: a die gets the DieButton, everything else the sewing button. Memoized
  *  (#293 perf): the baked deck layer renders these gradient SVGs per token, so skipping re-renders when
  *  props are unchanged keeps decorated decks cheap to composite (e.g. under the float-menu dim). */
-export const TokenGlyph = memo(function TokenGlyph({ size, token }: { size: number; token: { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number } }) {
+export const TokenGlyph = memo(function TokenGlyph({ size, token }: { size: number; token: { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number; dieValue2?: number } }) {
   if (token.kind === 'die') {
     const dt = token.dieType ?? 'd6';
-    return <DieButton size={size} dieType={dt} value={token.dieValue ?? DIE_MAX[dt]} />;
+    return <DieButton size={size} dieType={dt} value={token.dieValue ?? DIE_MAX[dt]} value2={token.dieValue2} />;
   }
   return <TokenButton size={size} fill={tokenFill(token)} />;
 });

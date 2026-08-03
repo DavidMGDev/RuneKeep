@@ -218,9 +218,31 @@ export const MoodboardItemView = memo(function MoodboardItemView({
     };
   });
 
+  /**
+   * The drag trail (owner, v0.34.4): faint horizontal and vertical lines of leftover pixels along the
+   * path a dragged image took.
+   *
+   * That is a repaint artifact, not anything drawn. A moving view is repainted by invalidating the
+   * rectangle it used to occupy and the one it now occupies, and both rectangles are computed in the
+   * PARENT's coordinates then rounded to whole device pixels. The whole board lives inside a
+   * DesignStage, so it is scaled by a fraction, and a fractional rectangle rounded inwards leaves a
+   * sliver of the old frame unpainted on the leading or trailing edge. Every frame of the drag leaves
+   * one, which is the trail: horizontal on a horizontal drag, vertical on a vertical one.
+   *
+   * The fix is to stop making the platform repair a moving rectangle. Both properties below give this
+   * view its own compositing layer, so its transform is applied to a texture that is drawn whole each
+   * frame rather than patched in place:
+   *
+   *  - `renderToHardwareTextureAndroid` is React Native's own answer, and its documentation names
+   *    exactly this case (a view whose transform or opacity is animated).
+   *  - `backfaceVisibility: 'hidden'` is the browser equivalent: it promotes the element to its own
+   *    layer, which is why it is the standard cure for repaint streaks on a transformed element.
+   *
+   * Each is inert on the other platform, and neither changes what is drawn.
+   */
   return (
     <GestureDetector gesture={gesture}>
-      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: w, height: h }, style]}>
+      <Animated.View renderToHardwareTextureAndroid style={[{ position: 'absolute', left: 0, top: 0, width: w, height: h, backfaceVisibility: 'hidden' }, style]}>
         <ExpoImage
           source={{ uri: item.imageUri }}
           style={{ width: '100%', height: '100%' }}

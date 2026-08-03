@@ -21,7 +21,6 @@ import {
   removeItem,
   updateItem,
 } from '@/lib/moodboard';
-import { boardPalette } from '@/lib/palette';
 import { renderMoodboardToDataUri } from '@/lib/moodboard-render';
 import { ownImage } from '@/lib/owned-image';
 import { useScreenEdge } from '@/lib/screen-dim';
@@ -37,9 +36,6 @@ import { MoodboardRadial, type MoodAction } from './moodboard-radial';
  * the images are the only thing with edges on it.
  */
 export const MOODBOARD_BG = '#101A2B';
-
-/** The swatches the colour button offers (v0.34.3). Generated: see `lib/moodboard`. */
-const PALETTE = boardPalette();
 
 /** The fall an image takes when deleted, before the parent drops it. Matches the item's own timing. */
 const LEAVE_MS = 900;
@@ -429,7 +425,7 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
         ) : null}
 
         {picking ? (
-          <ColorPalette title="Background" colors={PALETTE} current={ground} onPick={(c) => { onBackground(c); setPicking(false); }} onClose={() => setPicking(false)} />
+          <ColorPalette title="Background" current={ground} onPick={(c) => { onBackground(c); setPicking(false); }} allowRandom onClose={() => setPicking(false)} />
         ) : null}
 
         {layers ? (

@@ -14,7 +14,6 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { ART_H, FORGED_H, FORGED_W, ForgedCard } from '@/features/create/components/forged-card';
-import { cardPalette } from '@/lib/palette';
 import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
@@ -701,10 +700,9 @@ export function CardEditor({
       {pickColor ? (
         <ColorPalette
           title="Card colour"
-          colors={cardPalette()}
           current={draft.imageUri ? null : draft.color}
           onPick={(c) => { setPickColor(false); setColor(c); }}
-          onRandom={() => { setPickColor(false); rollColor(); }}
+          allowRandom
           onClose={() => setPickColor(false)}
         />
       ) : null}
