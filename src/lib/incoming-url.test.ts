@@ -57,3 +57,27 @@ describe('the launch handoff', () => {
     expect(seen).toEqual(['content://x/2']);
   });
 });
+
+describe('isFilePayload · picked photos are not shares (v0.33.0)', () => {
+  it('rejects the shapes Android image pickers return', () => {
+    for (const u of [
+      'content://media/external/images/media/1000012345',
+      'content://com.android.providers.media.documents/document/image%3A48291',
+      'content://media/picker/0/com.android.providers.media.photopicker/media/1000000034',
+      'content://media/external/video/media/771',
+    ]) {
+      expect(isFilePayload(u)).toBe(false);
+    }
+  });
+
+  it('still accepts the shapes real shares return', () => {
+    for (const u of [
+      'content://com.whatsapp.provider.media/item/8a83f1c2',
+      'content://media/external/downloads/9912',
+      'content://com.google.android.apps.docs.storage/document/acc%3D1%3Bdoc%3D77',
+      'content://com.android.externalstorage.documents/document/primary%3ADownload%2FJohn.rune',
+    ]) {
+      expect(isFilePayload(u)).toBe(true);
+    }
+  });
+});

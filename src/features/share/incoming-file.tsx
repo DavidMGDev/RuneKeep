@@ -20,10 +20,24 @@ import { type AppLocation, type RouteOutcome, routeIncoming } from '@/lib/rkp-ro
  * `com.android.externalstorage` and throws "Unsupported scheme" on everything else, which rules out
  * WhatsApp, Gmail and Drive. Worth knowing before anyone reaches for it.)
  */
+/**
+ * The largest thing that could plausibly be a character (v0.33.0).
+ *
+ * A character with an embedded portrait and card art runs to a few hundred KB; the image budget caps
+ * each picture at 220 KB. Two megabytes is generous for the biggest deck anyone has, and small enough
+ * that a photo or a video never gets decoded as UTF-8 to find out it is not a character.
+ */
+const MAX_INCOMING_BYTES = 2_000_000;
+
 async function readIncoming(uri: string): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { File } = require('expo-file-system') as typeof import('expo-file-system');
-  return new File(uri).textSync();
+  const f = new File(uri);
+  // v0.33.0: check the size first, and read ASYNCHRONOUSLY. `textSync` blocks the JS thread for as
+  // long as the read takes, which for anything that is not a character file is time spent freezing
+  // the app to produce an error message.
+  if ((f.size ?? 0) > MAX_INCOMING_BYTES) throw new Error('too large');
+  return f.text();
 }
 
 interface Incoming {

@@ -6,7 +6,7 @@ import { Keyboard, type NativeSyntheticEvent, Platform, Pressable, ScrollView, T
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
-import { type CardDraft, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
+import { type CardDraft, CharCount, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
 import { isExperienceType } from '@/features/character-sheet/card-types';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -214,6 +214,7 @@ export function QuickCardFlow({
                 style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0 }}
                 accessibilityLabel="Card title"
               />
+              <CharCount value={draft.title} max={TITLE_MAX} />
             </ChamferBox>
             {expMode ? null : (
             <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
@@ -234,6 +235,7 @@ export function QuickCardFlow({
                 style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, flex: 1, textAlignVertical: 'top' }}
                 accessibilityLabel="Card text"
               />
+              <CharCount value={draft.text} max={TEXT_MAX} />
             </ChamferBox>
             )}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>

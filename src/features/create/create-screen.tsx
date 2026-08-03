@@ -24,6 +24,7 @@ import { saveCharacter } from '@/lib/character-store';
 import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { contentForCreation, type CreationContent, type Expansion, featureSectionIndexes, isEnabledForCreation, type LibraryCard, subclassFamilyKey } from '@/lib/library';
 import { hasStrikeLines } from '@/data/ancestry-trait-regions';
+import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { LibraryForgedCard } from './components/library-forged-card';
 import { listExpansions } from '@/lib/library-store';
 import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
@@ -92,11 +93,23 @@ const skipInventoryCard = (choice: 0 | 1): StraightItem => ({
 // other forged cards. Stats for weapon/armor are folded into the body.
 // `struckIndex` (v0.12.4): strike a section's text (mixed-ancestry crossed-out feature) live in the
 // creation carousel — structured ancestries have no webp to overlay, so the cross-out rides the markdown.
-const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => ({
-  id: lc.id,
-  label: lc.title || 'Card',
-  custom: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
-});
+const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => {
+  /**
+   * A PRINTED FACE rides the image path, not the live one (v0.33.0).
+   *
+   * The Hope and Fear ancestries are single bundled bitmaps: there is nothing to lay out and nothing
+   * to forge. Handing them over as `custom` made them a live component anyway, and the carousel only
+   * mounts a window of slots, so grinding past them unmounted and remounted the element every time
+   * the window moved. A `thumb`/`source` item is a plain image the carousel keeps decoded and fades,
+   * which is exactly how the catalog ancestries beside them already behave.
+   *
+   * `struckIndex` is deliberately ignored: a printed face has no text blocks to strike, and the
+   * carousel draws the mixed-ancestry cross-out over the bitmap itself.
+   */
+  const face = VOID_ANCESTRY_FACE[lc.id];
+  if (face) return { id: lc.id, label: lc.title || 'Card', thumb: face, source: face };
+  return { id: lc.id, label: lc.title || 'Card', custom: <LibraryForgedCard card={lc} struckIndex={struckIndex} /> };
+};
 
 /**
  * A draft is worth persisting/resuming only if SOMETHING was chosen — otherwise resuming would show

@@ -52,6 +52,29 @@ export interface CardDraft {
 export const TITLE_MAX = 120;
 export const TEXT_MAX = 600;
 
+/**
+ * How much of a field is used (v0.33.0).
+ *
+ * `maxLength` stops typing dead with no warning and no explanation, which is a bad way to find out a
+ * limit exists. The count stays quiet until the field is most of the way full and then turns gold, so
+ * it is an answer when you want one rather than a number to read while you write.
+ *
+ * Absolutely positioned on purpose: the fields it sits in are fixed-height boxes, and a counter in
+ * the flow would squeeze the input it is describing.
+ */
+export function CharCount({ value, max }: { value: string; max: number }) {
+  const used = value.length;
+  if (used < max * 0.6) return null;
+  return (
+    <Text
+      pointerEvents="none"
+      accessibilityLabel={`${used} of ${max} characters used`}
+      style={{ position: 'absolute', right: 5, bottom: 2, color: used >= max ? Rune.red : Rune.goldText, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 0.5 }}>
+      {used}/{max}
+    </Text>
+  );
+}
+
 /** A tiny markdown-toolbar button (Bold / Italic / bullet / reorder). */
 function MarkBtn({ label, onPress }: { label: string; onPress: () => void }) {
   return (
@@ -155,6 +178,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
             style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, minHeight: 48, textAlignVertical: 'top' }}
             accessibilityLabel={`Section ${i + 1} text`}
           />
+          <CharCount value={r.body} max={TEXT_MAX} />
         </ChamferBox>
         );
       })}
@@ -477,6 +501,7 @@ export function CardEditor({
               style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0, textAlignVertical: expMode ? 'top' : 'center' }}
               accessibilityLabel={expMode ? 'Experience' : 'Card title'}
             />
+            <CharCount value={draft.title} max={expMode ? 160 : TITLE_MAX} />
           </ChamferBox>
           {expMode ? null : sectioned ? (
             <SectionsField sections={draft.sections ?? []} onChange={(sections) => setDraft((d) => ({ ...d, sections }))} minRows={sectionsConfig?.minRows} fixedLabels={sectionsConfig?.fixedLabels} ancestryFeatures={sectionsConfig?.ancestryFeatures} />
@@ -494,6 +519,7 @@ export function CardEditor({
                 style={{ color: Rune.sheet, fontSize: 13, lineHeight: 18, fontFamily: Body.regular, padding: 0, flex: 1, textAlignVertical: 'top' }}
                 accessibilityLabel="Card text"
               />
+              <CharCount value={draft.text} max={TEXT_MAX} />
             </ChamferBox>
           )}
           {expMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} experiences={experiences} />}

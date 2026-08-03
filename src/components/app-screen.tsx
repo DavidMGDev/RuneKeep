@@ -31,6 +31,15 @@ interface AppScreenProps {
   contentAboveFrame?: boolean;
   /** DM Mode (v0.15.0): desaturate the header text/back into the DM palette. */
   dm?: boolean;
+  /**
+   * A dialog that must cover the WHOLE screen, border and all (v0.33.0).
+   *
+   * `children` are inset inside the gold frame, and the frame art is painted over them, so a dialog
+   * rendered among them can only scrim the inset column: the dim reads as a grey rectangle laid on
+   * the screen, with the border still bright around it. Anything in this slot is drawn last, over
+   * everything including the frame and the status bands, so its scrim covers the display.
+   */
+  overlay?: ReactNode;
   children: ReactNode;
 }
 
@@ -39,7 +48,7 @@ interface AppScreenProps {
  * within it. Plain flex (dp), NOT DesignStage — these screens scroll and adapt (DESIGN.md).
  * The sheet keeps its own ornamental border; everything else lives in this frame.
  */
-export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, children }: AppScreenProps) {
+export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
   // v0.24.1: what the tablet margins copy. Every AppScreen paints ink to its left and right edges.
   useScreenEdge(Rune.ink);
@@ -110,6 +119,9 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, c
       {/* painted inset bars, same belt-and-braces as the sheet */}
       <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: top, backgroundColor: Rune.ink }} />
       <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottom, backgroundColor: Rune.ink }} />
+      {/* Last, so a dialog's scrim covers the frame art and the inset bands rather than sitting in a
+          rectangle inside them (v0.33.0). */}
+      {overlay}
     </View>
   );
 }

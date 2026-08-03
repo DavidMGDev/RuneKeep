@@ -19,6 +19,7 @@ import { Platform } from 'react-native';
 
 import type { CharacterFile } from './character-file';
 import type { LibraryCard } from './library';
+import { blobUriToData } from './owned-image';
 
 /** Per-image budget inside a `.rkp`. Generous: files are shared over the OS sheet, not a radio. */
 export const FILE_IMAGE_BUDGET = 220_000;
@@ -88,12 +89,42 @@ export async function compressToDataUri(uri: string, budget: number): Promise<st
 const IMAGE_COLLECTIONS = ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards'] as const;
 
 /**
+ * Web export (v0.33.0): turn every session-scoped `blob:` URL into the bytes it points at.
+ *
+ * A blob that has already been revoked (the tab was reloaded since the image was picked) reads back
+ * as null, and the reference is DROPPED rather than shipped. An empty portrait is honest; a blob URL
+ * from someone else's browser session renders as a white rectangle with no explanation.
+ */
+async function resolveWebBlobs(file: CharacterFile): Promise<CharacterFile> {
+  const isBlob = (u: unknown): u is string => typeof u === 'string' && u.startsWith('blob:');
+  const out: CharacterFile = { ...file };
+  if (isBlob(out.portraitUri)) out.portraitUri = await blobUriToData(out.portraitUri);
+  for (const key of IMAGE_COLLECTIONS) {
+    const arr = (out as unknown as Record<string, unknown>)[key];
+    if (!Array.isArray(arr) || !arr.some((c) => isBlob((c as { imageUri?: unknown }).imageUri))) continue;
+    (out as unknown as Record<string, unknown>)[key] = await Promise.all(
+      arr.map(async (card: unknown) => {
+        const c = card as { imageUri?: string | null };
+        if (!isBlob(c.imageUri)) return card;
+        return { ...(card as object), imageUri: await blobUriToData(c.imageUri) };
+      }),
+    );
+  }
+  return out;
+}
+
+/**
  * Inline every local image a character owns: the portrait, and the art on any card the player made
  * or received. Returns a NEW file; the on-device character is never modified, because its `file://`
  * references are perfectly good locally and re-reading them is cheaper than carrying base64 around.
  */
 export async function embedCharacterImages(file: CharacterFile): Promise<CharacterFile> {
-  if (Platform.OS === 'web') return file;
+  // v0.33.0: the web build has its own version of this problem. A browser-picked image is a `blob:`
+  // URL scoped to one page session, so an export written straight out carried a handle that means
+  // nothing on the phone it was imported to — a character that arrived with a blank white portrait.
+  // Reading the blob out here rescues any that were picked before v0.33.0 started storing data URIs,
+  // as long as the tab has not been reloaded since.
+  if (Platform.OS === 'web') return resolveWebBlobs(file);
   const out: CharacterFile = { ...file };
 
   if (isLocalImage(out.portraitUri)) {

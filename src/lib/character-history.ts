@@ -147,6 +147,16 @@ export interface RecordIntent {
    */
   kind?: HistoryKind;
   label?: string;
+  /**
+   * What the change consisted of, for entries whose detail lives in the caller (v0.33.0).
+   *
+   * A level-up is the case that needed it. "Levelled up to 5" is the one entry in a campaign anyone
+   * would actually want to read, and it was also the least informative, because the choices that
+   * define the level (which domain card, which advancements, which traits) are only nameable where
+   * they were made. A diff can see that `domainCardIds` grew; it cannot say the card is called
+   * Rune Ward without knowing the whole catalog.
+   */
+  steps?: string[];
   /** Force a fresh entry even if the previous one would otherwise coalesce. */
   separate?: boolean;
   /**
@@ -284,7 +294,7 @@ export function record(history: CharacterHistory, prev: CharacterFile | null, ne
     };
     entries = [...entries.slice(0, -1), merged];
   } else {
-    entries = [...entries, { id: entryId(at), at, kind: cls.kind, label: cls.label, milestone: cls.milestone, steps: [cls.label], key: cls.key, snapshot }];
+    entries = [...entries, { id: entryId(at), at, kind: cls.kind, label: cls.label, milestone: cls.milestone, steps: intent.steps?.length ? intent.steps : [cls.label], key: cls.key, snapshot }];
   }
 
   return { version: HISTORY_VERSION, entries: capEntries(entries), rewoundTo: null };

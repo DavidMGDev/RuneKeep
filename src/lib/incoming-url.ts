@@ -25,11 +25,26 @@
  * far was already selected by Android. Trying to re-check the extension here is what broke it, since
  * provider URIs have no extension to check.
  */
+/**
+ * Provider URIs that are a PHOTO the app itself just asked for, not a share (v0.33.0).
+ *
+ * "Broad on content://" was right for shares and wrong for everything else, because the app opens the
+ * system image picker itself (portraits, card art) and that hands back a `content://` URI of exactly
+ * the same shape. When one of those reached the incoming-file gate it was read off disk as text and
+ * offered to the player as a possible character, which for a multi-megabyte photo is a synchronous
+ * read of a few million bytes on the JS thread. The owner hit this the moment they left the app with
+ * the picker open and came back.
+ *
+ * Matching on the media markers rather than on the authority keeps genuine shares working: a `.rune`
+ * from Downloads is also `content://media/…`, and it has none of these in its path.
+ */
+const MEDIA_URI = /[/.](images|video|audio|photo_?picker)(\/|$)|document\/(image|video|audio)(%3a|:)/;
+
 export function isFilePayload(url: string | null | undefined): boolean {
   if (!url) return false;
   const u = url.toLowerCase();
   if (u.startsWith('runekeep://')) return false; // the app's own deep links are routes
-  if (u.startsWith('content://')) return true;
+  if (u.startsWith('content://')) return !MEDIA_URI.test(u);
   // v0.30.0: `.rune` is the extension now; `.rkp` still opens, because files sent before the rename
   // are on people's phones and in their chat histories.
   if (u.startsWith('file://')) return /\.(rune|rkp)($|[?#])/i.test(url);

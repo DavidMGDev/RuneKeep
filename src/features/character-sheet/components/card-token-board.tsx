@@ -105,6 +105,8 @@ const LEAVE_MS = 1150;
 const THROW_SLOP = 30;
 /** Peak swell, as a fraction of the token's size, at the top of a hold or a roll. */
 const SWELL = 0.26;
+/** A roll turns the die exactly once (v0.33.0). More reads as a spinner; less does not read as a roll. */
+const ROLL_TURNS = 1;
 
 /**
  * A placed, interactive token.
@@ -137,6 +139,14 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
    * stayed there until release. One value, animated continuously, has neither problem.
    */
   const swell = useSharedValue(0);
+  /**
+   * Rotation, in TURNS, only ever added to (v0.33.0).
+   *
+   * Never assigned an absolute value and never reset, which is the whole trick: roll a die three
+   * times and it spins on from wherever it stopped rather than snapping back to zero to start the
+   * next one, and a throw mid-roll carries the angle it was at into the flight.
+   */
+  const turn = useSharedValue(0);
   const rollP = useSharedValue(0); // 0..1 through the roll (drives the number cross-fade)
   const phase = useSharedValue(0); // 0 = idle/holding, 1 = rolling, 2 = leaving
   const leave = useSharedValue(0); // 0..1 through the fall or throw
@@ -152,7 +162,13 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
 
   const done = useCallback(() => onLeave(token), [onLeave, token]);
 
-  /** Grow on from wherever the hold got to, cross-fade the number, settle back. */
+  // Per-token randomness, from its id, so the same token always tumbles the same way.
+  const h = hashStr(token.id);
+  const h2 = hashStr(`${token.id}~`);
+  const driftX = (h - 0.5) * 2 * size * 1.2;
+  const spin = (h2 - 0.5) * 2; // turns over one flight
+
+  /** Grow on from wherever the hold got to, spin once, cross-fade the number, settle back. */
   const beginRoll = useCallback(() => {
     setRollTo(onRoll(token));
     rollP.value = 0;
@@ -161,15 +177,24 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
       withTiming(1.35, { duration: reduced ? 60 : ROLL_MS * 0.34, easing: Easing.out(Easing.cubic) }),
       withTiming(0, { duration: reduced ? 100 : ROLL_MS * 0.66, easing: Easing.inOut(Easing.cubic) }),
     );
+    // One turn, thrown fast and eased to a stop. `out(cubic)` is the snap: most of the rotation is
+    // spent in the first third and the last few degrees crawl in, which is what a die settling does.
+    if (!reduced) turn.value = withTiming(turn.value + ROLL_TURNS, { duration: ROLL_MS, easing: Easing.out(Easing.cubic) });
     rollP.value = withTiming(1, { duration: reduced ? 160 : ROLL_MS, easing: Easing.inOut(Easing.cubic) }, (f) => {
       'worklet';
       // Settled, and the finger may still be down. Back to idle at RESTING size, not at full swell.
       if (f && phase.value === 1) { phase.value = 0; runOnJS(setRollTo)(null); }
     });
-  }, [onRoll, token, rollP, swell, phase, reduced]);
+  }, [onRoll, token, rollP, swell, turn, phase, reduced]);
 
-  /** Start leaving the card. `dx`/`dy` (a swipe) throw it that way; without them it simply drops. */
-  const beginLeave = useCallback((dx: number, dy: number) => {
+  /**
+   * Start leaving the card. `dx`/`dy` (a swipe) throw it that way; without them it simply drops.
+   *
+   * `spinning` is how fast the token is already turning, in turns per millisecond, at this instant.
+   * A die swiped away mid-roll keeps exactly the speed it had (owner, v0.33.0), so the throw looks
+   * like the roll continuing off the card rather than a second, unrelated animation.
+   */
+  const beginLeave = useCallback((dx: number, dy: number, spinning = 0) => {
     phase.value = 2;
     const len = Math.hypot(dx, dy);
     dirX.value = len ? dx / len : 0;
@@ -179,11 +204,17 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
     pop.value = withTiming(1, { duration: reduced ? 120 : 420 });
     tapHaptic();
     playSfx('tokenRemove'); // #255
-    leave.value = withTiming(1, { duration: reduced ? 200 : LEAVE_MS, easing: Easing.out(Easing.quad) }, (f) => {
+    const flight = reduced ? 200 : LEAVE_MS;
+    // Carry the current spin at a CONSTANT rate: nothing is slowing it down once it is off the card.
+    // A token that was not already spinning gets its own random tumble instead.
+    if (!reduced) turn.value = withTiming(turn.value + (spinning > 0 ? spinning * flight : spin), { duration: flight, easing: Easing.linear });
+    // Linear, so `leave` is proportional to TIME. The fall is f² (gravity) and the throw is f
+    // (constant velocity) only if f is a clock; an eased f made both of them lie.
+    leave.value = withTiming(1, { duration: flight, easing: Easing.linear }, (f) => {
       'worklet';
       if (f) runOnJS(done)();
     });
-  }, [phase, dirX, dirY, thrownAt, leave, pop, reduced, done]);
+  }, [phase, dirX, dirY, thrownAt, leave, pop, turn, spin, reduced, done]);
 
   /** Steer a leave that is already running, from a swipe mid-flight. Adds direction to where the
    *  token IS rather than restarting it, which is what keeps hold and hold-then-swipe one motion. */
@@ -214,7 +245,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
             'worklet';
             if (!f || phase.value !== 0) return;
             if (isDie) { phase.value = 1; runOnJS(beginRoll)(); }
-            else runOnJS(beginLeave)(0, 0);
+            else { phase.value = 2; runOnJS(beginLeave)(0, 0); }
           });
         })
         .onTouchesMove((e, state) => {
@@ -234,8 +265,26 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
           'worklet';
           if (Math.hypot(e.translationX, e.translationY) < THROW_SLOP) return;
           // A die is only ever removed by a throw; anything else is already leaving and gets steered.
-          if (phase.value === 1) runOnJS(beginLeave)(e.translationX, e.translationY);
-          else if (phase.value === 2 && thrownAt.value > 1) runOnJS(steer)(e.translationX, e.translationY);
+          if (phase.value === 1) {
+            /**
+             * Claim the phase HERE, on the UI thread, not inside `beginLeave` (v0.33.0).
+             *
+             * `runOnJS` is a hop, and `onUpdate` runs every frame the finger moves, so the frames in
+             * between all saw phase 1 and all queued another throw. The token only left once, but the
+             * haptic and the removal sound fired for each of them, which is the stutter the owner
+             * heard when swiping a die away. One assignment closes the window.
+             */
+            phase.value = 2;
+            // The roll's angular speed right now: d/dp[1-(1-p)^3] = 3(1-p)^2, over ROLL_MS.
+            const p = rollP.value;
+            runOnJS(beginLeave)(e.translationX, e.translationY, (ROLL_TURNS * 3 * (1 - p) * (1 - p)) / ROLL_MS);
+            // `leave.value > 0`: the fall is actually running. Without it, a swipe in the same frame
+            // the hold completed would steer a leave that had not started, and the throw it set up
+            // would be overwritten a moment later by the leave's own defaults.
+          } else if (phase.value === 2 && thrownAt.value > 1 && leave.value > 0) {
+            thrownAt.value = leave.value; // same reason: one steer, not one per frame
+            runOnJS(steer)(e.translationX, e.translationY);
+          }
         })
         .onFinalize(() => {
           'worklet';
@@ -244,7 +293,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
           cancelAnimation(swell);
           swell.value = withTiming(0, { duration: 160 });
         }),
-    [swell, phase, thrownAt, startX, startY, isDie, beginRoll, beginLeave, steer],
+    [swell, phase, thrownAt, leave, rollP, startX, startY, isDie, beginRoll, beginLeave, steer],
   );
 
   const tap = useMemo(
@@ -262,25 +311,28 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
   );
   const gesture = useMemo(() => Gesture.Race(pan, tap), [pan, tap]);
 
-  const h = hashStr(token.id);
-  const h2 = hashStr(`${token.id}~`);
-  const driftX = (h - 0.5) * 2 * size * 1.2;
-  const spin = (h2 - 0.5) * 2; // turns
-
+  /**
+   * The flight (v0.33.0).
+   *
+   * Gravity is ALWAYS `f² · 7`, whether the token was thrown or not, and the swipe only ever ADDS a
+   * constant-velocity term from the instant it happened. That is the fix for the owner's "harsh
+   * redirect": the old version swapped the gravity constant from 7 to 1.8 the moment a throw
+   * registered, so a token halfway down its fall jumped upward onto a different curve mid-flight. A
+   * throw is momentum on top of the fall now, and the two terms never disagree about where the token
+   * already is.
+   */
   const style = useAnimatedStyle(() => {
     const f = leave.value;
-    // The throw is an IMPULSE added from the moment of the swipe, so a token steered late carries on
-    // from where it already was instead of jumping onto a new path.
+    // The impulse counts only from the moment of the swipe, so a token steered late carries on from
+    // where it already was instead of jumping onto a new path.
     const kick = Math.max(0, f - Math.min(thrownAt.value, 1));
-    const thrown = thrownAt.value <= 1;
     return {
       opacity: f < 0.66 ? 1 : Math.max(0, 1 - (f - 0.66) / 0.34),
       transform: [
         { translateX: driftX * f + dirX.value * kick * size * 7 },
-        // A thrown token sags a little on its way out; a dropped one is all gravity.
-        { translateY: (thrown ? f * f * size * 1.8 : f * f * size * 7) + dirY.value * kick * size * 7 },
+        { translateY: f * f * size * 7 + dirY.value * kick * size * 7 },
         { scale: 1 + swell.value * SWELL - 0.3 * f },
-        { rotate: `${spin * f * 360}deg` }, // RN transforms accept deg/rad only — NEVER 'turn' (crashes)
+        { rotate: `${turn.value * 360}deg` }, // RN transforms accept deg/rad only — NEVER 'turn' (crashes)
       ],
     };
   });

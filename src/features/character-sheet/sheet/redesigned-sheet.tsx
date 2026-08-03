@@ -54,6 +54,7 @@ import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/l
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
+import { contentSig } from '@/lib/content-sig';
 import { hasStrikeLines } from '@/data/ancestry-trait-regions';
 import { cardChoiceFor } from '@/data/card-choices';
 import { embedCardImageForNfc } from '@/lib/image-embed';
@@ -955,7 +956,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       })
       .filter((j): j is Job => j !== null);
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
-      key: `itm-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13) % 99991}`,
+      key: `itm-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color)}`,
       id: it.id,
       node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
@@ -963,7 +964,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
     // Player-authored cards (#164) → routed to the inventory and/or arsenal deck by `target`.
     const customCardJobs: CustomJob[] = (file.customCards ?? []).map((it) => ({
-      key: `cc-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13 + (it.typeLabel?.length ?? 0) * 17) % 99991}`,
+      key: `cc-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.target)}`,
       id: it.id,
       node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
@@ -971,7 +972,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     }));
     // Notes (#214): freeform note cards, their own category (every class). Optional title → 'Note'.
     const notesJobs: Job[] = (file.notes ?? []).map((it) => ({
-      key: `note-${it.id}-${(it.title.length * 31 + it.text.length * 7 + (it.imageUri?.length ?? 0) + (it.color?.length ?? 0) * 13 + (it.typeLabel?.length ?? 0) * 17) % 99991}`,
+      key: `note-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel)}`,
       id: it.id,
       node: <ForgedCard title={it.title ?? ''} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
@@ -988,9 +989,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       const struckIndex = crossed && !hasStrikeLines(lc.id) ? featureSectionIndexes(lc)[crossed - 1] : undefined;
       // v0.13.0: order-sensitive section signature — re-arranging sections (same lengths) must NOT
       // serve the stale pre-arrange snapshot.
-      const secSig = (lc.sections ?? []).reduce((a, s, i) => (a + (i + 1) * ((s.name?.length ?? 0) * 3 + s.body.length + (s.feature ? 5 : 0))) % 99991, 0);
+      const secSig = contentSig(...(lc.sections ?? []).flatMap((sec) => [sec.name, sec.body, sec.feature ? 'f' : '']));
       return {
-        key: `lib-${lc.id}-${(lc.title.length * 31 + lc.text.length * 7 + (lc.imageUri?.length ?? 0) + (lc.color?.length ?? 0) * 13 + secSig * 41 + crossed * 7919) % 99991}`,
+        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed)}`,
         id: lc.id,
         node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
@@ -1449,8 +1450,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // (clamped to the new maxes), and CELEBRATE the result — a gained Max HP slot fills with its heart
   // animation and every stat change pops a toast.
   const onApplyLevelUp = useCallback(
-    (next: CharacterFile) => {
-      withIntent({ kind: 'level', label: `Levelled up to ${next.level}` });
+    (next: CharacterFile, steps: string[] = []) => {
+      withIntent({ kind: 'level', label: `Levelled up to ${next.level}`, steps });
       setFile(next);
       saveFileRef.current(next);
       const c = characterRef.current;
