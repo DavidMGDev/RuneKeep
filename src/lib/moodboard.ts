@@ -39,8 +39,14 @@ export interface CanvasSize {
 /** An unscaled item is this wide; its height follows the image's own aspect. */
 export const ITEM_BASE_W = 150;
 
-/** How much of an item must stay on the canvas. Keeps a centre reachable, so nothing can be stranded. */
-const EDGE_MARGIN = 28;
+/**
+ * How much of an item must stay on the canvas. Keeps a centre reachable, so nothing can be stranded.
+ *
+ * Exported (v0.34.1) because the drag clamps INLINE on the UI thread: a plain imported function
+ * cannot be called from a worklet, and calling one is what crashed the app the first time an image
+ * was dragged on a phone. The constant travels into the worklet closure; the function does not.
+ */
+export const EDGE_MARGIN = 28;
 
 export const itemWidth = (it: MoodboardItem): number => ITEM_BASE_W * it.scale;
 export const itemHeight = (it: MoodboardItem): number => (ITEM_BASE_W / (it.aspect || 1)) * it.scale;

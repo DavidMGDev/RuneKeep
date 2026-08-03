@@ -185,6 +185,8 @@ export interface CharacterFile {
    * snapshot stripping and the import-side blob drop all key off that name.
    */
   moodboard?: import('./moodboard').MoodboardItem[];
+  /** v0.34.1: leaving the moodboard saves a picture of it over the character's portrait. */
+  moodboardAsPortrait?: boolean;
   // --- card management (#246) — all additive; absent on old saves means "no customisation". ---
   /** Player-created carousel categories: id, label, icon key (from the category icon library). */
   customCategories?: import('@/features/character-sheet/carousel-categories').CustomCategory[];

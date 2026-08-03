@@ -7,7 +7,7 @@ import { Rune } from '@/constants/theme';
 import { tapHaptic } from '@/lib/haptics';
 import { playSfx } from '@/lib/sfx';
 
-export type MoodAction = 'delete' | 'copy' | 'front' | 'back' | 'centre';
+export type MoodAction = 'delete' | 'copy' | 'front' | 'centre';
 
 const R_OUT = 78;
 const R_IN = 34;
@@ -17,7 +17,6 @@ const OPTIONS: { key: MoodAction; label: string }[] = [
   { key: 'delete', label: 'Delete' },
   { key: 'copy', label: 'Duplicate' },
   { key: 'front', label: 'Bring to front' },
-  { key: 'back', label: 'Send to back' },
   { key: 'centre', label: 'Centre' },
 ];
 
@@ -56,12 +55,6 @@ function ActionGlyph({ kind, lit }: { kind: MoodAction; lit: boolean }) {
           <Polyline points="6,9 12,3 18,9" {...s} />
           <Path d="M4 20 H20" {...s} />
         </>
-      ) : kind === 'back' ? (
-        <>
-          <Polyline points="12,21 12,9" {...s} />
-          <Polyline points="6,15 12,21 18,15" {...s} />
-          <Path d="M4 4 H20" {...s} />
-        </>
       ) : (
         <>
           <Path d="M12 3 V21 M3 12 H21" {...s} />
@@ -84,16 +77,25 @@ function ActionGlyph({ kind, lit }: { kind: MoodAction; lit: boolean }) {
  * off the edge is an option you cannot pick.
  */
 export function MoodboardRadial({ x, y, canvasW, canvasH, onPick, onDismiss }: { x: number; y: number; canvasW: number; canvasH: number; onPick: (a: MoodAction) => void; onDismiss: () => void }) {
-  const p = useSharedValue(0);
+  /**
+   * Starts VISIBLE (v0.34.1).
+   *
+   * It used to start at opacity 0 and fade in from an effect. When that did not run, the wheel was
+   * invisible and every wedge was still hit-testable, so the owner double-tapped an image, saw
+   * nothing at all, pressed where a wedge would have been, and the image was deleted. A control that
+   * can act while it cannot be seen is the worst failure this menu could have, so the opacity is no
+   * longer animated at all: only the scale, which cannot hide anything.
+   */
+  const p = useSharedValue(0.86);
   const [lit, setLit] = useState<MoodAction | null>(null);
   useEffect(() => {
-    p.value = withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) });
+    p.value = withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) });
     playSfx('panelOpen');
   }, [p]);
 
   const cx = Math.min(canvasW - R_OUT - 8, Math.max(R_OUT + 8, x));
   const cy = Math.min(canvasH - R_OUT - 8, Math.max(R_OUT + 8, y));
-  const style = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ scale: 0.86 + 0.14 * p.value }] }));
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: p.value }] }));
 
   const n = OPTIONS.length;
   const step = 360 / n;
@@ -103,13 +105,16 @@ export function MoodboardRadial({ x, y, canvasW, canvasH, onPick, onDismiss }: {
       {/* A tap anywhere else puts the wheel away, which is the only way out other than choosing. */}
       <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Close the image menu" />
       <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', left: cx - R_OUT, top: cy - R_OUT, width: R_OUT * 2, height: R_OUT * 2 }, style]}>
-        <Svg width={R_OUT * 2} height={R_OUT * 2} pointerEvents="none">
+        {/* The ring itself takes no touches; the wedge buttons below it do. */}
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0 }}>
+        <Svg width={R_OUT * 2} height={R_OUT * 2}>
           {OPTIONS.map((o, i) => {
             const a0 = -90 + i * step + 1.2;
             const a1 = -90 + (i + 1) * step - 1.2;
             return <Path key={o.key} d={sector(a0, a1)} fill={lit === o.key ? 'rgba(74,82,92,0.95)' : 'rgba(16,20,28,0.92)'} stroke={Rune.goldEdge} strokeWidth={1.1} />;
           })}
         </Svg>
+        </View>
         {OPTIONS.map((o, i) => {
           const mid = ((-90 + (i + 0.5) * step) * Math.PI) / 180;
           const r = (R_IN + R_OUT) / 2;

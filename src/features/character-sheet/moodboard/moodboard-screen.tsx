@@ -1,10 +1,13 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { captureRef } from 'react-native-view-shot';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 import { DesignStage, useStageScale } from '@/components/design-stage';
+import { useScreenInsets } from '@/components/app-screen';
 import { Body, Rune } from '@/constants/theme';
 import { SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { focusHaptic, tapHaptic } from '@/lib/haptics';
@@ -13,11 +16,8 @@ import {
   bringToFront,
   centreItem,
   duplicateItem,
-  layerDown,
-  layerUp,
   type MoodboardItem,
   removeItem,
-  sendToBack,
   updateItem,
 } from '@/lib/moodboard';
 import { ownImage } from '@/lib/owned-image';
@@ -39,6 +39,8 @@ const UNLOCK_MS = 1000;
 /** The fall an image takes when deleted, before the parent drops it. Matches the item's own timing. */
 const LEAVE_MS = 900;
 
+/** The top-bar controls. Small enough to sit clear of a phone's own chrome (v0.34.1). */
+const BTN = 38;
 const CANVAS = { width: SHEET_DESIGN_WIDTH, height: SHEET_DESIGN_HEIGHT };
 const newId = () => `mb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -70,7 +72,7 @@ function RoundButton({ onPress, label, children, tint = 'rgba(14,20,32,0.92)' }:
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: tint, borderWidth: 1.2, borderColor: Rune.goldEdge, opacity: pressed ? 0.7 : 1 })}>
+      style={({ pressed }) => ({ width: BTN, height: BTN, borderRadius: BTN / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: tint, borderWidth: 1.2, borderColor: Rune.goldEdge, opacity: pressed ? 0.7 : 1 })}>
       {children}
     </Pressable>
   );
@@ -82,59 +84,52 @@ function RoundButton({ onPress, label, children, tint = 'rgba(14,20,32,0.92)' }:
  */
 function LockButton({ locked, onUnlock, onLock, reduced }: { locked: boolean; onUnlock: () => void; onLock: () => void; reduced: boolean }) {
   const p = useSharedValue(0);
-  const fired = useRef(false);
-  const ring = useAnimatedStyle(() => ({ opacity: p.value > 0.02 ? 1 : 0, transform: [{ scale: 0.9 + 0.1 * p.value }] }));
   const fill = useAnimatedStyle(() => ({ height: `${p.value * 100}%` }));
 
-  const done = useCallback(() => {
-    if (fired.current) return;
-    fired.current = true;
-    p.value = withTiming(0, { duration: 260 }); // the hold is spent; the button stops looking charged
-    focusHaptic();
-    playSfx('cardSelect');
-    onUnlock();
-  }, [onUnlock, p]);
+  const unlock = useCallback(() => { focusHaptic(); playSfx('cardSelect'); onUnlock(); }, [onUnlock]);
+  const relock = useCallback(() => { tapHaptic(); playSfx('buttonTap'); onLock(); }, [onLock]);
+
+  /**
+   * A gesture, not a `Pressable` (v0.34.1).
+   *
+   * Two things were wrong and both are the same root. In a browser the hold filled to about half and
+   * then reset, because the page's own long-press behaviour (selection, the context menu) cancels the
+   * pointer partway through and `Pressable` gives up with it. And on every platform, `Pressable` fires
+   * `onPressOut` and then `onPress`, so the release that COMPLETED a hold was also read as a tap,
+   * which locked the board straight back the moment it unlocked.
+   *
+   * Gesture-handler owns the touch outright, suppresses the browser's default, and tells a completed
+   * long press apart from a tap by construction.
+   */
+  const gesture = useMemo(() => {
+    const hold = Gesture.LongPress()
+      .minDuration(UNLOCK_MS)
+      .maxDistance(24)
+      .enabled(locked)
+      .onBegin(() => {
+        'worklet';
+        p.value = 0;
+        p.value = withTiming(1, { duration: reduced ? 0 : UNLOCK_MS, easing: Easing.linear });
+      })
+      .onStart(() => { 'worklet'; runOnJS(unlock)(); })
+      .onFinalize(() => { 'worklet'; p.value = withTiming(0, { duration: 200 }); });
+    const tap = Gesture.Tap().maxDuration(400).enabled(!locked).onEnd(() => { 'worklet'; runOnJS(relock)(); });
+    return Gesture.Exclusive(hold, tap);
+  }, [locked, reduced, p, unlock, relock]);
 
   return (
-    <Pressable
-      onPressIn={() => {
-        if (!locked) return;
-        fired.current = false;
-        p.value = 0;
-        p.value = withTiming(1, { duration: reduced ? 0 : UNLOCK_MS, easing: Easing.linear }, (f) => {
-          'worklet';
-          if (f) runOnJS(done)();
-        });
-      }}
-      onPressOut={() => {
-        if (!locked) return;
-        p.value = withTiming(0, { duration: 180 });
-      }}
-      /**
-       * The release that FINISHED a hold is not a tap (v0.34.0).
-       *
-       * `Pressable` fires `onPress` after `onPressOut`, and by then the hold has already unlocked the
-       * board, so the tap branch saw an unlocked board and locked it straight back: holding for a
-       * second did nothing at all, twice as slowly. The flag the hold sets is what tells them apart.
-       */
-      onPress={() => {
-        if (fired.current) { fired.current = false; return; }
-        if (!locked) { tapHaptic(); playSfx('buttonTap'); onLock(); }
-      }}
-      hitSlop={10}
-      accessibilityRole="button"
-      accessibilityLabel={locked ? 'Hold to unlock the moodboard' : 'Lock the moodboard'}
-      accessibilityHint={locked ? 'Hold for one second' : undefined}
-      style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: locked ? 'rgba(14,20,32,0.92)' : 'rgba(63,52,20,0.92)', borderWidth: 1.2, borderColor: locked ? Rune.goldEdge : Rune.goldBright, overflow: 'hidden' }}>
-      {/* The hold, drawn: gold rises from the bottom of the button over the full second. */}
-      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.35)' }, fill]} />
-      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }, ring]}>
-        <Svg width={40} height={40} viewBox="0 0 40 40">
-          <Circle cx={20} cy={20} r={18} fill="none" stroke={Rune.goldBright} strokeWidth={1.4} />
-        </Svg>
-      </Animated.View>
-      <Glyph kind={locked ? 'lock' : 'unlock'} color={locked ? Rune.goldText : Rune.goldBright} />
-    </Pressable>
+    <GestureDetector gesture={gesture}>
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={locked ? 'Hold to unlock the moodboard' : 'Lock the moodboard'}
+        accessibilityHint={locked ? 'Hold for one second' : undefined}
+        style={{ width: BTN, height: BTN, borderRadius: BTN / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: locked ? 'rgba(14,20,32,0.92)' : 'rgba(63,52,20,0.92)', borderWidth: 1.2, borderColor: locked ? Rune.goldEdge : Rune.goldBright, overflow: 'hidden' }}>
+        {/* The hold, drawn: gold rises from the bottom of the button over the full second. */}
+        <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(224,181,99,0.4)' }, fill]} />
+        <Glyph kind={locked ? 'lock' : 'unlock'} color={locked ? Rune.goldText : Rune.goldBright} />
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -160,7 +155,15 @@ function LockButton({ locked, onUnlock, onLock, reduced }: { locked: boolean; on
  * not zoom, which is what makes "nothing can be lost" a promise the app can keep: a centre is clamped
  * inside the canvas, and the image list can always bring something back.
  */
-export function MoodboardScreen({ items, onChange, onClose }: { items: MoodboardItem[]; onChange: (next: MoodboardItem[]) => void; onClose: () => void }) {
+export function MoodboardScreen({ items, usePortrait, onChange, onSetPortrait, onUsePortrait, onClose }: {
+  items: MoodboardItem[];
+  /** v0.34.1: leaving the board saves a picture of it over the character's portrait. */
+  usePortrait: boolean;
+  onChange: (next: MoodboardItem[]) => void;
+  onSetPortrait: (uri: string) => void;
+  onUsePortrait: (on: boolean) => void;
+  onClose: () => void;
+}) {
   const reduced = useReducedMotion();
   const [locked, setLocked] = useState(true);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -169,6 +172,10 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
   /** Ids that are falling off the canvas. They are still drawn; the model has already let them go. */
   const [leaving, setLeaving] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const insets = useScreenInsets();
+  /** The images ALONE, with no ground behind them: what a portrait capture is taken from. */
+  const shotRef = useRef<View>(null);
   useScreenEdge(MOODBOARD_BG);
   // Read by the delete timer, which outlives the render that started it.
   const itemsRef = useRef(items);
@@ -184,13 +191,42 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
   const groundStyle = useAnimatedStyle(() => ({ opacity: enter.value }));
   const chromeStyle = useAnimatedStyle(() => ({ opacity: Math.max(0, (enter.value - 0.35) / 0.65), transform: [{ translateY: (1 - enter.value) * -8 }] }));
 
-  const leave = useCallback(() => {
+  /**
+   * Leaving (v0.34.1).
+   *
+   * If the board is the portrait, it is captured BEFORE the fade starts, while everything is still on
+   * screen at full opacity. Capturing a view mid-fade would save a half-transparent picture.
+   *
+   * The capture is taken from a view that holds the images and nothing else, so the PNG keeps its
+   * transparency and the portrait is the board's contents rather than a dark blue rectangle. (In a
+   * browser the capture goes through html2canvas, which fills the background: a web capture is
+   * opaque. Nothing else differs.)
+   */
+  const leave = useCallback(async () => {
+    if (usePortrait && shotRef.current) {
+      setSaving(true);
+      try {
+        const shot = await captureRef(shotRef, {
+          format: 'png',
+          quality: 1,
+          result: Platform.OS === 'web' ? 'data-uri' : 'tmpfile',
+          width: CANVAS.width,
+          height: CANVAS.height,
+        });
+        const owned = await ownImage(shot);
+        if (owned) onSetPortrait(owned);
+      } catch {
+        // A failed capture must never trap the player on the board.
+      } finally {
+        setSaving(false);
+      }
+    }
     playSfx('panelClose');
-    enter.value = withTiming(0, { duration: reduced ? 0 : 240, easing: Easing.in(Easing.cubic) }, (f) => {
+    enter.value = withTiming(0, { duration: reduced ? 0 : 260, easing: Easing.in(Easing.cubic) }, (f) => {
       'worklet';
       if (f) runOnJS(onClose)();
     });
-  }, [enter, onClose, reduced]);
+  }, [enter, onClose, onSetPortrait, reduced, usePortrait]);
 
   const add = useCallback(async () => {
     if (busy) return;
@@ -219,7 +255,7 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
         onChange(removeItem(itemsRef.current, id));
       }, reduced ? 180 : LEAVE_MS);
     },
-    [items, onChange, reduced],
+    [onChange, reduced],
   );
 
   const act = useCallback(
@@ -227,7 +263,6 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
       if (a === 'delete') { drop(id); return; }
       if (a === 'copy') { onChange(duplicateItem(items, id, newId(), CANVAS)); return; }
       if (a === 'front') { onChange(bringToFront(items, id)); return; }
-      if (a === 'back') { onChange(sendToBack(items, id)); return; }
       onChange(centreItem(items, id, CANVAS));
     },
     [items, onChange, drop],
@@ -246,6 +281,9 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
   return (
     <Animated.View style={[{ flex: 1, backgroundColor: MOODBOARD_BG }, groundStyle]}>
       <DesignStage designWidth={SHEET_DESIGN_WIDTH} designHeight={SHEET_DESIGN_HEIGHT} clip>
+        {/* `shotRef` wraps the images and nothing else. A capture taken from here has no background,
+            which is what keeps the saved portrait a PNG with real transparency (v0.34.1). */}
+        <View ref={shotRef} collapsable={false} style={{ position: 'absolute', left: 0, top: 0, width: SHEET_DESIGN_WIDTH, height: SHEET_DESIGN_HEIGHT }} pointerEvents="box-none">
         <Canvas
           items={items}
           locked={locked}
@@ -256,6 +294,7 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
           onRelease={onRelease}
           reduced={reduced}
         />
+        </View>
         {menu ? (
           <MoodboardRadial
             x={menu.x}
@@ -271,30 +310,33 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
       {/* The chrome sits OUTSIDE the stage, in device points, so the buttons are a comfortable size on
           every screen rather than scaled with the canvas. */}
       <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, chromeStyle]}>
-        <View style={{ position: 'absolute', right: 14, top: 46, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+        {/* v0.34.1: measured from the real inset rather than a flat 46, which left a band of dead
+            space at the top of a browser and sat under the status bar on some phones. */}
+        <View style={{ position: 'absolute', right: 14, top: insets.top + 10, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
           <RoundButton label="Show every image on the board" onPress={() => setLayers(true)}>
             <Glyph kind="list" />
           </RoundButton>
           <LockButton locked={locked} onUnlock={() => setLocked(false)} onLock={() => setLocked(true)} reduced={reduced} />
-          <RoundButton label="Close the moodboard" onPress={leave}>
+          <RoundButton label="Close the moodboard" onPress={() => void leave()}>
             <Glyph kind="x" />
           </RoundButton>
         </View>
 
-        {/* The add button, hidden while something is being moved so it is never under the finger. */}
+        {/* The add button, hidden while something is being moved so it is never under the finger.
+            v0.34.1: smaller, and lifted clear of the navigation bar it was bleeding into. */}
         {!locked && !dragging ? (
-          <View style={{ position: 'absolute', left: 0, right: 0, bottom: 44, alignItems: 'center' }}>
+          <View style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 26, alignItems: 'center' }}>
             <Pressable
               onPress={() => { tapHaptic(); void add(); }}
               accessibilityRole="button"
               accessibilityLabel="Add an image to the moodboard"
-              style={({ pressed }) => ({ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(14,20,32,0.94)', borderWidth: 1.6, borderColor: Rune.goldBright, opacity: pressed ? 0.75 : 1 })}>
-              <Glyph kind="plus" size={26} color={Rune.goldBright} />
+              style={({ pressed }) => ({ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(14,20,32,0.94)', borderWidth: 1.5, borderColor: Rune.goldBright, opacity: pressed ? 0.75 : 1 })}>
+              <Glyph kind="plus" size={22} color={Rune.goldBright} />
             </Pressable>
           </View>
         ) : null}
 
-        {locked && items.length === 0 ? (
+        {locked && items.length === 0 && !layers ? (
           <View pointerEvents="none" style={{ position: 'absolute', left: 24, right: 24, top: '44%' }}>
             <Text style={{ color: 'rgba(224,214,196,0.66)', fontSize: 13, fontFamily: Body.medium, textAlign: 'center', lineHeight: 20 }}>
               This is your character&apos;s moodboard.{'\n'}Hold the lock for a second to start adding images.
@@ -302,7 +344,21 @@ export function MoodboardScreen({ items, onChange, onClose }: { items: Moodboard
           </View>
         ) : null}
 
-        {layers ? <MoodboardLayers items={items} onAction={(id, a) => { setLayers(false); act(id, a); }} onClose={() => setLayers(false)} /> : null}
+        {saving ? (
+          <View pointerEvents="auto" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(16,26,43,0.72)' }}>
+            <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Saving your portrait</Text>
+          </View>
+        ) : null}
+
+        {layers ? (
+          <MoodboardLayers
+            items={items}
+            usePortrait={usePortrait}
+            onAction={(id, a) => { setLayers(false); act(id, a); }}
+            onTogglePortrait={onUsePortrait}
+            onClose={() => setLayers(false)}
+          />
+        ) : null}
       </Animated.View>
     </Animated.View>
   );

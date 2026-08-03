@@ -51,6 +51,10 @@ if (process.env.SEED) {
       weaponPrimaryId: 'wpn-broadsword', armorId: 'arm-gambeson', level: 5,
       inventoryItemIds: ['consumable-minor-health-potion', 'inv-opt-a-sharpening-stone'],
       experiences: [{ id: 'exp-1', title: 'Sailor for a decade', text: '', imageUri: null, color: '#3A6E8F', modifier: 2 }],
+      moodboard: [
+        { id: 'mb-a', imageUri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGO4Y2ODFTEMLQkAXrdVAdmuFfUAAAAASUVORK5CYII=', x: 200, y: 300, scale: 1.2, rotation: 0, aspect: 1 },
+        { id: 'mb-b', imageUri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGO4Y2ODFTEMLQkAXrdVAdmuFfUAAAAASUVORK5CYII=', x: 240, y: 480, scale: 1, rotation: 12, aspect: 1 },
+      ],
     };
     const req = indexedDB.open('runekeep', 1);
     req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('kv')) req.result.createObjectStore('kv'); };

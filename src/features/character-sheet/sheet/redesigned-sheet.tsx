@@ -5,7 +5,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccentTint } from '../components/accent';
@@ -56,7 +56,7 @@ import { LibraryForgedCard } from '@/features/create/components/library-forged-c
 import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { contentSig } from '@/lib/content-sig';
 import { type MoodboardItem, readMoodboard } from '@/lib/moodboard';
-import { MoodboardScreen } from '../moodboard/moodboard-screen';
+import { MOODBOARD_BG, MoodboardScreen } from '../moodboard/moodboard-screen';
 import { hasStrikeLines } from '@/data/ancestry-trait-regions';
 import { cardChoiceFor } from '@/data/card-choices';
 import { embedCardImageForNfc } from '@/lib/image-embed';
@@ -134,7 +134,7 @@ const hasBeastform = (f: { className: string; multiclassName?: string }) => f.cl
  */
 /** Cosmetic decoration: stick-on tokens, and the moodboard. Nothing that builds a deck reads any
  *  of it (v0.33.1, moodboard v0.34.0). */
-const TOKEN_FIELDS = new Set(['cardTokens', 'tokenColor', 'tokenDrawerX', 'moodboard']);
+const TOKEN_FIELDS = new Set(['cardTokens', 'tokenColor', 'tokenDrawerX', 'moodboard', 'moodboardAsPortrait']);
 
 /** Whether `next` differs from `prev` in the token fields and nowhere else. */
 function onlyTokensChanged(prev: CharacterFile | null | undefined, next: CharacterFile | null | undefined): boolean {
@@ -2429,6 +2429,30 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const moodboard = useMemo(() => readMoodboard(file?.moodboard), [file?.moodboard]);
   const onMoodboard = useCallback((next: MoodboardItem[]) => mutateFile({ moodboard: next }), [mutateFile]);
   const onOpenBoard = useCallback(() => setBoardOpen(true), []);
+  /**
+   * Coming back from the board (v0.34.1).
+   *
+   * The sheet is remounted from nothing, so its cards, tracks and frame arrive over the next few
+   * frames and the old cut from a dark canvas to bright parchment read as a flashbang with things
+   * popping in behind it. `boardCover` holds the board's own ground over the sheet and fades it out,
+   * so the sheet is already assembled by the time it is visible. Same trick the tour hand-back uses.
+   */
+  const boardCover = useSharedValue(0);
+  const boardCoverStyle = useAnimatedStyle(() => ({ opacity: boardCover.value }));
+  const closeBoard = useCallback(() => {
+    boardCover.value = 1;
+    setBoardOpen(false);
+    boardCover.value = withDelay(140, withTiming(0, { duration: 460, easing: Easing.out(Easing.quad) }));
+  }, [boardCover]);
+  /** The captured board becomes the portrait, through the same path the picker uses. */
+  const onBoardPortrait = useCallback(
+    (uri: string) => {
+      const reset = { scale: 1, x: 0, y: 0 };
+      setCharacter((c) => ({ ...c, portraitUri: uri, portraitTransform: reset }));
+      mutateFile({ portraitUri: uri, portraitTransform: reset });
+    },
+    [mutateFile],
+  );
   const setTokenColor = useCallback((color: string) => mutateFile({ tokenColor: color }), [mutateFile]);
   const moveTokenDrawer = useCallback((x: number) => mutateFile({ tokenDrawerX: x }), [mutateFile]);
   const onHp = useCallback(
@@ -2498,7 +2522,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // gears' spill) ran under the 3-button nav bar. Floor at the standard 48dp bar height whenever
   // Android detection is implausibly small; gesture-nav devices report ~16-34 and keep it.
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
-  if (boardOpen) return <MoodboardScreen items={moodboard} onChange={onMoodboard} onClose={() => setBoardOpen(false)} />;
+  if (boardOpen)
+    return (
+      <MoodboardScreen
+        items={moodboard}
+        usePortrait={!!file?.moodboardAsPortrait}
+        onChange={onMoodboard}
+        onSetPortrait={onBoardPortrait}
+        onUsePortrait={(on) => mutateFile({ moodboardAsPortrait: on })}
+        onClose={closeBoard}
+      />
+    );
   return (
     <AccentProvider>
       <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
@@ -2820,6 +2854,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         </View>
        </FloatMenuProvider>
       </CarouselProvider>
+      {/* The moodboard's ground, held over the sheet for a beat as it rebuilds (v0.34.1). */}
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: MOODBOARD_BG, zIndex: 99999 }, boardCoverStyle]} />
     </AccentProvider>
   );
 }
