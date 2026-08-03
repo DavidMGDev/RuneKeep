@@ -3,9 +3,9 @@ import { memo, useCallback, useEffect, useMemo } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { focusHaptic, tapHaptic } from '@/lib/haptics';
-import { clampCentre, ITEM_BASE_W, type CanvasSize, type MoodboardItem } from '@/lib/moodboard';
-import { ANGLE_SNAP, ANGLE_TARGETS, CENTRE_SNAP, snapValue } from '@/lib/snap';
+import { focusHaptic } from '@/lib/haptics';
+import { EDGE_MARGIN, ITEM_BASE_W, type CanvasSize, type MoodboardItem } from '@/lib/moodboard';
+import { ANGLE_SNAP, ANGLE_TARGETS, snapValue } from '@/lib/snap';
 
 /** How long a deleted image takes to fall off the canvas. */
 const LEAVE_MS = 900;
@@ -18,16 +18,14 @@ export interface ItemGestureResult {
 }
 
 /**
- * One image on the moodboard (v0.34.0).
+ * One image on the moodboard (v0.34.0, reworked v0.34.1).
  *
  * Everything a gesture touches is a shared value, so dragging never crosses onto the JS thread and
  * never touches React state. The board is written to disk exactly once, when a gesture ENDS, which is
- * also the only moment the parent re-renders. Fifty images cost fifty transforms per frame on the UI
- * thread and nothing else.
+ * also the only moment the parent re-renders.
  *
  * ONE image view per item, never a thumb/full pair. Pointing two views at one asset is what made the
- * ancestry cards blink in v0.33.0, and there is nothing to gain here either: the picked image is the
- * only version of itself that exists.
+ * ancestry cards blink in v0.33.0, and there is nothing to gain here either.
  */
 export const MoodboardItemView = memo(function MoodboardItemView({
   item,
@@ -62,14 +60,17 @@ export const MoodboardItemView = memo(function MoodboardItemView({
   const fall = useSharedValue(0);
   const appear = useSharedValue(0);
 
-  // Raw, un-snapped values, so a snap can be escaped by continuing to move rather than by fighting
-  // a value that keeps being pulled back.
-  const rawX = useSharedValue(item.x);
-  const rawY = useSharedValue(item.y);
+  /**
+   * The RAW angle, un-snapped, and the snap the gesture is currently holding.
+   *
+   * `escaped` is the owner's rule (v0.34.1): once a snap has been deliberately turned out of, this
+   * gesture stops snapping altogether. Turning back towards a right angle after escaping it means you
+   * want that angle and not the snap, and re-grabbing would be the app arguing with you. Releasing and
+   * starting again clears it, which is how you ask for the snap back.
+   */
   const rawRot = useSharedValue(item.rotation);
-  const heldX = useSharedValue<number | null>(null);
-  const heldY = useSharedValue<number | null>(null);
   const heldRot = useSharedValue<number | null>(null);
+  const escaped = useSharedValue(false);
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
   const startScale = useSharedValue(1);
@@ -83,49 +84,51 @@ export const MoodboardItemView = memo(function MoodboardItemView({
     appear.value = withTiming(1, { duration: reduced ? 0 : 260, easing: Easing.out(Easing.cubic) });
   }, [appear, reduced]);
 
+  // The model is the source of truth after a layer move, a centre or a restore.
+  useEffect(() => {
+    x.value = item.x;
+    y.value = item.y;
+    scale.value = item.scale;
+    rot.value = item.rotation;
+  }, [item.x, item.y, item.scale, item.rotation, x, y, scale, rot]);
+
   const commit = useCallback(() => {
     onCommit(item.id, { x: x.value, y: y.value, scale: scale.value, rotation: rot.value });
     onRelease();
   }, [onCommit, onRelease, item.id, x, y, scale, rot]);
 
   const openMenu = useCallback(() => onMenu(item.id, x.value, y.value), [onMenu, item.id, x, y]);
-
-  const begin = useCallback(() => {
-    lifted.value = withTiming(1, { duration: 140 });
-    onGrab();
-  }, [lifted, onGrab]);
+  const grabbed = useCallback(() => onGrab(), [onGrab]);
 
   const gesture = useMemo(() => {
+    /**
+     * v0.34.1: the pan is NOT exclusive with the double tap any more.
+     *
+     * `Gesture.Exclusive(doubleTap, pan)` makes the pan wait for the double tap to fail, which takes
+     * the whole double-tap window before the image can move. That is the "big delay between when I
+     * grab an image and when it starts moving". They are already mutually exclusive by their own
+     * thresholds: a pan needs movement, a tap needs none.
+     */
     const pan = Gesture.Pan()
       .enabled(!locked && !leaving)
+      .minDistance(2)
       .averageTouches(true)
       .onStart(() => {
         'worklet';
         startX.value = x.value;
         startY.value = y.value;
-        rawX.value = x.value;
-        rawY.value = y.value;
-        runOnJS(begin)();
+        lifted.value = withTiming(1, { duration: 120 });
+        runOnJS(grabbed)();
       })
       .onUpdate((e) => {
         'worklet';
-        rawX.value = startX.value + e.translationX / scaleFactor;
-        rawY.value = startY.value + e.translationY / scaleFactor;
-        const sx = snapValue(rawX.value, [canvas.width / 2], CENTRE_SNAP, heldX.value);
-        const sy = snapValue(rawY.value, [canvas.height / 2], CENTRE_SNAP, heldY.value);
-        if (sx.entered || sy.entered) runOnJS(tapHaptic)();
-        heldX.value = sx.target;
-        heldY.value = sy.target;
-        // Clamped as it moves, not on release, so an image cannot be dragged somewhere it then
-        // springs back from. What you see under your finger is where it lands.
-        const c = clampCentre(sx.value, sy.value, canvas);
-        x.value = c.x;
-        y.value = c.y;
-      })
-      .onEnd(() => {
-        'worklet';
-        heldX.value = null;
-        heldY.value = null;
+        // Clamped INLINE. A plain imported function cannot be called from the UI thread, and calling
+        // one is what crashed the app the first time an image was dragged on a phone (v0.34.1).
+        // No position snapping at all: the owner asked for right angles only.
+        const nx = startX.value + e.translationX / scaleFactor;
+        const ny = startY.value + e.translationY / scaleFactor;
+        x.value = Math.min(canvas.width - EDGE_MARGIN, Math.max(EDGE_MARGIN, nx));
+        y.value = Math.min(canvas.height - EDGE_MARGIN, Math.max(EDGE_MARGIN, ny));
       })
       .onFinalize(() => {
         'worklet';
@@ -138,7 +141,7 @@ export const MoodboardItemView = memo(function MoodboardItemView({
       .onStart(() => {
         'worklet';
         startScale.value = scale.value;
-        runOnJS(begin)();
+        runOnJS(grabbed)();
       })
       .onUpdate((e) => {
         'worklet';
@@ -146,7 +149,6 @@ export const MoodboardItemView = memo(function MoodboardItemView({
       })
       .onFinalize(() => {
         'worklet';
-        lifted.value = withTiming(0, { duration: 160 });
         runOnJS(commit)();
       });
 
@@ -156,11 +158,19 @@ export const MoodboardItemView = memo(function MoodboardItemView({
         'worklet';
         startRot.value = rot.value;
         rawRot.value = rot.value;
+        heldRot.value = null;
+        escaped.value = false; // a fresh grip is a fresh chance to snap
       })
       .onUpdate((e) => {
         'worklet';
         rawRot.value = startRot.value + (e.rotation * 180) / Math.PI;
+        if (escaped.value) {
+          rot.value = rawRot.value;
+          return;
+        }
         const s = snapValue(rawRot.value, ANGLE_TARGETS, ANGLE_SNAP, heldRot.value);
+        // Held a snap and then left it: done snapping until this gesture ends.
+        if (heldRot.value != null && s.target == null) escaped.value = true;
         if (s.entered) runOnJS(focusHaptic)();
         heldRot.value = s.target;
         rot.value = s.value;
@@ -168,23 +178,23 @@ export const MoodboardItemView = memo(function MoodboardItemView({
       .onFinalize(() => {
         'worklet';
         heldRot.value = null;
+        escaped.value = false;
         runOnJS(commit)();
       });
 
-    // Two fingers move, resize and turn at once, which is the whole point of a canvas.
-    const manipulate = Gesture.Simultaneous(pan, pinch, rotate);
-
     const doubleTap = Gesture.Tap()
       .numberOfTaps(2)
-      .maxDuration(280)
+      .maxDuration(300)
+      .maxDistance(18)
       .enabled(!locked && !leaving)
       .onStart(() => {
         'worklet';
         runOnJS(openMenu)();
       });
 
-    return Gesture.Exclusive(doubleTap, manipulate);
-  }, [locked, leaving, canvas, scaleFactor, begin, commit, openMenu, x, y, scale, rot, rawX, rawY, rawRot, heldX, heldY, heldRot, startX, startY, startScale, startRot, lifted]);
+    // Two fingers move, resize and turn at once, which is the whole point of a canvas.
+    return Gesture.Simultaneous(pan, pinch, rotate, doubleTap);
+  }, [locked, leaving, canvas, scaleFactor, grabbed, commit, openMenu, x, y, scale, rot, rawRot, heldRot, escaped, startX, startY, startScale, startRot, lifted]);
 
   /**
    * The departure (owner): the pre-v0.33.1 token fall. Gravity, a little drift, a slow turn and a
@@ -213,8 +223,8 @@ export const MoodboardItemView = memo(function MoodboardItemView({
       <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: w, height: h }, style]}>
         <ExpoImage
           source={{ uri: item.imageUri }}
-          style={{ width: '100%', height: '100%', borderRadius: 3 }}
-          contentFit="cover"
+          style={{ width: '100%', height: '100%' }}
+          contentFit="contain"
           cachePolicy="memory-disk"
           recyclingKey={item.id}
           transition={0}

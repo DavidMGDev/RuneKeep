@@ -106,3 +106,38 @@ describe('modSum', () => {
     expect(modSum(undefined, 'evasion')).toBe(0);
   });
 });
+
+/**
+ * The moodboard travels with the character (v0.34.0, pinned v0.34.1).
+ *
+ * The board is stored on the character precisely so that sharing a character shares what it looks
+ * like. Three separate mechanisms have to agree about it, and all three key off the field being
+ * called `imageUri`, which is easy to rename by accident and impossible to notice afterwards.
+ */
+describe('a shared character carries its moodboard', () => {
+  const board = [
+    { id: 'mb-1', imageUri: 'data:image/png;base64,AAAA', x: 100, y: 200, scale: 1.4, rotation: 90, aspect: 1.5 },
+    { id: 'mb-2', imageUri: 'data:image/png;base64,BBBB', x: 300, y: 400, scale: 0.8, rotation: 0, aspect: 0.75 },
+  ];
+
+  it('survives a write and a read with every image and every placement', () => {
+    const back = parseCharacterFile(serializeCharacterFile(baseFile({ moodboard: board, moodboardAsPortrait: true })));
+    expect(back.moodboard).toEqual(board);
+    expect(back.moodboardAsPortrait).toBe(true);
+  });
+
+  it('keeps the image bytes, which are the whole point of sharing one', () => {
+    const text = serializeCharacterFile(baseFile({ moodboard: board }));
+    expect(text).toContain('data:image/png;base64,AAAA');
+    expect(text).toContain('data:image/png;base64,BBBB');
+  });
+
+  it('drops a browser blob reference on the way in, the same as every other image', () => {
+    const raw = JSON.stringify(baseFile({ moodboard: [{ ...board[0], imageUri: 'blob:https://runekeep.pages.dev/dead' }] }));
+    expect(parseCharacterFile(raw).moodboard?.[0].imageUri).toBeNull();
+  });
+
+  it('is absent, not broken, on a character that has never opened one', () => {
+    expect(parseCharacterFile(serializeCharacterFile(baseFile())).moodboard).toBeUndefined();
+  });
+});
