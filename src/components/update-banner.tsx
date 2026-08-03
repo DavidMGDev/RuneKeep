@@ -8,7 +8,7 @@ import { playSfx } from '@/lib/sfx';
 import { ANDROID_DOWNLOAD_URL, hardReloadWeb, isNewerVersion, latestReleaseTag, webUpdateWaiting } from '@/lib/update-check';
 
 /** This build's version, as declared in app.json. */
-function appVersion(): string | undefined {
+export function appVersion(): string | undefined {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Constants = require('expo-constants').default as { expoConfig?: { version?: string } };

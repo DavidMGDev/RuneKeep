@@ -1,27 +1,19 @@
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Keyboard, type NativeSyntheticEvent, Platform, Pressable, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { useReducedMotion } from 'react-native-reanimated';
 
-import { type CardDraft, CharCount, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
+import { ArtGesture, type CardDraft, CharCount, ColorOverArtDialog, PLAQUE_H, PLAQUE_TOP, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
 import { isExperienceType } from '@/features/character-sheet/card-types';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { ART_H, FORGED_H, FORGED_W, ForgedCard } from '@/features/create/components/forged-card';
+import { ForgedCard } from '@/features/create/components/forged-card';
 import { DimScreen } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
 import { scrollFieldIntoView } from '@/lib/web-keyboard';
-
-// v0.25.0: shorter, because the waterline no longer starts filling the instant you touch down, so
-// the hold has to complete sooner to still feel brief.
-const HOLD_MS = 460;
-/** How long a press must last before it LOOKS like a hold. Under this it is a tap, and a tap must not
- *  flash the picker's waterline: the tap does something else entirely (it rerolls the colour). */
-const HOLD_GRACE_MS = 150;
 
 /**
  * QUICK CARD (v0.24.3) — the sheet's Add Card badge opens this, not the full editor.
@@ -89,10 +81,17 @@ export function QuickCardFlow({
   // only its phrase, so the phrase is the whole requirement.
   const canSave = expMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || draft.text.trim().length > 0;
 
-  const rollColor = useCallback(() => {
+  /** v0.34.3: a tap on the art can no longer throw a picture away without asking. The same dialog the
+   *  full editor uses, because it is the same mistake in both places. */
+  const [askColor, setAskColor] = useState(false);
+  const applyRoll = useCallback(() => {
     playSfx('tokenCopyColor');
     setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null }));
   }, []);
+  const rollColor = useCallback(() => {
+    if (draft.imageUri) { setAskColor(true); return; }
+    applyRoll();
+  }, [applyRoll, draft.imageUri]);
 
   const pickImage = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
@@ -265,6 +264,7 @@ export function QuickCardFlow({
           </View>
         )}
       </ScrollView>
+      {askColor ? <ColorOverArtDialog onConfirm={() => { setAskColor(false); applyRoll(); }} onCancel={() => setAskColor(false)} /> : null}
       {pickType && typeGroups ? (
         <TypePicker
           groups={typeGroups}
@@ -273,68 +273,6 @@ export function QuickCardFlow({
           onClose={() => setPickType(false)}
         />
       ) : null}
-    </View>
-  );
-}
-
-/** The type plaque's hit band, matching the seam the divider is drawn on. Same numbers as the full
- *  editor's chip, so the control is in the same place whichever door the card came through. */
-const PLAQUE_TOP = Math.round(FORGED_H * 0.4) - 16;
-const PLAQUE_H = 32;
-
-/**
- * The card's ART ZONE as one control: tap rerolls the color, hold charges a gold waterline over the
- * art and opens the picker.
- *
- * v0.31.0: the live band now STOPS at the type plaque, instead of covering the whole card. It has to,
- * because the plaque became a control of its own, and a tap that both changed the type and rerolled
- * the art would be one of them too many. Everything below the seam is inert, which is what the card
- * always looked like anyway.
- */
-function ArtGesture({ onTap, onHold, reduced, children }: { onTap: () => void; onHold: () => void; reduced: boolean; children: React.ReactNode }) {
-  const charge = useSharedValue(0);
-  const fire = useCallback(() => { playSfx('placeToken'); void onHold(); }, [onHold]);
-
-  const gesture = useMemo(
-    () =>
-      Gesture.Exclusive(
-        Gesture.LongPress()
-          .minDuration(reduced ? 1 : HOLD_MS)
-          .maxDistance(30)
-          .onBegin(() => {
-            // Delayed, not immediate: a tap releases inside the grace window and the waterline never
-            // appears at all, so tapping for a new colour stops looking like a half-finished hold.
-            if (!reduced) charge.value = withDelay(HOLD_GRACE_MS, withTiming(1, { duration: HOLD_MS - HOLD_GRACE_MS, easing: Easing.out(Easing.cubic) }));
-          })
-          .onStart(() => runOnJS(fire)())
-          .onFinalize((_e, ok) => { if (!ok) { cancelAnimation(charge); charge.value = withTiming(0, { duration: 160 }); } }),
-        Gesture.Tap().maxDistance(16).onEnd((_e, ok) => { if (ok) runOnJS(onTap)(); }),
-      ),
-    [charge, fire, onTap, reduced],
-  );
-
-  // Reset the fill after the picker takes over, so returning to a card never shows a stuck waterline.
-  useEffect(() => () => { charge.value = 0; }, [charge]);
-
-  const fillStyle = useAnimatedStyle(() => ({ height: charge.value * ART_H, opacity: charge.value > 0.02 ? 0.42 : 0 }));
-  const edgeStyle = useAnimatedStyle(() => ({ opacity: charge.value > 0.02 ? 1 : 0, transform: [{ translateY: -charge.value * ART_H }] }));
-
-  return (
-    <View style={{ width: FORGED_W, height: FORGED_H }}>
-      {children}
-      <GestureDetector gesture={gesture}>
-        <View
-          style={{ position: 'absolute', left: 0, right: 0, top: 0, height: PLAQUE_TOP }}
-          accessibilityRole="button"
-          accessibilityLabel="Card art"
-          accessibilityHint="Tap for a new color, hold to choose a picture"
-        />
-      </GestureDetector>
-      {/* The charge rides the art band only, bottom-up, like every other hold in the app. */}
-      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: ART_H, overflow: 'hidden' }} pointerEvents="none">
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Rune.goldBright }, fillStyle]} />
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2.5, backgroundColor: Rune.goldBright }, edgeStyle]} />
-      </View>
     </View>
   );
 }

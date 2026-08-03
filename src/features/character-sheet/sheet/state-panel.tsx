@@ -295,6 +295,15 @@ function TimelineView({
           Your character goes back to how it was on {dayLabel(entry.at, new Date())} at {clockLabel(entry.at)}
           {entry.milestone ? ', a milestone.' : '.'}
         </Text>
+        {/* v0.34.3: pictures are not in history, and a rewind that quietly leaves the portrait alone
+            looks like a rewind that failed. Only shown when a portrait actually changed after this
+            point, so it is a fact about this rewind and not standing small print. */}
+        {rows.some((r) => r.index > confirm.index && r.entry.label === 'Changed portrait') ? (
+          <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.medium, lineHeight: 18, marginTop: 10 }}>
+            Your portrait changed after this point and will NOT go back. Only the picture the moodboard replaced is kept,
+            and you restore that by switching &quot;Use as portrait&quot; off. Anything older than that is not saved on file.
+          </Text>
+        ) : null}
         {discards > 0 ? (
           <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.medium, lineHeight: 18, marginTop: 10 }}>
             {discards} later change{discards === 1 ? '' : 's'} will still be listed, greyed out, until you change something
