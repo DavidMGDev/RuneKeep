@@ -86,7 +86,7 @@ export async function compressToDataUri(uri: string, budget: number): Promise<st
 }
 
 /** The authored-card collections that can carry a player-supplied image. */
-const IMAGE_COLLECTIONS = ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards'] as const;
+const IMAGE_COLLECTIONS = ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards', 'moodboard'] as const;
 
 /**
  * Web export (v0.33.0): turn every session-scoped `blob:` URL into the bytes it points at.

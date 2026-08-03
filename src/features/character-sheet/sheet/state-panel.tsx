@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -28,6 +28,9 @@ import { OverlayShell } from './overlay-shell';
  */
 const HOLD_MS = 620;
 const HOLD_SLOP = 10;
+
+/** Timeline entries built per page. Comfortably more than one screenful, so scrolling never waits. */
+const TIMELINE_PAGE = 20;
 
 /**
  * The State interface (v0.22.0) — the float menu's north slot, replacing Modifiers.
@@ -238,6 +241,23 @@ function TimelineView({
   const rows = useMemo(() => timeline(history), [history]);
   const [confirm, setConfirm] = useState<{ entry: HistoryEntry; index: number; discards: number } | null>(null);
   const [repairs, setRepairs] = useState<string[] | null>(null);
+  /**
+   * The timeline pages in (v0.34.0).
+   *
+   * At the owner's 98 entries it built every row on open, and a row is not cheap: each one diffs two
+   * whole character snapshots to work out which cards moved, and then looked its predecessor up with
+   * a linear search through the whole list, which is quadratic over the timeline. A page at a time
+   * makes opening it constant work whatever the length of the campaign.
+   */
+  const [shown, setShown] = useState(TIMELINE_PAGE);
+  const more = useCallback(() => setShown((n) => (n >= rows.length ? n : n + TIMELINE_PAGE)), [rows.length]);
+  const paged = useMemo(() => rows.slice(0, shown), [rows, shown]);
+  /** Each entry's predecessor, resolved ONCE. The per-row search was the other half of the cost. */
+  const prevById = useMemo(() => {
+    const m = new Map<string, CharacterFile | undefined>();
+    for (const r of rows) m.set(r.entry.id, history.entries[r.index - 1]?.snapshot);
+    return m;
+  }, [rows, history]);
 
   if (repairs) {
     return (
@@ -290,13 +310,13 @@ function TimelineView({
   }
 
   return (
-    <OverlayShell title="Timeline" subtitle={rows.length ? `${rows.length} recorded change${rows.length === 1 ? '' : 's'}` : undefined} onClose={onClose} header={header}>
+    <OverlayShell title="Timeline" subtitle={rows.length ? `${rows.length} recorded change${rows.length === 1 ? '' : 's'}` : undefined} onClose={onClose} header={header} onEndReached={more}>
       {rows.length === 0 ? (
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
           Nothing recorded yet. From here on, everything you do to this character is listed here and can be rewound.
         </Text>
       ) : null}
-      {groupByDay(rows, (r) => r.entry.at, new Date()).map((group) => (
+      {groupByDay(paged, (r) => r.entry.at, new Date()).map((group) => (
         <View key={group.label}>
           {/* Day heading, the way every chat app does it. A column of times tells you nothing about
               whether something happened this afternoon or last month. */}
@@ -310,13 +330,18 @@ function TimelineView({
               key={entry.id}
               entry={entry}
               file={file}
-              prevSnapshot={rows.find((r) => r.index === index - 1)?.entry.snapshot}
+              prevSnapshot={prevById.get(entry.id)}
               discarded={discarded}
               onRewind={() => setConfirm({ entry, index, discards: rows.filter((r) => r.index > index).length })}
             />
           ))}
         </View>
       ))}
+      {shown < rows.length ? (
+        <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 8 }}>
+          {rows.length - shown} older change{rows.length - shown === 1 ? '' : 's'}. Keep scrolling.
+        </Text>
+      ) : null}
     </OverlayShell>
   );
 }

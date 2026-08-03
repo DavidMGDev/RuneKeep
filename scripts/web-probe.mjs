@@ -15,6 +15,7 @@
  * Steps are given on the command line and run in order:
  *   tap:LABEL[@n]      click the nth visible element whose text is LABEL
  *   xy:X,Y             click a point
+ *   xy2:X,Y            double click a point (v0.34.0: the moodboard opens on one)
  *   hold:X,Y,MS        press and hold
  *   swipe:X1,Y1,X2,Y2  press, drag in small steps, release (a real gesture, not a jump)
  *   type:TEXT          type into whatever has focus
@@ -138,6 +139,11 @@ for (const step of steps) {
     const [x, y] = nums();
     await page.mouse.click(x, y, { delay: 40 });
     log.push(`click ${x},${y}`);
+    await wait(900);
+  } else if (kind === 'xy2') {
+    const [x, y] = nums();
+    await page.mouse.click(x, y, { clickCount: 2, delay: 30 });
+    log.push(`double-click ${x},${y}`);
     await wait(900);
   } else if (kind === 'hold') {
     const [x, y, ms] = nums();

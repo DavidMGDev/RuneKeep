@@ -44,6 +44,21 @@ BETA_CARDS = frozenset(
     + [f"subclass-{s}-{t}-{name}" for s in BETA_SUBCLASSES for t, name in ((1, "foundation"), (2, "specialization"), (3, "mastery"))]
 )
 
+# The Hope and Fear ancestries are NOT catalog rows. They are authored as structured LibraryCards
+# in src/data/void-ancestries.ts and seeded onto the expansion record, so that mixed-ancestry
+# strike-through, markdown and stat effects all work on them. v0.12.3 deleted these six rows from
+# the generated catalog BY HAND, and regenerating this file in v0.32.0 put them straight back, so
+# every one of them appeared TWICE in the creator: once from the catalog and once from the
+# expansion. Two cards sharing one id also means two image views sharing one recycling key, which
+# is what made that end of the ancestry deck flicker.
+#
+# Excluding them HERE is the fix, for the same reason the beta split lives here: a hand edit to a
+# generated file survives exactly until the next generation. `data-integrity.test.ts` fails if a
+# structured ancestry ever reappears as a catalog row.
+STRUCTURED_ANCESTRIES = frozenset(
+    f"ancestry-{n}" for n in ("earthkin", "tidekin", "emberkin", "skykin", "aetheris", "gnome")
+)
+
 
 def ts_str(s: str) -> str:
     """A single-quoted TS string literal (card names carry apostrophes: "A Soldier's Bond")."""
@@ -95,6 +110,8 @@ def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
         for f in sorted(anc.glob("*.webp")):
             if f.stem.endswith("_lod"):
                 continue
+            if f"ancestry-{f.stem}" in STRUCTURED_ANCESTRIES:
+                continue  # authored as a structured card instead; see STRUCTURED_ANCESTRIES
             rel = f"{rel_prefix}/Ancestry/{f.stem}"
             entries.append(
                 f"  {{ id: 'ancestry-{f.stem}', kind: 'ancestry', label: '{title(f.stem)}',{tag_for('ancestry-' + f.stem)}"

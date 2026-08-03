@@ -55,6 +55,8 @@ import { mixedCrossedTrait } from '@/lib/library-embed';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { contentSig } from '@/lib/content-sig';
+import { type MoodboardItem, readMoodboard } from '@/lib/moodboard';
+import { MoodboardScreen } from '../moodboard/moodboard-screen';
 import { hasStrikeLines } from '@/data/ancestry-trait-regions';
 import { cardChoiceFor } from '@/data/card-choices';
 import { embedCardImageForNfc } from '@/lib/image-embed';
@@ -102,6 +104,7 @@ import { LevelUpPanel } from './level-up-panel';
 import { RestPanel } from './rest-panel';
 import type { DomainCardInfo } from './domain-card-info';
 import { StatePanel } from './state-panel';
+import { CardDestination } from './card-destination';
 import { CardManagementPanel, Confirm, MoveSheet } from './card-management-panel';
 import { type CardMenuKind } from '../card-menu';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
@@ -129,8 +132,9 @@ const hasBeastform = (f: { className: string; multiclassName?: string }) => f.cl
  * rounded), the SAME size for every state. The marked pip adds a FLAT thin under-line spanning
  * only the straight middle of the bottom edge — the chamfered corner spans are excluded.
  */
-/** Cosmetic stick-on decoration. Nothing that builds a deck reads any of it (v0.33.1). */
-const TOKEN_FIELDS = new Set(['cardTokens', 'tokenColor', 'tokenDrawerX']);
+/** Cosmetic decoration: stick-on tokens, and the moodboard. Nothing that builds a deck reads any
+ *  of it (v0.33.1, moodboard v0.34.0). */
+const TOKEN_FIELDS = new Set(['cardTokens', 'tokenColor', 'tokenDrawerX', 'moodboard']);
 
 /** Whether `next` differs from `prev` in the token fields and nowhere else. */
 function onlyTokensChanged(prev: CharacterFile | null | undefined, next: CharacterFile | null | undefined): boolean {
@@ -270,7 +274,7 @@ function FavoritesBadge({ left, top, w, h }: { left: number; top: number; w: num
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onAddCard, onAddGear, onFavoritesBlocked }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onAddCard: () => void; onAddGear: () => void; onFavoritesBlocked: () => void }) {
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onOpenBoard, onAddCard, onAddGear, onFavoritesBlocked }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onOpenBoard: () => void; onAddCard: () => void; onAddGear: () => void; onFavoritesBlocked: () => void }) {
   const tint = useAccentTint();
   // v0.10.7: the hidden Favorites mirror can't take new cards — Add Card / Add Gear toast instead of
   // authoring a copy into the mirror. `category` comes from the carousel (this body is inside it).
@@ -314,10 +318,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
             it's INTERACTIVE (drag/pinch/hold-to-replace, #155); when not, a tap-to-add Pressable. */}
         {character.portraitUri ? (
           <View style={box(0, 3, 148, 222)}>
-            <PortraitImage uri={character.portraitUri} width={148} height={222} transform={character.portraitTransform} onTransform={onPortraitTransform} onReplace={onPortraitReplace} />
+            <PortraitImage uri={character.portraitUri} width={148} height={222} transform={character.portraitTransform} onTransform={onPortraitTransform} onReplace={onPortraitReplace} onOpenBoard={onOpenBoard} />
           </View>
         ) : (
-          <PortraitTapButton style={StyleSheet.absoluteFill} onPress={onPortraitReplace} accessibilityLabel="Character portrait. Add a photo">
+          <PortraitTapButton style={StyleSheet.absoluteFill} onPress={onPortraitReplace} onOpenBoard={onOpenBoard} accessibilityLabel="Character portrait. Add a photo">
             <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
           </PortraitTapButton>
         )}
@@ -747,6 +751,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Held in a ref (not useCallback) so the many save call-sites don't each need it as a dependency —
   // it only reads refs, so it's safe to treat as stable.
   const saveFileRef = useRef<(next: CharacterFile) => void>(() => {});
+  /** `commitFile`, reachable from handlers declared above it (restoring a card can change stats). */
+  const commitFileRef = useRef<(next: CharacterFile) => void>(() => {});
   // v0.22.0 — STATE HISTORY. This closure is the single choke point every in-play mutation passes
   // through (creation and import are the only other write entry points), which is what makes "no
   // action is exempt" tractable rather than a 40-site audit.
@@ -817,17 +823,41 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const trashRecords = useMemo(() => (file ? recoverableCards(historyRef.current, file) : []), [file, historyRev]);
   const noticeRef = useRef<((t: string) => void) | null>(null);
-  const trashList = useMemo(() => trashRecords.map((r) => ({ id: r.id, title: r.title, at: r.at })), [trashRecords]);
-  const onRestoreCard = useCallback((id: string) => {
-    const cur = fileRef.current;
-    const rec = trashRecords.find((r) => r.id === id);
-    if (!cur || !rec) return;
-    const next = restoreCard(cur, rec);
-    withIntent({ kind: 'cards', label: `Restored ${rec.title}` });
-    setFile(next);
-    saveFileRef.current(next);
-    noticeRef.current?.(`${rec.title} restored`);
-  }, [trashRecords, withIntent]);
+  /**
+   * The trash list, with SYSTEM cards named (v0.34.0).
+   *
+   * A tombstoned catalog card carries no title of its own, because the history model has no catalog
+   * to look one up in. It does here.
+   */
+  const trashList = useMemo(
+    () => trashRecords.map((r) => ({ id: r.id, title: (r.collection ? r.title : sourceLabelForCardId(r.id, file!)) || r.title, at: r.at })),
+    [trashRecords, file],
+  );
+  /** The card waiting on a destination before it goes back. */
+  const [restoreAsk, setRestoreAsk] = useState<{ id: string; title: string } | null>(null);
+  const onRestoreCard = useCallback(
+    (id: string) => {
+      const rec = trashRecords.find((r) => r.id === id);
+      if (!rec) return;
+      // Ask FIRST (v0.34.0). Deleting a card drops its category with it, so a restore with no answer
+      // put the card wherever its kind defaults to, which is rarely where it was.
+      setRestoreAsk({ id, title: trashList.find((t) => t.id === id)?.title ?? rec.title });
+    },
+    [trashRecords, trashList],
+  );
+  const doRestore = useCallback(
+    (id: string, category: CardCategory) => {
+      const cur = fileRef.current;
+      const rec = trashRecords.find((r) => r.id === id);
+      if (!cur || !rec) return;
+      const title = trashList.find((t) => t.id === id)?.title ?? rec.title;
+      const next = restoreCard(cur, rec, category);
+      withIntent({ kind: 'cards', label: `Restored ${title}` });
+      commitFileRef.current(next);
+      noticeRef.current?.(`${title} restored`);
+    },
+    [trashRecords, trashList, withIntent],
+  );
 
   const mutateFile = useCallback((patch: Partial<CharacterFile>) => {
     setFile((f) => {
@@ -1688,6 +1718,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     burstResources(c, result); // v0.13.1: effect edits that scar filled hope play the deplete fx
     setCharacter(result);
   }, [burstResources]);
+  commitFileRef.current = commitFile;
   // Cards panel (#227/#246): toggle a category on/off (≥1 must stay enabled). Works for built-in AND
   // custom categories (the available set includes both).
   const onToggleCategory = useCallback((c: CardCategory) => {
@@ -2386,6 +2417,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
+  /**
+   * The moodboard (v0.34.0), opened by double-tapping the portrait.
+   *
+   * While it is open the sheet renders the board INSTEAD of itself, so the carousel, the forge stage
+   * and every track come down. That is the owner's "everything gets unloaded for performance", and it
+   * costs nothing to do it this way: the character's state and its save path are untouched, so
+   * closing the board is a render rather than a reload.
+   */
+  const [boardOpen, setBoardOpen] = useState(false);
+  const moodboard = useMemo(() => readMoodboard(file?.moodboard), [file?.moodboard]);
+  const onMoodboard = useCallback((next: MoodboardItem[]) => mutateFile({ moodboard: next }), [mutateFile]);
+  const onOpenBoard = useCallback(() => setBoardOpen(true), []);
   const setTokenColor = useCallback((color: string) => mutateFile({ tokenColor: color }), [mutateFile]);
   const moveTokenDrawer = useCallback((x: number) => mutateFile({ tokenDrawerX: x }), [mutateFile]);
   const onHp = useCallback(
@@ -2455,6 +2498,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // gears' spill) ran under the 3-button nav bar. Floor at the standard 48dp bar height whenever
   // Android detection is implausibly small; gesture-nav devices report ~16-34 and keep it.
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
+  if (boardOpen) return <MoodboardScreen items={moodboard} onChange={onMoodboard} onClose={() => setBoardOpen(false)} />;
   return (
     <AccentProvider>
       <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
@@ -2515,7 +2559,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenBoard={onOpenBoard} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
               <EditHud />
@@ -2574,6 +2618,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* v0.12.1 item 10: the radial-menu pop-ups fade in (they used to POP). */}
             {moveReq ? (
               <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
+                {restoreAsk ? (
+                  <CardDestination
+                    title="Where does it go back?"
+                    cardTitle={restoreAsk.title}
+                    categories={moveTargets}
+                    customCategories={customCategories}
+                    suggested={undefined}
+                    cancelLabel="Not now"
+                    onPick={(key) => { const r = restoreAsk; setRestoreAsk(null); doRestore(r.id, key); }}
+                    onCancel={() => setRestoreAsk(null)}
+                  />
+                ) : null}
                 <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onCopy={(key) => { onDuplicateCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
               </Animated.View>
             ) : null}
@@ -2665,6 +2721,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <CardManagementPanel
               trash={trashList}
               onRestoreCard={onRestoreCard}
+              onNotice={pushNotice}
               isDruid={hasBeastform(file)}
               hasCompanion={hasCompanion(file)}
               hasMartialForm={hasMartialForm(file)}

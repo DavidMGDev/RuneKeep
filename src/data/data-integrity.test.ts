@@ -153,3 +153,34 @@ describe('loot', () => {
     });
   });
 });
+
+/**
+ * The Hope and Fear ancestries live in exactly ONE place (v0.34.0).
+ *
+ * They are structured LibraryCards on the expansion record, and they used to also be rows in the
+ * generated catalog. v0.12.3 removed those rows by hand; regenerating the catalog in v0.32.0 put them
+ * back, and every one of them then appeared twice in the creator's ancestry deck. Two cards sharing
+ * an id also means two image views sharing a recycling key, which is what made that end of the deck
+ * flicker. The generator excludes them now, and this is what stops the next regeneration undoing it.
+ */
+describe('structured ancestries are not also catalog rows', () => {
+  it('has no catalog entry for an ancestry authored as a library card', () => {
+    const structured = new Set(VOID_ANCESTRIES.map((a) => a.id));
+    const dupes = CATALOG.filter((c) => structured.has(c.id)).map((c) => c.id);
+    expect(dupes).toEqual([]);
+  });
+
+  it('has no duplicate id anywhere in the catalog', () => {
+    const seen = new Set<string>();
+    const dupes: string[] = [];
+    for (const c of CATALOG) {
+      if (seen.has(c.id)) dupes.push(c.id);
+      seen.add(c.id);
+    }
+    expect(dupes).toEqual([]);
+  });
+
+  it('still knows every printed face, which is what the creator draws them from', () => {
+    for (const a of VOID_ANCESTRIES) expect(VOID_ANCESTRY_FACE[a.id]).toBeTruthy();
+  });
+});

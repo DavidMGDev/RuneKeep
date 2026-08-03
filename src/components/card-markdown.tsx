@@ -18,7 +18,7 @@ function spanNodes(spans: MdSpan[]) {
     if (s.italic) style.fontStyle = 'italic';
     if (s.strike) { style.textDecorationLine = 'line-through'; style.opacity = 0.5; } // mixed-ancestry cross-out
     return (
-      <Text key={i} style={s.bold || s.italic || s.strike ? style : undefined}>
+      <Text allowFontScaling={false} key={i} style={s.bold || s.italic || s.strike ? style : undefined}>
         {s.text}
       </Text>
     );
@@ -40,7 +40,7 @@ export function CardMarkdownBody({
 }) {
   if (!hasMarkdown(body)) {
     return (
-      <Text numberOfLines={numberOfLines} adjustsFontSizeToFit={adjustsFontSizeToFit} minimumFontScale={minimumFontScale} style={style}>
+      <Text allowFontScaling={false} numberOfLines={numberOfLines} adjustsFontSizeToFit={adjustsFontSizeToFit} minimumFontScale={minimumFontScale} style={style}>
         {body}
       </Text>
     );
@@ -50,7 +50,7 @@ export function CardMarkdownBody({
 
   if (!hasList) {
     return (
-      <Text numberOfLines={numberOfLines} adjustsFontSizeToFit={adjustsFontSizeToFit} minimumFontScale={minimumFontScale} style={style}>
+      <Text allowFontScaling={false} numberOfLines={numberOfLines} adjustsFontSizeToFit={adjustsFontSizeToFit} minimumFontScale={minimumFontScale} style={style}>
         {blocks.map((b, i) => (
           <Fragment key={i}>
             {/* v0.13.0 typeset: the blank line between sections rides a tiny-lineHeight span, so the
@@ -73,7 +73,7 @@ export function CardMarkdownBody({
         const gap = i > 0 ? 6 : 0; // v0.13.0 typeset: match the inline path's half-line section gap
         if (b.kind === 'p') {
           return (
-            <Text key={i} style={[rowText, { marginTop: gap }]}>
+            <Text allowFontScaling={false} key={i} style={[rowText, { marginTop: gap }]}>
               {spanNodes(b.spans)}
             </Text>
           );
@@ -83,8 +83,8 @@ export function CardMarkdownBody({
           <View key={i} style={{ marginTop: gap }}>
             {items.map(({ marker, spans, j }) => (
               <View key={j} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                <Text style={[rowText, { width: b.kind === 'ol' ? 14 : 9 }]}>{marker}</Text>
-                <Text style={listText}>{spanNodes(spans)}</Text>
+                <Text allowFontScaling={false} style={[rowText, { width: b.kind === 'ol' ? 14 : 9 }]}>{marker}</Text>
+                <Text allowFontScaling={false} style={listText}>{spanNodes(spans)}</Text>
               </View>
             ))}
           </View>

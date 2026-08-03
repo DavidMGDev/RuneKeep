@@ -177,6 +177,14 @@ export interface CharacterFile {
   tokenColor?: string;
   /** The token drawer's horizontal anchor along the top (#244), normalized 0..1. */
   tokenDrawerX?: number;
+  /**
+   * The character's moodboard (v0.34.0): images the player has placed on a canvas of their own.
+   *
+   * Cosmetic, like the card tokens above it, and stored on the character so it travels with them. The
+   * image field inside each entry is called `imageUri` deliberately: export embedding, history
+   * snapshot stripping and the import-side blob drop all key off that name.
+   */
+  moodboard?: import('./moodboard').MoodboardItem[];
   // --- card management (#246) — all additive; absent on old saves means "no customisation". ---
   /** Player-created carousel categories: id, label, icon key (from the category icon library). */
   customCategories?: import('@/features/character-sheet/carousel-categories').CustomCategory[];
@@ -311,7 +319,7 @@ function migrateInPlace(f: Partial<CharacterFile>): void {
 function dropBlobUris(f: Partial<CharacterFile>): void {
   const dead = (u: unknown): boolean => typeof u === 'string' && u.startsWith('blob:');
   if (dead(f.portraitUri)) f.portraitUri = null;
-  for (const key of ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards'] as const) {
+  for (const key of ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards', 'moodboard'] as const) {
     const arr = (f as unknown as Record<string, unknown>)[key];
     if (!Array.isArray(arr)) continue;
     for (const card of arr) {

@@ -1,6 +1,6 @@
 import { type FC } from 'react';
 import { Image as ExpoImage } from 'expo-image';
-import { Text, View } from 'react-native';
+import { Text, type TextProps, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
 
 import { CardMarkdownBody } from '@/components/card-markdown';
@@ -39,7 +39,7 @@ export function ForgedFaceCard({ face }: { face: number }) {
 export function PlaqueLabel({ text, textColor }: { text: string; textColor: string }) {
   return (
     <View style={{ maxWidth: 104, alignItems: 'center' }}>
-      <Text
+      <CardText
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.6}
@@ -52,7 +52,7 @@ export function PlaqueLabel({ text, textColor }: { text: string; textColor: stri
         }}
       >
         {text}
-      </Text>
+      </CardText>
     </View>
   );
 }
@@ -88,6 +88,33 @@ const FOOTER_GUARD = 6;
  * arithmetic asked for. iOS and web ignore the prop.
  */
 const NO_FONT_PAD = { includeFontPadding: false } as const;
+
+/**
+ * The DEVICE font scale, switched off for the card (v0.34.0).
+ *
+ * This is what was still cutting descriptions off on a phone, and it is measurable rather than
+ * theoretical. Working back from the owner's screenshot, where the card is drawn 648 image pixels
+ * wide for its 230 design px:
+ *
+ *   the body's first line   renders at ~9.67 against a chosen  8.5
+ *   the footer's copyright  renders at ~7.13 against a declared 6.3
+ *   the title               renders at ~20.2 against a declared 17
+ *
+ * Three independent strings, all about 1.15, which is Android's second text-size step. The size
+ * calculation was right every time and the renderer multiplied it afterwards, so a body computed to
+ * fill its box exactly overflowed it by about fifteen percent and the last line was clipped.
+ *
+ * A forged card is a fixed-size printed artifact, and `fitText` already chooses a size to fit its
+ * geometry. A second multiplier applied after that calculation cannot make the card readable, only
+ * overflowing. So the card opts out and its own auto-fit remains the sizing mechanism; a card that
+ * needs to be bigger is opened full screen.
+ */
+const FIXED_TYPE = { allowFontScaling: false } as const;
+
+/** Every piece of type on a forged card: no OS font scale, no Android font padding. */
+function CardText({ style, ...rest }: TextProps) {
+  return <Text {...FIXED_TYPE} {...rest} style={[NO_FONT_PAD, style]} />;
+}
 
 /**
  * The generic card's description, sized to what is left under its own title (v0.30.0).
@@ -196,18 +223,18 @@ export function ForgedCard({
         // +N pill is anchored at a constant height regardless of how many lines the title takes.
         <View style={{ flex: 1 }}>
           <View style={{ position: 'absolute', top: 16, left: 16, right: 16, bottom: 58, alignItems: 'center', justifyContent: 'center' }}>
-            <Text
+            <CardText
               numberOfLines={7}
               adjustsFontSizeToFit
               minimumFontScale={0.42}
               style={{ color: Rune.inkText, fontSize: 23, lineHeight: 26, fontFamily: Display.bold, letterSpacing: 0.2, textAlign: 'center' }}>
               {title}
-            </Text>
+            </CardText>
           </View>
           {modifier != null ? (
             <View style={{ position: 'absolute', left: 0, right: 0, bottom: 30, alignItems: 'center' }}>
               <View style={{ paddingHorizontal: 14, paddingVertical: 3, backgroundColor: Rune.red }}>
-                <Text style={{ color: Rune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.5 }}>{modifier >= 0 ? `+${modifier}` : `${modifier}`}</Text>
+                <CardText style={{ color: Rune.ivory, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.5 }}>{modifier >= 0 ? `+${modifier}` : `${modifier}`}</CardText>
               </View>
             </View>
           ) : null}
@@ -218,22 +245,22 @@ export function ForgedCard({
               the body fill from the top — no "Untitled"/"Note" placeholder. */}
           {title.trim() ? (
             <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
-              <Text
+              <CardText
                 numberOfLines={multilineTitle ? 4 : 1}
                 adjustsFontSizeToFit
                 minimumFontScale={multilineTitle ? 0.42 : 0.55}
                 style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, lineHeight: BODY_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>
                 {title}
-              </Text>
-              {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+              </CardText>
+              {pageMark ? <CardText style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</CardText> : null}
             </View>
           ) : pageMark ? (
-            <Text style={{ alignSelf: 'flex-end', color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text>
+            <CardText style={{ alignSelf: 'flex-end', color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</CardText>
           ) : null}
           {subtitle ? (
-            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.inkMuted, fontSize: 8.5, lineHeight: BODY_SUB_H, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'center', marginTop: 3, ...NO_FONT_PAD }}>
+            <CardText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ color: Rune.inkMuted, fontSize: 8.5, lineHeight: BODY_SUB_H, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase', textAlign: 'center', marginTop: 3, ...NO_FONT_PAD }}>
               {subtitle}
-            </Text>
+            </CardText>
           ) : null}
           {/* v0.30.0: sized to the room actually left under this card's own title, so a long
               description shrinks instead of running into the footer. A body that already fits keeps
@@ -254,9 +281,9 @@ function ForgedFooter() {
         <Svg width={7} height={7} viewBox="0 0 12 12">
           <Path d="M 1 11 L 3 6 L 9 0 L 12 3 L 6 9 Z M 1 11 L 3.4 9.8" fill={Rune.inkText} />
         </Svg>
-        <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep</Text>
+        <CardText style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep</CardText>
       </View>
-      <Text style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep © Treehouse109 2026</Text>
+      <CardText style={{ color: Rune.inkText, fontSize: 6.3, fontFamily: Body.medium, letterSpacing: 0.2 }}>RuneKeep © Treehouse109 2026</CardText>
     </View>
   );
 }
@@ -298,19 +325,19 @@ export function ForgedTextCard({
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 14, paddingBottom: 24 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5 }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ flexShrink: 1, color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+          <CardText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ flexShrink: 1, color: Rune.inkText, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>
             {title}
-          </Text>
-          {pageMark ? <Text style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</Text> : null}
+          </CardText>
+          {pageMark ? <CardText style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</CardText> : null}
         </View>
         {/* v0.13.0 typeset: left-aligned like the prints; size bumped only to 9.5 — the feature
             pagination (featurePages) is fit-tuned and this container CLIPS overflow. */}
         <View style={{ marginTop: 5, gap: 5, overflow: 'hidden', flex: 1 }}>
           {sections.map((s) => (
-            <Text key={s.name} style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13.2, fontFamily: Body.regular, textAlign: 'left', ...NO_FONT_PAD }}>
-              <Text style={{ fontFamily: Body.bold }}>{s.name}: </Text>
+            <CardText key={s.name} style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13.2, fontFamily: Body.regular, textAlign: 'left', ...NO_FONT_PAD }}>
+              <CardText style={{ fontFamily: Body.bold }}>{s.name}: </CardText>
               {s.text}
-            </Text>
+            </CardText>
           ))}
         </View>
       </View>
@@ -381,10 +408,10 @@ function equipFeatureRoom(rows: number): number {
 function FeatureLine({ feature, room }: { feature: { name: string; text: string }; room: number }) {
   const fit = fitText(`${feature.name}: ${feature.text}`, { width: EQUIP_TEXT_W, height: room - FOOTER_GUARD, base: 8.5, lineRatio: EQUIP_LINE_RATIO });
   return (
-    <Text style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9, ...NO_FONT_PAD }}>
-      <Text style={{ fontFamily: Body.bold }}>{feature.name}: </Text>
+    <CardText style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'justify', marginTop: 9, ...NO_FONT_PAD }}>
+      <CardText style={{ fontFamily: Body.bold }}>{feature.name}: </CardText>
       {feature.text}
-    </Text>
+    </CardText>
   );
 }
 
@@ -403,8 +430,8 @@ const STAT_ROW_H = 13;
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-      <Text style={{ color: Rune.inkMuted, fontSize: 7.5, lineHeight: STAT_ROW_H, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', ...NO_FONT_PAD }}>{label}</Text>
-      <Text style={{ color: Rune.inkText, fontSize: 10, lineHeight: STAT_ROW_H, fontFamily: Body.semibold, ...NO_FONT_PAD }}>{value}</Text>
+      <CardText style={{ color: Rune.inkMuted, fontSize: 7.5, lineHeight: STAT_ROW_H, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', ...NO_FONT_PAD }}>{label}</CardText>
+      <CardText style={{ color: Rune.inkText, fontSize: 10, lineHeight: STAT_ROW_H, fontFamily: Body.semibold, ...NO_FONT_PAD }}>{value}</CardText>
     </View>
   );
 }
@@ -428,7 +455,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{weapon.name}</Text>
+        <CardText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{weapon.name}</CardText>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Trait" value={weapon.trait} />
           <StatRow label="Range" value={weapon.range} />
@@ -489,7 +516,7 @@ export function ForgedLootCard({ loot }: { loot: LootDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{loot.name}</Text>
+        <CardText numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{loot.name}</CardText>
         {/* v0.19.2 item 5: roll + which table it's from (Table 1 = base game, Table 2 = Hope and Fear). */}
         <View style={{ marginTop: 8 }}>
           <StatRow label="Roll" value={`${loot.roll}  ·  Table ${lootTable(loot)}`} />
@@ -541,9 +568,9 @@ export function ForgedGoldCard({ amount }: { amount?: number }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, alignItems: 'center', paddingTop: 20, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} style={{ color: Rune.inkText, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>Gold</Text>
-        {amount != null ? <Text style={{ color: Rune.inkText, fontSize: 22, fontFamily: Display.black, marginTop: 4 }}>{amount}</Text> : null}
-        <Text style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'center', marginTop: 7 }}>Coin for trade, bribes, and the finer things. Track it here as you spend and earn.</Text>
+        <CardText numberOfLines={1} style={{ color: Rune.inkText, fontSize: 17, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>Gold</CardText>
+        {amount != null ? <CardText style={{ color: Rune.inkText, fontSize: 22, fontFamily: Display.black, marginTop: 4 }}>{amount}</CardText> : null}
+        <CardText style={{ color: Rune.inkText, fontSize: 9, lineHeight: 13.5, fontFamily: Body.regular, textAlign: 'center', marginTop: 7 }}>Coin for trade, bribes, and the finer things. Track it here as you spend and earn.</CardText>
       </View>
       <ForgedFooter />
     </View>
@@ -564,7 +591,7 @@ export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{armor.name}</Text>
+        <CardText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{armor.name}</CardText>
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Thresholds" value={armor.thresholds} />
           <StatRow label="Base Score" value={String(armor.baseScore)} />

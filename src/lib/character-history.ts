@@ -98,7 +98,7 @@ export function readHistory(h: unknown): CharacterHistory {
 export const KEPT_IMAGE = '@kept';
 
 /** The collections whose cards can carry a player-supplied image. */
-const IMAGE_COLLECTIONS = ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards'] as const;
+const IMAGE_COLLECTIONS = ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards', 'moodboard'] as const;
 
 const isInline = (u: unknown): u is string => typeof u === 'string' && u.startsWith('data:');
 
@@ -453,12 +453,18 @@ export function timeline(history: CharacterHistory): { entry: HistoryEntry; inde
 export interface RecoverableCard {
   id: string;
   title: string;
-  /** Which collection it lived in, so restoring puts it back where it came from. */
-  collection: AuthoredCollection;
+  /**
+   * The collection it lived in, or null for a SYSTEM card (v0.34.0).
+   *
+   * A card the player authored is spliced out of its array when deleted and has to be put back. A
+   * catalog card is never spliced, because that would corrupt the file's structure: it is tombstoned
+   * in `removedCardIds` instead, and putting it back means taking the tombstone away.
+   */
+  collection: AuthoredCollection | null;
   /** When it was last seen alive. */
   at: string;
-  /** The card object itself, ready to be put back. */
-  card: unknown;
+  /** The card object itself, ready to be put back. Absent for a system card, which still exists. */
+  card?: unknown;
 }
 
 /** The four collections that hold player-AUTHORED cards. Catalog cards aren't listed: they are
@@ -482,6 +488,8 @@ function cardsIn(file: CharacterFile, col: AuthoredCollection): { id?: string; t
  *
  * Newest sighting wins, so a card deleted, restored and deleted again reports the latest version.
  */
+const removedIds = (f: CharacterFile): string[] => (Array.isArray(f.removedCardIds) ? f.removedCardIds : []);
+
 export function recoverableCards(history: CharacterHistory, current: CharacterFile): RecoverableCard[] {
   const alive = new Set<string>();
   for (const col of AUTHORED) for (const c of cardsIn(current, col)) if (c.id) alive.add(c.id);
@@ -495,14 +503,52 @@ export function recoverableCards(history: CharacterHistory, current: CharacterFi
       }
     }
   }
+  /**
+   * Tombstoned SYSTEM cards belong in the trash too (v0.34.0).
+   *
+   * They were left out on the grounds that a catalog card is re-addable from the gear browser and so
+   * was never really lost. That is not what deleting one feels like: the owner deleted an armor card,
+   * looked in the trash, and it was not there. A weapon or an armor is not "re-addable" in any obvious
+   * sense either, because it came from a slot rather than from a list.
+   *
+   * They carry no card OBJECT because nothing was removed: the card still exists, it is hidden.
+   * Restoring one takes the tombstone away. The title is left as the id here, because turning an id
+   * into the name on the card needs the catalog and the character's own cards, which is the screen's
+   * job and not this module's.
+   */
+  const hiddenNow = new Set(removedIds(current));
+  for (const id of hiddenNow) {
+    if (found.has(id)) continue;
+    const last = [...history.entries].reverse().find((e) => !removedIds(e.snapshot).includes(id));
+    found.set(id, { id, title: id, collection: null, at: last?.at ?? history.entries[0]?.at ?? new Date(0).toISOString() });
+  }
   return [...found.values()].sort((a, b) => b.at.localeCompare(a.at));
 }
 
-/** Put a recovered card back in the collection it came from. Returns a new file. */
-export function restoreCard(file: CharacterFile, rec: RecoverableCard): CharacterFile {
-  const existing = cardsIn(file, rec.collection);
-  if (existing.some((c) => c.id === rec.id)) return file; // already back; restoring twice is a no-op
-  return { ...file, [rec.collection]: [...existing, rec.card] } as CharacterFile;
+/**
+ * Put a recovered card back, in `category` when one is given. Returns a new file.
+ *
+ * v0.34.0 fixes two ways this used to do nothing at all.
+ *
+ * An authored card is deleted by BOTH splicing it out of its collection and tombstoning its id, and
+ * this only ever undid the splice. So restoring the note every character starts with put the note
+ * object back and the tombstone went on hiding it: the card came back to a file nobody could see.
+ * The tombstone is lifted either way now.
+ *
+ * And a restored card had no CATEGORY, because deleting one drops its `cardCategory` entry. Without
+ * one it falls back to wherever its kind defaults to, which is rarely where it was. The caller asks
+ * the player, the same way every other card destination in the app is chosen.
+ */
+export function restoreCard(file: CharacterFile, rec: RecoverableCard, category?: string): CharacterFile {
+  const next: CharacterFile = { ...file };
+  const hidden = removedIds(file);
+  if (hidden.includes(rec.id)) next.removedCardIds = hidden.filter((x) => x !== rec.id);
+  if (rec.collection && rec.card) {
+    const existing = cardsIn(file, rec.collection);
+    if (!existing.some((c) => c.id === rec.id)) (next as unknown as Record<string, unknown>)[rec.collection] = [...existing, rec.card];
+  }
+  if (category) next.cardCategory = { ...(file.cardCategory ?? {}), [rec.id]: category };
+  return next;
 }
 
 /**
