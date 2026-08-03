@@ -49,14 +49,19 @@ function webWrite(all: CharacterFile[]) {
  * is commonly a few hundred kilobytes. It used to happen on every save: every tap on the HP track
  * (after its debounce), every card toggled, every item equipped.
  *
- * The browser build pays none of it. It swaps a value in an in-memory map and persists in the
- * background, which is a fair part of why the same character feels quicker in a browser than in the
- * app built for the device.
+ * So: keep the newest version in memory, answer reads from there, and write once the writes stop.
+ * Everything that reads goes through this module, so an unflushed character is never visible as
+ * stale. `flushCharacters()` forces it out, and the app calls that when it goes to the background,
+ * which is where a process gets killed.
  *
- * So do what the browser does: keep the newest version in memory, answer reads from there, and write
- * once the writes stop. Everything that reads goes through this module, so an unflushed character is
- * never visible as stale. `flushCharacters()` forces it out, and the app calls that when it goes to
- * the background, which is where a process gets killed.
+ * v0.33.1: THE BROWSER GOES THROUGH THE SAME QUEUE.
+ *
+ * The v0.27.4 note here said the browser paid none of this, which was wrong, and wrong in the
+ * expensive direction: web took an early return that read the whole roster back out of storage,
+ * parsed it, spliced this character in and re-serialized ALL of it, synchronously, on every single
+ * save. A save happens on every token dropped and every die tapped, which is why placing a token in
+ * a browser froze for about a second while the same gesture was instant in the app. Everything below
+ * the queue is platform-specific; the queue is not.
  */
 const pending = new Map<string, CharacterFile>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,7 +69,8 @@ const FLUSH_MS = 300;
 
 function writeNow(file: CharacterFile): void {
   try {
-    new (fs().File)(charactersDir(), `${file.id}.json`).write(serializeCharacterFile(file));
+    if (Platform.OS === 'web') webWrite([...webList().filter((c) => c.id !== file.id), file]);
+    else new (fs().File)(charactersDir(), `${file.id}.json`).write(serializeCharacterFile(file));
   } catch {
     // Keep it queued rather than lose it: the next flush tries again.
     return;
@@ -81,8 +87,33 @@ export function flushCharacters(): void {
   for (const file of [...pending.values()]) writeNow(file);
 }
 
+/**
+ * The browser's version of "the app is going away" (v0.33.1).
+ *
+ * Native flushes on `AppState` leaving `active`, which is where a process gets killed. A browser tab
+ * has its own moments and does not fire that: `pagehide` covers closing, navigating and the back /
+ * forward cache, and `visibilitychange` covers switching tabs or apps on a phone, which is the one
+ * that actually happens mid-session. Both are cheap and idempotent.
+ *
+ * Registered here rather than in a component because the queue lives here, and a save must survive
+ * whatever is or is not mounted at the time.
+ */
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const flush = () => flushCharacters();
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+}
+
 export async function listCharacters(): Promise<CharacterFile[]> {
-  if (Platform.OS === 'web') return webList();
+  // Queued-but-unwritten characters must be listed as they ARE, on both platforms (v0.33.1).
+  if (Platform.OS === 'web') {
+    const stored = webList().map((c) => pending.get(c.id) ?? c);
+    const seen = new Set(stored.map((c) => c.id));
+    for (const [id, c] of pending) if (!seen.has(id)) stored.push(c);
+    return stored.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
   const { File } = fs();
   const files = charactersDir()
     .list()
@@ -103,10 +134,6 @@ export async function listCharacters(): Promise<CharacterFile[]> {
 }
 
 export async function saveCharacter(file: CharacterFile): Promise<void> {
-  if (Platform.OS === 'web') {
-    webWrite([...webList().filter((c) => c.id !== file.id), file]);
-    return;
-  }
   pending.set(file.id, file);
   if (!flushTimer) {
     flushTimer = setTimeout(() => {
@@ -117,9 +144,9 @@ export async function saveCharacter(file: CharacterFile): Promise<void> {
 }
 
 export async function getCharacter(id: string): Promise<CharacterFile | null> {
-  if (Platform.OS === 'web') return webList().find((c) => c.id === id) ?? null;
   const queued = pending.get(id);
   if (queued) return queued;
+  if (Platform.OS === 'web') return webList().find((c) => c.id === id) ?? null;
   const f = new (fs().File)(charactersDir(), `${id}.json`);
   if (!f.exists) return null;
   try {
@@ -130,11 +157,11 @@ export async function getCharacter(id: string): Promise<CharacterFile | null> {
 }
 
 export async function deleteCharacter(id: string): Promise<void> {
+  pending.delete(id); // a queued write must never resurrect a deleted character
   if (Platform.OS === 'web') {
     webWrite(webList().filter((c) => c.id !== id));
     return;
   }
-  pending.delete(id); // a queued write must never resurrect a deleted character
   const f = new (fs().File)(charactersDir(), `${id}.json`);
   if (f.exists) f.delete();
 }

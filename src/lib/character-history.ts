@@ -90,14 +90,73 @@ export function readHistory(h: unknown): CharacterHistory {
 }
 
 /**
+ * Stands in for an INLINE image in a snapshot (v0.33.1). See `stripHistory`.
+ *
+ * Deliberately not a `data:` URI, so anything that renders it fails visibly rather than drawing a
+ * broken image. Nothing renders a snapshot, though: `rewind` swaps it back for the live value first.
+ */
+export const KEPT_IMAGE = '@kept';
+
+/** The collections whose cards can carry a player-supplied image. */
+const IMAGE_COLLECTIONS = ['customCards', 'inventoryCustom', 'notes', 'experiences', 'libraryCards'] as const;
+
+const isInline = (u: unknown): u is string => typeof u === 'string' && u.startsWith('data:');
+
+/**
  * A snapshot must never contain history, or each entry would nest the whole chain before it and the
  * file would grow quadratically.
+ *
+ * v0.33.1: it must not contain INLINE IMAGE BYTES either, for exactly the same reason.
+ *
+ * A browser stores a picked image as a `data:` URI inside the character (there is no filesystem to
+ * point at), and v0.33.0 started doing that for portraits, which used to be short-lived `blob:`
+ * handles. History keeps up to 120 snapshots of the whole character, so a 200KB portrait was being
+ * written 120 times into one file, and every save re-serialized all of it. On the web build, where
+ * saves were not coalesced, that was the second-long freeze the owner felt when placing a token.
+ *
+ * So a snapshot records that an image WAS there, not what it was. `rewind` fills the live value back
+ * in, which means rewinding never changes your pictures. That is a deliberate trade and the same one
+ * the rewind screen already describes for images the device has since cleared: history is for the
+ * character's state, and a portrait is not state.
+ *
+ * A native `file://` path is left exactly as it is. It costs forty bytes and it restores properly.
  */
 export function stripHistory(file: CharacterFile): CharacterFile {
-  if (!('history' in file)) return file;
   const copy = { ...(file as CharacterFile & { history?: unknown }) };
   delete copy.history;
+  if (isInline(copy.portraitUri)) copy.portraitUri = KEPT_IMAGE;
+  for (const key of IMAGE_COLLECTIONS) {
+    const arr = (copy as unknown as Record<string, unknown>)[key];
+    if (!Array.isArray(arr) || !arr.some((c) => isInline((c as { imageUri?: unknown }).imageUri))) continue;
+    (copy as unknown as Record<string, unknown>)[key] = arr.map((card: unknown) =>
+      isInline((card as { imageUri?: unknown }).imageUri) ? { ...(card as object), imageUri: KEPT_IMAGE } : card,
+    );
+  }
   return copy;
+}
+
+/**
+ * Put the live images back into a restored snapshot (v0.33.1), matching cards by id.
+ *
+ * A card that no longer exists has nothing to restore from and keeps the placeholder, which is then
+ * cleared to null: an empty art zone the player can refill, rather than a string that renders as a
+ * broken image forever.
+ */
+export function rehydrateImages(snapshot: CharacterFile, live: CharacterFile): CharacterFile {
+  const out: CharacterFile = { ...snapshot };
+  if (out.portraitUri === KEPT_IMAGE) out.portraitUri = isInline(live.portraitUri) ? live.portraitUri : null;
+  for (const key of IMAGE_COLLECTIONS) {
+    const arr = (out as unknown as Record<string, unknown>)[key];
+    if (!Array.isArray(arr) || !arr.some((c) => (c as { imageUri?: unknown }).imageUri === KEPT_IMAGE)) continue;
+    const liveArr = ((live as unknown as Record<string, unknown>)[key] ?? []) as { id?: string; imageUri?: string | null }[];
+    (out as unknown as Record<string, unknown>)[key] = arr.map((card: unknown) => {
+      const c = card as { id?: string; imageUri?: string | null };
+      if (c.imageUri !== KEPT_IMAGE) return card;
+      const now = liveArr.find((x) => x.id === c.id)?.imageUri;
+      return { ...(card as object), imageUri: isInline(now) ? now : null };
+    });
+  }
+  return out;
 }
 
 /**
@@ -346,7 +405,9 @@ export function rewind(history: CharacterHistory, index: number, live: Character
   const entry = history.entries[index];
   if (!entry) return { file: live, history, repairs: [], discards: 0 };
 
-  const { file, repairs } = repair(entry.snapshot);
+  // v0.33.1: snapshots hold a placeholder where an inline image was, so the live picture goes back in
+  // before anything else looks at the restored character.
+  const { file, repairs } = repair(rehydrateImages(entry.snapshot, live));
   return {
     file,
     history: preview(history, index),
