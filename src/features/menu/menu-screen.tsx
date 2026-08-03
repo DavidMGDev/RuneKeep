@@ -9,7 +9,7 @@ import { AppScreen } from '@/components/app-screen';
 import { FitLine } from '@/components/fit-line';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
-import { UpdateBanner } from '@/components/update-banner';
+import { appVersion, UpdateBanner } from '@/components/update-banner';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
@@ -321,8 +321,11 @@ export function MenuScreen() {
             {/* v0.22.0: the tour is re-openable, not a one-shot you can never find again. */}
             <Pressable
               onPress={() => { playSfx('buttonTap'); resetTours(); showToast('Tips are back on. They will appear as you go.'); }}
+              /* v0.34.3 (owner): which build am I actually running. Nothing else in the app says, and
+                 the answer is the first thing any bug report needs. */
+              onLongPress={() => { playSfx('buttonTap'); showToast(`RuneKeep ${appVersion() ?? 'unknown'} ${Platform.OS === 'web' ? 'in your browser' : 'for Android'}`); }}
               accessibilityRole="button"
-              accessibilityLabel="Show tips again">
+              accessibilityLabel="Show tips again, hold for the version">
               <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={dm ? DmRune.line : Rune.goldEdge} strokeWidth={1.3} style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 15, fontFamily: Display.black }}>?</Text>
               </ChamferBox>

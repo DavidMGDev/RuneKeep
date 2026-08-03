@@ -125,6 +125,9 @@ export function stripHistory(file: CharacterFile): CharacterFile {
   const copy = { ...(file as CharacterFile & { history?: unknown }) };
   delete copy.history;
   if (isInline(copy.portraitUri)) copy.portraitUri = KEPT_IMAGE;
+  // v0.34.3: the moodboard's backup of the previous portrait is a picture too, and 120 snapshots of
+  // one is the same file-size problem the portrait itself was.
+  if (isInline(copy.portraitBefore)) copy.portraitBefore = KEPT_IMAGE;
   for (const key of IMAGE_COLLECTIONS) {
     const arr = (copy as unknown as Record<string, unknown>)[key];
     if (!Array.isArray(arr) || !arr.some((c) => isInline((c as { imageUri?: unknown }).imageUri))) continue;
@@ -145,6 +148,7 @@ export function stripHistory(file: CharacterFile): CharacterFile {
 export function rehydrateImages(snapshot: CharacterFile, live: CharacterFile): CharacterFile {
   const out: CharacterFile = { ...snapshot };
   if (out.portraitUri === KEPT_IMAGE) out.portraitUri = isInline(live.portraitUri) ? live.portraitUri : null;
+  if (out.portraitBefore === KEPT_IMAGE) out.portraitBefore = isInline(live.portraitBefore) ? live.portraitBefore : null;
   for (const key of IMAGE_COLLECTIONS) {
     const arr = (out as unknown as Record<string, unknown>)[key];
     if (!Array.isArray(arr) || !arr.some((c) => (c as { imageUri?: unknown }).imageUri === KEPT_IMAGE)) continue;

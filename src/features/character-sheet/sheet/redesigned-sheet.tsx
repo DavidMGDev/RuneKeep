@@ -1026,9 +1026,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       })
       .filter((j): j is Job => j !== null);
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
-      key: `itm-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color)}`,
+      // v0.34.3: a custom item's TYPE is the player's to set, and it was neither drawn nor part of the
+      // cache key, so changing it repainted nothing and the old bitmap stayed.
+      key: `itm-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel)}`,
       id: it.id,
-      node: <ForgedCard title={it.title} kindLabel="Item" body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
+      node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? 'Item'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
     }));
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
@@ -1061,7 +1063,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // serve the stale pre-arrange snapshot.
       const secSig = contentSig(...(lc.sections ?? []).flatMap((sec) => [sec.name, sec.body, sec.feature ? 'f' : '']));
       return {
-        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed)}`,
+        // v0.34.3: `typeLabel` rides the key too. It is printed on the plaque, so a card that arrives
+        // with one (or is given one) has to re-forge like any other content change.
+        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel)}`,
         id: lc.id,
         node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
@@ -2453,6 +2457,26 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     },
     [mutateFile],
   );
+  /**
+   * Turning "use as portrait" on and off again (owner, v0.34.3).
+   *
+   * Switching it ON files the portrait the board is about to replace; switching it OFF puts that
+   * portrait back, crop and all. Exactly one is kept, so this undoes the board and nothing older: the
+   * rewind screen says as much, because a portrait is not part of what history stores.
+   */
+  const onUseBoardPortrait = useCallback(
+    (on: boolean) => {
+      if (on) {
+        mutateFile({ moodboardAsPortrait: true, portraitBefore: fileRef.current?.portraitUri ?? null, portraitBeforeTransform: fileRef.current?.portraitTransform });
+        return;
+      }
+      const back = fileRef.current?.portraitBefore ?? null;
+      const transform = fileRef.current?.portraitBeforeTransform ?? { scale: 1, x: 0, y: 0 };
+      setCharacter((c) => ({ ...c, portraitUri: back, portraitTransform: transform }));
+      mutateFile({ moodboardAsPortrait: false, portraitUri: back, portraitTransform: transform, portraitBefore: null, portraitBeforeTransform: undefined });
+    },
+    [mutateFile],
+  );
   const setTokenColor = useCallback((color: string) => mutateFile({ tokenColor: color }), [mutateFile]);
   const moveTokenDrawer = useCallback((x: number) => mutateFile({ tokenDrawerX: x }), [mutateFile]);
   const onHp = useCallback(
@@ -2529,7 +2553,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         usePortrait={!!file?.moodboardAsPortrait}
         onChange={onMoodboard}
         onSetPortrait={onBoardPortrait}
-        onUsePortrait={(on) => mutateFile({ moodboardAsPortrait: on })}
+        onUsePortrait={onUseBoardPortrait}
         background={file?.moodboardColor}
         onBackground={(color) => mutateFile({ moodboardColor: color })}
         onClose={closeBoard}
@@ -2857,7 +2881,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
        </FloatMenuProvider>
       </CarouselProvider>
       {/* The moodboard's ground, held over the sheet for a beat as it rebuilds (v0.34.1). */}
-      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: MOODBOARD_BG, zIndex: 99999 }, boardCoverStyle]} />
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: file?.moodboardColor || MOODBOARD_BG, zIndex: 99999 }, boardCoverStyle]} />
     </AccentProvider>
   );
 }

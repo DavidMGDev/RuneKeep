@@ -189,6 +189,15 @@ export interface CharacterFile {
   moodboardAsPortrait?: boolean;
   /** v0.34.2: the moodboard's ground colour. Absent means the default deep blue. */
   moodboardColor?: string;
+  /**
+   * The portrait the board REPLACED, so turning "use as portrait" back off restores it (v0.34.3).
+   *
+   * Exactly one is kept. A stack of every portrait a character has ever had would be a stack of
+   * images inside a file that is already the biggest thing the app saves, and the rewind screen says
+   * plainly that anything older than this is not on file and cannot come back.
+   */
+  portraitBefore?: string | null;
+  portraitBeforeTransform?: { scale: number; x: number; y: number };
   // --- card management (#246) — all additive; absent on old saves means "no customisation". ---
   /** Player-created carousel categories: id, label, icon key (from the category icon library). */
   customCategories?: import('@/features/character-sheet/carousel-categories').CustomCategory[];

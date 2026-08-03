@@ -1,17 +1,20 @@
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { scrollFieldIntoView, RESERVES_KEYBOARD_SPACE } from '@/lib/web-keyboard';
 import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { ColorPalette } from '@/components/color-palette';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { FORGED_H, ForgedCard } from '@/features/create/components/forged-card';
+import { ART_H, FORGED_H, FORGED_W, ForgedCard } from '@/features/create/components/forged-card';
+import { cardPalette } from '@/lib/palette';
 import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
@@ -231,6 +234,97 @@ export function randomCardColor(): string {
   return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
+// v0.25.0: shorter, because the waterline no longer starts filling the instant you touch down, so
+// the hold has to complete sooner to still feel brief.
+const HOLD_MS = 460;
+/** How long a press must last before it LOOKS like a hold. Under this it is a tap, and a tap must not
+ *  flash the picker's waterline: the tap does something else entirely (it rerolls the colour). */
+const HOLD_GRACE_MS = 150;
+/** The type plaque's hit band, on the seam the divider is drawn on. Shared so the control sits in the
+ *  same place whichever door the card came through. */
+export const PLAQUE_TOP = Math.round(FORGED_H * 0.4) - 16;
+export const PLAQUE_H = 32;
+
+/**
+ * The card's ART ZONE as one control: tap rerolls the color, hold charges a gold waterline over the
+ * art and opens the picker.
+ *
+ * Written for the quick flow (v0.24.3) and now the full editor's too (v0.34.3, owner): "there is no
+ * reason for only quick card creation to have easy controls". The advanced editor keeps its labelled
+ * buttons as well, because that is what makes it the advanced one, but the card itself behaves the
+ * same in both places.
+ *
+ * The live band STOPS at the type plaque (v0.31.0). It has to, because the plaque is a control of its
+ * own, and a tap that both changed the type and rerolled the art would be one of them too many.
+ */
+export function ArtGesture({ onTap, onHold, reduced, children }: { onTap: () => void; onHold: () => void; reduced: boolean; children: ReactNode }) {
+  const charge = useSharedValue(0);
+  const fire = useCallback(() => { playSfx('placeToken'); void onHold(); }, [onHold]);
+
+  const gesture = useMemo(
+    () =>
+      Gesture.Exclusive(
+        Gesture.LongPress()
+          .minDuration(reduced ? 1 : HOLD_MS)
+          .maxDistance(30)
+          .onBegin(() => {
+            // Delayed, not immediate: a tap releases inside the grace window and the waterline never
+            // appears at all, so tapping for a new colour stops looking like a half-finished hold.
+            if (!reduced) charge.value = withDelay(HOLD_GRACE_MS, withTiming(1, { duration: HOLD_MS - HOLD_GRACE_MS, easing: Easing.out(Easing.cubic) }));
+          })
+          .onStart(() => runOnJS(fire)())
+          .onFinalize((_e, ok) => { if (!ok) { cancelAnimation(charge); charge.value = withTiming(0, { duration: 160 }); } }),
+        Gesture.Tap().maxDistance(16).onEnd((_e, ok) => { if (ok) runOnJS(onTap)(); }),
+      ),
+    [charge, fire, onTap, reduced],
+  );
+
+  // Reset the fill after the picker takes over, so returning to a card never shows a stuck waterline.
+  useEffect(() => () => { charge.value = 0; }, [charge]);
+
+  const fillStyle = useAnimatedStyle(() => ({ height: charge.value * ART_H, opacity: charge.value > 0.02 ? 0.42 : 0 }));
+  const edgeStyle = useAnimatedStyle(() => ({ opacity: charge.value > 0.02 ? 1 : 0, transform: [{ translateY: -charge.value * ART_H }] }));
+
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H }}>
+      {children}
+      <GestureDetector gesture={gesture}>
+        <View
+          style={{ position: 'absolute', left: 0, right: 0, top: 0, height: PLAQUE_TOP }}
+          accessibilityRole="button"
+          accessibilityLabel="Card art"
+          accessibilityHint="Tap for a new color, hold to choose a picture"
+        />
+      </GestureDetector>
+      {/* The charge rides the art band only, bottom-up, like every other hold in the app. */}
+      <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: ART_H, overflow: 'hidden' }} pointerEvents="none">
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: Rune.goldBright }, fillStyle]} />
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2.5, backgroundColor: Rune.goldBright }, edgeStyle]} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The dialog that stands between a picture and a colour (owner, v0.34.3).
+ *
+ * Setting a colour REPLACES the art, and now that the card itself rerolls on a tap, one stray touch
+ * could throw away a photograph the player had just chosen. Every door that sets a colour goes
+ * through this when there is an image to lose, and none of them ask when there is not.
+ */
+export function ColorOverArtDialog({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <PopupDialog
+      title="Replace the picture?"
+      body="This card has an image on it. Setting a colour takes the image off. You can always choose it again."
+      confirmLabel="Use a colour"
+      destructive
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
+  );
+}
+
 /**
  * Editor frame (#252): in-sheet (framed) the scroller lives inside a full-screen chamfered SVG border
  * with `overflow: hidden`, so the card + fields can never escape past the border / the status bar.
@@ -322,7 +416,27 @@ export function CardEditor({
     // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
     if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null })); }
   }, []);
-  const rollColor = useCallback(() => { playSfx('tokenCopyColor'); setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null })); }, []);
+  /**
+   * Setting a colour, with the picture guarded (v0.34.3).
+   *
+   * `'random'` stands for the dice rather than for a value, so the confirmation can be answered and
+   * THEN rolled: asking "replace the picture with this colour?" and rolling a different one on Yes
+   * would be its own small lie.
+   */
+  const [pickColor, setPickColor] = useState(false);
+  const [askColor, setAskColor] = useState<string | null>(null);
+  const applyColor = useCallback((c: string) => {
+    playSfx('tokenCopyColor');
+    setDraft((d) => ({ ...d, color: c === 'random' ? randomCardColor() : c, imageUri: null }));
+  }, []);
+  const setColor = useCallback(
+    (c: string) => {
+      if (draft.imageUri) { setAskColor(c); return; }
+      applyColor(c);
+    },
+    [applyColor, draft.imageUri],
+  );
+  const rollColor = useCallback(() => setColor('random'), [setColor]);
 
   // #318: a note/card can be saved with NO title as long as it has SOME content (a body). An experience
   // still needs its phrase (the title IS the experience).
@@ -460,33 +574,39 @@ export function CardEditor({
         {/* live preview — scales down from its TOP while a field is focused, the negative margin pulling
             the fields up so they sit above the keyboard */}
         <Animated.View style={[{ transformOrigin: 'top center' }, previewStyle]}>
-          {expMode ? (
-            <ForgedCard title={draft.title.trim() || 'Experience'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
-          ) : (
-            // #318: no "Untitled" — an empty title previews as a titleless card (the body fills the space).
-            <ForgedCard title={draft.title.trim()} kindLabel={plaqueLabel} subtitle={previewSubtitle} body={sectioned ? composeSections(draft.sections) : draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
-          )}
-          {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
-              transparent hit-band over the divider seam (~40% down), so the player taps the chip on
-              the card itself. Only when type options are supplied (New Card), not experiences. */}
-          {typeGroups?.length && !experienceMode ? (
-            <Pressable
-              onPress={() => setPickType(true)}
-              accessibilityRole="button"
-              accessibilityLabel={`Card type: ${plaqueLabel}. Tap to change`}
-              style={{ position: 'absolute', left: 0, right: 0, top: Math.round(FORGED_H * 0.4) - 16, height: 32 }}
-            />
-          ) : null}
+          {/* v0.34.3: the art is the same tap-and-hold control the quick flow has. The labelled
+              buttons below stay: this is the advanced editor, and it should have both. */}
+          <ArtGesture onTap={rollColor} onHold={pickImage} reduced={reduced}>
+            {expMode ? (
+              <ForgedCard title={draft.title.trim() || 'Experience'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
+            ) : (
+              // #318: no "Untitled" — an empty title previews as a titleless card (the body fills the space).
+              <ForgedCard title={draft.title.trim()} kindLabel={plaqueLabel} subtitle={previewSubtitle} body={sectioned ? composeSections(draft.sections) : draft.text} accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} multilineTitle />
+            )}
+            {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
+                transparent hit-band over the divider seam (~40% down), so the player taps the chip on
+                the card itself. Only when type options are supplied (New Card), not experiences. */}
+            {typeGroups?.length && !experienceMode ? (
+              <Pressable
+                onPress={() => setPickType(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Card type: ${plaqueLabel}. Tap to change`}
+                style={{ position: 'absolute', left: 0, right: 0, top: PLAQUE_TOP, height: PLAQUE_H }}
+              />
+            ) : null}
+          </ArtGesture>
         </Animated.View>
-        {typeGroups?.length && !experienceMode ? (
-          <Text style={{ marginTop: 8, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Tap the card type to change it</Text>
-        ) : null}
+        <Text style={{ marginTop: 8, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', textAlign: 'center', paddingHorizontal: 24 }}>
+          {typeGroups?.length && !experienceMode ? 'Tap the art for a new color, hold it for a picture. Tap the type to change it.' : 'Tap the art for a new color, hold it for a picture.'}
+        </Text>
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Add Image" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={pickImage} />
             <RuneButton label="Random Color" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={rollColor} muteSfx />
+            {/* v0.34.3: the same swatch grid the moodboard uses, for a colour you actually chose. */}
+            <RuneButton label="Colors" kind="ghost" dense height={36} style={{ flex: 0.8 }} onPress={() => setPickColor(true)} />
           </View>
           <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: expMode ? 80 : 46, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: expMode ? 9 : 0 }}>
             <TextInput
@@ -578,6 +698,17 @@ export function CardEditor({
           onClose={() => setPickType(false)}
         />
       ) : null}
+      {pickColor ? (
+        <ColorPalette
+          title="Card colour"
+          colors={cardPalette()}
+          current={draft.imageUri ? null : draft.color}
+          onPick={(c) => { setPickColor(false); setColor(c); }}
+          onRandom={() => { setPickColor(false); rollColor(); }}
+          onClose={() => setPickColor(false)}
+        />
+      ) : null}
+      {askColor ? <ColorOverArtDialog onConfirm={() => { const c = askColor; setAskColor(null); applyColor(c); }} onCancel={() => setAskColor(null)} /> : null}
     </View>
   );
 }

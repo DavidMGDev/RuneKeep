@@ -152,6 +152,14 @@ export function cardToLibraryCard(file: CharacterFile | undefined, id: string, m
     imageUri: authored?.imageUri ?? null,
     color: authored?.color ?? null,
     effects: effectsForCardId(ref, file),
+    /**
+     * The card's TYPE travels with it (owner, v0.34.3).
+     *
+     * It was dropped here, so every shared card landed on the other phone reading "Card": a Story
+     * card was a story card right up until you gave it to someone. The type is the one thing on a
+     * card that the player chose and the receiver cannot infer.
+     */
+    typeLabel: authored?.typeLabel,
   };
 }
 

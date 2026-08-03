@@ -1,12 +1,14 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
+import { BackHandler, Platform, Pressable, Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 
 import { DesignStage, useStageScale } from '@/components/design-stage';
 import { useScreenInsets } from '@/components/app-screen';
+import { ChamferBox } from '@/components/chamfer-box';
+import { ColorPalette } from '@/components/color-palette';
 import { Body, Rune } from '@/constants/theme';
 import { SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { tapHaptic } from '@/lib/haptics';
@@ -19,6 +21,7 @@ import {
   removeItem,
   updateItem,
 } from '@/lib/moodboard';
+import { boardPalette } from '@/lib/palette';
 import { renderMoodboardToDataUri } from '@/lib/moodboard-render';
 import { ownImage } from '@/lib/owned-image';
 import { useScreenEdge } from '@/lib/screen-dim';
@@ -35,15 +38,8 @@ import { MoodboardRadial, type MoodAction } from './moodboard-radial';
  */
 export const MOODBOARD_BG = '#101A2B';
 
-/**
- * The grounds the paint button cycles through (v0.34.2).
- *
- * A fixed set rather than a true random, because a random colour is as likely to be an unusable
- * near-white as anything else, and every image on the board has to stay readable against it. All of
- * them are dark and desaturated enough to sit under artwork, and the first is the default, so the
- * cycle always comes back home.
- */
-export const MOODBOARD_GROUNDS = [MOODBOARD_BG, '#1B1420', '#101F1B', '#23161A', '#151823', '#1F1A10', '#0E0F12'] as const;
+/** The swatches the colour button offers (v0.34.3). Generated: see `lib/moodboard`. */
+const PALETTE = boardPalette();
 
 /** The fall an image takes when deleted, before the parent drops it. Matches the item's own timing. */
 const LEAVE_MS = 900;
@@ -64,9 +60,13 @@ function Glyph({ kind, size = 20, color = Rune.goldText }: { kind: 'x' | 'lock' 
       ) : kind === 'list' ? (
         <Path d="M4 7 H20 M4 12 H20 M4 17 H14" {...s} />
       ) : kind === 'paint' ? (
+        /* v0.34.3: four swatches, two of them filled. The palette-and-thumbhole drawing it replaces
+           was unreadable at this size, which is the only size it is ever drawn at. */
         <>
-          <Path d="M12 3 A9 9 0 1 0 12 21 A2.4 2.4 0 0 0 12 16.2 A2.4 2.4 0 0 1 12 11.4 H15.6 A5.4 5.4 0 0 0 21 6 A3 3 0 0 0 12 3 Z" {...s} />
-          <Path d="M7.2 9.6 h0.01 M10.2 6.6 h0.01 M6.6 13.8 h0.01" {...s} strokeWidth={2.6} />
+          <Rect x={3.2} y={3.2} width={7.6} height={7.6} rx={1.2} {...s} fill={color} />
+          <Rect x={13.2} y={3.2} width={7.6} height={7.6} rx={1.2} {...s} />
+          <Rect x={3.2} y={13.2} width={7.6} height={7.6} rx={1.2} {...s} />
+          <Rect x={13.2} y={13.2} width={7.6} height={7.6} rx={1.2} {...s} fill={color} />
         </>
       ) : (
         <>
@@ -174,6 +174,15 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
   const [leaving, setLeaving] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [picking, setPicking] = useState(false);
+  /**
+   * The locked-board notice, drawn HERE rather than as an app toast (v0.34.3).
+   *
+   * The app's toast sits at the top centre, which is exactly where the lock button is, so the message
+   * telling you to press the lock covered the lock for as long as it was up. Its own banner sits at
+   * the foot of the board, out of the way of every control.
+   */
+  const [nag, setNag] = useState(0);
   const insets = useScreenInsets();
   /** The board AS IT LOOKS, ground included: what a portrait capture is taken from (v0.34.2). */
   const shotRef = useRef<View>(null);
@@ -282,26 +291,39 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
     [items, onChange],
   );
 
-  /** The next ground along, so tapping it repeatedly walks the set rather than repeating itself. */
-  const nextGround = useCallback(() => {
-    const i = MOODBOARD_GROUNDS.indexOf(ground as (typeof MOODBOARD_GROUNDS)[number]);
-    onBackground(MOODBOARD_GROUNDS[(i + 1 + MOODBOARD_GROUNDS.length) % MOODBOARD_GROUNDS.length]);
-  }, [ground, onBackground]);
-
   /**
    * The locked board says so (v0.34.2), at most once every two seconds.
    *
    * Every gesture on an image is simply disabled while locked, so touching one did nothing at all and
    * looked exactly like the app being broken. The throttle is the owner's: a canvas gets a lot of
-   * stray taps and a toast per tap would be worse than silence.
+   * stray taps and a notice per tap would be worse than silence.
    */
   const nagLocked = useCallback(() => {
     const now = Date.now();
     if (now - lastNag.current < 2000) return;
     lastNag.current = now;
     playSfx('buttonTap');
-    showToast('The board is locked. Tap the lock to make changes.');
+    setNag(now);
+    setTimeout(() => setNag((n) => (n === now ? 0 : n)), 1900);
   }, []);
+
+  /**
+   * The device back button CLOSES the board (owner, v0.34.3).
+   *
+   * The board renders INSTEAD of the sheet, so the sheet's own back guard is unmounted while it is
+   * up and back went all the way out to the character list. It leaves the same way the X does,
+   * portrait capture and all, because that is what "close and save" means here.
+   */
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (picking) { setPicking(false); return true; }
+      if (layers) { setLayers(false); return true; }
+      if (menu) { setMenu(null); return true; }
+      void leave();
+      return true;
+    });
+    return () => sub.remove();
+  }, [layers, leave, menu, picking]);
 
   const onMenu = useCallback((id: string, x: number, y: number) => { playSfx('buttonTap'); setMenu({ id, x, y }); }, []);
   const onGrab = useCallback(() => setDragging(true), []);
@@ -352,7 +374,7 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
         {/* v0.34.1: measured from the real inset rather than a flat 46, which left a band of dead
             space at the top of a browser and sat under the status bar on some phones. */}
         <View style={{ position: 'absolute', right: 14, top: insets.top + 10, flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-          <RoundButton label="Change the board's background colour" onPress={nextGround}>
+          <RoundButton label="Change the board's background colour" onPress={() => setPicking(true)}>
             <Glyph kind="paint" />
           </RoundButton>
           <RoundButton label="Show every image on the board" onPress={() => setLayers(true)}>
@@ -395,6 +417,19 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
           <View pointerEvents="auto" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(16,26,43,0.72)' }}>
             <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Saving your portrait</Text>
           </View>
+        ) : null}
+
+        {/* The locked notice, at the foot of the board so it never covers the lock it names. */}
+        {nag ? (
+          <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom + 26, alignItems: 'center' }}>
+            <ChamferBox chamfer={7} fill="rgba(12,15,20,0.96)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ paddingHorizontal: 13, paddingVertical: 6, maxWidth: 300 }}>
+              <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.3, textAlign: 'center' }}>The board is locked. Tap the lock to make changes.</Text>
+            </ChamferBox>
+          </View>
+        ) : null}
+
+        {picking ? (
+          <ColorPalette title="Background" colors={PALETTE} current={ground} onPick={(c) => { onBackground(c); setPicking(false); }} onClose={() => setPicking(false)} />
         ) : null}
 
         {layers ? (
