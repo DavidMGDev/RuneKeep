@@ -148,7 +148,15 @@ describe('card tokens — pure helpers (#244)', () => {
     it('gives the two duality dice separate centres, which is what lets them turn on their own', () => {
       const { hope, fear } = dualityGeometry();
       expect(hope.cx).not.toBe(fear.cx);
-      expect(hope.cy).not.toBe(fear.cy);
+    });
+
+    it('stands them LEVEL and clear of each other (owner, v0.34.5)', () => {
+      const { hope, fear } = dualityGeometry();
+      expect(hope.cy).toBe(fear.cy);
+      const right = (d: { points: string }) => Math.max(...d.points.split(' ').map((p) => Number(p.split(',')[0])));
+      const left = (d: { points: string }) => Math.min(...d.points.split(' ').map((p) => Number(p.split(',')[0])));
+      expect(right(hope)).toBeLessThan(left(fear)); // a real gap, not an overlap
+      expect(fear.cx - hope.cx).toBeGreaterThan(51 * 1.2); // a quarter further apart than v0.34.4
     });
 
     it('keeps both duality dice inside the token box', () => {

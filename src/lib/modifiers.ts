@@ -40,7 +40,7 @@ export type EffectTarget =
  * - `delta`   — a flat signed amount (most effects).
  * - `byTier`  — tier-dependent amount; the value is `byTier[tier - 1]` (tier 1..4).
  * - `dynamic` — computed from the resolved sheet AFTER the flat pass: `proficiency` = the character's
- *               final Proficiency; `halfAgility` = floor(final Agility / 2); `strengthPlus3` = final
+ *               final Proficiency; `halfAgility` = ceil(final Agility / 2); `strengthPlus3` = final
  *               Strength + 3 (Bare Bones' unarmored Armor Score). With `mode:'set'` it REPLACES the
  *               target's running total (e.g. armorScore) instead of adding.
  */
@@ -247,7 +247,16 @@ function resolveFormula(
 function dynamicValue(e: CardEffect, out: SheetBreakdown, level: number, spellcastTrait?: TraitKey | null, ctx?: SheetContext, sourceKey?: string): number {
   return e.dynamic === 'proficiency' ? out.proficiency.total
     : e.dynamic === 'strengthPlus3' ? out.strength.total + 3
-    : e.dynamic === 'halfAgility' ? Math.floor(out.agility.total / 2)
+    /**
+     * ROUNDS UP (owner, v0.34.5), like every other division in this engine.
+     *
+     * This floored while the formula path ceils, and the two are the SAME effect: opening a card's
+     * modifiers rewrites `halfAgility` into `{variable:'agility', divide:2}` (see
+     * `migrateEffectShape`). So Untouchable was worth one number until you looked at it in the
+     * Modifiers panel and saved, and a different number afterwards. That is the owner's "does not
+     * properly update until I edit and save": nothing was stale, the two paths disagreed.
+     */
+    : e.dynamic === 'halfAgility' ? Math.ceil(out.agility.total / 2)
     : resolveFormula(e.formula, out, level, spellcastTrait, ctx, sourceKey);
 }
 

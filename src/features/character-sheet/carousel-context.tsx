@@ -143,10 +143,12 @@ interface CarouselContextValue {
    *  - `modsOff`     equipped but its modifiers are switched off → grey corner, and the Toggle reads
    *                  as off.
    *  - `numberInput` has a modifier that reads a number the player types → show the "#" button.
-   *  - `domain`      a domain card, the only kind that gets the Toggle at all.
+   *  - `domain`      a domain card.
+   *  - `toggleable`  carries a modifier AND is not an identity card (ancestry / community / subclass),
+   *                  so it may be switched off for a scene (v0.34.5).
    */
-  cardStates: { permanent: Set<string>; modsOff: Set<string>; numberInput: Set<string>; domain: Set<string> };
-  /** Switch a card's modifiers off/on without unequipping it (v0.32.0). Domain cards only. */
+  cardStates: { permanent: Set<string>; modsOff: Set<string>; numberInput: Set<string>; domain: Set<string>; toggleable: Set<string> };
+  /** Switch a card's modifiers off/on without unequipping it (v0.32.0). */
   toggleCardModifiers: (id: string) => void;
   /** Ask for this card's number (v0.32.0) — the sheet opens the keypad. */
   editNumberInput: (id: string) => void;
@@ -571,7 +573,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   // v0.32.0: the demo sheet supplies none of these, so nothing is permanent, muted or asking for a
   // number and no card gets a Toggle — exactly the behaviour before this existed.
   const emptyCardStates = useMemo<CarouselContextValue['cardStates']>(
-    () => ({ permanent: new Set<string>(), modsOff: new Set<string>(), numberInput: new Set<string>(), domain: new Set<string>() }),
+    () => ({ permanent: new Set<string>(), modsOff: new Set<string>(), numberInput: new Set<string>(), domain: new Set<string>(), toggleable: new Set<string>() }),
     [],
   );
   const noopInfo = useCallback((_id: string) => {}, []);

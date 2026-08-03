@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Keyboard, type NativeSyntheticEvent, Platform, Pressable, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
 
-import { ArtGesture, type CardDraft, CharCount, ColorOverArtDialog, PLAQUE_H, PLAQUE_TOP, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
+import { ArtGesture, type CardDraft, CharCount, ColorNameFlash, ColorOverArtDialog, PLAQUE_H, PLAQUE_TOP, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
 import { isExperienceType } from '@/features/character-sheet/card-types';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -84,9 +84,12 @@ export function QuickCardFlow({
   /** v0.34.3: a tap on the art can no longer throw a picture away without asking. The same dialog the
    *  full editor uses, because it is the same mistake in both places. */
   const [askColor, setAskColor] = useState(false);
+  /** Bumped on every roll, which is what makes the colour's name flash over the art (v0.34.5). */
+  const [colorNonce, setColorNonce] = useState(0);
   const applyRoll = useCallback(() => {
     playSfx('tokenCopyColor');
     setDraft((d) => ({ ...d, color: randomCardColor(), imageUri: null }));
+    setColorNonce((n) => n + 1);
   }, []);
   const rollColor = useCallback(() => {
     if (draft.imageUri) { setAskColor(true); return; }
@@ -177,6 +180,7 @@ export function QuickCardFlow({
             colorArt={draft.color}
             multilineTitle
           />
+          <ColorNameFlash color={draft.imageUri ? null : draft.color} nonce={colorNonce} />
           {/* The type plaque, as its own control (v0.31.0). It sits on the seam BELOW the art
               gesture's band, so tapping the type can never also reroll the color, and the two
               targets never race for the same touch. Same band the full editor uses. */}

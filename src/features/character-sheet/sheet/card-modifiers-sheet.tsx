@@ -18,7 +18,7 @@ import { FullScreenPanel } from './full-screen-panel';
  *  previews the same figure the engine applies. */
 function resolvedDelta(e: CardEffect, character: Character, level: number, numberInput = 0): number {
   if (e.dynamic === 'proficiency') return character.proficiency;
-  if (e.dynamic === 'halfAgility') return Math.floor((character.traits.agility ?? 0) / 2);
+  if (e.dynamic === 'halfAgility') return Math.ceil((character.traits.agility ?? 0) / 2); // rounds up, like the engine (v0.34.5)
   if (e.dynamic === 'strengthPlus3') return (character.traits.strength ?? 0) + 3;
   if (e.dynamic === 'formula' && e.formula) {
     const f = e.formula;

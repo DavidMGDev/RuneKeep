@@ -310,6 +310,15 @@ function entryId(at: string): string {
  * rule: once you change something, you can never fast-forward again.
  */
 export function record(history: CharacterHistory, prev: CharacterFile | null, next: CharacterFile, intent: RecordIntent = {}, now: Date = new Date()): CharacterHistory {
+  /**
+   * Checked FIRST (v0.34.5), before any of the work below.
+   *
+   * It used to be tested after the no-op guard, which meant a write the app made still paid for a
+   * `stripHistory` and two `JSON.stringify`s of the whole character. Rolling a die is one of those
+   * writes and it happens mid-animation, on the JS thread, in a browser. Nothing about a write that
+   * cannot produce an entry needs to be computed to find that out.
+   */
+  if (intent.system) return history;
   const at = now.toISOString();
   const snapshot = stripHistory(next);
 
@@ -327,12 +336,6 @@ export function record(history: CharacterHistory, prev: CharacterFile | null, ne
    */
   if (prev && same(prev, snapshot)) return history;
 
-  /**
-   * An app-initiated write is not a player edit. Returning the history untouched keeps `rewoundTo`
-   * intact, so a first-run affordance or a normalisation pass that fires while the player is
-   * browsing an earlier state cannot discard the future.
-   */
-  if (intent.system) return history;
 
   // Truncate any rewound-away future BEFORE appending.
   let entries = history.rewoundTo != null ? history.entries.slice(0, history.rewoundTo + 1) : history.entries;

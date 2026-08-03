@@ -5,11 +5,12 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { scrollFieldIntoView, RESERVES_KEYBOARD_SPACE } from '@/lib/web-keyboard';
 import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { ColorPalette } from '@/components/color-palette';
+import { nearestColorName, normalizeHex, readableInk } from '@/lib/color';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -305,6 +306,41 @@ export function ArtGesture({ onTap, onHold, reduced, children }: { onTap: () => 
 }
 
 /**
+ * The colour's NAME, over the art, for a moment (owner, v0.34.5).
+ *
+ * Rolling a random colour used to be a silent change of hue. The picker names the colour it is
+ * centred on, and there is no reason the dice should not say the same thing: it fades up over a
+ * second, sits, and goes. Same naming as the picker, so "Hot Pink" here is "Hot Pink" there.
+ *
+ * `nonce` rather than the colour itself, so rolling the same colour twice still says so.
+ */
+export function ColorNameFlash({ color, nonce }: { color: string | null; nonce: number }) {
+  const p = useSharedValue(0);
+  const [shown, setShown] = useState<string | null>(null);
+  useEffect(() => {
+    if (!nonce || !color) return;
+    const normal = normalizeHex(color);
+    setShown(normal ? nearestColorName(normal) : null);
+    p.value = 0;
+    p.value = withSequence(
+      withTiming(1, { duration: 1000, easing: Easing.out(Easing.cubic) }),
+      withDelay(500, withTiming(0, { duration: 500, easing: Easing.in(Easing.cubic) })),
+    );
+  }, [nonce, color, p]);
+  const style = useAnimatedStyle(() => ({ opacity: p.value }));
+  if (!shown) return null;
+  return (
+    <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, height: ART_H, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Text
+        allowFontScaling={false}
+        style={{ color: color ? readableInk(normalizeHex(color) ?? '#000000') : Rune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase', textAlign: 'center', paddingHorizontal: 16 }}>
+        {shown}
+      </Text>
+    </Animated.View>
+  );
+}
+
+/**
  * The dialog that stands between a picture and a colour (owner, v0.34.3).
  *
  * Setting a colour REPLACES the art, and now that the card itself rerolls on a tap, one stray touch
@@ -424,9 +460,12 @@ export function CardEditor({
    */
   const [pickColor, setPickColor] = useState(false);
   const [askColor, setAskColor] = useState<string | null>(null);
+  /** Bumped on every applied colour, which is what makes the name flash fire (v0.34.5). */
+  const [colorNonce, setColorNonce] = useState(0);
   const applyColor = useCallback((c: string) => {
     playSfx('tokenCopyColor');
     setDraft((d) => ({ ...d, color: c === 'random' ? randomCardColor() : c, imageUri: null }));
+    setColorNonce((n) => n + 1);
   }, []);
   const setColor = useCallback(
     (c: string) => {
@@ -585,6 +624,7 @@ export function CardEditor({
             {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
                 transparent hit-band over the divider seam (~40% down), so the player taps the chip on
                 the card itself. Only when type options are supplied (New Card), not experiences. */}
+            <ColorNameFlash color={draft.imageUri ? null : draft.color} nonce={colorNonce} />
             {typeGroups?.length && !experienceMode ? (
               <Pressable
                 onPress={() => setPickType(true)}

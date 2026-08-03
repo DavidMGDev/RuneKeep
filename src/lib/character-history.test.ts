@@ -519,3 +519,15 @@ describe('the card trash (v0.34.0)', () => {
     expect(JSON.stringify(gone)).toBe(before);
   });
 });
+describe('an app-initiated write (v0.34.5)', () => {
+  it('costs nothing at all: it never even looks at the character', () => {
+    const h = record(emptyHistory(), null, mk({ name: 'A' }));
+    // A Proxy that throws on ANY read is the only way to prove the early return runs first.
+    const tripwire = new Proxy({} as CharacterFile, {
+      get() {
+        throw new Error('a system write must not read the character');
+      },
+    });
+    expect(record(h, mk({ name: 'A' }), tripwire, { system: true })).toBe(h);
+  });
+});

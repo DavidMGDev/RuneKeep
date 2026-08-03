@@ -93,8 +93,9 @@ export function shadesForHue(h: number): string[] {
   const out: string[] = [];
   for (const s of SAT_BANDS) {
     for (let i = 0; i < LIGHT_STEPS; i += 1) {
-      // 88% down to 10%: light first, so scrolling right walks into the dark.
-      const l = 88 - (i * (88 - 10)) / (LIGHT_STEPS - 1);
+      // 92% down to 3%: light first, so scrolling right walks into the dark, and the last square of
+      // the greyest band is a true black (owner, v0.34.5: "I would wish for a deeper black").
+      const l = 92 - (i * (92 - 3)) / (LIGHT_STEPS - 1);
       out.push(hslToHex({ h, s, l }));
     }
   }
@@ -177,18 +178,69 @@ const CSS_COLORS: Record<string, string> = {
 
 const NAMES = Object.entries(CSS_COLORS);
 
-/** The nearest named colour to `hex`. Always returns something: every colour is near enough to one. */
+/**
+ * The hue families, for colours the CSS list cannot tell apart (v0.34.5).
+ *
+ * Every dark or washed-out colour is nearest to one of about six CSS names, so a whole quarter of the
+ * picker answered "Dark Slate Gray" whatever hue it was on. That is the owner's report, and it is a
+ * property of nearest-in-RGB: at low saturation and low lightness the distances between hues collapse
+ * while the distance to the few dark names does not.
+ *
+ * So those colours are NAMED rather than matched, from what they actually are: a hue family, plus how
+ * dark and how grey they are. "Deep Green Gray" says more than "Dark Slate Gray" ever did, and it
+ * changes when the hue changes, which was the whole complaint.
+ */
+const HUE_FAMILY: { upTo: number; name: string }[] = [
+  { upTo: 12, name: 'Red' },
+  { upTo: 38, name: 'Orange' },
+  { upTo: 68, name: 'Yellow' },
+  { upTo: 95, name: 'Lime' },
+  { upTo: 145, name: 'Green' },
+  { upTo: 175, name: 'Emerald' },
+  { upTo: 195, name: 'Teal' },
+  { upTo: 215, name: 'Cyan' },
+  { upTo: 245, name: 'Blue' },
+  { upTo: 265, name: 'Indigo' },
+  { upTo: 290, name: 'Violet' },
+  { upTo: 320, name: 'Purple' },
+  { upTo: 345, name: 'Magenta' },
+  { upTo: 361, name: 'Red' },
+];
+
+export function hueFamily(h: number): string {
+  const x = ((h % 360) + 360) % 360;
+  return (HUE_FAMILY.find((f) => x < f.upTo) ?? HUE_FAMILY[0]).name;
+}
+
+/** Below this saturation the CSS list stops being able to tell one hue from another. */
+const NAMEABLE_SATURATION = 26;
+
+/**
+ * The nearest named colour to `hex`, or a composed name when no name would be honest.
+ *
+ * Saturated colours keep the CSS name, which the owner likes and which is the whole reason the list
+ * is here. Everything else is described instead of matched.
+ */
 export function nearestColorName(hex: string): string {
-  let best = NAMES[0][0];
-  let bestD = Infinity;
-  for (const [name, value] of NAMES) {
-    const d = dist2(value, hex);
-    if (d < bestD) {
-      bestD = d;
-      best = name;
+  const { h, s, l } = hexToHsl(hex);
+  if (l <= 4) return 'Black';
+  if (l >= 97 && s < 12) return 'White';
+  if (s >= NAMEABLE_SATURATION) {
+    let best = NAMES[0][0];
+    let bestD = Infinity;
+    for (const [name, value] of NAMES) {
+      const d = dist2(value, hex);
+      if (d < bestD) {
+        bestD = d;
+        best = name;
+      }
     }
+    return best;
   }
-  return best;
+  // Too grey to name: describe it. A true neutral drops the hue word, since it does not have one.
+  const tone = l < 16 ? 'Near Black' : l < 30 ? 'Deep' : l < 46 ? 'Dark' : l < 62 ? 'Muted' : l < 78 ? 'Soft' : 'Pale';
+  if (s < 6) return `${tone} Gray`;
+  return `${tone} ${hueFamily(h)} Gray`;
 }
 
 /** A random colour anywhere in the picker's own space, so Surprise me and the carousel agree. */
