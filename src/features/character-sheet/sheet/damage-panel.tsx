@@ -9,6 +9,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { hpLostFromDamage } from '@/lib/damage';
 import { playRiser, playSfx, type RiserHandle } from '@/lib/sfx';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { StepBtn } from './number-keypad';
 
 const HOLD_MS = 620;
 
@@ -73,6 +74,11 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
   const clear = useCallback(() => {
     playSfx('numpadPress');
     setTyped('');
+  }, []);
+  // v0.32.0: nudge the figure instead of retyping it. Clamped to the 3 digits the keypad accepts.
+  const step = useCallback((d: number) => {
+    playSfx('numpadPress');
+    setTyped((t) => String(Math.max(0, Math.min(999, (parseInt(t || '0', 10) || 0) + d))));
   }, []);
   const confirm = useCallback(() => finish(true), [finish]);
 
@@ -144,9 +150,14 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
             ))}
           </View>
 
-          {/* typed number + live HP-loss preview */}
+          {/* typed number + live HP-loss preview. v0.32.0: a minus and a plus flank it, because
+              adjusting a damage figure by one is far more common than retyping it. */}
           <View style={{ alignItems: 'center', minHeight: 52, justifyContent: 'center' }}>
-            <Text style={{ color: typed ? Rune.sheet : Rune.muted, fontSize: 40, fontFamily: Display.black, lineHeight: 44 }}>{typed || '0'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <StepBtn label="−" onPress={() => step(-1)} disabled={damage <= 0} a11y="One less" />
+              <Text style={{ minWidth: 100, textAlign: 'center', color: typed ? Rune.sheet : Rune.muted, fontSize: 40, fontFamily: Display.black, lineHeight: 44 }}>{typed || '0'}</Text>
+              <StepBtn label="+" onPress={() => step(1)} disabled={damage >= 999} a11y="One more" />
+            </View>
             <Text style={{ color: damage > 0 ? '#E2705A' : 'transparent', fontSize: 11, fontFamily: Body.bold, letterSpacing: 1 }}>−{hpLoss} HP</Text>
           </View>
 

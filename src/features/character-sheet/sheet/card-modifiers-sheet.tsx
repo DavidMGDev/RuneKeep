@@ -8,25 +8,31 @@ import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchO
 import { Body, Display, Rune } from '@/constants/theme';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
-import type { CharacterFile } from '@/lib/character-file';
+import { type CharacterFile, numberInputFor } from '@/lib/character-file';
 
 import type { Character } from '../character';
 import { FullScreenPanel } from './full-screen-panel';
 
-/** Resolve an effect's signed amount as it applies to this character right now (tier/dynamic/formula). */
-function resolvedDelta(e: CardEffect, character: Character, level: number): number {
+/** Resolve an effect's signed amount as it applies to this character right now (tier/dynamic/formula).
+ *  v0.32.0: `stress` reads the marked Stress and `input` the number typed on THIS card, so the panel
+ *  previews the same figure the engine applies. */
+function resolvedDelta(e: CardEffect, character: Character, level: number, numberInput = 0): number {
   if (e.dynamic === 'proficiency') return character.proficiency;
   if (e.dynamic === 'halfAgility') return Math.floor((character.traits.agility ?? 0) / 2);
   if (e.dynamic === 'strengthPlus3') return (character.traits.strength ?? 0) + 3;
   if (e.dynamic === 'formula' && e.formula) {
+    const f = e.formula;
     const base =
-      e.formula.variable === 'level' ? level
-      : e.formula.variable === 'tier' ? tierForLevel(level)
-      : e.formula.variable === 'proficiency' ? character.proficiency
-      : e.formula.variable === 'spellcast' ? (character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0)
-      : character.traits[e.formula.variable] ?? 0;
-    const div = e.formula.divide && e.formula.divide !== 0 ? e.formula.divide : 1;
-    return Math.ceil((base * (e.formula.multiply ?? 1)) / div) + (e.formula.plus ?? 0); // #325: + flat constant
+      f.variable === 'level' ? level
+      : f.variable === 'tier' ? tierForLevel(level)
+      : f.variable === 'proficiency' ? character.proficiency
+      : f.variable === 'spellcast' ? (character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0)
+      : f.variable === 'stress' ? character.stress.active
+      : f.variable === 'input' ? numberInput
+      : character.traits[f.variable] ?? 0;
+    const div = f.divide && f.divide !== 0 ? f.divide : 1;
+    const scaled = (base * (f.multiply ?? 1)) / div;
+    return (f.floor ? Math.floor(scaled) : Math.ceil(scaled)) + (f.plus ?? 0); // #325: + flat constant
   }
   if (e.byTier) return e.byTier[tierForLevel(level) - 1] ?? 0;
   return e.delta ?? 0;
@@ -70,6 +76,9 @@ export function CardModifiersSheet({
 }) {
   const effects = effectsForCardId(cardId, file);
   const label = sourceLabelForCardId(cardId, file);
+  // v0.32.0: the number this card was given, so an `input` formula previews the figure the engine
+  // is really applying rather than a 0 the player has already replaced.
+  const numberInput = numberInputFor(file, cardId);
   const [editing, setEditing] = useState(false);
   // #325: load the card's effects as EDITABLE shapes (legacy dynamics → formulas) so complex cards like
   // Bare Bones (Strength+3, per-tier thresholds) actually show + change in the editor.
@@ -80,7 +89,7 @@ export function CardModifiersSheet({
   const startEdit = () => { setDraft(toEditableEffects(effectsForCardId(cardId, file))); setEditing(true); };
   const save = () => { onSaveEffects?.(cardId, draft); setEditing(false); };
   // live "= N" preview for the dynamic shapes (formula / per-tier) at the current character.
-  const previewFn = (e: CardEffect) => (e.dynamic === 'formula' || e.byTier ? resolvedDelta(e, character, character.level) : null);
+  const previewFn = (e: CardEffect) => (e.dynamic === 'formula' || e.byTier ? resolvedDelta(e, character, character.level, numberInput) : null);
 
   return (
     <FullScreenPanel
@@ -116,7 +125,7 @@ export function CardModifiersSheet({
               </Text>
             ) : (
               effects.map((e, i) => {
-                const v = resolvedDelta(e, character, character.level);
+                const v = resolvedDelta(e, character, character.level, numberInput);
                 return (
                   <ChamferBox key={i} chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 13, gap: 10 }}>
                     <View style={{ flex: 1 }}>

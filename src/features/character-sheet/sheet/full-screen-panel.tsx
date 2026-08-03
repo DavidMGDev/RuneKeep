@@ -7,7 +7,7 @@ import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
 import { useLayout } from '@/hooks/use-layout';
 import { playSfx } from '@/lib/sfx';
-import { useScreenDim } from '@/lib/screen-dim';
+import { DimScreen, useScreenDim } from '@/lib/screen-dim';
 
 /**
  * The shared FULL-SCREEN interface shell (#252) — the Level Up pattern, generalised. An OPAQUE
@@ -72,7 +72,13 @@ export function CenterDialog({ onClose, children, zIndex = 10003, scrimOpacity =
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex }}>
       <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: scrimOpacity > 0 ? `rgba(6,8,13,${scrimOpacity})` : 'transparent' }} onPress={dismissOnScrim ? onClose : undefined} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
-      <View>{children}</View>
+      {/* v0.32.0: declare the dim so the tablet frame's margins darken with it (lib/screen-dim),
+          instead of the dialog sitting on a dark screen between two lit strips. */}
+      <DimScreen opacity={scrimOpacity} />
+      {/* v0.32.0: the content SWALLOWS touches. A plain View is not a touch responder and neither is
+          a Text inside it, so a tap on a label fell straight through to the scrim behind and closed
+          the dialog. Reading an option was enough to dismiss the question. */}
+      <View onStartShouldSetResponder={() => true} onResponderRelease={() => {}}>{children}</View>
     </View>
   );
 }

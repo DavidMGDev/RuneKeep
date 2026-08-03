@@ -9,6 +9,7 @@ import { AppScreen } from '@/components/app-screen';
 import { FitLine } from '@/components/fit-line';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
+import { UpdateBanner } from '@/components/update-banner';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
@@ -324,6 +325,9 @@ export function MenuScreen() {
               </ChamferBox>
             </Pressable>
           </View>
+          {/* v0.32.0: told about a newer build, on the one screen nobody is mid-anything on. Renders
+              nothing at all when this version is current, which is nearly always. */}
+          <UpdateBanner />
           {/* v0.30.0: the people who made it. Under the controls, quiet enough to stay out of the way. */}
           <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.medium, letterSpacing: 1.4, textTransform: 'uppercase', textAlign: 'center', marginTop: -4 }}>
             Created by Koy and David

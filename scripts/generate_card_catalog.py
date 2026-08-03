@@ -10,6 +10,7 @@ Usage:  python scripts/generate_card_catalog.py
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -19,6 +20,34 @@ OUT = ROOT / "src" / "data" / "catalog.ts"
 REL = "../../assets/extracted_cards"
 
 TIER_NAMES = {1: "Foundation", 2: "Specialization", 3: "Mastery"}
+
+# v0.32.0: the real printed name of every domain card, read off the scans (see
+# scripts/domain_title_strips.py — the rulebook stores these cards as flat images, so there is no text
+# layer to pull from). Before this the catalog called them "Blade 8", which is where the card sits in
+# the book rather than what it is called at the table. A card missing from the file falls back to the
+# old positional label, so adding an expansion's cards never breaks the build.
+TITLES: dict[str, str] = {
+    k: v for k, v in json.loads((Path(__file__).parent / "domain_card_titles.json").read_text(encoding="utf-8")).items()
+    if not k.startswith("_")
+}
+
+
+# The two Void packs (v0.25.0). Everything under assets/extracted_cards/Void is the OFFICIAL "The
+# Void" expansion except this list, which is the earlier BETA holding the Blood domain and the five
+# subclasses that were cut before release. Two packs, gated separately, because a table playing the
+# published book should not be offered playtest content it cannot look up.
+VOID_EXPANSION = "void"
+BETA_EXPANSION = "thevoid"
+BETA_SUBCLASSES = ("order-of-the-lycan", "order-of-the-mutant", "order-of-the-specter", "necromancy", "theurgy")
+BETA_CARDS = frozenset(
+    [f"blood-{lvl:02d}-{n}" for lvl in range(1, 11) for n in (1, 2, 3) if lvl == 1 or n <= 2]
+    + [f"subclass-{s}-{t}-{name}" for s in BETA_SUBCLASSES for t, name in ((1, "foundation"), (2, "specialization"), (3, "mastery"))]
+)
+
+
+def ts_str(s: str) -> str:
+    """A single-quoted TS string literal (card names carry apostrophes: "A Soldier's Bond")."""
+    return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
 def title(slug: str) -> str:
@@ -33,7 +62,17 @@ entries: list[str] = []
 def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
     """Emit catalog entries for the domain/ancestry/community/subclass/transformation trees under `base`.
     `exp` (e.g. 'void') tags the card with its expansion; base-game cards pass '' (no expansion field)."""
-    tag = f" expansion: '{exp}'," if exp else ""
+    def tag_for(card_id: str) -> str:
+        """The expansion tag for one card id.
+
+        v0.32.0: the void/thevoid SPLIT lives here now. It was applied by hand to the generated file,
+        so re-running this script silently reunited the two packs and moved the whole beta into the
+        official one. `expansions.test.ts` caught it, but only after the fact; the generator being
+        wrong is the actual bug.
+        """
+        e = BETA_EXPANSION if exp == VOID_EXPANSION and card_id in BETA_CARDS else exp
+        return f" expansion: '{e}'," if e else ""
+
 
     dom_root = base / "Domains"
     if dom_root.is_dir():
@@ -45,8 +84,9 @@ def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
                 assert m, f.name
                 dom, level = m.group(1), int(m.group(2))
                 rel = f"{rel_prefix}/Domains/{dom_dir.name}/{f.stem}"
+                label = TITLES.get(f.stem, f"{dom_dir.name} {level}")
                 entries.append(
-                    f"  {{ id: '{f.stem}', kind: 'domain', label: '{dom_dir.name} {level}', domain: '{dom}', level: {level},{tag}"
+                    f"  {{ id: '{f.stem}', kind: 'domain', label: {ts_str(label)}, domain: '{dom}', level: {level},{tag_for(f.stem)}"
                     f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
                 )
 
@@ -57,7 +97,7 @@ def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
                 continue
             rel = f"{rel_prefix}/Ancestry/{f.stem}"
             entries.append(
-                f"  {{ id: 'ancestry-{f.stem}', kind: 'ancestry', label: '{title(f.stem)}',{tag}"
+                f"  {{ id: 'ancestry-{f.stem}', kind: 'ancestry', label: '{title(f.stem)}',{tag_for('ancestry-' + f.stem)}"
                 f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
             )
 
@@ -68,7 +108,7 @@ def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
                 continue
             rel = f"{rel_prefix}/Community/{f.stem}"
             entries.append(
-                f"  {{ id: 'community-{f.stem}', kind: 'community', label: '{title(f.stem)}',{tag}"
+                f"  {{ id: 'community-{f.stem}', kind: 'community', label: '{title(f.stem)}',{tag_for('community-' + f.stem)}"
                 f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
             )
 
@@ -84,7 +124,7 @@ def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
                 rel = f"{rel_prefix}/Subclass/{cls_dir.name}/{f.stem}"
                 entries.append(
                     f"  {{ id: 'subclass-{f.stem}', kind: 'subclass', label: '{title(sub)} {TIER_NAMES[tier]}',"
-                    f" className: '{cls_dir.name.lower()}', subclass: '{sub}', tier: {tier},{tag}"
+                    f" className: '{cls_dir.name.lower()}', subclass: '{sub}', tier: {tier},{tag_for('subclass-' + f.stem)}"
                     f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
                 )
 
@@ -95,7 +135,7 @@ def scan(base: Path, rel_prefix: str, exp: str = "") -> None:
                 continue
             rel = f"{rel_prefix}/Transformations/{f.stem}"
             entries.append(
-                f"  {{ id: 'transformation-{f.stem}', kind: 'transformation', label: '{title(f.stem)}',{tag}"
+                f"  {{ id: 'transformation-{f.stem}', kind: 'transformation', label: '{title(f.stem)}',{tag_for('transformation-' + f.stem)}"
                 f" source: require('{rel}.webp'), thumb: require('{rel}_lod.webp') }},"
             )
 

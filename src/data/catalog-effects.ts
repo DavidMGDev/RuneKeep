@@ -38,4 +38,59 @@ export const CATALOG_EFFECTS: Record<string, CardEffect[]> = {
   "valor-05-1": [{ target: "armorScore", delta: 1, note: "While wearing armor, +1 Armor Score (always-on while armored)" }],
   "valor-06-2": [{ target: "severeThreshold", dynamic: "proficiency", note: "Rise Up: +Proficiency to Severe threshold" }],
   "valor-07-2": [{ target: "armorScore", delta: 1, note: "+1 Armor Score while 4+ loadout cards are Valor-domain (always-on passive)" }],
+
+  // ---------------------------------------------------------------------------
+  // v0.32.0 — cards that were collecting a loadout slot and granting nothing.
+  //
+  // Each of these has a number in its rules text that the sheet can hold, and none of them had an
+  // entry here, so equipping them did nothing at all. The three that are CONDITIONAL (Frenzy, Deadly
+  // Focus, Shadowhunter, Full Surge) rely on the new per-card modifier Toggle: equip the card, leave
+  // it muted, and switch it on for the scene it applies to. That is why they can be flat modifiers at
+  // all — before the Toggle, a card that is only sometimes true had to be either always on or
+  // unequipped, and neither is the truth.
+  // ---------------------------------------------------------------------------
+
+  // Bone 7. "+1 to Agility, Finesse and Instinct" while 4+ of your loadout is Bone. Unconditional
+  // enough to leave live; the domain requirement is the player's to keep, like every other 4+ card
+  // already in this table (blade-07-1, splendor-07-2, valor-07-2).
+  "bone-07-1": [
+    { target: "agility", delta: 1, note: "Bone-Touched: +1 Agility while 4+ loadout cards are Bone-domain" },
+    { target: "finesse", delta: 1, note: "Bone-Touched: +1 Finesse while 4+ loadout cards are Bone-domain" },
+    { target: "instinct", delta: 1, note: "Bone-Touched: +1 Instinct while 4+ loadout cards are Bone-domain" },
+  ],
+  // Blade 8. Frenzy: while raging you cannot use Armor Slots, and you deal +10 damage. The sheet
+  // number is the Armor Score going to nothing, which is what Armor Slots are. Mute the card between
+  // rages.
+  "blade-08-2": [{ target: "armorScore", delta: 0, overwrite: true, note: "Frenzy: while raging you can't use Armor Slots" }],
+  // Blade 4. Deadly Focus: while focused on one target, +2 to any roll against them. Proficiency is
+  // the only sheet number that carries a roll bonus, so that is where it lands; mute when the focus ends.
+  "blade-04-1": [{ target: "proficiency", delta: 2, note: "Deadly Focus: +2 to rolls against the target you are focused on" }],
+  // Midnight 8. Shadowhunter: while cloaked in shadow, +3 Evasion. Mute when you step into the light.
+  "midnight-08-1": [{ target: "evasion", delta: 3, note: "Shadowhunter: +3 Evasion while cloaked in shadow" }],
+  // Valor 8. Full Surge: +2 to all character traits while surging. Mute when the surge ends.
+  "valor-08-1": [
+    { target: "agility", delta: 2, note: "Full Surge: +2 Agility while surging" },
+    { target: "strength", delta: 2, note: "Full Surge: +2 Strength while surging" },
+    { target: "finesse", delta: 2, note: "Full Surge: +2 Finesse while surging" },
+    { target: "instinct", delta: 2, note: "Full Surge: +2 Instinct while surging" },
+    { target: "presence", delta: 2, note: "Full Surge: +2 Presence while surging" },
+    { target: "knowledge", delta: 2, note: "Full Surge: +2 Knowledge while surging" },
+  ],
+  // Dread 8. Eldritch Flesh: +1 Armor Score for every 2 Stress you have marked. The first card that
+  // reads a resource rather than a stat, which is what the `stress` formula variable is for: it moves
+  // as you play, so the sheet re-derives whenever Stress changes.
+  "dread-08-2": [
+    { target: "armorScore", dynamic: "formula", formula: { variable: "stress", divide: 2, floor: true }, note: "Eldritch Flesh: +1 Armor Score per 2 marked Stress" },
+  ],
+  // Bone 2. Ferocity: +Evasion equal to the Hit Points your target marked. Nothing on the sheet knows
+  // what the enemy took, so the card ASKS: the "#" button on a focused card opens a keypad and the
+  // number it stores drives this formula. Per card, never global.
+  "bone-02-1": [
+    { target: "evasion", dynamic: "formula", formula: { variable: "input", multiply: 1 }, note: "Ferocity: +Evasion equal to the Hit Points your target marked" },
+  ],
+  // Splendor 9. Overwhelming Aura: your Presence is equal to your Spellcast trait. Not a bonus, a
+  // replacement, which is what `overwrite` is for.
+  "splendor-09-1": [
+    { target: "presence", dynamic: "formula", formula: { variable: "spellcast", multiply: 1 }, overwrite: true, note: "Overwhelming Aura: your Presence equals your Spellcast trait" },
+  ],
 };

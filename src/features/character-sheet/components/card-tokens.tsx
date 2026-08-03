@@ -84,12 +84,31 @@ function scalePts(pts: string, pad: number): string {
  *  radial-gradient face in the die's shape, with the number drawn as a centred RN Text (crisp, reliably
  *  centred). Geometry comes from {@link dieGeometry} so the shape is centred in its slot and the number
  *  sits on the shape's centroid. */
-export const DieButton = memo(function DieButton({ size, dieType, value }: { size: number; dieType: DieType; value: number }) {
+/**
+ * A die's NUMBER on its own (v0.32.0), in the same typography and at the same offset the die draws it.
+ *
+ * Split out so the roll can cross-fade two of them over one die face. Doing it any other way meant
+ * either re-rendering the whole gradient SVG per frame or duplicating the offset maths, and the second
+ * copy would drift from this one the first time a die's nudge was tuned.
+ */
+export const DieNumber = memo(function DieNumber({ size, dieType, value }: { size: number; dieType: DieType; value: number }) {
+  const geo = dieGeometry(dieType);
+  const noff = dieNumberOffset(dieType);
+  const rim = shade(DIE_COLOR[dieType], -0.34);
+  return (
+    <Text
+      allowFontScaling={false}
+      style={{ color: '#F2ECDC', fontFamily: Display.black, fontSize: size * dieNumberFrac(dieType), textAlign: 'center', textShadowColor: rim, textShadowRadius: 1, textShadowOffset: { width: 0, height: 1 }, transform: [{ translateX: (noff.dx / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2 + noff.dy) / DIE_BOX) * size }] }}>
+      {value}
+    </Text>
+  );
+});
+
+export const DieButton = memo(function DieButton({ size, dieType, value, hideNumber }: { size: number; dieType: DieType; value: number; /** v0.32.0: the roll draws its own cross-fading numbers over the face. */ hideNumber?: boolean }) {
   const gid = useId();
   const fill = DIE_COLOR[dieType];
   const rim = shade(fill, -0.34);
   const geo = dieGeometry(dieType);
-  const noff = dieNumberOffset(dieType);
   const face = (pad: number, fillv: string, stroke?: string, sw?: number) =>
     geo.rect ? (
       <Rect x={geo.rect[0] + pad} y={geo.rect[1] + pad} width={geo.rect[2] - 2 * pad} height={geo.rect[3] - 2 * pad} rx={geo.rect[4]} fill={fillv} stroke={stroke} strokeWidth={sw} />
@@ -111,11 +130,7 @@ export const DieButton = memo(function DieButton({ size, dieType, value }: { siz
         {face(2, rim)}
         {face(8, `url(#${gid})`, shade(fill, -0.42), 2)}
       </Svg>
-      <Text
-        allowFontScaling={false}
-        style={{ color: '#F2ECDC', fontFamily: Display.black, fontSize: size * dieNumberFrac(dieType), textAlign: 'center', textShadowColor: rim, textShadowRadius: 1, textShadowOffset: { width: 0, height: 1 }, transform: [{ translateX: (noff.dx / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2 + noff.dy) / DIE_BOX) * size }] }}>
-        {value}
-      </Text>
+      {hideNumber ? null : <DieNumber size={size} dieType={dieType} value={value} />}
     </View>
   );
 });

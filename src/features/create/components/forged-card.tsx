@@ -80,7 +80,10 @@ function BodyText({ body, title, hasSubtitle, multiline }: { body: string; title
     - titleLines * BODY_TITLE_H
     - (hasSubtitle ? BODY_SUB_H + 3 : 0) // its own marginTop rides with it
     - (named ? 6 : 0); // the body's marginTop
-  const fit = fitText(body, { width: BODY_TEXT_W, height: room, base: 10.5, lineRatio: BODY_LINE_RATIO });
+  // v0.32.0: the leading may tighten to 1.05 before the font gives way. A description full of blank
+  // lines is the case that needed it: it could not fit at the old fixed leading, so it fell through
+  // to a truncated line count and printed over the footer on Android.
+  const fit = fitText(body, { width: BODY_TEXT_W, height: room, base: 10.5, lineRatio: BODY_LINE_RATIO, minRatio: 1.05 });
   // Native keeps its auto-shrink under the computed size as a second net; a browser has none, and a
   // line count there could only truncate. See FeatureLine.
   const native = Platform.OS !== 'web' && multiline;

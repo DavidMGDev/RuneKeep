@@ -54,10 +54,40 @@ describe('fitting card text', () => {
   });
 
   it('never returns a size that does not fit, however long the text', () => {
+    // v0.32.0: this used to assert a 6pt floor, which meant an absurd body was TRUNCATED to whatever
+    // fitted at 6pt and the line count it returned was a fiction. It fits by construction now: the
+    // block is never taller than the box, and no line is dropped to get there.
     const wall = Array.from({ length: 60 }, (_, i) => `sentence number ${i} of a very long feature`).join(' ');
     const fit = fitText(wall, WEAPON);
-    expect(fit.fontSize).toBeGreaterThanOrEqual(6);
     expect(fit.fontSize).toBeLessThanOrEqual(WEAPON.base);
+    expect(fit.lines * fit.lineHeight).toBeLessThanOrEqual(WEAPON.height + 0.5); // rounding slack
+    expect(fit.lineHeight).toBeGreaterThanOrEqual(fit.fontSize); // glyphs never overlap
+  });
+
+  describe('newline-heavy bodies (v0.32.0)', () => {
+    // The generic card body, with the leading allowed to tighten before the font gives way.
+    const BODY = { width: 200, height: 122, base: 10.5, lineRatio: 14 / 10.5, minRatio: 1.05 };
+
+    it('keeps every line of a description full of blank lines, inside the box', () => {
+      const body = `Top line.${'\n'.repeat(9)}Bottom line.`;
+      const fit = fitText(body, BODY);
+      expect(fit.lines).toBe(10); // 2 lines of text + 8 blanks — none dropped
+      expect(fit.lines * fit.lineHeight).toBeLessThanOrEqual(BODY.height + 0.5);
+    });
+
+    it('tightens the leading before it shrinks the type', () => {
+      const twelve = Array.from({ length: 12 }, (_, i) => `Line ${i + 1}`).join('\n');
+      const fit = fitText(twelve, BODY);
+      expect(fit.lineHeight).toBeLessThan(fit.fontSize * BODY.lineRatio); // leading gave first
+      expect(fit.fontSize).toBeGreaterThan(8); // and the type is still readable because of it
+    });
+
+    it('reports the TRUE line count even for an absurd body, so nothing is cut', () => {
+      const absurd = `a${'\n\n'.repeat(15)}b`;
+      const fit = fitText(absurd, BODY);
+      expect(fit.lines).toBe(31);
+      expect(fit.lines * fit.lineHeight).toBeLessThanOrEqual(BODY.height + 0.5);
+    });
   });
 
   it('never grows text above the size the card was designed at', () => {

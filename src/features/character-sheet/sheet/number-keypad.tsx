@@ -25,15 +25,31 @@ function Key({ label, onPress, accent, disabled, dm }: { label: string; onPress:
   );
 }
 
+/** A small step button flanking the current number. The GLYPH is small so it does not shout over the
+ *  value, but the touch target is a comfortable 44dp square, which is the whole trick (v0.32.0). */
+export function StepBtn({ label, onPress, disabled, a11y }: { label: string; onPress: () => void; disabled?: boolean; a11y: string }) {
+  return (
+    <Pressable onPress={disabled ? undefined : onPress} disabled={disabled} hitSlop={10} accessibilityRole="button" accessibilityLabel={a11y}>
+      <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.3 : 1 }}>
+        <Text style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.bold, lineHeight: 26 }}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 /**
  * A plain number keypad (#248 item 6) — the damage panel's keypad WITHOUT the hold-to-accept charge
- * and WITHOUT the damage thresholds. Used to ask the player for a dice result during a rest. OK is a
- * normal tap, enabled only when the typed value is within [min, max]. Tap the dim outside to cancel.
+ * and WITHOUT the damage thresholds. Used to ask the player for a dice result during a rest, and
+ * (v0.32.0) for the number a card like Ferocity reads. OK is a normal tap, enabled only when the
+ * typed value is within [min, max]. Tap the dim outside to cancel.
+ *
+ * v0.32.0: a minus and a plus flank the number. Typing a value from scratch every time is the wrong
+ * interaction for a figure you are nudging ("it was 3, now it is 4"), which is most of the time.
  */
-export function NumberKeypad({ title, subtitle, min = 1, max = 9, dm, onSubmit, onClose }: { title: string; subtitle?: string; min?: number; max?: number; /** v0.22.0: this is the PRIMARY stat-editing surface of DM mode, and it was gold-and-red. */ dm?: boolean; onSubmit: (n: number) => void; onClose: () => void }) {
+export function NumberKeypad({ title, subtitle, min = 1, max = 9, initial, dm, onSubmit, onClose }: { title: string; subtitle?: string; min?: number; max?: number; /** v0.32.0: the number already set, so the keypad opens on it rather than empty. */ initial?: number; /** v0.22.0: this is the PRIMARY stat-editing surface of DM mode, and it was gold-and-red. */ dm?: boolean; onSubmit: (n: number) => void; onClose: () => void }) {
   const { scale } = useLayout();
   const vis = useSharedValue(0);
-  const [typed, setTyped] = useState('');
+  const [typed, setTyped] = useState(initial != null && initial !== 0 ? String(initial) : '');
   useEffect(() => { vis.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) }); }, [vis]);
 
   const val = parseInt(typed || '0', 10) || 0;
@@ -42,6 +58,11 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, dm, onSubmit, 
     playSfx('numpadPress');
     setTyped((t) => (t.length < 2 ? t + d : t));
   }, []);
+  // Steps CLAMP rather than refusing, so holding the edge of the range is not a dead button press.
+  const step = useCallback((d: number) => {
+    playSfx('numpadPress');
+    setTyped((t) => String(Math.max(min, Math.min(max, (parseInt(t || '0', 10) || 0) + d))));
+  }, [min, max]);
   const clear = useCallback(() => {
     playSfx('numpadPress');
     setTyped('');
@@ -63,8 +84,10 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, dm, onSubmit, 
         <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke={dm ? DmRune.line : 'rgba(218,162,73,0.6)'} strokeWidth={1.4} style={{ width: scaled(264, scale), maxWidth: '92%', padding: scaled(16, scale), gap: 12 }}>
           <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{title}</Text>
           {subtitle ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, textAlign: 'center', marginTop: -6 }}>{subtitle}</Text> : null}
-          <View style={{ alignItems: 'center', minHeight: 52, justifyContent: 'center' }}>
-            <Text style={{ color: typed ? (dm ? DmRune.ivory : Rune.sheet) : Rune.muted, fontSize: 40, fontFamily: Display.black, lineHeight: 44 }}>{typed || '0'}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 52 }}>
+            <StepBtn label="−" onPress={() => step(-1)} disabled={val <= min} a11y="One less" />
+            <Text style={{ minWidth: 92, textAlign: 'center', color: typed ? (dm ? DmRune.ivory : Rune.sheet) : Rune.muted, fontSize: 40, fontFamily: Display.black, lineHeight: 44 }}>{typed || '0'}</Text>
+            <StepBtn label="+" onPress={() => step(1)} disabled={val >= max} a11y="One more" />
           </View>
           {[
             ['1', '2', '3'],
