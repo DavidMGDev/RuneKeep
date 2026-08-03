@@ -1,19 +1,27 @@
-RuneKeep v0.32.2 - Frenzy gives its Severe bonus, armor equips without closing the app, homebrew lives inside the category it belongs to, and the armor row is five shields again.
-
-FIXES
-
-- FRENZY GRANTS +8 TO YOUR SEVERE DAMAGE THRESHOLD. It had the Armor Slots half of its rule and not the other half.
-- EQUIPPING ARMOR NO LONGER CLOSES THE APP. The armor track's shield count became dynamic in v0.32.0, and nothing had ever changed it before, so an animating shield could outlive the slot it was drawn in. Reaching for a slot that was no longer there threw during a render, which on Android closes the app outright. Frenzy made it easy to hit, because it takes your Armor Score to zero. Any track can shrink safely now.
-- THE ARMOR ROW IS FIVE SHIELDS, NOT HOWEVER MANY YOU HAVE. v0.32.1 read the request backwards and showed only the shields you owned. At five or fewer it is the SECOND ROW that goes: five shields on one line, scaled up to use the space both rows used to take, spaced to line up with the twelve-shield row exactly. Six or more is the two rows of twelve, unchanged.
+RuneKeep v0.33.0 - Cards update when you edit them, dice spin when you roll them, and a character exported from the browser keeps its face.
 
 CARDS
 
-- HOMEBREW IS A FILTER INSIDE EACH CATEGORY, NOT A CATEGORY OF ITS OWN. Three custom weapons now appear under Weapons, with a Homebrew chip beside the tier tabs to narrow to them. Everything else gets an Official and a Homebrew chip; with neither lit you see both, which is the default. Weapons and Armor need only the Homebrew chip, because their tiers already separate the published gear.
-- THE CARD ARCHIVE SHOWS YOUR EXPANSIONS. It only ever listed the bundled cards, so a homebrew card was invisible there however you filtered. Installed expansions now file under the type their content belongs to, and the archive has the same Source filter.
-- CARD DESCRIPTIONS SHOULD NO LONGER REACH THE FOOTER ON ANDROID. The description was measured one way and drawn another: the size was worked out in code, and then the platform's own auto-shrink was also switched on, but only on the phone. Two mechanisms deciding one layout is one too many, so the auto-shrink is gone and both platforms now draw from the same calculation. Six pixels above the watermark are also kept clear, and the line spacing never goes below what the typeface itself asks for, which v0.32.0 allowed.
+- EDITING A CARD ACTUALLY CHANGES THE CARD. The picture the carousel shows is cached, and the cache was keyed on the LENGTH of a card's title, text and colour rather than on what they said. A colour is always seven characters, so recolouring a card could not change the key and you kept the old card forever. Swapping a word for another the same length did the same. It is keyed on the content now. Every custom card, note, item and homebrew card redraws once after you update.
+- DESCRIPTIONS SHOULD CLEAR THE FOOTER ON ANDROID. Android quietly pads every block of text out to the typeface's widest metrics whatever line height it was given, which makes a card's text about four pixels taller on a phone than the same text in a browser. Four pixels is most of the gap between the last line and the watermark. That padding is off now. If a description still reaches the footer after this update, send it to me with the card's title.
+- A CHARACTER COUNT ON TITLES AND DESCRIPTIONS. It appears once a field is most of the way full, so you can see the limit coming instead of finding it when typing stops.
+- HOPE AND FEAR ANCESTRIES NO LONGER FLICKER when you scroll the creator quickly. Those cards are a single printed picture, and they were being rebuilt from scratch every time the carousel moved its window rather than kept as an image like every card beside them.
+
+DICE AND TOKENS
+
+- ROLLING A DIE SPINS IT. One quick turn, thrown fast and eased to a stop. Roll again and it carries on from where it stopped rather than jumping back to square. Swipe it away mid-roll and it keeps turning at the speed it had.
+- THROWING A TOKEN ADDS MOMENTUM TO ITS FALL instead of yanking it onto a new path. The old version changed how gravity worked the instant you swiped, so a token halfway down its drop jumped upward.
+- SWIPING A DIE AWAY MAKES ONE SOUND. It was firing once per frame of the swipe.
+
+CHARACTERS
+
+- A CHARACTER EXPORTED FROM THE BROWSER KEEPS ITS PORTRAIT. The browser's image picker hands back a reference to one page's memory, not the picture, and that reference was what got written into the file. It also meant a portrait picked in a browser vanished the next time you reloaded the tab. The picture itself is stored now. An older export whose portrait cannot be recovered arrives empty and asks for a new one, instead of showing a white rectangle.
+- THE TIMELINE SAYS WHAT A LEVEL UP WAS. Which domain card, which advancements, which traits, the multiclass, the new Experience. It used to say only which level you reached, which is the one entry worth reading.
+- HOLD TO REWIND NO LONGER FIRES WHILE YOU SCROLL. The hold cancels the moment your finger moves, and takes a little longer, so scrolling past a row is just scrolling.
 
 ELSEWHERE
 
-- THE CARDS PANEL OPENS ON CATEGORIES, and the word Categories fits inside its button instead of reading "Catego".
+- THE UPDATE PROMPT DIMS THE WHOLE SCREEN, border included, instead of laying a grey rectangle over part of it.
+- A PHOTO YOU PICK IS NEVER MISTAKEN FOR A SHARED CHARACTER. Anything handed to the app was read off the disk as text and offered to you as a possible character file, including images the app's own picker had just returned. Pictures are recognised as pictures now, and nothing large is read at all.
 
 Sideload: enable Install unknown apps, then open the APK.
