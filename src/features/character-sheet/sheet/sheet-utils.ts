@@ -59,3 +59,30 @@ export function washBands(w: number, h: number, holes: WashRect[]): WashRect[] {
   if (y < h) out.push({ left: 0, top: y, width: w, height: h - y });
   return out;
 }
+
+/**
+ * How the armor shields are laid out (v0.32.1).
+ *
+ * The track was always twelve 17px shields in two rows of six, because twelve is the ceiling. Almost
+ * nobody is at the ceiling: an unarmoured character has none and ordinary armor gives three to five,
+ * so the usual sight was a wall of small grey shields with two or three live ones lost among them.
+ *
+ * Five or fewer: show exactly those, in ONE row, big enough to be worth looking at. Six or more: the
+ * original two rows, because that many at the larger size does not fit the band.
+ *
+ * Zero is the exception that keeps one shield: an empty band under the word ARMOR reads as a bug, and
+ * a single locked shield says "none" clearly. Pure so the geometry can be checked without a screen.
+ */
+export const ARMOR_ONE_ROW_MAX = 5;
+export function armorTrackLayout(unlocked: number): { count: number; size: number; slots: { x: number; y: number }[] } {
+  const safe = Math.max(0, Math.floor(unlocked));
+  if (safe > ARMOR_ONE_ROW_MAX) {
+    return { count: 12, size: 17, slots: Array.from({ length: 12 }, (_, i) => ({ x: (i % 6) * 21, y: Math.floor(i / 6) * 22 })) };
+  }
+  const count = Math.min(Math.max(safe, 1), ARMOR_ONE_ROW_MAX);
+  const size = 26;
+  // Centred vertically in the band the two-row layout occupies (0..39), so the label above and the
+  // panel below keep their spacing whichever layout is showing.
+  const y = Math.round((39 - size) / 2);
+  return { count, size, slots: Array.from({ length: count }, (_, i) => ({ x: i * 28, y })) };
+}

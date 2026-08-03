@@ -677,22 +677,40 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
   );
 });
 
-/** One button in the focused card's action row. Same chamfered shape as the original Modifiers
- *  button, so adding neighbours next to it did not invent a second visual language. */
+/**
+ * One button in the focused card's action row. Same chamfered shape as the original Modifiers button,
+ * so adding neighbours next to it did not invent a second visual language.
+ *
+ * v0.32.1: the Pressable FILLS the button and the button is 44 tall, not 40.
+ *
+ * The row is drawn over the focus veil, and a plain View is not a touch responder, so anything inside
+ * the row that was not the Pressable itself fell straight through to the veil and closed the card.
+ * That included the gaps between the buttons and, on the fixed-width ones, the padding around the
+ * label. `ActionRow` below swallows what is left, so nothing in that band can reach the veil.
+ */
 function ActionBtn({ label, on, wide, a11y, onPress }: { label: string; on?: boolean; wide?: boolean; a11y: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={a11y} style={wide ? { flex: 1 } : undefined}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+      hitSlop={6}
+      style={wide ? { flex: 1, height: ACTION_H } : { minWidth: 48, height: ACTION_H }}>
       <ChamferBox
         chamfer={9}
         fill={on ? 'rgba(200,27,24,0.9)' : 'rgba(14,17,22,0.95)'}
         stroke={on ? Rune.goldBright : Rune.goldEdge}
         strokeWidth={1.4}
-        style={{ paddingHorizontal: wide ? 14 : 12, minWidth: wide ? undefined : 44, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+        style={{ flex: 1, paddingHorizontal: wide ? 14 : 12, paddingVertical: 2, alignItems: 'center', justifyContent: 'center' }}>
         <Text numberOfLines={1} style={{ color: on ? Rune.ivory : Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
     </Pressable>
   );
 }
+
+/** The row's height. 40 + 2px of vertical padding either side: the buttons were too short once there
+ *  were three of them sharing the band. */
+const ACTION_H = 44;
 
 /**
  * The row of controls under a focused card (v0.32.0).
@@ -712,7 +730,12 @@ function FocusedCardActions({ cardId, instanceId }: { cardId: string; instanceId
   const live = !cardStates.modsOff.has(cardId);
   const takesNumber = cardStates.numberInput.has(cardId);
   return (
-    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+    // The row SWALLOWS every touch inside it (v0.32.1). Without this the 8px gaps between the buttons
+    // were holes straight through to the focus veil, and tapping one closed the card.
+    <View
+      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+      onStartShouldSetResponder={() => true}
+      onResponderRelease={() => {}}>
       <ActionBtn label="Modifiers" wide a11y="View this card's modifiers" onPress={() => showCardInfo(instanceId)} />
       {isDomain && equipped ? (
         <ActionBtn
@@ -1252,7 +1275,10 @@ export function CardCarousel() {
           padTouch.value = e.x / coordScale >= PAD_X && e.x / coordScale <= PAD_X + PAD_W && e.y / coordScale >= PAD_Y && e.y / coordScale <= PAD_Y + PAD_H;
           // Never treat a touch on the focused card's Modifiers button as a gear-pad tap (#248 item 2):
           // it would otherwise close+collapse the card alongside opening the modifiers.
-          if (machineState.value === 'fullscreen' && e.x / coordScale >= 106 && e.x / coordScale <= 306 && e.y / coordScale >= 768 && e.y / coordScale <= 814) padTouch.value = false;
+          // v0.32.1: widened to the whole action row (56..356), which grew when Toggle and # joined
+          // Modifiers. The old box was the lone button's, so a tap on the new neighbours reached the
+          // gear underneath as well.
+          if (machineState.value === 'fullscreen' && e.x / coordScale >= 52 && e.x / coordScale <= 360 && e.y / coordScale >= 764 && e.y / coordScale <= 816) padTouch.value = false;
           padWasExpanded.value = machineState.value === 'expanded';
           if (padTouch.value && padWasExpanded.value) {
             grindProgress.value = withTiming(1, { duration: 160 });
@@ -1797,7 +1823,7 @@ export function CardCarousel() {
         <FocusOverlay />
         {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view.
             Sits BELOW the multi-page page dots (#233 item 3) so it never collides with them. */}
-        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(56, 770, 300, 40), { zIndex: 3500 }, modBtnStyle]}>
+        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(56, 768, 300, ACTION_H), { zIndex: 3500 }, modBtnStyle]}>
           {/* kept MOUNTED whenever there's a focusable card so it FADES with fullscreenProgress (no
               pop). The Pressable fills the whole box (no hitSlop into the gear pad below) so a tap
               here ALWAYS opens the modifiers and is CONSUMED — it never falls through to the focus

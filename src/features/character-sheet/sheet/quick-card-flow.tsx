@@ -183,7 +183,10 @@ export function QuickCardFlow({
               targets never race for the same touch. Same band the full editor uses. */}
           {typeable ? (
             <Pressable
-              onPress={() => { playSfx('buttonTap'); setPickType(true); }}
+              // v0.32.1: put the keyboard away first. The picker is a full-screen list, and leaving
+              // the title field focused under it meant returning to a half-covered card with a
+              // keyboard nobody asked to keep.
+              onPress={() => { playSfx('buttonTap'); Keyboard.dismiss(); setPickType(true); }}
               accessibilityRole="button"
               accessibilityLabel={`Card type: ${plaqueLabel}. Tap to change`}
               style={{ position: 'absolute', left: 0, right: 0, top: PLAQUE_TOP, height: PLAQUE_H }}

@@ -3,8 +3,9 @@
  * origin-card preview). Closed, it's one centred "open" button; open, it reveals three aligned top
  * panels — the card action (edit/delete, left), the draggable token sources (centre), and the die
  * source (right). There is no close button: the drawer closes when the card leaves fullscreen and this
- * board unmounts. Gestures on already-placed tokens: HOLD to drop with a gravity fall; TAP to eyedrop a
- * token's colour (drawer open) or cycle a die's number. Placed tokens can't be moved (#244 item 8).
+ * board unmounts. Gestures on already-placed tokens: HOLD to send it off the card (a die ROLLS
+ * instead), keep holding and SWIPE to throw it, TAP to eyedrop a token's colour (drawer open) or step
+ * a die's number. Placed tokens can't be moved (#244 item 8).
  * Everything off the interactive bits is `box-none` so the card still closes by tapping the veil /
  * swiping.
  *
@@ -15,7 +16,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 import { Rune } from '@/constants/theme';
@@ -75,60 +76,8 @@ const DRAWER_TOP = 6;
 
 const newTokenId = () => `tk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
-/** A token mid-fall: the build-up grow + a tiny spark pop, then it drops off the card under gravity. */
+/** The little pop of sparks as a token lets go of the card. */
 const SPARKS = Array.from({ length: 7 }, (_, i) => ({ ang: (i / 7) * Math.PI * 2 + (i % 2) * 0.5, dist: 22 + ((i * 13) % 20) }));
-
-const FallingToken = memo(function FallingToken({ token, size, left, top, dir, reduced, onDone }: { token: PlacedToken; size: number; left: number; top: number; /** v0.32.0: a thrown die's swipe vector. Absent = the original drop, straight down under gravity. */ dir?: { x: number; y: number }; reduced: boolean; onDone: (id: string) => void }) {
-  const grow = useSharedValue(0);
-  const fall = useSharedValue(0);
-  const done = useCallback(() => onDone(token.id), [onDone, token.id]);
-  const h = hashStr(token.id);
-  const h2 = hashStr(`${token.id}~`);
-  const driftX = (h - 0.5) * 2 * size * 1.7;
-  const spin = (h2 - 0.5) * 2; // turns
-  // A THROW keeps the swipe's direction and travels far enough to clear any screen, with a little
-  // gravity sag on the way so it arcs rather than sliding. Same easing and fade as the drop, because
-  // the owner liked how that one felt and this is the same object leaving by a different door.
-  const throwLen = dir ? Math.hypot(dir.x, dir.y) || 1 : 1;
-  const throwX = dir ? (dir.x / throwLen) * size * 16 : 0;
-  const throwY = dir ? (dir.y / throwLen) * size * 16 : 0;
-
-  useEffect(() => {
-    // A thrown die is already big and already spinning in the player's hand — no build-up.
-    if (dir) {
-      grow.value = 1;
-      fall.value = withTiming(1, { duration: reduced ? 160 : 620, easing: Easing.out(Easing.quad) }, (ff) => { if (ff) runOnJS(done)(); });
-      return;
-    }
-    grow.value = withTiming(1, { duration: reduced ? 110 : 440, easing: Easing.out(Easing.cubic) }, (f) => {
-      if (f) fall.value = withTiming(1, { duration: reduced ? 150 : 760, easing: Easing.in(Easing.quad) }, (ff) => { if (ff) runOnJS(done)(); });
-    });
-  }, [grow, fall, reduced, done, dir]);
-
-  const style = useAnimatedStyle(() => {
-    const g = grow.value;
-    const f = fall.value;
-    const fadeOut = f < 0.72 ? 1 : Math.max(0, 1 - (f - 0.72) / 0.28);
-    return {
-      opacity: fadeOut,
-      transform: [
-        { translateX: dir ? throwX * f : driftX * f },
-        { translateY: dir ? throwY * f + f * f * (size * 2.2) : f * f * (size * 9) }, // gravity accel — well past the card edge
-        { scale: 1 + (reduced ? 0.18 : 0.55) * g - 0.25 * f },
-        { rotate: `${spin * f * 360}deg` }, // RN transforms accept deg/rad only — NEVER 'turn' (crashes)
-      ],
-    };
-  });
-
-  return (
-    <View pointerEvents="none" style={{ position: 'absolute', left, top, width: size, height: size }}>
-      {!reduced && !dir ? SPARKS.map((s, i) => <SparkBit key={i} ang={s.ang} dist={s.dist} center={size / 2} grow={grow} />) : null}
-      <Animated.View style={[StyleSheet.absoluteFill, style]}>
-        <TokenGlyph size={size} token={token} />
-      </Animated.View>
-    </View>
-  );
-});
 
 /** One spark of the build-up pop — driven by the LAST half of the grow, gone before the fall begins. */
 function SparkBit({ ang, dist, center, grow }: { ang: number; dist: number; center: number; grow: SharedValue<number> }) {
@@ -143,143 +92,197 @@ function SparkBit({ ang, dist, center, grow }: { ang: number; dist: number; cent
   return <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: center - 2, top: center - 2, width: 4, height: 4, borderRadius: 2, backgroundColor: Rune.goldBright }, style]} />;
 }
 
-/** Hold this long on a die before it starts rolling. Short enough to feel immediate, long enough that
- *  a swipe across the card that happens to begin on a die is still a swipe. */
-const ROLL_HOLD_MS = 340;
-/** The roll itself: grow, cross-fade the number, settle back. */
-const ROLL_MS = 560;
-/** How far the finger must travel DURING a roll to throw the die. Deliberately not twitchy: the owner
- *  asked for intentional, and an accidental throw destroys the token. */
+/** Hold this long before a token acts: a die starts rolling, anything else starts leaving. Short
+ *  enough to feel immediate, long enough that a swipe which merely begins on a token is still a swipe. */
+const HOLD_MS = 340;
+/** The roll: keeps growing, cross-fades the number, settles back to its resting size. */
+const ROLL_MS = 620;
+/** A token leaving the card, whether it falls or is thrown. v0.32.1: the throw used to cover sixteen
+ *  token-widths in 620ms, which is about four frames of screen time. */
+const LEAVE_MS = 1150;
+/** How far the finger must travel to THROW. Deliberately not twitchy: the owner asked for intentional,
+ *  and a throw destroys the token. */
 const THROW_SLOP = 30;
+/** Peak swell, as a fraction of the token's size, at the top of a hold or a roll. */
+const SWELL = 0.26;
 
 /**
  * A placed, interactive token.
  *
- *  - a plain token: HOLD → drop it off the card; TAP (drawer open) → eyedrop its colour.
- *  - a DIE (v0.32.0): HOLD → ROLL it in place; keep holding and SWIPE → throw it off the screen.
- *    TAP still steps its number by one, which is the way to set a die to a result you rolled yourself.
+ *  - ANY token: HOLD and it swells, then leaves the card, falling under gravity. Keep holding and
+ *    SWIPE and it is thrown that way instead. The swipe does not interrupt anything: it adds a
+ *    direction to wherever the token already is, so holding and holding-then-swiping are one motion
+ *    with two endings (v0.32.1).
+ *  - a DIE: HOLD and it ROLLS in place instead of leaving, because a die you are holding is one you
+ *    are about to roll. Only a swipe takes it off the card. TAP still steps its number by one, which
+ *    is how you set a die to a result you rolled yourself.
  *
- * The die's hold used to delete it, which was the wrong verb for the object: a die you are holding is
- * one you are about to roll. Deleting it is now the throw, where the gesture says so.
+ * The whole leave animation lives HERE rather than in a separate falling layer, which is what makes
+ * mid-flight steering possible at all: the gesture and the thing it steers are the same view. The
+ * token comes off the card when the animation ENDS, not when it starts.
  */
-const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, onBeginDrop, onEyedrop, onCycleDie, onRoll, onThrow, reduced }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; onBeginDrop: (t: PlacedToken) => void; onEyedrop: (color: string) => void; onCycleDie: (t: PlacedToken) => void; onRoll: (t: PlacedToken) => number; onThrow: (t: PlacedToken, dx: number, dy: number) => void; reduced: boolean }) {
-  const press = useSharedValue(0);
+const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, onEyedrop, onCycleDie, onRoll, onLeave, reduced }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; onEyedrop: (color: string) => void; onCycleDie: (t: PlacedToken) => void; onRoll: (t: PlacedToken) => number; /** Called once the token has finished leaving: take it off the card. */ onLeave: (t: PlacedToken) => void; reduced: boolean }) {
   const fill = tokenFill(token); // computed on JS — NEVER call tokenFill() inside a worklet (crashes)
   const isDie = token.kind === 'die';
   const dieType = token.dieType ?? 'd6';
   const shownValue = token.dieValue ?? DIE_MAX[dieType];
 
-  // --- the roll (dice only) -------------------------------------------------
-  const arm = useSharedValue(0); // 0..1 hold progress; reaching 1 starts the roll
-  const rolling = useSharedValue(0); // 1 while the roll animation owns this token
-  const rollP = useSharedValue(0); // 0..1 through the roll
-  const thrown = useSharedValue(0); // 1 once a throw has been fired, so it only fires once
+  /**
+   * ONE swell value for the hold AND the roll (v0.32.1).
+   *
+   * They used to be two: the hold grew `press` to 1, then the roll switched the style over to a sine
+   * of its own progress, which starts at 0. So the die snapped back to its resting size at the exact
+   * moment the roll sound played, and then grew a second time. Worse, when the roll ended the style
+   * fell back to `press`, still 1, so a die held past the end of its roll jumped to full size and
+   * stayed there until release. One value, animated continuously, has neither problem.
+   */
+  const swell = useSharedValue(0);
+  const rollP = useSharedValue(0); // 0..1 through the roll (drives the number cross-fade)
+  const phase = useSharedValue(0); // 0 = idle/holding, 1 = rolling, 2 = leaving
+  const leave = useSharedValue(0); // 0..1 through the fall or throw
+  const thrownAt = useSharedValue(2); // the `leave` value the swipe landed at; > 1 = never thrown
+  const dirX = useSharedValue(0);
+  const dirY = useSharedValue(0);
   const startX = useSharedValue(0);
   const startY = useSharedValue(0);
+  /** Drives the spark pop as the token lets go. Its own value because `swell` is parked at 1 through
+   *  a leave, and SparkBit reads a 0..1 sweep. */
+  const pop = useSharedValue(0);
   const [rollTo, setRollTo] = useState<number | null>(null); // the face being rolled to
+
+  const done = useCallback(() => onLeave(token), [onLeave, token]);
+
+  /** Grow on from wherever the hold got to, cross-fade the number, settle back. */
   const beginRoll = useCallback(() => {
     setRollTo(onRoll(token));
     rollP.value = 0;
+    // Continuous: `swell` is already at 1 from the hold, so it carries on up and then comes back down.
+    swell.value = withSequence(
+      withTiming(1.35, { duration: reduced ? 60 : ROLL_MS * 0.34, easing: Easing.out(Easing.cubic) }),
+      withTiming(0, { duration: reduced ? 100 : ROLL_MS * 0.66, easing: Easing.inOut(Easing.cubic) }),
+    );
     rollP.value = withTiming(1, { duration: reduced ? 160 : ROLL_MS, easing: Easing.inOut(Easing.cubic) }, (f) => {
       'worklet';
-      if (f && thrown.value === 0) { rolling.value = 0; runOnJS(setRollTo)(null); }
+      // Settled, and the finger may still be down. Back to idle at RESTING size, not at full swell.
+      if (f && phase.value === 1) { phase.value = 0; runOnJS(setRollTo)(null); }
     });
-  }, [onRoll, token, rollP, rolling, thrown, reduced]);
-  const fireThrow = useCallback((dx: number, dy: number) => onThrow(token, dx, dy), [onThrow, token]);
+  }, [onRoll, token, rollP, swell, phase, reduced]);
+
+  /** Start leaving the card. `dx`/`dy` (a swipe) throw it that way; without them it simply drops. */
+  const beginLeave = useCallback((dx: number, dy: number) => {
+    phase.value = 2;
+    const len = Math.hypot(dx, dy);
+    dirX.value = len ? dx / len : 0;
+    dirY.value = len ? dy / len : 0;
+    thrownAt.value = len ? 0 : 2;
+    pop.value = 0;
+    pop.value = withTiming(1, { duration: reduced ? 120 : 420 });
+    tapHaptic();
+    playSfx('tokenRemove'); // #255
+    leave.value = withTiming(1, { duration: reduced ? 200 : LEAVE_MS, easing: Easing.out(Easing.quad) }, (f) => {
+      'worklet';
+      if (f) runOnJS(done)();
+    });
+  }, [phase, dirX, dirY, thrownAt, leave, pop, reduced, done]);
+
+  /** Steer a leave that is already running, from a swipe mid-flight. Adds direction to where the
+   *  token IS rather than restarting it, which is what keeps hold and hold-then-swipe one motion. */
+  const steer = useCallback((dx: number, dy: number) => {
+    const len = Math.hypot(dx, dy) || 1;
+    dirX.value = dx / len;
+    dirY.value = dy / len;
+    thrownAt.value = leave.value;
+  }, [dirX, dirY, thrownAt, leave]);
 
   /**
    * MANUAL activation, which is the whole reason this is a Pan and not a LongPress.
    *
-   * Until the hold completes the gesture stays un-activated, so a swipe that merely started on a die
-   * still reaches the card behind and closes it, exactly as before. The moment the roll begins it
-   * activates and takes the touch, which is what stops an accidental swipe-down from unfocusing the
-   * card while the die is still under the finger.
+   * Until the hold completes the gesture stays un-activated, so a swipe that merely started on a
+   * token still reaches the card behind and closes it. The moment it acts it activates and takes the
+   * touch, which is what stops an accidental swipe-down from unfocusing the card mid-roll.
    */
-  const diePan = useMemo(
+  const pan = useMemo(
     () =>
       Gesture.Pan()
         .manualActivation(true)
         .onTouchesDown((e) => {
           'worklet';
-          arm.value = 0;
-          thrown.value = 0;
+          if (phase.value === 2) return; // already on its way out
           startX.value = e.allTouches[0]?.absoluteX ?? 0;
           startY.value = e.allTouches[0]?.absoluteY ?? 0;
-          press.value = withTiming(1, { duration: ROLL_HOLD_MS });
-          arm.value = withTiming(1, { duration: ROLL_HOLD_MS }, (f) => {
+          swell.value = withTiming(1, { duration: HOLD_MS }, (f) => {
             'worklet';
-            if (!f) return;
-            rolling.value = 1;
-            runOnJS(beginRoll)();
+            if (!f || phase.value !== 0) return;
+            if (isDie) { phase.value = 1; runOnJS(beginRoll)(); }
+            else runOnJS(beginLeave)(0, 0);
           });
         })
         .onTouchesMove((e, state) => {
           'worklet';
-          if (rolling.value === 1) { state.activate(); return; } // the roll owns the finger now
+          if (phase.value !== 0) { state.activate(); return; } // we own the finger now
           const t = e.allTouches[0];
           if (!t) return;
-          // Moved before the hold completed: this is a swipe, not a roll. Fail, so the card behind
-          // still gets it and swiping across a die closes the card exactly as it always did.
+          // Moved before the hold completed: this is a swipe, not a hold. Fail, so the card behind
+          // still gets it and swiping across a token closes the card exactly as it always did.
           if (Math.hypot(t.absoluteX - startX.value, t.absoluteY - startY.value) > 14) {
-            cancelAnimation(arm);
-            arm.value = 0;
+            cancelAnimation(swell);
+            swell.value = withTiming(0, { duration: 160 });
             state.fail();
           }
         })
         .onUpdate((e) => {
           'worklet';
-          if (rolling.value !== 1 || thrown.value === 1) return;
           if (Math.hypot(e.translationX, e.translationY) < THROW_SLOP) return;
-          thrown.value = 1;
-          runOnJS(fireThrow)(e.translationX, e.translationY);
+          // A die is only ever removed by a throw; anything else is already leaving and gets steered.
+          if (phase.value === 1) runOnJS(beginLeave)(e.translationX, e.translationY);
+          else if (phase.value === 2 && thrownAt.value > 1) runOnJS(steer)(e.translationX, e.translationY);
         })
         .onFinalize(() => {
           'worklet';
-          cancelAnimation(arm);
-          arm.value = 0;
-          press.value = withTiming(0, { duration: 160 });
+          // A roll or a leave in flight keeps its animation; only an unfinished HOLD relaxes.
+          if (phase.value !== 0) return;
+          cancelAnimation(swell);
+          swell.value = withTiming(0, { duration: 160 });
         }),
-    [arm, press, rolling, thrown, startX, startY, beginRoll, fireThrow],
+    [swell, phase, thrownAt, startX, startY, isDie, beginRoll, beginLeave, steer],
   );
 
-  const hold = useMemo(
-    () =>
-      Gesture.LongPress()
-        .minDuration(420)
-        .maxDistance(16)
-        .onBegin(() => {
-          'worklet';
-          press.value = withTiming(1, { duration: 300 });
-        })
-        .onStart(() => {
-          'worklet';
-          runOnJS(onBeginDrop)(token);
-        })
-        .onFinalize(() => {
-          'worklet';
-          press.value = withTiming(0, { duration: 160 });
-        }),
-    [press, onBeginDrop, token],
-  );
   const tap = useMemo(
     () =>
       Gesture.Tap()
         .maxDuration(260)
         .onEnd(() => {
           'worklet';
+          if (phase.value === 2) return;
           // #293: tapping a placed DIE cycles its number; a regular token eyedrops its colour (drawer open).
           if (isDie) runOnJS(onCycleDie)(token);
           else if (drawerOpen) runOnJS(onEyedrop)(fill);
         }),
-    [drawerOpen, onEyedrop, fill, isDie, onCycleDie, token],
+    [drawerOpen, onEyedrop, fill, isDie, onCycleDie, token, phase],
   );
-  const gesture = useMemo(() => (isDie ? Gesture.Race(diePan, tap) : Gesture.Race(hold, tap)), [isDie, diePan, hold, tap]);
+  const gesture = useMemo(() => Gesture.Race(pan, tap), [pan, tap]);
 
-  // The die swells as it is held and through the first half of the roll, then settles back — the
-  // same build-up language as a token about to drop, ending in a landing rather than a fall.
+  const h = hashStr(token.id);
+  const h2 = hashStr(`${token.id}~`);
+  const driftX = (h - 0.5) * 2 * size * 1.2;
+  const spin = (h2 - 0.5) * 2; // turns
+
   const style = useAnimatedStyle(() => {
-    const swell = rolling.value === 1 ? Math.sin(rollP.value * Math.PI) : press.value;
-    return { transform: [{ scale: 1 + swell * 0.26 }] };
+    const f = leave.value;
+    // The throw is an IMPULSE added from the moment of the swipe, so a token steered late carries on
+    // from where it already was instead of jumping onto a new path.
+    const kick = Math.max(0, f - Math.min(thrownAt.value, 1));
+    const thrown = thrownAt.value <= 1;
+    return {
+      opacity: f < 0.66 ? 1 : Math.max(0, 1 - (f - 0.66) / 0.34),
+      transform: [
+        { translateX: driftX * f + dirX.value * kick * size * 7 },
+        // A thrown token sags a little on its way out; a dropped one is all gravity.
+        { translateY: (thrown ? f * f * size * 1.8 : f * f * size * 7) + dirY.value * kick * size * 7 },
+        { scale: 1 + swell.value * SWELL - 0.3 * f },
+        { rotate: `${spin * f * 360}deg` }, // RN transforms accept deg/rad only — NEVER 'turn' (crashes)
+      ],
+    };
   });
   // Old number out over the first half, new number in over the second. The swap point is the top of
   // the swell, so the value changes at the moment the die is biggest.
@@ -289,6 +292,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View style={[{ position: 'absolute', left, top, width: size, height: size }, style]}>
+        {!reduced ? SPARKS.map((s, i) => <SparkBit key={i} ang={s.ang} dist={s.dist} center={size / 2} grow={pop} />) : null}
         {isDie && rollTo != null ? (
           <>
             <DieButton size={size} dieType={dieType} value={shownValue} hideNumber />
@@ -381,8 +385,6 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
   const [open, setOpen] = useState(false);
   const [dieType, setDieType] = useState<DieType>('d20'); // the source die's current size (#293)
   const openP = useSharedValue(0);
-  // `dir` (v0.32.0) is a thrown die's swipe vector; without one the token just drops under gravity.
-  const [falling, setFalling] = useState<{ token: PlacedToken; left: number; top: number; dir?: { x: number; y: number } }[]>([]);
 
   useEffect(() => {
     openP.value = withTiming(open ? 1 : 0, { duration: 220, easing: Easing.out(Easing.cubic) });
@@ -408,19 +410,10 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
     [cardRect, cardBase, drawerColor, dieType, onPlace],
   );
 
-  const beginDrop = useCallback(
-    (t: PlacedToken) => {
-      const size = cardBase * placedKindScale(t.kind);
-      const left = cardRect.left + t.x * cardRect.width - size / 2;
-      const top = cardRect.top + t.y * cardRect.height - size / 2;
-      setFalling((list) => [...list, { token: t, left, top }]);
-      onRemove(t.id);
-      tapHaptic();
-      playSfx('tokenRemove'); // #255
-    },
-    [cardRect, cardBase, onRemove],
-  );
-  const fallingDone = useCallback((id: string) => setFalling((list) => list.filter((f) => f.token.id !== id)), []);
+  /** A token has finished its leave animation. NOW it comes off the card (v0.32.1): removing it at
+   *  the START meant the animation had to live in a separate layer, which is what made steering a
+   *  throw mid-flight impossible. */
+  const leaveDone = useCallback((t: PlacedToken) => onRemove(t.id), [onRemove]);
   /**
    * Roll a placed die (v0.32.0): pick the face, store it, and hand it back so the animation can
    * cross-fade to it. Stored immediately rather than at the end of the animation, so a die thrown
@@ -437,19 +430,6 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
     },
     [onUpdate],
   );
-  /** Throw a rolling die off the screen in the direction of the swipe, and take it off the card. */
-  const throwDie = useCallback(
-    (t: PlacedToken, dx: number, dy: number) => {
-      const size = cardBase * placedKindScale(t.kind);
-      const left = cardRect.left + t.x * cardRect.width - size / 2;
-      const top = cardRect.top + t.y * cardRect.height - size / 2;
-      setFalling((list) => [...list, { token: t, left, top, dir: { x: dx, y: dy } }]);
-      onRemove(t.id);
-      tapHaptic();
-      playSfx('tokenRemove');
-    },
-    [cardRect, cardBase, onRemove],
-  );
   const eyedrop = useCallback((color: string) => { onSetDrawerColor(color); tapHaptic(); playSfx('tokenCopyColor'); }, [onSetDrawerColor]);
   const cycleColor = useCallback(() => { onSetDrawerColor(randomTokenColor(drawerColor)); playSfx('tokenCopyColor'); }, [onSetDrawerColor, drawerColor]);
   // #293: tap the source die → next size; tap a placed die → next value.
@@ -463,9 +443,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
     },
     [onUpdate],
   );
-
-  const fallingIds = useMemo(() => new Set(falling.map((f) => f.token.id)), [falling]);
-  const shown = tokens.filter((t) => !fallingIds.has(t.id));
+  const shown = tokens;
 
   // Three aligned panels in the top band (#293/#297): action (left), token sources (centre), die
   // (right). The side panels EXPAND to fill the row width on each side of the fixed centre panel.
@@ -491,19 +469,14 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
             left={cardRect.left + t.x * cardRect.width - size / 2}
             top={cardRect.top + t.y * cardRect.height - size / 2}
             drawerOpen={open}
-            onBeginDrop={beginDrop}
             onEyedrop={eyedrop}
             onCycleDie={cycleDie}
             onRoll={rollDie}
-            onThrow={throwDie}
+            onLeave={leaveDone}
             reduced={reduced}
           />
         );
       })}
-      {/* tokens dropping off the card, and dice thrown off it */}
-      {falling.map((f) => (
-        <FallingToken key={f.token.id} token={f.token} size={cardBase * placedKindScale(f.token.kind)} left={f.left} top={f.top} dir={f.dir} reduced={reduced} onDone={fallingDone} />
-      ))}
 
       {/* CLOSED: one obvious "open drawer" button, centred at the top. No close — the drawer closes when
           you leave fullscreen (this whole board unmounts). */}
