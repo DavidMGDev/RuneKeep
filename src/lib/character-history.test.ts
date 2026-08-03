@@ -1,5 +1,5 @@
 import type { CharacterFile } from './character-file';
-import { cardMoves, capEntries, classify, recoverableCards, restoreCard, COALESCE_MS, emptyHistory, HISTORY_CAP, preview, readHistory, record, repair, rewind, stripHistory, timeline } from './character-history';
+import { cardMoves, capEntries, classify, recoverableCards, restoreCard, COALESCE_MS, emptyHistory, HISTORY_CAP, KEPT_IMAGE, preview, readHistory, record, rehydrateImages, repair, rewind, stripHistory, timeline } from './character-history';
 
 /** A minimal but realistic character file. Only the fields a test touches need to be meaningful. */
 function mk(over: Partial<CharacterFile> = {}): CharacterFile {
@@ -417,5 +417,48 @@ describe('which cards an entry moved', () => {
     expect(fromNothing.removed).toEqual([]);
     expect(cardMoves(mk(), null).added).toEqual([]);
     expect(cardMoves(mk(), null).removed).toContain('ancestry-elf');
+  });
+});
+
+describe('inline images never enter a snapshot (v0.33.1)', () => {
+  const PHOTO = `data:image/jpeg;base64,${'A'.repeat(500)}`;
+  const live = mk({
+    portraitUri: PHOTO,
+    customCards: [
+      { id: 'cc-1', title: 'Torch', text: '', imageUri: PHOTO },
+      { id: 'cc-2', title: 'Rope', text: '', imageUri: null },
+    ],
+  } as Partial<CharacterFile>);
+
+  it('replaces the bytes with a placeholder, and leaves file:// paths alone', () => {
+    const snap = stripHistory(live);
+    expect(snap.portraitUri).toBe(KEPT_IMAGE);
+    expect(JSON.stringify(snap)).not.toContain('AAAA');
+    expect(stripHistory(mk({ portraitUri: 'file:///images/a.jpg' })).portraitUri).toBe('file:///images/a.jpg');
+  });
+
+  it('does not copy the character it was given', () => {
+    stripHistory(live);
+    expect(live.portraitUri).toBe(PHOTO);
+    expect((live.customCards ?? [])[0].imageUri).toBe(PHOTO);
+  });
+
+  it('puts the live picture back on rewind, matching cards by id', () => {
+    const back = rehydrateImages(stripHistory(live), live);
+    expect(back.portraitUri).toBe(PHOTO);
+    expect((back.customCards ?? [])[0].imageUri).toBe(PHOTO);
+    expect((back.customCards ?? [])[1].imageUri).toBeNull();
+  });
+
+  it('clears the placeholder when there is no live image to take, rather than leaving it on screen', () => {
+    const gone = rehydrateImages(stripHistory(live), mk({ portraitUri: null, customCards: [] } as Partial<CharacterFile>));
+    expect(gone.portraitUri).toBeNull();
+    expect((gone.customCards ?? [])[0].imageUri).toBeNull();
+  });
+
+  it('rewind returns a character with its picture, not a placeholder', () => {
+    const h = record(record(emptyHistory(), null, stripHistory(live), {}, T0), stripHistory(live), stripHistory(mk({ ...live, level: 2 })), {}, at(1));
+    const r = rewind(h, 0, live);
+    expect(r.file.portraitUri).toBe(PHOTO);
   });
 });

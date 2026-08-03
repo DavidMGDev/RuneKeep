@@ -129,6 +129,24 @@ const hasBeastform = (f: { className: string; multiclassName?: string }) => f.cl
  * rounded), the SAME size for every state. The marked pip adds a FLAT thin under-line spanning
  * only the straight middle of the bottom edge — the chamfered corner spans are excluded.
  */
+/** Cosmetic stick-on decoration. Nothing that builds a deck reads any of it (v0.33.1). */
+const TOKEN_FIELDS = new Set(['cardTokens', 'tokenColor', 'tokenDrawerX']);
+
+/** Whether `next` differs from `prev` in the token fields and nowhere else. */
+function onlyTokensChanged(prev: CharacterFile | null | undefined, next: CharacterFile | null | undefined): boolean {
+  if (!prev || !next) return false;
+  const a = prev as unknown as Record<string, unknown>;
+  const b = next as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  let touched = false;
+  for (const k of keys) {
+    if (a[k] === b[k]) continue;
+    if (!TOKEN_FIELDS.has(k)) return false;
+    touched = true;
+  }
+  return touched;
+}
+
 function StressPip({ state, red }: { state: PipState; red: string }) {
   // The FILLED shapes give the chamfer polygon a SAME-COLOUR stroke so it renders as one seamless SVG
   // shape. The plain-View chamfer (#328) left hairline seams where its corner triangles abut the body
@@ -702,6 +720,25 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [file, setFile] = useState(characterFile);
   const fileRef = useRef(file);
   fileRef.current = file;
+  /**
+   * The file as the DECKS see it (v0.33.1): the same object, unless something other than the
+   * cosmetic token fields changed.
+   *
+   * Building the carousel is the expensive thing the sheet does. It rebuilds every forged-card job,
+   * every deck and every card element, and it is memoized on the whole `file`, so dropping a token or
+   * tapping a die invalidated it and rebuilt the lot. On a phone the deck is bitmaps by then and it
+   * mostly gets away with it. In a browser NOTHING is ever forged, so those elements are live cards:
+   * svg canvases plus auto-sizing text, dozens of them, re-rendered for a decoration that is drawn by
+   * a different layer entirely. That is the rest of the second the owner waited after dropping a
+   * token.
+   *
+   * A shallow reference compare is enough because every writer builds `{ ...f, patch }`, so a
+   * token-only change leaves every other value reference-identical. Anything else at all, and the new
+   * file is adopted.
+   */
+  const deckFileRef = useRef(file);
+  if (file !== deckFileRef.current && !onlyTokensChanged(deckFileRef.current, file)) deckFileRef.current = file;
+  const deckFile = deckFileRef.current;
   // In-play resource persistence (v0.9.7): HP/Stress/Hope/Armor + gold live in the runtime `character`
   // and historically reset to full/default on every load. A ref holds the live values; EVERY disk write
   // STAMPS them onto the file (kept OUT of `file` state so a pip change never re-derives the carousel).
@@ -836,6 +873,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
   const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs } = useMemo(() => {
+    // v0.33.1: the deck-facing view of the file. Reference-identical to `file` unless something
+    // other than the cosmetic token fields changed, so a placed token cannot rebuild the whole deck.
+    const file = deckFile;
     // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
     // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
     // & experience cards carry their own stable id here so a toggle survives an edit.
@@ -1020,7 +1060,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         }))
       : [];
     return { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs };
-  }, [file]);
+  }, [deckFile]);
   const allJobs = useMemo(
     () => [...expJobs, ...(classJob ? [classJob] : []), ...(mcClassJob ? [mcClassJob] : []), ...mcFeatJobs, ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs, ...martialJobs],
     [expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, martialJobs],
@@ -1072,6 +1112,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // feature card, then subclass, ancestry, community in that order (#100/#108). The origin trio
   // stays LAST so the badges (which target the last three) keep pointing at them.
   const { decks: carouselDecks, categoryMeta, originIndices } = useMemo(() => {
+    // v0.33.1: the deck-facing view of the file. Reference-identical to `file` unless something
+    // other than the cosmetic token fields changed, so a placed token cannot rebuild the whole deck.
+    const file = deckFile;
     const none = { decks: undefined as Record<string, CardItem[]> | undefined, categoryMeta: undefined as Record<string, { label: string; icon?: string; builtin: boolean }> | undefined, originIndices: undefined as [number, number, number] | undefined };
     if (!file) return none;
     // v0.10.3: an embedded homebrew card forges into a CardItem in its own structural slot (so origin
@@ -1363,7 +1406,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const fa = decks.abilities;
     const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
     return { decks, categoryMeta, originIndices };
-  }, [file, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
+  }, [deckFile, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null); // v0.10.1 NFC tap-to-share

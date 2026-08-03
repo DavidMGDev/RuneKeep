@@ -95,19 +95,26 @@ const skipInventoryCard = (choice: 0 | 1): StraightItem => ({
 // creation carousel — structured ancestries have no webp to overlay, so the cross-out rides the markdown.
 const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => {
   /**
-   * A PRINTED FACE rides the image path, not the live one (v0.33.0).
+   * A PRINTED FACE is ONE image (v0.33.0, corrected v0.33.1).
    *
    * The Hope and Fear ancestries are single bundled bitmaps: there is nothing to lay out and nothing
    * to forge. Handing them over as `custom` made them a live component anyway, and the carousel only
-   * mounts a window of slots, so grinding past them unmounted and remounted the element every time
-   * the window moved. A `thumb`/`source` item is a plain image the carousel keeps decoded and fades,
-   * which is exactly how the catalog ancestries beside them already behave.
+   * mounts a window of slots, so grinding past them rebuilt the element every time the window moved.
    *
-   * `struckIndex` is deliberately ignored: a printed face has no text blocks to strike, and the
-   * carousel draws the mixed-ancestry cross-out over the bitmap itself.
+   * v0.33.0 gave them `thumb` AND `source`, which made it worse rather than better. Those are meant
+   * to be a LOD PAIR of two different files, and the carousel mounts the `source` layer only within
+   * two slots of the centre, so every card you passed mounted a SECOND image view onto the very same
+   * bundled asset and unmounted it again a moment later. Two views sharing one decoded bitmap, one of
+   * them being torn down on a timer, is a blank card waiting to happen, and with a run of these
+   * ancestries side by side it happens to several at once, which is what reads as the whole carousel
+   * blinking. There is no LOD to have here anyway: both halves were the same picture.
+   *
+   * So: one persistent image, mounted for as long as the slot is, never swapped. `struckIndex` is
+   * deliberately ignored, because a printed face has no text blocks to strike and the carousel draws
+   * the mixed-ancestry cross-out over the bitmap itself.
    */
   const face = VOID_ANCESTRY_FACE[lc.id];
-  if (face) return { id: lc.id, label: lc.title || 'Card', thumb: face, source: face };
+  if (face) return { id: lc.id, label: lc.title || 'Card', thumb: face };
   return { id: lc.id, label: lc.title || 'Card', custom: <LibraryForgedCard card={lc} struckIndex={struckIndex} /> };
 };
 
