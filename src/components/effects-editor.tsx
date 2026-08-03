@@ -78,10 +78,18 @@ export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
   return { ...e, target: o.target, mode: isThresholdTarget(o.target) ? o.mode : undefined, experienceId: undefined };
 }
 
-/** Formula variables a player can scale (#278). v0.21.0: `spellcast` = your subclass's Spellcast trait. */
-const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+/** Formula variables a player can scale (#278). v0.21.0: `spellcast` = your subclass's Spellcast trait.
+ *  v0.32.0 adds two that are not sheet stats: the Stress currently marked, and a NUMBER INPUT the
+ *  card asks its owner for (per card, never shared). */
+const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
 const VAR_LABEL: Record<EffectFormula['variable'], string> = {
-  level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
+  level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', stress: 'Current Stress', input: 'Number Input',
+  agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
+};
+/** What a variable means, for the ones a player cannot guess from the name alone. */
+const VAR_HINT: Partial<Record<EffectFormula['variable'], string>> = {
+  stress: 'How much Stress is marked right now. Changes as you play.',
+  input: 'A number you type on this card. Tap # under the card to set it.',
 };
 
 /**
@@ -114,6 +122,7 @@ export function FormulaVarPicker({ current, onPick, onClose }: { current?: Effec
               <Pressable key={v} onPress={() => onPick(v)} accessibilityRole="button" accessibilityState={{ selected: on }}>
                 <View style={{ minHeight: 40, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
                   <Text style={{ color: on ? Rune.ivory : Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{VAR_LABEL[v]}</Text>
+                  {VAR_HINT[v] ? <Text style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 10, lineHeight: 13, fontFamily: Body.regular, marginTop: 2 }}>{VAR_HINT[v]}</Text> : null}
                 </View>
               </Pressable>
             );
@@ -326,6 +335,21 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
                   {e.permanent
                     ? 'Kept whether or not the card is equipped. To lose it you must delete this card from every category it appears in.'
                     : 'Applies only while the card is equipped.'}
+                </Text>
+                {/* v0.32.0: OVERWRITE. Some cards do not add to a stat, they replace it: Overwhelming
+                    Aura's "your Presence is equal to your Spellcast trait" is a statement about what
+                    Presence IS. Modelling that as a bonus would have needed a number nobody can know
+                    in advance. */}
+                <Pressable onPress={() => setAt(i, { overwrite: e.overwrite ? undefined : true })} accessibilityRole="switch" accessibilityState={{ checked: !!e.overwrite }} accessibilityLabel="Overwrite" style={{ marginTop: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ width: 18, height: 18, borderRadius: 3, borderWidth: 1.6, borderColor: e.overwrite ? Rune.goldBright : 'rgba(218,162,73,0.45)', backgroundColor: e.overwrite ? Rune.goldBright : 'transparent' }} />
+                    <Text style={{ color: e.overwrite ? Rune.goldBright : Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>Overwrite</Text>
+                  </View>
+                </Pressable>
+                <Text style={{ color: Rune.muted, fontSize: 10, lineHeight: 14, fontFamily: Body.regular }}>
+                  {e.overwrite
+                    ? 'The stat BECOMES this value. Everything else contributing to it is discarded, however it got there.'
+                    : 'Adds to whatever else is contributing to the stat.'}
                 </Text>
               </View>
             ) : null}

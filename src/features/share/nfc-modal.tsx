@@ -31,7 +31,7 @@ import {
   SAFE_NFC_BYTES,
   startNfcSend,
 } from '@/lib/nfc';
-import { exportRkp } from '@/lib/library-store';
+import { canShareFiles, exportRkp, shareFileLabel } from '@/lib/library-store';
 import type { RkpContent } from '@/lib/rkp';
 import { DimScreen } from '@/lib/screen-dim';
 
@@ -73,9 +73,9 @@ function useExport(content: RkpContent, label: string, onClose: () => void) {
     void (async () => {
       try {
         await exportRkp(content, label);
-        // The browser downloads without further ceremony, so say something happened; the OS share
-        // sheet on a phone is its own confirmation.
-        if (Platform.OS === 'web') showToast('Saved as a .rune file', 'success');
+        // A DOWNLOAD happens with no further ceremony, so say something happened. A share sheet, on
+        // a phone or in a browser that has one, is its own confirmation and needs no toast.
+        if (Platform.OS === 'web' && !canShareFiles()) showToast('Saved as a .rune file', 'success');
         onClose();
       } catch {
         showToast('That could not be exported.', 'error');
@@ -98,9 +98,11 @@ function ExportOnlyPanel({ content, label, onClose }: { content: RkpContent; lab
       <ExportGlyph tint={Rune.goldEdge} />
       <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' }}>Share {label}</Text>
       <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19, textAlign: 'center' }}>
-        Tapping phones together needs NFC, which is not available here. Save it as a file instead, then send it however you like. Anyone with RuneKeep can open it.
+        {canShareFiles()
+          ? 'Tapping phones together needs NFC, which is not available here. Send it as a file instead, straight to any app on this device. Anyone with RuneKeep can open it.'
+          : 'Tapping phones together needs NFC, which is not available here. Save it as a file instead, then send it however you like. Anyone with RuneKeep can open it.'}
       </Text>
-      <RuneButton label="Export as file" kind="primary" height={46} style={{ alignSelf: 'stretch' }} onPress={doExport} />
+      <RuneButton label={shareFileLabel()} kind="primary" height={46} style={{ alignSelf: 'stretch' }} onPress={doExport} />
       <RuneButton label="Cancel" kind="ghost" height={40} style={{ alignSelf: 'stretch' }} onPress={onClose} />
     </Shell>
   );
@@ -168,7 +170,7 @@ function NfcSendPanel({ content, label, onClose }: { content: RkpContent; label:
       ) : null}
       {/* v0.30.0: the same payload, out as a file. It is the way to share with someone who is not in
           the room, and the only thing that works once a payload is too big for a tag. */}
-      {state === 'sent' ? null : <RuneButton label="Export as file" kind={tooBig ? 'primary' : 'ghost'} height={42} style={{ alignSelf: 'stretch' }} onPress={doExport} />}
+      {state === 'sent' ? null : <RuneButton label={shareFileLabel()} kind={tooBig ? 'primary' : 'ghost'} height={42} style={{ alignSelf: 'stretch' }} onPress={doExport} />}
       <RuneButton label={state === 'sent' ? 'Done' : 'Cancel'} kind={state === 'sent' ? 'primary' : 'ghost'} height={42} style={{ alignSelf: 'stretch' }} onPress={onClose} />
     </Shell>
   );

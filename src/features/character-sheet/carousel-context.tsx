@@ -136,6 +136,20 @@ interface CarouselContextValue {
   toggleCard: (id: string) => void;
   /** Open the per-card modifier view (#175): the focused card's "Modifiers" button calls this. */
   showCardInfo: (id: string) => void;
+  /**
+   * What a card IS, beyond equipped (v0.32.0). All keyed by the card's ref, like `enabledIds`.
+   *
+   *  - `permanent`   grants something you keep whether or not it is equipped → gold corner, not red.
+   *  - `modsOff`     equipped but its modifiers are switched off → grey corner, and the Toggle reads
+   *                  as off.
+   *  - `numberInput` has a modifier that reads a number the player types → show the "#" button.
+   *  - `domain`      a domain card, the only kind that gets the Toggle at all.
+   */
+  cardStates: { permanent: Set<string>; modsOff: Set<string>; numberInput: Set<string>; domain: Set<string> };
+  /** Switch a card's modifiers off/on without unequipping it (v0.32.0). Domain cards only. */
+  toggleCardModifiers: (id: string) => void;
+  /** Ask for this card's number (v0.32.0) — the sheet opens the keypad. */
+  editNumberInput: (id: string) => void;
   // --- card tokens (#244): cosmetic buttons the player drags onto a fullscreen card. ---
   /** Placed tokens per deck-card id (drives both the baked LOD layer and the interactive board). */
   cardTokens: Record<string, PlacedToken[]>;
@@ -162,7 +176,7 @@ export interface CarouselApi {
   setCategory: (c: CardCategory, arrival?: ArrivalEnd) => void;
 }
 
-export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, crossOuts, onToggleCard, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards, onCardAction, nfcAvailable = false, isCardFavorited, onEmptyFavorites, onEmptyOpen, apiRef }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void; onCardAction?: (kind: CardMenuKind, ids: string[]) => void; nfcAvailable?: boolean; isCardFavorited?: (id: string) => boolean; onEmptyFavorites?: () => void; onEmptyOpen?: () => void; apiRef?: MutableRefObject<CarouselApi | null> }) {
+export function CarouselProvider({ children, decks: decksProp, categoryMeta, ring = ['abilities', 'inventory'], validRing, originIndices, enabledIds, cardStates, crossOuts, onToggleCard, onToggleCardModifiers, onEditNumberInput, onShowCardInfo, onLeaveFullscreen, cardTokens, tokenColor, tokenDrawerX, onPlaceToken, onRemoveToken, onUpdateToken, onSetTokenColor, onMoveTokenDrawer, onReorderCards, onCardAction, nfcAvailable = false, isCardFavorited, onEmptyFavorites, onEmptyOpen, apiRef }: { children: ReactNode; decks?: Record<CardCategory, CardItem[]>; categoryMeta?: Record<string, { label: string; icon?: string; builtin: boolean }>; ring?: CardCategory[]; validRing?: CardCategory[]; originIndices?: [number, number, number]; enabledIds?: Set<string>; cardStates?: CarouselContextValue['cardStates']; crossOuts?: Record<string, 1 | 2>; onToggleCard?: (id: string) => void; onToggleCardModifiers?: (id: string) => void; onEditNumberInput?: (id: string) => void; onShowCardInfo?: (id: string) => void; onLeaveFullscreen?: () => void; cardTokens?: Record<string, PlacedToken[]>; tokenColor?: string; tokenDrawerX?: number; onPlaceToken?: (cardId: string, token: PlacedToken) => void; onRemoveToken?: (cardId: string, tokenId: string) => void; onUpdateToken?: (cardId: string, tokenId: string, patch: Partial<PlacedToken>) => void; onSetTokenColor?: (color: string) => void; onMoveTokenDrawer?: (x: number) => void; onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void; onCardAction?: (kind: CardMenuKind, ids: string[]) => void; nfcAvailable?: boolean; isCardFavorited?: (id: string) => boolean; onEmptyFavorites?: () => void; onEmptyOpen?: () => void; apiRef?: MutableRefObject<CarouselApi | null> }) {
   // A real character supplies its OWN full decks map (built-in + custom categories, #246). The
   // hardcoded CARD_DECKS are only the fallback for the demo sheet; `...CARD_DECKS` also guarantees the
   // four built-in keys always exist (empty) even if a real map omits one.
@@ -554,6 +568,12 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const emptyEnabled = useMemo(() => new Set<string>(), []);
   const emptyCrossOuts = useMemo<Record<string, 1 | 2>>(() => ({}), []);
   const noopToggle = useCallback((_id: string) => {}, []);
+  // v0.32.0: the demo sheet supplies none of these, so nothing is permanent, muted or asking for a
+  // number and no card gets a Toggle — exactly the behaviour before this existed.
+  const emptyCardStates = useMemo<CarouselContextValue['cardStates']>(
+    () => ({ permanent: new Set<string>(), modsOff: new Set<string>(), numberInput: new Set<string>(), domain: new Set<string>() }),
+    [],
+  );
   const noopInfo = useCallback((_id: string) => {}, []);
   const emptyTokens = useMemo<Record<string, PlacedToken[]>>(() => ({}), []);
   const noopPlace = useCallback((_cardId: string, _token: PlacedToken) => {}, []);
@@ -611,8 +631,11 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       closeCardMenu,
       selectCardMenu,
       enabledIds: enabledIds ?? emptyEnabled,
+      cardStates: cardStates ?? emptyCardStates,
       crossOuts: crossOuts ?? emptyCrossOuts,
       toggleCard: onToggleCard ?? noopToggle,
+      toggleCardModifiers: onToggleCardModifiers ?? noopToggle,
+      editNumberInput: onEditNumberInput ?? noopToggle,
       showCardInfo: onShowCardInfo ?? noopInfo,
       cardTokens: cardTokens ?? emptyTokens,
       tokenColor: tokenColor ?? '',
@@ -623,7 +646,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, crossOuts, emptyCrossOuts, onToggleCard, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, cardStates, emptyCardStates, crossOuts, emptyCrossOuts, onToggleCard, onToggleCardModifiers, onEditNumberInput, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

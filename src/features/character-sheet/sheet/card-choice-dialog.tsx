@@ -47,8 +47,13 @@ export function CardChoiceDialog({
   };
 
   return (
-    <CenterDialog onClose={onCancel}>
-      <View style={{ width: '100%', maxWidth: 340, gap: 12 }}>
+    // v0.32.0: a real PANEL, and a heavy scrim behind it. This dialog used to be bare text floating
+    // over a lightly dimmed character sheet: the parchment showed through every line of it, the
+    // options had no field of their own, and it read as unfinished because nothing said where the
+    // dialog began or ended.
+    <CenterDialog onClose={onCancel} scrimOpacity={0.86}>
+      <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 348, maxWidth: '94%', paddingHorizontal: 18, paddingVertical: 18 }}>
+      <View style={{ width: '100%', gap: 12 }}>
         {cardTitle ? (
           <Text numberOfLines={2} style={{ color: Rune.ivory, fontSize: 19, fontFamily: Display.black, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{cardTitle}</Text>
         ) : null}
@@ -86,6 +91,7 @@ export function CardChoiceDialog({
           <RuneButton label="Take these" kind="primary" height={44} style={{ flex: 1.3 }} disabled={!full} onPress={() => onPick([...picked].sort((a, b) => a - b))} />
         </View>
       </View>
+      </ChamferBox>
     </CenterDialog>
   );
 }

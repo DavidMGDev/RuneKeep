@@ -17,7 +17,7 @@ import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
-import { type CharacterFile, type CustomCardDef, experienceBreakdown, toSheetCharacter } from '@/lib/character-file';
+import { type CharacterFile, type CustomCardDef, experienceBreakdown, numberInputFor, toSheetCharacter } from '@/lib/character-file';
 import { CATALOG, cardById } from '@/data/catalog';
 import { CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
@@ -31,7 +31,10 @@ import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANC
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
-import { cardToLibraryCard, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isPermanentCard, refOf, sourceLabelForCardId } from '@/features/cards/card-effects';
+import { cardToLibraryCard, cardTakesNumberInput, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
+import { equipNoticeFor } from '@/data/card-notices';
+import { showToast } from '@/components/toast';
+import { NumberKeypad } from './number-keypad';
 import { authoredItemOptionId, CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
@@ -1910,6 +1913,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * every question but the last was overwritten before it was ever seen, so unequipping four potions
    * offered to discard one. The head of the queue is what shows; answering it uncovers the next.
    */
+  /** v0.32.0: the card whose number the "#" button is asking for, or null. */
+  const [numberCardId, setNumberCardId] = useState<string | null>(null);
   const [depletedIds, setDepletedIds] = useState<string[]>([]);
   const [choiceReqs, setChoiceReqs] = useState<string[]>([]);
   const depletedId = depletedIds[0] ?? null;
@@ -1992,11 +1997,75 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Enabled/equipped cards (#175): the set drives the corner check; toggling re-derives the build
   // stats via the modifier engine while keeping in-play resource positions (clamped to the new maxes).
   const enabledIds = useMemo(() => new Set(file?.enabledCardIds ?? []), [file]);
+  /**
+   * v0.32.0: what each card IS, beyond equipped, for the carousel's corner and its action row.
+   *
+   * Built over every card the character HOLDS rather than only the equipped ones, because a permanent
+   * card in the vault still wants its gold corner: that is precisely the state the card is telling you
+   * to put it in.
+   */
+  const cardStates = useMemo(() => {
+    const permanent = new Set<string>();
+    const numberInput = new Set<string>();
+    const domain = new Set<string>();
+    if (file) {
+      for (const raw of heldCardIds(file)) {
+        const ref = refOf(raw, file);
+        if (isPermanentCard(ref, file)) permanent.add(ref);
+        if (cardTakesNumberInput(ref, file)) numberInput.add(ref);
+        if (cardById(catalogIdOf(ref))?.kind === 'domain') domain.add(ref);
+      }
+    }
+    return { permanent, numberInput, domain, modsOff: new Set(file?.modifiersOffCardIds ?? []) };
+  }, [file]);
   // v0.19.1 item 8: ONE ref-based toggle implementation, shared by manual taps AND bulk equip. Reading +
   // writing fileRef/characterRef synchronously lets a staggered bulk sequence compose correctly (a
   // stale `file` closure would make every step start from the same original file). `force` makes it
   // directional for bulk: 'on' only equips, 'off' only unequips; a card already in the target state is
   // skipped so nothing toggles the wrong way — the result is byte-for-byte the same as manual selection.
+  /**
+   * Save a new file and re-derive the sheet from it, keeping the in-play resources (v0.32.0).
+   *
+   * This was the tail of `toggleOneFromRefs` and nothing else could reach it, so every later feature
+   * that changes a derived number (muting a card's modifiers, typing the number Ferocity reads,
+   * marking Stress while Eldritch Flesh is on) would have had to copy it. `adjust` is the one hook
+   * the Beastform stress cost needs, applied before the toasts so it toasts the truth.
+   */
+  const applyFileToSheet = useCallback(
+    (next: CharacterFile, adjust?: (c: Character) => Character) => {
+      setFile(next);
+      fileRef.current = next; // keep the ref fresh so a staggered bulk step reads the accumulated file
+      saveFileRef.current(next);
+      const c = characterRef.current;
+      const d = toSheetCharacter(next);
+      // Gaining Max HP fills the new heart(s) (#233 item 5): hp follows the gain so the added slot
+      // animates filling; on a loss hp clamps down (the burst shows the heart breaking).
+      const hpGain = Math.max(0, d.maxHp - c.maxHp);
+      // Gaining Armor Score fills the new slot(s) (#328) — armor.active follows the score gain exactly
+      // like hp follows maxHp above, so equipping flies the new shields IN and unequipping bursts them
+      // OUT via burstResources' armor burst (the same silent visual path HP uses — no extra sound).
+      const armorGain = Math.max(0, d.armorScore - c.armorScore);
+      const base: Character = {
+        ...d,
+        hp: Math.min(d.maxHp, c.hp + hpGain),
+        stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
+        armor: { ...d.armor, active: Math.min(d.armorScore, c.armor.active + armorGain) },
+        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total - (d.hope.locked ?? 0)) },
+        gold: c.gold,
+        portraitUri: c.portraitUri,
+        portraitTransform: c.portraitTransform,
+      };
+      const result = adjust ? adjust(base) : base;
+      // Toast each attribute the change made (#233 item 1): "+1 Finesse", "−2 Evasion", …
+      pushToasts(c, result);
+      // animate any track whose value the change moved (e.g. +1 Max HP at full HP, removed)
+      burstResources(c, result);
+      setCharacter(result);
+      characterRef.current = result; // keep fresh for the next staggered bulk step
+      return result;
+    },
+    [burstResources, pushToasts],
+  );
   const toggleOneFromRefs = useCallback(
     // v0.31.0: `cents` pitches this step's equip/unequip sound. A bulk run walks it up as cards come
     // on and down as they go off, so a cascade reads as one rising (or falling) run rather than the
@@ -2089,51 +2158,56 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         cur.add(ref);
       }
       const next = { ...file, enabledCardIds: [...cur], beastformUnequipped, beastformDomainSnapshot };
-      setFile(next);
-      fileRef.current = next; // keep the ref fresh so a staggered bulk step reads the accumulated file
-      saveFileRef.current(next);
-      const c = characterRef.current;
-      const d = toSheetCharacter(next);
-      // Gaining Max HP fills the new heart(s) (#233 item 5): hp follows the gain so the added slot
-      // animates filling; on a loss hp clamps down (the burst shows the heart breaking).
-      const hpGain = Math.max(0, d.maxHp - c.maxHp);
-      // Gaining Armor Score fills the new slot(s) (#328) — armor.active follows the score gain exactly
-      // like hp follows maxHp above, so equipping flies the new shields IN and unequipping bursts them
-      // OUT via burstResources' armor burst (the same silent visual path HP uses — no extra sound).
-      const armorGain = Math.max(0, d.armorScore - c.armorScore);
-      let result: Character = {
-        ...d,
-        hp: Math.min(d.maxHp, c.hp + hpGain),
-        stress: { ...d.stress, active: Math.min(c.stress.active, d.stress.total - (d.stress.locked ?? 0)) },
-        armor: { ...d.armor, active: Math.min(d.armorScore, c.armor.active + armorGain) },
-        hope: { ...d.hope, active: Math.min(c.hope.active, d.hope.total - (d.hope.locked ?? 0)) },
-        gold: c.gold,
-        portraitUri: c.portraitUri,
-        portraitTransform: c.portraitTransform,
-      };
       // Assuming a Beastform costs Stress (#214) — spill to HP when Stress is full, never lethal.
-      if (isWs && !wasEnabled) {
+      applyFileToSheet(next, (result) => {
+        if (!isWs || wasEnabled) return result;
         const ws = wildshapeById(id);
-        if (ws) {
-          const { stressActive, hp } = applyWildshapeCost(
-            { stressActive: result.stress.active, stressUnlocked: result.stress.total - (result.stress.locked ?? 0), hp: result.hp },
-            ws.stress,
-          );
-          result = { ...result, hp, stress: { ...result.stress, active: stressActive } };
-        }
+        if (!ws) return result;
+        const { stressActive, hp } = applyWildshapeCost(
+          { stressActive: result.stress.active, stressUnlocked: result.stress.total - (result.stress.locked ?? 0), hp: result.hp },
+          ws.stress,
+        );
+        return { ...result, hp, stress: { ...result.stress, active: stressActive } };
+      });
+      // v0.32.0: a few cards need a word from the app when they come on, because what they grant is
+      // not a number the sheet can show (Master of the Craft asks you to name the Experience).
+      if (!wasEnabled) {
+        const notice = equipNoticeFor(catalogIdOf(ref));
+        if (notice) showToast(notice, 'info');
       }
-      // Toast each attribute the toggle changed (#233 item 1): "+1 Finesse", "−2 Evasion", …
-      pushToasts(c, result);
-      // animate any track whose value the equip/unequip changed (e.g. +1 Max HP at full HP, removed)
-      burstResources(c, result);
-      setCharacter(result);
-      characterRef.current = result; // keep fresh for the next staggered bulk step
     },
-    [burstResources, pushToasts, pushNotice, queueChoice, queueDepleted],
+    [applyFileToSheet, pushNotice, queueChoice, queueDepleted],
   );
   // v0.26.0: is anything modal open? The keyboard scheme keeps its hands off the carousel when so.
   const anyOverlay = !!(floatKind || cardInfoId || editCardId || emptyPanel || incoming || moveReq || depletedId || newCardCat || choiceReq);
   const onToggleCard = useCallback((id: string) => toggleOneFromRefs(id), [toggleOneFromRefs]);
+  /**
+   * v0.32.0: switch an equipped card's modifiers off (or back on) without unequipping it.
+   *
+   * Writes through the same choke point everything else does, so it lands in history and the sheet
+   * re-derives from it exactly like an equip. Newly equipped cards start LIVE, which is why this
+   * stores the OFF ones: the default needs no entry at all.
+   */
+  const onToggleCardModifiers = useCallback((id: string) => {
+    const cur = fileRef.current;
+    if (!cur) return;
+    const ref = refOf(id, cur);
+    const off = new Set(cur.modifiersOffCardIds ?? []);
+    const nowOff = !off.has(ref);
+    if (nowOff) off.add(ref); else off.delete(ref);
+    playSfx(nowOff ? 'cardDisable' : 'cardEnable');
+    withIntent({ kind: 'equip', label: `${nowOff ? 'Muted' : 'Unmuted'} ${sourceLabelForCardId(ref, cur)}` });
+    const next = { ...cur, modifiersOffCardIds: [...off] };
+    applyFileToSheet(next);
+  }, [applyFileToSheet]);
+  /** v0.32.0: store the number a card's `input` formulas read. Per card, keyed by ref like everything. */
+  const setNumberInput = useCallback((id: string, n: number) => {
+    const cur = fileRef.current;
+    if (!cur) return;
+    const ref = refOf(id, cur);
+    withIntent({ kind: 'equip', label: `Set ${sourceLabelForCardId(ref, cur)} to ${n}` });
+    applyFileToSheet({ ...cur, numberInputs: { ...cur.numberInputs, [ref]: n } });
+  }, [applyFileToSheet]);
   // item 8: bulk equip/unequip the raised selection. If every card is already equipped the whole set is
   // unequipped, otherwise the whole set is equipped — each firing BULK_STEP_MS after the last, LEFT→RIGHT in deck
   // order, so they cascade on visibly. When the queue drains, the selection clears all at once.
@@ -2247,14 +2321,37 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     (n: number) => setCharacter((c) => ({ ...c, hp: Math.max(0, Math.min(c.maxHp, n)) })),
     [],
   );
+  /**
+   * v0.32.0: does any live card read the Stress track? Eldritch Flesh is the first.
+   *
+   * Checked before doing anything, because re-deriving the whole sheet on every Stress tap would be a
+   * real cost paid by every character for one card almost nobody has equipped.
+   */
+  const stressDrivesStats = useMemo(
+    () => !!file && [...new Set(file.enabledCardIds ?? [])].some((id) => usesFormulaVariable(effectsForCardId(id, file), 'stress')),
+    [file],
+  );
+  const stressDrivesRef = useRef(stressDrivesStats);
+  stressDrivesRef.current = stressDrivesStats;
   const onTrack = useCallback(
-    (key: TrackKey, n: number) =>
-      setCharacter((c) => {
-        const t = c[key];
-        const unlocked = t.total - (t.locked ?? 0);
-        return { ...c, [key]: { ...t, active: Math.max(0, Math.min(unlocked, n)) } };
-      }),
-    [],
+    (key: TrackKey, n: number) => {
+      const c = characterRef.current;
+      const t = c[key];
+      const unlocked = t.total - (t.locked ?? 0);
+      const active = Math.max(0, Math.min(unlocked, n));
+      const moved: Character = { ...c, [key]: { ...t, active } };
+      // The ref leads the state on purpose: `applyFileToSheet` reads it for the in-play resources, so
+      // it has to already know the new Stress or the re-derive would clamp straight back to the old one.
+      characterRef.current = moved;
+      setCharacter(moved);
+      // v0.32.0: marking Stress can change a STAT (Eldritch Flesh), so the sheet re-derives from the
+      // file with the new value. The file's resources are only stamped at save time, so stamp them here.
+      if (key !== 'stress' || !stressDrivesRef.current) return;
+      const cur = fileRef.current;
+      if (!cur) return;
+      applyFileToSheet({ ...cur, resources: { hp: moved.hp, hope: moved.hope.active, armor: moved.armor.active, stress: active } });
+    },
+    [applyFileToSheet],
   );
   // Status bar clearance, third attempt (#54 D). On the owner's A54 + Expo Go BOTH inset APIs
   // (safe-area context AND StatusBar.currentHeight) report 0 — the device "acts as if there is no
@@ -2288,7 +2385,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} crossOuts={crossOuts} onToggleCard={onToggleCard} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
        {/* v0.29.1: the south wedge is CHARACTERS, the way out. It is not an interface, it raises the
            SAME leave confirm the back button already uses rather than adding a second prompt that
            could drift from it. */}
@@ -2424,6 +2521,20 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   onConfirm={() => { onDeleteCards([depletedId]); nextDepleted(); }}
                 />
               </Animated.View>
+            ) : null}
+            {/* v0.32.0: the number a card like Ferocity reads. Range 0..99 because it stands for
+                something at the table (Hit Points marked, tokens placed), not a sheet stat with a
+                known ceiling, and 0 has to be sayable so the bonus can be cleared. */}
+            {numberCardId ? (
+              <NumberKeypad
+                title={sourceLabelForCardId(numberCardId, file ?? undefined)}
+                subtitle="The number this card's modifiers read."
+                min={0}
+                max={99}
+                initial={numberInputFor(file ?? undefined, numberCardId)}
+                onSubmit={(n) => { setNumberInput(numberCardId, n); setNumberCardId(null); }}
+                onClose={() => setNumberCardId(null)}
+              />
             ) : null}
             {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
             {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}

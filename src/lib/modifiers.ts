@@ -48,14 +48,31 @@ export type EffectTarget =
  *  Daggerheart number rounds up). e.g. {variable:'level',divide:2} = ½ level (round up);
  *  {variable:'proficiency',multiply:2} = 2× Proficiency; {variable:'tier'} = your Tier. */
 export interface EffectFormula {
-  /** v0.21.0: `spellcast` resolves to the character's Spellcast trait total — the trait named by their
-   *  subclass (Wizard→Knowledge, Sorcerer→Instinct, …). It's what makes Mage Robes' "Enchanted" work:
-   *  +Spellcast to damage thresholds, whatever the subclass. Resolves to 0 for a non-caster subclass. */
-  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | TraitKey;
+  /**
+   * v0.21.0: `spellcast` resolves to the character's Spellcast trait total — the trait named by their
+   * subclass (Wizard→Knowledge, Sorcerer→Instinct, …). It's what makes Mage Robes' "Enchanted" work:
+   * +Spellcast to damage thresholds, whatever the subclass. Resolves to 0 for a non-caster subclass.
+   *
+   * v0.32.0 adds two that read the table rather than the sheet:
+   *  - `stress` is the character's CURRENT marked Stress. Eldritch Flesh ("+1 Armor Score for every
+   *    2 Stress you have marked") is the first card that needs it, and it changes as you play.
+   *  - `input` is a NUMBER THE PLAYER TYPES ON THIS CARD, and it is per-card, never global. Ferocity
+   *    ("+Evasion equal to the Hit Points your target marked") cannot be derived from anything the
+   *    app knows, so the card asks. See `numberInputs` on the character file.
+   */
+  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | 'stress' | 'input' | TraitKey;
   multiply?: number;
   divide?: number;
   /** #325: a flat constant ADDED after the ×/÷ round-up (e.g. Bare Bones' Armor = Strength + 3). */
   plus?: number;
+  /**
+   * v0.32.0: round DOWN instead of up.
+   *
+   * Daggerheart rounds up, so that is the default and stays the default. But "for every 2 Stress you
+   * have marked" is a different sentence: at 1 Stress you have not reached the first 2, and rounding
+   * up would pay out immediately. Eldritch Flesh is the first card that says it that way.
+   */
+  floor?: boolean;
 }
 
 export interface CardEffect {
@@ -101,6 +118,19 @@ export interface CardEffect {
    *  one, which is what makes a shipped card (the Honing Relic) work before the player picks. An id that
    *  no longer resolves (the Experience was deleted) contributes nothing. */
   experienceId?: string;
+  /**
+   * v0.32.0: this effect SETS the target rather than adding to it, discarding everything else.
+   *
+   * Overwhelming Aura is the reason: "your Presence is equal to your Spellcast trait". Not a bonus, a
+   * replacement, and one that has to beat every other contribution however they were ordered. It runs
+   * in a pass of its own, after both the flat and the dynamic passes, so nothing can land on top of
+   * it. The Modifiers panel still shows the contributions it overrode, as the delta that got it there.
+   *
+   * `mode: 'set'` already existed but only for thresholds and dynamics, and only within its own pass.
+   * This is the general form, available to any target and any shape, and it is what the card editor's
+   * "Overwrite" checkbox writes.
+   */
+  overwrite?: boolean;
 }
 
 /** The two damage-threshold stats, modeled specially (set-or-bonus) rather than plain additive. */
@@ -127,6 +157,18 @@ export interface StatBreakdown {
 export interface EffectSource {
   source: string;
   effects: CardEffect[];
+  /** v0.32.0: the card's stable id, so a per-card `input` formula can find the number the player typed
+   *  ON THIS CARD. Absent = an input formula on it resolves to 0, which is the honest answer for a
+   *  card nobody can address. */
+  key?: string;
+}
+
+/** Everything a formula can read that is not a sheet stat (v0.32.0). */
+export interface SheetContext {
+  /** The character's CURRENT marked Stress, for `variable: 'stress'`. */
+  stress?: number;
+  /** Per-card numbers the player typed, keyed by `EffectSource.key`, for `variable: 'input'`. */
+  inputs?: Record<string, number>;
 }
 
 /** The targets that are actually SHEET stats — one base value, one row in the Modifiers panel. Excludes
@@ -177,31 +219,53 @@ function flatDelta(e: CardEffect, tier: number): number | null {
 /** Resolve a formula value (#278) from the finalized sheet, rounded UP (Daggerheart rounds up).
  *  `spellcastTrait` (v0.21.0) is the trait the character's subclass casts with; a `spellcast` formula
  *  reads that trait's total. Null/undefined (non-caster or unknown subclass) resolves to 0. */
-function resolveFormula(f: EffectFormula | undefined, out: SheetBreakdown, level: number, spellcastTrait?: TraitKey | null): number {
+function resolveFormula(
+  f: EffectFormula | undefined,
+  out: SheetBreakdown,
+  level: number,
+  spellcastTrait?: TraitKey | null,
+  ctx?: SheetContext,
+  sourceKey?: string,
+): number {
   if (!f) return 0;
   const base =
     f.variable === 'level' ? level
     : f.variable === 'tier' ? tierForLevel(level)
     : f.variable === 'proficiency' ? out.proficiency?.total ?? 0
     : f.variable === 'spellcast' ? (spellcastTrait ? out[spellcastTrait]?.total ?? 0 : 0)
+    // v0.32.0: read from the table rather than the sheet. Current Stress moves as you play, and the
+    // per-card input is whatever the player last typed on THIS card (0 until they do).
+    : f.variable === 'stress' ? ctx?.stress ?? 0
+    : f.variable === 'input' ? (sourceKey ? ctx?.inputs?.[sourceKey] ?? 0 : 0)
     : out[f.variable]?.total ?? 0; // a trait total (from pass 1)
   const div = f.divide && f.divide !== 0 ? f.divide : 1;
-  return Math.ceil((base * (f.multiply ?? 1)) / div) + (f.plus ?? 0); // #325: + flat constant
+  const scaled = (base * (f.multiply ?? 1)) / div;
+  return (f.floor ? Math.floor(scaled) : Math.ceil(scaled)) + (f.plus ?? 0); // #325: + flat constant
+}
+
+/** The value of a dynamic effect, whichever shape it is. Shared by the dynamic and overwrite passes. */
+function dynamicValue(e: CardEffect, out: SheetBreakdown, level: number, spellcastTrait?: TraitKey | null, ctx?: SheetContext, sourceKey?: string): number {
+  return e.dynamic === 'proficiency' ? out.proficiency.total
+    : e.dynamic === 'strengthPlus3' ? out.strength.total + 3
+    : e.dynamic === 'halfAgility' ? Math.floor(out.agility.total / 2)
+    : resolveFormula(e.formula, out, level, spellcastTrait, ctx, sourceKey);
 }
 
 /**
  * Compute the whole sheet. `base` holds the intrinsic value per target; `sources` are the enabled
  * cards' effects. Pure + deterministic — same inputs always yield the same breakdown.
  */
-export function computeSheet(base: BaseStats, level: number, sources: EffectSource[], spellcastTrait?: TraitKey | null): SheetBreakdown {
+export function computeSheet(base: BaseStats, level: number, sources: EffectSource[], spellcastTrait?: TraitKey | null, ctx?: SheetContext): SheetBreakdown {
   const tier = tierForLevel(level);
   const out = {} as SheetBreakdown;
   for (const t of EFFECT_TARGETS) out[t] = { base: base[t] ?? 0, contributions: [], total: base[t] ?? 0 };
 
   // Pass 1: flat + tier-dependent effects. Threshold targets are handled in their own pass below
-  // (they are set-or-bonus, not plain additive), so skip them here.
+  // (they are set-or-bonus, not plain additive), so skip them here. An OVERWRITE effect is skipped
+  // everywhere until its own final pass (v0.32.0), so nothing it replaces can be applied twice.
   for (const src of sources) {
     for (const e of src.effects) {
+      if (e.overwrite) continue;
       if (isThreshold(e.target)) continue;
       if (e.target === 'experience') continue; // per-instance, not a sheet stat — see experienceBreakdown
       const d = flatDelta(e, tier);
@@ -224,7 +288,7 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
     const bonuses: Contribution[] = [];
     for (const src of sources) {
       for (const e of src.effects) {
-        if (e.target !== t) continue;
+        if (e.target !== t || e.overwrite) continue;
         const d = flatDelta(e, tier);
         if (d === null) continue;
         if (e.mode === 'set') { setVal = d; setSource = src.source; setNote = e.note; }
@@ -242,15 +306,11 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
   // otherwise it adds.
   for (const src of sources) {
     for (const e of src.effects) {
-      if (!e.dynamic) continue;
+      if (!e.dynamic || e.overwrite) continue;
       if (e.target === 'experience') continue; // per-instance, not a sheet stat
       const b = out[e.target];
       if (!b) continue;
-      const d =
-        e.dynamic === 'proficiency' ? out.proficiency.total
-        : e.dynamic === 'strengthPlus3' ? out.strength.total + 3
-        : e.dynamic === 'halfAgility' ? Math.floor(out.agility.total / 2)
-        : resolveFormula(e.formula, out, level, spellcastTrait);
+      const d = dynamicValue(e, out, level, spellcastTrait, ctx, src.key);
       if (e.mode === 'set') {
         b.contributions.push({ source: src.source, delta: d - b.total, note: e.note });
         b.total = d;
@@ -259,6 +319,25 @@ export function computeSheet(base: BaseStats, level: number, sources: EffectSour
         b.contributions.push({ source: src.source, delta: d, note: e.note });
         b.total += d;
       }
+    }
+  }
+  /**
+   * Pass 3: OVERWRITE (v0.32.0). The target becomes this value, whatever else contributed.
+   *
+   * It runs last and reads the sheet as pass 2 left it, which is what makes Overwhelming Aura's
+   * "your Presence is equal to your Spellcast trait" mean the trait total including its own bonuses.
+   * With several overwrites on one target the LAST source wins, matching how `set` already behaves;
+   * two cards claiming the same stat is a table argument, not something the app should average.
+   */
+  for (const src of sources) {
+    for (const e of src.effects) {
+      if (!e.overwrite || e.target === 'experience') continue;
+      const b = out[e.target];
+      if (!b) continue;
+      const d = e.dynamic ? dynamicValue(e, out, level, spellcastTrait, ctx, src.key) : flatDelta(e, tier) ?? 0;
+      // Recorded as the step that got us here, so the panel still shows what it displaced.
+      b.contributions.push({ source: src.source, delta: d - b.total, note: e.note });
+      b.total = d;
     }
   }
   // Apply caps.

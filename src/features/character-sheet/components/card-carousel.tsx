@@ -86,7 +86,7 @@ import { cardMenuOptions } from '../card-menu';
 import { CardRadialMenu } from './card-radial-menu';
 import { Card, CardThumb } from './card';
 import { BakedTokenLayer, type PlacedToken } from './card-tokens';
-import { EnabledCorner } from './enabled-corner';
+import { type CornerTone, EnabledCorner } from './enabled-corner';
 import { TraitCrossOut } from './trait-cross-out';
 import { catalogIdOf } from '@/features/cards/card-effects';
 import { FocusOverlay } from './focus-overlay';
@@ -193,6 +193,8 @@ interface SlotProps {
   registerPager: (index: number, pager: ((delta: number) => void) | null) => void;
   /** This card is currently enabled/equipped (#175) — show the corner check. */
   enabled: boolean;
+  /** What the corner says (v0.32.0): equipped, permanent, or equipped-with-modifiers-off. */
+  cornerTone: CornerTone;
   /** Mixed ancestry (#265): which trait (1|2) is crossed out on this card, if any. */
   crossTrait?: 1 | 2;
   /** Toggle this card's enabled state (#175): committed by a press-and-hold on the centered/focused card. */
@@ -253,7 +255,7 @@ interface SlotProps {
   menuBounce: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLive, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLive, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, cornerTone, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
   // Web reports gesture x in CSS pixels, not design pixels (see coordScale in CardCarousel):
   // without this the left/right half that decides which way a multi-page card turns lands at about a
   // quarter of the card instead of the middle.
@@ -666,7 +668,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
             </Animated.View>
           ) : null}
           {/* enabled corner check (#175): overlay on any equipped card, in both LOD and focused states */}
-          {enabled ? <EnabledCorner width={CARD_W} height={CARD_H} /> : null}
+          {enabled ? <EnabledCorner width={CARD_W} height={CARD_H} tone={cornerTone} /> : null}
           {/* mixed-ancestry cross-out (#265): strikes the trait not taken; rides the slot like the corner */}
           {crossTrait ? <TraitCrossOut width={CARD_W} height={CARD_H} catalogId={catalogIdOf(item.id)} crossedTrait={crossTrait} /> : null}
         </View>
@@ -674,6 +676,68 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
     </Animated.View>
   );
 });
+
+/** One button in the focused card's action row. Same chamfered shape as the original Modifiers
+ *  button, so adding neighbours next to it did not invent a second visual language. */
+function ActionBtn({ label, on, wide, a11y, onPress }: { label: string; on?: boolean; wide?: boolean; a11y: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={a11y} style={wide ? { flex: 1 } : undefined}>
+      <ChamferBox
+        chamfer={9}
+        fill={on ? 'rgba(200,27,24,0.9)' : 'rgba(14,17,22,0.95)'}
+        stroke={on ? Rune.goldBright : Rune.goldEdge}
+        strokeWidth={1.4}
+        style={{ paddingHorizontal: wide ? 14 : 12, minWidth: wide ? undefined : 44, height: 40, alignItems: 'center', justifyContent: 'center' }}>
+        <Text numberOfLines={1} style={{ color: on ? Rune.ivory : Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
+      </ChamferBox>
+    </Pressable>
+  );
+}
+
+/**
+ * The row of controls under a focused card (v0.32.0).
+ *
+ * "Modifiers" has been here since #175. Two neighbours join it, and only when they mean something:
+ *
+ *  - TOGGLE, on domain cards only. A card like Frenzy is true for one scene and false for the rest
+ *    of the session, but it holds one of your five loadout slots either way. Unequipping it to turn
+ *    the bonus off was the only lever there was, and it lied about your loadout. Lit = applying.
+ *  - "#", only on a card whose modifiers actually read a typed number (Ferocity). A button that did
+ *    nothing on every other card would be worse than no button.
+ */
+function FocusedCardActions({ cardId, instanceId }: { cardId: string; instanceId: string }) {
+  const { showCardInfo, toggleCardModifiers, editNumberInput, enabledIds, cardStates } = useCarousel();
+  const isDomain = cardStates.domain.has(cardId);
+  const equipped = enabledIds.has(cardId);
+  const live = !cardStates.modsOff.has(cardId);
+  const takesNumber = cardStates.numberInput.has(cardId);
+  return (
+    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+      <ActionBtn label="Modifiers" wide a11y="View this card's modifiers" onPress={() => showCardInfo(instanceId)} />
+      {isDomain && equipped ? (
+        <ActionBtn
+          label="Toggle"
+          on={live}
+          a11y={live ? "Switch this card's modifiers off, keeping it equipped" : "Switch this card's modifiers back on"}
+          onPress={() => toggleCardModifiers(instanceId)}
+        />
+      ) : null}
+      {takesNumber ? <ActionBtn label="#" a11y="Set this card's number" onPress={() => editNumberInput(instanceId)} /> : null}
+    </View>
+  );
+}
+
+/**
+ * What an equipped card's corner should say (v0.32.0).
+ *
+ * Muted beats permanent: if the player has explicitly switched a card's modifiers off, that is the
+ * fact they need to see, whatever else the card also is.
+ */
+function cornerToneFor(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
+  if (states.modsOff.has(ref)) return 'muted';
+  if (states.permanent.has(ref)) return 'permanent';
+  return 'on';
+}
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const IND = 64; // indicator box (design px)
@@ -765,7 +829,7 @@ function GhostCard({ editMode, editGrabbed, rotation, hoverAnim, overscrollX, dr
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, crossOuts, toggleCard, showCardInfo, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, onEmptyOpen } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, cardStates, crossOuts, toggleCard, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, onEmptyOpen } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
 
@@ -1679,6 +1743,7 @@ export function CardCarousel() {
         closeFullscreen={closeFullscreen}
         registerPager={registerPager}
         enabled={enabledIds.has(deck[i].ref ?? deck[i].id)}
+        cornerTone={cornerToneFor(deck[i].ref ?? deck[i].id, cardStates)}
         crossTrait={crossOuts[deck[i].id]}
         onToggle={toggleCard}
         // v0.9.8: tokens are keyed by the card's ref so all copies (incl. favorites) share one board;
@@ -1732,17 +1797,13 @@ export function CardCarousel() {
         <FocusOverlay />
         {/* "Modifiers" button (#175): fades in under the focused card; opens its per-card effect view.
             Sits BELOW the multi-page page dots (#233 item 3) so it never collides with them. */}
-        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(106, 770, 200, 40), { zIndex: 3500 }, modBtnStyle]}>
+        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[box(56, 770, 300, 40), { zIndex: 3500 }, modBtnStyle]}>
           {/* kept MOUNTED whenever there's a focusable card so it FADES with fullscreenProgress (no
               pop). The Pressable fills the whole box (no hitSlop into the gear pad below) so a tap
               here ALWAYS opens the modifiers and is CONSUMED — it never falls through to the focus
               veil (which would close the card) or the gear (#248 item 2). */}
           {deck[c] && !deck[c].interactive ? (
-            <Pressable onPress={() => showCardInfo(deck[c].id)} accessibilityRole="button" accessibilityLabel="View this card's modifiers" style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <ChamferBox chamfer={9} fill="rgba(14,17,22,0.95)" stroke={Rune.goldEdge} strokeWidth={1.4} style={{ paddingHorizontal: 18, height: 40, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Modifiers</Text>
-              </ChamferBox>
-            </Pressable>
+            <FocusedCardActions cardId={deck[c].ref ?? deck[c].id} instanceId={deck[c].id} />
           ) : null}
         </Animated.View>
         {/* Gear over-scroll indicator (#174): progress ring + target deck SVG in the opened gap. */}

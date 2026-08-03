@@ -9,6 +9,7 @@ import { Platform } from 'react-native';
 
 import { type CharacterFile, parseCharacterFile, serializeCharacterFile } from './character-file';
 import { embedCharacterImages } from './image-embed';
+import { canShareFiles, webShareFile } from './library-store';
 import { parseRkp, RUNE_EXT, serializeRkp } from './rkp';
 import { webGet, webSet } from './web-store';
 
@@ -149,8 +150,18 @@ export async function deleteCharacter(id: string): Promise<void> {
 export async function exportCharacter(file: CharacterFile): Promise<void> {
   const safe = file.name.replace(/[^\w-]+/g, '_').slice(0, 40) || 'character';
   if (Platform.OS === 'web') {
+    const text = serializeRkp({ kind: 'character', payload: file });
+    // v0.32.0: a phone browser can hand this straight to another app; a desktop can only save it.
+    if (canShareFiles()) {
+      try {
+        await navigator.share({ files: [webShareFile(text, `${safe}.${RUNE_EXT}`)], title: file.name });
+        return;
+      } catch (e) {
+        if ((e as { name?: string })?.name === 'AbortError') return; // cancelled, not failed
+      }
+    }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([serializeRkp({ kind: 'character', payload: file })], { type: 'application/json' }));
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
     a.download = `${safe}.${RUNE_EXT}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);

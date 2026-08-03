@@ -180,3 +180,58 @@ describe('damage thresholds — set / bonus (#242)', () => {
     expect(s.severeThreshold.total).toBe(20);
   });
 });
+
+describe('overwrite (v0.32.0) — Overwhelming Aura', () => {
+  it('replaces the running total, whatever else contributed', () => {
+    const base: BaseStats = { ...ZERO, presence: 1, knowledge: 4 };
+    const s = computeSheet(
+      base,
+      5,
+      [
+        src('Charm', [{ target: 'presence', delta: 3 }]), // presence would be 4
+        src('Overwhelming Aura', [{ target: 'presence', dynamic: 'formula', formula: { variable: 'spellcast' }, overwrite: true }]),
+      ],
+      'knowledge',
+    );
+    expect(s.presence.total).toBe(4); // = the Spellcast trait, not 1 + 3 + 4
+  });
+
+  it('runs after the flat pass whichever order the sources come in', () => {
+    const first = computeSheet(ZERO, 1, [
+      src('Aura', [{ target: 'evasion', delta: 2, overwrite: true }]),
+      src('Cloak', [{ target: 'evasion', delta: 5 }]),
+    ]);
+    expect(first.evasion.total).toBe(2); // NOT 10 + 5 then overwritten to 2 by luck of ordering
+  });
+
+  it('still records what it displaced, so the panel can show provenance', () => {
+    const s = computeSheet(ZERO, 1, [src('Aura', [{ target: 'evasion', delta: 3, overwrite: true }])]);
+    expect(s.evasion.contributions).toEqual([{ source: 'Aura', delta: -7, note: undefined }]); // 10 → 3
+  });
+});
+
+describe('stress + input variables (v0.32.0)', () => {
+  const keyed = (source: string, effects: CardEffect[], key?: string): EffectSource => ({ source, effects, key });
+
+  it('Eldritch Flesh gives +1 Armor per TWO marked Stress, rounding down', () => {
+    const armorPerStress: CardEffect[] = [{ target: 'armorScore', dynamic: 'formula', formula: { variable: 'stress', divide: 2, floor: true } }];
+    const at = (stress: number) => computeSheet(ZERO, 1, [src('Eldritch Flesh', armorPerStress)], null, { stress }).armorScore.total;
+    expect(at(0)).toBe(0);
+    expect(at(1)).toBe(0); // one Stress has not reached the first two
+    expect(at(2)).toBe(1);
+    expect(at(5)).toBe(2);
+  });
+
+  it("a card's number input is its OWN, never shared", () => {
+    const ferocity: CardEffect[] = [{ target: 'evasion', dynamic: 'formula', formula: { variable: 'input' } }];
+    const s = computeSheet(ZERO, 1, [keyed('Ferocity', ferocity, 'bone-02-1'), keyed('Homebrew', ferocity, 'custom-9')], null, {
+      inputs: { 'bone-02-1': 3 },
+    });
+    expect(s.evasion.total).toBe(13); // base 10 + Ferocity's 3 + nothing from the card with no number
+  });
+
+  it('an input formula on a source with no key resolves to nothing rather than guessing', () => {
+    const s = computeSheet(ZERO, 1, [src('Anonymous', [{ target: 'evasion', dynamic: 'formula', formula: { variable: 'input' } }])], null, { inputs: { x: 9 } });
+    expect(s.evasion.total).toBe(10);
+  });
+});

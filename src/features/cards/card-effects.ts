@@ -199,18 +199,30 @@ export function heldCardIds(file?: CharacterFile): string[] {
  * every permanent bonus. This is the other half: Vitality sitting in the vault, exactly as its own
  * rules text instructs.
  */
-export function unequippedPermanentSources(file: CharacterFile): { source: string; effects: CardEffect[] }[] {
+export function unequippedPermanentSources(file: CharacterFile): { source: string; effects: CardEffect[]; key: string }[] {
   const equipped = new Set((file.enabledCardIds ?? []).map((id) => refOf(id, file)));
   const seen = new Set<string>();
-  const out: { source: string; effects: CardEffect[] }[] = [];
+  const out: { source: string; effects: CardEffect[]; key: string }[] = [];
   for (const rawId of heldCardIds(file)) {
     const id = refOf(rawId, file);
     if (equipped.has(id) || seen.has(id)) continue;
     seen.add(id);
     const permanent = effectsForCardId(id, file).filter((e) => e.permanent);
-    if (permanent.length) out.push({ source: sourceLabelForCardId(id, file), effects: permanent });
+    if (permanent.length) out.push({ source: sourceLabelForCardId(id, file), effects: permanent, key: id });
   }
   return out;
+}
+
+/** Whether any effect on a card reads a given formula variable (v0.32.0) — so the UI can decide
+ *  whether to offer the "#" number-input control, and the sheet whether marking Stress must re-derive. */
+export function usesFormulaVariable(effects: CardEffect[], variable: string): boolean {
+  return effects.some((e) => e.dynamic === 'formula' && e.formula?.variable === variable);
+}
+
+/** Whether this card asks the player for a number (v0.32.0). Reads the RESOLVED effects, so an
+ *  unanswered choice card does not advertise an input it is not yet applying. */
+export function cardTakesNumberInput(id: string, file?: CharacterFile): boolean {
+  return usesFormulaVariable(effectsForCardId(id, file), 'input');
 }
 
 /** Whether a card grants anything permanent, so the UI can mark it and exempt it from the loadout

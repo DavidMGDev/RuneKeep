@@ -87,16 +87,54 @@ export async function deleteExpansion(id: string): Promise<void> {
 }
 
 /**
+ * Can this device hand a file to ANOTHER APP, or only save it? (v0.32.0)
+ *
+ * Native always can: `expo-sharing` opens the OS share sheet. A browser can only if it implements
+ * the Web Share API for files, which phones do (Android Chrome, iOS Safari, including installed
+ * PWAs) and desktops generally do not. That difference is worth surfacing, because "Share File" is a
+ * promise: on a desktop the file goes to the downloads folder and nothing else happens, and calling
+ * that sharing would be a small lie repeated every time.
+ */
+export function canShareFiles(): boolean {
+  if (Platform.OS !== 'web') return true;
+  try {
+    const n = navigator as Navigator & { canShare?: (d: { files?: File[] }) => boolean };
+    if (typeof n.share !== 'function' || typeof n.canShare !== 'function' || typeof (globalThis as { File?: unknown }).File === 'undefined') return false;
+    // The spec requires testing with a real file: several browsers expose `share` but refuse files.
+    return n.canShare({ files: [webShareFile('.', `probe.${RUNE_EXT}`)] });
+  } catch {
+    return false;
+  }
+}
+
+/** A browser `File`, reached through globalThis because `File` in these modules is expo-file-system's. */
+export const webShareFile = (text: string, name: string): File => new (globalThis as unknown as { File: typeof File }).File([text], name, { type: 'application/json' });
+
+/** "Share File" where it will really share; "Export to File" where it can only save. */
+export const shareFileLabel = (): string => (canShareFiles() ? 'Share File' : 'Export to File');
+
+/**
  * Share an expansion (or any RkpContent) as a `.rune` file (v0.30.0, both platforms).
  *
- * Native goes through the OS share sheet, so the file can go straight into WhatsApp or Drive. A
- * browser has no share sheet worth the name, so it downloads: one anchor, one object URL, no library.
- * The browser path is why the web build can share cards at all now that NFC is not the only way out.
+ * Native goes through the OS share sheet, so the file can go straight into WhatsApp or Drive.
+ * v0.32.0: a BROWSER does too, where it has one. A phone browser can hand the file to any app on the
+ * device through the Web Share API, which is the same thing the native build does; a desktop cannot,
+ * so it falls back to the download it always did.
  */
 export async function exportRkp(content: RkpContent, filename: string): Promise<void> {
   const safe = filename.replace(/[^\w-]+/g, '_').slice(0, 40) || 'runekeep';
   const text = serializeRkp(content);
   if (Platform.OS === 'web') {
+    if (canShareFiles()) {
+      try {
+        await navigator.share({ files: [webShareFile(text, `${safe}.${RUNE_EXT}`)], title: filename });
+        return;
+      } catch (e) {
+        // Cancelling the share sheet is a decision, not a failure: do NOT then download it anyway.
+        if ((e as { name?: string })?.name === 'AbortError') return;
+        // Anything else (no handler, a browser that lied about canShare) falls through to the download.
+      }
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
     a.download = `${safe}.${RUNE_EXT}`;

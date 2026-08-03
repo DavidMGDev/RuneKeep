@@ -38,7 +38,11 @@ export function dieNumberFrac(type: DieType): number {
 }
 // Per-die number nudge in 124-box units (#293 owner: d4's digit reads better shifted left + up). Scales
 // with the token since it's expressed in design-box units.
-const DIE_NUM_OFFSET: Partial<Record<DieType, { dx: number; dy: number }>> = { d4: { dx: -3, dy: -6 } };
+//
+// v0.32.0: the d4's digit sat 2px too far left on a focused card. A placed die renders at
+// CARD_W(230) x TOKEN_FRAC(0.17) x DIE_PLACED_MULT(2) = 78 card px, magnified by FS_FOCUS_SCALE(1.79)
+// to ~140 design px, so one box unit is ~1.13 px on screen and 2px is ~1.8 units: -3 becomes -1.
+const DIE_NUM_OFFSET: Partial<Record<DieType, { dx: number; dy: number }>> = { d4: { dx: -1, dy: -6 } };
 export function dieNumberOffset(type: DieType): { dx: number; dy: number } {
   return DIE_NUM_OFFSET[type] ?? { dx: 0, dy: 0 };
 }

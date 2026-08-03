@@ -10,7 +10,7 @@ import { CATALOG, cardById } from '@/data/catalog';
 import { withRequiredExpansions } from '@/lib/expansion-membership';
 import type { CharacterHistory } from '@/lib/character-history';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
-import { effectsForCardId, sourceLabelForCardId, unequippedPermanentSources } from '@/features/cards/card-effects';
+import { effectsForCardId, refOf, sourceLabelForCardId, unequippedPermanentSources } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA, spellcastTraitForSubclass } from '@/data/class-data';
 import { activeWildshapeName } from '@/data/wildshape-data';
@@ -213,6 +213,27 @@ export interface CharacterFile {
    * and re-equipping later finds it still there. No replay logic needed.
    */
   cardChoices?: Record<string, number[]>;
+  /**
+   * v0.32.0: equipped cards whose MODIFIERS are switched off, keyed by card ref.
+   *
+   * A domain card like Frenzy only does anything at certain moments, but it occupies one of your five
+   * loadout slots the whole session. Unequipping it to stop its bonus was the only way to turn it off,
+   * and that lied about your loadout. This separates the two: the card stays equipped and counted, and
+   * its bonuses simply are not applied.
+   *
+   * PERMANENT effects are exempt. They survive the card being unequipped entirely, so muting cannot
+   * sensibly be stronger than removing it. Additive: an absent field means every equipped card is live,
+   * which is what every existing save means.
+   */
+  modifiersOffCardIds?: string[];
+  /**
+   * v0.32.0: per-card numbers the player typed, keyed by card ref, for the `input` formula variable.
+   *
+   * Ferocity gives Evasion equal to the Hit Points its target marked, which is not on the sheet and
+   * never will be, so the card asks. Per card, never global: two cards reading "a number" are reading
+   * two different numbers. Additive; absent resolves to 0.
+   */
+  numberInputs?: Record<string, number>;
   /** Card copies (#277): extra deck instances of an existing card. Each has its own unique instance
    *  `id` (for position/category/tokens) but a `ref` to the underlying card (catalog id or custom-card
    *  id) — copies SHARE enable state + apply their effect once (enable is keyed by ref). Additive. */
@@ -351,11 +372,26 @@ function levelThresholdSources(level: number, armored: boolean): EffectSource[] 
   return out;
 }
 
-/** The enabled cards' effect sources (#175), deduped by ref so several copies apply once. */
+/**
+ * The enabled cards' effect sources (#175), deduped by ref so several copies apply once.
+ *
+ * v0.32.0: a card the player has MUTED contributes only its permanent effects. See
+ * `modifiersOffCardIds` for why muting is not the same as unequipping, and why permanent survives it.
+ */
 function enabledCardSources(file: CharacterFile): EffectSource[] {
+  const muted = new Set(file.modifiersOffCardIds ?? []);
   return [...new Set(file.enabledCardIds ?? [])]
-    .map((id) => ({ source: sourceLabelForCardId(id, file), effects: effectsForCardId(id, file) }))
+    .map((id) => {
+      const key = refOf(id, file);
+      const all = effectsForCardId(id, file);
+      return { source: sourceLabelForCardId(id, file), effects: muted.has(key) ? all.filter((e) => e.permanent) : all, key };
+    })
     .filter((s) => s.effects.length > 0);
+}
+
+/** The number this card's `input` formulas read (v0.32.0). 0 until the player types one. */
+export function numberInputFor(file: CharacterFile | undefined, id: string): number {
+  return file ? file.numberInputs?.[refOf(id, file)] ?? 0 : 0;
 }
 
 /**
@@ -365,6 +401,15 @@ function enabledCardSources(file: CharacterFile): EffectSource[] {
  * That last group is what lets Vitality do what its own text says: gain the benefit permanently, then
  * put the card in your vault. Before this, following the card's instructions turned its benefit off.
  */
+/**
+ * What a formula can read that is not a sheet stat (v0.32.0): the character's marked Stress and the
+ * per-card numbers they typed. Both live on the file, so both are inside a history snapshot and undo
+ * restores them with everything else.
+ */
+function sheetContext(file: CharacterFile): import('@/lib/modifiers').SheetContext {
+  return { stress: file.resources?.stress ?? 0, inputs: file.numberInputs };
+}
+
 function allEffectSources(file: CharacterFile): EffectSource[] {
   const cards = [...enabledCardSources(file), ...unequippedPermanentSources(file)];
   // "Armored" = some enabled card SETS a threshold (armor card, or Bare Bones). Then the level bonus is
@@ -423,7 +468,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
   // v0.21.0 item 5: the Spellcast trait (from the chosen subclass) powers the `spellcast` formula variable
   // — e.g. Mage Robes' Enchanted feature adds it to the damage thresholds.
   const spellcastTrait = spellcastTraitForSubclass(subclass?.subclass);
-  const sheet = computeSheet(base, file.level, sources, spellcastTrait);
+  const sheet = computeSheet(base, file.level, sources, spellcastTrait, sheetContext(file));
   // v0.13.0 SCARS: each enabled scar card disables one Hope slot from the RIGHT. Flat count — freeing
   // any scar card always releases the leftmost scarred slot. Hope in play can never sit on a scarred slot.
   const scars = Math.max(0, Math.min(sheet.hopeMax.total, sheet.scar.total));
@@ -496,7 +541,7 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     restMoves: 0, // v0.25.0
   };
   const spellcastTrait = spellcastTraitForSubclass(cardById(file.subclassCardId)?.subclass);
-  return computeSheet(base, file.level, allEffectSources(file), spellcastTrait);
+  return computeSheet(base, file.level, allEffectSources(file), spellcastTrait, sheetContext(file));
 }
 
 /** The starting bonus on a new Experience (rulebook: +2, at creation and at each tier start). */

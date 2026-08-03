@@ -35,8 +35,17 @@ export interface FitBox {
   base: number;
   /** lineHeight / fontSize, so the shrunk text keeps the leading it was typeset with. */
   lineRatio: number;
-  /** Never shrink past this, however long the text is. */
+  /** The size to aim for. Text that needs less than this keeps its designed leading. */
   min?: number;
+  /**
+   * The tightest leading allowed before the FONT has to give way instead (v0.32.0).
+   *
+   * The owner's rule for overlong text is "shrink spacings, font size, whatever it takes, but never
+   * cut a word". Leading was the one lever that was not being pulled: the ratio was fixed, so a card
+   * that would have fitted at slightly tighter leading was instead truncated. Defaults to `lineRatio`,
+   * which is the old behaviour exactly.
+   */
+  minRatio?: number;
 }
 
 export interface Fit {
@@ -89,17 +98,33 @@ const round = (n: number) => Math.round(n * 100) / 100;
  * the size (a quarter point can be the difference between three lines and two) and stepping is both
  * exact and trivially readable.
  */
+/** The absolute floor, below which text is not text any more. Only reached by a body nobody should
+ *  be authoring; it exists so such a card ruins itself rather than printing over the card's footer. */
+const HARD_MIN = 3.5;
+
 export function fitText(text: string, box: FitBox): Fit {
-  const { width, height, base, lineRatio, min = 6 } = box;
+  const { width, height, base, lineRatio, min = 6, minRatio = lineRatio } = box;
   const body = (text ?? '').trim();
   if (!body) return { fontSize: base, lineHeight: round(base * lineRatio), lines: 0 };
-  for (let size = base; size >= min; size -= 0.25) {
-    const lineHeight = size * lineRatio;
+  for (let size = base; size >= Math.min(min, HARD_MIN); size -= 0.25) {
     const lines = wrapLines(body, Math.floor(width / (size * CHAR_RATIO)));
-    if (lines * lineHeight <= height) return { fontSize: round(size), lineHeight: round(lineHeight), lines };
+    if (lines < 1 || !Number.isFinite(lines)) continue;
+    // The tallest line this many lines can afford. Use the designed leading when there is room for
+    // it and only tighten when there is not, so an ordinary card is typeset exactly as before.
+    const afford = height / lines;
+    if (afford >= size * minRatio) return { fontSize: round(size), lineHeight: round(Math.min(size * lineRatio, afford)), lines };
   }
-  // Longer than any size can hold. Sit at the floor: the text runs on rather than disappearing, and
-  // the caller's container clips it, which is the least-bad end of a card nobody should be authoring.
-  const lineHeight = min * lineRatio;
-  return { fontSize: min, lineHeight: round(lineHeight), lines: Math.max(1, Math.floor(height / lineHeight)) };
+  /**
+   * Longer than the floor can hold with any leading. Fit it ANYWAY, by construction: lines × height
+   * is the box exactly, and the font comes down to meet the leading so glyphs never overlap.
+   *
+   * v0.32.0: this used to return a LINE COUNT rather than a fit — `floor(height / lineHeight)` — and
+   * the caller passed that to `numberOfLines`. Two things went wrong. The count was a lie (a 20-line
+   * body reported 15), and Android will not honour a `lineHeight` below the font's own natural line
+   * height, so those 15 lines rendered taller there than the arithmetic said and ran into the footer
+   * watermark. A browser honours the value exactly, which is why only the phone showed it.
+   */
+  const lines = Math.max(1, wrapLines(body, Math.max(1, Math.floor(width / (HARD_MIN * CHAR_RATIO)))));
+  const lineHeight = Math.max(1, height / lines);
+  return { fontSize: round(Math.min(HARD_MIN, lineHeight)), lineHeight: round(lineHeight), lines };
 }
