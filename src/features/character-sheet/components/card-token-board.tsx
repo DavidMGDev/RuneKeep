@@ -14,12 +14,12 @@
  * board lives inside the scaled DesignStage; the origin preview is screen-space, scale 1).
  */
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
-import { Rune } from '@/constants/theme';
+import { Body, Rune } from '@/constants/theme';
 import { useStageScale } from '@/components/design-stage';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
@@ -32,10 +32,15 @@ import { isWildshapeId } from '@/data/wildshape-data';
 import { CARD_H, CARD_W, FS_CENTER_Y, FS_FOCUS_SCALE, OX } from '../carousel-geometry';
 import {
   DEFAULT_TOKEN_KINDS,
+  DIE_BOX,
   DIE_MAX,
+  DIE_TYPES,
   DieButton,
   DieNumber,
   type DieType,
+  DualityDieFace,
+  DualityNumber,
+  dualityGeometry,
   hashStr,
   kindScale,
   nextDieType,
@@ -73,6 +78,8 @@ const SIDE_GLYPH = 48; // the edit/delete icon + the die source — bigger than 
 const OPEN_W = 66; // the closed "open drawer" button
 const OPEN_H = 42;
 const DRAWER_TOP = 6;
+/** The dice dropdown: four to a row, so eight dice are two tidy rows under the source (v0.34.4). */
+const DIE_MENU_W = 4 * 46 + 3 * 4 + 12;
 
 const newTokenId = () => `tk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -107,6 +114,14 @@ const THROW_SLOP = 30;
 const SWELL = 0.26;
 /** A roll turns the die exactly once (v0.33.0). More reads as a spinner; less does not read as a roll. */
 const ROLL_TURNS = 1;
+/**
+ * How far behind the first duality die the second one rolls (owner, v0.34.4).
+ *
+ * Small on purpose. They are one token and they answer one press, so they must not read as two
+ * separate rolls: 50ms is enough to see that they are independent objects and too little to look like
+ * you pressed twice. The die the finger was ON goes first, because that is the one you pressed.
+ */
+const DUALITY_LAG_MS = 50;
 
 /**
  * A placed, interactive token.
@@ -123,11 +138,13 @@ const ROLL_TURNS = 1;
  * mid-flight steering possible at all: the gesture and the thing it steers are the same view. The
  * token comes off the card when the animation ENDS, not when it starts.
  */
-const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, onEyedrop, onCycleDie, onRoll, onLeave, reduced }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; onEyedrop: (color: string) => void; onCycleDie: (t: PlacedToken) => void; onRoll: (t: PlacedToken) => number; /** Called once the token has finished leaving: take it off the card. */ onLeave: (t: PlacedToken) => void; reduced: boolean }) {
+const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, drawerOpen, coordScale, onEyedrop, onCycleDie, onRoll, onLeave, reduced }: { token: PlacedToken; size: number; left: number; top: number; drawerOpen: boolean; /** Design px per gesture px for e.x/e.y: the stage scale on web, 1 on a phone. */ coordScale: number; onEyedrop: (color: string) => void; onCycleDie: (t: PlacedToken, side?: 'hope' | 'fear') => void; onRoll: (t: PlacedToken) => { value: number; value2?: number }; /** Called once the token has finished leaving: take it off the card. */ onLeave: (t: PlacedToken) => void; reduced: boolean }) {
   const fill = tokenFill(token); // computed on JS — NEVER call tokenFill() inside a worklet (crashes)
   const isDie = token.kind === 'die';
   const dieType = token.dieType ?? 'd6';
+  const isPair = dieType === 'duality';
   const shownValue = token.dieValue ?? DIE_MAX[dieType];
+  const shownValue2 = token.dieValue2 ?? DIE_MAX.duality;
 
   /**
    * ONE swell value for the hold AND the roll (v0.32.1).
@@ -159,6 +176,25 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
    *  a leave, and SparkBit reads a 0..1 sweep. */
   const pop = useSharedValue(0);
   const [rollTo, setRollTo] = useState<number | null>(null); // the face being rolled to
+  /**
+   * The duality pair's own animation (v0.34.4).
+   *
+   * Each die gets its own turn, its own swell, its own roll progress and its own shake, because the
+   * owner asked for two dice that behave as one token and animate as two objects. Nothing here is
+   * touched unless the token IS a pair, and shared values are cheap enough that branching on the
+   * token type to declare them would only buy a hooks-order bug.
+   */
+  const turnH = useSharedValue(0);
+  const turnF = useSharedValue(0);
+  const swellH = useSharedValue(0);
+  const swellF = useSharedValue(0);
+  const rollH = useSharedValue(0);
+  const rollF = useSharedValue(0);
+  const shakeH = useSharedValue(0);
+  const shakeF = useSharedValue(0);
+  /** Which half the finger came down on: the one that rolls first. */
+  const heldFear = useSharedValue(false);
+  const [pairTo, setPairTo] = useState<{ value: number; value2: number } | null>(null);
 
   const done = useCallback(() => onLeave(token), [onLeave, token]);
 
@@ -168,9 +204,61 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
   const driftX = (h - 0.5) * 2 * size * 1.2;
   const spin = (h2 - 0.5) * 2; // turns over one flight
 
+  /**
+   * Roll the PAIR (v0.34.4): both dice, the held one first, the other {@link DUALITY_LAG_MS} behind.
+   *
+   * Each die owns its swell, its turn and its number cross-fade, so nothing about this is shared
+   * except the moment it starts. When both have settled the HIGHER one shakes: Fear jerks, in short
+   * hard swings, and Hope sways, wider and slower. A tie shakes neither, because a tie has no winner.
+   */
+  const beginPairRoll = useCallback(() => {
+    const res = onRoll(token);
+    const hope = res.value;
+    const fear = res.value2 ?? res.value;
+    setPairTo({ value: hope, value2: fear });
+    const fearFirst = heldFear.value;
+    const lag = reduced ? 0 : DUALITY_LAG_MS;
+    const spin = (turn: typeof turnH, swell: typeof swellH, roll: typeof rollH, delay: number, last: boolean) => {
+      roll.value = 0;
+      swell.value = withDelay(delay, withSequence(
+        withTiming(1.35, { duration: reduced ? 60 : ROLL_MS * 0.34, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: reduced ? 100 : ROLL_MS * 0.66, easing: Easing.inOut(Easing.cubic) }),
+      ));
+      if (!reduced) turn.value = withDelay(delay, withTiming(turn.value + ROLL_TURNS, { duration: ROLL_MS, easing: Easing.out(Easing.cubic) }));
+      roll.value = withDelay(delay, withTiming(1, { duration: reduced ? 160 : ROLL_MS, easing: Easing.inOut(Easing.cubic) }, (f) => {
+        'worklet';
+        // Only the die that lands LAST clears the phase, or the first one would end the roll early.
+        if (f && last && phase.value === 1) { phase.value = 0; runOnJS(setPairTo)(null); }
+      }));
+    };
+    spin(turnH, swellH, rollH, fearFirst ? lag : 0, fearFirst);
+    spin(turnF, swellF, rollF, fearFirst ? 0 : lag, !fearFirst);
+    if (reduced || hope === fear) return;
+    const settled = ROLL_MS + lag;
+    if (hope > fear) {
+      // Hope sways: wide, soft, and it comes to rest rather than stopping.
+      shakeH.value = withDelay(settled, withSequence(
+        withTiming(7, { duration: 190, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-5, { duration: 220, easing: Easing.inOut(Easing.sin) }),
+        withTiming(2.5, { duration: 200, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 180, easing: Easing.out(Easing.sin) }),
+      ));
+    } else {
+      // Fear jerks: short, hard, and it stops dead.
+      shakeF.value = withDelay(settled, withSequence(
+        withTiming(13, { duration: 60, easing: Easing.out(Easing.quad) }),
+        withTiming(-11, { duration: 55, easing: Easing.out(Easing.quad) }),
+        withTiming(8, { duration: 50, easing: Easing.out(Easing.quad) }),
+        withTiming(-5, { duration: 45, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 40, easing: Easing.linear }),
+      ));
+    }
+  }, [onRoll, token, heldFear, reduced, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, phase]);
+
   /** Grow on from wherever the hold got to, spin once, cross-fade the number, settle back. */
   const beginRoll = useCallback(() => {
-    setRollTo(onRoll(token));
+    if (isPair) { beginPairRoll(); return; }
+    setRollTo(onRoll(token).value);
     rollP.value = 0;
     // Continuous: `swell` is already at 1 from the hold, so it carries on up and then comes back down.
     swell.value = withSequence(
@@ -185,7 +273,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
       // Settled, and the finger may still be down. Back to idle at RESTING size, not at full swell.
       if (f && phase.value === 1) { phase.value = 0; runOnJS(setRollTo)(null); }
     });
-  }, [onRoll, token, rollP, swell, turn, phase, reduced]);
+  }, [onRoll, token, rollP, swell, turn, phase, reduced, isPair, beginPairRoll]);
 
   /**
    * Start leaving the card. `dx`/`dy` (a swipe) throw it that way; without them it simply drops.
@@ -241,6 +329,9 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
           if (phase.value === 2) return; // already on its way out
           startX.value = e.allTouches[0]?.absoluteX ?? 0;
           startY.value = e.allTouches[0]?.absoluteY ?? 0;
+          // Which duality die is under the finger, so that one rolls first (owner). `x` is view-local
+          // and arrives in CSS px on web, which is what `coordScale` divides out.
+          heldFear.value = ((e.allTouches[0]?.x ?? 0) / coordScale) > size / 2;
           swell.value = withTiming(1, { duration: HOLD_MS }, (f) => {
             'worklet';
             if (!f || phase.value !== 0) return;
@@ -293,21 +384,22 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
           cancelAnimation(swell);
           swell.value = withTiming(0, { duration: 160 });
         }),
-    [swell, phase, thrownAt, leave, rollP, startX, startY, isDie, beginRoll, beginLeave, steer],
+    [swell, phase, thrownAt, leave, rollP, startX, startY, isDie, beginRoll, beginLeave, steer, heldFear, coordScale, size],
   );
 
   const tap = useMemo(
     () =>
       Gesture.Tap()
         .maxDuration(260)
-        .onEnd(() => {
+        .onEnd((e) => {
           'worklet';
           if (phase.value === 2) return;
           // #293: tapping a placed DIE cycles its number; a regular token eyedrops its colour (drawer open).
-          if (isDie) runOnJS(onCycleDie)(token);
+          // v0.34.4: on a pair, the half you tapped is the half that steps.
+          if (isDie) runOnJS(onCycleDie)(token, isPair ? (e.x / coordScale > size / 2 ? 'fear' : 'hope') : undefined);
           else if (drawerOpen) runOnJS(onEyedrop)(fill);
         }),
-    [drawerOpen, onEyedrop, fill, isDie, onCycleDie, token, phase],
+    [drawerOpen, onEyedrop, fill, isDie, isPair, onCycleDie, token, phase, coordScale, size],
   );
   const gesture = useMemo(() => Gesture.Race(pan, tap), [pan, tap]);
 
@@ -345,7 +437,9 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
     <GestureDetector gesture={gesture}>
       <Animated.View style={[{ position: 'absolute', left, top, width: size, height: size }, style]}>
         {!reduced ? SPARKS.map((s, i) => <SparkBit key={i} ang={s.ang} dist={s.dist} center={size / 2} grow={pop} />) : null}
-        {isDie && rollTo != null ? (
+        {isPair ? (
+          <DualityPair size={size} hope={shownValue} fear={shownValue2} rolled={pairTo} turnH={turnH} turnF={turnF} swellH={swellH} swellF={swellF} rollH={rollH} rollF={rollF} shakeH={shakeH} shakeF={shakeF} />
+        ) : isDie && rollTo != null ? (
           <>
             <DieButton size={size} dieType={dieType} value={shownValue} hideNumber />
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, oldNum]}>
@@ -364,11 +458,77 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
 });
 
 /**
+ * The Hope and Fear pair, drawn and animated as two objects inside one token (v0.34.4).
+ *
+ * Each die rotates about ITS OWN centre, not the token's, which is the whole reason this is not one
+ * glyph with one transform: two dice sharing a pivot orbit each other, and dice do not orbit. The
+ * pivot is moved into place, the rotation and swell applied, and the pivot moved back, which is the
+ * standard way to turn a child about an off-centre point in React Native.
+ *
+ * `shake` is added to the same rotation rather than being a transform of its own, so the winner's
+ * flourish continues from exactly where its roll stopped.
+ */
+function DualityPair({ size, hope, fear, rolled, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF }: {
+  size: number;
+  hope: number;
+  fear: number;
+  /** The faces being rolled TO, or null when the pair is at rest. */
+  rolled: { value: number; value2: number } | null;
+  turnH: SharedValue<number>; turnF: SharedValue<number>;
+  swellH: SharedValue<number>; swellF: SharedValue<number>;
+  rollH: SharedValue<number>; rollF: SharedValue<number>;
+  shakeH: SharedValue<number>; shakeF: SharedValue<number>;
+}) {
+  const geo = dualityGeometry();
+  const off = (v: number) => ((v - DIE_BOX / 2) / DIE_BOX) * size;
+  // Written out twice rather than through a helper: two `useAnimatedStyle` calls from a shared
+  // closure is a hooks-rule violation waiting to be edited into a real one.
+  const hopeStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: off(geo.hope.cx) },
+      { translateY: off(geo.hope.cy) },
+      { rotate: `${turnH.value * 360 + shakeH.value}deg` },
+      { scale: 1 + swellH.value * SWELL },
+      { translateX: -off(geo.hope.cx) },
+      { translateY: -off(geo.hope.cy) },
+    ],
+  }));
+  const fearStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: off(geo.fear.cx) },
+      { translateY: off(geo.fear.cy) },
+      { rotate: `${turnF.value * 360 + shakeF.value}deg` },
+      { scale: 1 + swellF.value * SWELL },
+      { translateX: -off(geo.fear.cx) },
+      { translateY: -off(geo.fear.cy) },
+    ],
+  }));
+  const oldH = useAnimatedStyle(() => ({ opacity: rolled == null ? 1 : Math.max(0, 1 - rollH.value * 2.4) }));
+  const newH = useAnimatedStyle(() => ({ opacity: rolled == null ? 0 : Math.max(0, (rollH.value - 0.5) * 2.4) }));
+  const oldF = useAnimatedStyle(() => ({ opacity: rolled == null ? 1 : Math.max(0, 1 - rollF.value * 2.4) }));
+  const newF = useAnimatedStyle(() => ({ opacity: rolled == null ? 0 : Math.max(0, (rollF.value - 0.5) * 2.4) }));
+  return (
+    <View style={{ width: size, height: size }} pointerEvents="none">
+      <Animated.View style={[StyleSheet.absoluteFill, hopeStyle]}>
+        <DualityDieFace size={size} side="hope" />
+        <Animated.View style={[StyleSheet.absoluteFill, oldH]}><DualityNumber size={size} side="hope" value={hope} /></Animated.View>
+        {rolled ? <Animated.View style={[StyleSheet.absoluteFill, newH]}><DualityNumber size={size} side="hope" value={rolled.value} /></Animated.View> : null}
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, fearStyle]}>
+        <DualityDieFace size={size} side="fear" />
+        <Animated.View style={[StyleSheet.absoluteFill, oldF]}><DualityNumber size={size} side="fear" value={fear} /></Animated.View>
+        {rolled ? <Animated.View style={[StyleSheet.absoluteFill, newF]}><DualityNumber size={size} side="fear" value={rolled.value2} /></Animated.View> : null}
+      </Animated.View>
+    </View>
+  );
+}
+
+/**
  * A drawer source: DRAG it onto the card to place a copy; (colour button only) TAP to cycle colour.
  * `localX/localY` position it WITHIN the tray; `homeX/homeY` are its absolute board-space centre, used
  * to test the drop against the card rect.
  */
-const DraggableSource = memo(function DraggableSource({ token, localX, localY, homeX, homeY, scale, base = DRAWER_TOKEN, onPlace, onCycle }: { token: TokenDesc; localX: number; localY: number; homeX: number; homeY: number; scale: number; base?: number; onPlace: (desc: TokenDesc, cx: number, cy: number) => void; onCycle?: () => void }) {
+const DraggableSource = memo(function DraggableSource({ token, localX, localY, homeX, homeY, scale, base = DRAWER_TOKEN, onPlace, onCycle, onHold }: { token: TokenDesc; localX: number; localY: number; homeX: number; homeY: number; scale: number; base?: number; onPlace: (desc: TokenDesc, cx: number, cy: number) => void; onCycle?: () => void; /** v0.34.4: hold the die source to see every die at once and pick one. */ onHold?: () => void }) {
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const drag = useSharedValue(0);
@@ -394,7 +554,21 @@ const DraggableSource = memo(function DraggableSource({ token, localX, localY, h
     () => Gesture.Tap().maxDuration(260).onEnd(() => { 'worklet'; if (onCycle) runOnJS(onCycle)(); }),
     [onCycle],
   );
-  const gesture = useMemo(() => (onCycle ? Gesture.Exclusive(pan, tap) : pan), [pan, tap, onCycle]);
+  /**
+   * v0.34.4: the die source also answers a HOLD, which opens the list of every die.
+   *
+   * `Race(pan, Exclusive(hold, tap))` and not `Exclusive(pan, hold, tap)`: the tap has to wait for the
+   * hold to fail, which it does the instant the finger lifts, so a quick tap still cycles with no
+   * delay. Putting the pan in the same Exclusive would make the drag wait for both.
+   */
+  const hold = useMemo(
+    () => Gesture.LongPress().minDuration(320).maxDistance(12).onStart(() => { 'worklet'; if (onHold) runOnJS(onHold)(); }),
+    [onHold],
+  );
+  const gesture = useMemo(() => {
+    if (onHold && onCycle) return Gesture.Race(pan, Gesture.Exclusive(hold, tap));
+    return onCycle ? Gesture.Exclusive(pan, tap) : pan;
+  }, [pan, tap, hold, onCycle, onHold]);
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: 1 + drag.value * 0.18 }],
     zIndex: drag.value > 0 ? 50 : 1,
@@ -436,6 +610,8 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
   const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [dieType, setDieType] = useState<DieType>('d20'); // the source die's current size (#293)
+  /** v0.34.4: holding the die source drops down every die at once, so eight is not eight taps. */
+  const [dieMenu, setDieMenu] = useState(false);
   const openP = useSharedValue(0);
 
   useEffect(() => {
@@ -454,7 +630,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
       const tok: PlacedToken = { id: newTokenId(), kind: desc.kind, x, y };
       if (desc.kind === 'color') tok.color = drawerColor;
       // #297: a placed die starts at its LOWEST value (1), even though the source shows the maximum.
-      if (desc.kind === 'die') { const dt = desc.dieType ?? dieType; tok.dieType = dt; tok.dieValue = 1; }
+      if (desc.kind === 'die') { const dt = desc.dieType ?? dieType; tok.dieType = dt; tok.dieValue = 1; if (dt === 'duality') tok.dieValue2 = 1; }
       onPlace(tok);
       focusHaptic();
       playSfx('placeToken'); // #255
@@ -475,10 +651,14 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
     (t: PlacedToken) => {
       const dt = t.dieType ?? 'd6';
       const to = 1 + Math.floor(Math.random() * DIE_MAX[dt]);
-      onUpdate?.(t.id, { dieValue: to });
+      // v0.34.4: a duality token is TWO dice, so it rolls two numbers and stores both. They are
+      // written immediately, like a single die's, so a pair thrown mid-roll still leaves the right
+      // faces behind on every other copy of the card.
+      const to2 = dt === 'duality' ? 1 + Math.floor(Math.random() * DIE_MAX.duality) : undefined;
+      onUpdate?.(t.id, to2 == null ? { dieValue: to } : { dieValue: to, dieValue2: to2 });
       focusHaptic();
       playSfx('placeToken');
-      return to;
+      return { value: to, value2: to2 };
     },
     [onUpdate],
   );
@@ -486,10 +666,12 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
   const cycleColor = useCallback(() => { onSetDrawerColor(randomTokenColor(drawerColor)); playSfx('tokenCopyColor'); }, [onSetDrawerColor, drawerColor]);
   // #293: tap the source die → next size; tap a placed die → next value.
   const cycleDieType = useCallback(() => { setDieType((d) => nextDieType(d)); playSfx('tokenCopyColor'); }, []);
+  const openDieMenu = useCallback(() => { setDieMenu(true); focusHaptic(); playSfx('panelOpen'); }, []);
   const cycleDie = useCallback(
-    (t: PlacedToken) => {
+    (t: PlacedToken, side?: 'hope' | 'fear') => {
       if (!t.dieType || !onUpdate) return;
-      onUpdate(t.id, { dieValue: nextDieValue(t.dieType, t.dieValue ?? DIE_MAX[t.dieType]) });
+      if (side === 'fear') onUpdate(t.id, { dieValue2: nextDieValue('duality', t.dieValue2 ?? DIE_MAX.duality) });
+      else onUpdate(t.id, { dieValue: nextDieValue(t.dieType, t.dieValue ?? DIE_MAX[t.dieType]) });
       tapHaptic();
       playSfx('numpadPress');
     },
@@ -521,6 +703,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
             left={cardRect.left + t.x * cardRect.width - size / 2}
             top={cardRect.top + t.y * cardRect.height - size / 2}
             drawerOpen={open}
+            coordScale={Platform.OS === 'web' ? scale || 1 : 1}
             onEyedrop={eyedrop}
             onCycleDie={cycleDie}
             onRoll={rollDie}
@@ -571,9 +754,29 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
           <View style={panelBox(rightX, sideW)}>
             {(() => {
               const lx = sideW / 2;
-              return <DraggableSource token={{ kind: 'die', dieType, dieValue: DIE_MAX[dieType] }} localX={lx} localY={ly} homeX={rightX + lx} homeY={drawerTop + ly} scale={scale} base={SIDE_GLYPH} onPlace={place} onCycle={cycleDieType} />;
+              return <DraggableSource token={{ kind: 'die', dieType, dieValue: DIE_MAX[dieType] }} localX={lx} localY={ly} homeX={rightX + lx} homeY={drawerTop + ly} scale={scale} base={SIDE_GLYPH} onPlace={place} onCycle={cycleDieType} onHold={openDieMenu} />;
             })()}
           </View>
+          {/* The dropdown (v0.34.4): every die, tap one to arm the source with it. It hangs under the
+              die panel and closes on any tap outside, so it never has to be dismissed on purpose. */}
+          {dieMenu ? (
+            <>
+              <Pressable style={StyleSheet.absoluteFill} onPress={() => setDieMenu(false)} accessibilityRole="button" accessibilityLabel="Close the dice list" />
+              <View style={{ position: 'absolute', left: Math.max(SIDE, rightX + sideW - DIE_MENU_W), top: drawerTop + PANEL_H + 6, width: DIE_MENU_W, backgroundColor: 'rgba(14,17,22,0.97)', borderRadius: 12, borderWidth: 1.4, borderColor: Rune.goldEdge, paddingVertical: 8, paddingHorizontal: 6, flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                {DIE_TYPES.map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => { setDieType(t); setDieMenu(false); tapHaptic(); playSfx('cardSelect'); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t === 'duality' ? 'Hope and Fear dice' : t}
+                    style={({ pressed }) => ({ width: 46, alignItems: 'center', paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: t === dieType ? Rune.goldBright : 'transparent', opacity: pressed ? 0.6 : 1 })}>
+                    <TokenGlyph size={34} token={{ kind: 'die', dieType: t, dieValue: DIE_MAX[t], dieValue2: DIE_MAX.duality }} />
+                    <Text style={{ color: t === dieType ? Rune.goldBright : Rune.goldText, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 0.3, marginTop: 2 }}>{t === 'duality' ? 'HOPE' : t.toUpperCase()}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : null}
         </Animated.View>
       ) : null}
     </View>

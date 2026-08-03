@@ -1,4 +1,4 @@
-import { DEFAULT_TOKEN_KINDS, DIE_BOX, DIE_COLOR, DIE_MAX, DIE_PLACED_MULT, DIE_TYPES, dieGeometry, hashStr, kindScale, nextDieType, nextDieValue, pickTokenColor, placedKindScale, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
+import { DEFAULT_TOKEN_KINDS, DIE_BOX, DIE_COLOR, DIE_MAX, DIE_PLACED_MULT, DIE_TYPES, dieGeometry, dualityGeometry, FEAR_INK, FEAR_PURPLE, hashStr, HOPE_GOLD, HOPE_INK, kindScale, nextDieType, nextDieValue, pickTokenColor, placedKindScale, TOKEN_BASE, TOKEN_COLORS, tokenFill } from './card-tokens-data';
 
 describe('card tokens — pure helpers (#244)', () => {
   describe('pickTokenColor', () => {
@@ -82,11 +82,12 @@ describe('card tokens — pure helpers (#244)', () => {
   });
 
   describe('dice (#293)', () => {
-    it('nextDieType cycles the six sizes and wraps', () => {
-      expect(DIE_TYPES).toEqual(['d4', 'd6', 'd8', 'd10', 'd12', 'd20']);
+    it('nextDieType cycles every die and wraps', () => {
+      expect(DIE_TYPES).toEqual(['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', 'duality']);
       expect(nextDieType('d4')).toBe('d6');
       expect(nextDieType('d12')).toBe('d20');
-      expect(nextDieType('d20')).toBe('d4'); // wrap
+      expect(nextDieType('d100')).toBe('duality');
+      expect(nextDieType('duality')).toBe('d4'); // wrap
     });
 
     it('nextDieValue steps 1..max then wraps to 1', () => {
@@ -124,6 +125,57 @@ describe('card tokens — pure helpers (#244)', () => {
         expect(g.numberY).toBeGreaterThan(miny);
         expect(g.numberY).toBeLessThan(maxy);
       }
+    });
+  });
+
+  describe('the d100 and the duality pair (v0.34.4)', () => {
+    it('rolls a d100 from 1 to 100', () => {
+      expect(DIE_MAX.d100).toBe(100);
+      expect(nextDieValue('d100', 99)).toBe(100);
+      expect(nextDieValue('d100', 100)).toBe(1);
+    });
+
+    it('draws the d100 with enough sides to read as a disc', () => {
+      const pts = dieGeometry('d100').points!.split(' ');
+      expect(pts.length).toBeGreaterThanOrEqual(16);
+    });
+
+    it('makes both duality dice d12s', () => {
+      expect(DIE_MAX.duality).toBe(12);
+      expect(nextDieValue('duality', 12)).toBe(1);
+    });
+
+    it('gives the two duality dice separate centres, which is what lets them turn on their own', () => {
+      const { hope, fear } = dualityGeometry();
+      expect(hope.cx).not.toBe(fear.cx);
+      expect(hope.cy).not.toBe(fear.cy);
+    });
+
+    it('keeps both duality dice inside the token box', () => {
+      const g = dualityGeometry();
+      for (const die of [g.hope, g.fear]) {
+        for (const p of die.points.split(' ')) {
+          const [x, y] = p.split(',').map(Number);
+          expect(x).toBeGreaterThanOrEqual(0);
+          expect(x).toBeLessThanOrEqual(DIE_BOX);
+          expect(y).toBeGreaterThanOrEqual(0);
+          expect(y).toBeLessThanOrEqual(DIE_BOX);
+        }
+      }
+    });
+
+    it('centres each duality die on its own pivot', () => {
+      for (const die of Object.values(dualityGeometry())) {
+        const pts = die.points.split(' ').map((p) => p.split(',').map(Number));
+        const xs = pts.map((p) => p[0]);
+        expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(die.cx, 1);
+      }
+    });
+
+    it('gives Hope and Fear opposite colours, each readable on the other', () => {
+      expect(HOPE_GOLD).not.toBe(FEAR_PURPLE);
+      expect(HOPE_INK).toBe('#2A1436'); // dark purple numbers on the gold die
+      expect(FEAR_INK).toBe('#F0D79A'); // light gold numbers on the purple die
     });
   });
 });
