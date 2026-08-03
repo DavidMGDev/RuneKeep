@@ -1,19 +1,19 @@
-RuneKeep v0.34.1 - The moodboard stops crashing, the menu you could not see is visible, and the board can be your portrait.
+RuneKeep v0.34.2 - Two fingers no longer close the app, the lock is a tap, and the board can paint itself into your portrait.
 
 FIXES
 
-- DRAGGING AN IMAGE NO LONGER CLOSES THE APP. The drag was calling an ordinary function from the animation thread, which on Android is fatal. That is why an image could be added and then never touched again.
-- THE IMAGE MENU IS VISIBLE. Double tapping an image opened a wheel that was drawn at zero opacity and still took taps, so you saw nothing, pressed where a button would be, and the image was deleted. It no longer fades in at all, so it cannot act while it cannot be seen.
-- HOLDING THE LOCK WORKS IN A BROWSER. The hold filled halfway and reset, because the browser's own long-press behaviour cancelled it. The lock is a proper gesture now rather than a plain button, which also fixes the release being read as a second tap.
-- DRAGGING STARTS IMMEDIATELY. Every drag was waiting for the double tap to rule itself out first. They tell each other apart by movement now, so an image follows your finger from the first pixel.
+- PINCHING AND ROTATING NO LONGER CLOSES THE APP. The rotation snap called an ordinary helper from the animation thread, which on Android is fatal. One finger was fine because only two fingers reach that code. This is the same fault as last version's crash, one level further in.
+- THE PORTRAIT CAPTURE WORKS IN A BROWSER. It was trying to photograph the page, which gave a white rectangle or nothing at all. A browser now DRAWS the board instead: the background, then each image at its own position, size and angle. The result is exactly what you were looking at.
+- THE MENU STAYS OPEN IN A BROWSER. Double tapping an image opened the wheel and closed it two frames later, because the second tap also arrived as a click and landed on the dismiss area behind it.
 
 THE MOODBOARD
 
-- YOUR BOARD CAN BE YOUR PORTRAIT. In the images panel, turn on Use as portrait: every time you leave the board it saves a picture of it over your character's portrait. The capture is a PNG taken from the images alone, so it keeps its transparency. In a browser the capture is opaque, which is a limit of how a browser takes a picture of a page.
-- LESS SNAPPING, AND LESS BUZZING. Position snapping is gone entirely; only rotation snaps, and only to right angles. Once you turn deliberately out of a snap, that turn will not snap again. Let go and start turning again to get it back.
-- THE IMAGES PANEL IS ONE ROW OF BUTTONS. Send to back is gone, which is what lets Centre, Front, Copy and Delete fit on a single line, and deleting asks first.
-- THE ADD BUTTON IS SMALLER AND SITS CLEAR of the navigation bar it was bleeding into. The top buttons no longer have a band of empty space above them.
-- THE EMPTY BOARD PROMPT NO LONGER READS THROUGH the images panel.
-- LEAVING THE BOARD FADES rather than cutting straight to a half-built character sheet.
+- THE LOCK IS A TAP. Tap to unlock, tap to lock. Holding for a second was a lot of ceremony for something you do every time you want to move a picture.
+- AN EMPTY BOARD OPENS UNLOCKED, with an arrow pointing at the plus. There is no arrangement to protect yet, and nothing worse than a blank canvas that will not let you start.
+- A NEW BUTTON CHANGES THE BACKGROUND. It walks a set of dark grounds chosen to sit under artwork, and the first tap round the loop brings back the original blue. The colour is saved with the character and is part of the portrait when the board becomes one.
+- THE DOUBLE TAP MENU IS DELETE AND DUPLICATE. Front and Centre were layout choices, and layout belongs in the images list where you can see the stack.
+- USE AS PORTRAIT IS A REAL SWITCH, the same one the category list uses. As a bordered panel it read like another image row.
+- TOUCHING A LOCKED BOARD SAYS SO, at most once every two seconds. It used to do nothing at all, which looks the same as being broken.
+- PNGs KEEP THEIR TRANSPARENCY on the board, and the saved portrait is flattened onto the background.
 
 Sideload: enable Install unknown apps, then open the APK.

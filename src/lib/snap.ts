@@ -35,8 +35,16 @@ export interface SnapResult {
   entered: boolean;
 }
 
-/** Shortest signed distance from `a` to `b`, going the short way round when the axis wraps. */
+/**
+ * Shortest signed distance from `a` to `b`, going the short way round when the axis wraps.
+ *
+ * **A worklet, because `snapValue` is one and calls it** (v0.34.2). A worklet that reaches an ordinary
+ * function crashes the app on Android, and marking the caller is not enough: everything it calls has
+ * to be marked too. `snapValue` runs only on the rotation gesture, which is why one finger was fine
+ * and two crashed. This is the same fault as v0.34.1's `clampCentre`, one level deeper.
+ */
 function delta(a: number, b: number, wrap?: number): number {
+  'worklet';
   const d = a - b;
   if (!wrap) return d;
   const m = ((d % wrap) + wrap) % wrap;

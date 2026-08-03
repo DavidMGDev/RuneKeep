@@ -63,24 +63,24 @@ export function MoodboardLayers({
           <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.medium }}>{items.length} on the board</Text>
         </View>
 
-        {/* v0.34.1: the board can BE the portrait. Kept here rather than in the top bar because it is
-            a setting about the board, not a control for using it. */}
+        {/* v0.34.1: the board can BE the portrait. v0.34.2: drawn as the same switch the character
+            sheet's category list uses, because as a bordered box with a thumbnail-sized gap it read
+            as another image row rather than as a setting. */}
         <Pressable
           onPress={() => { playSfx('buttonTap'); onTogglePortrait(!usePortrait); }}
           accessibilityRole="switch"
           accessibilityState={{ checked: usePortrait }}
           accessibilityLabel="Use this moodboard as the character portrait"
-          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginBottom: 10 })}>
-          <ChamferBox chamfer={8} fill={usePortrait ? 'rgba(224,181,99,0.18)' : 'rgba(14,17,22,0.9)'} stroke={usePortrait ? Rune.goldBright : 'rgba(218,162,73,0.4)'} strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 3 }}>
-            <Text style={{ color: usePortrait ? Rune.goldBright : Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
-              {usePortrait ? 'Portrait: this board' : 'Use as portrait'}
-            </Text>
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 })}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: usePortrait ? Rune.goldBright : Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>Use as portrait</Text>
             <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 15 }}>
-              {usePortrait
-                ? 'Leaving the board saves a picture of it over your portrait.'
-                : 'Turn this on and the board becomes your portrait each time you leave it.'}
+              Leaving the board saves a picture of it over your portrait.
             </Text>
-          </ChamferBox>
+          </View>
+          <View style={{ width: 44, height: 26, borderRadius: 13, padding: 3, backgroundColor: usePortrait ? Rune.gold : 'rgba(80,84,92,0.6)', justifyContent: 'center' }}>
+            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: Rune.ivory, alignSelf: usePortrait ? 'flex-end' : 'flex-start' }} />
+          </View>
         </Pressable>
 
         {top.length === 0 ? (

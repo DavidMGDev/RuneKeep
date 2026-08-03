@@ -187,6 +187,8 @@ export interface CharacterFile {
   moodboard?: import('./moodboard').MoodboardItem[];
   /** v0.34.1: leaving the moodboard saves a picture of it over the character's portrait. */
   moodboardAsPortrait?: boolean;
+  /** v0.34.2: the moodboard's ground colour. Absent means the default deep blue. */
+  moodboardColor?: string;
   // --- card management (#246) — all additive; absent on old saves means "no customisation". ---
   /** Player-created carousel categories: id, label, icon key (from the category icon library). */
   customCategories?: import('@/features/character-sheet/carousel-categories').CustomCategory[];

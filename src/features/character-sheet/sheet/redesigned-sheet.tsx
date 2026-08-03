@@ -134,7 +134,7 @@ const hasBeastform = (f: { className: string; multiclassName?: string }) => f.cl
  */
 /** Cosmetic decoration: stick-on tokens, and the moodboard. Nothing that builds a deck reads any
  *  of it (v0.33.1, moodboard v0.34.0). */
-const TOKEN_FIELDS = new Set(['cardTokens', 'tokenColor', 'tokenDrawerX', 'moodboard', 'moodboardAsPortrait']);
+const TOKEN_FIELDS = new Set(['cardTokens', 'tokenColor', 'tokenDrawerX', 'moodboard', 'moodboardAsPortrait', 'moodboardColor']);
 
 /** Whether `next` differs from `prev` in the token fields and nowhere else. */
 function onlyTokensChanged(prev: CharacterFile | null | undefined, next: CharacterFile | null | undefined): boolean {
@@ -2530,6 +2530,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         onChange={onMoodboard}
         onSetPortrait={onBoardPortrait}
         onUsePortrait={(on) => mutateFile({ moodboardAsPortrait: on })}
+        background={file?.moodboardColor}
+        onBackground={(color) => mutateFile({ moodboardColor: color })}
         onClose={closeBoard}
       />
     );

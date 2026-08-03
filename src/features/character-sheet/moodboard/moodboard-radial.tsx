@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path, Polyline, Rect } from 'react-native-svg';
@@ -9,16 +9,16 @@ import { playSfx } from '@/lib/sfx';
 
 export type MoodAction = 'delete' | 'copy' | 'front' | 'centre';
 
+/** What the DOUBLE TAP offers (owner, v0.34.2): the two things worth reaching for on the card
+ *  itself. Front and Centre are layout, which belongs in the images list where you can see the stack. */
+const WHEEL: MoodAction[] = ['delete', 'copy'];
+
 const R_OUT = 78;
 const R_IN = 34;
 const ICON = 22;
 
-const OPTIONS: { key: MoodAction; label: string }[] = [
-  { key: 'delete', label: 'Delete' },
-  { key: 'copy', label: 'Duplicate' },
-  { key: 'front', label: 'Bring to front' },
-  { key: 'centre', label: 'Centre' },
-];
+const LABEL: Record<MoodAction, string> = { delete: 'Delete', copy: 'Duplicate', front: 'Bring to front', centre: 'Centre' };
+const OPTIONS: { key: MoodAction; label: string }[] = WHEEL.map((key) => ({ key, label: LABEL[key] }));
 
 /** One wedge of the ring, drawn in a local 2R x 2R canvas centred at (R, R). */
 function sector(a0: number, a1: number): string {
@@ -88,7 +88,17 @@ export function MoodboardRadial({ x, y, canvasW, canvasH, onPick, onDismiss }: {
    */
   const p = useSharedValue(0.86);
   const [lit, setLit] = useState<MoodAction | null>(null);
+  /**
+   * When this wheel opened (v0.34.2).
+   *
+   * In a browser the second tap of a double tap ALSO arrives as a click, a moment after the gesture
+   * has already opened the menu, and it landed on the dismiss scrim. The wheel appeared for about two
+   * frames and closed itself. Ignoring dismissals for a beat after opening is the whole fix; a
+   * genuine "put it away" tap is never that fast.
+   */
+  const openedAt = useRef(0);
   useEffect(() => {
+    openedAt.current = Date.now();
     p.value = withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) });
     playSfx('panelOpen');
   }, [p]);
@@ -103,7 +113,7 @@ export function MoodboardRadial({ x, y, canvasW, canvasH, onPick, onDismiss }: {
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}>
       {/* A tap anywhere else puts the wheel away, which is the only way out other than choosing. */}
-      <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Close the image menu" />
+      <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} onPress={() => { if (Date.now() - openedAt.current > 400) onDismiss(); }} accessibilityRole="button" accessibilityLabel="Close the image menu" />
       <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', left: cx - R_OUT, top: cy - R_OUT, width: R_OUT * 2, height: R_OUT * 2 }, style]}>
         {/* The ring itself takes no touches; the wedge buttons below it do. */}
         <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0 }}>
