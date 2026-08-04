@@ -11,6 +11,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { ColorPalette } from '@/components/color-palette';
 import { Body, Rune } from '@/constants/theme';
 import { SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
+import { computeStageScale } from '@/lib/stage-scale';
 import { tapHaptic } from '@/lib/haptics';
 import {
   addItem,
@@ -136,18 +137,36 @@ function LockButton({ locked, onToggle }: { locked: boolean; onToggle: () => voi
 const PORTRAIT_W = 148;
 const PORTRAIT_H = 222;
 
+/**
+ * v0.34.7: drawn OUTSIDE the design stage, in screen pixels.
+ *
+ * Inside the stage it could only ever be 412 design pixels wide, so on anything wider than a phone
+ * the guides stopped at the invisible edges of the canvas column and left the rest of the screen
+ * bare. The crop is vertical, so the band's width is decorative and should simply run the whole way.
+ *
+ * The stage's own arithmetic gives the two y positions: the same `computeStageScale` the stage uses,
+ * measured off this view, so the lines land exactly on the canvas rows they describe.
+ */
 function PortraitFrame() {
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const keptH = (PORTRAIT_H * SHEET_DESIGN_WIDTH) / PORTRAIT_W;
-  const top = Math.max(0, (SHEET_DESIGN_HEIGHT - keptH) / 2);
+  const topDesign = Math.max(0, (SHEET_DESIGN_HEIGHT - keptH) / 2);
+  const m = box ? computeStageScale({ availW: box.w, availH: box.h, designW: SHEET_DESIGN_WIDTH, designH: SHEET_DESIGN_HEIGHT }) : null;
+  const top = m ? m.offsetY + topDesign * m.scale : 0;
+  const height = m ? keptH * m.scale : 0;
   const bar = { position: 'absolute' as const, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.55)' };
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: SHEET_DESIGN_WIDTH, height: SHEET_DESIGN_HEIGHT }}>
-      <View style={[bar, { top: 0, height: top }]} />
-      <View style={[bar, { top: top + keptH, bottom: 0 }]} />
-      <View style={{ position: 'absolute', left: 0, right: 0, top, height: keptH, borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: 'rgba(218,162,73,0.75)', borderStyle: 'dashed' }} />
-      <Text style={{ position: 'absolute', left: 0, right: 0, top: top + 6, textAlign: 'center', color: 'rgba(218,162,73,0.85)', fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-        Portrait keeps this
-      </Text>
+    <View pointerEvents="none" onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}>
+      {m ? (
+        <>
+          <View style={[bar, { top: 0, height: top }]} />
+          <View style={[bar, { top: top + height, bottom: 0 }]} />
+          <View style={{ position: 'absolute', left: 0, right: 0, top, height, borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: 'rgba(218,162,73,0.75)', borderStyle: 'dashed' }} />
+          <Text style={{ position: 'absolute', left: 0, right: 0, top: top + 6, textAlign: 'center', color: 'rgba(218,162,73,0.85)', fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+            Portrait keeps this
+          </Text>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -379,7 +398,6 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
           reduced={reduced}
         />
         </View>
-        {usePortrait && showFrame ? <PortraitFrame /> : null}
         {/* Locked: swallow taps on the canvas and say why, rather than doing nothing (v0.34.2). */}
         {locked ? (
           <Pressable
@@ -404,6 +422,7 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
       {/* The chrome sits OUTSIDE the stage, in device points, so the buttons are a comfortable size on
           every screen rather than scaled with the canvas. */}
       <Animated.View pointerEvents="box-none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, chromeStyle]}>
+        {usePortrait && showFrame ? <PortraitFrame /> : null}
         {/* v0.34.1: measured from the real inset rather than a flat 46, which left a band of dead
             space at the top of a browser and sat under the status bar on some phones. */}
         <View style={{ position: 'absolute', right: 14, top: insets.top + 10, flexDirection: 'row', gap: 10, alignItems: 'center' }}>

@@ -72,6 +72,11 @@ describe('card tokens — pure helpers (#244)', () => {
   });
 
   describe('placedKindScale (#297)', () => {
+    it('grows a duality token, which holds two dice in the space of one (v0.34.7)', () => {
+      expect(placedKindScale('die', 'duality')).toBeGreaterThan(placedKindScale('die', 'd20'));
+      expect(placedKindScale('die', 'd20')).toBe(placedKindScale('die'));
+    });
+
     it('doubles a placed die but leaves every other kind unchanged', () => {
       expect(DIE_PLACED_MULT).toBe(2);
       expect(placedKindScale('die')).toBe(kindScale('die') * 2);

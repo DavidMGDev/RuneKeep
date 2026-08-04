@@ -210,6 +210,23 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
   /** Store a landed roll. Called from the animation's completion, so it never runs mid-motion. */
   const landed = useCallback((value: number) => onRolled(token, value), [onRolled, token]);
   const landedPair = useCallback((value: number, value2: number) => onRolled(token, value, value2), [onRolled, token]);
+  /**
+   * The pair's voice (owner, v0.34.7).
+   *
+   * The die that goes FIRST is heard when the roll starts, from `rollDie`. This is the second one,
+   * fired when its delay is up, pitched by which die it is: Hope rings above the first, Fear below
+   * it. So the pair sounds like two dice landing, and which way round tells you what you are hearing.
+   */
+  const secondDie = useCallback((fear: boolean) => playSfx('placeToken', { cents: fear ? -400 : 320 }), []);
+  /**
+   * And the result, once both have stopped. Composed from sounds the app already has: the Hope chime
+   * for Hope, its darker counterpart for Fear, and the golden flourish for a critical.
+   */
+  const callResult = useCallback((hope: number, fear: number) => {
+    if (hope === fear) playSfx('gainGoldenHp');
+    else if (hope > fear) playSfx('gainHope');
+    else playSfx('loseHope', { cents: -200 });
+  }, []);
 
   // Per-token randomness, from its id, so the same token always tumbles the same way.
   const h = hashStr(token.id);
@@ -247,6 +264,8 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         withTiming(0, { duration: reduced ? 100 : ROLL_MS * 0.66, easing: Easing.inOut(Easing.cubic) }),
       ));
       if (!reduced) turn.value = withDelay(delay, withTiming(turn.value + ROLL_TURNS, { duration: ROLL_MS, easing: Easing.out(Easing.cubic) }));
+      // The second die announces itself when its delay is up, not when the gesture began.
+      if (delay > 0) setTimeout(() => secondDie(!fearFirst), delay);
       roll.value = withDelay(delay, withTiming(1, { duration: reduced ? 160 : ROLL_MS, easing: Easing.inOut(Easing.cubic) }, (f) => {
         'worklet';
         // Only the die that lands LAST clears the phase, or the first one would end the roll early.
@@ -254,7 +273,16 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         // stored either way, the moment the dice stop.
         if (!f || !last) return;
         runOnJS(landedPair)(hope, fear);
-        if (phase.value === 1) { phase.value = 0; runOnJS(setPairTo)(null); }
+        runOnJS(callResult)(hope, fear);
+        /**
+         * `pairTo` is NOT cleared (v0.34.7).
+         *
+         * Clearing it unmounted the two cross-fade layers in the same commit that wrote the new faces
+         * to the character, and the pair blinked out for a frame before the shake began. There is
+         * nothing to clear: by now the layers show exactly what the token shows, at full opacity, so
+         * leaving them mounted is invisible and the next roll simply overwrites them.
+         */
+        if (phase.value === 1) phase.value = 0;
       }));
     };
     spin(turnH, swellH, rollH, fearFirst ? lag : 0, fearFirst);
@@ -271,7 +299,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         // die that can never be rolled or removed again.
         withTiming(0, { duration: reduced ? 80 : 320, easing: Easing.in(Easing.cubic) }, () => {
           'worklet';
-          if (phase.value === 3) { phase.value = 0; runOnJS(setPairTo)(null); }
+          if (phase.value === 3) phase.value = 0;
         }),
       ));
       if (reduced) return;
@@ -305,7 +333,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         withTiming(0, { duration: 40, easing: Easing.linear }),
       ));
     }
-  }, [onRoll, token, heldFear, reduced, swell, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, phase, crit, landedPair]);
+  }, [onRoll, token, heldFear, reduced, swell, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, phase, crit, landedPair, secondDie, callResult]);
 
   /** Grow on from wherever the hold got to, spin once, cross-fade the number, settle back. */
   const beginRoll = useCallback(() => {
@@ -780,7 +808,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* placed tokens (interactive) */}
       {shown.map((t) => {
-        const size = cardBase * placedKindScale(t.kind);
+        const size = cardBase * placedKindScale(t.kind, t.dieType);
         return (
           <PlacedTokenView
             key={t.id}
