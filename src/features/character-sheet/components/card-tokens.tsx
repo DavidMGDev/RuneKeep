@@ -236,7 +236,7 @@ export const BakedTokenLayer = memo(function BakedTokenLayer({ tokens, cardW, ca
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {tokens.map((t) => {
-        const size = base * placedKindScale(t.kind);
+        const size = base * placedKindScale(t.kind, t.dieType);
         return (
           <View key={t.id} style={{ position: 'absolute', left: t.x * cardW - size / 2, top: t.y * cardH - size / 2 }}>
             <TokenGlyph size={size} token={t} />

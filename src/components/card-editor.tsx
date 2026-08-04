@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { ColorPalette } from '@/components/color-palette';
-import { nearestColorName, normalizeHex, readableInk } from '@/lib/color';
+import { hslToHex, nearestColorName, normalizeHex, readableInk } from '@/lib/color';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -226,12 +226,20 @@ export function TypePicker({ groups, current, onPick, onClose }: { groups: { lab
 }
 
 
-/** A pleasant-but-random flat color (controlled S/L so it never looks garish). */
+/**
+ * A pleasant-but-random flat colour (controlled S/L so it never looks garish).
+ *
+ * Returns HEX since v0.34.7. It used to return an `hsl()` string, which every renderer accepts and
+ * nothing else in the app speaks any more: the colour picker works in hex, so the name flash could
+ * not read a rolled colour and silently showed nothing. That is the owner's "Random Color never
+ * displays the name, the palette does" — the two buttons were not using the same system after all.
+ */
 export function randomCardColor(): string {
-  const h = Math.floor(Math.random() * 360);
-  const s = 42 + Math.floor(Math.random() * 28); // 42-70%
-  const l = 30 + Math.floor(Math.random() * 22); // 30-52%
-  return `hsl(${h}, ${s}%, ${l}%)`;
+  return hslToHex({
+    h: Math.floor(Math.random() * 360),
+    s: 42 + Math.floor(Math.random() * 28), // 42-70%
+    l: 30 + Math.floor(Math.random() * 22), // 30-52%
+  });
 }
 
 // v0.25.0: shorter, because the waterline no longer starts filling the instant you touch down, so

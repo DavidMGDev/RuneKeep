@@ -161,3 +161,15 @@ describe('naming the DARK end (owner, v0.34.6)', () => {
     expect(nearestColorName(shadesForHue(200)[shadesForHue(200).length - 1])).toBe('Black');
   });
 });
+describe('a rolled colour and a picked colour are the same kind of thing (v0.34.7)', () => {
+  it('names whatever the roll produces', () => {
+    // randomCardColor's band: saturation 42-70, lightness 30-52. Every colour in it must name.
+    for (let h = 0; h < 360; h += 7) {
+      for (const [s, l] of [[42, 30], [55, 40], [70, 52]]) {
+        const name = nearestColorName(hslToHex({ h, s, l }));
+        expect(name.length).toBeGreaterThan(0);
+        expect(normalizeHex(hslToHex({ h, s, l }))).not.toBeNull();
+      }
+    }
+  });
+});

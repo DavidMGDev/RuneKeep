@@ -155,11 +155,15 @@ export interface DualityDie {
  * How big each duality die is, and how far apart they sit (owner, v0.34.5).
  *
  * They used to sit diagonally, 51 units apart, which read as one die photobombing another. They are
- * LEVEL now, a quarter further apart, and a little smaller so the gap between them is real: two dice
- * side by side on the table. The span is bounded by the box, because a die turns about its own centre
- * and its corners sweep out to its circumradius (about 0.53 of the span for a pentagon).
+ * LEVEL now, a quarter further apart. The span is bounded by the box, because a die turns about its
+ * own centre and its corners sweep out to its circumradius (about 0.53 of the span for a pentagon).
+ *
+ * v0.34.7: bigger dice, same centres (owner: "keep the spacing, consider how the gap will shrink").
+ * The span can only grow so far before a die's corners sweep outside the box as it spins: at 56 the
+ * circumradius is 29.4 against a 30-unit margin, which is the last whole number that never clips. The
+ * rest of the increase comes from the TOKEN growing (see `dieSizeMult`), which costs nothing at all.
  */
-const DUALITY_SPAN = 54;
+const DUALITY_SPAN = 56;
 
 function pentagon(span: number, cx: number, cy: number): DualityDie {
   const raw: [number, number][] = [];
@@ -214,8 +218,20 @@ export function kindScale(kind: TokenKind): number {
 /** Placed dice render twice the size of their drawer source (#293 owner: on-card dice were too small).
  *  Only the PLACED/baked glyphs use this; the drawer source keeps {@link kindScale}. */
 export const DIE_PLACED_MULT = 2;
-export function placedKindScale(kind: TokenKind): number {
-  return kindScale(kind) * (kind === 'die' ? DIE_PLACED_MULT : 1);
+/**
+ * Per-die size, on top of everything else (v0.34.7).
+ *
+ * A duality token holds TWO dice in the space one die gets, so each of them is inevitably smaller
+ * than a d20 on the same card. Growing the token is the half of the answer that does not cost the
+ * gap between them: the geometry inside is untouched, so the pair keeps its proportions and simply
+ * arrives bigger.
+ */
+const DIE_SIZE_MULT: Partial<Record<DieType, number>> = { duality: 1.32 };
+export function dieSizeMult(dieType?: DieType): number {
+  return (dieType && DIE_SIZE_MULT[dieType]) ?? 1;
+}
+export function placedKindScale(kind: TokenKind, dieType?: DieType): number {
+  return kindScale(kind) * (kind === 'die' ? DIE_PLACED_MULT * dieSizeMult(dieType) : 1);
 }
 
 /** The token's base fill: the material for a default kind, the frozen custom colour, or the die colour. */

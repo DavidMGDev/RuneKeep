@@ -97,7 +97,17 @@ function TimelineRow({ entry, file, prevSnapshot, discarded, onRewind }: { entry
     [charge, reduced, onRewind],
   );
   return (
-    <GestureDetector gesture={hold}>
+    /**
+     * `touchAction="pan-y"` is the whole fix for scrolling in a browser (v0.34.7).
+     *
+     * Gesture-handler puts `touch-action: none` on every gesture target by default, which tells the
+     * browser that this element handles its own touches. So a finger drag that began on a row could
+     * never scroll the list, whatever the gesture then decided: the rewind bar filled and the page
+     * stayed put. Swapping in RNGH's ScrollView (v0.34.6) did not help, because the row was refusing
+     * the gesture before the scroller ever saw it. `pan-y` gives vertical scrolling back to the
+     * browser and leaves the press to the hold, which is exactly the division of labour wanted.
+     */
+    <GestureDetector gesture={hold} touchAction="pan-y">
       <View
         accessible
         accessibilityRole="button"
