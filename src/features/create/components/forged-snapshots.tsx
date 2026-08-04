@@ -1,3 +1,4 @@
+import { Image as ExpoImage } from 'expo-image';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
@@ -47,6 +48,15 @@ interface PendingJob {
   /** Card has a RASTER art image (a player photo) that decodes async — needs a settle before
    *  capture (#110). Vector cards (svg+text: class/feature/weapon/armor) don't and forge fast. */
   raster?: boolean;
+  /**
+   * The art's own URI (v0.34.6), so the forge can WAIT for it rather than guess at a delay.
+   *
+   * The settle below used to be a flat 450ms, which is a bet: on a busy device, or with a big photo,
+   * or with a queue of cards forging one after another, the decode loses and a black art zone is
+   * captured and written to disk. Given the URI, the image can be decoded into the cache FIRST and
+   * the capture taken when there is something to capture.
+   */
+  art?: string;
 }
 
 type FS = typeof import('expo-file-system');
@@ -178,9 +188,27 @@ export function useForgedSnapshots(jobs: PendingJob[]): { sources: Record<string
     requestAnimationFrame(() =>
       requestAnimationFrame(async () => {
         try {
-          // raster art (player photo) decodes async after layout — settle so the full-res capture
-          // isn't black (#110/#121); vector cards skip it and forge fast.
-          if (job.raster) await new Promise((r) => setTimeout(r, 450));
+          /**
+           * Raster art: DECODE IT FIRST, then settle (v0.34.6).
+           *
+           * `prefetch` resolves once the image is in expo-image's cache, so by the time the capture
+           * runs the card has something to draw rather than an empty box. The 450ms settle stays
+           * behind it for the paint itself, and the race is what it always was for anything without
+           * a URI to wait on.
+           *
+           * If the art cannot be decoded at all, this card is NOT captured: a black bitmap on disk is
+           * permanent and a live card looks right. It is left unsettled for the next mount.
+           */
+          if (job.raster) {
+            if (job.art) {
+              const ok = await Promise.race([
+                ExpoImage.prefetch(job.art).catch(() => false),
+                new Promise<boolean>((r) => setTimeout(() => r(false), 4000)),
+              ]);
+              if (!ok) return; // `finally` still frees the queue; the live card stays on screen
+            }
+            await new Promise((r) => setTimeout(r, 450));
+          }
           const { File } = fs();
           const fullTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 750, height: 1050 });
           const thumbTmp = await captureRef(shotRef, { format: 'png', quality: 1, result: 'tmpfile', width: 188, height: 263 });

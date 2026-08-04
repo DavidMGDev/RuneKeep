@@ -970,11 +970,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // this Experience (the Honing Relic). The total rides the forge key so equipping it re-forges.
     const expTotals = new Map(experienceBreakdown(file).map((b) => [b.id, b.total]));
     const expJobs = (file.experiences ?? []).map((e) => ({
-      key: `exp-${e.id}-${(e.title.length * 31 + e.text.length * 7 + (e.imageUri?.length ?? 0) + (e.color?.length ?? 0) * 13 + (expTotals.get(e.id) ?? e.modifier ?? 0) * 101) % 99991}`,
+      /**
+       * The LAST length-based cache key (v0.34.6, owner).
+       *
+       * This hashed the LENGTHS of the fields, which v0.33.0 replaced everywhere else with a real
+       * signature for exactly one reason: every owned image path is the same length, so re-picking a
+       * photo produced an IDENTICAL key. That is the black experience card. A capture that lost the
+       * race with the image decode was written to disk, and re-picking the image asked for the same
+       * key and got the same black bitmap back. Setting a COLOUR changed the key (0 to 7 characters),
+       * which is why that fixed it, and putting an image back returned to the poisoned key.
+       */
+      key: `exp-${e.id}-${contentSig(e.title, e.text, e.imageUri, e.color, String(expTotals.get(e.id) ?? e.modifier ?? 0))}`,
       id: e.id,
       node: <ForgedCard title={e.title} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={e.imageUri} colorArt={e.color} experience modifier={expTotals.get(e.id) ?? e.modifier ?? 2} />,
       // player photo (file://) decodes async — needs the forge settle so it isn't captured black (#121)
       raster: !!e.imageUri,
+      art: e.imageUri ?? undefined,
     }));
     // starting equipment (#121): the primary weapon, the optional secondary, and the armor card
     const weaponJobs = [file.weaponPrimaryId, file.weaponSecondaryId]
@@ -1047,6 +1058,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       id: it.id,
       node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? 'Item'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
+      art: it.imageUri ?? undefined,
     }));
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
     // Player-authored cards (#164) → routed to the inventory and/or arsenal deck by `target`.
@@ -1055,6 +1067,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       id: it.id,
       node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
+      art: it.imageUri ?? undefined,
       target: it.target,
     }));
     // Notes (#214): freeform note cards, their own category (every class). Optional title → 'Note'.
@@ -1063,6 +1076,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       id: it.id,
       node: <ForgedCard title={it.title ?? ''} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
+      art: it.imageUri ?? undefined,
     }));
     // Embedded homebrew cards (v0.10.3): each picked LibraryCard forges to a card the carousel treats
     // like any scanned card. Structural/domain ones slot into their positions below; loose ones (weapon/
@@ -1086,6 +1100,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
         // image-bearing card (avoids the async-art flicker, per the forged-card cache rules).
         raster: !!lc.imageUri || !!VOID_ANCESTRY_FACE[lc.id],
+        art: lc.imageUri ?? undefined,
       };
     });
     // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
