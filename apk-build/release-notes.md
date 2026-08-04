@@ -25,5 +25,7 @@ THE TIMELINE
 CARDS
 
 - THE DESCRIPTION BOX GROWS with what you write, rather than holding a wall of text in a small window you have to scroll.
+- CARD ART NO LONGER TURNS BLACK IN THE CAROUSEL. Experience cards kept a cache key built from the LENGTHS of their fields, and every stored image path is the same length, so re-picking a photo asked for the same picture the app had already got wrong. Setting a colour changed the key, which is why that appeared to fix it, and putting an image back brought the black one straight back.
+- A CARD IS NO LONGER PHOTOGRAPHED BEFORE ITS PICTURE HAS LOADED. It waited a fixed moment and hoped, which is why it went wrong more often the more cards you had. It waits for the picture now, and if the picture cannot be loaded at all the card is left as it is rather than being saved wrong.
 
 Sideload: enable Install unknown apps, then open the APK.
