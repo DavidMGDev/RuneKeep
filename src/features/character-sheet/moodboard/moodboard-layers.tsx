@@ -25,6 +25,15 @@ const ROW_ACTIONS: { key: MoodAction; label: string }[] = [
   { key: 'delete', label: 'Delete' },
 ];
 
+/** A small pill switch. The same one the sheet's category list uses, so a setting reads as a setting. */
+function Switch({ on }: { on: boolean }) {
+  return (
+    <View style={{ width: 44, height: 26, borderRadius: 13, padding: 3, backgroundColor: on ? Rune.gold : 'rgba(80,84,92,0.6)', justifyContent: 'center' }}>
+      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: Rune.ivory, alignSelf: on ? 'flex-end' : 'flex-start' }} />
+    </View>
+  );
+}
+
 /**
  * Every image on the board, as a list (v0.34.0).
  *
@@ -38,15 +47,24 @@ const ROW_ACTIONS: { key: MoodAction; label: string }[] = [
 export function MoodboardLayers({
   items,
   usePortrait,
+  showFrame,
   onAction,
   onTogglePortrait,
+  onToggleFrame,
+  onToggleLock,
   onClose,
 }: {
   items: MoodboardItem[];
   /** v0.34.1: whether leaving the board also saves it as the character's portrait. */
   usePortrait: boolean;
+  /** v0.34.6: draw the part of the board a portrait actually shows. Only offered while the board IS
+   *  the portrait, because that is the only time the answer matters. */
+  showFrame: boolean;
   onAction: (id: string, a: MoodAction) => void;
   onTogglePortrait: (on: boolean) => void;
+  onToggleFrame: (on: boolean) => void;
+  /** v0.34.6: pin an image down, or let it go. The list is the only way BACK from locked. */
+  onToggleLock: (id: string, on: boolean) => void;
   onClose: () => void;
 }) {
   const top = [...items].reverse();
@@ -78,10 +96,28 @@ export function MoodboardLayers({
               Leaving the board saves a picture of it over your portrait.
             </Text>
           </View>
-          <View style={{ width: 44, height: 26, borderRadius: 13, padding: 3, backgroundColor: usePortrait ? Rune.gold : 'rgba(80,84,92,0.6)', justifyContent: 'center' }}>
-            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: Rune.ivory, alignSelf: usePortrait ? 'flex-end' : 'flex-start' }} />
-          </View>
+          <Switch on={usePortrait} />
         </Pressable>
+
+        {/* v0.34.6: what a portrait actually shows is a tall slice of the middle of the board, and
+            there was no way to know where it fell until you left. Only offered while the board is
+            the portrait; turning it off leaves the board clean to work on. */}
+        {usePortrait ? (
+          <Pressable
+            onPress={() => { playSfx('buttonTap'); onToggleFrame(!showFrame); }}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showFrame }}
+            accessibilityLabel="Draw frame limits"
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 })}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: showFrame ? Rune.goldBright : Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>Draw frame limits</Text>
+              <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 15 }}>
+                Show which part of the board the portrait will keep.
+              </Text>
+            </View>
+            <Switch on={showFrame} />
+          </Pressable>
+        ) : null}
 
         {top.length === 0 ? (
           <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
@@ -95,7 +131,17 @@ export function MoodboardLayers({
                   <ExpoImage source={{ uri: it.imageUri }} style={{ width: 40, height: 40 }} contentFit="contain" cachePolicy="memory-disk" recyclingKey={`row-${it.id}`} transition={0} />
                   <Text style={{ flex: 1, color: Rune.sheet, fontSize: 12, fontFamily: Body.bold }}>
                     {i === 0 ? 'Top' : i === top.length - 1 ? 'Bottom' : `Layer ${top.length - i}`}
+                    {it.locked ? '  (locked)' : ''}
                   </Text>
+                  <Pressable
+                    onPress={() => { playSfx('buttonTap'); onToggleLock(it.id, !it.locked); }}
+                    hitSlop={6}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: !!it.locked }}
+                    accessibilityLabel={it.locked ? 'Unlock this image' : 'Lock this image in place'}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                    <Switch on={!!it.locked} />
+                  </Pressable>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 5 }}>
                   {ROW_ACTIONS.map((a) => (

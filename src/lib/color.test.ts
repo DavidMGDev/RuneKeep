@@ -137,3 +137,27 @@ describe('naming the greys (owner, v0.34.5)', () => {
     expect(hexToHsl(darkest).l).toBeLessThan(5);
   });
 });
+describe('naming the DARK end (owner, v0.34.6)', () => {
+  it('does not call two whole rows of the ladder Black', () => {
+    // The CSS list has almost nothing dark in it, so every deep colour matched Black.
+    const dark = [200, 30, 120, 300].flatMap((h) => shadesForHue(h).slice(-3, -1));
+    for (const hex of dark) expect(nearestColorName(hex)).not.toBe('Black');
+  });
+
+  it('keeps the hue in the name of a dark SATURATED colour, and never calls it grey', () => {
+    const deepTeal = hslToHex({ h: 190, s: 90, l: 18 });
+    const name = nearestColorName(deepTeal);
+    expect(name).toContain('Teal');
+    expect(name).not.toContain('Gray');
+  });
+
+  it('gives different dark hues different names', () => {
+    const names = new Set([10, 100, 190, 250, 310].map((h) => nearestColorName(hslToHex({ h, s: 80, l: 20 }))));
+    expect(names.size).toBe(5);
+  });
+
+  it('still says Black for an actual black', () => {
+    expect(nearestColorName('#000000')).toBe('Black');
+    expect(nearestColorName(shadesForHue(200)[shadesForHue(200).length - 1])).toBe('Black');
+  });
+});

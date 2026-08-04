@@ -109,8 +109,12 @@ export const MoodboardItemView = memo(function MoodboardItemView({
      * grab an image and when it starts moving". They are already mutually exclusive by their own
      * thresholds: a pan needs movement, a tap needs none.
      */
+    // v0.34.6: `item.locked` is the IMAGE's own lock, set from its radial or the images list. It
+    // stops every gesture the same way the board's lock does, including the double tap, so a pinned
+    // image can only be freed from the list.
+    const held = locked || !!item.locked;
     const pan = Gesture.Pan()
-      .enabled(!locked && !leaving)
+      .enabled(!held && !leaving)
       .minDistance(2)
       .averageTouches(true)
       .onStart(() => {
@@ -137,7 +141,7 @@ export const MoodboardItemView = memo(function MoodboardItemView({
       });
 
     const pinch = Gesture.Pinch()
-      .enabled(!locked && !leaving)
+      .enabled(!held && !leaving)
       .onStart(() => {
         'worklet';
         startScale.value = scale.value;
@@ -153,7 +157,7 @@ export const MoodboardItemView = memo(function MoodboardItemView({
       });
 
     const rotate = Gesture.Rotation()
-      .enabled(!locked && !leaving)
+      .enabled(!held && !leaving)
       .onStart(() => {
         'worklet';
         startRot.value = rot.value;
@@ -186,7 +190,7 @@ export const MoodboardItemView = memo(function MoodboardItemView({
       .numberOfTaps(2)
       .maxDuration(300)
       .maxDistance(18)
-      .enabled(!locked && !leaving)
+      .enabled(!held && !leaving)
       .onStart(() => {
         'worklet';
         runOnJS(openMenu)();
@@ -194,7 +198,7 @@ export const MoodboardItemView = memo(function MoodboardItemView({
 
     // Two fingers move, resize and turn at once, which is the whole point of a canvas.
     return Gesture.Simultaneous(pan, pinch, rotate, doubleTap);
-  }, [locked, leaving, canvas, scaleFactor, grabbed, commit, openMenu, x, y, scale, rot, rawRot, heldRot, escaped, startX, startY, startScale, startRot, lifted]);
+  }, [locked, item.locked, leaving, canvas, scaleFactor, grabbed, commit, openMenu, x, y, scale, rot, rawRot, heldRot, escaped, startX, startY, startScale, startRot, lifted]);
 
   /**
    * The departure (owner): the pre-v0.33.1 token fall. Gravity, a little drift, a slow turn and a

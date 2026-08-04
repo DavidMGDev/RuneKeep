@@ -29,6 +29,14 @@ export interface MoodboardItem {
   rotation: number;
   /** width / height of the source image, so a slot has the right shape before the image decodes. */
   aspect: number;
+  /**
+   * Pinned down (v0.34.6): no drag, no pinch, no rotate, no double tap.
+   *
+   * Per-image, unlike the board's own lock, and deliberately one-way from the canvas: a locked image
+   * cannot be double-tapped, so its own radial cannot be the thing that frees it. The images list is
+   * where it comes back, which is also the one place you can see what is locked.
+   */
+  locked?: boolean;
 }
 
 export interface CanvasSize {
@@ -136,5 +144,5 @@ export function readMoodboard(raw: unknown): MoodboardItem[] {
   return raw.filter(
     (i): i is MoodboardItem =>
       !!i && typeof i.id === 'string' && typeof i.imageUri === 'string' && typeof i.x === 'number' && typeof i.y === 'number' && typeof i.scale === 'number' && typeof i.rotation === 'number',
-  ).map((i) => ({ ...i, aspect: typeof i.aspect === 'number' && i.aspect > 0 ? i.aspect : 1 }));
+  ).map((i) => ({ ...i, aspect: typeof i.aspect === 'number' && i.aspect > 0 ? i.aspect : 1, locked: i.locked === true ? true : undefined }));
 }

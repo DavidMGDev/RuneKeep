@@ -214,6 +214,15 @@ export function hueFamily(h: number): string {
 
 /** Below this saturation the CSS list stops being able to tell one hue from another. */
 const NAMEABLE_SATURATION = 26;
+/**
+ * And below this LIGHTNESS it stops too, however saturated the colour is (owner, v0.34.6).
+ *
+ * The list has almost nothing dark in it: Black, Dark Slate Gray, Midnight Blue and a handful more.
+ * So every deep colour, saturated or not, landed on one of those, and two whole rows of the picker
+ * read "Black" while a vivid dark teal read "Dark Slate Gray". Nearest-match is not wrong there, it
+ * is simply out of names, so below this line the colour is described instead.
+ */
+const NAMEABLE_LIGHTNESS = 32;
 
 /**
  * The nearest named colour to `hex`, or a composed name when no name would be honest.
@@ -223,9 +232,9 @@ const NAMEABLE_SATURATION = 26;
  */
 export function nearestColorName(hex: string): string {
   const { h, s, l } = hexToHsl(hex);
-  if (l <= 4) return 'Black';
+  if (l <= 3.5) return 'Black';
   if (l >= 97 && s < 12) return 'White';
-  if (s >= NAMEABLE_SATURATION) {
+  if (s >= NAMEABLE_SATURATION && l >= NAMEABLE_LIGHTNESS) {
     let best = NAMES[0][0];
     let bestD = Infinity;
     for (const [name, value] of NAMES) {
@@ -237,10 +246,12 @@ export function nearestColorName(hex: string): string {
     }
     return best;
   }
-  // Too grey to name: describe it. A true neutral drops the hue word, since it does not have one.
-  const tone = l < 16 ? 'Near Black' : l < 30 ? 'Deep' : l < 46 ? 'Dark' : l < 62 ? 'Muted' : l < 78 ? 'Soft' : 'Pale';
+  const tone = l < 11 ? 'Blackened' : l < 20 ? 'Midnight' : l < 32 ? 'Deep' : l < 46 ? 'Dark' : l < 62 ? 'Muted' : l < 78 ? 'Soft' : 'Pale';
+  // A true neutral has no hue to name. Anything with colour in it says which colour, and only the
+  // washed-out ones are called grey: a dark VIVID teal is a "Deep Teal", not a grey of any kind.
   if (s < 6) return `${tone} Gray`;
-  return `${tone} ${hueFamily(h)} Gray`;
+  if (s < NAMEABLE_SATURATION) return `${tone} ${hueFamily(h)} Gray`;
+  return `${tone} ${hueFamily(h)}`;
 }
 
 /** A random colour anywhere in the picker's own space, so Surprise me and the carousel agree. */

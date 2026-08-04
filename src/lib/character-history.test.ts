@@ -1,5 +1,5 @@
 import type { CharacterFile } from './character-file';
-import { cardMoves, capEntries, classify, recoverableCards, restoreCard, COALESCE_MS, emptyHistory, HISTORY_CAP, KEPT_IMAGE, preview, readHistory, record, rehydrateImages, repair, rewind, stripHistory, timeline } from './character-history';
+import { cardMoves, capEntries, classify, compactableCount, compactHistory, recoverableCards, restoreCard, COALESCE_MS, emptyHistory, HISTORY_CAP, KEPT_IMAGE, preview, readHistory, record, rehydrateImages, repair, rewind, stripHistory, timeline } from './character-history';
 
 /** A minimal but realistic character file. Only the fields a test touches need to be meaningful. */
 function mk(over: Partial<CharacterFile> = {}): CharacterFile {
@@ -529,5 +529,41 @@ describe('an app-initiated write (v0.34.5)', () => {
       },
     });
     expect(record(h, mk({ name: 'A' }), tripwire, { system: true })).toBe(h);
+  });
+});
+describe('compacting a long campaign (owner, v0.34.6)', () => {
+  const build = () => {
+    let h = record(emptyHistory(), null, mk({ name: 'A' }));
+    h = record(h, mk({ name: 'A' }), mk({ name: 'A', resources: { hp: 5, stress: 0, hope: 2, armor: 0 } }));
+    h = record(h, mk({ name: 'A' }), mk({ name: 'A', level: 2 }));
+    h = record(h, mk({ name: 'A', level: 2 }), mk({ name: 'A', level: 2, resources: { hp: 3, stress: 1, hope: 2, armor: 0 } }));
+    h = record(h, mk({ name: 'A', level: 2 }), mk({ name: 'A', level: 3 }));
+    return h;
+  };
+
+  it('keeps creation and every level, and nothing else', () => {
+    const kinds = compactHistory(build()).entries.map((e) => e.kind);
+    expect(kinds).toEqual(['create', 'level', 'level']);
+  });
+
+  it('says how many it would drop, before it drops them', () => {
+    const h = build();
+    expect(compactableCount(h)).toBe(h.entries.length - 3);
+  });
+
+  it('clears the rewind position, because every index just moved', () => {
+    const h = preview(build(), 1);
+    expect(h.rewoundTo).toBe(1);
+    expect(compactHistory(h).rewoundTo).toBeNull();
+  });
+
+  it('is a no-op on a history that is already only milestones', () => {
+    const once = compactHistory(build());
+    expect(compactHistory(once).entries).toHaveLength(once.entries.length);
+    expect(compactableCount(once)).toBe(0);
+  });
+
+  it('never throws creation away, whatever else goes', () => {
+    expect(compactHistory(build()).entries[0].kind).toBe('create');
   });
 });

@@ -92,7 +92,7 @@ import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
-import { emptyHistory, type CharacterHistory, readHistory, record, recoverableCards, type RecordIntent, restoreCard, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
+import { compactHistory, emptyHistory, type CharacterHistory, readHistory, record, recoverableCards, type RecordIntent, restoreCard, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
@@ -799,6 +799,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * Character-scoped by construction: party vitals, the card library and DM encounters are not
    * touched, and `repairs` carries anything the snapshot couldn't legally restore.
    */
+  /**
+   * Throw the timeline down to its milestones (owner, v0.34.6).
+   *
+   * Written through the SAME save the rewind uses, and as a system write: compacting is not itself a
+   * moment in the character's story, and recording it would put back the first of the entries it was
+   * asked to remove.
+   */
+  const compactTimeline = useCallback(() => {
+    const live = fileRef.current;
+    if (!live) return;
+    historyRef.current = compactHistory(historyRef.current);
+    intentRef.current = { system: true };
+    saveFileRef.current(live);
+    noticeRef.current?.('Timeline compacted');
+  }, []);
   const rewindTo = useCallback((index: number): string[] => {
     const live = fileRef.current;
     if (!live) return [];
@@ -2821,7 +2836,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} moveLimit={restMoveLimit(character.restMoves)} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
-            <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onClose={() => setFloatKind(null)} />
+            <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onCompact={compactTimeline} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (
             <CardManagementPanel
               trash={trashList}

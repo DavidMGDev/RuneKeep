@@ -1,5 +1,15 @@
 import { type ReactNode, useEffect } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+/**
+ * Gesture-handler's ScrollView, not React Native's (v0.34.6).
+ *
+ * The timeline's rows are held to rewind, and a hold is a gesture-handler gesture. With the platform
+ * ScrollView the two do not negotiate: on the web a swipe that begins on a row was taken by the hold,
+ * the rewind bar started filling, and the list did not move at all. RNGH's own ScrollView takes part
+ * in the same gesture system, so the scroll wins a drag and the hold wins a press. This is the third
+ * time a list of held rows has needed exactly this.
+ */
+import { ScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -26,9 +36,12 @@ export function OverlayShell({
   dismissOnScrim = true,
   mute = false,
   onEndReached,
+  titleAction,
 }: {
   title: string;
   subtitle?: string;
+  /** v0.34.6: a small button beside the title. The Timeline's Compact is the first one. */
+  titleAction?: { label: string; onPress: () => void };
   onClose: () => void;
   children: ReactNode;
   /** Pinned above the scrolling body — used by the State panel for its tab strip. */
@@ -87,7 +100,16 @@ export function OverlayShell({
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: scaled(width, scale), maxWidth: '94%', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
           <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text numberOfLines={2} style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text numberOfLines={2} style={{ flexShrink: 1, color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>
+              {titleAction ? (
+                <Pressable onPress={titleAction.onPress} hitSlop={6} accessibilityRole="button" accessibilityLabel={titleAction.label} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                  <ChamferBox chamfer={6} fill="rgba(20,24,31,0.9)" stroke={Rune.goldEdge} strokeWidth={1.1} style={{ paddingHorizontal: 10, height: 26, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{titleAction.label}</Text>
+                  </ChamferBox>
+                </Pressable>
+              ) : null}
+            </View>
             {subtitle ? <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginTop: 2 }}>{subtitle}</Text> : null}
           </View>
           <Pressable onPress={close} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
