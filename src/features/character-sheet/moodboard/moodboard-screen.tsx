@@ -121,6 +121,38 @@ function LockButton({ locked, onToggle }: { locked: boolean; onToggle: () => voi
 }
 
 /**
+ * What a portrait actually keeps (owner, v0.34.6).
+ *
+ * The sheet's portrait is a 148x222 frame and the board is 412x892, so the picture is scaled to FILL
+ * that frame and the top and bottom are cropped away. Nothing on the board said so, and an
+ * arrangement that looked right on the canvas lost its head and its feet the moment it became a
+ * portrait.
+ *
+ * The maths, once: the frame is wider than the board is (0.667 against 0.462), so a cover fit scales
+ * by WIDTH, and the height that survives is the frame's height at that scale. Everything outside is
+ * dimmed rather than hidden, because it is still yours to arrange; it simply will not be in the
+ * picture.
+ */
+const PORTRAIT_W = 148;
+const PORTRAIT_H = 222;
+
+function PortraitFrame() {
+  const keptH = (PORTRAIT_H * SHEET_DESIGN_WIDTH) / PORTRAIT_W;
+  const top = Math.max(0, (SHEET_DESIGN_HEIGHT - keptH) / 2);
+  const bar = { position: 'absolute' as const, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.55)' };
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: SHEET_DESIGN_WIDTH, height: SHEET_DESIGN_HEIGHT }}>
+      <View style={[bar, { top: 0, height: top }]} />
+      <View style={[bar, { top: top + keptH, bottom: 0 }]} />
+      <View style={{ position: 'absolute', left: 0, right: 0, top, height: keptH, borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: 'rgba(218,162,73,0.75)', borderStyle: 'dashed' }} />
+      <Text style={{ position: 'absolute', left: 0, right: 0, top: top + 6, textAlign: 'center', color: 'rgba(218,162,73,0.85)', fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+        Portrait keeps this
+      </Text>
+    </View>
+  );
+}
+
+/**
  * The moodboard (v0.34.0) — a character's canvas, opened by double-tapping its portrait.
  *
  * ## Why it is a screen and not an overlay
@@ -171,6 +203,8 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [picking, setPicking] = useState(false);
+  /** v0.34.6: draw the portrait's visible slice. On by default the first time the board becomes one. */
+  const [showFrame, setShowFrame] = useState(true);
   /**
    * The locked-board notice, drawn HERE rather than as an app toast (v0.34.3).
    *
@@ -277,10 +311,12 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
       if (a === 'delete') { drop(id); return; }
       if (a === 'copy') { onChange(duplicateItem(items, id, newId(), CANVAS)); return; }
       if (a === 'front') { onChange(bringToFront(items, id)); return; }
+      if (a === 'lock') { onChange(updateItem(items, id, { locked: true })); showToast('Locked. Unlock it from the images list.'); return; }
       onChange(centreItem(items, id, CANVAS));
     },
     [items, onChange, drop],
   );
+  const setLock = useCallback((id: string, on: boolean) => onChange(updateItem(items, id, { locked: on || undefined })), [items, onChange]);
 
   const commit = useCallback(
     (id: string, next: { x: number; y: number; scale: number; rotation: number }) => onChange(updateItem(items, id, next)),
@@ -343,6 +379,7 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
           reduced={reduced}
         />
         </View>
+        {usePortrait && showFrame ? <PortraitFrame /> : null}
         {/* Locked: swallow taps on the canvas and say why, rather than doing nothing (v0.34.2). */}
         {locked ? (
           <Pressable
@@ -432,8 +469,11 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
           <MoodboardLayers
             items={items}
             usePortrait={usePortrait}
+            showFrame={showFrame}
             onAction={(id, a) => { setLayers(false); act(id, a); }}
             onTogglePortrait={onUsePortrait}
+            onToggleFrame={setShowFrame}
+            onToggleLock={setLock}
             onClose={() => setLayers(false)}
           />
         ) : null}

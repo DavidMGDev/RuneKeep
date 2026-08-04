@@ -8,7 +8,7 @@ import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import type { CharacterFile } from '@/lib/character-file';
-import { cardMoves, type CharacterHistory, type HistoryEntry, type HistoryKind, timeline } from '@/lib/character-history';
+import { cardMoves, type CharacterHistory, compactableCount, type HistoryEntry, type HistoryKind, timeline } from '@/lib/character-history';
 import { clockLabel, dayLabel, groupByDay } from '@/lib/day-label';
 import { sourceLabelForCardId } from '@/features/cards/card-effects';
 import { playSfx } from '@/lib/sfx';
@@ -157,12 +157,15 @@ export function StatePanel({
   file,
   history,
   onRewind,
+  onCompact,
   onClose,
 }: {
   file: CharacterFile;
   history: CharacterHistory;
   /** Restores the snapshot and returns anything the repair pass had to correct. */
   onRewind: (index: number) => string[];
+  /** v0.34.6: throw away everything that is not a milestone. Irreversible; the screen asks first. */
+  onCompact: () => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<'modifiers' | 'timeline'>('modifiers');
@@ -176,7 +179,7 @@ export function StatePanel({
       />
     );
   }
-  return <TimelineView file={file} history={history} onRewind={onRewind} onClose={onClose} header={<Tabs tab={tab} onTab={setTab} count={history.entries.length} />} />;
+  return <TimelineView file={file} history={history} onRewind={onRewind} onCompact={onCompact} onClose={onClose} header={<Tabs tab={tab} onTab={setTab} count={history.entries.length} />} />;
 }
 
 function Tabs({ tab, onTab, count }: { tab: 'modifiers' | 'timeline'; onTab: (t: 'modifiers' | 'timeline') => void; count: number }) {
@@ -228,6 +231,7 @@ function TimelineView({
   file,
   history,
   onRewind,
+  onCompact,
   onClose,
   header,
 }: {
@@ -235,12 +239,16 @@ function TimelineView({
   file: CharacterFile;
   history: CharacterHistory;
   onRewind: (index: number) => string[];
+  onCompact: () => void;
   onClose: () => void;
   header: React.ReactNode;
 }) {
   const rows = useMemo(() => timeline(history), [history]);
   const [confirm, setConfirm] = useState<{ entry: HistoryEntry; index: number; discards: number } | null>(null);
   const [repairs, setRepairs] = useState<string[] | null>(null);
+  /** v0.34.6: the Compact confirmation. Never a one-tap action; it cannot be undone. */
+  const [asking, setAsking] = useState(false);
+  const droppable = useMemo(() => compactableCount(history), [history]);
   /**
    * The timeline pages in (v0.34.0).
    *
@@ -318,8 +326,27 @@ function TimelineView({
     );
   }
 
+  if (asking) {
+    return (
+      <OverlayShell title="Compact the timeline?" subtitle={`${droppable} entr${droppable === 1 ? 'y' : 'ies'} would go`} onClose={() => setAsking(false)}>
+        <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
+          Everything except your character&apos;s creation and each level up is thrown away, leaving the milestones you
+          would actually rewind to.
+        </Text>
+        <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.medium, lineHeight: 18, marginTop: 10 }}>
+          This cannot be undone, and the states you drop can never be rewound to again. Your character itself is not
+          touched.
+        </Text>
+        <View style={{ marginTop: 16, gap: 10 }}>
+          <HoldToConfirm label="Hold to compact" height={44} chamfer={10} sfx={null} onConfirm={() => { setAsking(false); onCompact(); }} />
+          <RuneButton label="Cancel" kind="ghost" height={40} onPress={() => setAsking(false)} />
+        </View>
+      </OverlayShell>
+    );
+  }
+
   return (
-    <OverlayShell title="Timeline" subtitle={rows.length ? `${rows.length} recorded change${rows.length === 1 ? '' : 's'}` : undefined} onClose={onClose} header={header} onEndReached={more}>
+    <OverlayShell title="Timeline" subtitle={rows.length ? `${rows.length} recorded change${rows.length === 1 ? '' : 's'}` : undefined} onClose={onClose} header={header} onEndReached={more} titleAction={droppable > 0 ? { label: 'Compact', onPress: () => { playSfx('buttonTap'); setAsking(true); } } : undefined}>
       {rows.length === 0 ? (
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
           Nothing recorded yet. From here on, everything you do to this character is listed here and can be rewound.

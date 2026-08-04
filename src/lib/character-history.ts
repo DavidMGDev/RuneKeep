@@ -385,6 +385,28 @@ export function capEntries(entries: HistoryEntry[], cap = HISTORY_CAP): HistoryE
   return result;
 }
 
+/**
+ * Throw away everything that is not a milestone (owner, v0.34.6).
+ *
+ * A campaign records every tap on the HP track, and after a few sessions the timeline is a wall of
+ * them with the level-ups buried inside. This keeps the entries a player would actually want to
+ * rewind to: how the character was made, and each level. Rests are dropped too, deliberately, because
+ * "only level up milestones" is what was asked for and a rest is a resource change with a nicer name.
+ *
+ * Destructive and irreversible, which is why the screen asks first. Creation is always kept: it is
+ * the only entry that can restore the character as it was made.
+ */
+export function compactHistory(history: CharacterHistory): CharacterHistory {
+  const entries = history.entries.filter((e, i) => i === 0 || e.kind === 'level' || e.kind === 'create');
+  // Rewinding is by INDEX, and the indices just moved. Anything rewound to is meaningless now.
+  return { version: HISTORY_VERSION, entries, rewoundTo: null };
+}
+
+/** How many entries `compactHistory` would drop, so the confirmation can say. */
+export function compactableCount(history: CharacterHistory): number {
+  return history.entries.length - compactHistory(history).entries.length;
+}
+
 /** Move the viewing position without committing anything. Browsing must always be free. */
 export function preview(history: CharacterHistory, index: number): CharacterHistory {
   if (index < 0 || index >= history.entries.length) return history;

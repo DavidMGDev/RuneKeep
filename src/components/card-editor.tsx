@@ -460,6 +460,8 @@ export function CardEditor({
    */
   const [pickColor, setPickColor] = useState(false);
   const [askColor, setAskColor] = useState<string | null>(null);
+  /** The description's measured height, so its box can grow to fit it (v0.34.6). */
+  const [textH, setTextH] = useState(0);
   /** Bumped on every applied colour, which is what makes the name flash fire (v0.34.5). */
   const [colorNonce, setColorNonce] = useState(0);
   const applyColor = useCallback((c: string) => {
@@ -665,10 +667,15 @@ export function CardEditor({
           {expMode ? null : sectioned ? (
             <SectionsField sections={draft.sections ?? []} onChange={(sections) => setDraft((d) => ({ ...d, sections }))} minRows={sectionsConfig?.minRows} fixedLabels={sectionsConfig?.fixedLabels} ancestryFeatures={sectionsConfig?.ancestryFeatures} />
           ) : (
-            <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
+            // v0.34.6 (owner): the box GROWS with what is in it, instead of being a fixed 92dp
+            // window you scroll a wall of text inside. The editor is already a scroller, so the right
+            // place to scroll a long description is the page, not a hole in the middle of it.
+            // `onContentSizeChange` is how React Native reports a multiline input's real height.
+            <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: 92, height: Math.max(92, textH + 18), paddingHorizontal: 13, paddingVertical: 9 }}>
               <TextInput
                 value={draft.text}
                 onChangeText={(text) => setDraft((d) => ({ ...d, text }))}
+                onContentSizeChange={(e) => setTextH(e.nativeEvent.contentSize.height)}
                 onFocus={onFieldFocus}
                 placeholder="What it means, and when it helps."
                 placeholderTextColor={Rune.muted}

@@ -134,25 +134,35 @@ export const DualityDieFace = memo(function DualityDieFace({ size, side, white }
   );
 });
 
-/** A duality die's number, positioned on ITS pentagon rather than on the token's centre. */
+/**
+ * A duality die's number, on ITS pentagon (v0.34.6).
+ *
+ * The digit used to hang from the TOP of the token box and be pushed down by a translate, so it sat
+ * low on the die and drifted with the font's own metrics. It is centred in a box the size of the
+ * token instead, and that box is then moved onto the die: whatever the digit's height, its middle is
+ * the die's middle.
+ */
 export const DualityNumber = memo(function DualityNumber({ size, side, value }: { size: number; side: 'hope' | 'fear'; value: number }) {
   const geo = dualityGeometry()[side];
   return (
-    <Text
-      allowFontScaling={false}
+    <View
+      pointerEvents="none"
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
         width: size,
-        textAlign: 'center',
-        color: side === 'hope' ? HOPE_INK : FEAR_INK,
-        fontFamily: Display.black,
-        fontSize: size * 0.17,
-        transform: [{ translateX: ((geo.cx - DIE_BOX / 2) / DIE_BOX) * size }, { translateY: ((geo.numberY - 8) / DIE_BOX) * size }],
+        height: size,
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: [{ translateX: ((geo.cx - DIE_BOX / 2) / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2) / DIE_BOX) * size }],
       }}>
-      {value}
-    </Text>
+      <Text
+        allowFontScaling={false}
+        style={{ color: side === 'hope' ? HOPE_INK : FEAR_INK, fontFamily: Display.black, fontSize: size * 0.17, textAlign: 'center', includeFontPadding: false }}>
+        {value}
+      </Text>
+    </View>
   );
 });
 

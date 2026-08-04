@@ -231,6 +231,15 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
     setPairTo({ value: hope, value2: fear });
     const fearFirst = heldFear.value;
     const lag = reduced ? 0 : DUALITY_LAG_MS;
+    /**
+     * Let the TOKEN's hold-swell go (owner, v0.34.6).
+     *
+     * The hold grows the whole token, and a single die's roll then re-animates that same value back
+     * to zero. A pair does not: it animates each die's own swell and left the token's parked at 1, so
+     * the pair stayed big after the roll and only shrank when you touched it again. Every gesture the
+     * pair has now ends at its resting size on its own.
+     */
+    swell.value = withTiming(0, { duration: reduced ? 60 : 260, easing: Easing.out(Easing.cubic) });
     const spin = (turn: typeof turnH, swell: typeof swellH, roll: typeof rollH, delay: number, last: boolean) => {
       roll.value = 0;
       swell.value = withDelay(delay, withSequence(
@@ -296,7 +305,7 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         withTiming(0, { duration: 40, easing: Easing.linear }),
       ));
     }
-  }, [onRoll, token, heldFear, reduced, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, phase, crit, landedPair]);
+  }, [onRoll, token, heldFear, reduced, swell, turnH, turnF, swellH, swellF, rollH, rollF, shakeH, shakeF, phase, crit, landedPair]);
 
   /** Grow on from wherever the hold got to, spin once, cross-fade the number, settle back. */
   const beginRoll = useCallback(() => {
@@ -423,7 +432,9 @@ const PlacedTokenView = memo(function PlacedTokenView({ token, size, left, top, 
         })
         .onFinalize(() => {
           'worklet';
-          // A roll or a leave in flight keeps its animation; only an unfinished HOLD relaxes.
+          // A roll or a leave in flight OWNS `swell` and must keep it: a single die's roll animates
+          // it, and a pair's roll (v0.34.6) hands it back to resting size itself. Only an unfinished
+          // HOLD relaxes here.
           if (phase.value !== 0) return;
           cancelAnimation(swell);
           swell.value = withTiming(0, { duration: 160 });

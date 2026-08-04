@@ -7,17 +7,18 @@ import { Rune } from '@/constants/theme';
 import { tapHaptic } from '@/lib/haptics';
 import { playSfx } from '@/lib/sfx';
 
-export type MoodAction = 'delete' | 'copy' | 'front' | 'centre';
+export type MoodAction = 'delete' | 'copy' | 'front' | 'centre' | 'lock';
 
 /** What the DOUBLE TAP offers (owner, v0.34.2): the two things worth reaching for on the card
  *  itself. Front and Centre are layout, which belongs in the images list where you can see the stack. */
-const WHEEL: MoodAction[] = ['delete', 'copy'];
+/** v0.34.6 adds the lock: pinning an image down is a per-image decision, so it belongs on the image. */
+const WHEEL: MoodAction[] = ['delete', 'copy', 'lock'];
 
 const R_OUT = 78;
 const R_IN = 34;
 const ICON = 22;
 
-const LABEL: Record<MoodAction, string> = { delete: 'Delete', copy: 'Duplicate', front: 'Bring to front', centre: 'Centre' };
+const LABEL: Record<MoodAction, string> = { delete: 'Delete', copy: 'Duplicate', front: 'Bring to front', centre: 'Centre', lock: 'Lock in place' };
 const OPTIONS: { key: MoodAction; label: string }[] = WHEEL.map((key) => ({ key, label: LABEL[key] }));
 
 /** One wedge of the ring, drawn in a local 2R x 2R canvas centred at (R, R). */
@@ -48,6 +49,11 @@ function ActionGlyph({ kind, lit }: { kind: MoodAction; lit: boolean }) {
         <>
           <Rect x={4} y={4} width={12} height={12} {...s} />
           <Path d="M8 20 H20 V8" {...s} />
+        </>
+      ) : kind === 'lock' ? (
+        <>
+          <Rect x={5} y={11} width={14} height={9} rx={1.6} {...s} />
+          <Path d="M8.5 11 V7.6 A3.5 3.5 0 0 1 15.5 7.6 V11" {...s} />
         </>
       ) : kind === 'front' ? (
         <>
@@ -95,10 +101,14 @@ export function MoodboardRadial({ x, y, canvasW, canvasH, onPick, onDismiss }: {
    * has already opened the menu, and it landed on the dismiss scrim. The wheel appeared for about two
    * frames and closed itself. Ignoring dismissals for a beat after opening is the whole fix; a
    * genuine "put it away" tap is never that fast.
+   *
+   * v0.34.6: stamped WHERE IT IS DECLARED, not in the effect. An effect runs after paint, and the
+   * stray click can arrive before it: `Date.now() - 0` is thirty-odd years, which sails past the
+   * guard, so the wheel still closed itself and the owner was left tapping at controls that were no
+   * longer there. A ref initialiser runs before any event can.
    */
-  const openedAt = useRef(0);
+  const openedAt = useRef(Date.now());
   useEffect(() => {
-    openedAt.current = Date.now();
     p.value = withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) });
     playSfx('panelOpen');
   }, [p]);
