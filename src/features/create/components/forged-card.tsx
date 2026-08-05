@@ -28,14 +28,22 @@ export const ART_H = Math.round(FORGED_H * 0.4);
  * line.
  */
 export function ForgedFaceCard({ face }: { face: number | string }) {
-  // v0.34.8: a URI as well as a bundled asset, so a player's own whole-card image (a
-  // cardcreator.daggerheart.com export) prints the same way the publisher's scans do. `contain` on a
-  // URI, because a face somebody else exported may not be exactly 5:7 and cropping their card is
-  // worse than a hairline of parchment at the edge.
+  /**
+   * v0.35 (owner): NO plate, and the picture fills the card.
+   *
+   * v0.34.8 laid a URI face on parchment and fitted it inside, which was wrong twice. A card exported
+   * with rounded corners showed four parchment triangles, because the plate was visible exactly where
+   * the artwork was not; and a picture that was not 5:7 changed the SIZE of the card, so a hand of
+   * imported cards was a hand of different-sized cards.
+   *
+   * Filling the card's own 5:7 and cropping the overflow makes every card the same size, and a
+   * transparent ground lets a rounded corner be a rounded corner. A few pixels off a long edge is a
+   * far smaller lie than a card that is the wrong shape.
+   */
   const uri = typeof face === 'string';
   return (
-    <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
-      <ExpoImage source={uri ? { uri: face } : face} style={{ width: FORGED_W, height: FORGED_H }} contentFit={uri ? 'contain' : 'cover'} cachePolicy="memory-disk" />
+    <View style={{ width: FORGED_W, height: FORGED_H, overflow: 'hidden' }}>
+      <ExpoImage source={uri ? { uri: face } : face} style={{ width: FORGED_W, height: FORGED_H }} contentFit="cover" cachePolicy="memory-disk" />
     </View>
   );
 }

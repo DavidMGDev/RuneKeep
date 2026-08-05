@@ -18,6 +18,7 @@ import { CATALOG_EFFECTS } from '@/data/catalog-effects';
 import { effectsForChoice } from '@/data/card-choices';
 import { isAncestryEffectDisabled } from '@/data/ancestry-traits';
 import { libraryCardById, libraryCardEffects, mixedCrossedTrait } from '@/lib/library-embed';
+import { isDmCardId } from '@/lib/dm-cards';
 
 /** All player-authored cards on a file (experiences, inventory items, sheet-made cards). */
 function customCards(file?: CharacterFile): ExperienceDef[] {
@@ -85,7 +86,11 @@ export function isEditableCard(id: string, file?: CharacterFile): boolean {
  * the same thing rather than two things that agree for a while.
  */
 export function editableCardIds(file?: CharacterFile): Set<string> {
-  const own = new Set(customCards(file).map((c) => c.id));
+  // v0.35: a DM-owned card is authored, so it would otherwise be editable here. It is not the
+  // player's to edit: the DM keeps a standing list of adjustments, and a player who could rewrite
+  // them from their own sheet could quietly undo the table's bookkeeping. Unequipping it is still
+  // theirs, which is the level of control the owner asked for.
+  const own = new Set(customCards(file).filter((c) => !isDmCardId(c.id)).map((c) => c.id));
   for (const c of file?.cardCopies ?? []) if (own.has(catalogIdOf(c.ref))) own.add(c.id);
   return own;
 }

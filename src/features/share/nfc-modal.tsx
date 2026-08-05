@@ -36,9 +36,19 @@ import { canShareFiles, exportRkp, shareFileLabel } from '@/lib/library-store';
 import type { RkpContent } from '@/lib/rkp';
 import { DimScreen } from '@/lib/screen-dim';
 
+/**
+ * Above everything (v0.35, owner).
+ *
+ * This sat at 9500, under the full-screen panel layer at 10000, so raising it from the float menu's
+ * card panel put it BEHIND the panel that raised it: invisible until the panel was closed, by which
+ * time the selection it was about to send had been cleared. It is a modal answer to a question the
+ * user just asked, so it belongs on top wherever it is raised, including over the drag ghost (10006).
+ */
+const SHELL_Z = 10020;
+
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9500, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: SHELL_Z, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
       <DimScreen opacity={0.92} />
       <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 20, paddingVertical: 22, gap: 14, alignItems: 'center' }}>

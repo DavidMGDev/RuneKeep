@@ -73,12 +73,13 @@ import { useKeyboardControl } from './use-keyboard-control';
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
+import { PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
 import { Art } from '../art';
 import { armorTrackLayout, chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
 import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
 import { OverlayShell } from './overlay-shell';
-import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory } from '../card-data';
+import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory, printFaces } from '../card-data';
 import { isExperienceType } from '../card-types';
 import { type Character, SAMPLE_CHARACTER } from '../character';
 import { FillText, SheetText } from '../components/primitives';
@@ -2025,13 +2026,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setNfcSend({ content: { kind: 'expansion', payload: exp }, label: `${cards.length} cards`, ids });
   }, [file]);
   /**
-   * The selected cards, onto paper (v0.34.8, owner).
+   * The selected cards, onto paper (v0.34.8; rebuilt v0.35).
    *
-   * A forged card is a 750 x 1050 bitmap and a printed card at 300 DPI is 750 x 1050 pixels, so the
-   * bitmap goes on the page at its exact density with nothing to upscale. Where there is no bitmap —
-   * a browser forges nothing, and a card can still be mid-forge on a phone — the card is laid out in
-   * the print document instead, from the same title, type and text it draws from on screen.
+   * Every card on the page is a 750 x 1050 bitmap, which is a printed card at 300 DPI exactly. Where
+   * the carousel already has one, it goes straight on the page. Where it does not, the card is
+   * CAPTURED now (`PrintStage`) rather than printed as the placeholder the carousel shows in its
+   * place, which is what made every app-drawn card come out as the app icon.
+   *
+   * A multi-page card contributes one printed card PER FACE, in order, so a class card's features
+   * reach the table instead of stopping at its cover.
    */
+  const printRef = useRef<PrintStageHandle>(null);
   const onPrintCards = useCallback((ids: string[]) => {
     const byId = new Map(Object.values(carouselDecks ?? {}).flat().map((c) => [c.id, c]));
     void (async () => {
@@ -2041,19 +2046,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           const item = byId.get(id);
           const authored = findEditableCard(file ?? undefined, contentIdOf(id, file ?? undefined))?.card;
           const lib = file ? libraryCardById(file, contentIdOf(id, file)) : undefined;
-          // A whole-card image prints from the ORIGINAL file rather than the forged bitmap: the forge
-          // captures it at 750x1050 whatever size it came in at, and printing an upscale of a picture
-          // we still have is a worse page and a much bigger document.
+          // A whole-card image prints from the ORIGINAL file rather than a capture of it: printing a
+          // re-render of a picture we still have is a worse page and a much bigger document.
           const own = (authored?.fullImage && authored.imageUri) || (lib?.fullImage && lib.imageUri) || null;
-          cards.push({
-            image: own ? await imageForPrint({ uri: own }) : await imageForPrint(item?.source),
+          const base = {
             title: sourceLabelForCardId(id, file ?? undefined),
             typeLabel: authored?.typeLabel ?? lib?.typeLabel ?? 'Card',
             body: authored?.text ?? lib?.text ?? '',
             color: authored?.color ?? lib?.color ?? null,
             art: authored?.imageUri ?? lib?.imageUri ?? null,
-          });
+          };
+          if (own) { cards.push({ ...base, image: await imageForPrint({ uri: own }) }); continue; }
+          for (const face of printFaces(item)) {
+            const image = face.image ? await imageForPrint(face.image) : face.node ? (await printRef.current?.capture(face.node)) ?? null : null;
+            cards.push({ ...base, image });
+          }
         }
+        if (!cards.length) { pushNotice('Nothing to print'); return; }
         await shareCardsPdf(cards, `${file?.name || 'RuneKeep'} cards`);
       } catch {
         pushNotice('Those cards could not be printed');
@@ -2897,6 +2906,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {damageOpen ? <DamagePanel thresholds={character.damageThresholds} onApply={onApplyDamage} onClose={() => setDamageOpen(false)} /> : null}
           {/* offscreen forge stage: captures the class-feature cards to bitmaps (#104) */}
           {forgeStage}
+          {/* v0.35: the same capture, on demand, for a card the printer needs and the forge queue has
+              not reached. Renders nothing until a print job asks for one. */}
+          <PrintStage ref={printRef} />
           {/* entry loader (#150): covers the whole sheet while the cards forge, then fades to reveal */}
           {loaderUp ? <RuneLoader done={sheetReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /> : null}
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
@@ -2982,6 +2994,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               canEdit={!isWildshapeId(catalogIdOf(cardInfoId))}
               onToggle={onToggleCard}
               onSaveEffects={onEditCardEffects}
+              onCollapseGroups={(keys) => setFile((f) => { if (!f) return f; const next = { ...f, collapsedModifierGroups: keys }; saveFileRef.current(next); return next; })}
               onClose={() => setCardInfoId(null)}
             />
           ) : null}

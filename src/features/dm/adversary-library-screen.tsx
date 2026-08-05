@@ -19,6 +19,7 @@ import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (cus
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { FilterBand } from '@/components/filter-band';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
@@ -195,19 +196,25 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           <TextInput value={search} onChangeText={setSearch} placeholder="Search adversaries…" placeholderTextColor={DmRune.muted} style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.semibold }} />
         </ChamferBox>
 
+        {/* v0.35 (owner): labelled bands, like the card archive, so a chip says what it filters ON.
+            Capped and scrollable: four wrapping bands can be taller than the roster below them. */}
         {drawer ? (
-          <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke={DmRune.line} strokeWidth={1.2} style={{ padding: 10, marginBottom: 10, gap: 8 }}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {[1, 2, 3, 4].map((t) => <Chip key={t} label={`Tier ${t}`} on={filters.tiers.has(t)} onPress={() => setFilters((f) => ({ ...f, tiers: toggle(f.tiers, t) }))} />)}
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {ADVERSARY_ROLES.map((r) => <Chip key={r} label={r} on={filters.roles.has(r)} onPress={() => setFilters((f) => ({ ...f, roles: toggle(f.roles, r) }))} />)}
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {(['Physical', 'Magic'] as const).map((d) => <Chip key={d} label={d} on={filters.damage.has(d)} onPress={() => setFilters((f) => ({ ...f, damage: toggle(f.damage, d) }))} />)}
-              {ADVERSARY_TAGS.map((t) => <Chip key={t} label={t} on={filters.tags.has(t)} onPress={() => setFilters((f) => ({ ...f, tags: toggle(f.tags, t) }))} />)}
-            </View>
-            {activeCount ? <Pressable onPress={() => setFilters(EMPTY)} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>Clear filters</Text></Pressable> : null}
+          <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke={DmRune.line} strokeWidth={1.2} style={{ paddingHorizontal: 10, paddingVertical: 10, marginBottom: 10, maxHeight: 250 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10 }} keyboardShouldPersistTaps="handled">
+              <FilterBand label="Tier" dm>
+                {[1, 2, 3, 4].map((t) => <Chip key={t} label={`Tier ${t}`} on={filters.tiers.has(t)} onPress={() => setFilters((f) => ({ ...f, tiers: toggle(f.tiers, t) }))} />)}
+              </FilterBand>
+              <FilterBand label="Role" dm>
+                {ADVERSARY_ROLES.map((r) => <Chip key={r} label={r} on={filters.roles.has(r)} onPress={() => setFilters((f) => ({ ...f, roles: toggle(f.roles, r) }))} />)}
+              </FilterBand>
+              <FilterBand label="Damage" dm>
+                {(['Physical', 'Magic'] as const).map((d) => <Chip key={d} label={d} on={filters.damage.has(d)} onPress={() => setFilters((f) => ({ ...f, damage: toggle(f.damage, d) }))} />)}
+              </FilterBand>
+              <FilterBand label="Tag" dm>
+                {ADVERSARY_TAGS.map((t) => <Chip key={t} label={t} on={filters.tags.has(t)} onPress={() => setFilters((f) => ({ ...f, tags: toggle(f.tags, t) }))} />)}
+              </FilterBand>
+              {activeCount ? <Pressable onPress={() => setFilters(EMPTY)} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>Clear filters</Text></Pressable> : null}
+            </ScrollView>
           </ChamferBox>
         ) : null}
 

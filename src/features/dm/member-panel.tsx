@@ -12,6 +12,7 @@ import Svg, { Polygon, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { FitLine } from '@/components/fit-line';
+import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { domainCardCount, memberSummary } from '@/lib/dm-vitals';
 import { type CharacterFile } from '@/lib/character-file';
@@ -42,6 +43,8 @@ export function MemberPanel({
   onRequestSet,
   onBlocked,
   onLongPress,
+  onModifiers,
+  onCards,
 }: {
   file: CharacterFile;
   vitals: MemberVitals;
@@ -54,6 +57,16 @@ export function MemberPanel({
   onRequestSet: (key: VitalKey) => void;
   onBlocked?: () => void;
   onLongPress?: () => void;
+  /**
+   * v0.35 (owner): the DM's modifiers for this character. `edit` opens straight into the editor (the
+   * expanded entry's button); the summary first is what a HOLD on the name gives you.
+   *
+   * The hold is only wired where nothing else claims it. In an encounter a hold on a member starts
+   * ally multi-select, which is worth more there, so that screen reaches this through the button.
+   */
+  onModifiers?: (edit: boolean) => void;
+  /** v0.35: open this character's cards. */
+  onCards?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const s = memberSummary(file);
@@ -73,7 +86,7 @@ export function MemberPanel({
   return (
     <ChamferBox chamfer={11} fill={selected ? 'rgba(196,200,208,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
       {/* header: portrait + identity (tap to expand) + read-only Evasion / thresholds + a clear chevron */}
-      <Pressable onPress={() => setOpen((o) => !o)} onLongPress={onLongPress} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
+      <Pressable onPress={() => setOpen((o) => !o)} onLongPress={onLongPress ?? (onModifiers ? () => onModifiers(false) : undefined)} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
         <ChamferBox chamfer={6} fill={DmRune.ink} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           {s.portraitUri ? <Image source={s.portraitUri} style={{ width: 46, height: 46 }} contentFit="cover" /> : (
             <Svg width={20} height={20} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={DmRune.accentDim} strokeWidth={1.6} /></Svg>
@@ -120,6 +133,13 @@ export function MemberPanel({
             <ReadStat label="Prof" value={String(s.proficiency)} color={DmRune.accent} />
             <ReadStat label="Domain Cards" value={String(domainCardCount(file))} color={DmRune.accent} />
           </View>
+          {/* v0.35 (owner): the DM's two tools for this character, where expanding them already is. */}
+          {onModifiers || onCards ? (
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 2 }}>
+              {onModifiers ? <RuneButton label="Modifiers" kind="secondary" height={34} dense dm style={{ flex: 1 }} onPress={() => onModifiers(true)} /> : null}
+              {onCards ? <RuneButton label="Cards" kind="secondary" height={34} dense dm style={{ flex: 1 }} onPress={onCards} /> : null}
+            </View>
+          ) : null}
         </View>
       ) : null}
     </ChamferBox>

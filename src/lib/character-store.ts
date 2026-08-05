@@ -256,15 +256,41 @@ export function readCharacterText(text: string): CharacterFile {
  * amounted to.
  */
 export async function importCharacter(): Promise<CharacterFile | null> {
+  const picked = await pickCharacterFiles(false);
+  if (!picked?.length) return null;
+  await saveCharacter(picked[0]);
+  return picked[0];
+}
+
+/**
+ * Pick one or several character files and PARSE them, without saving anything (v0.35).
+ *
+ * Saving is the caller's job now, because what a file means depends on what is already here: an id
+ * that collides is either an update or a copy, and only the person importing knows which. See
+ * `lib/import-characters` for that decision.
+ *
+ * A file that cannot be read is skipped rather than failing the whole batch: one damaged sheet in a
+ * selection of five should not cost the other four. The caller is told how many arrived.
+ */
+export async function pickCharacterFiles(multiple = true): Promise<CharacterFile[] | null> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const DocumentPicker = require('expo-document-picker') as typeof import('expo-document-picker');
   // accept any file (.rune has no registered MIME) and validate by content
-  const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-  if (res.canceled || !res.assets[0]) return null;
-  const asset = res.assets[0] as { uri: string; file?: { text: () => Promise<string> } };
-  // `fetch` covers the blob: URL a browser gives when the asset carries no File handle.
-  const text = Platform.OS === 'web' ? (asset.file ? await asset.file.text() : await (await fetch(asset.uri)).text()) : new (fs().File)(asset.uri).textSync();
-  const file = readCharacterText(text);
-  await saveCharacter(file);
-  return file;
+  const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple });
+  if (res.canceled || !res.assets.length) return null;
+  const out: CharacterFile[] = [];
+  let firstError: unknown = null;
+  for (const a of res.assets) {
+    const asset = a as { uri: string; file?: { text: () => Promise<string> } };
+    try {
+      // `fetch` covers the blob: URL a browser gives when the asset carries no File handle.
+      const text = Platform.OS === 'web' ? (asset.file ? await asset.file.text() : await (await fetch(asset.uri)).text()) : new (fs().File)(asset.uri).textSync();
+      out.push(readCharacterText(text));
+    } catch (e) {
+      firstError ??= e;
+    }
+  }
+  // Nothing readable at all IS a failure, and the caller has an error dialog for it.
+  if (!out.length && firstError) throw firstError;
+  return out;
 }

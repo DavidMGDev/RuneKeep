@@ -12,35 +12,18 @@ import Animated, { Easing, runOnJS, type SharedValue, useAnimatedReaction, useAn
 import Svg, { Path } from 'react-native-svg';
 
 import { DmType, Display, DmRune } from '@/constants/theme';
+import { useFrame, windowToFrameX, windowToFrameY } from '@/hooks/use-layout';
+import { RADIAL_WEDGES as WEDGES, WEDGE_HALF, WEDGE_RICON, WEDGE_RIN, WEDGE_ROUT } from './radial-wedges';
 import { playSfx } from '@/lib/sfx';
 import { useScreenDim } from '@/lib/screen-dim';
 
-// Six wedges. Top three read +1 +2 +3 left→right; bottom three read −1 −2 −3 left→right. The left and
-// right sides (around ±0° and ±180°) are the cancel gaps.
-export const RADIAL_WEDGES = [
-  { center: -128, delta: 1 }, { center: -90, delta: 2 }, { center: -52, delta: 3 },
-  { center: 128, delta: -1 }, { center: 90, delta: -2 }, { center: 52, delta: -3 },
-];
-const HALF = 19; // wedge half-width (deg)
-const DEAD = 24; // centre dead-zone radius (window px)
-const RIN = 32;
-const ROUT = 96;
-const RICON = 64;
-
-/** Which wedge the finger points at (-1 = cancel). Pure angular + radial hit-test (worklet-safe). */
-export function pickWedge(dx: number, dy: number): number {
-  'worklet';
-  const dist = Math.hypot(dx, dy);
-  if (dist < DEAD || dist > ROUT + 26) return -1;
-  const a = (Math.atan2(dy, dx) * 180) / Math.PI;
-  for (let i = 0; i < RADIAL_WEDGES.length; i++) {
-    let d = a - RADIAL_WEDGES[i].center;
-    while (d > 180) d -= 360;
-    while (d < -180) d += 360;
-    if (Math.abs(d) <= HALF) return i;
-  }
-  return -1;
-}
+// The wheel's geometry lives in `radial-wedges` so it can be unit-tested (this module imports the
+// theme, which Jest cannot load). Re-exported so existing call sites are unchanged.
+export { pickWedge, RADIAL_WEDGES } from './radial-wedges';
+const HALF = WEDGE_HALF;
+const RIN = WEDGE_RIN;
+const ROUT = WEDGE_ROUT;
+const RICON = WEDGE_RICON;
 
 interface RadialCtx {
   progress: SharedValue<number>;
@@ -84,6 +67,7 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
 
   const open = useCallback((ax: number, ay: number, c: string, onApply: (d: number) => void, touch?: { x: number; y: number }) => {
     applyRef.current = onApply;
+    measureRef.current(); // v0.35: the host may have moved since layout (a scroll, a rotation, a panel)
     anchorX.value = ax; anchorY.value = ay;
     // v0.23.0: seed the cursor at the REAL touch point, not the anchor. Seeding it to the glyph
     // centre made the dot appear a finger-width away from the thumb until the first drag update.
@@ -102,8 +86,8 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
 
   const commit = useCallback(() => {
     const i = Math.round(highlight.value);
-    if (i >= 0 && i < RADIAL_WEDGES.length && applyRef.current) {
-      const w = RADIAL_WEDGES[i];
+    if (i >= 0 && i < WEDGES.length && applyRef.current) {
+      const w = WEDGES[i];
       applyRef.current(w.delta);
       playSfx('numpadPress', { cents: w.delta > 0 ? 300 : -200, vary: false });
     } else {
@@ -116,7 +100,23 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
   const cancel = useCallback(() => { applyRef.current = null; close(); }, [close]);
 
   const frameRef = useRef<View>(null);
-  const measureFrame = useCallback(() => { frameRef.current?.measureInWindow((x, y) => { hostX.value = x; hostY.value = y; }); }, [hostX, hostY]);
+  /**
+   * The host's origin, in the SAME SPACE as the anchor and the finger (v0.35).
+   *
+   * `measureInWindow` reports physical window coordinates. The anchor and the finger are converted
+   * into FRAME space before they get here (`windowToFrameX`), so subtracting a raw window origin from
+   * them mixed two units: on a magnified viewport the pointer was drawn a margin's width away from the
+   * finger, which is exactly the "starts displaced from where my finger is" report. On an unmagnified
+   * phone the two spaces are identical, which is why it went unnoticed for so long.
+   */
+  const frame = useFrame();
+  const measureFrame = useCallback(() => {
+    frameRef.current?.measureInWindow((x, y) => { hostX.value = windowToFrameX(x, frame); hostY.value = windowToFrameY(y, frame); });
+  }, [hostX, hostY, frame]);
+  // `open` is built once and must not be rebuilt when the frame changes, so it reaches the measure
+  // through a ref rather than closing over it.
+  const measureRef = useRef(measureFrame);
+  measureRef.current = measureFrame;
   const value = useMemo<RadialCtx>(() => ({ progress, anchorX, anchorY, fingerX, fingerY, highlight, active, hostX, hostY, open, commit, cancel }), [progress, anchorX, anchorY, fingerX, fingerY, highlight, active, hostX, hostY, open, commit, cancel]);
 
   return (
@@ -168,7 +168,7 @@ function StatRadialHost({ color }: { color: string }) {
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, dim]} />
       <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: ROUT * 2, height: ROUT * 2 }, wheel]}>
         <Svg width={ROUT * 2} height={ROUT * 2}>
-          {RADIAL_WEDGES.map((w, i) => {
+          {WEDGES.map((w, i) => {
             const sel = hl === i;
             return (
               <AnimatedPath
@@ -183,7 +183,7 @@ function StatRadialHost({ color }: { color: string }) {
             );
           })}
         </Svg>
-        {RADIAL_WEDGES.map((w, i) => {
+        {WEDGES.map((w, i) => {
           const a = (w.center * Math.PI) / 180;
           const x = ROUT + RICON * Math.cos(a); const y = ROUT + RICON * Math.sin(a);
           const sel = hl === i;
