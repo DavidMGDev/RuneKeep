@@ -4,7 +4,7 @@
  * experience, features), and a fullscreen image viewer. Reused by the CombatantPanel and the library.
  */
 import { useEffect } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/custom portraits)
 import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated';
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
@@ -16,6 +16,7 @@ import { type Combatant } from '@/lib/session';
 import { useLayout } from '@/hooks/use-layout';
 import { useScreenDim } from '@/lib/screen-dim';
 import { useAndroidBack } from './use-android-back';
+import { DmPress } from './dm-ui';
 
 /** A stylised tome/rune emblem marking a Base Game adversary that carries no custom image (item 12). */
 export function BaseGameEmblem({ size = 22, color = DmRune.accentDim }: { size?: number; color?: string }) {
@@ -42,9 +43,9 @@ export function AdversaryPortrait({ uri, size = 42, tint, onPress }: { uri?: str
   );
   if (!onPress) return box;
   return (
-    <Pressable onPress={onPress} accessibilityRole="imagebutton" accessibilityLabel={uri ? 'View image' : 'Base Game adversary'} hitSlop={4}>
+    <DmPress onPress={onPress} accessibilityRole="imagebutton" accessibilityLabel={uri ? 'View image' : 'Base Game adversary'} hitSlop={4}>
       {box}
-    </Pressable>
+    </DmPress>
   );
 }
 
@@ -129,9 +130,9 @@ export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; nam
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 400 }}>
       <Animated.View entering={FadeIn.duration(120)} exiting={FadeOut.duration(120)} style={{ flex: 1 }}>
-        <Pressable style={{ flex: 1 }} onPress={close} accessibilityRole="button" accessibilityLabel="Close image">
+        <DmPress style={{ flex: 1 }} onPress={close} accessibilityRole="button" accessibilityLabel="Close image">
           <Animated.View style={[{ flex: 1, backgroundColor: '#06080d', alignItems: 'center', justifyContent: 'center' }, veil]} />
-        </Pressable>
+        </DmPress>
       </Animated.View>
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: '50%', left: 0, right: 0, marginTop: -box / 2 - 24, alignItems: 'center' }, body]}>
         <ChamferBox chamfer={16} fill={DmRune.ink} stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: box, height: box, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>

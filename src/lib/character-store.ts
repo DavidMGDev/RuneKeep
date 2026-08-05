@@ -209,7 +209,10 @@ export async function exportCharacter(file: CharacterFile): Promise<void> {
       }
     }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    // v0.35.2 (owner): NOT `application/json`. Chrome on Android renames a download to match its MIME
+    // type, so a `.rune` arrived on the phone as `.rune.json` and stopped being a RuneKeep file. An
+    // opaque type leaves the name we chose alone.
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
     a.download = `${safe}.${RUNE_EXT}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);

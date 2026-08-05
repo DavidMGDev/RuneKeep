@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import Svg, { Polyline } from 'react-native-svg';
+import Svg, { Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { deleteGroup, freeGroupName, groupEffects, groupNames, isGroupOn, moveToGroup, setGroupOn } from '@/lib/modifier-groups';
+import { deleteGroup, groupEffects, groupNames, isGroupOn, moveToGroup, renameGroup, setGroupOn } from '@/lib/modifier-groups';
 import { type CardEffect, type EffectFormula, type EffectTarget, TARGET_LABEL } from '@/lib/modifiers';
 import { DimScreen } from '@/lib/screen-dim';
 
@@ -270,6 +270,32 @@ function GroupPicker({ current, groups, dm, onPick, onClose }: { current?: strin
   );
 }
 
+/**
+ * Name a group (v0.35.2, owner). Used for both halves of the same job: a new group is ASKED for its
+ * name rather than handed one, and an existing one is renamed from its header.
+ */
+function GroupNameDialog({ title, initial, taken, onSave, onClose }: { title: string; initial: string; taken: string[]; onSave: (name: string) => void; onClose: () => void }) {
+  const [name, setName] = useState(initial);
+  const clash = name.trim() !== initial && taken.includes(name.trim());
+  return (
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
+      <DimScreen opacity={0.9} />
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>
+        <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>{title}</Text>
+        <ChamferBox chamfer={7} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 44, justifyContent: 'center', paddingHorizontal: 12 }}>
+          <TextInput value={name} onChangeText={setName} autoFocus placeholder="Group name" placeholderTextColor={Rune.muted} selectionColor={Rune.goldBright} maxLength={24} style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0 }} accessibilityLabel="Group name" />
+        </ChamferBox>
+        {clash ? <Text style={{ color: '#E2705A', fontSize: 11, fontFamily: Body.regular, marginTop: 6 }}>There is already a group with that name.</Text> : null}
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+          <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onClose} />
+          <RuneButton label="Save" kind="primary" height={42} style={{ flex: 1.3 }} disabled={!name.trim() || clash} onPress={() => onSave(name.trim())} />
+        </View>
+      </ChamferBox>
+    </View>
+  );
+}
+
 export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVar, preview, experiences, dm, collapsed, onCollapsedChange }: {
   effects: CardEffect[];
   onChange: (e: CardEffect[]) => void;
@@ -294,6 +320,8 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
   // only while the editor is open; put something in it before saving or it is gone.
   const [draftGroups, setDraftGroups] = useState<string[]>([]);
   const [groupPick, setGroupPick] = useState<number | null>(null);
+  /** Naming a group: an empty string is a NEW one, anything else renames that group. */
+  const [naming, setNaming] = useState<string | null>(null);
   const [localCollapsed, setLocalCollapsed] = useState<string[]>([]);
   const shut = collapsed ?? localCollapsed;
   const setShut = (next: string[]) => (onCollapsedChange ? onCollapsedChange(next) : setLocalCollapsed(next));
@@ -473,13 +501,28 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {/* Only a DM switches a whole group; a player can open it and read it. */}
               {dm ? <Check on={on} onPress={() => onChange(setGroupOn(effects, name, !on))} label={`${name} applied`} /> : null}
-              <Pressable onPress={() => toggleOpen(name)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${name}, ${rows.length} modifiers`}>
+              <Pressable
+                onPress={() => toggleOpen(name)}
+                onLongPress={dm ? () => setNaming(name) : undefined}
+                delayLongPress={340}
+                style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.6 : 1 })}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: open }}
+                accessibilityLabel={`${name}, ${rows.length} modifiers${dm ? ', hold to rename' : ''}`}>
                 <Svg width={11} height={11} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
                   <Polyline points="5,3 11,8 5,13" fill="none" stroke={Rune.goldText} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                 </Svg>
                 <Text numberOfLines={1} style={{ flex: 1, color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{name}</Text>
                 <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{rows.length}</Text>
               </Pressable>
+              {/* v0.35.2 (owner): rename. A hold on the header works too; the pencil is the visible way. */}
+              {dm ? (
+                <Pressable onPress={() => setNaming(name)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Rename ${name}`} style={({ pressed }) => ({ padding: 3, opacity: pressed ? 0.55 : 1 })}>
+                  <Svg width={13} height={13} viewBox="0 0 24 24">
+                    <Path d="M4 20 L4.5 15.5 L15 5 L19 9 L8.5 19.5 Z" fill="none" stroke={Rune.goldText} strokeWidth={1.9} strokeLinejoin="round" />
+                  </Svg>
+                </Pressable>
+              ) : null}
               {/* Deleting the group keeps every modifier in it; they come back out ungrouped. */}
               <Pressable onPress={() => { setDraftGroups((g) => g.filter((n) => n !== name)); onChange(deleteGroup(effects, name)); }} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete the group ${name}`} style={{ padding: 3 }}>
                 <Text style={{ color: '#E2705A', fontSize: 15, fontFamily: Body.bold }}>✕</Text>
@@ -498,8 +541,29 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
           </View>
         );
       })}
-      <RuneButton label="+ Add effect" kind="secondary" dense height={36} onPress={() => onChange([...effects, { target: 'maxHp', delta: 1 }])} />
-      {dm ? <RuneButton label="+ New group" kind="ghost" dense height={36} onPress={() => setDraftGroups((g) => [...g, freeGroupName([...effects, ...g.map((n) => ({ target: 'maxHp', group: n }) as CardEffect)])])} /> : null}
+      {/* v0.35.2 (owner): side by side, with Add effect on the right. */}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {dm ? <RuneButton label="+ New group" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => setNaming('')} /> : null}
+        <RuneButton label="+ Add effect" kind="secondary" dense height={36} style={{ flex: 1 }} onPress={() => onChange([...effects, { target: 'maxHp', delta: 1 }])} />
+      </View>
+      {naming != null ? (
+        <GroupNameDialog
+          title={naming ? 'Rename group' : 'Name the group'}
+          initial={naming}
+          taken={allGroups}
+          onSave={(next) => {
+            if (naming) {
+              onChange(renameGroup(effects, naming, next));
+              setDraftGroups((g) => g.map((n) => (n === naming ? next : n)));
+              setShut(shut.map((n) => (n === naming ? next : n)));
+            } else {
+              setDraftGroups((g) => [...g, next]);
+            }
+            setNaming(null);
+          }}
+          onClose={() => setNaming(null)}
+        />
+      ) : null}
       {groupPick != null && effects[groupPick] ? (
         <GroupPicker
           current={effects[groupPick].group}

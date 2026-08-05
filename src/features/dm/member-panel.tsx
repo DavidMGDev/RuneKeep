@@ -6,7 +6,7 @@
  * proficiency and the character's unique domain-card count (Armor is not repeated there).
  */
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits) — RN Image drops them on Android
 import Svg, { Polygon, Polyline } from 'react-native-svg';
 
@@ -18,6 +18,7 @@ import { domainCardCount, memberSummary } from '@/lib/dm-vitals';
 import { type CharacterFile } from '@/lib/character-file';
 import { type MemberMaxes, type MemberVitals, type VitalKey } from '@/lib/party';
 import { StatPulse } from './stat-pulse';
+import { DmPress } from './dm-ui';
 
 const TRAIT_ORDER: [keyof ReturnType<typeof memberSummary>['traits'], string][] = [
   ['agility', 'Agi'], ['strength', 'Str'], ['finesse', 'Fin'], ['instinct', 'Ins'], ['presence', 'Pre'], ['knowledge', 'Kno'],
@@ -94,7 +95,7 @@ export function MemberPanel({
   return (
     <ChamferBox chamfer={11} fill={selected ? 'rgba(196,200,208,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
       {/* header: portrait + identity (tap to expand) + read-only Evasion / thresholds + a clear chevron */}
-      <Pressable onPress={() => setOpen((o) => !o)} onLongPress={onLongPress ?? (onModifiers ? () => onModifiers(false) : undefined)} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
+      <DmPress onPress={() => setOpen((o) => !o)} onLongPress={onLongPress ?? (onModifiers ? () => onModifiers(false) : undefined)} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
         <ChamferBox chamfer={6} fill={DmRune.ink} stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           {s.portraitUri ? (
             <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
@@ -125,7 +126,7 @@ export function MemberPanel({
         ) : (
           <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
         )}
-      </Pressable>
+      </DmPress>
 
       {/* vitals row: the four editable tracks, tightly grouped, sheet-coloured */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', columnGap: 14, rowGap: 8 }}>

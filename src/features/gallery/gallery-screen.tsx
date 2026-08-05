@@ -29,7 +29,7 @@ import { listExpansions } from '@/lib/library-store';
 import { isEnabledForCreation } from '@/lib/library';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { imageForPrint, type PdfCard } from '@/lib/card-pdf';
-import { PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
+import { PrintableImage, PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
 import { usePrintJob } from '@/features/share/print-job';
 import { type RkpContent } from '@/lib/rkp';
 import { useScreenDim } from '@/lib/screen-dim';
@@ -72,7 +72,31 @@ interface Filters {
   tiers: Set<number>; // tier 1–4, equipment only
   /** v0.32.2: where the card came from. Empty = both, which is the default and stays it. */
   sources: Set<'official' | 'homebrew'>;
+  /**
+   * v0.35.2 (owner): WHICH pack, by expansion id, with the base game as `base`.
+   *
+   * Every card in the archive belongs to exactly one, and the archive already shows several packs at
+   * once, so "show me only what The Void added" had no way to be asked before. Empty = all of them.
+   */
+  packs: Set<string>;
 }
+
+/** The pack a finished grid item belongs to. Derived at the end rather than threaded through each
+ *  branch above, because every branch already knows its own expansion field and none of them agree
+ *  on where it lives. */
+function packOfItem(it: GalleryItem, libPack: Map<string, string>): string {
+  switch (it.type) {
+    case 'card': return it.card.expansion ?? BASE_PACK;
+    case 'weapon': return it.weapon.expansion ?? BASE_PACK;
+    case 'armor': return it.armor.expansion ?? BASE_PACK;
+    case 'loot': return it.loot.expansion ?? BASE_PACK;
+    case 'class': return classExpansion(it.def.key) ?? BASE_PACK;
+    case 'lib': return libPack.get(it.lib.id) ?? BASE_PACK;
+  }
+}
+
+/** The base game is not an expansion, but it IS a pack you can filter to. */
+export const BASE_PACK = 'base';
 
 /** The gallery kind an installed expansion card belongs under. `generic` has no macro home of its own,
  *  so it joins Loot, the archive's bucket for what you carry (v0.32.2). */
@@ -80,7 +104,7 @@ export function libraryKind(t: LibraryContentType): GalleryKind {
   return t === 'weapon' ? 'weapon' : t === 'armor' ? 'armor' : t === 'inventory' || t === 'generic' ? 'loot' : (t as GalleryKind);
 }
 
-function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string>, library: LibraryCard[] = []): GalleryItem[] {
+function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string>, library: LibraryCard[] = [], libPack: Map<string, string> = new Map()): GalleryItem[] {
   const wantKind = (k: GalleryKind) => !f.kinds.size || f.kinds.has(k);
   const wantSource = (src: 'official' | 'homebrew') => !f.sources.size || f.sources.has(src);
   // domains/levels are catalog-domain dimensions; tiers is an equipment dimension. Selecting one set
@@ -144,7 +168,7 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
       out.push({ type: 'lib', id: c.id, label: c.title || 'Untitled', lib: c });
     }
   }
-  return out;
+  return f.packs.size ? out.filter((it) => f.packs.has(packOfItem(it, libPack))) : out;
 }
 
 /** A forged equipment card (no image asset) scaled to fill `width`, clipped to the 5:7 cell. */
@@ -453,8 +477,9 @@ export function GalleryScreen() {
     domains: new Set((params.domains?.split(',').filter(Boolean) as DomainName[]) ?? []),
     levels: new Set(params.levels?.split(',').filter(Boolean).map(Number) ?? []),
     tiers: new Set<number>(),
+    packs: new Set<string>(),
   }));
-  const clearFilters = useCallback(() => setFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set(), sources: new Set() }), []);
+  const clearFilters = useCallback(() => setFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set(), sources: new Set(), packs: new Set() }), []);
   // v0.13.0: the archive respects the GLOBAL expansion toggles — Void cards (and their Blood/Dread
   // filter chips) appear only while The Void is enabled in the Card Library.
   const [enabledExp, setEnabledExp] = useState<Set<string> | null>(null);
@@ -477,12 +502,22 @@ export function GalleryScreen() {
   // v0.32.2: the archive shows INSTALLED EXPANSIONS too, filed under the kind their content belongs
   // to. It only ever listed bundled cards, so a homebrew weapon was invisible here however you filtered.
   const [library, setLibrary] = useState<LibraryCard[]>([]);
+  /** v0.35.2: which pack each installed card came from, and the packs themselves for the chips. The
+   *  flat card list loses the expansion it belonged to, which is exactly what the filter needs. */
+  const [libPack, setLibPack] = useState<Map<string, string>>(() => new Map());
+  const [packs, setPacks] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
     let live = true;
-    void listExpansions().then((exps) => { if (live) setLibrary(exps.filter(isEnabledForCreation).flatMap((e) => e.cards)); });
+    void listExpansions().then((exps) => {
+      if (!live) return;
+      const on = exps.filter(isEnabledForCreation);
+      setLibrary(on.flatMap((e) => e.cards));
+      setLibPack(new Map(on.flatMap((e) => e.cards.map((c) => [c.id, e.id] as const))));
+      setPacks([{ id: BASE_PACK, name: 'Base game' }, ...on.map((e) => ({ id: e.id, name: e.name }))]);
+    });
     return () => { live = false; };
   }, []);
-  const cards = useMemo(() => applyFilters(filters, gated, enabledExp ?? new Set(), library), [filters, gated, enabledExp, library]);
+  const cards = useMemo(() => applyFilters(filters, gated, enabledExp ?? new Set(), library, libPack), [filters, gated, enabledExp, library, libPack]);
   const toggle = useCallback(<T,>(set: Set<T>, v: T): Set<T> => {
     const next = new Set(set);
     if (next.has(v)) next.delete(v);
@@ -490,7 +525,7 @@ export function GalleryScreen() {
     return next;
   }, []);
 
-  const activeCount = filters.kinds.size + filters.domains.size + filters.levels.size + filters.tiers.size;
+  const activeCount = filters.kinds.size + filters.domains.size + filters.levels.size + filters.tiers.size + filters.packs.size;
   const { width, isTablet, maxContent } = useLayout();
   // v0.23.0: the grid lives inside AppScreen's measured column, so size cells against THAT, and add
   // columns rather than inflating each cell. Phones keep the 3 they have always had.
@@ -533,7 +568,13 @@ export function GalleryScreen() {
         for (const it of items) {
           if (cancelled()) return [];
           const base = { title: it.label, typeLabel: 'Card', body: '', color: null as string | null, art: null as string | null };
-          if (it.type === 'card') { out.push({ ...base, image: await imageForPrint(it.card.source) }); step(); continue; }
+          if (it.type === 'card') {
+            // Bundled artwork has no bytes to inline on Android, so it is drawn and captured instead.
+            const bytes = await imageForPrint(it.card.source);
+            out.push({ ...base, image: bytes ?? (await printRef.current?.capture(<PrintableImage source={it.card.source} />)) ?? null });
+            step();
+            continue;
+          }
           const node =
             it.type === 'lib' ? <LibraryForgedCard card={it.lib} />
             : it.type === 'weapon' ? <ForgedWeaponCard weapon={it.weapon} />
@@ -663,6 +704,15 @@ export function GalleryScreen() {
             <FilterBand label="Source">
               <RuneChip label="Official" active={filters.sources.has('official')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'official' as const) }))} />
               <RuneChip label="Homebrew" active={filters.sources.has('homebrew')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'homebrew' as const) }))} />
+            </FilterBand>
+          ) : null}
+          {/* v0.35.2 (owner): one chip per pack the device has switched on, plus the base game. With
+              only the base game there is nothing to choose between, so the band does not appear. */}
+          {packs.length > 1 ? (
+            <FilterBand label="Pack">
+              {packs.map((k) => (
+                <RuneChip key={k.id} label={k.name} active={filters.packs.has(k.id)} onPress={() => setFilters((f) => ({ ...f, packs: toggle(f.packs, k.id) }))} />
+              ))}
             </FilterBand>
           ) : null}
           <FilterBand label="Type">

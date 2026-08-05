@@ -5,7 +5,7 @@
  * list of features (passive/action/reaction). Plain inputs — this is prep, not the fast in-play pulse.
  */
 import { useCallback, useState } from 'react';
-import { Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image, ScrollView, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
@@ -17,7 +17,7 @@ import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { ADVERSARY_ROLES, type AdversaryFeature, type AdversaryRole, type FeatureKind } from '@/data/adversaries';
 import { type Combatant } from '@/lib/session';
 import { AdversaryPortrait } from './adversary-detail';
-import { DmModal } from './dm-ui';
+import { DmModal, DmPress } from './dm-ui';
 
 const FIELD_LABEL = { color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const INPUT_FILL = 'rgba(20,24,30,0.9)';
@@ -25,11 +25,11 @@ const KINDS: FeatureKind[] = ['Passive', 'Action', 'Reaction'];
 
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label} hitSlop={4}>
+    <DmPress onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label} hitSlop={4}>
       <ChamferBox chamfer={5} fill={on ? DmRune.accent : 'transparent'} stroke={on ? 'transparent' : DmRune.line} strokeWidth={1.1} style={{ height: 28, justifyContent: 'center', paddingHorizontal: 10 }}>
         <Text style={{ color: on ? DmRune.ink : DmRune.text, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
-    </Pressable>
+    </DmPress>
   );
 }
 
@@ -50,12 +50,12 @@ function NumField({ label, value, onChange }: { label: string; value: number; on
 
 function Toggle({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 }}>
+    <DmPress onPress={onPress} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 }}>
       <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
         {on ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
       </ChamferBox>
       <Text style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.semibold, letterSpacing: 0.4 }}>{label}</Text>
-    </Pressable>
+    </DmPress>
   );
 }
 
@@ -66,9 +66,9 @@ function FeatureEditor({ f, onChange, onRemove }: { f: AdversaryFeature; onChang
         <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ flex: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 9 }}>
           <TextInput value={f.name} onChangeText={(name) => onChange({ ...f, name })} placeholder="Feature name" placeholderTextColor={DmRune.muted} maxLength={50} style={{ color: DmRune.ivory, fontSize: DmType.body, fontFamily: Body.bold, paddingVertical: 6, lineHeight: 18, textAlignVertical: 'center' }} />
         </ChamferBox>
-        <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove feature">
+        <DmPress onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove feature">
           <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-        </Pressable>
+        </DmPress>
       </View>
       <View style={{ flexDirection: 'row', gap: 6 }}>
         {KINDS.map((k) => <Chip key={k} label={k} on={f.kind === k} onPress={() => onChange({ ...f, kind: k })} />)}
@@ -103,19 +103,19 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
         <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 13, paddingBottom: 4 }}>
           {/* portrait + name */}
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-            <Pressable onPress={pickImage} accessibilityRole="button" accessibilityLabel="Choose image">
+            <DmPress onPress={pickImage} accessibilityRole="button" accessibilityLabel="Choose image">
               {c.portraitUri ? (
                 <ChamferBox chamfer={7} fill={DmRune.ink} stroke={DmRune.line} strokeWidth={1.3} style={{ width: 56, height: 56, overflow: 'hidden' }}><Image source={{ uri: c.portraitUri }} style={{ width: 56, height: 56 }} resizeMode="cover" /></ChamferBox>
               ) : (
                 <AdversaryPortrait size={56} tint={DmRune.line} />
               )}
-            </Pressable>
+            </DmPress>
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={FIELD_LABEL}>Name</Text>
               <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ height: 42, justifyContent: 'center', paddingHorizontal: 11 }}>
                 <TextInput value={c.name} onChangeText={(name) => set({ name })} maxLength={40} style={{ color: DmRune.text, fontSize: DmType.title, fontFamily: Body.semibold }} />
               </ChamferBox>
-              {c.portraitUri ? <Pressable onPress={() => set({ portraitUri: undefined })} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Remove image</Text></Pressable> : null}
+              {c.portraitUri ? <DmPress onPress={() => set({ portraitUri: undefined })} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Remove image</Text></DmPress> : null}
             </View>
           </View>
 
@@ -192,7 +192,7 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
           <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={FIELD_LABEL}>Features</Text>
-              <Pressable onPress={addFeature} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add feature"><Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>+ Add</Text></Pressable>
+              <DmPress onPress={addFeature} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add feature"><Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>+ Add</Text></DmPress>
             </View>
             {features.map((f, i) => <FeatureEditor key={i} f={f} onChange={(nf) => setFeature(i, nf)} onRemove={() => removeFeature(i)} />)}
           </View>

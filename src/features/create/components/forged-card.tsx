@@ -19,6 +19,18 @@ export const FORGED_H = 322;
 export const ART_H = Math.round(FORGED_H * 0.4);
 
 /**
+ * The class banners' shape, stated rather than inferred (v0.35.2, owner).
+ *
+ * They were drawn into a 62 x (ART_H + 12) box and left to letterbox themselves with
+ * `preserveAspectRatio`. Native honours that; the web build stretched them instead, so every class
+ * card in a browser had a banner reaching down past the divider and into the text. All nine base
+ * banners are within half a percent of this ratio, so giving the box the banner's own shape means
+ * there is nothing left to stretch, on any platform, whatever the renderer does with the attribute.
+ */
+const BANNER_W = 62;
+const BANNER_H = Math.round(BANNER_W * (2045.3123 / 1304));
+
+/**
  * A card that IS a printed face (v0.25.0): one bitmap, edge to edge, no plaque and no text.
  *
  * The Hope and Fear ancestries use this. There is nothing to lay out because the publisher already
@@ -219,7 +231,7 @@ export function ForgedCard({
         ) : colorArt ? null : fallbackArt != null ? (
           <ExpoImage source={fallbackArt} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />
         ) : Banner ? (
-          <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
+          <Banner width={BANNER_W} height={BANNER_H} preserveAspectRatio="xMidYMin meet" />
         ) : null}
       </View>
       {/* the 40/60 seam: the divider with its plaque carrying the kind label */}
@@ -329,7 +341,7 @@ export function ForgedTextCard({
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       <View style={{ height: ART_H, backgroundColor: accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
-        <Banner width={62} height={ART_H + 12} preserveAspectRatio="xMidYMin meet" />
+        <Banner width={BANNER_W} height={BANNER_H} preserveAspectRatio="xMidYMin meet" />
       </View>
       <View style={{ position: 'absolute', top: ART_H - (FORGED_W + 14) / (1978.811 / 151.3009) / 2, left: -7, right: -7, alignItems: 'center' }} pointerEvents="none">
         <DividerPlaque width={FORGED_W + 14} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>

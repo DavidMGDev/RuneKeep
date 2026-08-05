@@ -9,7 +9,7 @@
  * selected, both confirmed (item 3).
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { LayoutChangeEvent, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, FadeIn, FadeOut, LinearTransition, runOnJS, type SharedValue, SlideInLeft, SlideOutLeft, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import Svg, { Line, Polyline } from 'react-native-svg';
@@ -22,7 +22,7 @@ import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type LogEntry } from '@/lib/session';
 import { playSfx } from '@/lib/sfx';
 import { DimScreen } from '@/lib/screen-dim';
-import { DmModal } from './dm-ui';
+import { DmModal, DmPress } from './dm-ui';
 import { useSelection } from './use-selection';
 
 // item 4: short, smooth reflow — no spring bounce.
@@ -86,7 +86,7 @@ function LogRow({ item, isNote, isDragged, selecting, on, showDropAbove, dragY, 
         ) : (
           <View style={{ width: 34 }} />
         )}
-        <Pressable
+        <DmPress
           onPress={onPress}
           onLongPress={onLongPress}
           delayLongPress={320}
@@ -102,7 +102,7 @@ function LogRow({ item, isNote, isDragged, selecting, on, showDropAbove, dragY, 
               {on ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
             </ChamferBox>
           ) : null}
-        </Pressable>
+        </DmPress>
       </ChamferBox>
     </Animated.View>
   );
@@ -182,7 +182,7 @@ export function EncounterLog({
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 300 }]}>
       <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(160)} style={StyleSheet.absoluteFill}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close log" />
+        <DmPress style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close log" />
         <DimScreen opacity={0.72} />
       </Animated.View>
       {/* item 4: short, smooth slide — no elastic spring. */}
@@ -190,9 +190,9 @@ export function EncounterLog({
         <ChamferBox chamfer={0} fill="rgba(10,13,18,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.4} style={{ flex: 1, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
             <Text style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>Log</Text>
-            <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close log">
+            <DmPress onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close log">
               <Svg width={20} height={20} viewBox="0 0 20 20"><Line x1={4} y1={4} x2={16} y2={16} stroke={DmRune.accent} strokeWidth={2.2} /><Line x1={16} y1={4} x2={4} y2={16} stroke={DmRune.accent} strokeWidth={2.2} /></Svg>
-            </Pressable>
+            </DmPress>
           </View>
           {log.length === 0 ? (
             <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, marginTop: 24 }}>No entries yet. Add a note, or toggle Auto-log to record stat changes.</Text>

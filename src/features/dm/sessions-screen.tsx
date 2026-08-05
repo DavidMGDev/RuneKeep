@@ -6,7 +6,7 @@
  */
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Text, View } from 'react-native';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
@@ -22,29 +22,29 @@ import { listParties, setActiveParty } from '@/lib/party-store';
 import { newSession, type Session } from '@/lib/session';
 import { deleteEncounter, deleteSession, listEncounters, listSessions, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
-import { DmEmpty, ColorDiamond, NameDialog } from './dm-ui';
+import { DmEmpty, ColorDiamond, NameDialog, DmPress } from './dm-ui';
 import { useSelection } from './use-selection';
 
 function PartyDropdown({ parties, selected, onSelect }: { parties: Party[]; selected: Party; onSelect: (p: Party) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <View style={{ zIndex: 50 }}>
-      <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button" accessibilityLabel={`Party: ${selected.name}. Change`}>
+      <DmPress onPress={() => setOpen((o) => !o)} accessibilityRole="button" accessibilityLabel={`Party: ${selected.name}. Change`}>
         <ChamferBox chamfer={10} fill="rgba(14,17,22,0.94)" stroke={DmRune.lineStrong} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, height: 52 }}>
           <ColorDiamond color={selected.color} size={14} />
           <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{selected.name}</FitLine>
           {!selected.enabled ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Disabled</Text> : null}
           <Svg width={16} height={16} viewBox="0 0 16 16"><Polyline points="3,6 8,11 13,6" fill="none" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
         </ChamferBox>
-      </Pressable>
+      </DmPress>
       {open ? (
         <ChamferBox chamfer={10} fill="rgba(10,13,18,0.99)" stroke={DmRune.line} strokeWidth={1.2} style={{ position: 'absolute', top: 58, left: 0, right: 0, paddingVertical: 4 }}>
           {parties.map((p) => (
-            <Pressable key={p.id} onPress={() => { setOpen(false); onSelect(p); }} accessibilityRole="button" accessibilityLabel={p.name} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent' })}>
+            <DmPress key={p.id} onPress={() => { setOpen(false); onSelect(p); }} accessibilityRole="button" accessibilityLabel={p.name} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent' })}>
               <ColorDiamond color={p.color} size={12} />
               <Text style={{ flex: 1, color: p.id === selected.id ? DmRune.accent : DmRune.text, fontSize: DmType.title, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{p.name}</Text>
               {p.enabled ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} /> : <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Off</Text>}
-            </Pressable>
+            </DmPress>
           ))}
         </ChamferBox>
       ) : null}
@@ -154,7 +154,7 @@ export function SessionsScreen() {
             renderItem={({ item }) => {
               const on = sel.ids.has(item.id);
               return (
-                <Pressable
+                <DmPress
                   onPress={() => (sel.selecting ? sel.toggle(item.id) : router.push(`/session?id=${item.id}` as Href))}
                   onLongPress={() => (sel.selecting ? sel.toggle(item.id) : sel.start(item.id))}
                   delayLongPress={340}
@@ -174,7 +174,7 @@ export function SessionsScreen() {
                       {!sel.selecting ? <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={4} y1={2} x2={12} y2={8} stroke={DmRune.accentDim} strokeWidth={2} /><Line x1={12} y1={8} x2={4} y2={14} stroke={DmRune.accentDim} strokeWidth={2} /></Svg> : null}
                     </ChamferBox>
                   )}
-                </Pressable>
+                </DmPress>
               );
             }}
           />

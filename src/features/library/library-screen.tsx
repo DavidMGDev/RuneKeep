@@ -311,6 +311,8 @@ export function LibraryScreen() {
   const [expansions, setExpansions] = useState<Expansion[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<{ index: number | 'new'; config: CardConfig; draft?: CardDraft } | null>(null);
+  /** v0.35.2: an ancestry just saved as one whole picture, waiting to be told what that costs. */
+  const [fullImageAncestry, setFullImageAncestry] = useState<string | null>(null);
   const [choosingType, setChoosingType] = useState(false);
   const [metaForm, setMetaForm] = useState<'new' | 'edit' | null>(null);
   const [confirmDeleteExp, setConfirmDeleteExp] = useState<Expansion | null>(null);
@@ -567,6 +569,18 @@ export function LibraryScreen() {
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
         {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
+        {/* v0.35.2 (owner): a whole-picture ancestry cannot be half struck through. Saying so at the
+            moment it is saved is the only time the author can still choose the other shape. */}
+        {fullImageAncestry ? (
+          <PopupDialog
+            title="One picture, no cross-outs"
+            body={`${fullImageAncestry} is a whole card image, so RuneKeep cannot see where its two features are. In a mixed ancestry the app strikes through the half a character does not keep, and it will not be able to do that here: the player will have to remember which feature is theirs. Writing the two features out as text instead lets the app cross the right one out for them.`}
+            confirmLabel="OK"
+            cancelLabel="OK"
+            onConfirm={() => setFullImageAncestry(null)}
+            onCancel={() => setFullImageAncestry(null)}
+          />
+        ) : null}
       </AppScreen>
     );
   }

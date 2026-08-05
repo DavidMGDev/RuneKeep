@@ -5,7 +5,7 @@
  */
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Text, View } from 'react-native';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
@@ -21,7 +21,7 @@ import { getParty } from '@/lib/party-store';
 import { duplicateEncounter, type Encounter, moveEncounterToSession, newEncounter, newSession, nextIndex, type Session, sortedEncounters } from '@/lib/session';
 import { deleteEncounter, getSession, listEncounters, listSessions, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
-import { DmEmpty, DmModal, NameDialog } from './dm-ui';
+import { DmEmpty, DmModal, NameDialog, DmPress } from './dm-ui';
 import { useSelection } from './use-selection';
 
 const STATUS_COLOR = (s: Encounter['status']) => (s === 'active' ? DmRune.accent : s === 'completed' ? DmRune.muted : DmRune.accentDim);
@@ -33,9 +33,9 @@ function MoveTargetPicker({ sessions, onPick, onNew, onCancel }: { sessions: Ses
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 312, padding: 20, gap: 6 }}>
         <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to session</Text>
         {sessions.map((s) => (
-          <Pressable key={s.id} onPress={() => onPick(s.id)} accessibilityRole="button" accessibilityLabel={s.name} style={({ pressed }) => ({ paddingVertical: 12, paddingHorizontal: 8, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent', borderRadius: 6 })}>
+          <DmPress key={s.id} onPress={() => onPick(s.id)} accessibilityRole="button" accessibilityLabel={s.name} style={({ pressed }) => ({ paddingVertical: 12, paddingHorizontal: 8, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent', borderRadius: 6 })}>
             <Text style={{ color: DmRune.text, fontSize: DmType.title, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{s.name}</Text>
-          </Pressable>
+          </DmPress>
         ))}
         <View style={{ marginTop: 8, gap: 8 }}>
           <RuneButton label="New session" kind="secondary" height={42} dm onPress={onNew} />
@@ -146,7 +146,7 @@ export function SessionScreen() {
               const pinned = item.id === session.activeEncounterId;
               const on = sel.ids.has(item.id);
               return (
-                <Pressable
+                <DmPress
                   onPress={() => (sel.selecting ? sel.toggle(item.id) : router.push(`/encounter?id=${item.id}` as Href))}
                   onLongPress={() => (sel.selecting ? sel.toggle(item.id) : sel.start(item.id))}
                   delayLongPress={340}
@@ -170,7 +170,7 @@ export function SessionScreen() {
                       {!sel.selecting ? <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={4} y1={2} x2={12} y2={8} stroke={DmRune.accentDim} strokeWidth={2} /><Line x1={12} y1={8} x2={4} y2={14} stroke={DmRune.accentDim} strokeWidth={2} /></Svg> : null}
                     </ChamferBox>
                   )}
-                </Pressable>
+                </DmPress>
               );
             }}
           />
