@@ -137,8 +137,6 @@ function sector(cx: number, cy: number, a0: number, a1: number, ri: number, ro: 
   return `M${x0},${y0} A${ro},${ro} 0 0 1 ${x1},${y1} L${x2},${y2} A${ri},${ri} 0 0 0 ${x3},${y3} Z`;
 }
 
-const AnimatedPath = Animated.createAnimatedComponent(Path);
-
 function StatRadialHost({ color }: { color: string }) {
   const { progress, anchorX, anchorY, fingerX, fingerY, highlight, hostX, hostY } = useStatRadial();
   const [hl, setHl] = useState(-1);
@@ -162,7 +160,18 @@ function StatRadialHost({ color }: { color: string }) {
 
   // v0.24.1: declare it so the tablet margins darken with the screen (lib/screen-dim).
   useScreenDim(shown ? 0.34 : 0);
-  if (!shown) return null;
+  /**
+   * ALWAYS MOUNTED, opacity-driven (v0.35.1, owner).
+   *
+   * This used to return null until the hold began, so the whole wheel, an `<Svg>` included, was
+   * MOUNTED in the middle of a live gesture and UNMOUNTED again while its parent was still animating
+   * out. That is the one thing this component does that the character sheet's float menu (the same
+   * shape, on the same platform, working) does not, and the DM's wheel is the one that kills the app
+   * on Android. Six paths behind `pointerEvents: none` at zero opacity cost nothing to leave up.
+   *
+   * The wedge paths are plain `Path` again for the same reason: they were wrapped in
+   * `createAnimatedComponent` and never given a single animated prop.
+   */
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 9000 }]} pointerEvents="none">
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, dim]} />
@@ -171,7 +180,7 @@ function StatRadialHost({ color }: { color: string }) {
           {WEDGES.map((w, i) => {
             const sel = hl === i;
             return (
-              <AnimatedPath
+              <Path
                 key={i}
                 d={sector(ROUT, ROUT, w.center - HALF + 2, w.center + HALF - 2, RIN, ROUT)}
                 fill={sel ? color : 'rgba(20,24,31,0.82)'}

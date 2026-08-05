@@ -20,10 +20,12 @@ export async function captureCard(ref: RefObject<View | null>, width: number, he
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require('html2canvas') as { default?: H2C } & H2C;
   const html2canvas: H2C = mod.default ?? mod;
-  const canvas = await html2canvas(el, { backgroundColor: null, logging: false, useCORS: true });
+  // Enlarge with the RASTERISER, not with CSS (v0.35.1). The card is drawn at its authored size and
+  // html2canvas renders it at `scale`, which is how it produces a crisp 750px card without anything
+  // being transformed underneath it. Scaling the DOM instead is what mangled the class-feature pages.
+  const scale = el.offsetWidth ? width / el.offsetWidth : 1;
+  const canvas = await html2canvas(el, { backgroundColor: null, logging: false, useCORS: true, scale });
   if (canvas.width === width && canvas.height === height) return canvas.toDataURL('image/png');
-  // The stage is drawn at print size, but the browser's pixel ratio decides what html2canvas hands
-  // back, so bring it to exactly 750 x 1050 rather than putting an odd size on the page.
   const out = document.createElement('canvas');
   out.width = width;
   out.height = height;

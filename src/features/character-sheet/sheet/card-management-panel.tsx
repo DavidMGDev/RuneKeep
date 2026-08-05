@@ -563,24 +563,46 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
   ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
 }) {
   const frame = useFrame();
-  const tap = useMemo(() => letBrowserScroll(Gesture.Tap().maxDuration(260).onEnd(() => runOnJS(onToggleSelect)(item.id))), [onToggleSelect, item.id]);
+  /**
+   * The callbacks, behind a ref (v0.35.1, owner).
+   *
+   * Every one of these is rebuilt by the panel as the drag runs: `onEndDrag` depends on `dragId` and
+   * `dragGroup`, which the drag SETS the moment it starts, and `onBeginDrag` depends on the selection
+   * and the decks. So the gesture object was replaced underneath a gesture that was still running,
+   * every single time. react-native-gesture-handler says not to do that; on web it showed up as a
+   * drag that let go of itself, and on Android it took the app down.
+   *
+   * This is the third time this repo has been bitten by a gesture rebuilt mid-gesture (the v0.27.3
+   * creator lock-up, the v0.35 stat wheel). The shape of the fix is the same every time: build the
+   * gesture once and let it read the current callbacks through a ref.
+   */
+  const cb = useRef({ onToggleSelect, onBeginDrag, onEndDrag, onHover, id: item.id });
+  cb.current = { onToggleSelect, onBeginDrag, onEndDrag, onHover, id: item.id };
+  const toggle = useCallback(() => cb.current.onToggleSelect(cb.current.id), []);
+  const begin = useCallback(() => cb.current.onBeginDrag(cb.current.id), []);
+  const end = useCallback((x: number, y: number) => cb.current.onEndDrag(x, y), []);
+  const hover = useCallback((x: number, y: number) => cb.current.onHover(x, y), []);
+
+  const tap = useMemo(() => letBrowserScroll(Gesture.Tap().maxDuration(260).onEnd(() => runOnJS(toggle)())), [toggle]);
   const drag = useMemo(
     () =>
       letBrowserScroll(
       Gesture.Pan()
         .activateAfterLongPress(420)
+        // A card is dragged ACROSS the panel, so leaving the tile it started on is the whole point.
+        .shouldCancelWhenOutside(false)
         .onStart((e) => {
           'worklet';
           // v0.24.0: window coords, and the ghost is drawn inside the (possibly magnified) frame.
           ghostX.value = windowToFrameX(e.absoluteX, frame);
           ghostY.value = windowToFrameY(e.absoluteY, frame);
           ghostOn.value = 1;
-          runOnJS(onBeginDrag)(item.id);
+          runOnJS(begin)();
         })
-        .onUpdate((e) => { 'worklet'; ghostX.value = windowToFrameX(e.absoluteX, frame); ghostY.value = windowToFrameY(e.absoluteY, frame); runOnJS(onHover)(e.absoluteX, e.absoluteY); })
-        .onEnd((e) => { 'worklet'; runOnJS(onEndDrag)(e.absoluteX, e.absoluteY); })
+        .onUpdate((e) => { 'worklet'; ghostX.value = windowToFrameX(e.absoluteX, frame); ghostY.value = windowToFrameY(e.absoluteY, frame); runOnJS(hover)(e.absoluteX, e.absoluteY); })
+        .onEnd((e) => { 'worklet'; runOnJS(end)(e.absoluteX, e.absoluteY); })
         .onFinalize(() => { 'worklet'; ghostOn.value = 0; })),
-    [item.id, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn, frame],
+    [begin, end, hover, ghostX, ghostY, ghostOn, frame],
   );
   const gesture = useMemo(() => Gesture.Race(drag, tap), [drag, tap]);
   return (
@@ -593,9 +615,10 @@ function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBe
           collapsable={false}
           accessibilityRole="button"
           accessibilityLabel="Card. Tap to select, hold to drag"
-          style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: selected ? 2.5 : 1, borderColor: selected ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden', opacity: dimmed ? 0.4 : 1 }}>
+          style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: selected ? 2.5 : 1, borderColor: selected ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden' }}>
           {item.live ? <LiveTile item={item} /> : item.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>}
           {selected ? <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text></View> : null}
+          {dimmed ? <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(12,15,20,0.6)' }} /> : null}
         </View>
       </View>
     </GestureDetector>

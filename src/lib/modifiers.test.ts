@@ -309,3 +309,18 @@ describe('level as a modifier (v0.35)', () => {
     expect(s.maxHp.total).toBe(9); // 6 + tier 3
   });
 });
+
+describe('Max Hope is not a modifier (v0.35.1)', () => {
+  it('ignores an effect aimed at it, however it got there', () => {
+    const s = computeSheet(ZERO, 1, [src('Old Card', [{ target: 'hopeMax', delta: 3 }, { target: 'maxHp', delta: 1 }])]);
+    expect(s.hopeMax.total).toBe(6);
+    expect(s.hopeMax.contributions).toEqual([]);
+    expect(s.maxHp.total).toBe(7); // its siblings still apply
+  });
+
+  it('leaves scars, the one thing that does change usable Hope, alone', () => {
+    const s = computeSheet(ZERO, 1, [src('Cursed', [{ target: 'scar', delta: 2 }, { target: 'hopeMax', delta: 4 }])]);
+    expect(s.scar.total).toBe(2);
+    expect(s.hopeMax.total).toBe(6);
+  });
+});

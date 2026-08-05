@@ -10,12 +10,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable } from 'react-native';
-import Svg, { Circle, Line } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { LoadingScreen } from '@/components/loading-screen';
 import { showToast } from '@/components/toast';
-import { DmRune } from '@/constants/theme';
 import { NumberKeypad } from '@/features/character-sheet/sheet/number-keypad';
 import { type CharacterFile } from '@/lib/character-file';
 import { listCharacters, saveCharacter } from '@/lib/character-store';
@@ -26,24 +24,12 @@ import { applyVitalDelta, isPresent, type Party, setGlobalEffects, setMemberVita
 import { getParty, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
 import { useDmCharacterTools } from './dm-character-tools';
+import { PartyEffectsIcon } from './dm-icons';
 import { DmModifiersPanel } from './dm-modifiers-panel';
 import { MemberPanel } from './member-panel';
 import { StatRadialProvider } from './stat-radial';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
-
-/** The party-wide modifiers button: a ring of figures with a plus. */
-function PartyEffectsGlyph() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24">
-      <Circle cx={9} cy={8} r={3.2} fill="none" stroke={DmRune.accent} strokeWidth={1.6} />
-      <Circle cx={16} cy={10} r={2.4} fill="none" stroke={DmRune.accentDim} strokeWidth={1.4} />
-      <Line x1={4} y1={19} x2={14} y2={19} stroke={DmRune.accent} strokeWidth={1.6} strokeLinecap="round" />
-      <Line x1={18} y1={16} x2={18} y2={21} stroke={DmRune.accent} strokeWidth={1.8} strokeLinecap="round" />
-      <Line x1={15.5} y1={18.5} x2={20.5} y2={18.5} stroke={DmRune.accent} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
 
 export function PartyOverviewScreen() {
   const router = useRouter();
@@ -146,7 +132,7 @@ export function PartyOverviewScreen() {
       onBack={() => router.back()}
       headerRight={
         <Pressable onPress={() => { playSfx('buttonTap'); setGlobalOpen(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Party modifiers, ${globalCount} set`}>
-          <PartyEffectsGlyph />
+          <PartyEffectsIcon />
         </Pressable>
       }>
       <FlatList

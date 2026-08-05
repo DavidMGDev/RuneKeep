@@ -30,7 +30,8 @@ export const EFFECT_GROUPS: { label: string; options: EffectOption[] }[] = [
   { label: 'Resources', options: [
     { key: 'maxHp', label: 'Max Hit Points', target: 'maxHp' },
     { key: 'stressMax', label: 'Max Stress', target: 'stressMax' },
-    { key: 'hopeMax', label: 'Max Hope', target: 'hopeMax' },
+    // v0.35.1 (owner): Max Hope is NOT a modifier. Six is six for everyone, and the only thing that
+    // ever changes it is a scar taking a slot away. The engine drops any that already exist.
     { key: 'armorScore', label: 'Armor Score', target: 'armorScore' },
   ] },
   { label: 'Damage Thresholds', options: [
@@ -485,7 +486,14 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
               </Pressable>
             </View>
             {open ? (
-              rows.length ? rows.map((r) => row(r.effect, r.index)) : <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, paddingHorizontal: 4, paddingBottom: 2 }}>Empty. Move a modifier in with the folder button, or this group is gone when you save.</Text>
+              <>
+                {rows.length ? rows.map((r) => row(r.effect, r.index)) : <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, paddingHorizontal: 4, paddingBottom: 2 }}>Empty. Add one below, move one in with the folder button, or this group is gone when you save.</Text>}
+                {/* v0.35.1 (owner): add straight INTO the open group. Adding at the bottom and then
+                    filing it with the folder button is two steps for the common case. */}
+                <Pressable onPress={() => onChange([...effects, { target: 'maxHp', delta: 1, group: name }])} accessibilityRole="button" accessibilityLabel={`Add a modifier to ${name}`} style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 5, borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+                  <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase' }}>+ Add here</Text>
+                </Pressable>
+              </>
             ) : null}
           </View>
         );

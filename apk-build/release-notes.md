@@ -1,41 +1,32 @@
-RuneKeep v0.35.0 - Printed cards that are actually cards, and a DM screen that can change a character without opening it.
+RuneKeep v0.35.1 - The two crashes, printed cards that look like cards, and the DM's card panel rebuilt.
+
+CRASHES
+
+- DRAGGING A CARD in the float menu's Cards panel no longer kills the app on Android, and no longer lets go of itself on the web. The gesture was being rebuilt while it was still running, every single time, because the panel rebuilds its handlers the moment a drag starts.
+- HOLDING A STAT on a DM screen no longer crashes. The wheel used to be built the instant you held, and taken apart again while it was still animating away; it stays up now, at nothing, and the wedges are plain shapes again instead of animated ones that were never animated.
 
 PRINTING
 
-- EVERY CARD REACHES THE PAGE. In a browser the PDF was nine empty rectangles a sheet; on a phone anything the app draws itself, a weapon, an experience, a note, a card you wrote, came out as the RuneKeep icon on a blue square. Cards that have no picture yet are drawn for the printer now, at 750 by 1050 pixels, which is a printed card at 300 DPI exactly.
-- A CLASS CARD PRINTS ALL OF ITS PAGES, in order, instead of stopping at the cover. So does anything else with more than one face.
-- ROOM TO CUT. Twice the gap between cards and a third more margin around the sheet, so a home printer stops clipping the outer column and a slightly crooked cut does not eat the next card. Cards come out a few percent under true size to keep nine on a page.
-
-THE CARD ARCHIVE
-
-- SELECT. A button beside Filters turns tapping into picking. Hold any card you have picked and the whole set shares at once: a tap, a file, or a PDF. Handing three cards to a player is one action now.
+- THE PICTURES COME OUT. On a phone every card printed as a broken-image glyph on a beige rectangle: the sheet inlines every card into one document, and now that every card is a real bitmap that document was too big for the print engine to read. Each card is re-encoded at print size, so a full page is under two megabytes and still 300 DPI.
+- APP-DRAWN CARDS LOOK LIKE THEMSELVES. In the browser they were being enlarged by stretching the page before the picture was taken, which mangled them and left most class-feature pages blank. The picture is taken at a higher resolution instead, and the card is untouched.
+- A MULTI-CARD PRINT PRINTS EVERY CARD. Only the first was ever really drawn; the rest quietly timed out and fell back to a plain proxy.
+- A PROGRESS BAR, counting card by card, with a Cancel. Back asks before it leaves, and leaving really does stop the job.
+- THE FILE HAS A NAME. "Auren 9 cards.pdf" rather than whatever the print engine felt like calling it. The browser's Save as PDF picks up the same name.
 
 THE DM'S SCREEN
 
-- MODIFIERS WITHOUT OPENING THE SHEET. Expand a character on the party sheet, or hold their name, and you can put modifiers on them from your own screen. It is the same editor the character sheet uses, so there is nothing new to learn.
-- ONE SWITCH PER MODIFIER. A checkbox on the left of each one, so a standing list of adjustments can be turned on as the fiction calls for them instead of being deleted and typed again.
-- A LEVEL MODIFIER. "Tonight you are all level 6" without levelling anyone up, and without a way back. It carries through to Proficiency, Tier, thresholds and every formula that reads your level.
-- IT ARRIVES AS A CARD. The player sees a "DM Changes" card on their sheet, so they can see what has been done to them and unequip it if they want it gone. The per-modifier switches stay yours.
-- THEIR CARDS, FROM YOUR SCREEN. A Cards button in the expanded entry shows one category at a time, and lets you add gear or write them a card without asking for their phone.
-- PARTY-WIDE MODIFIERS. The button in the top right of the party sheet puts a set of modifiers on every character at once. Players can see them and cannot change them, and they are managed in exactly one place. Allies are not characters, so they are modified individually.
-
-GROUPS
-
-- MODIFIERS FILE INTO GROUPS, the way characters file into folders: a name, a disclosure that remembers whether it was open, and a checkbox that switches everything inside. A card with eight modifiers is readable again.
-- Making a group and switching one are a DM's. Opening one, moving a modifier between them and deleting a group are anyone's, and deleting a group never deletes what was in it.
-
-IMPORTING
-
-- IT ASKS NOW. Importing a character already on the device offers to update them or make a copy, instead of silently overwriting. Updating keeps their folder and their party and clears any modifiers you had put on them, so nothing lands twice. A copy gets a numbered name and no group.
-- SEVERAL AT ONCE. Pick a table's worth of sheets in one go. A selection is always an update, and it says what it did.
-- PARTY EFFECTS CLEAR THEMSELVES once every member has handed in a new sheet, with a word about it rather than silently.
+- THE CARD PANEL IS REBUILT. It was the float menu's management grid, which was the wrong thing entirely. It is the level-up panel now: the same bordered shell, a rail of deck tabs across the top, and a real carousel you can open a card from and read. It asks which deck you want before it opens.
+- AN ADD BUTTON INSIDE EACH OPEN GROUP in the modifiers panel, so filling a group does not mean adding at the bottom and filing it afterwards.
+- DOWNED PLAYERS ARE VISIBLY DOWN: at zero hit points their portrait goes grey and dark.
+- HOLDING TO SELECT REACHES MODIFIERS. One character selected offers theirs; the whole party selected offers the party's. Any other number offers neither, because there is no such thing as the modifiers of three people.
+- "COMPLETE" IS "FINISH ENCOUNTER" now, and everything that said complete says finish.
+- MODIFIERS ARE FROZEN WITH THE FIGHT. Finishing an encounter records the modifiers everyone was under, and rolling back to that snapshot puts them back.
+- THE CARD ARCHIVE BUTTON IS AN OPEN BOOK, not a bookmark, and the party sheet sits beside it in an encounter.
+- THE PARTY SHEET'S CORNER BUTTON is a pair of sliders instead of the shape that was there before.
 
 FIXES
 
-- THE SHARE PANEL WAS BEHIND THE CARDS PANEL that raised it, so it could not be seen until you closed the panel and lost your selection.
-- THE STAT WHEEL. Holding a stat crashed the app on Android; the pointer was drawn away from the finger, so the wedge you aimed at was not the one you hit. Both fixed, and the wheel reads as one scale now: -3 at the bottom left, up and round to +3 at the top right.
-- A WHOLE-CARD IMAGE IS THE WHOLE CARD. No white plate behind it, so rounded corners are corners, and any picture is fitted to the card's own shape so a hand of them is one size.
-- THE PARTY SHEET IS ONE TAP from an encounter's options.
-- THE ADVERSARY AND ALLY LIBRARIES sort their filters into named bands like the card archive, and the chips wrap instead of hiding off the right edge.
+- MAX HOPE IS NOT A MODIFIER. Six is six; the only thing that ever changes it is a scar taking a slot away. Any card that claimed otherwise is ignored.
+- THE RESTART ENCOUNTER DIALOG had two Cancel buttons side by side.
 
 Sideload: enable Install unknown apps, then open the APK.

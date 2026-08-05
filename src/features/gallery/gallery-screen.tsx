@@ -28,8 +28,9 @@ import { type Expansion, type LibraryCard, type LibraryContentType } from '@/lib
 import { listExpansions } from '@/lib/library-store';
 import { isEnabledForCreation } from '@/lib/library';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
-import { imageForPrint, type PdfCard, shareCardsPdf } from '@/lib/card-pdf';
+import { imageForPrint, type PdfCard } from '@/lib/card-pdf';
 import { PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
+import { usePrintJob } from '@/features/share/print-job';
 import { type RkpContent } from '@/lib/rkp';
 import { useScreenDim } from '@/lib/screen-dim';
 
@@ -515,20 +516,24 @@ export function GalleryScreen() {
    * content with no portable form (the same rule the single-card hold has always followed).
    */
   /**
-   * The archive's own print path (v0.35).
+   * The archive's own print path (v0.35; watched v0.35.1).
    *
    * A catalog card is already a bitmap of the right size, so it goes straight on the page. Everything
    * else here (weapons, armour, loot, homebrew) is drawn by the app, so it is captured at print size
-   * first, exactly as the character sheet does.
+   * first, exactly as the character sheet does, and that is slow enough to deserve a progress bar.
    */
   const printRef = useRef<PrintStageHandle>(null);
+  const printJob = usePrintJob(setNotice);
   const onPrintItems = useCallback((items: GalleryItem[]) => {
-    void (async () => {
-      try {
+    printJob.run({
+      total: items.length,
+      subject: 'RuneKeep',
+      build: async (step, cancelled) => {
         const out: PdfCard[] = [];
         for (const it of items) {
+          if (cancelled()) return [];
           const base = { title: it.label, typeLabel: 'Card', body: '', color: null as string | null, art: null as string | null };
-          if (it.type === 'card') { out.push({ ...base, image: await imageForPrint(it.card.source) }); continue; }
+          if (it.type === 'card') { out.push({ ...base, image: await imageForPrint(it.card.source) }); step(); continue; }
           const node =
             it.type === 'lib' ? <LibraryForgedCard card={it.lib} />
             : it.type === 'weapon' ? <ForgedWeaponCard weapon={it.weapon} />
@@ -536,14 +541,12 @@ export function GalleryScreen() {
             : it.type === 'loot' ? <ForgedLootCard loot={it.loot} />
             : <ForgedCard title={it.def.title} kindLabel="Class" body={it.def.body} accentDeep={classColor(it.def.key).deep} Banner={it.def.Banner} classKey={it.def.key} />;
           out.push({ ...base, image: (await printRef.current?.capture(node)) ?? null });
+          step();
         }
-        if (!out.length) { setNotice('Nothing to print'); return; }
-        await shareCardsPdf(out, 'RuneKeep cards');
-      } catch {
-        setNotice('Those cards could not be printed');
-      }
-    })();
-  }, []);
+        return out;
+      },
+    });
+  }, [printJob]);
 
   const shareItems = useCallback((items: GalleryItem[]) => {
     const usable = items.filter((i) => i.type !== 'class') as Exclude<GalleryItem, { type: 'class' }>[];
@@ -739,6 +742,7 @@ export function GalleryScreen() {
         </View>
       ) : null}
       <PrintStage ref={printRef} />
+      {printJob.node}
       {nfcSend ? (
         <NfcSendModal
           content={nfcSend.content}

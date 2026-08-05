@@ -14,12 +14,14 @@
  * a ceiling, so a card that will not render costs a second and falls back to the HTML card rather than
  * hanging the print.
  *
- * On web the card is drawn at print size before it is captured. `html2canvas` rasterises what is on
- * screen at CSS resolution, so capturing the 230dp card and enlarging it to 750px would print a
- * blurred card; rendering it large in the first place does not.
+ * The card is drawn at its AUTHORED size on both platforms and enlarged by the rasteriser, not by CSS
+ * (v0.35.1). v0.35 scaled the stage with a CSS transform on web so html2canvas would see 750 real
+ * pixels; html2canvas clones the node into its own document and re-lays it out, and a scaled, clipped
+ * subtree came out mangled, with most class-feature pages drawing nothing but their background at all.
+ * `html2canvas` has a `scale` of its own for exactly this, and it renders the untransformed card.
  */
-import { forwardRef, type ReactNode, useCallback, useImperativeHandle, useRef, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { View } from 'react-native';
 
 import { FORGED_H, FORGED_W } from './forged-card';
 import { captureCard } from './print-capture';
@@ -27,7 +29,6 @@ import { captureCard } from './print-capture';
 /** 750 x 1050 is 2.5 x 3.5 inches at 300 DPI, which is what a card is. */
 export const PRINT_PX_W = 750;
 export const PRINT_PX_H = 1050;
-const WEB_SCALE = PRINT_PX_W / FORGED_W;
 
 export interface PrintStageHandle {
   /** Capture one card to a `data:` URI, or null if it could not be drawn. */
@@ -60,15 +61,24 @@ export const PrintStage = forwardRef<PrintStageHandle>(function PrintStage(_prop
     },
   }), []);
 
-  const onReady = useCallback(() => {
-    if (!pending.current) return;
+  /**
+   * Driven by the NODE changing, not by `onLayout` (v0.35.1).
+   *
+   * onLayout only fires when the layout actually changes, and every card here is the same size. React
+   * batches the "clear the stage" of one capture with the "put this card up" of the next, so from the
+   * view's point of view nothing moved: the second card and every card after it timed out, and a
+   * multi-card print produced exactly one real card. An effect on the node cannot miss.
+   */
+  useEffect(() => {
+    if (!node || !pending.current) return;
+    let live = true;
     // Double rAF lets svg + text paint; the settle after it is for raster art, which decodes
     // asynchronously after layout (the same reason the background forge holds one).
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         void (async () => {
           const resolve = pending.current;
-          if (!resolve) return;
+          if (!resolve || !live) return;
           let uri: string | null = null;
           try {
             await new Promise((r) => setTimeout(r, 300));
@@ -76,20 +86,21 @@ export const PrintStage = forwardRef<PrintStageHandle>(function PrintStage(_prop
           } catch {
             uri = null; // a card that will not rasterise falls back to the plain HTML card
           }
+          if (!live) return;
           pending.current = null;
           setNode(null);
           resolve(uri);
         })();
       }),
     );
-  }, []);
+    return () => { live = false; };
+  }, [node]);
 
   if (!node) return null;
-  const scale = Platform.OS === 'web' ? WEB_SCALE : 1;
   return (
     <View style={{ position: 'absolute', left: -4000, top: 0 }} pointerEvents="none">
-      <View ref={shotRef} collapsable={false} onLayout={onReady} style={{ width: FORGED_W * scale, height: FORGED_H * scale, overflow: 'hidden' }}>
-        <View style={{ width: FORGED_W, height: FORGED_H, transform: [{ scale }], transformOrigin: [0, 0, 0] }}>{node}</View>
+      <View ref={shotRef} collapsable={false} style={{ width: FORGED_W, height: FORGED_H, overflow: 'hidden' }}>
+        {node}
       </View>
     </View>
   );

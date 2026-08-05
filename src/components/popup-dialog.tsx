@@ -67,9 +67,14 @@ export function PopupDialog({
         <Text numberOfLines={2} style={{ color: dm ? DmRune.ivory : Rune.ivory, fontSize: scaled(19, scale), fontFamily: Display.black, letterSpacing: 1.4, textTransform: 'uppercase' }}>{title}</Text>
         {body ? <Text style={{ color: dm ? DmRune.muted : Rune.muted, fontSize: 13, fontFamily: Body.medium, lineHeight: 19, marginTop: 10 }}>{body}</Text> : null}
         {children}
+        {/* v0.35.1 (owner): a dialog whose two buttons say the SAME thing shows ONE. Some dialogs put
+            their real choices in `children` and use this row only to get out (the encounter restart
+            offered "Cancel" twice, side by side, which reads as a bug because it is one). */}
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>
-          <RuneButton label={cancelLabel} kind="ghost" height={42} dm={dm} style={{ flex: 1 }} onPress={onCancel} />
-          <RuneButton label={confirmLabel} kind={destructive ? 'primary' : 'secondary'} height={42} dm={dm} style={{ flex: 1 }} onPress={onConfirm} />
+          <RuneButton label={cancelLabel} kind={cancelLabel === confirmLabel ? 'secondary' : 'ghost'} height={42} dm={dm} style={{ flex: 1 }} onPress={onCancel} />
+          {cancelLabel === confirmLabel ? null : (
+            <RuneButton label={confirmLabel} kind={destructive ? 'primary' : 'secondary'} height={42} dm={dm} style={{ flex: 1 }} onPress={onConfirm} />
+          )}
         </View>
         </ChamferBox>
       </Pressable>
