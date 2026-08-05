@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Keyboard, type NativeSyntheticEvent, Platform, Pressable, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
 
-import { ArtGesture, type CardDraft, CharCount, ColorNameFlash, ColorOverArtDialog, PLAQUE_H, PLAQUE_TOP, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker } from '@/components/card-editor';
+import { ArtGesture, type CardDraft, CharCount, ColorNameFlash, ColorOverArtDialog, LeaveGuardDialog, PLAQUE_H, PLAQUE_TOP, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker, useBackGuard } from '@/components/card-editor';
 import { isExperienceType } from '@/features/character-sheet/card-types';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -56,6 +56,8 @@ export function QuickCardFlow({
   const [draft, setDraft] = useState<CardDraft>(() => initial ?? { title: '', text: '', imageUri: null, color: randomCardColor(), effects: [] });
   const [step, setStep] = useState<'edit' | 'confirm'>('edit');
   const [pickType, setPickType] = useState(false);
+  /** The description's measured height, so its box can grow to fit it (v0.34.8, owner). */
+  const [textH, setTextH] = useState(0);
   const titleRef = useRef<TextInput>(null);
   const textRef = useRef<TextInput>(null);
   const reduced = useReducedMotion();
@@ -101,6 +103,21 @@ export function QuickCardFlow({
     // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
     if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null })); }
   }, []);
+
+  /**
+   * Back, guarded (v0.34.8, owner).
+   *
+   * A quick card is worth keeping the moment there is a single character on it, which is the owner's
+   * rule, and a picked photo counts too: choosing it took a trip out to the gallery and back.
+   */
+  const commit = useCallback(() => onSave({ ...draft, title: draft.title.trim(), typeLabel: draft.typeLabel ?? kindLabel }), [draft, kindLabel, onSave]);
+  const dirty = draft.title.trim().length > 0 || draft.text.trim().length > 0 || !!draft.imageUri;
+  const [leaving, setLeaving] = useState(false);
+  useBackGuard(useCallback(() => {
+    if (step === 'confirm') { setStep('edit'); return; } // Back steps back through the flow first
+    if (dirty) setLeaving(true);
+    else onCancel();
+  }, [dirty, onCancel, step]));
 
   // Enter on the title goes to the body; Enter on the body goes to the confirmation. `submitBehavior`
   // is what makes that true on the multiline body, where Enter would otherwise type a newline.
@@ -219,12 +236,16 @@ export function QuickCardFlow({
               />
               <CharCount value={draft.title} max={TITLE_MAX} />
             </ChamferBox>
+            {/* v0.34.8 (owner): the box GROWS with what is in it, the way the full editor's does.
+                A fixed 92dp window meant the quick flow, which is the one used at the table, was the
+                one place you could not see the description you had just typed. */}
             {expMode ? null : (
-            <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 92, paddingHorizontal: 13, paddingVertical: 9 }}>
+            <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: 92, height: Math.max(92, textH + 18), paddingHorizontal: 13, paddingVertical: 9 }}>
               <TextInput
                 ref={textRef}
                 value={draft.text}
                 onChangeText={(text) => setDraft((d) => ({ ...d, text }))}
+                onContentSizeChange={(e) => setTextH(e.nativeEvent.contentSize.height)}
                 placeholder="What it does. Enter when you are done."
                 placeholderTextColor={Rune.muted}
                 selectionColor={Rune.goldBright}
@@ -262,13 +283,21 @@ export function QuickCardFlow({
                 // v0.25.0: quick cards are type "Card". Leaving typeLabel unset let the destination
                 // decide, so a card sent to the Arsenal came out labelled "Ability", which is a
                 // choice the player never made. Changing the type is what Advanced is for.
-                onPress={() => onSave({ ...draft, title: draft.title.trim(), typeLabel: draft.typeLabel ?? kindLabel })}
+                onPress={commit}
               />
             </View>
           </View>
         )}
       </ScrollView>
       {askColor ? <ColorOverArtDialog onConfirm={() => { setAskColor(false); applyRoll(); }} onCancel={() => setAskColor(false)} /> : null}
+      {leaving ? (
+        <LeaveGuardDialog
+          canSave={canSave}
+          onSave={() => { setLeaving(false); commit(); }}
+          onDiscard={() => { setLeaving(false); onCancel(); }}
+          onStay={() => setLeaving(false)}
+        />
+      ) : null}
       {pickType && typeGroups ? (
         <TypePicker
           groups={typeGroups}

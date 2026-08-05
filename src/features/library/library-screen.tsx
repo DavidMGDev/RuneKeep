@@ -5,6 +5,7 @@
  * creation. Sharing/import use the shared `.rkp` file format; importing a newer version of an
  * expansion you already have updates it in place.
  */
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -28,6 +29,7 @@ import {
   type LibraryCard,
   type LibraryContentType,
   type WeaponSpec,
+  expansionShareIssues,
   expansionSummary,
   incompleteSubclasses,
   isEnabledForCreation,
@@ -36,10 +38,11 @@ import {
   subclassFamilyName,
 } from '@/lib/library';
 import { formMarkdown } from '@/lib/card-form';
+import { ownImage } from '@/lib/owned-image';
 import { cardById } from '@/data/catalog';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
-import { embedCardImageForNfc } from '@/lib/image-embed';
+import { embedCardImageForNfc, embedExpansionImages } from '@/lib/image-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -349,6 +352,28 @@ export function LibraryScreen() {
     setExpansions((all) => [...(all ?? []).filter((e) => e.id !== exp.id), exp].sort((a, b) => a.name.localeCompare(b.name)));
   }, []);
 
+  /**
+   * A pack from a folder of pictures (v0.34.8, owner).
+   *
+   * Each selected image becomes its own card, rendered edge to edge, which is what the Daggerheart
+   * card creator's exports already are. They arrive untitled and generic deliberately: this is the
+   * bulk step, and the editing pass afterwards is where each one is given a name and told what it is.
+   * `expansionShareIssues` is the gate that stops a pack leaving before then.
+   */
+  const addCardsFromImages = useCallback(async (exp: Expansion) => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: true, quality: 1 });
+      if (res.canceled || !res.assets.length) return;
+      const owned = await Promise.all(res.assets.map((a) => ownImage(a.uri)));
+      const cards: LibraryCard[] = owned.map((uri) => ({ id: newId('lc'), contentType: 'generic', title: '', text: '', imageUri: uri, fullImage: true }));
+      playSfx('customCardCreate');
+      await persist({ ...exp, cards: [...exp.cards, ...cards] });
+      showToast(cards.length === 1 ? 'Added 1 image card. Name it before sharing.' : `Added ${cards.length} image cards. Name them before sharing.`, 'success');
+    } catch {
+      showToast('Those pictures could not be added.', 'error');
+    }
+  }, [persist]);
+
   const onImport = useCallback(async () => {
     try {
       const res = await importExpansionRkp();
@@ -375,6 +400,7 @@ export function LibraryScreen() {
           color: existing.color ?? null,
           effects: existing.effects ?? [],
           typeLabel: existing.typeLabel,
+          fullImage: existing.fullImage,
           // migrate legacy single-body cards into one section so editing keeps their text
           sections: existing.sections ?? (existing.text ? [{ body: existing.text }] : undefined),
         }
@@ -411,6 +437,7 @@ export function LibraryScreen() {
             ancestryEffectTrait: cfg.contentType === 'ancestry' ? cfg.ancestryEffectTrait : undefined,
             weapon: cfg.contentType === 'weapon' ? cfg.weapon : undefined,
             armor: cfg.contentType === 'armor' ? cfg.armor : undefined,
+            fullImage: d.fullImage, // v0.34.8: the card IS the picture
           };
           if (typeof editingCard.index === 'number') cards[editingCard.index] = base;
           else cards.push(base);
@@ -459,7 +486,19 @@ export function LibraryScreen() {
             {/* v0.12.0: the enable/disable button moved OUT to the hub row toggle — no in-detail button. */}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
-              <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); void exportRkp({ kind: 'expansion', payload: selected }, selected.name).catch(() => showToast('Could not share that expansion.', 'error')); }} />
+              {/* v0.34.8 (owner): saving a half-finished pack is fine, sending one is not. A card
+                  bulk-made from an image starts with no name and no type, and on the other person's
+                  phone that is a card nobody can use or file. */}
+              <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => {
+                playSfx('buttonTap');
+                const issues = expansionShareIssues(selected);
+                if (issues.length) { setMessage({ title: 'Finish these cards first', body: `${issues.slice(0, 6).join('\n')}${issues.length > 6 ? `\nand ${issues.length - 6} more.` : ''}` }); return; }
+                // v0.34.8: the pictures travel INSIDE the file. A card's imageUri is a path into
+                // this phone, so a pack shared without this arrived with every image blank.
+                void embedExpansionImages(selected)
+                  .then((packed) => exportRkp({ kind: 'expansion', payload: packed }, selected.name))
+                  .catch(() => showToast('Could not share that expansion.', 'error'));
+              }} />
             </View>
           </ChamferBox>
 
@@ -501,6 +540,10 @@ export function LibraryScreen() {
             ))
           )}
         </ScrollView>
+        {/* v0.34.8 (owner): a whole folder of finished card faces becomes a whole pack in one go, one
+            card per image. They land untitled and generic on purpose — naming and configuring them is
+            the editing pass, and the Share button will not let a pack out until that pass is done. */}
+        <RuneButton label="Add cards from images" kind="ghost" dense height={38} onPress={() => void addCardsFromImages(selected)} />
         <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
           <RuneButton label="Delete expansion" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => setConfirmDeleteExp(selected)} />
           <RuneButton label="Add card" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setChoosingType(true)} />

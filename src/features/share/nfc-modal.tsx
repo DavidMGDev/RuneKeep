@@ -31,6 +31,7 @@ import {
   SAFE_NFC_BYTES,
   startNfcSend,
 } from '@/lib/nfc';
+import { embedCardImageForFile, embedExpansionImages } from '@/lib/image-embed';
 import { canShareFiles, exportRkp, shareFileLabel } from '@/lib/library-store';
 import type { RkpContent } from '@/lib/rkp';
 import { DimScreen } from '@/lib/screen-dim';
@@ -66,13 +67,24 @@ function ExportGlyph({ tint }: { tint: string }) {
   );
 }
 
-/** Write the payload out as a `.rune`. Shared by both shapes of the send panel. */
+/**
+ * Write the payload out as a `.rune`. Shared by both shapes of the send panel.
+ *
+ * v0.34.8: the pictures go INSIDE the file first. A card's `imageUri` is a path into this phone's
+ * storage, so a card or a stack shared as a file used to land on the other device with its art blank.
+ * The tag path already compressed images in (it has to, to fit); the file path never did, even though
+ * it is the one with room for them.
+ */
 function useExport(content: RkpContent, label: string, onClose: () => void) {
   return useCallback(() => {
     playSfx('buttonTap');
     void (async () => {
       try {
-        await exportRkp(content, label);
+        const packed: RkpContent =
+          content.kind === 'card' ? { kind: 'card', payload: await embedCardImageForFile(content.payload) }
+          : content.kind === 'expansion' ? { kind: 'expansion', payload: await embedExpansionImages(content.payload) }
+          : content;
+        await exportRkp(packed, label);
         // A DOWNLOAD happens with no further ceremony, so say something happened. A share sheet, on
         // a phone or in a browser that has one, is its own confirmation and needs no toast.
         if (Platform.OS === 'web' && !canShareFiles()) showToast('Saved as a .rune file', 'success');
@@ -91,7 +103,7 @@ function useExport(content: RkpContent, label: string, onClose: () => void) {
  * something that cannot work. Saying why up front is the point: a player who was told to "tap phones"
  * and found no way to do it would reasonably assume the feature was broken.
  */
-function ExportOnlyPanel({ content, label, onClose }: { content: RkpContent; label: string; onClose: () => void }) {
+function ExportOnlyPanel({ content, label, onPdf, onClose }: { content: RkpContent; label: string; onPdf?: () => void; onClose: () => void }) {
   const doExport = useExport(content, label, onClose);
   return (
     <Shell>
@@ -103,6 +115,7 @@ function ExportOnlyPanel({ content, label, onClose }: { content: RkpContent; lab
           : 'Tapping phones together needs NFC, which is not available here. Save it as a file instead, then send it however you like. Anyone with RuneKeep can open it.'}
       </Text>
       <RuneButton label={shareFileLabel()} kind="primary" height={46} style={{ alignSelf: 'stretch' }} onPress={doExport} />
+      <PdfButton onPdf={onPdf} onClose={onClose} />
       <RuneButton label="Cancel" kind="ghost" height={40} style={{ alignSelf: 'stretch' }} onPress={onClose} />
     </Shell>
   );
@@ -110,12 +123,24 @@ function ExportOnlyPanel({ content, label, onClose }: { content: RkpContent; lab
 
 /** Emulate a tag broadcasting `content`; closes shortly after the other phone reads it. Where there
  *  is no radio, this becomes the export panel instead. */
-export function NfcSendModal({ content, label, onClose }: { content: RkpContent; label: string; onClose: () => void }) {
-  if (!nfcModulesPresent()) return <ExportOnlyPanel content={content} label={label} onClose={onClose} />;
-  return <NfcSendPanel content={content} label={label} onClose={onClose} />;
+export function NfcSendModal({ content, label, onPdf, onClose }: { content: RkpContent; label: string; onPdf?: () => void; onClose: () => void }) {
+  if (!nfcModulesPresent()) return <ExportOnlyPanel content={content} label={label} onPdf={onPdf} onClose={onClose} />;
+  return <NfcSendPanel content={content} label={label} onPdf={onPdf} onClose={onClose} />;
 }
 
-function NfcSendPanel({ content, label, onClose }: { content: RkpContent; label: string; onClose: () => void }) {
+/**
+ * The third way to hand cards over (v0.34.8, owner): onto paper.
+ *
+ * A tap and a file both need RuneKeep at the other end. A printed sheet needs a table. Offered only
+ * where the caller can actually build one (the sheet's card selection), so this panel is unchanged
+ * everywhere it cannot.
+ */
+function PdfButton({ onPdf, onClose }: { onPdf?: () => void; onClose: () => void }) {
+  if (!onPdf) return null;
+  return <RuneButton label="Share as PDF" kind="ghost" height={42} style={{ alignSelf: 'stretch' }} onPress={() => { playSfx('buttonTap'); onPdf(); onClose(); }} />;
+}
+
+function NfcSendPanel({ content, label, onPdf, onClose }: { content: RkpContent; label: string; onPdf?: () => void; onClose: () => void }) {
   const [state, setState] = useState<'starting' | 'ready' | 'sent' | 'error'>('starting');
   const [error, setError] = useState<string | null>(null);
   const handle = useRef<NfcSendHandle | null>(null);
@@ -171,6 +196,7 @@ function NfcSendPanel({ content, label, onClose }: { content: RkpContent; label:
       {/* v0.30.0: the same payload, out as a file. It is the way to share with someone who is not in
           the room, and the only thing that works once a payload is too big for a tag. */}
       {state === 'sent' ? null : <RuneButton label={shareFileLabel()} kind={tooBig ? 'primary' : 'ghost'} height={42} style={{ alignSelf: 'stretch' }} onPress={doExport} />}
+      {state === 'sent' ? null : <PdfButton onPdf={onPdf} onClose={onClose} />}
       <RuneButton label={state === 'sent' ? 'Done' : 'Cancel'} kind={state === 'sent' ? 'primary' : 'ghost'} height={42} style={{ alignSelf: 'stretch' }} onPress={onClose} />
     </Shell>
   );

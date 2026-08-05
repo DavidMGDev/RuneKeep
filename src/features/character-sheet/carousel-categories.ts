@@ -19,7 +19,8 @@ export interface CustomCategory {
   icon: string;
 }
 
-/** Canonical built-in ring order (#227: Notes sits AFTER Beastform). */
+/** Canonical built-in ring order. v0.34.8 (owner): the class decks (Beastform, Companion, Martial
+ *  Form) come LAST among the active ones, so Arsenal is one step from the deck your class gave you. */
 export const CATEGORY_ORDER: CardCategory[] = [...BUILTIN_CATEGORIES];
 
 /** Human label per built-in category (indicator + a11y). `wildshape` shows as "Beastform" (#227). */
@@ -30,7 +31,8 @@ export const CATEGORY_LABEL: Record<string, string> = {
   wildshape: 'Beastform',
   companion: 'Companion',
   martialform: 'Martial Form', // #357: Martial Artist Brawler stances + Focus
-  archive: 'Archive',
+  archive: 'Vault', // v0.34.8 (owner): "Archive" reads as somewhere things go to be forgotten
+
   favorites: 'Favorites', // v0.9.8: a special category of duplicates, gated by `hasFavorites`
 };
 

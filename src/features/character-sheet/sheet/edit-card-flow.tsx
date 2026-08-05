@@ -4,7 +4,7 @@ import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { Body, Rune } from '@/constants/theme';
-import { findEditableCard } from '@/features/cards/card-effects';
+import { contentIdOf, findEditableCard } from '@/features/cards/card-effects';
 import { type CharacterFile } from '@/lib/character-file';
 import { DimScreen } from '@/lib/screen-dim';
 
@@ -31,7 +31,8 @@ export function EditCardFlow({
   onDelete: (id: string) => void;
   onCancel: () => void;
 }) {
-  const found = findEditableCard(file, cardId);
+  // v0.34.8: a COPY opens the card it mirrors, so editing either one edits the card itself.
+  const found = findEditableCard(file, contentIdOf(cardId, file));
   if (!found) return null;
   const { card, collection } = found;
   const isExp = collection === 'experiences';
@@ -42,6 +43,7 @@ export function EditCardFlow({
     color: card.color ?? null,
     effects: card.effects ?? [],
     typeLabel: card.typeLabel,
+    fullImage: card.fullImage,
   };
   return (
     <CardEditor

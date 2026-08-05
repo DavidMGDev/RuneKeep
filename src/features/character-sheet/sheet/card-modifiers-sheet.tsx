@@ -7,6 +7,7 @@ import { RuneButton } from '@/components/rune-button';
 import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchOption, toEditableEffects } from '@/components/effects-editor';
 import { Body, Display, Rune } from '@/constants/theme';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
+import { copyRoleOf } from '@/lib/card-copies';
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
 import { type CharacterFile, numberInputFor } from '@/lib/character-file';
 
@@ -79,6 +80,8 @@ export function CardModifiersSheet({
   // v0.32.0: the number this card was given, so an `input` formula previews the figure the engine
   // is really applying rather than a 0 the player has already replaced.
   const numberInput = numberInputFor(file, cardId);
+  /** v0.34.8: whether this instance is the original card or one of its mirrors. */
+  const mirror = copyRoleOf(file, cardId);
   const [editing, setEditing] = useState(false);
   // #325: load the card's effects as EDITABLE shapes (legacy dynamics → formulas) so complex cards like
   // Bare Bones (Strength+3, per-tier thresholds) actually show + change in the editor.
@@ -111,6 +114,19 @@ export function CardModifiersSheet({
           <EffectsField effects={draft} onChange={setDraft} onRequestPick={setPick} onRequestPickVar={setPickVar} preview={previewFn} experiences={file.experiences} />
         ) : (
           <>
+            {/* v0.34.8 (owner): say which of the copies this is. They share one equip, one token board
+                and one set of modifiers, so a player toggling what looks like a spare card needs to
+                know the card in the other deck is going with it. */}
+            {mirror.role !== 'single' ? (
+              <ChamferBox chamfer={8} fill="rgba(160,124,60,0.14)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ paddingVertical: 10, paddingHorizontal: 13, gap: 3 }}>
+                <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>
+                  {mirror.role === 'original' ? 'The original' : 'A copy'}
+                </Text>
+                <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
+                  {`This card is in ${mirror.total} places. They are all the same card, so equipping, editing or marking one does it to every one of them, and the modifier counts once.`}
+                </Text>
+              </ChamferBox>
+            ) : null}
             {canEdit && onSaveEffects ? (
               <Pressable onPress={startEdit} accessibilityRole="button" accessibilityLabel="Edit modifiers" style={{ alignSelf: 'flex-end' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 6, borderWidth: 1, borderColor: Rune.goldEdge, backgroundColor: 'rgba(20,24,31,0.6)' }}>

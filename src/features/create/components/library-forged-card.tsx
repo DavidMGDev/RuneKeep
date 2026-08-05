@@ -51,6 +51,10 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
 }
 
 export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; struckIndex?: number }) {
+  // v0.34.8: the author already laid this card out somewhere else (the Daggerheart card creator), so
+  // it prints as its own face, exactly like the publisher's scans. Everything else about it — its
+  // content type, domain, effects — still works; only the drawing is the picture.
+  if (card.fullImage && card.imageUri) return <ForgedFaceCard face={card.imageUri} />;
   // v0.14.1: a shared loot/consumable travels as a reference. If this phone has the item bundled,
   // draw the REAL forged loot card (chest/flask glyph, roll row) rather than a flattened note.
   const loot = card.catalogId ? lootById(card.catalogId) : undefined;

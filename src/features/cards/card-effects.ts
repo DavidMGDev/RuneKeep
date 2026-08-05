@@ -33,12 +33,27 @@ export function catalogIdOf(id: string): string {
   return id.replace(/#\d+$/, '');
 }
 
-/** The SYNC KEY for a deck-card instance (#277): an explicit copy points to its underlying card's id;
- *  every other instance resolves to its catalog/custom id (suffix stripped). Enable state + effects are
- *  keyed by this, so all copies of one card share an equip and apply their effect ONCE. */
+/**
+ * The SYNC KEY for a deck-card instance (#277).
+ *
+ * An explicit COPY (made with Move → "copy instead of move") points at its source card, so every copy
+ * of one card shares an equip, a token board and a set of effects: they are one card shown in several
+ * places, and the effect applies ONCE.
+ *
+ * Everything else is its own key. v0.34.8 (owner): this used to strip the `#n` instance suffix, which
+ * meant two of the same potion, picked up separately, were welded together — enabling one enabled the
+ * other and only one of them counted. Two potions are two potions. The suffix is stripped again for
+ * CONTENT lookups (`catalogIdOf`), so `pot#2` still knows what it says on it.
+ */
 export function refOf(id: string, file?: CharacterFile): string {
   const copy = file?.cardCopies?.find((c) => c.id === id);
-  return copy ? copy.ref : catalogIdOf(id);
+  return copy ? copy.ref : id;
+}
+
+/** The underlying CARD a sync key names: a copy's source, or a duplicate's catalog entry. Content
+ *  (title, art, printed effects) lives here; per-instance state lives under `refOf`. */
+export function contentIdOf(id: string, file?: CharacterFile): string {
+  return catalogIdOf(refOf(id, file));
 }
 
 /** The file collections that hold player-authored, editable cards (#264 item 5). */
@@ -61,9 +76,18 @@ export function isEditableCard(id: string, file?: CharacterFile): boolean {
   return findEditableCard(file, id) != null;
 }
 
-/** The set of all editable (player-authored) card ids on a file. */
+/**
+ * The set of all editable (player-authored) card ids on a file, INCLUDING the ids of copies that
+ * point at one (v0.34.8).
+ *
+ * A copy is a second window onto the same card, so editing it has to be offered and has to reach the
+ * original. Every edit path resolves the id through `contentIdOf` first, which is what makes the two
+ * the same thing rather than two things that agree for a while.
+ */
 export function editableCardIds(file?: CharacterFile): Set<string> {
-  return new Set(customCards(file).map((c) => c.id));
+  const own = new Set(customCards(file).map((c) => c.id));
+  for (const c of file?.cardCopies ?? []) if (own.has(catalogIdOf(c.ref))) own.add(c.id);
+  return own;
 }
 
 /**
@@ -79,7 +103,7 @@ export function effectsForCardId(rawId: string, file?: CharacterFile): CardEffec
 
 /** Everything the card COULD grant, before the player's choice narrows it. */
 export function rawEffectsForCardId(rawId: string, file?: CharacterFile): CardEffect[] {
-  const id = refOf(rawId, file);
+  const id = contentIdOf(rawId, file);
   const custom = customCards(file).find((c) => c.id === id);
   if (custom?.effects?.length) return custom.effects;
   // v0.10.3: an embedded homebrew (library) card resolves its effects here — armor bakes in its score +
@@ -139,7 +163,7 @@ export function cardHasEffects(id: string, file?: CharacterFile): boolean {
  *  effects; a catalog card sends as a generic card labelled by the catalog + its resolved effects. The
  *  image is a URI reference — the caller inlines the bytes (async/platform) when it wants them to travel. */
 export function cardToLibraryCard(file: CharacterFile | undefined, id: string, makeId: (srcId: string) => string): LibraryCard {
-  const ref = refOf(id, file);
+  const ref = contentIdOf(id, file);
   const lib = libraryCardById(file, ref);
   if (lib) return { ...lib, id: makeId(id) }; // homebrew: full data survives the trip
   const authored = (findEditableCard(file, ref) ?? findEditableCard(file, id))?.card;
@@ -160,12 +184,15 @@ export function cardToLibraryCard(file: CharacterFile | undefined, id: string, m
      * card that the player chose and the receiver cannot infer.
      */
     typeLabel: authored?.typeLabel,
+    /** v0.34.8: a whole-card image travels as one. Without this the receiver got the picture back as
+     *  a card's ART, framed and captioned, which is not the card that was sent. */
+    fullImage: authored?.fullImage,
   };
 }
 
 /** A human label for a card id — used as the modifier source in the Modifiers panel. */
 export function sourceLabelForCardId(rawId: string, file?: CharacterFile): string {
-  const id = refOf(rawId, file); // a copy/duplicate shares its underlying card's label (#269/#277)
+  const id = contentIdOf(rawId, file); // a copy/duplicate shares its underlying card's label (#269/#277)
   const custom = customCards(file).find((c) => c.id === id);
   if (custom) return custom.title;
   const lib = libraryCardById(file, id);

@@ -1,6 +1,6 @@
 import { type CharacterFile, sheetBreakdown, toSheetCharacter } from '@/lib/character-file';
 import { VOID_ANCESTRIES } from '@/data/void-ancestries';
-import { cardHasEffects, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, refOf, sourceLabelForCardId } from './card-effects';
+import { cardHasEffects, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, refOf, sourceLabelForCardId } from './card-effects';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
   return {
@@ -170,11 +170,16 @@ describe('custom ancestry without an authored effect-trait (v0.13.2 #359)', () =
 });
 
 describe('card copies — synced references (#277)', () => {
-  it('refOf resolves a copy to its underlying card; others to their catalog id', () => {
+  it('refOf resolves a copy to its source; a plain duplicate is its OWN card (v0.34.8)', () => {
     const file = baseFile({ cardCopies: [{ id: 'cp-1', ref: 'wpn-greatsword' }] });
     expect(refOf('cp-1', file)).toBe('wpn-greatsword');
     expect(refOf('wpn-greatsword', file)).toBe('wpn-greatsword');
-    expect(refOf('wpn-greatsword#2', file)).toBe('wpn-greatsword');
+    // Two of the same weapon picked up separately are two weapons: their own equip, own tokens.
+    expect(refOf('wpn-greatsword#2', file)).toBe('wpn-greatsword#2');
+    // Their CONTENT still resolves to the one card they are both printed from.
+    expect(contentIdOf('wpn-greatsword#2', file)).toBe('wpn-greatsword');
+    expect(contentIdOf('cp-1', file)).toBe('wpn-greatsword');
+    expect(sourceLabelForCardId('wpn-greatsword#2', file)).toBe(sourceLabelForCardId('wpn-greatsword', file));
   });
   it('a copy resolves its effects via the underlying card', () => {
     const file = baseFile({ cardCopies: [{ id: 'cp-g', ref: 'ancestry-giant' }] });

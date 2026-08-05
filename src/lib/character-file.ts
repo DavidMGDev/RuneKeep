@@ -57,6 +57,10 @@ export interface ExperienceDef {
   /** The player-chosen card "type" shown on the plaque (#214): e.g. Note / Reminder / Story, or
    *  Item / Tool, or Ability / Skill. Cycled via the editor's type chip; falls back per category. */
   typeLabel?: string;
+  /** v0.34.8: the card IS `imageUri`, edge to edge — no art zone, no plaque, no typeset body. For
+   *  faces made somewhere else (the official Daggerheart card creator) that already have their own
+   *  layout. The title/type/effects still exist as data; they are simply not printed. */
+  fullImage?: boolean;
 }
 
 /** A player-authored card created on the sheet (#164), routed to one or both decks. */

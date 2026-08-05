@@ -103,6 +103,15 @@ export interface LibraryCard {
   /** v0.13.1 (#357): a catalog-reference card — points at a bundled CATALOG id so a receiving phone
    *  resolves the real card art/identity locally (system card scans are images, never sent as bytes). */
   catalogId?: string;
+  /**
+   * v0.34.8: the card IS `imageUri`, edge to edge, exactly like the printed scans.
+   *
+   * For faces authored somewhere else (cardcreator.daggerheart.com exports a finished PNG) where the
+   * app has nothing to lay out. Everything else about the card is unchanged: it still carries a
+   * title, a content type and whatever the author configured, because that is what makes it a domain
+   * card rather than a picture. Only the RENDERING is the image.
+   */
+  fullImage?: boolean;
 }
 
 /** The word printed under a subclass card's title, matching the official scans. */
@@ -254,7 +263,31 @@ export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
     weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,
     armor: c.armor && typeof c.armor === 'object' ? (c.armor as ArmorSpec) : undefined,
     catalogId: typeof c.catalogId === 'string' ? c.catalogId : undefined,
+    fullImage: c.fullImage === true ? true : undefined,
   };
+}
+
+/**
+ * Why an expansion is not ready to hand to someone else (v0.34.8, owner).
+ *
+ * Bulk-importing images makes cards fast, and a card made that way starts with a picture and nothing
+ * else. That is fine to keep working on and NOT fine to send: the person receiving it gets an
+ * untitled card the app cannot file, and there is no way for them to guess what it was meant to be.
+ * So saving is always allowed and sharing is gated on the author finishing the job.
+ *
+ * Configuration is checked for every card, not only the image ones, because a domain card with no
+ * domain is the same broken card whichever door it came in through.
+ */
+export function expansionShareIssues(exp: Expansion): string[] {
+  const out: string[] = [];
+  const name = (c: LibraryCard, i: number) => c.title.trim() || `Card ${i + 1}`;
+  exp.cards.forEach((c, i) => {
+    if (!c.title.trim()) out.push(`Card ${i + 1} has no name.`);
+    if (c.contentType === 'domain' && !c.domain?.trim()) out.push(`${name(c, i)} is a domain card with no domain set.`);
+    if ((c.contentType === 'subclass' || c.contentType === 'class') && !c.className?.trim()) out.push(`${name(c, i)} needs the class it belongs to.`);
+    if (c.fullImage && !c.imageUri) out.push(`${name(c, i)} is an image card with no image.`);
+  });
+  return out;
 }
 
 /** Validate + normalize a parsed object into an Expansion. Throws on anything that isn't one — the

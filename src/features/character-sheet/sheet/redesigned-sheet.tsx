@@ -23,7 +23,7 @@ import { CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identit
 import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS, classBanner } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/data/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
+import { ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
@@ -31,7 +31,9 @@ import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANC
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
-import { cardHasEffects, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
+import { cardHasEffects, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
+import { applyPromotions, resolveCopyDeletions } from '@/lib/card-copies';
+import { imageForPrint, type PdfCard, shareCardsPdf } from '@/lib/card-pdf';
 import { equipNoticeFor } from '@/data/card-notices';
 import { showToast } from '@/components/toast';
 import { NumberKeypad } from './number-keypad';
@@ -1051,30 +1053,38 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           : { key: held, id: held, node: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> };
       })
       .filter((j): j is Job => j !== null);
+    /**
+     * A card that IS one picture (v0.34.8, owner).
+     *
+     * Cards exported from cardcreator.daggerheart.com arrive finished, so there is nothing to lay
+     * out on top of them. `null` means this card is not one of those and forges normally.
+     */
+    const faceOf = (it: { imageUri?: string | null; fullImage?: boolean }) =>
+      it.fullImage && it.imageUri ? <ForgedFaceCard face={it.imageUri} /> : null;
     const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
       // v0.34.3: a custom item's TYPE is the player's to set, and it was neither drawn nor part of the
       // cache key, so changing it repainted nothing and the old bitmap stayed.
-      key: `itm-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel)}`,
+      key: `itm-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.fullImage ? 'face' : '')}`,
       id: it.id,
-      node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? 'Item'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
+      node: faceOf(it) ?? <ForgedCard title={it.title} kindLabel={it.typeLabel ?? 'Item'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
       art: it.imageUri ?? undefined,
     }));
     const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
     // Player-authored cards (#164) → routed to the inventory and/or arsenal deck by `target`.
     const customCardJobs: CustomJob[] = (file.customCards ?? []).map((it) => ({
-      key: `cc-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.target)}`,
+      key: `cc-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.target, it.fullImage ? 'face' : '')}`,
       id: it.id,
-      node: <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
+      node: faceOf(it) ?? <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
       art: it.imageUri ?? undefined,
       target: it.target,
     }));
     // Notes (#214): freeform note cards, their own category (every class). Optional title → 'Note'.
     const notesJobs: Job[] = (file.notes ?? []).map((it) => ({
-      key: `note-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel)}`,
+      key: `note-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.fullImage ? 'face' : '')}`,
       id: it.id,
-      node: <ForgedCard title={it.title ?? ''} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
+      node: faceOf(it) ?? <ForgedCard title={it.title ?? ''} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
       raster: !!it.imageUri,
       art: it.imageUri ?? undefined,
     }));
@@ -1094,7 +1104,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return {
         // v0.34.3: `typeLabel` rides the key too. It is printed on the plaque, so a card that arrives
         // with one (or is given one) has to re-forge like any other content change.
-        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel)}`,
+        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel, lc.fullImage ? 'face' : '')}`,
         id: lc.id,
         node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
@@ -1433,8 +1443,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Card copies (#277): extra instances of an existing card, built from a template primary so they
     // render identically. Own id (position/tokens), shared ref (enable + effects apply once). Routed by
     // their own category override, defaulting to the source card's category. Beastform can't be copied.
+    // v0.34.8: keyed by the instance's own SYNC KEY, not by its catalog id. A copy points at one
+    // specific instance now (`pot`, not "whichever potion"), so looking the template up by catalog id
+    // would hand a copy of the second potion the first one's card.
     const templateByRef = new Map<string, { item: CardItem; cat: string }>();
-    for (const f of flat) { const r = catalogIdOf(f.item.id); if (!templateByRef.has(r)) templateByRef.set(r, { item: f.item, cat: f.cat }); }
+    for (let i = 0; i < flat.length; i++) {
+      const r = instanceIds[i];
+      if (!templateByRef.has(r)) templateByRef.set(r, { item: flat[i].item, cat: flat[i].cat });
+    }
     for (const copy of file.cardCopies ?? []) {
       if (removed.has(copy.id) || isWildshapeId(copy.ref) || isMartialStanceId(copy.ref) || copy.ref === MARTIAL_FOCUS_CARD_ID) continue; // #279/#357: special decks can't be copied
       const t = templateByRef.get(copy.ref);
@@ -1461,7 +1477,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       companion: { label: 'Companion', builtin: true },
       martialform: { label: 'Martial Form', builtin: true }, // #357: Martial Artist Brawler
       notes: { label: 'Notes', builtin: true },
-      archive: { label: 'Archive', builtin: true },
+      archive: { label: 'Vault', builtin: true }, // v0.34.8 (owner): renamed from Archive
       favorites: { label: 'Favorites', icon: 'star', builtin: true }, // v0.9.8: special, un-deletable; star glyph
     };
     for (const c of customCats) categoryMeta[c.id] = { label: c.label, icon: c.icon, builtin: false };
@@ -1473,7 +1489,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [deckFile, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
-  const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null); // v0.10.1 NFC tap-to-share
+  const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; ids: string[] } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
   const [leaveConfirm, setLeaveConfirm] = useState(false);
@@ -1613,6 +1629,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       color: draft.color,
       effects: draft.effects,
       typeLabel: draft.typeLabel,
+      fullImage: draft.fullImage, // v0.34.8: a card that IS its picture
     };
     playSfx('customCardCreate'); // #255: the card is created + added
     setFile((f) => {
@@ -1874,14 +1891,26 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       ids = rawIds.filter((id) => id !== keep);
     }
     if (ids.length === 0) return;
+    /**
+     * Copies first (v0.34.8, owner). An original with a copy left standing is not deleted at all: the
+     * card survives and moves into that copy's slot, and the copy is what disappears. Only the last
+     * instance of a card is a real delete, so a card can never leave a copy behind with nothing to
+     * render, and can never reach the trash while it is still on screen somewhere.
+     */
+    const promo = resolveCopyDeletions(file, ids);
+    ids = [...promo.deleteIds, ...promo.consumedCopyIds];
+    if (ids.length === 0 && promo.promotedRefs.length === 0) return;
     const del = new Set(ids);
     // v0.9.8: cascade — deleting the last real (non-favorite) source of a card also removes its
     // favorite duplicate(s), so the Favorites category never shows dead cards.
     const deckCardsAll = Object.values(carouselDecks ?? {}).flat();
     for (const fid of orphanedFavoriteIds(file, deckCardsAll, del)) del.add(fid);
-    const cardCategory = { ...(file.cardCategory ?? {}) };
+    const promoted = applyPromotions(file, promo.promotedRefs, promo.consumedCopyIds);
+    const cardCategory = { ...promoted.cardCategory };
+    const cardOrder = { ...promoted.cardOrder };
     const cardTokens = { ...(file.cardTokens ?? {}) };
     for (const id of del) { delete cardCategory[id]; delete cardTokens[id]; }
+    for (const k of Object.keys(cardOrder)) cardOrder[k] = cardOrder[k].filter((x) => !del.has(x));
     // #269 duplicate-aware: an instance id may be a suffixed copy. For an ACQUIRED catalog card, drop
     // exactly ONE matching copy from the multiset (not every copy); cards with no acquired entry
     // (equipped weapon/armor, domain, origin) are hidden by their instance id via removedCardIds.
@@ -1916,6 +1945,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       enabledCardIds: (file.enabledCardIds ?? []).filter((r) => remainingRefs.has(r)),
       removedCardIds: [...new Set([...(file.removedCardIds ?? []), ...hide])],
       cardCategory,
+      cardOrder,
       cardTokens,
     };
     commitFile(next);
@@ -1978,7 +2008,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // v0.23.0: compress the art down until it fits the tag rather than dropping it, which is what
       // the old sync inliner did for any photo over the budget.
       void embedCardImageForNfc(cardToLibraryCard(file, ids[0], makeId)).then((card) => {
-        setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' });
+        setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card', ids });
       });
       return;
     }
@@ -1992,8 +2022,44 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       createdAt: new Date().toISOString(),
       cards,
     };
-    setNfcSend({ content: { kind: 'expansion', payload: exp }, label: `${cards.length} cards` });
+    setNfcSend({ content: { kind: 'expansion', payload: exp }, label: `${cards.length} cards`, ids });
   }, [file]);
+  /**
+   * The selected cards, onto paper (v0.34.8, owner).
+   *
+   * A forged card is a 750 x 1050 bitmap and a printed card at 300 DPI is 750 x 1050 pixels, so the
+   * bitmap goes on the page at its exact density with nothing to upscale. Where there is no bitmap —
+   * a browser forges nothing, and a card can still be mid-forge on a phone — the card is laid out in
+   * the print document instead, from the same title, type and text it draws from on screen.
+   */
+  const onPrintCards = useCallback((ids: string[]) => {
+    const byId = new Map(Object.values(carouselDecks ?? {}).flat().map((c) => [c.id, c]));
+    void (async () => {
+      try {
+        const cards: PdfCard[] = [];
+        for (const id of ids) {
+          const item = byId.get(id);
+          const authored = findEditableCard(file ?? undefined, contentIdOf(id, file ?? undefined))?.card;
+          const lib = file ? libraryCardById(file, contentIdOf(id, file)) : undefined;
+          // A whole-card image prints from the ORIGINAL file rather than the forged bitmap: the forge
+          // captures it at 750x1050 whatever size it came in at, and printing an upscale of a picture
+          // we still have is a worse page and a much bigger document.
+          const own = (authored?.fullImage && authored.imageUri) || (lib?.fullImage && lib.imageUri) || null;
+          cards.push({
+            image: own ? await imageForPrint({ uri: own }) : await imageForPrint(item?.source),
+            title: sourceLabelForCardId(id, file ?? undefined),
+            typeLabel: authored?.typeLabel ?? lib?.typeLabel ?? 'Card',
+            body: authored?.text ?? lib?.text ?? '',
+            color: authored?.color ?? lib?.color ?? null,
+            art: authored?.imageUri ?? lib?.imageUri ?? null,
+          });
+        }
+        await shareCardsPdf(cards, `${file?.name || 'RuneKeep'} cards`);
+      } catch {
+        pushNotice('Those cards could not be printed');
+      }
+    })();
+  }, [carouselDecks, file, pushNotice]);
   // Favorite selected cards (v0.9.8): add a favorite DUPLICATE for each eligible source. Skips cards that
   // are already a favorite copy or already favorited. Un-favoriting is just deleting the copy in Favorites.
   const onFavoriteCards = useCallback((ids: string[]) => {
@@ -2074,9 +2140,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [file?.mixedAncestry]);
   // Save edits to a player-authored card in place, preserving its id + collection (and a custom card's
   // `target`). commitFile re-derives the sheet so effect edits take immediate effect.
-  const onSaveEditedCard = useCallback((id: string, draft: CardDraft) => {
+  const onSaveEditedCard = useCallback((rawId: string, draft: CardDraft) => {
     if (!file) return;
-    const patch = { title: draft.title, text: draft.text, imageUri: draft.imageUri, color: draft.color, effects: draft.effects, typeLabel: draft.typeLabel };
+    // v0.34.8: editing a COPY edits the card it mirrors, so every copy updates together. That is what
+    // makes a copy a window onto one card rather than a snapshot that drifts.
+    const id = contentIdOf(rawId, file);
+    const patch = { title: draft.title, text: draft.text, imageUri: draft.imageUri, color: draft.color, effects: draft.effects, typeLabel: draft.typeLabel, fullImage: draft.fullImage };
     commitFile({
       ...file,
       customCards: file.customCards?.map((c) => (c.id === id ? { ...c, ...patch } : c)),
@@ -2092,8 +2161,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [onDeleteCards]);
   // Save effects edited in the Modifiers panel (#278): a custom card updates its OWN effects; a catalog
   // card writes a per-card override (keyed by catalog id, so all copies share). Re-derives the sheet.
-  const onEditCardEffects = useCallback((id: string, effects: CardEffect[]) => {
+  const onEditCardEffects = useCallback((rawId: string, effects: CardEffect[]) => {
     if (!file) return;
+    const id = contentIdOf(rawId, file); // a copy edits the card it mirrors (v0.34.8)
     if (findEditableCard(file, id)) {
       commitFile({
         ...file,
@@ -2753,18 +2823,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* v0.12.1 item 10: the radial-menu pop-ups fade in (they used to POP). */}
             {moveReq ? (
               <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
-                {restoreAsk ? (
-                  <CardDestination
-                    title="Where does it go back?"
-                    cardTitle={restoreAsk.title}
-                    categories={moveTargets}
-                    customCategories={customCategories}
-                    suggested={undefined}
-                    cancelLabel="Not now"
-                    onPick={(key) => { const r = restoreAsk; setRestoreAsk(null); doRestore(r.id, key); }}
-                    onCancel={() => setRestoreAsk(null)}
-                  />
-                ) : null}
                 <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onCopy={(key) => { onDuplicateCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
               </Animated.View>
             ) : null}
@@ -2799,7 +2857,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 onClose={() => setNumberCardId(null)}
               />
             ) : null}
-            {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
+            {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onPdf={() => onPrintCards(nfcSend.ids)} onClose={() => setNfcSend(null)} /> : null}
             {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}
             {/* v0.25.0: the card asks its question before it can be equipped. Answering stores the
                 pick and equips in one step, so the tap the player made is the tap that happens. */}
@@ -2878,6 +2936,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onDeleteType={onDeleteCardType}
               onEditCard={(id) => { setFloatKind(null); setEditCardId(id); }}
               onDuplicate={onDuplicateCards}
+              onShare={onSendNfc}
               onFavorite={onFavoriteCards}
               editableIds={editableIds}
               onClose={() => setFloatKind(null)}
@@ -2886,6 +2945,27 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} companion={companionOf(file)} companionPicks={companionPicksPerLevel(file)} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
+          ) : null}
+          {/**
+            * Where a restored card goes back (v0.34.8, owner).
+            *
+            * This prompt used to be nested INSIDE the move sheet's block, so it only rendered while a
+            * card move happened to be in progress. Pressing Restore in the trash therefore did nothing
+            * at all: no dialog, no card back, no notice, and the entry stayed in the list because the
+            * card never came alive. It sits with the panel that raises it now, so it is drawn OVER the
+            * full-screen Cards panel rather than behind it.
+            */}
+          {restoreAsk ? (
+            <CardDestination
+              title="Where does it go back?"
+              cardTitle={restoreAsk.title}
+              categories={moveTargets}
+              customCategories={customCategories}
+              suggested={undefined}
+              cancelLabel="Not now"
+              onPick={(key) => { const r = restoreAsk; setRestoreAsk(null); doRestore(r.id, key); }}
+              onCancel={() => setRestoreAsk(null)}
+            />
           ) : null}
           {/* edit a player-authored card (#264 item 5): from the gallery's Edit or the fullscreen pencil.
               From fullscreen the carousel stays mounted+fullscreen behind this editor (#276 item 4). */}

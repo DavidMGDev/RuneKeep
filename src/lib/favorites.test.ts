@@ -38,10 +38,12 @@ describe('favorites (v0.9.8)', () => {
     expect(f.cardCopies).toHaveLength(1);
   });
 
-  it('a duplicate instance counts as the same favorite (keyed by ref)', () => {
+  it('a second copy of the same card is its own card, so its own favorite (v0.34.8)', () => {
     const f = addFavorite(baseFile(), 'valor-01-1', makeId);
     expect(isFavorited(f, 'valor-01-1')).toBe(true);
-    expect(isFavorited(f, 'valor-01-1#2')).toBe(true); // positional duplicate of the same card
+    // Held twice = two cards. Starring one is not starring the other, which is what the owner
+    // asked for: identical cards are only linked when you have deliberately copied one.
+    expect(isFavorited(f, 'valor-01-1#2')).toBe(false);
     expect(isFavorited(f, 'blade-01-1')).toBe(false);
   });
 
