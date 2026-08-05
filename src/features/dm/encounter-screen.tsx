@@ -65,6 +65,7 @@ import { DmModal, NameDialog } from './dm-ui';
 import { EncounterLog } from './encounter-log';
 import { MemberPanel } from './member-panel';
 import { StatRadialProvider } from './stat-radial';
+import { useDmCharacterTools } from './dm-character-tools';
 import { useSelection } from './use-selection';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
@@ -107,6 +108,9 @@ export function EncounterScreen() {
   const [session, setSession] = useState<Session | null>(null);
   const [party, setParty] = useState<Party | null>(null);
   const [files, setFiles] = useState<Record<string, CharacterFile>>({});
+  // v0.35: the same per-character modifier + card panels the party sheet has. The hold on a member
+  // here already starts ally multi-select, so this screen reaches them through the expanded entry.
+  const tools = useDmCharacterTools(files, useCallback((next: CharacterFile) => setFiles((f) => ({ ...f, [next.id]: next })), []));
   const [library, setLibrary] = useState<SavedAdversary[]>([]);
   const [keypad, setKeypad] = useState<KeypadTarget | null>(null);
   // v0.23.0: setting a member above their maximum asks whether it is a bonus for this fight or a
@@ -419,6 +423,8 @@ export function EncounterScreen() {
               onRequestSet={(key) => (editableMembers ? setKeypad({ kind: 'member', charId: a.charId, key }) : blockedVitals())}
               onBlocked={blockedVitals}
               onLongPress={() => startAlly(a.charId)}
+              onModifiers={(edit) => tools.openModifiers(a.charId, edit)}
+              onCards={() => tools.openCards(a.charId)}
             />
           ))}
           {npcAllies.map((a) => (
@@ -525,6 +531,7 @@ export function EncounterScreen() {
         </DmModal>
       ) : null}
 
+      {tools.node}
       {confirmComplete ? <PopupDialog dm title="Complete encounter?" body="This freezes the party's current state onto the encounter as a record. The party keeps its live state for the next encounter." confirmLabel="Complete" onConfirm={complete} onCancel={() => setConfirmComplete(false)} /> : null}
       {confirmDeleteAlly ? <PopupDialog dm title="Remove these allies?" body={`${confirmDeleteAlly.size === 1 ? 'This ally' : `These ${confirmDeleteAlly.size} allies`} will be removed from this encounter. Player characters are never removed this way.`} confirmLabel="Remove" destructive onConfirm={() => { deleteNpcAllies(confirmDeleteAlly); setConfirmDeleteAlly(null); allySel.clear(); }} onCancel={() => setConfirmDeleteAlly(null)} /> : null}
       {confirmDeleteAdv ? <PopupDialog dm title="Delete selected?" body={`${confirmDeleteAdv.size} removed from this encounter.`} confirmLabel="Delete" destructive onConfirm={() => { deleteCombatants(confirmDeleteAdv); setConfirmDeleteAdv(null); advSel.clear(); }} onCancel={() => setConfirmDeleteAdv(null)} /> : null}

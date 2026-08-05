@@ -12,9 +12,12 @@ import { RuneButton } from '@/components/rune-button';
 import { classColor, classInfo } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
-import { deleteCharacter, exportCharacter, importCharacter, listCharacters, saveCharacter } from '@/lib/character-store';
+import { deleteCharacter, exportCharacter, listCharacters, pickCharacterFiles, saveCharacter } from '@/lib/character-store';
 import { seedOfficialExpansions } from '@/lib/expansions';
 import { addFolder, assign, EMPTY_INDEX, type Folder, type FolderIndex, loadFolders, recolorFolder, removeFolder, renameFolder, saveFolders, setCollapsed as setCollapsedIn } from '@/lib/folders';
+import { asCopy, asUpdate, planImports } from '@/lib/import-characters';
+import { markMemberUpdated } from '@/lib/party';
+import { listParties, saveParty } from '@/lib/party-store';
 import { type Expansion, isEnabledForCreation } from '@/lib/library';
 import { listExpansions } from '@/lib/library-store';
 import { playSfx } from '@/lib/sfx';
@@ -118,6 +121,8 @@ export function RosterScreen() {
   const [actionsFor, setActionsFor] = useState<CharacterFile | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<CharacterFile | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  /** v0.35: an incoming character whose id is already on the roster, waiting on update-or-copy. */
+  const [collision, setCollision] = useState<CharacterFile | null>(null);
   const [movingChar, setMovingChar] = useState<CharacterFile | null>(null);
   const [folderActions, setFolderActions] = useState<Folder | null>(null);
   const [renamingFolder, setRenamingFolder] = useState<Folder | null>(null);
@@ -145,14 +150,55 @@ export function RosterScreen() {
 
   const commitIndex = useCallback((next: FolderIndex) => { setIndex(next); void saveFolders(next); }, []);
 
+  /**
+   * Record that a character's sheet has been REPLACED, everywhere it matters (v0.35, owner).
+   *
+   * A DM's per-character modifiers went with the old sheet (`asUpdate` strips them). Party-wide
+   * modifiers are the table's, not one character's, so they survive until every member has handed in
+   * a new sheet, and then they go with a word about it rather than silently.
+   */
+  const notePartyUpdate = useCallback(async (charId: string) => {
+    let cleared: string | null = null;
+    for (const p of await listParties()) {
+      const r = markMemberUpdated(p, charId);
+      if (r.party === p) continue;
+      await saveParty(r.party);
+      if (r.cleared) cleared = p.name;
+    }
+    if (cleared) showToast(`Every sheet in ${cleared} is new, so its party effects were removed`, 'success');
+  }, []);
+
+  const applyUpdate = useCallback(async (incoming: CharacterFile) => {
+    await saveCharacter(asUpdate(incoming));
+    await notePartyUpdate(incoming.id);
+  }, [notePartyUpdate]);
+
   const onImport = useCallback(async () => {
     try {
-      const imported = await importCharacter();
-      if (imported) reload();
+      const incoming = await pickCharacterFiles();
+      if (!incoming?.length) return;
+      const roster = (files ?? []).map((f) => ({ id: f.id, name: f.name }));
+      const plan = planImports(incoming, roster);
+      // ONE file that collides is the case where the answer could go either way, so it asks. A
+      // selection is a DM collecting the table's sheets, which is an update by definition.
+      if (plan.length === 1 && plan[0].collides) { setCollision(plan[0].file); return; }
+      let updated = 0;
+      for (const p of plan) {
+        if (p.collides) { await applyUpdate(p.file); updated += 1; }
+        else await saveCharacter(p.file);
+      }
+      reload();
+      const added = plan.length - updated;
+      showToast(
+        updated && added ? `${updated} updated, ${added} added`
+        : updated ? `${updated} character${updated === 1 ? '' : 's'} updated`
+        : `${added} character${added === 1 ? '' : 's'} added`,
+        'success',
+      );
     } catch (e) {
       setImportError(e instanceof Error ? e.message : 'Could not read that file');
     }
-  }, [reload]);
+  }, [reload, files, applyUpdate]);
 
   if (!files) return <LoadingScreen label="Summoning the roster" />;
 
@@ -295,6 +341,31 @@ export function RosterScreen() {
         />
       ) : null}
 
+      {collision ? (
+        <PopupDialog
+          title={`${collision.name} is already here`}
+          body="This is the same character, not a new one. Updating replaces their sheet and removes any modifiers you have put on them. A copy leaves the original alone."
+          confirmLabel="Cancel"
+          cancelLabel="Cancel"
+          onConfirm={() => setCollision(null)}
+          onCancel={() => setCollision(null)}>
+          <View style={{ marginTop: 14, gap: 10 }}>
+            <RuneButton label="Update this character" kind="primary" height={44} onPress={() => { const f = collision; setCollision(null); void applyUpdate(f).then(reload); }} />
+            <RuneButton
+              label="Make a copy"
+              kind="secondary"
+              height={44}
+              onPress={() => {
+                const f = collision;
+                setCollision(null);
+                const roster = (files ?? []).map((c) => ({ id: c.id, name: c.name }));
+                const id = `ch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+                void saveCharacter(asCopy(f, roster, id)).then(reload);
+              }}
+            />
+          </View>
+        </PopupDialog>
+      ) : null}
       {importError ? (
         <PopupDialog title="Import failed" body={importError} confirmLabel="OK" onConfirm={() => setImportError(null)} onCancel={() => setImportError(null)} />
       ) : null}

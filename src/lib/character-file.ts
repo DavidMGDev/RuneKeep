@@ -259,6 +259,14 @@ export interface CharacterFile {
    * two different numbers. Additive; absent resolves to 0.
    */
   numberInputs?: Record<string, number>;
+  /**
+   * v0.35: modifier GROUPS the player has collapsed, as `<cardRef>|<group name>` keys.
+   *
+   * Groups are open by default, so only the closed ones are listed and an absent field means every
+   * group is open, which is what every existing save means. Per card, because two cards can have a
+   * group of the same name and they are not the same group.
+   */
+  collapsedModifierGroups?: string[];
   /** Card copies (#277): extra deck instances of an existing card. Each has its own unique instance
    *  `id` (for position/category/tokens) but a `ref` to the underlying card (catalog id or custom-card
    *  id) — copies SHARE enable state + apply their effect once (enable is keyed by ref). Additive. */
