@@ -40,6 +40,24 @@ export interface Party {
   /** Enabled once populated (PRD #17) — gates the Sessions button for this party. */
   enabled: boolean;
   global: PartyGlobalState;
+  /**
+   * v0.35: modifiers the DM has put on the WHOLE party.
+   *
+   * Kept here as the source of truth, and mirrored onto each member as a read-only card (see
+   * `lib/dm-cards`) so a character sheet can show them without knowing that parties exist. Only
+   * CHARACTER members are mirrored: allies are combatant-shaped entries with their own stat model.
+   */
+  globalEffects?: import('./modifiers').CardEffect[];
+  /**
+   * v0.35 (item 10): members whose sheet has been REPLACED by an import since `globalEffects` was
+   * last set.
+   *
+   * A DM collecting fresh sheets from the table is starting again, so once every member has handed
+   * one over the party-wide modifiers are stale by definition and are dropped (with a toast, because
+   * modifiers vanishing silently is worse than modifiers that are wrong). Tracked rather than counted,
+   * so updating the same character twice does not stand in for updating someone else.
+   */
+  globalUpdated?: string[];
 }
 
 export const PARTY_SCHEMA_VERSION = 1;
@@ -128,4 +146,36 @@ export function partyIsPopulated(party: Party): boolean {
 /** Write one member's vitals into the party's global state (PRD #35: party overview / active encounter). */
 export function setMemberVitals(party: Party, charId: string, v: MemberVitals): Party {
   return { ...party, global: { ...party.global, [charId]: v } };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Party-wide modifiers (v0.35, owner)
+// ---------------------------------------------------------------------------------------------
+
+/** Replace the party's shared modifiers. Setting them starts the update tally over: these are new
+ *  modifiers, so nobody has handed in a sheet since. */
+export function setGlobalEffects(party: Party, effects: import('./modifiers').CardEffect[]): Party {
+  if (effects.length === 0) {
+    const { globalEffects: _e, globalUpdated: _u, ...rest } = party;
+    return rest;
+  }
+  return { ...party, globalEffects: effects, globalUpdated: [] };
+}
+
+/**
+ * Record that one member's sheet has been replaced by an import, and say whether that emptied the
+ * party's shared modifiers.
+ *
+ * Returns the party either way, so the caller stores one thing. `cleared` is what the toast is for:
+ * a DM who imports the last of five sheets should be told their party-wide modifiers have gone,
+ * rather than discovering it in the middle of a fight.
+ */
+export function markMemberUpdated(party: Party, charId: string): { party: Party; cleared: boolean } {
+  if (!party.globalEffects?.length || !party.memberIds.includes(charId)) return { party, cleared: false };
+  const updated = [...new Set([...(party.globalUpdated ?? []), charId])].filter((id) => party.memberIds.includes(id));
+  if (party.memberIds.every((id) => updated.includes(id))) {
+    const { globalEffects: _e, globalUpdated: _u, ...rest } = party;
+    return { party: rest, cleared: true };
+  }
+  return { party: { ...party, globalUpdated: updated }, cleared: false };
 }

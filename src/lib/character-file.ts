@@ -14,7 +14,7 @@ import { effectsForCardId, refOf, sourceLabelForCardId, unequippedPermanentSourc
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
 import { CLASS_DATA, spellcastTraitForSubclass } from '@/data/class-data';
 import { activeWildshapeName } from '@/data/wildshape-data';
-import { type BaseStats, type CardEffect, computeSheet, type Contribution, type EffectSource } from '@/lib/modifiers';
+import { type BaseStats, type CardEffect, computeSheet, type Contribution, effectiveLevel, type EffectSource } from '@/lib/modifiers';
 
 /** Daggerheart proficiency by level (#128): tier 1 = 1, tier 2 (L2-4) = 2, tier 3 (L5-7) = 3, tier 4 = 4. */
 export function proficiencyForLevel(level: number): number {
@@ -460,12 +460,21 @@ function sheetContext(file: CharacterFile): import('@/lib/modifiers').SheetConte
   return { stress: file.resources?.stress ?? 0, inputs: file.numberInputs };
 }
 
-function allEffectSources(file: CharacterFile): EffectSource[] {
+/**
+ * v0.35: the sources AND the level they are computed at, together.
+ *
+ * A `level` modifier changes how many per-level threshold bonuses there are, so the two cannot be
+ * derived independently: the level has to be resolved from the cards before the level-derived sources
+ * are built. Callers take both from here so none of them can compute the sheet at one level and the
+ * thresholds at another.
+ */
+function allEffectSources(file: CharacterFile): { sources: EffectSource[]; level: number } {
   const cards = [...enabledCardSources(file), ...unequippedPermanentSources(file)];
+  const level = effectiveLevel(file.level, cards);
   // "Armored" = some enabled card SETS a threshold (armor card, or Bare Bones). Then the level bonus is
   // +1/+1 (add-your-level on top of the set); otherwise the unarmored 1×/2× scaling applies.
   const armored = cards.some((s) => s.effects.some((e) => (e.target === 'majorThreshold' || e.target === 'severeThreshold') && e.mode === 'set'));
-  return [...levelThresholdSources(file.level, armored), ...cards];
+  return { sources: [...levelThresholdSources(level, armored), ...cards], level };
 }
 
 /**
@@ -476,6 +485,8 @@ function allEffectSources(file: CharacterFile): EffectSource[] {
 export function toSheetCharacter(file: CharacterFile): Character {
   const cls = classInfo(file.className);
   const data = CLASS_DATA[file.className];
+  // v0.35: the cards, and the level they put the character at, resolved together.
+  const { sources, level } = allEffectSources(file);
   const subclass = cardById(file.subclassCardId);
   const ancestry = cardById(file.ancestryCardId);
   const community = cardById(file.communityCardId);
@@ -505,7 +516,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     maxHp: file.maxHp ?? data.startingHp,
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
-    proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
+    proficiency: proficiencyForLevel(level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
     // #320: base thresholds are 0/0 — ALL value is per-level bonuses (levelThresholdSources), so the
     // character's level is always added to an armor/Bare-Bones `set`, and an unarmored character scales
     // 1×level / 2×level (still 1 / 2 at level 1). Nothing is baked into the base for a `set` to wipe.
@@ -513,12 +524,12 @@ export function toSheetCharacter(file: CharacterFile): Character {
     severeThreshold: 0,
     scar: 0, // v0.13.0: scars come only from enabled "Add Scar" cards
     restMoves: 0, // v0.25.0: the baseline two moves live in rest.ts; this counts only the extras
+    level: file.level, // v0.35: the character's OWN level; a `level` modifier adds to it
   };
-  const sources = allEffectSources(file);
   // v0.21.0 item 5: the Spellcast trait (from the chosen subclass) powers the `spellcast` formula variable
   // — e.g. Mage Robes' Enchanted feature adds it to the damage thresholds.
   const spellcastTrait = spellcastTraitForSubclass(subclass?.subclass);
-  const sheet = computeSheet(base, file.level, sources, spellcastTrait, sheetContext(file));
+  const sheet = computeSheet(base, level, sources, spellcastTrait, sheetContext(file));
   // v0.13.0 SCARS: each enabled scar card disables one Hope slot from the RIGHT. Flat count — freeing
   // any scar card always releases the leftmost scarred slot. Hope in play can never sit on a scarred slot.
   const scars = Math.max(0, Math.min(sheet.hopeMax.total, sheet.scar.total));
@@ -535,7 +546,8 @@ export function toSheetCharacter(file: CharacterFile): Character {
     // Wild Shape (#214): while a Beastform is enabled, the sheet shows the FORM's name so the player
     // always knows they're transformed — even when browsing other categories. file.name is unchanged.
     name: activeWildshapeName(file) ?? file.name,
-    level: file.level,
+    // v0.35: the level the sheet is computed at, so a DM's level modifier reads on the sheet too.
+    level: sheet.level.total,
     className: cls.label,
     subclass: subclass?.label.replace(/ Foundation$/, '') ?? libTitle(file.subclassCardId) ?? '',
     spellcastTrait,
@@ -571,6 +583,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
  */
 export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').SheetBreakdown {
   const data = CLASS_DATA[file.className];
+  const { sources, level } = allEffectSources(file);
   const baseTraits = file.traits ?? SAMPLE_CHARACTER.traits;
   const base: BaseStats = {
     agility: (baseTraits.agility ?? 0) + (file.traitBonuses?.agility ?? 0) + modSum(file.modifiers, 'agility'),
@@ -584,14 +597,15 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     maxHp: file.maxHp ?? data.startingHp,
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
-    proficiency: proficiencyForLevel(file.level) + (file.proficiencyBonus ?? 0),
+    proficiency: proficiencyForLevel(level) + (file.proficiencyBonus ?? 0),
     majorThreshold: 0, // #320: thresholds come entirely from per-level bonuses (see toSheetCharacter)
     severeThreshold: 0,
     scar: 0, // v0.13.0
     restMoves: 0, // v0.25.0
+    level: file.level, // v0.35
   };
   const spellcastTrait = spellcastTraitForSubclass(cardById(file.subclassCardId)?.subclass);
-  return computeSheet(base, file.level, allEffectSources(file), spellcastTrait, sheetContext(file));
+  return computeSheet(base, level, sources, spellcastTrait, sheetContext(file));
 }
 
 /** The starting bonus on a new Experience (rulebook: +2, at creation and at each tier start). */
@@ -627,7 +641,7 @@ export function experienceBreakdown(file: CharacterFile): ExperienceBreakdown[] 
     if (mod > base) contributions.push({ source: 'Level up', delta: mod - base, note: 'Experience advancements' });
     return { id: e.id, title: e.title, base, contributions, total: mod };
   });
-  for (const src of allEffectSources(file)) {
+  for (const src of allEffectSources(file).sources) {
     for (const e of src.effects) {
       if (e.target !== 'experience') continue;
       const row = e.experienceId ? rows.find((r) => r.id === e.experienceId) : rows[0];

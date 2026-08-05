@@ -6,7 +6,8 @@ import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useShared
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
-import { AppScreen, SectionLabel } from '@/components/app-screen';
+import { AppScreen } from '@/components/app-screen';
+import { FilterBand } from '@/components/filter-band';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { gridColumns, useLayout } from '@/hooks/use-layout';
@@ -399,17 +400,6 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, onOpen }: { 
  * Naming the axes lets the numbers lose their prefixes ("L1" and "Tier 1" become 1 and 1 under
  * "Level" and "Tier"), which is what makes each band fit on one line in the first place.
  */
-function FilterBand({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <View style={{ gap: 5 }}>
-      <SectionLabel style={{ fontSize: 9.5, letterSpacing: 1.6 }}>{label}</SectionLabel>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingRight: 8 }} keyboardShouldPersistTaps="handled">
-        {children}
-      </ScrollView>
-    </View>
-  );
-}
-
 export function GalleryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ kinds?: string; levels?: string; domains?: string }>();

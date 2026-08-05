@@ -4,7 +4,7 @@
  * radial (+1/+2/+3 up, −1/−2/−3 down). The wheel's origin is measured on the ICON itself so it centres
  * exactly on the glyph (item 4). When disabled (member vitals before Start) any press fires onBlocked.
  */
-import { type ReactNode, useCallback, useRef } from 'react';
+import { type ReactNode, useCallback, useMemo, useRef } from 'react';
 import { Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -36,31 +36,50 @@ export function StatPulse({
   const iconRef = useRef<View>(null);
   const color = STAT_COLOR[kind];
 
-  const onTap = useCallback(() => { if (disabled) onBlocked?.(); else onRequestSet(); }, [disabled, onBlocked, onRequestSet]);
+  /**
+   * The callbacks, behind a ref (v0.35).
+   *
+   * Every one of these arrives as a fresh arrow function on each render of the panel above (the
+   * member list rebuilds `onApply` inline), so the gesture below used to be a NEW gesture object on
+   * every render. A stat change re-renders the list, so the gesture was replaced WHILE its own hold
+   * was still running, which is the failure this codebase has already been bitten by twice (the
+   * v0.27.3 creator lock-up) and the most likely cause of the Android crash on hold. Reading through a
+   * ref lets the gesture be built once and still call the current callbacks.
+   */
+  const cb = useRef({ disabled, onApply, onRequestSet, onBlocked });
+  cb.current = { disabled, onApply, onRequestSet, onBlocked };
+
+  const onTap = useCallback(() => { const c = cb.current; if (c.disabled) c.onBlocked?.(); else c.onRequestSet(); }, []);
+  const applyLatest = useCallback((d: number) => { cb.current.onApply(d); }, []);
   const beginHold = useCallback((tx: number, ty: number) => {
+    const { disabled, onBlocked } = cb.current;
     if (disabled) { onBlocked?.(); return; }
     // Measure the ICON (not the whole row) so the wheel's origin sits exactly on the glyph (item 4).
     // The touch point rides along so the cursor starts under the thumb rather than on the glyph.
     // v0.24.0: measureInWindow and absoluteX are both WINDOW coords; the wheel is drawn inside
     // the frame, so both the anchor and the touch point come back to frame space together.
     iconRef.current?.measureInWindow((x, y, w, h) => {
-      if (w > 0) radial.open(windowToFrameX(x + w / 2, frame), windowToFrameY(y + h / 2, frame), color, onApply, { x: windowToFrameX(tx, frame), y: windowToFrameY(ty, frame) });
+      if (w > 0) radial.open(windowToFrameX(x + w / 2, frame), windowToFrameY(y + h / 2, frame), color, applyLatest, { x: windowToFrameX(tx, frame), y: windowToFrameY(ty, frame) });
     });
-  }, [disabled, onBlocked, radial, color, onApply, frame]);
+  }, [radial, color, applyLatest, frame]);
 
-  const gesture = Gesture.Exclusive(
-    Gesture.Pan()
-      .activateAfterLongPress(150)
-      .onStart((e) => { 'worklet'; runOnJS(beginHold)(e.absoluteX, e.absoluteY); })
-      .onUpdate((e) => {
-        'worklet';
-        if (radial.active.value !== 1) return;
-        radial.fingerX.value = windowToFrameX(e.absoluteX, frame);
-        radial.fingerY.value = windowToFrameY(e.absoluteY, frame);
-        radial.highlight.value = pickWedge(radial.fingerX.value - radial.anchorX.value, radial.fingerY.value - radial.anchorY.value);
-      })
-      .onFinalize(() => { 'worklet'; if (radial.active.value === 1) runOnJS(radial.commit)(); }),
-    Gesture.Tap().maxDuration(260).onEnd(() => { 'worklet'; runOnJS(onTap)(); }),
+  const gesture = useMemo(
+    () =>
+      Gesture.Exclusive(
+        Gesture.Pan()
+          .activateAfterLongPress(150)
+          .onStart((e) => { 'worklet'; runOnJS(beginHold)(e.absoluteX, e.absoluteY); })
+          .onUpdate((e) => {
+            'worklet';
+            if (radial.active.value !== 1) return;
+            radial.fingerX.value = windowToFrameX(e.absoluteX, frame);
+            radial.fingerY.value = windowToFrameY(e.absoluteY, frame);
+            radial.highlight.value = pickWedge(radial.fingerX.value - radial.anchorX.value, radial.fingerY.value - radial.anchorY.value);
+          })
+          .onFinalize(() => { 'worklet'; if (radial.active.value === 1) runOnJS(radial.commit)(); }),
+        Gesture.Tap().maxDuration(260).onEnd(() => { 'worklet'; runOnJS(onTap)(); }),
+      ),
+    [beginHold, onTap, radial, frame],
   );
 
   return (

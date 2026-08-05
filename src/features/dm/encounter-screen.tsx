@@ -513,6 +513,11 @@ export function EncounterScreen() {
             <OptionRow label="Share vitals with the party" hint="Off keeps this fight self-contained: nothing here changes the party in your other sessions." on={enc.options.globalSync} onToggle={toggleSync} />
             <OptionRow label="Mute UI sounds" hint="Silences every DM interface sound until turned back on (also toggleable from the main menu)." on={muted} onToggle={() => { setMuted((m) => { const n = !m; setUiMuted(n); if (!n) playSfx('buttonTap'); return n; }); }} />
             <View style={{ gap: 10, marginTop: 12 }}>
+              {/* v0.35 (owner): the party sheet is where party-wide modifiers live, and getting to it
+                  from a fight meant backing out through the session. */}
+              {partyRef.current ? (
+                <RuneButton label="Party sheet" kind="secondary" height={44} dm onPress={() => { const p = partyRef.current; setShowOptions(false); if (p) router.push(`/party-overview?partyId=${p.id}` as Href); }} />
+              ) : null}
               <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.</Text>
               <RuneButton label="Done" kind="ghost" height={44} dm onPress={() => setShowOptions(false)} />
             </View>

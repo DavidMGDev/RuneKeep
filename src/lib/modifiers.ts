@@ -22,6 +22,19 @@ export type EffectTarget =
   | 'proficiency'
   | 'majorThreshold'
   | 'severeThreshold'
+  /**
+   * v0.35: the character's LEVEL, which is an input to the sheet rather than one of its outputs.
+   *
+   * A DM running "tonight you are all level 6" had to level five characters up and then level them
+   * back down, which is not reversible: levelling spends advancements. As a modifier it is a number
+   * that goes away when the card does, and because it is resolved BEFORE the sheet is computed
+   * (`effectiveLevel`) it carries through to Proficiency, Tier, the per-level threshold bonuses and
+   * every `level` or `tier` formula, which is what makes it mean the same thing as a level.
+   *
+   * Only flat and per-tier shapes resolve. A formula reading the sheet cannot decide the level the
+   * sheet is computed at.
+   */
+  | 'level'
   /** v0.13.0 SCARS: a flat count, one per enabled "Add Scar" card. Each scar disables the character's
    *  rightmost available Hope slot (usable hope = hopeMax − scars, floored at 0); at hopeMax scars the
    *  whole sheet desaturates. Always `{ delta: 1 }` — the editor offers no formula/count for it. */
@@ -131,6 +144,27 @@ export interface CardEffect {
    * "Overwrite" checkbox writes.
    */
   overwrite?: boolean;
+  /**
+   * v0.35: this one modifier is switched OFF, without being deleted.
+   *
+   * The card-level mute (`modifiersOffCardIds`) is all or nothing, which is right for a player: a card
+   * is equipped or it is not. A DM works the other way round, keeping a standing list of adjustments
+   * and turning individual ones on as the fiction calls for them, so the switch has to be per
+   * modifier. The two compose: a muted card contributes nothing whatever these flags say.
+   *
+   * Only a DM surface writes this. A player can expand a group and read the state; they cannot flip it.
+   */
+  off?: boolean;
+  /**
+   * v0.35: the GROUP this modifier belongs to, by name.
+   *
+   * A card with eight modifiers is a wall, so they can be filed the way characters are filed into
+   * folders: a name, no colour, expandable, and a checkbox that switches everything inside at once.
+   * By name rather than by id, because the name IS the identity here (there is no colour, no icon and
+   * no ordering to keep) and it means a group travels with a card through export, NFC and history
+   * with no second table to keep in step.
+   */
+  group?: string;
 }
 
 /** The two damage-threshold stats, modeled specially (set-or-bonus) rather than plain additive. */
@@ -179,6 +213,7 @@ export type SheetBreakdown = Record<SheetTarget, StatBreakdown>;
 
 /** Every sheet target, in sheet-reading order (traits first). */
 export const EFFECT_TARGETS: SheetTarget[] = [
+  'level',
   'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge',
   'evasion', 'armorScore', 'maxHp', 'stressMax', 'hopeMax', 'proficiency', 'majorThreshold', 'severeThreshold', 'scar', 'restMoves',
 ];
@@ -191,7 +226,7 @@ export const TARGET_LABEL: Record<EffectTarget, string> = {
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
   evasion: 'Evasion', armorScore: 'Armor Score', maxHp: 'Max Hit Points', stressMax: 'Max Stress', hopeMax: 'Max Hope',
   proficiency: 'Proficiency', majorThreshold: 'Major Threshold', severeThreshold: 'Severe Threshold', scar: 'Scar',
-  restMoves: 'Optional Rest Bonus', experience: 'Experience',
+  restMoves: 'Optional Rest Bonus', experience: 'Experience', level: 'Level',
 };
 
 /** Game caps: HP, Stress, and Armor slots can never exceed 12 (rulebook). */
@@ -207,6 +242,37 @@ export function tierForLevel(level: number): 1 | 2 | 3 | 4 {
   if (level <= 4) return 2;
   if (level <= 7) return 3;
   return 4;
+}
+
+/** Every source with its switched-off modifiers removed (v0.35). Sources left empty are dropped, so a
+ *  card whose every modifier is off contributes no row rather than an empty one. */
+export function liveSources(sources: EffectSource[]): EffectSource[] {
+  if (!sources.some((s) => s.effects.some((e) => e.off))) return sources; // the overwhelmingly common case
+  return sources.map((s) => ({ ...s, effects: s.effects.filter((e) => !e.off) })).filter((s) => s.effects.length > 0);
+}
+
+/**
+ * The level the sheet is computed AT (v0.35): the character's own level plus every live `level`
+ * modifier.
+ *
+ * Resolved before `computeSheet` rather than inside it, because level is what the computation is
+ * parameterised by: proficiency, tier, the per-level threshold bonuses and every `level`/`tier`
+ * formula all read it. Flat and per-tier shapes only, since a formula would have to read a sheet that
+ * cannot be computed until this number exists. The tier used for a per-tier level modifier is the
+ * character's REAL tier, for the same reason.
+ *
+ * Floored at 1: a character below level 1 is not a state the rest of the app has an answer for.
+ */
+export function effectiveLevel(baseLevel: number, sources: EffectSource[]): number {
+  const tier = tierForLevel(baseLevel);
+  let delta = 0;
+  for (const s of liveSources(sources)) {
+    for (const e of s.effects) {
+      if (e.target !== 'level' || e.dynamic) continue;
+      delta += flatDelta(e, tier) ?? 0;
+    }
+  }
+  return Math.max(1, baseLevel + delta);
 }
 
 /** Resolve the flat/byTier value of an effect (dynamic effects return null — handled in pass 2). */
@@ -265,6 +331,9 @@ function dynamicValue(e: CardEffect, out: SheetBreakdown, level: number, spellca
  * cards' effects. Pure + deterministic — same inputs always yield the same breakdown.
  */
 export function computeSheet(base: BaseStats, level: number, sources: EffectSource[], spellcastTrait?: TraitKey | null, ctx?: SheetContext): SheetBreakdown {
+  // v0.35: a modifier switched off individually is dropped ONCE, here, rather than in each of the four
+  // passes below, so a new pass cannot forget to check it.
+  sources = liveSources(sources);
   const tier = tierForLevel(level);
   const out = {} as SheetBreakdown;
   for (const t of EFFECT_TARGETS) out[t] = { base: base[t] ?? 0, contributions: [], total: base[t] ?? 0 };

@@ -1,8 +1,9 @@
-import { type BaseStats, type CardEffect, computeSheet, type EffectSource, STAT_CAPS, tierForLevel } from './modifiers';
+import { type BaseStats, type CardEffect, computeSheet, effectiveLevel, type EffectSource, STAT_CAPS, tierForLevel } from './modifiers';
 
 const ZERO: BaseStats = {
   agility: 0, strength: 0, finesse: 0, instinct: 0, presence: 0, knowledge: 0,
   evasion: 10, armorScore: 0, maxHp: 6, stressMax: 6, hopeMax: 6, proficiency: 1, majorThreshold: 0, severeThreshold: 0, scar: 0, restMoves: 0,
+  level: 1,
 };
 const src = (source: string, effects: CardEffect[]): EffectSource => ({ source, effects });
 
@@ -243,5 +244,68 @@ describe('stress + input variables (v0.32.0)', () => {
   it('an input formula on a source with no key resolves to nothing rather than guessing', () => {
     const s = computeSheet(ZERO, 1, [src('Anonymous', [{ target: 'evasion', dynamic: 'formula', formula: { variable: 'input' } }])], null, { inputs: { x: 9 } });
     expect(s.evasion.total).toBe(10);
+  });
+});
+
+describe('per-modifier off switch (v0.35)', () => {
+  it('drops a switched-off modifier and keeps its siblings', () => {
+    const s = computeSheet(ZERO, 1, [
+      src('DM Changes', [
+        { target: 'evasion', delta: 2 },
+        { target: 'evasion', delta: 5, off: true },
+        { target: 'maxHp', delta: 3, off: true },
+      ]),
+    ]);
+    expect(s.evasion.total).toBe(12);
+    expect(s.maxHp.total).toBe(6);
+    expect(s.evasion.contributions).toHaveLength(1);
+  });
+
+  it('leaves a card with every modifier off out of the breakdown entirely', () => {
+    const s = computeSheet(ZERO, 1, [src('Storm', [{ target: 'evasion', delta: -1, off: true }])]);
+    expect(s.evasion.contributions).toEqual([]);
+  });
+
+  it('switches off a formula and an overwrite too, not just flat amounts', () => {
+    const s = computeSheet(ZERO, 1, [
+      src('Aura', [
+        { target: 'presence', delta: 4, overwrite: true, off: true },
+        { target: 'knowledge', dynamic: 'formula', formula: { variable: 'level', multiply: 3 }, off: true },
+      ]),
+    ]);
+    expect(s.presence.total).toBe(0);
+    expect(s.knowledge.total).toBe(0);
+  });
+});
+
+describe('level as a modifier (v0.35)', () => {
+  it('raises the level the sheet is computed at', () => {
+    expect(effectiveLevel(2, [src('DM Changes', [{ target: 'level', delta: 4 }])])).toBe(6);
+  });
+
+  it('ignores a switched-off level modifier', () => {
+    expect(effectiveLevel(2, [src('DM Changes', [{ target: 'level', delta: 4, off: true }])])).toBe(2);
+  });
+
+  it('never drops a character below level 1', () => {
+    expect(effectiveLevel(2, [src('Curse', [{ target: 'level', delta: -9 }])])).toBe(1);
+  });
+
+  it('resolves a per-tier level modifier at the character\u2019s real tier', () => {
+    // Level 5 is tier 3, so the third entry applies.
+    expect(effectiveLevel(5, [src('Boon', [{ target: 'level', byTier: [1, 2, 3, 4] }])])).toBe(8);
+  });
+
+  it('ignores a formula level modifier, which cannot be resolved before the sheet exists', () => {
+    expect(effectiveLevel(3, [src('Odd', [{ target: 'level', dynamic: 'formula', formula: { variable: 'proficiency' } }])])).toBe(3);
+  });
+
+  it('shows up as a contribution on the Level row, and drives tier formulas', () => {
+    const sources = [src('DM Changes', [{ target: 'level', delta: 5 }, { target: 'maxHp', dynamic: 'formula', formula: { variable: 'tier' } }])];
+    const lvl = effectiveLevel(1, sources);
+    const s = computeSheet({ ...ZERO, level: 1 }, lvl, sources);
+    expect(s.level.total).toBe(6);
+    expect(tierForLevel(lvl)).toBe(3);
+    expect(s.maxHp.total).toBe(9); // 6 + tier 3
   });
 });
