@@ -18,7 +18,7 @@
 import { Platform } from 'react-native';
 
 import type { CharacterFile } from './character-file';
-import type { LibraryCard } from './library';
+import type { Expansion, LibraryCard } from './library';
 import { blobUriToData } from './owned-image';
 
 /** Per-image budget inside a `.rkp`. Generous: files are shared over the OS sheet, not a radio. */
@@ -154,4 +154,32 @@ export async function embedCardImageForNfc(card: LibraryCard): Promise<LibraryCa
   if (!isLocalImage(card.imageUri)) return card;
   const data = await compressToDataUri(card.imageUri, NFC_IMAGE_BUDGET);
   return { ...card, imageUri: data };
+}
+
+/**
+ * A whole expansion, with its pictures inside it (v0.34.8, owner).
+ *
+ * Exporting an expansion serialized the cards as they sit on disk, and a card's `imageUri` is a path
+ * into THIS phone's storage, so every image in a shared pack arrived as a blank card on the other
+ * device. It went unnoticed while homebrew cards were mostly text; a pack of whole-card images is
+ * nothing BUT images, so it would have arrived as a pack of nothing.
+ *
+ * The generous file budget, not the NFC one: this goes through the share sheet, where there is room
+ * for the artwork to still look like artwork.
+ */
+export async function embedCardImageForFile(card: LibraryCard): Promise<LibraryCard> {
+  if (!isLocalImage(card.imageUri)) return card;
+  const data = await compressToDataUri(card.imageUri, FILE_IMAGE_BUDGET);
+  return data ? { ...card, imageUri: data } : card;
+}
+
+export async function embedExpansionImages(exp: Expansion): Promise<Expansion> {
+  const cards = await Promise.all(
+    exp.cards.map(async (c) => {
+      if (!isLocalImage(c.imageUri)) return c;
+      const data = await compressToDataUri(c.imageUri, FILE_IMAGE_BUDGET);
+      return data ? { ...c, imageUri: data } : c;
+    }),
+  );
+  return { ...exp, cards };
 }

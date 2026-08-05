@@ -18,10 +18,19 @@ export const CARD_ASPECT = 750 / 1050; // 5:7
  */
 export type CardCategory = string;
 
-/** The immutable built-in categories (#246): always present, never deletable. `wildshape` shows only
- *  for Druids and `companion` (#311) only for Beastbound Rangers (both gated in availableCategories).
- *  `archive` (#306) is a stash that starts empty → disabled (excluded from the ring + locked off). */
-export const BUILTIN_CATEGORIES = ['abilities', 'inventory', 'wildshape', 'companion', 'martialform', 'notes', 'archive'] as const;
+/**
+ * The immutable built-in categories (#246): always present, never deletable. `wildshape` shows only
+ * for Druids and `companion` (#311) only for Beastbound Rangers (both gated in availableCategories).
+ * `archive` (#306, shown as "Vault") is a stash that starts empty → disabled (excluded from the ring
+ * and locked off).
+ *
+ * v0.34.8 (owner) puts the CLASS decks last among the active ones, so the ring for a Druid reads
+ * Arsenal, Inventory, Notes, Beastform, Vault. They used to sit in the middle, which meant stepping
+ * through every ordinary deck to reach the one that belongs to the class you are playing. Only
+ * characters with no explicit `categoryOrder` follow this; anyone who has arranged their own ring
+ * keeps it.
+ */
+export const BUILTIN_CATEGORIES = ['abilities', 'inventory', 'notes', 'wildshape', 'companion', 'martialform', 'archive'] as const;
 export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 export const isBuiltinCategory = (k: string): k is BuiltinCategory => (BUILTIN_CATEGORIES as readonly string[]).includes(k);
 

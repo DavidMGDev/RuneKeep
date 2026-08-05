@@ -27,10 +27,15 @@ export const ART_H = Math.round(FORGED_H * 0.4);
  * against this exact size, so changing the box without re-measuring would slide every strike off its
  * line.
  */
-export function ForgedFaceCard({ face }: { face: number }) {
+export function ForgedFaceCard({ face }: { face: number | string }) {
+  // v0.34.8: a URI as well as a bundled asset, so a player's own whole-card image (a
+  // cardcreator.daggerheart.com export) prints the same way the publisher's scans do. `contain` on a
+  // URI, because a face somebody else exported may not be exactly 5:7 and cropping their card is
+  // worse than a hairline of parchment at the edge.
+  const uri = typeof face === 'string';
   return (
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
-      <ExpoImage source={face} style={{ width: FORGED_W, height: FORGED_H }} contentFit="cover" cachePolicy="memory-disk" />
+      <ExpoImage source={uri ? { uri: face } : face} style={{ width: FORGED_W, height: FORGED_H }} contentFit={uri ? 'contain' : 'cover'} cachePolicy="memory-disk" />
     </View>
   );
 }

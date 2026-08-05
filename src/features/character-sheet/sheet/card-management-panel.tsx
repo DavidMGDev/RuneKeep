@@ -91,8 +91,15 @@ interface Props {
   onDeleteType: (label: string) => void;
   /** Edit the one selected card (#264 item 5) — only offered when a single editable (custom) card is selected. */
   onEditCard?: (id: string) => void;
-  /** Duplicate the selected cards (#277): each becomes an individual copy sharing the source's equip + effect. */
-  onDuplicate?: (ids: string[]) => void;
+  /**
+   * Copy the selected cards (#277): each becomes an individual mirror sharing the source's equip,
+   * tokens and effect. v0.34.8: reached through Move's "copy instead of move" checkbox, the way
+   * copying works everywhere else in the app, rather than a button of its own.
+   */
+  onDuplicate?: (ids: string[], categoryKey?: string) => void;
+  /** v0.34.8 (owner): share the selected cards, from any category at once. Same panel the card
+   *  radial's Share raises (a tag, a `.rune` file, or a printable PDF). */
+  onShare?: (ids: string[]) => void;
   /** Favorite the selected cards (v0.9.8): add a favorite duplicate of each eligible source. */
   onFavorite?: (ids: string[]) => void;
   /** Ids of player-authored (editable) cards, so the gallery knows when to offer Edit. */
@@ -199,7 +206,7 @@ function LiveTile({ item }: { item: CardItem }) {
  * LONG-PRESS to pick it up and drag it to reorder within a category or move it to another.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hasCompanion, hasMartialForm, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onFavorite, editableIds, onClose } = props;
+  const { isDruid, hasCompanion, hasMartialForm, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onShare, onFavorite, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   // v0.32.2 (owner): open on CATEGORIES. It is what the panel is mostly used for, and Cards is one
   // tap away. #297 opened on Cards; this supersedes it.
@@ -378,8 +385,12 @@ export function CardManagementPanel(props: Props) {
                   <PencilIcon color={Rune.goldText} />
                 </Pressable>
               ) : null}
-              {onDuplicate ? (
-                <RuneButton label="Duplicate" kind="secondary" dense height={38} disabled={dupIds.length === 0} onPress={() => { onDuplicate(dupIds); clearSelect(); }} />
+              {/* v0.34.8 (owner): Duplicate's slot is Share now. Copying lives on the Move sheet's
+                  checkbox, which is where copying lives everywhere else, and this panel is the only
+                  place a player can pick cards out of EVERY category at once — so it is the right
+                  place to share a set from. */}
+              {onShare ? (
+                <RuneButton label="Share" kind="secondary" dense height={38} disabled={selArr.length === 0} onPress={() => { onShare(selArr); clearSelect(); }} />
               ) : null}
               {onFavorite ? (
                 <RuneButton label="★ Favorite" kind="secondary" dense height={38} disabled={favIds.length === 0} onPress={() => { onFavorite(favIds); clearSelect(); }} />
@@ -448,7 +459,7 @@ export function CardManagementPanel(props: Props) {
       {createOpen ? <CategoryForm title="New category" onCancel={() => setCreateOpen(false)} onSave={(label, icon) => { onCreateCategory(label, icon); setCreateOpen(false); }} /> : null}
       {editing ? <CategoryForm title="Edit category" initialLabel={editing.label} initialIcon={editing.icon} onCancel={() => setEditing(null)} onSave={(label, icon) => { onUpdateCategory(editing.id, { label, icon }); setEditing(null); }} /> : null}
       {confirmDelCat ? <Confirm title={`Delete "${confirmDelCat.label}"?`} body="The category is removed; its cards return to their default category." confirmLabel="Delete" onCancel={() => setConfirmDelCat(null)} onConfirm={() => { onDeleteCategory(confirmDelCat.id); setConfirmDelCat(null); }} /> : null}
-      {moveOpen ? <MoveSheet count={selected.size} ordered={ordered} customCategories={customCategories} onMove={(key) => { onMoveCards([...selected], key); clearSelect(); setMoveOpen(false); }} onClose={() => setMoveOpen(false)} /> : null}
+      {moveOpen ? <MoveSheet count={selected.size} ordered={ordered} customCategories={customCategories} onMove={(key) => { onMoveCards([...selected], key); clearSelect(); setMoveOpen(false); }} onCopy={onDuplicate ? (key) => { onDuplicate(dupIds, key); clearSelect(); setMoveOpen(false); } : undefined} onClose={() => setMoveOpen(false)} /> : null}
       {confirmDel ? <Confirm title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setConfirmDel(false)} onConfirm={() => { onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }} /> : null}
     </>
   );

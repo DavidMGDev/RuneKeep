@@ -15,8 +15,8 @@ describe('activeRing', () => {
   it('drops a category that is hidden', () => {
     expect(activeRing({ hidden: ['notes'] })).toEqual(['abilities', 'inventory', 'archive']);
   });
-  it('adds wildshape for a druid (Notes then Archive last)', () => {
-    expect(activeRing({ isDruid: true })).toEqual(['abilities', 'inventory', 'wildshape', 'notes', 'archive']);
+  it('adds wildshape for a druid, LAST before the vault (v0.34.8)', () => {
+    expect(activeRing({ isDruid: true })).toEqual(['abilities', 'inventory', 'notes', 'wildshape', 'archive']);
   });
   it('honors multiple hidden categories', () => {
     expect(activeRing({ isDruid: true, hidden: ['notes', 'inventory', 'archive'] })).toEqual(['abilities', 'wildshape']);
@@ -27,11 +27,12 @@ describe('activeRing', () => {
 });
 
 describe('nextCategory', () => {
-  const ring = activeRing({ isDruid: true }); // [abilities, inventory, wildshape, notes, archive]
+  const ring = activeRing({ isDruid: true }); // [abilities, inventory, notes, wildshape, archive]
   it('steps forward and wraps', () => {
     expect(nextCategory(ring, 'abilities', 1)).toBe('inventory');
-    expect(nextCategory(ring, 'wildshape', 1)).toBe('notes');
-    expect(nextCategory(ring, 'notes', 1)).toBe('archive');
+    expect(nextCategory(ring, 'inventory', 1)).toBe('notes');
+    expect(nextCategory(ring, 'notes', 1)).toBe('wildshape');
+    expect(nextCategory(ring, 'wildshape', 1)).toBe('archive');
     expect(nextCategory(ring, 'archive', 1)).toBe('abilities');
   });
   it('steps backward and wraps', () => {
@@ -63,7 +64,7 @@ describe('custom categories (#246)', () => {
     expect(activeRing({ custom: CUSTOM })).toEqual(['abilities', 'inventory', 'notes', 'archive', 'cat-a', 'cat-b']);
   });
   it('availableCategories lists built-in + custom (incl. wildshape for druids)', () => {
-    expect(availableCategories({ isDruid: true, custom: CUSTOM })).toEqual(['abilities', 'inventory', 'wildshape', 'notes', 'archive', 'cat-a', 'cat-b']);
+    expect(availableCategories({ isDruid: true, custom: CUSTOM })).toEqual(['abilities', 'inventory', 'notes', 'wildshape', 'archive', 'cat-a', 'cat-b']);
   });
   it('applies an explicit order, then appends anything not listed', () => {
     expect(activeRing({ custom: CUSTOM, order: ['cat-b', 'notes'] })).toEqual(['cat-b', 'notes', 'abilities', 'inventory', 'archive', 'cat-a']);
@@ -81,18 +82,18 @@ describe('custom categories (#246)', () => {
 describe('subclass-gated categories (#311 companion)', () => {
   it('companion is hidden by default and shown only for Beastbound', () => {
     expect(activeRing({})).not.toContain('companion');
-    expect(activeRing({ hasCompanion: true })).toEqual(['abilities', 'inventory', 'companion', 'notes', 'archive']);
+    expect(activeRing({ hasCompanion: true })).toEqual(['abilities', 'inventory', 'notes', 'companion', 'archive']);
   });
   it('availableCategories includes companion only when hasCompanion', () => {
     expect(availableCategories({})).not.toContain('companion');
     expect(availableCategories({ hasCompanion: true })).toContain('companion');
   });
   it('a Druid Beastbound (multiclass) shows both wildshape and companion', () => {
-    expect(activeRing({ isDruid: true, hasCompanion: true })).toEqual(['abilities', 'inventory', 'wildshape', 'companion', 'notes', 'archive']);
+    expect(activeRing({ isDruid: true, hasCompanion: true })).toEqual(['abilities', 'inventory', 'notes', 'wildshape', 'companion', 'archive']);
   });
   it('martialform appears only for a Martial Artist (#357), after companion', () => {
     expect(availableCategories({})).not.toContain('martialform');
     expect(availableCategories({ hasMartialForm: true })).toContain('martialform');
-    expect(activeRing({ hasMartialForm: true })).toEqual(['abilities', 'inventory', 'martialform', 'notes', 'archive']);
+    expect(activeRing({ hasMartialForm: true })).toEqual(['abilities', 'inventory', 'notes', 'martialform', 'archive']);
   });
 });

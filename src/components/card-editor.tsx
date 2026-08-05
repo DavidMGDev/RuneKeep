@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ownImage } from '@/lib/owned-image';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { scrollFieldIntoView, RESERVES_KEYBOARD_SPACE } from '@/lib/web-keyboard';
-import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
+import { BackHandler, Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +14,7 @@ import { hslToHex, nearestColorName, normalizeHex, readableInk } from '@/lib/col
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
-import { ART_H, FORGED_H, FORGED_W, ForgedCard } from '@/features/create/components/forged-card';
+import { ART_H, FORGED_H, FORGED_W, ForgedCard, ForgedFaceCard } from '@/features/create/components/forged-card';
 import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
@@ -38,6 +38,9 @@ export interface CardDraft {
   /** v0.10.2: the multi-field body (library cards). When set, the body renders per-section and `text`
    *  is a composed-markdown fallback derived from these on save. */
   sections?: CardSection[];
+  /** v0.34.8: the card IS `imageUri`, edge to edge — no plaque, no typeset body. The title, type and
+   *  effects are still authored (they are what the app files the card by); they are not printed. */
+  fullImage?: boolean;
 }
 
 /**
@@ -369,6 +372,45 @@ export function ColorOverArtDialog({ onConfirm, onCancel }: { onConfirm: () => v
 }
 
 /**
+ * Android's Back, while a card is being written (v0.34.8, owner).
+ *
+ * Back is the most-pressed control on the device and the card editors are full-screen overlays with
+ * no navigation of their own, so pressing it threw a half-written card away with no warning at all.
+ * The handler is registered LAST here (the newest listener wins in React Native), which is what makes
+ * it beat the sheet's own Back handling while the editor is open.
+ */
+export function useBackGuard(handler: () => void) {
+  const ref = useRef(handler);
+  ref.current = handler;
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { ref.current(); return true; });
+    return () => sub.remove();
+  }, []);
+}
+
+/**
+ * The question Back asks (v0.34.8, owner): keep going, keep the work, or drop it.
+ *
+ * Three answers, so leaving never has to mean losing. Discard is the plain ghost in the middle rather
+ * than a button on the confirm row, because it is the one answer nobody should hit by aiming at
+ * another one. Saving is offered only when the card is actually saveable; a card with nothing on it
+ * has nothing to save, and the question is then just "drop this or keep writing".
+ */
+export function LeaveGuardDialog({ canSave, onSave, onDiscard, onStay }: { canSave: boolean; onSave: () => void; onDiscard: () => void; onStay: () => void }) {
+  return (
+    <PopupDialog
+      title={canSave ? 'Save this card?' : 'Leave this card?'}
+      body={canSave ? 'You have unsaved changes. Save them, or leave them behind.' : 'What you have written here is not kept.'}
+      confirmLabel={canSave ? 'Save and leave' : 'Keep writing'}
+      cancelLabel="Keep writing"
+      onConfirm={canSave ? onSave : onStay}
+      onCancel={onStay}>
+      <RuneButton label="Leave without saving" kind="ghost" height={40} style={{ marginTop: 18 }} onPress={onDiscard} />
+    </PopupDialog>
+  );
+}
+
+/**
  * Editor frame (#252): in-sheet (framed) the scroller lives inside a full-screen chamfered SVG border
  * with `overflow: hidden`, so the card + fields can never escape past the border / the status bar.
  * Standalone (creation) it's a plain full-screen container. Module-level so it never remounts the
@@ -457,7 +499,20 @@ export function CardEditor({
   const pickImage = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
     // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
-    if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null })); }
+    // v0.34.8: art, so this is NOT a whole-card face; picking art turns that off again.
+    if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null, fullImage: false })); }
+  }, []);
+  /**
+   * A card that IS one picture (v0.34.8, owner).
+   *
+   * The official card creator at cardcreator.daggerheart.com exports a finished PNG, and there is
+   * nothing left for this editor to lay out on top of it. So the image becomes the whole card, the
+   * way the publisher's scans are, and the title, type and modifiers carry on being data: they are
+   * how the app files the card, offers it in creation and applies what it does.
+   */
+  const pickFullImage = useCallback(async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null, fullImage: true })); }
   }, []);
   /**
    * Setting a colour, with the picture guarded (v0.34.3).
@@ -474,7 +529,7 @@ export function CardEditor({
   const [colorNonce, setColorNonce] = useState(0);
   const applyColor = useCallback((c: string) => {
     playSfx('tokenCopyColor');
-    setDraft((d) => ({ ...d, color: c === 'random' ? randomCardColor() : c, imageUri: null }));
+    setDraft((d) => ({ ...d, color: c === 'random' ? randomCardColor() : c, imageUri: null, fullImage: false }));
     setColorNonce((n) => n + 1);
   }, []);
   const setColor = useCallback(
@@ -493,7 +548,12 @@ export function CardEditor({
   // use for an experience — a long phrase, no body, no effects, a bonus pill on the preview. The type
   // chip itself stays tappable (it's gated on the prop, not this), so the choice is reversible.
   const expMode = experienceMode || (!!typeGroups?.length && isExperienceType(draft.typeLabel));
-  const canSave = expMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || (sectioned ? hasSectionContent : draft.text.trim().length > 0);
+  /** v0.34.8: the card IS the image. The plaque, the typeset body and the colour controls have
+   *  nothing to act on, so the preview and the art gesture behave differently. */
+  const faceMode = !!draft.fullImage && !!draft.imageUri;
+  const canSave = faceMode
+    ? true // the picture is the content; a name is asked for when the pack is SHARED, not when saved
+    : expMode ? draft.title.trim().length > 0 : draft.title.trim().length > 0 || (sectioned ? hasSectionContent : draft.text.trim().length > 0);
   /**
    * v0.30.0: keep the form-written section in step with the form.
    *
@@ -528,6 +588,35 @@ export function CardEditor({
     if (handEdited.current) { setAskRewrite(generatedBody); return; }
     setDraft((d) => ({ ...d, sections: withGenerated(d.sections, generatedBody) }));
   }, [generatedBody, draft.sections]);
+
+  /**
+   * Has anything on this card been changed (v0.34.8, owner)?
+   *
+   * Field by field rather than a snapshot comparison, because a new card is not blank when it opens:
+   * it has a random colour, a default type, and (for library cards) a details block written by the
+   * form in an effect after mount. None of those are the player's edits, and a whole-object diff
+   * counts all three, so every fresh editor would ask on the way out.
+   *
+   * `colorNonce` is the colour's answer: it counts an APPLIED colour, which is the only kind the
+   * player chose, and leaves the one the editor rolled for itself out of it.
+   */
+  const base = useRef<CardDraft>(initial ?? { title: '', text: '', imageUri: null, color: null, effects: [] });
+  const authoredRows = (s?: CardSection[]) => JSON.stringify((s ?? []).filter((r) => !r.generated));
+  const dirty =
+    draft.title !== base.current.title ||
+    draft.text !== base.current.text ||
+    draft.imageUri !== base.current.imageUri ||
+    !!draft.fullImage !== !!base.current.fullImage ||
+    draft.typeLabel !== base.current.typeLabel ||
+    colorNonce > 0 ||
+    JSON.stringify(draft.effects) !== JSON.stringify(base.current.effects) ||
+    authoredRows(draft.sections) !== authoredRows(base.current.sections);
+  const [leaving, setLeaving] = useState(false);
+  const commit = useCallback(
+    () => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text }),
+    [draft, onSave, sectioned],
+  );
+  useBackGuard(useCallback(() => { if (dirty) setLeaving(true); else onCancel(); }, [dirty, onCancel]));
 
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
@@ -624,8 +713,12 @@ export function CardEditor({
         <Animated.View style={[{ transformOrigin: 'top center' }, previewStyle]}>
           {/* v0.34.3: the art is the same tap-and-hold control the quick flow has. The labelled
               buttons below stay: this is the advanced editor, and it should have both. */}
-          <ArtGesture onTap={rollColor} onHold={pickImage} reduced={reduced}>
-            {expMode ? (
+          <ArtGesture onTap={faceMode ? pickFullImage : rollColor} onHold={faceMode ? pickFullImage : pickImage} reduced={reduced}>
+            {faceMode ? (
+              // The whole card is the picture. Tapping it swaps the picture, because there is nothing
+              // else on it to change.
+              <ForgedFaceCard face={draft.imageUri!} />
+            ) : expMode ? (
               <ForgedCard title={draft.title.trim() || 'Experience'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
             ) : (
               // #318: no "Untitled" — an empty title previews as a titleless card (the body fills the space).
@@ -635,7 +728,7 @@ export function CardEditor({
                 transparent hit-band over the divider seam (~40% down), so the player taps the chip on
                 the card itself. Only when type options are supplied (New Card), not experiences. */}
             <ColorNameFlash color={draft.imageUri ? null : draft.color} nonce={colorNonce} />
-            {typeGroups?.length && !experienceMode ? (
+            {typeGroups?.length && !experienceMode && !faceMode ? (
               <Pressable
                 onPress={() => setPickType(true)}
                 accessibilityRole="button"
@@ -646,7 +739,11 @@ export function CardEditor({
           </ArtGesture>
         </Animated.View>
         <Text style={{ marginTop: 8, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', textAlign: 'center', paddingHorizontal: 24 }}>
-          {typeGroups?.length && !experienceMode ? 'Tap the art for a new color, hold it for a picture. Tap the type to change it.' : 'Tap the art for a new color, hold it for a picture.'}
+          {faceMode
+            ? 'This card is the picture. Tap it to choose another one.'
+            : typeGroups?.length && !experienceMode
+              ? 'Tap the art for a new color, hold it for a picture. Tap the type to change it.'
+              : 'Tap the art for a new color, hold it for a picture.'}
         </Text>
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
@@ -657,6 +754,18 @@ export function CardEditor({
             {/* v0.34.3: the same swatch grid the moodboard uses, for a colour you actually chose. */}
             <RuneButton label="Colors" kind="ghost" dense height={36} style={{ flex: 0.8 }} onPress={() => setPickColor(true)} />
           </View>
+          {/* v0.34.8 (owner): a card that is nothing but a finished picture, for faces exported from
+              the Daggerheart card creator. The name and type below still apply; they stop being
+              printed, because the picture already says them. */}
+          {experienceMode ? null : (
+            <RuneButton
+              label={faceMode ? 'Back to a RuneKeep card' : 'Use a whole card image'}
+              kind="ghost"
+              dense
+              height={36}
+              onPress={faceMode ? () => setDraft((d) => ({ ...d, fullImage: false })) : pickFullImage}
+            />
+          )}
           <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: expMode ? 80 : 46, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: expMode ? 9 : 0 }}>
             <TextInput
               value={draft.title}
@@ -700,7 +809,7 @@ export function CardEditor({
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
-            <RuneButton label={saveLabel} kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={() => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text })} />
+            <RuneButton label={saveLabel} kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={commit} />
           </View>
           <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>Same format as every RuneKeep card.</Text>
         </View>
@@ -762,6 +871,14 @@ export function CardEditor({
         />
       ) : null}
       {askColor ? <ColorOverArtDialog onConfirm={() => { const c = askColor; setAskColor(null); applyColor(c); }} onCancel={() => setAskColor(null)} /> : null}
+      {leaving ? (
+        <LeaveGuardDialog
+          canSave={canSave}
+          onSave={() => { setLeaving(false); commit(); }}
+          onDiscard={() => { setLeaving(false); onCancel(); }}
+          onStay={() => setLeaving(false)}
+        />
+      ) : null}
     </View>
   );
 }
