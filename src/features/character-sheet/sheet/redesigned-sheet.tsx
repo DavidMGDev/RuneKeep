@@ -74,6 +74,7 @@ import { useKeyboardControl } from './use-keyboard-control';
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
 import { PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
+import { usePrintJob } from '@/features/share/print-job';
 import { Art } from '../art';
 import { armorTrackLayout, chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
 import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
@@ -2026,7 +2027,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setNfcSend({ content: { kind: 'expansion', payload: exp }, label: `${cards.length} cards`, ids });
   }, [file]);
   /**
-   * The selected cards, onto paper (v0.34.8; rebuilt v0.35).
+   * The selected cards, onto paper (v0.34.8; rebuilt v0.35, watched v0.35.1).
    *
    * Every card on the page is a 750 x 1050 bitmap, which is a printed card at 300 DPI exactly. Where
    * the carousel already has one, it goes straight on the page. Where it does not, the card is
@@ -2035,14 +2036,20 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    *
    * A multi-page card contributes one printed card PER FACE, in order, so a class card's features
    * reach the table instead of stopping at its cover.
+   *
+   * v0.35.1: it runs inside a print JOB, so the wait has a card-by-card count and a way out.
    */
   const printRef = useRef<PrintStageHandle>(null);
+  const printJob = usePrintJob(pushNotice);
   const onPrintCards = useCallback((ids: string[]) => {
     const byId = new Map(Object.values(carouselDecks ?? {}).flat().map((c) => [c.id, c]));
-    void (async () => {
-      try {
+    printJob.run({
+      total: ids.length,
+      subject: file?.name || 'RuneKeep',
+      build: async (step, cancelled) => {
         const cards: PdfCard[] = [];
         for (const id of ids) {
+          if (cancelled()) return [];
           const item = byId.get(id);
           const authored = findEditableCard(file ?? undefined, contentIdOf(id, file ?? undefined))?.card;
           const lib = file ? libraryCardById(file, contentIdOf(id, file)) : undefined;
@@ -2056,19 +2063,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             color: authored?.color ?? lib?.color ?? null,
             art: authored?.imageUri ?? lib?.imageUri ?? null,
           };
-          if (own) { cards.push({ ...base, image: await imageForPrint({ uri: own }) }); continue; }
+          if (own) { cards.push({ ...base, image: await imageForPrint({ uri: own }) }); step(); continue; }
           for (const face of printFaces(item)) {
+            if (cancelled()) return [];
             const image = face.image ? await imageForPrint(face.image) : face.node ? (await printRef.current?.capture(face.node)) ?? null : null;
             cards.push({ ...base, image });
           }
+          step();
         }
-        if (!cards.length) { pushNotice('Nothing to print'); return; }
-        await shareCardsPdf(cards, `${file?.name || 'RuneKeep'} cards`);
-      } catch {
-        pushNotice('Those cards could not be printed');
-      }
-    })();
-  }, [carouselDecks, file, pushNotice]);
+        return cards;
+      },
+    });
+  }, [carouselDecks, file, printJob]);
   // Favorite selected cards (v0.9.8): add a favorite DUPLICATE for each eligible source. Skips cards that
   // are already a favorite copy or already favorited. Un-favoriting is just deleting the copy in Favorites.
   const onFavoriteCards = useCallback((ids: string[]) => {
@@ -2909,6 +2915,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* v0.35: the same capture, on demand, for a card the printer needs and the forge queue has
               not reached. Renders nothing until a print job asks for one. */}
           <PrintStage ref={printRef} />
+          {/* v0.35.1: the print job's progress, its Cancel and its back guard. */}
+          {printJob.node}
           {/* entry loader (#150): covers the whole sheet while the cards forge, then fades to reveal */}
           {loaderUp ? <RuneLoader done={sheetReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /> : null}
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still

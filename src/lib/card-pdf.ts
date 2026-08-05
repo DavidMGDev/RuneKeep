@@ -85,7 +85,19 @@ function cardHtml(c: PdfCard): string {
 
 /** The whole print document. One `.page` per nine cards; the last page is padded with blanks so the
  *  grid never reflows the final row into the middle of the sheet. */
-export function cardsPdfHtml(cards: PdfCard[]): string {
+/**
+ * What the file is called (v0.35.1, owner).
+ *
+ * Native handed the print engine's own temp name to the share sheet, and a browser's Save as PDF uses
+ * the document TITLE, which was empty, so both produced something unreadable. One name, built from
+ * what was printed, used for the file on a phone and for the `<title>` in a browser.
+ */
+export function printFileName(subject: string, cards: number): string {
+  const base = subject.replace(/[^\w \-]+/g, '').trim().slice(0, 40) || 'RuneKeep';
+  return `${base} ${cards} card${cards === 1 ? '' : 's'}`;
+}
+
+export function cardsPdfHtml(cards: PdfCard[], title = ''): string {
   const pages: string[] = [];
   for (let i = 0; i < Math.max(cards.length, 1); i += PER_PAGE) {
     const slice = cards.slice(i, i + PER_PAGE);
@@ -94,7 +106,7 @@ export function cardsPdfHtml(cards: PdfCard[]): string {
   }
   // `@page { margin: 0 }` plus explicit padding, so the sheet's margins are ours rather than the
   // print dialog's: a dialog default of half an inch would shrink the cards off true size.
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>
   @page { size: letter; margin: 0; }
   * { box-sizing: border-box; }
@@ -126,6 +138,34 @@ type FS = typeof import('expo-file-system');
 const fs = (): FS => require('expo-file-system') as FS;
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+
+/** A printed card is 2.5in wide; 750px across that is 300 DPI, and more is bytes nobody can see. */
+export const PRINT_MAX_W = 750;
+
+/**
+ * Re-encode a local image as a BOUNDED JPEG data URI (v0.35.1, owner).
+ *
+ * The print document is one HTML string handed to the platform's print engine with every picture
+ * inlined, and inlining nine full-size PNGs makes a document of several megabytes. v0.34.8 got away
+ * with it because most of its cards were the (tiny) placeholder icon; now that every card is a real
+ * bitmap, the Android print WebView stopped decoding them and drew nine broken-image glyphs on beige
+ * cards, which is exactly what the owner photographed.
+ *
+ * 750px wide at quality 0.82 is about 150KB a card, so a full page is comfortably under two megabytes
+ * and still 300 DPI at the size it prints. The raw bytes remain the fallback: a card that will not
+ * re-encode is better inlined big than not inlined at all.
+ */
+export async function boundedPrintJpeg(uri: string): Promise<string | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { ImageManipulator, SaveFormat } = require('expo-image-manipulator') as typeof import('expo-image-manipulator');
+    const image = await ImageManipulator.manipulate(uri).resize({ width: PRINT_MAX_W }).renderAsync();
+    const out = await image.saveAsync({ compress: 0.82, format: SaveFormat.JPEG, base64: true });
+    return out.base64 ? `data:image/jpeg;base64,${out.base64}` : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * A bundled asset's URL, resolved against the PAGE rather than against the print document (v0.35).
@@ -159,6 +199,8 @@ export async function imageForPrint(source: number | { uri: string } | undefined
     if (!uri) return null;
     if (uri.startsWith('data:') || uri.startsWith('http') || uri.startsWith('blob:')) return uri;
     if (Platform.OS === 'web') return absolute(uri);
+    const small = await boundedPrintJpeg(uri);
+    if (small) return small;
     try {
       const file = new (fs().File)(uri);
       if (!file.exists) return null;
@@ -175,7 +217,13 @@ export async function imageForPrint(source: number | { uri: string } | undefined
     if (Platform.OS === 'web') return absolute(asset.uri);
     await asset.downloadAsync();
     const local = asset.localUri ?? asset.uri;
-    if (!local || !local.startsWith('file://')) return local ?? null;
+    if (!local) return null;
+    const small = await boundedPrintJpeg(local);
+    if (small) return small;
+    // A bundled asset that is not a readable file (a packaged Android resource) has no bytes to
+    // inline, and its URI means nothing to the print engine, so say so rather than emitting a src
+    // that will draw a broken-image glyph on the page.
+    if (!local.startsWith('file://')) return null;
     const file = new (fs().File)(local);
     const ext = (asset.type || local.split('.').pop() || 'png').toLowerCase();
     return `data:${MIME[ext] ?? 'image/png'};base64,${file.base64()}`;
@@ -227,14 +275,27 @@ async function printInBrowser(html: string): Promise<void> {
  * A phone writes a real file and puts it through the share sheet, so it can go straight into a chat
  * or a drive. A browser prints, where Save as PDF is the destination.
  */
-export async function shareCardsPdf(cards: PdfCard[], name: string): Promise<void> {
-  const html = cardsPdfHtml(cards);
+export async function shareCardsPdf(cards: PdfCard[], subject: string): Promise<void> {
+  const name = printFileName(subject, cards.length);
+  const html = cardsPdfHtml(cards, name);
   if (Platform.OS === 'web') return printInBrowser(html);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Print = require('expo-print') as typeof import('expo-print');
   // Points, at 72 to the inch: US Letter is 612 x 792.
   const { uri } = await Print.printToFileAsync({ html, width: 612, height: 792 });
+  // The print engine writes something like `.../Print.pdf`, and that is the name the share sheet
+  // offers and the other app saves. Rename it to what it actually is before handing it over.
+  let out = uri;
+  try {
+    const { File, Paths } = fs();
+    const dest = new File(Paths.cache, `${name}.pdf`);
+    if (dest.exists) dest.delete();
+    new File(uri).move(dest);
+    out = dest.uri;
+  } catch {
+    // A rename that fails is a worse file name, not a failed print.
+  }
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Sharing = require('expo-sharing') as typeof import('expo-sharing');
-  await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Print ${name}`, UTI: 'com.adobe.pdf' });
+  await Sharing.shareAsync(out, { mimeType: 'application/pdf', dialogTitle: name, UTI: 'com.adobe.pdf' });
 }

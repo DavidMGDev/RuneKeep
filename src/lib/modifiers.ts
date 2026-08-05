@@ -18,6 +18,12 @@ export type EffectTarget =
   | 'armorScore'
   | 'maxHp'
   | 'stressMax'
+  /**
+   * v0.35.1 (owner): NOT a modifier any more. Six Hope is six Hope for every character, and the only
+   * thing that ever changes it is a scar taking a slot away, which is its own target. The target
+   * survives so old saves still parse; `liveSources` drops any effect aimed at it, and the editor
+   * does not offer it.
+   */
   | 'hopeMax'
   | 'proficiency'
   | 'majorThreshold'
@@ -247,8 +253,9 @@ export function tierForLevel(level: number): 1 | 2 | 3 | 4 {
 /** Every source with its switched-off modifiers removed (v0.35). Sources left empty are dropped, so a
  *  card whose every modifier is off contributes no row rather than an empty one. */
 export function liveSources(sources: EffectSource[]): EffectSource[] {
-  if (!sources.some((s) => s.effects.some((e) => e.off))) return sources; // the overwhelmingly common case
-  return sources.map((s) => ({ ...s, effects: s.effects.filter((e) => !e.off) })).filter((s) => s.effects.length > 0);
+  const dead = (e: CardEffect) => e.off || e.target === 'hopeMax';
+  if (!sources.some((s) => s.effects.some(dead))) return sources; // the overwhelmingly common case
+  return sources.map((s) => ({ ...s, effects: s.effects.filter((e) => !dead(e)) })).filter((s) => s.effects.length > 0);
 }
 
 /**

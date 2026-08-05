@@ -71,6 +71,14 @@ export function MemberPanel({
   const [open, setOpen] = useState(false);
   const s = memberSummary(file);
   const m = maxes ?? s.maxes;
+  /**
+   * v0.35.1 (owner): at zero hit points the portrait goes grey and dark.
+   *
+   * A DM scanning a fight needs to see who is down without reading four numbers per row. Their name,
+   * their stats and every control stay exactly as they are: this says "down", it does not disable
+   * anything, because bringing them back is done through those same controls.
+   */
+  const downed = vitals.hp <= 0;
   const pulse = (key: VitalKey, kind: 'hp' | 'armor' | 'stress' | 'hope', mx: number) => (
     <StatPulse
       kind={kind}
@@ -87,10 +95,19 @@ export function MemberPanel({
     <ChamferBox chamfer={11} fill={selected ? 'rgba(196,200,208,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
       {/* header: portrait + identity (tap to expand) + read-only Evasion / thresholds + a clear chevron */}
       <Pressable onPress={() => setOpen((o) => !o)} onLongPress={onLongPress ?? (onModifiers ? () => onModifiers(false) : undefined)} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-        <ChamferBox chamfer={6} fill={DmRune.ink} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          {s.portraitUri ? <Image source={s.portraitUri} style={{ width: 46, height: 46 }} contentFit="cover" /> : (
-            <Svg width={20} height={20} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={DmRune.accentDim} strokeWidth={1.6} /></Svg>
+        <ChamferBox chamfer={6} fill={DmRune.ink} stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          {s.portraitUri ? (
+            <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
+              <Image source={s.portraitUri} style={{ width: 46, height: 46 }} contentFit="cover" />
+            </View>
+          ) : (
+            <Svg width={20} height={20} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.6} /></Svg>
           )}
+          {/* Greyed AND darkened: desaturation alone is easy to miss on a portrait that is already
+              dim, and a scrim alone reads as a loading state. */}
+          {downed ? (
+            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(11,14,19,0.55)' }} />
+          ) : null}
         </ChamferBox>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>

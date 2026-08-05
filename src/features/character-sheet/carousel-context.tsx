@@ -659,3 +659,9 @@ export function useCarousel() {
   if (!ctx) throw new Error('useCarousel must be used within a CarouselProvider');
   return ctx;
 }
+
+/** The carousel if there is one, null if there is not (v0.35.1). The DM's screens borrow the sheet's
+ *  category glyphs, and they have no carousel to borrow them from. */
+export function useCarouselMaybe() {
+  return useContext(CarouselContext);
+}

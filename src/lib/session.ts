@@ -4,7 +4,8 @@
  * global-vs-local sync machinery (PRD #34–37). Deep, isolated, unit-testable — no store/IO imports.
  */
 import { type AdversaryFeature, type AdversaryRole } from '@/data/adversaries';
-import { type MemberMaxes, type MemberVitals, type PartyGlobalState, type Party, applyVitalDelta, presentMemberIds, setVital, type VitalKey } from './party';
+import { type MemberMaxes, type MemberVitals, type PartyGlobalState, type Party, applyVitalDelta, presentMemberIds, setGlobalEffects, setVital, type VitalKey } from './party';
+import { type CardEffect } from './modifiers';
 
 export const SESSION_SCHEMA_VERSION = 1;
 
@@ -79,6 +80,16 @@ export interface Encounter {
   localVitals?: PartyGlobalState;
   /** Frozen party state at completion (PRD #36). Present only once completed. */
   archivedGlobal?: PartyGlobalState;
+  /**
+   * v0.35.1 (owner): the MODIFIERS in force when the encounter finished, frozen with the vitals.
+   *
+   * Modifiers themselves live where they belong (a character's on their file, the party's on the
+   * party), so they already carry from one encounter to the next without help. What was missing is
+   * the record: rolling back to a finished encounter's snapshot restored everyone's hit points to
+   * what they were and left them under whatever modifiers happen to be in force now, which is a
+   * different fight from the one being restarted.
+   */
+  archivedEffects?: { party: CardEffect[]; members: Record<string, CardEffect[]> };
   /** v0.23.0: TEMPORARY max bonuses the DM granted for this fight only — bonus HP, a bigger stress
    *  track, extra armor slots. Encounter-scoped by definition, so it evaporates with the encounter
    *  and never touches the player's character file. A PERMANENT raise lives on the party instead. */
@@ -279,11 +290,14 @@ export function setActive(session: Session, encounter: Encounter): { session: Se
  * `archivedGlobal`, mark it completed, and clear it as the session's active encounter. The party's live
  * `global` is left untouched so it carries forward to the next encounter.
  */
-export function completeEncounter(session: Session, encounter: Encounter, party: Party): { session: Session; encounter: Encounter } {
+export function completeEncounter(session: Session, encounter: Encounter, party: Party, memberEffects: Record<string, CardEffect[]> = {}): { session: Session; encounter: Encounter } {
   const archivedGlobal: PartyGlobalState = encounter.options.globalSync ? { ...party.global } : { ...(encounter.localVitals ?? party.global) };
+  // v0.35.1: the modifiers ride along with the vitals, so a rollback restores the whole fight rather
+  // than half of it. Read from the caller, which is the side that can see character files.
+  const archivedEffects = { party: party.globalEffects ?? [], members: memberEffects };
   return {
     session: session.activeEncounterId === encounter.id ? { ...session, activeEncounterId: undefined } : session,
-    encounter: { ...encounter, status: 'completed', archivedGlobal },
+    encounter: { ...encounter, status: 'completed', archivedGlobal, archivedEffects },
   };
 }
 
@@ -321,11 +335,16 @@ export function moveEncounterToSession(enc: Encounter, sessionId: string, index:
  * keeps the party's current live global; 'encounter' rewinds the party global to this encounter's archived
  * snapshot. Downed adversaries revive to half HP. Returns the pieces to persist.
  */
-export function restartEncounter(session: Session, enc: Encounter, party: Party, source: 'party' | 'encounter'): { session: Session; encounter: Encounter; party: Party } {
-  const nextParty = source === 'encounter' && enc.archivedGlobal && enc.options.globalSync ? { ...party, global: { ...party.global, ...enc.archivedGlobal } } : party;
+export function restartEncounter(session: Session, enc: Encounter, party: Party, source: 'party' | 'encounter'): { session: Session; encounter: Encounter; party: Party; restoreEffects?: { party: CardEffect[]; members: Record<string, CardEffect[]> } } {
+  const rollback = source === 'encounter';
+  let nextParty = rollback && enc.archivedGlobal && enc.options.globalSync ? { ...party, global: { ...party.global, ...enc.archivedGlobal } } : party;
+  // Rolling back restores the modifiers the fight was fought under. The party's are ours to write;
+  // the members' are on their character files, so they go back to the caller to apply.
+  const restoreEffects = rollback && enc.archivedEffects ? enc.archivedEffects : undefined;
+  if (restoreEffects) nextParty = setGlobalEffects(nextParty, restoreEffects.party);
   const adversaries = enc.adversaries.map((c) => (c.fallen ? recover({ ...c, recoverHp: Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)) }) : c));
   const encounter: Encounter = { ...enc, status: 'active', archivedGlobal: undefined, adversaries };
-  return { session: { ...session, activeEncounterId: enc.id }, encounter, party: nextParty };
+  return { session: { ...session, activeEncounterId: enc.id }, encounter, party: nextParty, restoreEffects };
 }
 
 /** Move a log entry to an earlier (lower index = newer) position (PRD #18: notes only, enforced by UI). */

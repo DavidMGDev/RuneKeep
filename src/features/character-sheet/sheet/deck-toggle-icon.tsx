@@ -5,7 +5,7 @@ import Svg, { Circle, Line, Path, Polygon, Rect } from 'react-native-svg';
 
 import { Rune } from '@/constants/theme';
 import { type CardCategory, isBuiltinCategory } from '../card-data';
-import { useCarousel } from '../carousel-context';
+import { useCarouselMaybe } from '../carousel-context';
 import { CategoryIconSvg } from './category-icons';
 
 /**
@@ -126,9 +126,11 @@ export function ArchiveIcon() {
 
 /** The right glyph for any category (#214/#246) — built-in glyph, or a custom category's chosen icon
  *  (resolved from the carousel's category meta). Used by the trigger + the over-scroll indicator. */
-export function CategoryGlyph({ category }: { category: CardCategory }) {
-  const { categoryMeta } = useCarousel();
-  const m = categoryMeta[category];
+export function CategoryGlyph({ category, meta }: { category: CardCategory; meta?: { icon?: string; builtin: boolean } }) {
+  // v0.35.1: usable OUTSIDE the sheet (the DM's deck picker and its rail), where there is no carousel.
+  // A caller with no context passes the category's own meta, or none at all for a built-in.
+  const ctx = useCarouselMaybe();
+  const m = ctx?.categoryMeta[category] ?? meta;
   if (category === 'favorites') return <CategoryIconSvg iconKey="star" size={42} />; // v0.9.8: special built-in, star glyph
   if (m && !m.builtin) return <CategoryIconSvg iconKey={m.icon} size={42} />;
   if (!isBuiltinCategory(category)) return <CategoryIconSvg iconKey={m?.icon} size={42} />;

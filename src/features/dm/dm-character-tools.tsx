@@ -11,7 +11,7 @@ import type { CharacterFile } from '@/lib/character-file';
 import { saveCharacter } from '@/lib/character-store';
 import { dmEffectsOf, setDmEffects } from '@/lib/dm-cards';
 import type { CardEffect } from '@/lib/modifiers';
-import { DmCardsPanel } from './dm-cards-panel';
+import { DmCardsPanel, DmCategoryPrompt } from './dm-cards-panel';
 import { DmModifiersPanel } from './dm-modifiers-panel';
 
 export interface DmCharacterTools {
@@ -27,7 +27,8 @@ export interface DmCharacterTools {
 
 export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile: (next: CharacterFile) => void): DmCharacterTools {
   const [mods, setMods] = useState<{ id: string; edit: boolean } | null>(null);
-  const [cards, setCards] = useState<string | null>(null);
+  // v0.35.1: which deck, asked before the panel opens, so it never opens on a guess.
+  const [cards, setCards] = useState<{ id: string; category: string | null } | null>(null);
 
   const write = useCallback((next: CharacterFile) => {
     onFile(next);
@@ -35,10 +36,10 @@ export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile
   }, [onFile]);
 
   const openModifiers = useCallback((charId: string, edit: boolean) => setMods({ id: charId, edit }), []);
-  const openCards = useCallback((charId: string) => setCards(charId), []);
+  const openCards = useCallback((charId: string) => setCards({ id: charId, category: null }), []);
 
   const modFile = mods ? files[mods.id] : undefined;
-  const cardFile = cards ? files[cards] : undefined;
+  const cardFile = cards ? files[cards.id] : undefined;
   const saveMods = useCallback((effects: CardEffect[]) => {
     if (!modFile) return;
     write(setDmEffects(modFile, effects));
@@ -57,7 +58,12 @@ export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile
           onClose={() => setMods(null)}
         />
       ) : null}
-      {cardFile ? <DmCardsPanel file={cardFile} onFile={write} onClose={() => setCards(null)} /> : null}
+      {cardFile && cards && !cards.category ? (
+        <DmCategoryPrompt file={cardFile} onPick={(key) => setCards({ id: cards.id, category: key })} onCancel={() => setCards(null)} />
+      ) : null}
+      {cardFile && cards?.category ? (
+        <DmCardsPanel file={cardFile} category={cards.category} onFile={write} onClose={() => setCards(null)} />
+      ) : null}
     </>
   );
 
