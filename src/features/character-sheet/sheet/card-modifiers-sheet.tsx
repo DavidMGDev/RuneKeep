@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -8,6 +8,8 @@ import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchO
 import { Body, Display, Rune } from '@/constants/theme';
 import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { copyRoleOf } from '@/lib/card-copies';
+import { contentIdOf } from '@/features/cards/card-effects';
+import { groupEffects, groupKey, isGroupOpen, setGroupOpen } from '@/lib/modifier-groups';
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
 import { type CharacterFile, numberInputFor } from '@/lib/character-file';
 
@@ -64,6 +66,7 @@ export function CardModifiersSheet({
   canEdit = false,
   onToggle,
   onSaveEffects,
+  onCollapseGroups,
   onClose,
 }: {
   cardId: string;
@@ -73,6 +76,8 @@ export function CardModifiersSheet({
   canEdit?: boolean;
   onToggle: (id: string) => void;
   onSaveEffects?: (id: string, effects: CardEffect[]) => void;
+  /** v0.35: remember which of this card's modifier groups are folded shut. */
+  onCollapseGroups?: (keys: string[]) => void;
   onClose: () => void;
 }) {
   const effects = effectsForCardId(cardId, file);
@@ -88,6 +93,21 @@ export function CardModifiersSheet({
   const [draft, setDraft] = useState<CardEffect[]>(() => toEditableEffects(effects));
   const [pick, setPick] = useState<number | null>(null);
   const [pickVar, setPickVar] = useState<number | null>(null);
+  /**
+   * v0.35: modifier GROUPS.
+   *
+   * A player can open and close them, move a modifier between them and delete one (all in the editor
+   * below). Creating a group and switching one on or off are the DM's, which is why `EffectsField`
+   * here is not in `dm` mode. Which groups are shut lives on the character file, keyed per card, so
+   * a folded group is still folded tomorrow.
+   */
+  const cardRef = contentIdOf(cardId, file);
+  const shut = (file.collapsedModifierGroups ?? []).filter((k) => k.startsWith(`${cardRef}|`)).map((k) => k.slice(cardRef.length + 1));
+  const setShut = useCallback((names: string[]) => {
+    const others = (file.collapsedModifierGroups ?? []).filter((k) => !k.startsWith(`${cardRef}|`));
+    onCollapseGroups?.([...others, ...names.map((n) => groupKey(cardRef, n))]);
+  }, [file.collapsedModifierGroups, cardRef, onCollapseGroups]);
+  const toggleGroup = (name: string) => onCollapseGroups?.(setGroupOpen(file.collapsedModifierGroups, cardRef, name, !isGroupOpen(file.collapsedModifierGroups, cardRef, name)));
 
   const startEdit = () => { setDraft(toEditableEffects(effectsForCardId(cardId, file))); setEditing(true); };
   const save = () => { onSaveEffects?.(cardId, draft); setEditing(false); };
@@ -111,7 +131,7 @@ export function CardModifiersSheet({
       }>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
         {editing ? (
-          <EffectsField effects={draft} onChange={setDraft} onRequestPick={setPick} onRequestPickVar={setPickVar} preview={previewFn} experiences={file.experiences} />
+          <EffectsField effects={draft} onChange={setDraft} onRequestPick={setPick} onRequestPickVar={setPickVar} preview={previewFn} experiences={file.experiences} collapsed={shut} onCollapsedChange={setShut} />
         ) : (
           <>
             {/* v0.34.8 (owner): say which of the copies this is. They share one equip, one token board
@@ -140,16 +160,36 @@ export function CardModifiersSheet({
                 This card has no stat modifiers. {canEdit ? 'Tap Edit modifiers to add one.' : 'Enabling it just marks it as part of your loadout.'}
               </Text>
             ) : (
-              effects.map((e, i) => {
-                const v = resolvedDelta(e, character, character.level, numberInput);
+              groupEffects(effects).map((band) => {
+                const rows = band.rows.map((r) => {
+                  const e = r.effect;
+                  const v = resolvedDelta(e, character, character.level, numberInput);
+                  return (
+                    <ChamferBox key={r.index} chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 13, gap: 10, opacity: e.off ? 0.45 : 1 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: Rune.sheet, fontSize: 14, fontFamily: Body.bold }}>{TARGET_LABEL[e.target]}</Text>
+                        {e.note ? <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{e.note}</Text> : null}
+                        {/* v0.35: a modifier a DM has switched off still shows, greyed, so a number
+                            that is not being applied is visible rather than simply missing. */}
+                        {e.off ? <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic, marginTop: 1 }}>Switched off by your DM</Text> : null}
+                      </View>
+                      <Text style={{ color: e.off ? Rune.muted : v >= 0 ? Rune.goldBright : '#E2705A', fontSize: 22, fontFamily: Display.black }}>{signed(v)}</Text>
+                    </ChamferBox>
+                  );
+                });
+                if (band.name === null) return rows;
+                const open = isGroupOpen(file.collapsedModifierGroups, cardRef, band.name);
                 return (
-                  <ChamferBox key={i} chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 13, gap: 10 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: Rune.sheet, fontSize: 14, fontFamily: Body.bold }}>{TARGET_LABEL[e.target]}</Text>
-                      {e.note ? <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{e.note}</Text> : null}
-                    </View>
-                    <Text style={{ color: v >= 0 ? Rune.goldBright : '#E2705A', fontSize: 22, fontFamily: Display.black }}>{signed(v)}</Text>
-                  </ChamferBox>
+                  <View key={band.name} style={{ borderWidth: 1, borderColor: 'rgba(218,162,73,0.45)', borderRadius: 7, padding: 7, gap: 8, backgroundColor: 'rgba(14,17,22,0.4)' }}>
+                    <Pressable onPress={() => toggleGroup(band.name!)} accessibilityRole="button" accessibilityState={{ expanded: open }} accessibilityLabel={`${band.name}, ${band.rows.length} modifiers`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Svg width={11} height={11} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+                        <Polyline points="5,3 11,8 5,13" fill="none" stroke={Rune.goldText} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                      <Text numberOfLines={1} style={{ flex: 1, color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{band.name}</Text>
+                      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{band.rows.length}</Text>
+                    </Pressable>
+                    {open ? rows : null}
+                  </View>
                 );
               })
             )}

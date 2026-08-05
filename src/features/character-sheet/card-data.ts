@@ -85,6 +85,23 @@ export function dedupeIds(ids: string[]): string[] {
   });
 }
 
+/**
+ * What a card contributes to a printed sheet (v0.35, owner).
+ *
+ * One entry per FACE, so a multi-page card (a class card and its feature pages) prints as several
+ * cards in reading order rather than as its cover alone.
+ *
+ * A face is either a bitmap that already exists or the LIVE node the carousel is drawing in its
+ * place. Crucially it is never `item.source` when the card carries a live node: that field holds a
+ * placeholder while the forge queue catches up, and printing it put the app icon on the page.
+ */
+export function printFaces(item?: CardItem): { image: number | { uri: string } | null; node: import('react').ReactNode | null }[] {
+  if (!item) return [];
+  if (item.faces?.length) return item.faces.map((f) => (f.source ? { image: f.source, node: null } : { image: null, node: f.custom ?? null }));
+  if (item.live) return [{ image: null, node: item.live }];
+  return [{ image: item.source, node: null }];
+}
+
 export const CARD_CATEGORIES: { key: CardCategory; label: string }[] = [
   { key: 'abilities', label: 'Abilities' },
   { key: 'inventory', label: 'Inventory' },

@@ -1,5 +1,5 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
-import { memo, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -24,10 +24,12 @@ import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedCard, ForgedLootCard, Forged
 import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/class-cards';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { focusHaptic } from '@/lib/haptics';
-import { type LibraryCard, type LibraryContentType } from '@/lib/library';
+import { type Expansion, type LibraryCard, type LibraryContentType } from '@/lib/library';
 import { listExpansions } from '@/lib/library-store';
 import { isEnabledForCreation } from '@/lib/library';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
+import { imageForPrint, type PdfCard, shareCardsPdf } from '@/lib/card-pdf';
+import { PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
 import { type RkpContent } from '@/lib/rkp';
 import { useScreenDim } from '@/lib/screen-dim';
 
@@ -366,10 +368,17 @@ function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem,
  * rather than a picture, so the whole archive was paying that price for a state change that had
  * nothing to do with any of them.
  */
-const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, onOpen }: { item: GalleryItem; cellW: number; cellH: number; onOpen: (item: GalleryItem) => void }) {
+const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, selected, onOpen, onHold }: { item: GalleryItem; cellW: number; cellH: number; selecting?: boolean; selected?: boolean; onOpen: (item: GalleryItem) => void; onHold?: (item: GalleryItem) => void }) {
   return (
-    <Pressable onPress={() => onOpen(item)} accessibilityRole="button" accessibilityLabel={`${item.label}, open card`} style={{ width: cellW }}>
-      <View style={{ width: cellW, height: cellH }}>
+    <Pressable
+      onPress={() => onOpen(item)}
+      onLongPress={onHold ? () => onHold(item) : undefined}
+      delayLongPress={420}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      accessibilityLabel={selecting ? `${item.label}, ${selected ? 'selected' : 'not selected'}` : `${item.label}, open card`}
+      style={{ width: cellW }}>
+      <View style={{ width: cellW, height: cellH, opacity: selecting && !selected ? 0.55 : 1 }}>
         {item.type === 'card' ? (
           <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
         ) : item.type === 'lib' ? (
@@ -381,8 +390,14 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, onOpen }: { 
         ) : (
           <ScaledForged item={item} width={cellW} />
         )}
+        {/* v0.35: the check rides the art, not the label, so a long name cannot push it off. */}
+        {selected ? (
+          <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}>
+            <Svg width={12} height={12} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={Rune.ivory} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+          </View>
+        ) : null}
       </View>
-      <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
+      <Text numberOfLines={1} style={{ color: selected ? Rune.goldBright : Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
         {item.label}
       </Text>
     </Pressable>
@@ -407,7 +422,16 @@ export function GalleryScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [reading, setReading] = useState<GalleryItem | null>(null);
   // v0.13.1 (#357): hold-to-share — the NFC send panel for the held card (DMs granting cards).
-  const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null);
+  const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; items?: GalleryItem[] } | null>(null);
+  /**
+   * v0.35 (owner): SELECT mode, next to the filters.
+   *
+   * A DM handing three cards to a player did it three times, because the only way to share from here
+   * was to open one card and hold it. Tapping selects now, and holding any selected card shares the
+   * lot through the same panel a single card uses.
+   */
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
     if (!notice) return;
@@ -483,10 +507,82 @@ export function GalleryScreen() {
    */
   const rowH = cellH + 12 + 17; // cell + list gap + the label under it
   const getRowLayout = useCallback((_: unknown, i: number) => ({ length: rowH, offset: rowH * i, index: i }), [rowH]);
-  const openCard = useCallback((item: GalleryItem) => setReading(item), []);
+  /**
+   * Share a set of archive cards: one card travels as a card, several travel as a pack.
+   *
+   * The same shapes the character sheet sends, so a card handed over from here is indistinguishable
+   * from one handed over from a hand of cards. A class card is skipped: it is multi-page bundled
+   * content with no portable form (the same rule the single-card hold has always followed).
+   */
+  /**
+   * The archive's own print path (v0.35).
+   *
+   * A catalog card is already a bitmap of the right size, so it goes straight on the page. Everything
+   * else here (weapons, armour, loot, homebrew) is drawn by the app, so it is captured at print size
+   * first, exactly as the character sheet does.
+   */
+  const printRef = useRef<PrintStageHandle>(null);
+  const onPrintItems = useCallback((items: GalleryItem[]) => {
+    void (async () => {
+      try {
+        const out: PdfCard[] = [];
+        for (const it of items) {
+          const base = { title: it.label, typeLabel: 'Card', body: '', color: null as string | null, art: null as string | null };
+          if (it.type === 'card') { out.push({ ...base, image: await imageForPrint(it.card.source) }); continue; }
+          const node =
+            it.type === 'lib' ? <LibraryForgedCard card={it.lib} />
+            : it.type === 'weapon' ? <ForgedWeaponCard weapon={it.weapon} />
+            : it.type === 'armor' ? <ForgedArmorCard armor={it.armor} />
+            : it.type === 'loot' ? <ForgedLootCard loot={it.loot} />
+            : <ForgedCard title={it.def.title} kindLabel="Class" body={it.def.body} accentDeep={classColor(it.def.key).deep} Banner={it.def.Banner} classKey={it.def.key} />;
+          out.push({ ...base, image: (await printRef.current?.capture(node)) ?? null });
+        }
+        if (!out.length) { setNotice('Nothing to print'); return; }
+        await shareCardsPdf(out, 'RuneKeep cards');
+      } catch {
+        setNotice('Those cards could not be printed');
+      }
+    })();
+  }, []);
+
+  const shareItems = useCallback((items: GalleryItem[]) => {
+    const usable = items.filter((i) => i.type !== 'class') as Exclude<GalleryItem, { type: 'class' }>[];
+    if (!usable.length) { setNotice('Class cards cannot be shared'); return; }
+    playSfx('buttonTap');
+    const payloads = usable.map((i) => (i.type === 'lib' ? i.lib : toShareCard(i)));
+    if (payloads.length === 1) {
+      setNfcSend({ content: { kind: 'card', payload: payloads[0] }, label: payloads[0].title || 'card', items: usable });
+      return;
+    }
+    const exp: Expansion = {
+      id: `arc-${Date.now().toString(36)}`,
+      name: `${payloads.length} cards`,
+      author: '',
+      description: `${payloads.length} cards from the card archive`,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      cards: payloads,
+    };
+    setNfcSend({ content: { kind: 'expansion', payload: exp }, label: `${payloads.length} cards`, items: usable });
+  }, []);
+
+  /** Holding a selected card shares the whole selection; holding an unselected one shares just it. */
+  const onHoldGroup = useCallback((item: GalleryItem) => {
+    focusHaptic();
+    const ids = selected.has(item.id) ? selected : new Set([item.id]);
+    shareItems(cards.filter((c) => ids.has(c.id)));
+  }, [selected, cards, shareItems]);
+
+  const openCard = useCallback((item: GalleryItem) => {
+    if (!selecting) { setReading(item); return; }
+    playSfx(selected.has(item.id) ? 'cardDeselect' : 'cardSelect');
+    setSelected((s) => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
+  }, [selecting, selected]);
   const renderCard = useCallback(
-    ({ item }: { item: GalleryItem }) => <GalleryCell item={item} cellW={cellW} cellH={cellH} onOpen={openCard} />,
-    [cellW, cellH, openCard],
+    ({ item }: { item: GalleryItem }) => (
+      <GalleryCell item={item} cellW={cellW} cellH={cellH} selecting={selecting} selected={selected.has(item.id)} onOpen={openCard} onHold={selecting ? onHoldGroup : undefined} />
+    ),
+    [cellW, cellH, openCard, selecting, selected, onHoldGroup],
   );
 
   if (!ready || !enabledExp) return <LoadingScreen label="Opening the archive" />;
@@ -533,7 +629,26 @@ export function GalleryScreen() {
             <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Clear</Text>
           </Pressable>
         ) : null}
+        <View style={{ flex: 1 }} />
+        {/* v0.35 (owner): pick several cards, then hold one of them to share the lot. */}
+        <Pressable
+          onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityState={{ selected: selecting }}
+          accessibilityLabel={selecting ? 'Stop selecting' : 'Select cards'}>
+          <ChamferBox chamfer={5} fill={selecting ? 'rgba(200,27,24,0.16)' : 'transparent'} stroke={selecting ? Rune.red : Rune.goldEdge} strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 30 }}>
+            <Text style={{ color: selecting ? Rune.goldBright : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+              {selecting ? (selected.size ? `${selected.size} picked` : 'Done') : 'Select'}
+            </Text>
+          </ChamferBox>
+        </Pressable>
       </View>
+      {selecting ? (
+        <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginBottom: 8 }}>
+          Tap cards to pick them, then hold any one of them to share the set.
+        </Text>
+      ) : null}
       {drawerOpen ? (
         <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 9 }}>
           {/* v0.32.2: SOURCE is a filter inside the archive, not a category of its own. Neither chip
@@ -623,7 +738,15 @@ export function GalleryScreen() {
           </ChamferBox>
         </View>
       ) : null}
-      {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
+      <PrintStage ref={printRef} />
+      {nfcSend ? (
+        <NfcSendModal
+          content={nfcSend.content}
+          label={nfcSend.label}
+          onPdf={nfcSend.items ? () => onPrintItems(nfcSend.items!) : undefined}
+          onClose={() => setNfcSend(null)}
+        />
+      ) : null}
     </AppScreen>
   );
 }

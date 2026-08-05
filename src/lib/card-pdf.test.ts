@@ -20,11 +20,22 @@ describe('printing cards, nine to a sheet (v0.34.8)', () => {
     expect(slots(html)).toBe(18); // every page keeps a full 3x3 so the grid never reflows
   });
 
-  it('keeps cards at true playing-card size on US Letter', () => {
+  it('keeps a card 5:7 on US Letter, inside a margin a printer will not clip', () => {
     const html = cardsPdfHtml([card(1)]);
     expect(html).toContain('size: letter');
-    expect(html).toContain('width: 2.5in; height: 3.5in');
     expect(html).toContain('@page { size: letter; margin: 0; }'); // our margins, not the dialog's
+    // v0.35: the margins are fixed and the card is what fits inside them. It stays 5:7, stays close
+    // to true size, and nine still fit; the exact number is derived, so it is checked rather than
+    // written down twice.
+    const [, w, h] = /\.c \{ width: ([\d.]+)in; height: ([\d.]+)in/.exec(html) ?? [];
+    const cw = Number(w);
+    const ch = Number(h);
+    expect(ch / cw).toBeCloseTo(7 / 5, 2);
+    expect(cw).toBeGreaterThan(2.2); // still recognisably a playing card
+    expect(cw).toBeLessThanOrEqual(2.5); // never larger than the real thing
+    expect(3 * cw + 2 * 0.2 + 2 * 0.5).toBeLessThanOrEqual(8.5); // three across, inside a half inch
+    expect(3 * ch + 2 * 0.2 + 2 * 0.2).toBeLessThanOrEqual(11); // three down
+    expect(html).toContain('gap: 0.2in'); // twice v0.34.8's, per the owner
   });
 
   it('draws a card WITH a bitmap as the whole face, and nothing over it', () => {

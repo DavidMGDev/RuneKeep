@@ -1,20 +1,19 @@
 /**
- * Cards, on paper (v0.34.8, owner).
+ * Cards, on paper (v0.34.8; rebuilt v0.35).
  *
- * Nine cards to a US Letter sheet, three by three, at TRUE playing-card size (2.5 x 3.5 inches) so a
- * printed page cuts down into cards that fit a sleeve. Anything past nine starts a new page.
+ * Nine cards to a US Letter sheet, three by three, with a margin a home printer will not clip and a
+ * gap a pair of scissors can find. Anything past nine starts a new page.
  *
- * ## Why HTML and not a hand-written PDF
+ * ## Where the pictures come from
  *
- * The app already has the artwork it needs at exactly the right resolution: a forged card is a
- * 750 x 1050 bitmap, and 2.5 x 3.5 inches at 300 DPI is 750 x 1050 pixels. So the primary path is
- * "put the bitmap on the page at its native density", and the print engine (a WKWebView on iOS, the
- * Android print framework, or the browser itself) does the rest at print resolution. There is no
- * upscaling anywhere.
+ * Every card on the sheet is a 750 x 1050 bitmap, which is exactly 2.5 x 3.5 inches at 300 DPI. Cards
+ * the app has already forged for the carousel are that bitmap; cards it has not are captured on the
+ * spot (see `print-stage`), which is what v0.35 fixed. v0.34.8 read the carousel's image field
+ * directly, and an un-forged card carries the app icon as a placeholder, so a browser printed nine
+ * blank rectangles per page and a phone printed a grid of app icons.
  *
- * The FALLBACK matters in a browser, which forges nothing (see `forged-snapshots`): there, a card the
- * player wrote has no bitmap at all, so it is laid out in HTML instead. That version is vector, so it
- * is not a worse print, just a different route to the same page.
+ * The HTML fallback below is the last resort, for a card that will not draw at all. It is a legible
+ * proxy rather than the card, so it should be rare; if it stops being rare, the capture is failing.
  *
  * `cardsPdfHtml` is pure and tested. Everything that touches the filesystem or a print dialog is
  * below it and platform-guarded.
@@ -33,11 +32,28 @@ export interface PdfCard {
   art?: string | null;
 }
 
-/** Inches. True card size; the gaps and margins are what is left of the sheet. */
-const CARD_W = 2.5;
-const CARD_H = 3.5;
-const GAP = 0.1;
+/**
+ * Inches. The margins are fixed and the CARD is what fits inside them (v0.35, owner).
+ *
+ * v0.34.8 pinned the card at its true 2.5 x 3.5 and left whatever remained as margin, which came to a
+ * tenth of an inch between cards and 0.15in above the top row. A home printer's unprintable edge is
+ * usually a quarter inch, so the outer cards were being clipped, and a tenth of an inch is less than
+ * a pair of scissors is accurate to.
+ *
+ * So: twice the gap, a third more margin, and the card shrinks to keep nine on the sheet. It comes out
+ * about 5% under true size, still 5:7, so a printed card is very slightly small for a sleeve rather
+ * than the wrong shape. Keeping true size would have meant six cards to a page.
+ */
+const MARGIN_X = 0.5;
+const MARGIN_Y = 0.2;
+const GAP = 0.2;
+const CARD_W = Math.min((8.5 - 2 * MARGIN_X - 2 * GAP) / 3, ((11 - 2 * MARGIN_Y - 2 * GAP) / 3) * (5 / 7));
+const CARD_H = CARD_W * (7 / 5);
 const PER_PAGE = 9;
+
+/** Trimmed for CSS, which does not need fifteen decimal places of an inch. Rounded DOWN, so three
+ *  cards and two gaps can never come out a thousandth of an inch wider than the page allows. */
+const inches = (n: number) => `${Math.floor(n * 1000) / 1000}in`;
 
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -85,13 +101,13 @@ export function cardsPdfHtml(cards: PdfCard[]): string {
   html, body { margin: 0; padding: 0; background: #fff; }
   body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .page {
-    width: 8.5in; height: 11in; padding: 0.15in 0.375in;
-    display: grid; grid-template-columns: repeat(3, ${CARD_W}in); grid-template-rows: repeat(3, ${CARD_H}in);
-    gap: ${GAP}in; justify-content: center; align-content: center;
+    width: 8.5in; height: 11in; padding: ${inches(MARGIN_Y)} ${inches(MARGIN_X)};
+    display: grid; grid-template-columns: repeat(3, ${inches(CARD_W)}); grid-template-rows: repeat(3, ${inches(CARD_H)});
+    gap: ${inches(GAP)}; justify-content: center; align-content: center;
     page-break-after: always; break-after: page; overflow: hidden;
   }
   .page:last-child { page-break-after: auto; break-after: auto; }
-  .c { width: ${CARD_W}in; height: ${CARD_H}in; overflow: hidden; background: #EFE7D6; position: relative; display: flex; flex-direction: column; }
+  .c { width: ${inches(CARD_W)}; height: ${inches(CARD_H)}; overflow: hidden; background: #EFE7D6; position: relative; display: flex; flex-direction: column; }
   .blank { background: transparent; }
   .face { width: 100%; height: 100%; object-fit: contain; display: block; }
   .art { width: 100%; height: 40%; object-fit: cover; display: block; flex: none; }
@@ -112,6 +128,21 @@ const fs = (): FS => require('expo-file-system') as FS;
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
 
 /**
+ * A bundled asset's URL, resolved against the PAGE rather than against the print document (v0.35).
+ *
+ * The print frame is written into an `about:blank` document, and a root-relative asset path there is
+ * resolved against a document with no origin. Every image on the sheet came out broken, which is what
+ * the owner photographed. Absolute URLs cannot be resolved against the wrong thing.
+ */
+function absolute(uri: string): string {
+  try {
+    return new URL(uri, typeof document !== 'undefined' ? document.baseURI : undefined).href;
+  } catch {
+    return uri;
+  }
+}
+
+/**
  * A card's picture in a form the print engine will actually load.
  *
  * A print document is rendered in a web view with no access to the app's sandbox, so a `file://` path
@@ -127,7 +158,7 @@ export async function imageForPrint(source: number | { uri: string } | undefined
     const uri = source.uri;
     if (!uri) return null;
     if (uri.startsWith('data:') || uri.startsWith('http') || uri.startsWith('blob:')) return uri;
-    if (Platform.OS === 'web') return uri;
+    if (Platform.OS === 'web') return absolute(uri);
     try {
       const file = new (fs().File)(uri);
       if (!file.exists) return null;
@@ -141,7 +172,7 @@ export async function imageForPrint(source: number | { uri: string } | undefined
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Asset } = require('expo-asset') as typeof import('expo-asset');
     const asset = Asset.fromModule(source);
-    if (Platform.OS === 'web') return asset.uri;
+    if (Platform.OS === 'web') return absolute(asset.uri);
     await asset.downloadAsync();
     const local = asset.localUri ?? asset.uri;
     if (!local || !local.startsWith('file://')) return local ?? null;
@@ -173,7 +204,9 @@ async function printInBrowser(html: string): Promise<void> {
     const doc = frame.contentDocument;
     if (!doc) throw new Error('no frame document');
     doc.open();
-    doc.write(html);
+    // A <base> as well as absolute URLs above: a frame written this way has no URL of its own, and
+    // anything relative that slips through would silently draw nothing.
+    doc.write(typeof document !== 'undefined' ? html.replace('<head>', `<head><base href="${document.baseURI}">`) : html);
     doc.close();
     await Promise.race([
       Promise.all([...doc.images].map((img) => (img.complete ? null : new Promise((r) => { img.onload = r; img.onerror = r; })))),
