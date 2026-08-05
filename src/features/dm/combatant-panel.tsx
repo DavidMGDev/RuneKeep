@@ -7,7 +7,7 @@
  * unit to "Fallen"; only a fallen unit's X actually deletes.
  */
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
@@ -19,6 +19,7 @@ import { type Combatant, type CombatantStat } from '@/lib/session';
 import { AdversaryPortrait, hasStatBlock, StatBlockDetail } from './adversary-detail';
 import { StatGlyph } from './stat-glyphs';
 import { StatPulse } from './stat-pulse';
+import { DmPress } from './dm-ui';
 
 // item 4: short, smooth reflow — no spring bounce.
 const SPRING = LinearTransition.duration(180).easing(Easing.out(Easing.cubic));
@@ -77,7 +78,7 @@ export function CombatantPanel({
   if (c.fallen) {
     return (
       <Animated.View layout={SPRING}>
-        <Pressable onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
+        <DmPress onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
           <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
             {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : null}
             <FitLine style={{ flex: 1, color: DmRune.muted, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
@@ -85,13 +86,13 @@ export function CombatantPanel({
             {!selecting ? (
               <>
                 <RuneButton label="Recover" kind="secondary" height={30} dense dm onPress={onRecover} />
-                <Pressable onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${c.name}`}>
+                <DmPress onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${c.name}`}>
                   <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-                </Pressable>
+                </DmPress>
               </>
             ) : null}
           </ChamferBox>
-        </Pressable>
+        </DmPress>
       </Animated.View>
     );
   }
@@ -102,7 +103,7 @@ export function CombatantPanel({
     <Animated.View layout={SPRING}>
       <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || (c.show.description && !open) || open ? 10 : 0 }}>
         {/* header row — tap toggles the stat block; hold multi-selects */}
-        <Pressable onPress={headerTap} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}${canExpand ? ', tap to expand' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <DmPress onPress={headerTap} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}${canExpand ? ', tap to expand' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : (
             <AdversaryPortrait uri={c.portraitUri} size={38} tint={sideColor} onPress={onOpenImage} />
           )}
@@ -110,13 +111,13 @@ export function CombatantPanel({
           {!selecting ? (
             <>
               {canExpand ? <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
-              <Pressable onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Configure ${c.name}`}><Pencil /></Pressable>
-              <Pressable onPress={onFell} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Down ${c.name}`}>
+              <DmPress onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Configure ${c.name}`}><Pencil /></DmPress>
+              <DmPress onPress={onFell} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Down ${c.name}`}>
                 <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-              </Pressable>
+              </DmPress>
             </>
           ) : null}
-        </Pressable>
+        </DmPress>
 
         {anyTrack ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexWrap: 'wrap', paddingLeft: selecting ? 0 : 48 }}>

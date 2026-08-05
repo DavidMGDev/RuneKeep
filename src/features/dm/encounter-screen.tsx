@@ -7,8 +7,8 @@
  */
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
-import Svg, { Path, Polyline } from 'react-native-svg';
+import { ScrollView, Text, View } from 'react-native';
+import Svg, { Polyline } from 'react-native-svg';
 
 import { AppScreen, SectionLabel } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -62,7 +62,7 @@ import { AdversaryEditor } from './adversary-editor';
 import { AdversaryImageViewer } from './adversary-detail';
 import { AdversaryLibrary } from './adversary-library-screen';
 import { CombatantPanel } from './combatant-panel';
-import { DmModal, NameDialog } from './dm-ui';
+import { DmModal, NameDialog, DmPress } from './dm-ui';
 import { EncounterLog } from './encounter-log';
 import { MemberPanel } from './member-panel';
 import { StatRadialProvider } from './stat-radial';
@@ -76,7 +76,7 @@ type LibraryMode = 'adversary' | 'ally';
 
 function OptionRow({ label, hint, on, onToggle }: { label: string; hint: string; on: boolean; onToggle: () => void }) {
   return (
-    <Pressable onPress={onToggle} accessibilityRole="switch" accessibilityState={{ checked: on }} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 }}>
+    <DmPress onPress={onToggle} accessibilityRole="switch" accessibilityState={{ checked: on }} accessibilityLabel={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 }}>
       <ChamferBox chamfer={5} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 46, height: 26, justifyContent: 'center', paddingHorizontal: 4 }}>
         <View style={{ width: 18, height: 18, backgroundColor: on ? DmRune.ink : DmRune.accentDim, alignSelf: on ? 'flex-end' : 'flex-start', transform: [{ rotate: '45deg' }] }} />
       </ChamferBox>
@@ -84,7 +84,7 @@ function OptionRow({ label, hint, on, onToggle }: { label: string; hint: string;
         <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
         <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, marginTop: 2 }}>{hint}</Text>
       </View>
-    </Pressable>
+    </DmPress>
   );
 }
 
@@ -385,9 +385,9 @@ export function EncounterScreen() {
       dm
       onBack={() => router.back()}
       headerRight={
-        <Pressable onPress={() => setShowOptions(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Encounter options">
+        <DmPress onPress={() => setShowOptions(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Encounter options">
           <Svg width={20} height={20} viewBox="0 0 20 20"><Polyline points="3,6 17,6" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" /><Polyline points="3,10 17,10" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" /><Polyline points="3,14 17,14" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" /></Svg>
-        </Pressable>
+        </DmPress>
       }>
       <View style={{ flex: 1 }}>
         {/* v0.23.0: status on its own line, then ONE row of controls all at the same 28dp height
@@ -400,28 +400,28 @@ export function EncounterScreen() {
             {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Self-contained</Text> : null}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Pressable onPress={() => setShowLog(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
+            <DmPress onPress={() => setShowLog(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
               <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 11, height: CTRL_H, justifyContent: 'center' }}>
                 <Text style={{ color: DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Log · {enc.log.length}</Text>
               </ChamferBox>
-            </Pressable>
+            </DmPress>
             <View style={{ flex: 1 }}>
               {enc.status === 'prepared' ? <RuneButton label="Start encounter" kind="primary" height={CTRL_H} dense dm onPress={onStart} /> : null}
               {enc.status === 'active' ? <RuneButton label="Finish Encounter" kind="secondary" height={CTRL_H} dense dm onPress={() => setConfirmComplete(true)} /> : null}
               {enc.status === 'completed' ? <RuneButton label="Restart" kind="secondary" height={CTRL_H} dense dm onPress={() => setRestartPrompt(true)} /> : null}
             </View>
             {/* v0.35.1 (owner): an OPEN BOOK for the archive, and the party sheet beside it. */}
-            <Pressable onPress={() => { playSfx('buttonTap'); router.push('/gallery' as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open card archive">
+            <DmPress onPress={() => { playSfx('buttonTap'); router.push('/gallery' as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open card archive">
               <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ width: CTRL_H, height: CTRL_H, alignItems: 'center', justifyContent: 'center' }}>
                 <ArchiveIcon size={16} />
               </ChamferBox>
-            </Pressable>
+            </DmPress>
             {partyRef.current ? (
-              <Pressable onPress={() => { const p = partyRef.current; playSfx('buttonTap'); if (p) router.push(`/party-overview?partyId=${p.id}` as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open the party sheet">
+              <DmPress onPress={() => { const p = partyRef.current; playSfx('buttonTap'); if (p) router.push(`/party-overview?partyId=${p.id}` as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open the party sheet">
                 <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ width: CTRL_H, height: CTRL_H, alignItems: 'center', justifyContent: 'center' }}>
                   <PartySheetIcon size={16} />
                 </ChamferBox>
-              </Pressable>
+              </DmPress>
             ) : null}
           </View>
         </View>

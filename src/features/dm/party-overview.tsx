@@ -9,7 +9,7 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, Pressable } from 'react-native';
+import { FlatList } from 'react-native';
 
 import { AppScreen } from '@/components/app-screen';
 import { LoadingScreen } from '@/components/loading-screen';
@@ -28,6 +28,7 @@ import { PartyEffectsIcon } from './dm-icons';
 import { DmModifiersPanel } from './dm-modifiers-panel';
 import { MemberPanel } from './member-panel';
 import { StatRadialProvider } from './stat-radial';
+import { DmPress } from './dm-ui';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
 
@@ -131,9 +132,9 @@ export function PartyOverviewScreen() {
       dm
       onBack={() => router.back()}
       headerRight={
-        <Pressable onPress={() => { playSfx('buttonTap'); setGlobalOpen(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Party modifiers, ${globalCount} set`}>
+        <DmPress onPress={() => { playSfx('buttonTap'); setGlobalOpen(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Party modifiers, ${globalCount} set`}>
           <PartyEffectsIcon />
-        </Pressable>
+        </DmPress>
       }>
       <FlatList
         data={party.memberIds.filter((id) => files[id])}

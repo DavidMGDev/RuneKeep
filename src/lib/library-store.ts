@@ -108,7 +108,7 @@ export function canShareFiles(): boolean {
 }
 
 /** A browser `File`, reached through globalThis because `File` in these modules is expo-file-system's. */
-export const webShareFile = (text: string, name: string): File => new (globalThis as unknown as { File: typeof File }).File([text], name, { type: 'application/json' });
+export const webShareFile = (text: string, name: string): File => new (globalThis as unknown as { File: typeof File }).File([text], name, { type: 'application/octet-stream' });
 
 /** "Share File" where it will really share; "Export to File" where it can only save. */
 export const shareFileLabel = (): string => (canShareFiles() ? 'Share File' : 'Export to File');
@@ -136,7 +136,10 @@ export async function exportRkp(content: RkpContent, filename: string): Promise<
       }
     }
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    // v0.35.2 (owner): NOT `application/json`. Chrome on Android renames a download to match its MIME
+    // type, so a `.rune` arrived on the phone as `.rune.json` and stopped being a RuneKeep file. An
+    // opaque type leaves the name we chose alone.
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
     a.download = `${safe}.${RUNE_EXT}`;
     a.click();
     // Revoking immediately can cancel the download in Safari; a tick is enough everywhere.

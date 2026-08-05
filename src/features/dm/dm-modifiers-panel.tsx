@@ -16,7 +16,7 @@
  * modifiers to a reflex is the kind of loss that is noticed three fights later.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import Svg, { Polyline } from 'react-native-svg';
 
@@ -29,6 +29,7 @@ import { deleteGroup, groupEffects, isGroupOn, setGroupOn } from '@/lib/modifier
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
 import { useAndroidBack } from './use-android-back';
+import { DmPress } from './dm-ui';
 
 const signed = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
 
@@ -42,11 +43,11 @@ function resolvedDelta(e: CardEffect, level: number): number | null {
 
 function Check({ on, onPress, label }: { on: boolean; onPress: () => void; label: string }) {
   return (
-    <Pressable onPress={onPress} hitSlop={8} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label}>
+    <DmPress onPress={onPress} hitSlop={8} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label}>
       <View style={{ width: 22, height: 22, borderRadius: 4, borderWidth: 1.6, borderColor: on ? DmRune.accent : DmRune.line, backgroundColor: on ? DmRune.accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
         {on ? <Svg width={13} height={13} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
       </View>
-    </Pressable>
+    </DmPress>
   );
 }
 
@@ -112,9 +113,9 @@ export function DmModifiersPanel({
             <Text numberOfLines={2} style={{ color: DmRune.ivory, fontSize: DmType.hero, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>{title}</Text>
             <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>{editing ? 'Editing modifiers' : subtitle}</Text>
           </View>
-          <Pressable onPress={leave} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
+          <DmPress onPress={leave} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
             <Text style={{ color: DmRune.muted, fontSize: 20, fontFamily: Body.bold }}>✕</Text>
-          </Pressable>
+          </DmPress>
         </View>
 
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 10 }} keyboardShouldPersistTaps="handled">
@@ -142,7 +143,7 @@ export function DmModifiersPanel({
                 <View key={band.name} style={{ borderWidth: 1, borderColor: DmRune.line, borderRadius: 7, padding: 7, gap: 7, backgroundColor: 'rgba(14,17,22,0.5)' }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
                     <Check on={on} onPress={() => onSave(setGroupOn(effects, band.name!, !on))} label={`${band.name} applied`} />
-                    <Pressable
+                    <DmPress
                       onPress={() => setCollapsed((c) => (c.includes(band.name!) ? c.filter((n) => n !== band.name) : [...c, band.name!]))}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}
                       accessibilityRole="button"
@@ -153,10 +154,10 @@ export function DmModifiersPanel({
                       </Svg>
                       <Text numberOfLines={1} style={{ flex: 1, color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{band.name}</Text>
                       <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold }}>{band.rows.length}</Text>
-                    </Pressable>
-                    <Pressable onPress={() => onSave(deleteGroup(effects, band.name!))} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete the group ${band.name}`} style={{ padding: 3 }}>
+                    </DmPress>
+                    <DmPress onPress={() => onSave(deleteGroup(effects, band.name!))} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete the group ${band.name}`} style={{ padding: 3 }}>
                       <Text style={{ color: DmRune.red, fontSize: 15, fontFamily: Body.bold }}>✕</Text>
-                    </Pressable>
+                    </DmPress>
                   </View>
                   {open ? band.rows.map((r) => <Row key={r.index} e={r.effect} level={level} onToggle={() => toggleAt(r.index)} />) : null}
                 </View>

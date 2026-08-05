@@ -20,6 +20,7 @@
  * subtree came out mangled, with most class-feature pages drawing nothing but their background at all.
  * `html2canvas` has a `scale` of its own for exactly this, and it renders the untransformed card.
  */
+import { Image as ExpoImage } from 'expo-image';
 import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View } from 'react-native';
 
@@ -29,6 +30,19 @@ import { captureCard } from './print-capture';
 /** 750 x 1050 is 2.5 x 3.5 inches at 300 DPI, which is what a card is. */
 export const PRINT_PX_W = 750;
 export const PRINT_PX_H = 1050;
+
+/**
+ * A bundled picture, as something the stage can DRAW (v0.35.2, owner).
+ *
+ * A card that ships with the app is a `require()` id, and on Android that is a packaged resource with
+ * no file behind it: there are no bytes to inline, and the URI means nothing to a print engine. The
+ * app renders those images perfectly well, so the way to get bytes is to draw one and photograph it,
+ * which is what this is for. Every base-game ancestry, community, subclass and domain card went to the
+ * printer as a plain rectangle of text until this existed.
+ */
+export function PrintableImage({ source }: { source: number | { uri: string } }) {
+  return <ExpoImage source={source} style={{ width: FORGED_W, height: FORGED_H }} contentFit="cover" cachePolicy="memory-disk" />;
+}
 
 export interface PrintStageHandle {
   /** Capture one card to a `data:` URI, or null if it could not be drawn. */

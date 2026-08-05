@@ -73,7 +73,7 @@ import { useKeyboardControl } from './use-keyboard-control';
 // temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
 const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
-import { PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
+import { PrintableImage, PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
 import { usePrintJob } from '@/features/share/print-job';
 import { Art } from '../art';
 import { armorTrackLayout, chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
@@ -2066,7 +2066,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           if (own) { cards.push({ ...base, image: await imageForPrint({ uri: own }) }); step(); continue; }
           for (const face of printFaces(item)) {
             if (cancelled()) return [];
-            const image = face.image ? await imageForPrint(face.image) : face.node ? (await printRef.current?.capture(face.node)) ?? null : null;
+            // Bytes if the picture has any; otherwise DRAW it. A bundled card is a packaged Android
+            // resource with nothing to read, which is why they printed as bare text (v0.35.2).
+            let image = face.image ? await imageForPrint(face.image) : null;
+            if (!image && face.image) image = (await printRef.current?.capture(<PrintableImage source={face.image} />)) ?? null;
+            if (!image && face.node) image = (await printRef.current?.capture(face.node)) ?? null;
             cards.push({ ...base, image });
           }
           step();

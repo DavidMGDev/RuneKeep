@@ -1,7 +1,7 @@
 /** Shared DM-Mode UI atoms (v0.15.0/v0.16.0): an animated tap-absorbing modal, a name-input dialog, and
  *  small chrome helpers. */
 import { type ReactNode, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, type PressableProps, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -114,5 +114,24 @@ export function DmEmpty({ glyph, title, body, actionLabel, onAction }: { glyph?:
       </View>
       {actionLabel && onAction ? <RuneButton label={actionLabel} kind="primary" height={42} dm onPress={onAction} style={{ minWidth: 200 }} /> : null}
     </View>
+  );
+}
+
+/**
+ * A Pressable that acknowledges the tap (v0.35.2, owner).
+ *
+ * The DM screens are almost all bespoke rows and icon buttons rather than `RuneButton`s, and none of
+ * them reacted to being pressed at all: you tapped a member, a chip or a log entry and nothing
+ * happened until the next screen appeared. A short fade is enough, and it is what the owner asked for
+ * over anything that grows or springs.
+ *
+ * Drop-in for `Pressable`: whatever style is already there is kept, function form included.
+ */
+export function DmPress({ style, ...rest }: PressableProps) {
+  return (
+    <Pressable
+      {...rest}
+      style={(state) => [typeof style === 'function' ? style(state) : style, { opacity: state.pressed && !rest.disabled ? 0.58 : 1 }]}
+    />
   );
 }

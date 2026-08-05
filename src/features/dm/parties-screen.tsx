@@ -5,7 +5,7 @@
  */
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Text, View } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
@@ -17,11 +17,11 @@ import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { newParty, type Party } from '@/lib/party';
 import { listParties, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
-import { ColorDiamond, NameDialog } from './dm-ui';
+import { ColorDiamond, NameDialog, DmPress } from './dm-ui';
 
 function PartyRow({ party, onOpen }: { party: Party; onOpen: () => void }) {
   return (
-    <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${party.name}, ${party.memberIds.length} members${party.enabled ? ', enabled' : ''}`}>
+    <DmPress onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${party.name}, ${party.memberIds.length} members${party.enabled ? ', enabled' : ''}`}>
       {({ pressed }) => (
         <ChamferBox chamfer={12} fill={pressed ? 'rgba(24,28,35,0.95)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.line} strokeWidth={1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14 }}>
           <ColorDiamond color={party.color} size={16} />
@@ -43,7 +43,7 @@ function PartyRow({ party, onOpen }: { party: Party; onOpen: () => void }) {
           </Svg>
         </ChamferBox>
       )}
-    </Pressable>
+    </DmPress>
   );
 }
 
@@ -72,7 +72,7 @@ export function PartiesScreen() {
     <AppScreen title="Parties" dm onBack={() => router.back()}>
       {parties.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
-          <Pressable onPress={() => setNaming(true)} accessibilityRole="button" accessibilityLabel="Create your first party">
+          <DmPress onPress={() => setNaming(true)} accessibilityRole="button" accessibilityLabel="Create your first party">
             {({ pressed }) => (
               <ChamferBox chamfer={18} fill={pressed ? 'rgba(196,200,208,0.12)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.accent} strokeWidth={1.8} style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
                 <Svg width={64} height={64} viewBox="0 0 64 64">
@@ -81,7 +81,7 @@ export function PartiesScreen() {
                 </Svg>
               </ChamferBox>
             )}
-          </Pressable>
+          </DmPress>
           <View style={{ alignItems: 'center', gap: 6 }}>
             <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase' }}>No parties yet</Text>
             <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, textAlign: 'center', lineHeight: 19 }}>

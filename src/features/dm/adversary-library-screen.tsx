@@ -11,7 +11,7 @@
  * inside a bounded ScrollView (item 5).
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, SectionList, Text, TextInput, View } from 'react-native';
+import { SectionList, Text, TextInput, View } from 'react-native';
 // v0.21.0 item 3: the RN ScrollView would not scroll inside the DmModal overlay (the modal's start-responder
 // wrapper starves it on Android). The gesture-handler ScrollView runs in the RNGH pipeline and wins the drag.
 import { ScrollView } from 'react-native-gesture-handler';
@@ -31,7 +31,7 @@ import { type Combatant } from '@/lib/session';
 import { playSfx } from '@/lib/sfx';
 import { AdversaryImageViewer, AdversaryPortrait, StatBlockDetail } from './adversary-detail';
 import { AdversaryInfoPanel } from './adversary-info';
-import { DmModal } from './dm-ui';
+import { DmModal, DmPress } from './dm-ui';
 import { useAndroidBack } from './use-android-back';
 import { useSelection } from './use-selection';
 
@@ -61,21 +61,21 @@ function Avatar({ uri, name, tint }: { uri?: string; name: string; tint: string 
 
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={() => { playSfx('buttonTap'); onPress(); }} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label} hitSlop={4}>
+    <DmPress onPress={() => { playSfx('buttonTap'); onPress(); }} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={label} hitSlop={4}>
       <ChamferBox chamfer={6} fill={on ? DmRune.accent : 'transparent'} stroke={on ? 'transparent' : DmRune.line} strokeWidth={1.1} style={{ height: 30, justifyContent: 'center', paddingHorizontal: 11 }}>
         <Text style={{ color: on ? DmRune.ink : DmRune.text, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
-    </Pressable>
+    </DmPress>
   );
 }
 
 function Stepper({ n, onChange }: { n: number; onChange: (n: number) => void }) {
   const btn = (delta: number, label: string) => (
-    <Pressable onPress={() => onChange(Math.max(1, Math.min(20, n + delta)))} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}>
+    <DmPress onPress={() => onChange(Math.max(1, Math.min(20, n + delta)))} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}>
       <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.2} style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: DmRune.accent, fontSize: DmType.hero, fontFamily: Display.black }}>{delta > 0 ? '+' : '–'}</Text>
       </ChamferBox>
-    </Pressable>
+    </DmPress>
   );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -179,17 +179,17 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 350, backgroundColor: DmRune.ink }}>
       <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
+          <DmPress onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
             <Svg width={22} height={22} viewBox="0 0 22 22"><Polyline points="13,4 6,11 13,18" fill="none" stroke={DmRune.accent} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-          </Pressable>
+          </DmPress>
           <Text style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase' }}>{title}</Text>
-          <Pressable onPress={() => setInfo(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary reference">
+          <DmPress onPress={() => setInfo(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary reference">
             <Svg width={22} height={22} viewBox="0 0 22 22"><Polyline points="11,2 18,6.5 18,15.5 11,20 4,15.5 4,6.5 11,2" fill="none" stroke={DmRune.accentDim} strokeWidth={1.4} strokeLinejoin="round" /><Line x1={11} y1={6} x2={11} y2={6.4} stroke={DmRune.accent} strokeWidth={2.6} strokeLinecap="round" /><Line x1={11} y1={9.5} x2={11} y2={15.5} stroke={DmRune.accent} strokeWidth={2.2} strokeLinecap="round" /></Svg>
-          </Pressable>
-          <Pressable onPress={() => { playSfx('buttonTap'); setDrawer((o) => !o); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Filters, ${activeCount} active`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          </DmPress>
+          <DmPress onPress={() => { playSfx('buttonTap'); setDrawer((o) => !o); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Filters, ${activeCount} active`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Svg width={16} height={14} viewBox="0 0 18 16"><Line x1={1} y1={3} x2={17} y2={3} stroke={DmRune.accent} strokeWidth={2} /><Line x1={4} y1={8} x2={14} y2={8} stroke={DmRune.accent} strokeWidth={2} /><Line x1={7} y1={13} x2={11} y2={13} stroke={DmRune.accent} strokeWidth={2} /></Svg>
             {activeCount ? <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold }}>{activeCount}</Text> : null}
-          </Pressable>
+          </DmPress>
         </View>
 
         <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.1} style={{ height: 42, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 10 }}>
@@ -213,7 +213,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
               <FilterBand label="Tag" dm>
                 {ADVERSARY_TAGS.map((t) => <Chip key={t} label={t} on={filters.tags.has(t)} onPress={() => setFilters((f) => ({ ...f, tags: toggle(f.tags, t) }))} />)}
               </FilterBand>
-              {activeCount ? <Pressable onPress={() => setFilters(EMPTY)} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>Clear filters</Text></Pressable> : null}
+              {activeCount ? <DmPress onPress={() => setFilters(EMPTY)} hitSlop={6}><Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 2 }}>Clear filters</Text></DmPress> : null}
             </ScrollView>
           </ChamferBox>
         ) : null}
@@ -234,16 +234,16 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           maxToRenderPerBatch={10}
           windowSize={7}
           renderSectionHeader={({ section }) => (
-            <Pressable onPress={() => { playSfx('buttonTap'); setCollapsed((s) => { const n = new Set(s); if (n.has(section.key)) n.delete(section.key); else n.add(section.key); return n; }); }} accessibilityRole="button" accessibilityState={{ expanded: !section.collapsed }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 2 }}>
+            <DmPress onPress={() => { playSfx('buttonTap'); setCollapsed((s) => { const n = new Set(s); if (n.has(section.key)) n.delete(section.key); else n.add(section.key); return n; }); }} accessibilityRole="button" accessibilityState={{ expanded: !section.collapsed }} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 2 }}>
               <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: section.collapsed ? '0deg' : '90deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
               <Text style={{ color: DmRune.accentDim, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{section.title} · {section.count}</Text>
-            </Pressable>
+            </DmPress>
           )}
           renderItem={({ item }) => {
             const on = sel.ids.has(item.key);
             const selectable = item.source === 'custom';
             return (
-              <Pressable
+              <DmPress
                 onPress={() => (sel.selecting ? (selectable ? sel.toggle(item.key) : undefined) : setDetail(item))}
                 onLongPress={() => selectable && (sel.selecting ? sel.toggle(item.key) : sel.start(item.key))}
                 delayLongPress={340}
@@ -270,7 +270,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
                   <Text style={{ color: DmRune.accentDim, fontSize: DmType.title, fontFamily: Display.black }}>›</Text>
                 )}
                 </ChamferBox>
-              </Pressable>
+              </DmPress>
             );
           }}
         />

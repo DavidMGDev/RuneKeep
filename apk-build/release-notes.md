@@ -1,32 +1,33 @@
-RuneKeep v0.35.1 - The two crashes, printed cards that look like cards, and the DM's card panel rebuilt.
+RuneKeep v0.35.2 - The stat wheel rebuilt from the one that works, base game cards on paper, and the DM screens that answer when you tap them.
 
-CRASHES
+THE STAT WHEEL
 
-- DRAGGING A CARD in the float menu's Cards panel no longer kills the app on Android, and no longer lets go of itself on the web. The gesture was being rebuilt while it was still running, every single time, because the panel rebuilds its handlers the moment a drag starts.
-- HOLDING A STAT on a DM screen no longer crashes. The wheel used to be built the instant you held, and taken apart again while it was still animating away; it stays up now, at nothing, and the wedges are plain shapes again instead of animated ones that were never animated.
+- HOLDING A STAT ON A DM SCREEN. Two goes at this fixed real problems and it still took the app down, so this one stops guessing at what is different about it and removes the difference. The character sheet's float menu is the same thing on the same platform, holds the same kind of wheel, plays the same sounds, and has never crashed: the stat control is now built exactly the way it is. One gesture instead of two racing each other, nothing handed to Android's pan handler to time for us, and nothing crossing into the gesture that is not a plain value. Holding a stat still leaves the list scrollable.
 
 PRINTING
 
-- THE PICTURES COME OUT. On a phone every card printed as a broken-image glyph on a beige rectangle: the sheet inlines every card into one document, and now that every card is a real bitmap that document was too big for the print engine to read. Each card is re-encoded at print size, so a full page is under two megabytes and still 300 DPI.
-- APP-DRAWN CARDS LOOK LIKE THEMSELVES. In the browser they were being enlarged by stretching the page before the picture was taken, which mangled them and left most class-feature pages blank. The picture is taken at a higher resolution instead, and the card is untouched.
-- A MULTI-CARD PRINT PRINTS EVERY CARD. Only the first was ever really drawn; the rest quietly timed out and fell back to a plain proxy.
-- A PROGRESS BAR, counting card by card, with a Cancel. Back asks before it leaves, and leaving really does stop the job.
-- THE FILE HAS A NAME. "Auren 9 cards.pdf" rather than whatever the print engine felt like calling it. The browser's Save as PDF picks up the same name.
+- BASE GAME CARDS PRINT AS THEMSELVES. Ancestry, community, subclass and domain cards were coming out as plain rectangles of text on a phone. The pictures that ship with the app are packaged Android resources with no file behind them, so there were no bytes to put in the document. They are drawn and photographed now, the same way the app draws every other card it cannot read.
+
+CARDS
+
+- CLASS BANNERS FIT THEIR CARDS in the browser. They were being stretched down past the divider and into the text; the banner's box is its own shape now, on every platform.
+
+FILES
+
+- A .rune IS A .rune. Sharing a character from the web app on Android saved it as ".rune.json", because Chrome renames a download to match what the file says it is. It no longer says anything, so the name stands.
 
 THE DM'S SCREEN
 
-- THE CARD PANEL IS REBUILT. It was the float menu's management grid, which was the wrong thing entirely. It is the level-up panel now: the same bordered shell, a rail of deck tabs across the top, and a real carousel you can open a card from and read. It asks which deck you want before it opens.
-- AN ADD BUTTON INSIDE EACH OPEN GROUP in the modifiers panel, so filling a group does not mean adding at the bottom and filing it afterwards.
-- DOWNED PLAYERS ARE VISIBLY DOWN: at zero hit points their portrait goes grey and dark.
-- HOLDING TO SELECT REACHES MODIFIERS. One character selected offers theirs; the whole party selected offers the party's. Any other number offers neither, because there is no such thing as the modifiers of three people.
-- "COMPLETE" IS "FINISH ENCOUNTER" now, and everything that said complete says finish.
-- MODIFIERS ARE FROZEN WITH THE FIGHT. Finishing an encounter records the modifiers everyone was under, and rolling back to that snapshot puts them back.
-- THE CARD ARCHIVE BUTTON IS AN OPEN BOOK, not a bookmark, and the party sheet sits beside it in an encounter.
-- THE PARTY SHEET'S CORNER BUTTON is a pair of sliders instead of the shape that was there before.
+- EVERYTHING ANSWERS WHEN YOU TAP IT. Members, chips, rows, log entries, icon buttons: a short fade on press, everywhere, instead of nothing happening until the next screen appeared.
+- NAME YOUR GROUPS. A new modifier group asks what it is called instead of being handed one, and you can rename it later from the pencil, or by holding its header.
+- NEW GROUP AND ADD EFFECT sit side by side, with Add effect on the right.
 
-FIXES
+THE CARD ARCHIVE
 
-- MAX HOPE IS NOT A MODIFIER. Six is six; the only thing that ever changes it is a scar taking a slot away. Any card that claimed otherwise is ignored.
-- THE RESTART ENCOUNTER DIALOG had two Cancel buttons side by side.
+- FILTER BY PACK. Every expansion you have switched on becomes a chip, alongside the base game, so "show me only what The Void added" is one tap. With nothing installed there is nothing to choose between, so the band stays out of the way.
+
+HOMEBREW
+
+- A WARNING WORTH HAVING. Saving a custom ancestry that is one whole picture now says what that costs: in a mixed ancestry the app strikes through the half you did not keep, and it cannot do that to a picture. Writing the two features out as text keeps that working.
 
 Sideload: enable Install unknown apps, then open the APK.

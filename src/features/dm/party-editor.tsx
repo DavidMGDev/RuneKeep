@@ -6,7 +6,7 @@
  */
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits)
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
@@ -26,7 +26,7 @@ import { deleteParty, getParty, saveParty, setActiveParty } from '@/lib/party-st
 import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
 import { DimScreen } from '@/lib/screen-dim';
-import { DmEmpty, ColorDiamond, NameDialog } from './dm-ui';
+import { DmEmpty, ColorDiamond, NameDialog, DmPress } from './dm-ui';
 
 function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
   return (
@@ -47,14 +47,14 @@ function MemberRow({ file, present, onTogglePresent, onRemove }: { file: Charact
         <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{file.name}</FitLine>
         <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {file.level} {cls.label}</Text>
       </View>
-      <Pressable onPress={onTogglePresent} hitSlop={8} accessibilityRole="button" accessibilityLabel={present ? `${file.name} present` : `${file.name} absent`}>
+      <DmPress onPress={onTogglePresent} hitSlop={8} accessibilityRole="button" accessibilityLabel={present ? `${file.name} present` : `${file.name} absent`}>
         <ChamferBox chamfer={5} fill={present ? 'rgba(196,200,208,0.14)' : 'transparent'} stroke={present ? DmRune.accent : DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 9, height: 26, justifyContent: 'center' }}>
           <Text style={{ color: present ? DmRune.accent : DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{present ? 'Present' : 'Absent'}</Text>
         </ChamferBox>
-      </Pressable>
-      <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${file.name}`}>
+      </DmPress>
+      <DmPress onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${file.name}`}>
         <Svg width={16} height={16} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-      </Pressable>
+      </DmPress>
     </ChamferBox>
   );
 }
@@ -78,7 +78,7 @@ function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candidates: C
             const on = sel.has(item.id);
             const cls = classInfo(item.className);
             return (
-              <Pressable onPress={() => toggle(item.id)} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={item.name}>
+              <DmPress onPress={() => toggle(item.id)} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={item.name}>
                 <ChamferBox chamfer={10} fill={on ? 'rgba(196,200,208,0.14)' : 'rgba(14,17,22,0.9)'} stroke={on ? DmRune.accent : DmRune.line} strokeWidth={on ? 1.5 : 1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
                   <Portrait uri={item.portraitUri} tint={classColor(item.className).bright} />
                   <View style={{ flex: 1 }}>
@@ -89,7 +89,7 @@ function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candidates: C
                     {on ? <Svg width={12} height={12} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
                   </ChamferBox>
                 </ChamferBox>
-              </Pressable>
+              </DmPress>
             );
           }}
         />
@@ -163,16 +163,16 @@ export function PartyEditorScreen() {
       dm
       onBack={() => router.back()}
       headerRight={
-        <Pressable onPress={() => commit({ ...party, color: randomColor() })} hitSlop={10} accessibilityRole="button" accessibilityLabel="Re-roll party colour">
+        <DmPress onPress={() => commit({ ...party, color: randomColor() })} hitSlop={10} accessibilityRole="button" accessibilityLabel="Re-roll party colour">
           <ColorDiamond color={party.color} size={16} />
-        </Pressable>
+        </DmPress>
       }>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <SectionLabel dm>{party.memberIds.length} {party.memberIds.length === 1 ? 'Member' : 'Members'}</SectionLabel>
-          <Pressable onPress={() => setRenaming(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Rename party">
+          <DmPress onPress={() => setRenaming(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Rename party">
             <Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Rename</Text>
-          </Pressable>
+          </DmPress>
         </View>
 
         {party.memberIds.length === 0 ? (
@@ -193,9 +193,9 @@ export function PartyEditorScreen() {
               if (!f) return (
                 <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke={DmRune.line} strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 12 }}>
                   <Text style={{ flex: 1, color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, fontStyle: 'italic' }}>Missing character (removed from roster)</Text>
-                  <Pressable onPress={() => commit(removeMember(party, cid))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove missing member">
+                  <DmPress onPress={() => commit(removeMember(party, cid))} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove missing member">
                     <Svg width={16} height={16} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-                  </Pressable>
+                  </DmPress>
                 </ChamferBox>
               );
               return <MemberRow file={f} present={isPresent(party, cid)} onTogglePresent={() => commit(togglePresent(party, cid))} onRemove={() => setConfirmRemove({ id: cid, name: f.name })} />;

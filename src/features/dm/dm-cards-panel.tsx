@@ -17,7 +17,7 @@
  * carousel, which is exactly what the creation and level-up carousels do while cards are forging.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { CardEditor, type CardDraft } from '@/components/card-editor';
@@ -42,6 +42,7 @@ import type { LibraryCard } from '@/lib/library';
 import { useScreenDim } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
 import { useAndroidBack } from './use-android-back';
+import { DmPress } from './dm-ui';
 
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -80,7 +81,7 @@ export function DmCategoryPrompt({ file, onPick, onCancel }: { file: CharacterFi
   useScreenDim(0.86);
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 420, alignItems: 'center', justifyContent: 'center' }}>
-      <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.86)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close" />
+      <DmPress style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.86)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close" />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, maxWidth: '92%', paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{file.name}</Text>
         <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginTop: 2, marginBottom: 12 }}>Which of their decks do you want to see?</Text>
@@ -88,7 +89,7 @@ export function DmCategoryPrompt({ file, onPick, onCancel }: { file: CharacterFi
           {cats.length === 0 ? (
             <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular }}>They are not carrying anything yet.</Text>
           ) : cats.map((c) => (
-            <Pressable key={c.key} onPress={() => { playSfx('buttonTap'); onPick(c.key); }} accessibilityRole="button" accessibilityLabel={`${c.label}, ${decks[c.key]?.length ?? 0} cards`}>
+            <DmPress key={c.key} onPress={() => { playSfx('buttonTap'); onPick(c.key); }} accessibilityRole="button" accessibilityLabel={`${c.label}, ${decks[c.key]?.length ?? 0} cards`}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 6, backgroundColor: 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
                 <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                   <View style={{ transform: [{ scale: 30 / 46 }] }}><CategoryGlyph category={c.key} meta={meta[c.key]} /></View>
@@ -96,7 +97,7 @@ export function DmCategoryPrompt({ file, onPick, onCancel }: { file: CharacterFi
                 <Text style={{ flex: 1, color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{c.label}</Text>
                 <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold }}>{decks[c.key]?.length ?? 0}</Text>
               </View>
-            </Pressable>
+            </DmPress>
           ))}
         </View>
         <RuneButton label="Cancel" kind="ghost" height={42} style={{ marginTop: 14 }} onPress={onCancel} />
@@ -109,14 +110,14 @@ export function DmCategoryPrompt({ file, onPick, onCancel }: { file: CharacterFi
 function DeckTab({ categoryKey, meta, label, active, count, onPress }: { categoryKey: string; meta?: { icon?: string; builtin: boolean }; label: string; active: boolean; count: number; onPress: () => void }) {
   const color = active ? Rune.goldBright : Rune.muted;
   return (
-    <Pressable onPress={onPress} style={{ flex: 1 }} accessibilityRole="tab" accessibilityState={{ selected: active }} accessibilityLabel={`${label}, ${count} cards`}>
+    <DmPress onPress={onPress} style={{ flex: 1 }} accessibilityRole="tab" accessibilityState={{ selected: active }} accessibilityLabel={`${label}, ${count} cards`}>
       <ChamferBox chamfer={7} fill={active ? 'rgba(224,181,99,0.12)' : 'transparent'} stroke={active ? Rune.goldBright : 'rgba(147,142,136,0.3)'} strokeWidth={active ? 1.6 : 1.1} style={{ alignItems: 'center', paddingVertical: 7, gap: 2, overflow: 'hidden' }}>
         <View style={{ width: 26, height: 26, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', opacity: active ? 1 : 0.55 }}>
           <View style={{ transform: [{ scale: 26 / 46 }] }}><CategoryGlyph category={categoryKey} meta={meta} /></View>
         </View>
         <Text numberOfLines={1} style={{ color, fontSize: 8, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
-    </Pressable>
+    </DmPress>
   );
 }
 
@@ -200,9 +201,9 @@ export function DmCardsPanel({ file, category, onFile, onClose }: { file: Charac
               <Text numberOfLines={1} style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{file.name}</Text>
               <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>{`${label} · ${ids.length} card${ids.length === 1 ? '' : 's'}`}</Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
+            <DmPress onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
               <Text style={{ color: Rune.muted, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
-            </Pressable>
+            </DmPress>
           </View>
 
           {/* The deck rail, in the level-up panel's step-tab shape. */}
