@@ -23,7 +23,7 @@ import { cardById } from '@/data/catalog';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
-import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
+import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedLootCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { cardToLibraryCard, catalogIdOf } from '@/features/cards/card-effects';
@@ -38,16 +38,30 @@ const TILE_H = Math.round((TILE_W * 7) / 5);
 
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
-/** One card, at tile size: the catalog's own artwork where there is any, else the card as it renders. */
+/**
+ * One card, at tile size.
+ *
+ * Three routes, in the order that gives the truest picture: a catalog card is its own artwork; a piece
+ * of equipment or loot is the card the app draws for it (going through the generic converter would
+ * print an untitled "Card", because equipment is not in the catalog); anything else is the card as the
+ * library renders it.
+ */
 function CardTile({ file, id }: { file: CharacterFile; id: string }) {
-  const cat = cardById(catalogIdOf(id));
+  const base = catalogIdOf(id);
+  const cat = cardById(base);
+  const weapon = cat ? undefined : weaponById(base);
+  const armor = cat || weapon ? undefined : armorById(base);
+  const loot = cat || weapon || armor ? undefined : lootById(base);
   return (
     <View style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 1, borderColor: DmRune.line, backgroundColor: '#0c0f14', overflow: 'hidden' }}>
       {cat ? (
         <ArtImage source={cat.thumb} fit="cover" />
       ) : (
         <View pointerEvents="none" style={{ position: 'absolute', left: (TILE_W - FORGED_W) / 2, top: (TILE_H - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: TILE_W / FORGED_W }] }}>
-          <LibraryForgedCard card={cardToLibraryCard(file, id, (x) => x)} />
+          {weapon ? <ForgedWeaponCard weapon={weapon} />
+            : armor ? <ForgedArmorCard armor={armor} />
+            : loot ? <ForgedLootCard loot={loot} />
+            : <LibraryForgedCard card={cardToLibraryCard(file, id, (x) => x)} />}
         </View>
       )}
     </View>

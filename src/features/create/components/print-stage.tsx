@@ -20,9 +20,9 @@
  */
 import { forwardRef, type ReactNode, useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
-import { captureRef } from 'react-native-view-shot';
 
 import { FORGED_H, FORGED_W } from './forged-card';
+import { captureCard } from './print-capture';
 
 /** 750 x 1050 is 2.5 x 3.5 inches at 300 DPI, which is what a card is. */
 export const PRINT_PX_W = 750;
@@ -72,9 +72,9 @@ export const PrintStage = forwardRef<PrintStageHandle>(function PrintStage(_prop
           let uri: string | null = null;
           try {
             await new Promise((r) => setTimeout(r, 300));
-            uri = await captureRef(shotRef, { format: 'png', quality: 1, result: 'data-uri', width: PRINT_PX_W, height: PRINT_PX_H });
+            uri = await captureCard(shotRef, PRINT_PX_W, PRINT_PX_H);
           } catch {
-            uri = null;
+            uri = null; // a card that will not rasterise falls back to the plain HTML card
           }
           pending.current = null;
           setNode(null);
