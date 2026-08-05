@@ -154,20 +154,51 @@ export async function imageForPrint(source: number | { uri: string } | undefined
 }
 
 /**
+ * Print the sheet in a browser, through an offscreen frame.
+ *
+ * NOT `expo-print`: its web implementation is `window.print()` and nothing else, so it prints
+ * whatever page is currently on screen and throws the document away. The frame is its own page, so
+ * the print dialog is aimed at the cards, and "Save as PDF" is a destination in every browser's
+ * dialog. That is the platform's own PDF export and reimplementing it would be strictly worse.
+ *
+ * The images have to be DECODED before the dialog opens or the sheet prints blank, so the frame is
+ * given until every image reports in, with a ceiling so a broken one cannot hang the print.
+ */
+async function printInBrowser(html: string): Promise<void> {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0;border:0;';
+  document.body.appendChild(frame);
+  try {
+    const doc = frame.contentDocument;
+    if (!doc) throw new Error('no frame document');
+    doc.open();
+    doc.write(html);
+    doc.close();
+    await Promise.race([
+      Promise.all([...doc.images].map((img) => (img.complete ? null : new Promise((r) => { img.onload = r; img.onerror = r; })))),
+      new Promise((r) => setTimeout(r, 8000)),
+    ]);
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+  } finally {
+    // The dialog is modal in some browsers and not in others, so the frame outlives the call by a
+    // generous margin rather than being torn down under a dialog that is still reading from it.
+    setTimeout(() => frame.remove(), 60_000);
+  }
+}
+
+/**
  * Make the PDF and hand it over.
  *
- * A browser opens its own print dialog, where "Save as PDF" is the destination every browser offers;
- * that IS the platform's PDF export and reimplementing it would be worse. A phone writes a real file
- * and puts it through the share sheet, so it can go straight into a chat or a drive.
+ * A phone writes a real file and puts it through the share sheet, so it can go straight into a chat
+ * or a drive. A browser prints, where Save as PDF is the destination.
  */
 export async function shareCardsPdf(cards: PdfCard[], name: string): Promise<void> {
   const html = cardsPdfHtml(cards);
+  if (Platform.OS === 'web') return printInBrowser(html);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Print = require('expo-print') as typeof import('expo-print');
-  if (Platform.OS === 'web') {
-    await Print.printAsync({ html });
-    return;
-  }
   // Points, at 72 to the inch: US Letter is 612 x 792.
   const { uri } = await Print.printToFileAsync({ html, width: 612, height: 792 });
   // eslint-disable-next-line @typescript-eslint/no-require-imports
