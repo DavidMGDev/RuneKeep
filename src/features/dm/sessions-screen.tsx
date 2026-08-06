@@ -55,22 +55,19 @@ function PartyDropdown({ parties, selected, onSelect }: { parties: Party[]; sele
 /**
  * A session's encounters, as bullets (v0.36, owner).
  *
- * Capped, because a long night can hold a dozen fights and one session must not fill the screen;
- * the remainder is counted rather than hidden, so the list never lies about how much is in there.
- * A finished encounter is greyed, which makes the list double as a record of how far the night got.
+ * ALL of them (owner), not a sample: the list is the answer to "which night was that", and a session
+ * you have to open to identify is the thing this replaced. A finished encounter is greyed, which makes
+ * the list double as a record of how far the night actually got.
  */
-const BULLET_CAP = 4;
 
 function EncounterBullets({ list }: { list?: { id: string; name: string; status: EncounterStatus }[] }) {
   if (!list) return null; // still reading; a spinner per row would be noisier than the wait
   if (list.length === 0) {
     return <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.italic, marginTop: 5 }}>No encounters yet</Text>;
   }
-  const shown = list.slice(0, BULLET_CAP);
-  const rest = list.length - shown.length;
   return (
     <View style={{ marginTop: 6, gap: 2 }}>
-      {shown.map((e) => (
+      {list.map((e) => (
         <Text
           key={e.id}
           numberOfLines={1}
@@ -78,9 +75,6 @@ function EncounterBullets({ list }: { list?: { id: string; name: string; status:
           {'•'} {e.name}
         </Text>
       ))}
-      {rest > 0 ? (
-        <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.medium, lineHeight: 15 }}>{'•'} and {rest} more</Text>
-      ) : null}
     </View>
   );
 }
