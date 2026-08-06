@@ -1003,8 +1003,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     };
     const forgedItems = (jobs: { key: string; node: ReactNode; id?: string }[]) => jobs.map(forgedItem);
     const ids = [file.subclassCardId, file.ancestryCardId, file.communityCardId];
-    const structItems = ids.map((id) => catItem(id) ?? libItem(id));
-    if (structItems.some((c) => !c)) return none; // a structural id in neither catalog nor libraryCards → bail (as before)
+    /**
+     * An EMPTY origin id is a step that was SKIPPED, not a broken file (v0.36).
+     *
+     * Characterize lets the DM skip every step but Class, so a characterized adversary can genuinely
+     * have no subclass, no ancestry and no community. This used to bail the whole deck to empty on
+     * any missing structural card, which would have left the one kind of character whose cards are
+     * the entire point looking at an empty hand.
+     *
+     * The corrupt-file guard it replaces is kept exactly: an id that IS set and resolves to nothing
+     * still bails, because that is a file referring to content the app cannot find.
+     */
+    const structItems = ids.map((id) => (id ? (catItem(id) ?? libItem(id)) : null));
+    if (ids.some((id, i) => id && !structItems[i])) return none;
     // the actual cards the player PICKED at creation (#121: no more sample/placeholder cards) — the
     // two domain cards lead the abilities hand.
     // EVERY owned domain card rides the deck (owner, v0.10.0): the ≤5 cap governs only which are
@@ -1054,7 +1065,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Equipment (#121): weapons ride BOTH the abilities hand and inventory; armor is inventory only.
     const weaponItems = forgedItems(weaponJobs);
     const armorItems = armorJob ? forgedItems([armorJob]) : [];
-    const [subclassC, ancestryC, communityC] = structItems as [CardItem, CardItem, CardItem];
+    const [subclassC, ancestryC, communityC] = structItems as [CardItem | null, CardItem | null, CardItem | null];
     // Arsenal order (#157, owner): domains (by level) → ancestry → community → subclass → class
     // feature card → weapons → experiences. The origin badges target subclass/ancestry/community by
     // their actual index (no longer the contiguous last three).
@@ -1090,7 +1101,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // acquired-catalog pass below appended at the very END — so the two cards landed far apart. Place
     // it explicitly here; the acquired pass skips ids already present, so it isn't double-added.
     const secondAncestryC = file.mixedAncestry ? (catItem(file.mixedAncestry.second) ?? libItem(file.mixedAncestry.second)) : undefined;
-    const secondAncestryItem = secondAncestryC && secondAncestryC.id !== ancestryC.id ? [secondAncestryC] : [];
+    const secondAncestryItem = secondAncestryC && secondAncestryC.id !== ancestryC?.id ? [secondAncestryC] : [];
     // Class tracker (v0.19.1 item 7): one live Arsenal card for the Summoner (Summon Entity + circles) or
     // the Warlock (Patron / Spheres / Favor). Never deletable or duplicatable (guards below); movable like
     // any card via a category override. Source/thumb are placeholders — the live node renders.
@@ -1100,7 +1111,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       : file.className === 'warlock'
       ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
       : [];
-    const abilities = [...domainItems, ancestryC, ...secondAncestryItem, communityC, subclassC, ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
+    const abilities = [...domainItems, ...(ancestryC ? [ancestryC] : []), ...secondAncestryItem, ...(communityC ? [communityC] : []), ...(subclassC ? [subclassC] : []), ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
@@ -1269,7 +1280,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // Origin badges (#100) target the FINAL abilities deck (a card may have been moved out → -1, which
     // the legacy openOriginCard guards; the badges themselves use the standalone preview now).
     const fa = decks.abilities;
-    const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC.id), fa.findIndex((x) => x.id === ancestryC.id), fa.findIndex((x) => x.id === communityC.id)];
+    // -1 for a skipped origin, which is what findIndex already returns for a card that is not there.
+    const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC?.id), fa.findIndex((x) => x.id === ancestryC?.id), fa.findIndex((x) => x.id === communityC?.id)];
     return { decks, categoryMeta, originIndices };
   }, [deckFile, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
