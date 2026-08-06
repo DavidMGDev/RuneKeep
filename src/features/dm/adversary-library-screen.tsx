@@ -148,7 +148,10 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
 
   const baseItems = useMemo(() => BASE_ADVERSARIES.map((b) => baseItem(b, 'base')), []);
   const voidItems = useMemo(() => VOID_ADVERSARIES.map((b) => baseItem(b, 'void')), []);
-  const savedItems = useMemo(() => savedList.map(savedItem), [savedList]);
+  const savedItems = useMemo(() => savedList.filter((x) => !x.charId).map(savedItem), [savedList]);
+  /** v0.36: characterized entries get their own section, so a real character with cards and a sheet
+   *  is not lost in a list of stat blocks. Spawning one brings the same character back into a fight. */
+  const charItems = useMemo(() => savedList.filter((x) => !!x.charId).map(savedItem), [savedList]);
 
   const sections = useMemo(() => {
     const build = (title: string, key: string, items: Item[]) => {
@@ -157,11 +160,12 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
       return { title, key, count: filtered.length, collapsed: isCollapsed, data: isCollapsed ? [] : filtered };
     };
     const out = [];
+    if (charItems.length) out.push(build('Characters', 'characters', charItems));
     if (savedItems.length) out.push(build('Your Adversaries', 'custom', savedItems));
     out.push(build('Base Game', 'base', baseItems));
     out.push(build('Hope and Fear', 'void', voidItems));
     return out;
-  }, [savedItems, baseItems, voidItems, match, collapsed]);
+  }, [savedItems, charItems, baseItems, voidItems, match, collapsed]);
 
   const activeCount = filters.tiers.size + filters.roles.size + filters.damage.size + filters.tags.size;
 

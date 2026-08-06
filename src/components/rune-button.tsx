@@ -11,8 +11,14 @@ const PRESS_SPRING = { damping: 22, stiffness: 320, mass: 0.6 };
 interface RuneButtonProps {
   label: string;
   onPress?: () => void;
-  /** primary = red fill (ONE per region); secondary = gold hairline on ink; ghost = muted hairline. */
-  kind?: 'primary' | 'secondary' | 'ghost';
+  /**
+   * primary = red fill (ONE per region); secondary = gold hairline on ink; ghost = muted hairline.
+   *
+   * v0.36 adds `danger`: a RED hairline and red label, for a destructive action sitting in a row of
+   * ordinary ones. `primary` was the only red the button had and it is a filled shape reserved for
+   * the one main action of a region, so a Delete button among five others had no way to say so.
+   */
+  kind?: 'primary' | 'secondary' | 'ghost' | 'danger';
   disabled?: boolean;
   height?: number;
   /** Leading slot (small svg glyph). */
@@ -45,8 +51,8 @@ export function RuneButton({ label, onPress, kind = 'secondary', disabled, heigh
   const scale = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
   const fill = kind === 'primary' ? (dm ? DmRune.red : Rune.red) : 'transparent';
-  const stroke = kind === 'primary' ? 'transparent' : kind === 'secondary' ? (dm ? DmRune.accentDim : Rune.goldEdge) : (dm ? DmRune.muted : Rune.muted);
-  const color = kind === 'primary' ? (dm ? DmRune.ivory : Rune.ivory) : kind === 'secondary' ? (dm ? DmRune.accent : Rune.goldText) : (dm ? DmRune.muted : Rune.muted);
+  const stroke = kind === 'primary' ? 'transparent' : kind === 'danger' ? (dm ? DmRune.red : Rune.red) : kind === 'secondary' ? (dm ? DmRune.accentDim : Rune.goldEdge) : (dm ? DmRune.muted : Rune.muted);
+  const color = kind === 'primary' ? (dm ? DmRune.ivory : Rune.ivory) : kind === 'danger' ? (dm ? DmRune.red : Rune.red) : kind === 'secondary' ? (dm ? DmRune.accent : Rune.goldText) : (dm ? DmRune.muted : Rune.muted);
   return (
     <Pressable
       onPress={

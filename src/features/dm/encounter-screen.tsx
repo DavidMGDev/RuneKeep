@@ -22,8 +22,8 @@ import { addTemplate, loadAdversaries, removeTemplates, saveAdversaries, type Sa
 import { type CharacterFile } from '@/lib/character-file';
 import { listCharacters, saveCharacter } from '@/lib/character-store';
 import { dmEffectsOf, setDmEffects, setPartyEffects } from '@/lib/dm-cards';
-import { memberMaxes } from '@/lib/dm-vitals';
-import { isPresent, type Party, togglePresent, type VitalKey } from '@/lib/party';
+import { initialVitals, memberMaxes } from '@/lib/dm-vitals';
+import { applyVitalDelta, isPresent, type Party, setVital, togglePresent, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
 import {
   bonusMaxes,
@@ -61,7 +61,7 @@ import { isUiMuted, setUiMuted } from '@/lib/sfx-prefs';
 import { AdversaryEditor } from './adversary-editor';
 import { AdversaryImageViewer } from './adversary-detail';
 import { AdversaryLibrary } from './adversary-library-screen';
-import { CombatantPanel } from './combatant-panel';
+import { CharacterCombatant, CombatantPanel } from './combatant-panel';
 import { DmModal, NameDialog, DmPress } from './dm-ui';
 import { EncounterLog } from './encounter-log';
 import { MemberPanel } from './member-panel';
@@ -71,7 +71,7 @@ import { ArchiveIcon, PartySheetIcon } from './dm-icons';
 import { useSelection } from './use-selection';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
-type KeypadTarget = { kind: 'member'; charId: string; key: VitalKey } | { kind: 'combatant'; id: string; stat: CombatantStat };
+type KeypadTarget = { kind: 'member'; charId: string; key: VitalKey } | { kind: 'char'; charId: string; key: VitalKey } | { kind: 'combatant'; id: string; stat: CombatantStat };
 type LibraryMode = 'adversary' | 'ally';
 
 function OptionRow({ label, hint, on, onToggle }: { label: string; hint: string; on: boolean; onToggle: () => void }) {
@@ -88,13 +88,24 @@ function OptionRow({ label, hint, on, onToggle }: { label: string; hint: string;
   );
 }
 
-/** The bottom multi-select action bar (item 4: selection controls always live at the bottom). */
-function BottomBar({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * The bottom multi-select action bar (item 4: selection controls always live at the bottom).
+ *
+ * v0.36 (owner): the buttons were one wrapped run, so what you were doing, what you could do and the
+ * two you must not hit by accident were all the same size in the same line and landed somewhere
+ * different every time the count changed. It is two rows now with fixed jobs: the count and the way
+ * OUT on top, where Cancel is always in the same corner; everything you can DO underneath, with the
+ * destructive one last and red.
+ */
+function BottomBar({ label, onCancel, children }: { label: string; onCancel: () => void; children: React.ReactNode }) {
   return (
     <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>
-      <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
-        <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{label}</Text>
-        {children}
+      <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ gap: 9, paddingHorizontal: 12, paddingVertical: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ flex: 1, color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+          <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={onCancel} />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{children}</View>
       </ChamferBox>
     </View>
   );
@@ -102,6 +113,9 @@ function BottomBar({ label, children }: { label: string; children: React.ReactNo
 
 /** One height for every control in the encounter's top strip. */
 const CTRL_H = 28;
+/** How far a prepared encounter fades what is not a way to start it. Enough to read as waiting,
+ *  not so far that the DM cannot see who is in the fight while they set it up. */
+const DIM = 0.4;
 
 export function EncounterScreen() {
   const router = useRouter();
@@ -187,6 +201,33 @@ export function EncounterScreen() {
 
   const blockedVitals = useCallback(() => showToast('Start the encounter to change member vitals'), []);
 
+  /**
+   * CHARACTERIZE (v0.36, owner): send one stat block to the character creator.
+   *
+   * One at a time, on purpose. It is a creation flow, and there is no sensible reading of "make these
+   * four adversaries into a character". The creator reads the stat block back out of the encounter
+   * from these ids, so nothing large travels through the route.
+   */
+  const characterizable = useCallback((ids: Set<string>): boolean => {
+    if (ids.size !== 1) return false;
+    const found = findCombatant([...ids][0]);
+    return !!found && !found.c.charId; // already a character: there is nothing left to characterize
+  }, [findCombatant]);
+  const characterize = useCallback((cid: string, side: 'adversary' | 'ally') => {
+    playSfx('buttonTap');
+    advSel.clear(); allySel.clear();
+    router.push(`/create?encId=${id}&cid=${cid}&side=${side}` as Href);
+  }, [router, id, advSel, allySel]);
+
+  /** Vitals for a characterized entry. They are not in the party, so the encounter holds them. */
+  const charVitalsOf = useCallback((charId: string) => encRef.current?.charVitals?.[charId], []);
+  const onCharApply = useCallback((charId: string, key: VitalKey, delta: number) => {
+    const enc = encRef.current, f = files[charId];
+    if (!enc || !f) return;
+    const cur = enc.charVitals?.[charId] ?? initialVitals(f);
+    commitEncounter({ ...enc, charVitals: { ...(enc.charVitals ?? {}), [charId]: applyVitalDelta(cur, key, delta, memberMaxes(f)) } });
+  }, [files, commitEncounter]);
+
   // --- radial apply (one discrete change → one log entry, item 2) ---
   const onMemberApply = useCallback((charId: string, key: VitalKey, delta: number) => {
     const enc = encRef.current, pty = partyRef.current, f = files[charId];
@@ -209,6 +250,14 @@ export function EncounterScreen() {
   // --- keypad set (one log entry) ---
   const onKeypadSubmit = useCallback((n: number) => {
     const enc = encRef.current, pty = partyRef.current; if (!enc || !pty || !keypad) return;
+    if (keypad.kind === 'char') {
+      // A characterized entry is not in the party, so its vitals are set on the encounter.
+      const cf = files[keypad.charId]; if (!cf) { setKeypad(null); return; }
+      const cur = enc.charVitals?.[keypad.charId] ?? initialVitals(cf);
+      commitEncounter({ ...enc, charVitals: { ...(enc.charVitals ?? {}), [keypad.charId]: setVital(cur, keypad.key, n, memberMaxes(cf)) } });
+      setKeypad(null);
+      return;
+    }
     if (keypad.kind === 'member') {
       const f = files[keypad.charId]; if (!f) { setKeypad(null); return; }
       const from = memberVitals(enc, pty, keypad.charId)?.[keypad.key] ?? 0;
@@ -369,14 +418,28 @@ export function EncounterScreen() {
   const enc = encounter;
   const editableMembers = canEditMembers(enc);
   const memberAllies = enc.allies.filter((a): a is { kind: 'member'; charId: string } => a.kind === 'member' && !!files[a.charId]);
+  // v0.36 (owner): presence is a PLAYER CHARACTER's property, so the control only appears when
+  // every selected entry is one. An NPC or an adversary has no presence to toggle.
+  const allyMembersOnly = allySel.ids.size > 0 && [...allySel.ids].every((cid) => enc.allies.some((a) => a.kind === 'member' && a.charId === cid));
   const npcAllies = enc.allies.filter((a): a is { kind: 'npc'; combatant: Combatant } => a.kind === 'npc');
 
   const keypadMax = (() => {
     if (!keypad) return 0;
+    if (keypad.kind === 'char') { const f = files[keypad.charId]; if (!f) return 0; const m = memberMaxes(f); return keypad.key === 'hp' ? m.maxHp : keypad.key === 'stress' ? m.stressMax : keypad.key === 'hope' ? m.hopeMax : m.armorMax; }
     if (keypad.kind === 'member') { const f = files[keypad.charId]; const e = encRef.current, pt = partyRef.current; if (!f || !e || !pt) return 0; const m = bonusMaxes(memberMaxes(f), memberBonus(e, pt, keypad.charId)); return keypad.key === 'hp' ? m.maxHp : keypad.key === 'stress' ? m.stressMax : keypad.key === 'hope' ? m.hopeMax : m.armorMax; }
     const r = findCombatant(keypad.id); return (keypad.stat === 'hp' ? r?.c.maxHp : r?.c.maxStress) ?? 0;
   })();
   const statusColor = enc.status === 'active' ? DmRune.accent : enc.status === 'completed' ? DmRune.muted : DmRune.accentDim;
+  /**
+   * A PREPARED encounter is visibly WAITING (v0.36, owner).
+   *
+   * Before and after Start looked identical, so nothing on the screen said which button the DM was
+   * meant to press. Everything that is not a way to start or to prepare the fight dims. The panels
+   * dim themselves and fade back to full while they are expanded, so a stat block can still be read
+   * without losing the signal, and an encounter that HAS started looks completely normal, which is
+   * what makes the dim mean something.
+   */
+  const notStarted = enc.status === 'prepared';
 
   return (
     <StatRadialProvider>
@@ -394,7 +457,7 @@ export function EncounterScreen() {
             and on the same baseline. The lifecycle button was 40dp next to a 28dp Log and a 30dp
             archive tile, so three controls that belong together sat at three different heights. */}
         <View style={{ gap: 8, marginBottom: 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: notStarted ? DIM : 1 }}>
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusColor }} />
             <Text style={{ color: statusColor, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status === 'completed' ? 'Finished' : enc.status}</Text>
             {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Self-contained</Text> : null}
@@ -428,14 +491,14 @@ export function EncounterScreen() {
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: allySel.selecting || advSel.selecting ? 150 : 90, gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <SectionLabel dm>Allies</SectionLabel>
+            <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Allies</SectionLabel></View>
             <View style={{ flexDirection: 'row', gap: 14 }}>
               <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} />
               <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} />
             </View>
           </View>
           {memberAllies.length === 0 && npcAllies.length === 0 ? (
-            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>
+            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>
               No allies yet. Present party members appear here automatically; add an NPC to fight alongside them.
             </Text>
           ) : null}
@@ -445,6 +508,7 @@ export function EncounterScreen() {
               file={files[a.charId]}
               vitals={(partyRef.current && memberVitals(enc, partyRef.current, a.charId)) || { hp: 0, stress: 0, hope: 0, armor: 0 }}
               maxes={partyRef.current && files[a.charId] ? bonusMaxes(memberMaxes(files[a.charId]), memberBonus(enc, partyRef.current, a.charId)) : undefined}
+              dimmed={notStarted}
               editable={editableMembers && !!partyRef.current}
               absent={!!partyRef.current && !isPresent(partyRef.current, a.charId)}
               selected={allySel.ids.has(a.charId)}
@@ -456,33 +520,68 @@ export function EncounterScreen() {
               onCards={() => tools.openCards(a.charId)}
             />
           ))}
-          {npcAllies.map((a) => (
-            <CombatantPanel key={a.combatant.id} combatant={a.combatant} friendly selecting={allySel.selecting} selected={allySel.ids.has(a.combatant.id)}
+          {npcAllies.map((a) =>
+            // v0.36: a characterized ally is a CHARACTER, drawn the way a party member is, with the
+            // DM's modifier and card tools on it. Its vitals live on the encounter, not the party.
+            a.combatant.charId && files[a.combatant.charId] ? (
+              <CharacterCombatant
+                key={a.combatant.id}
+                file={files[a.combatant.charId]}
+                vitals={charVitalsOf(a.combatant.charId) ?? initialVitals(files[a.combatant.charId])}
+                dimmed={notStarted}
+                selected={allySel.ids.has(a.combatant.id)}
+                onApply={(k, d) => onCharApply(a.combatant.charId!, k, d)}
+                onRequestSet={(k) => setKeypad({ kind: 'char', charId: a.combatant.charId!, key: k })}
+                onLongPress={() => startAlly(a.combatant.id)}
+                onModifiers={(edit) => tools.openModifiers(a.combatant.charId!, edit)}
+                onCards={() => tools.openCards(a.combatant.charId!)}
+              />
+            ) : (
+            <CombatantPanel key={a.combatant.id} combatant={a.combatant} friendly dimmed={notStarted} selecting={allySel.selecting} selected={allySel.ids.has(a.combatant.id)}
               onApply={(s, delta) => onCombatantApply(a.combatant.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: a.combatant.id, stat: s })}
               onEdit={() => setEditing(a.combatant)} onFell={() => fellCombatant(a.combatant.id)} onRecover={() => recoverCombatant(a.combatant.id)} onDelete={() => deleteCombatants(new Set([a.combatant.id]))}
               onLongPress={() => startAlly(a.combatant.id)} onToggleSelect={() => allySel.toggle(a.combatant.id)} onOpenImage={() => setViewImage(a.combatant)} />
-          ))}
+            ),
+          )}
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
-            <SectionLabel dm>Adversaries</SectionLabel>
+            <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Adversaries</SectionLabel></View>
             <View style={{ flexDirection: 'row', gap: 14 }}>
               <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} />
               <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} />
             </View>
           </View>
-          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic' }}>None yet, add one, or spawn a whole group from the library.</Text> : null}
-          {enc.adversaries.map((c) => (
-            <CombatantPanel key={c.id} combatant={c} selecting={advSel.selecting} selected={advSel.ids.has(c.id)}
+          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>None yet, add one, or spawn a whole group from the library.</Text> : null}
+          {enc.adversaries.map((c) =>
+            // A characterized ADVERSARY stays an adversary. It is a character now, and it is still
+            // fighting the party, which is why it does not move to the ally list.
+            c.charId && files[c.charId] ? (
+              <CharacterCombatant
+                key={c.id}
+                file={files[c.charId]}
+                vitals={charVitalsOf(c.charId) ?? initialVitals(files[c.charId])}
+                dimmed={notStarted}
+                foe
+                selected={advSel.ids.has(c.id)}
+                onApply={(k, d) => onCharApply(c.charId!, k, d)}
+                onRequestSet={(k) => setKeypad({ kind: 'char', charId: c.charId!, key: k })}
+                onLongPress={() => startAdv(c.id)}
+                onModifiers={(edit) => tools.openModifiers(c.charId!, edit)}
+                onCards={() => tools.openCards(c.charId!)}
+              />
+            ) : (
+            <CombatantPanel key={c.id} combatant={c} dimmed={notStarted} selecting={advSel.selecting} selected={advSel.ids.has(c.id)}
               onApply={(s, delta) => onCombatantApply(c.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: c.id, stat: s })}
               onEdit={() => setEditing(c)} onFell={() => fellCombatant(c.id)} onRecover={() => recoverCombatant(c.id)} onDelete={() => deleteCombatants(new Set([c.id]))}
               onLongPress={() => startAdv(c.id)} onToggleSelect={() => advSel.toggle(c.id)} onOpenImage={() => setViewImage(c)} />
-          ))}
+            ),
+          )}
         </ScrollView>
       </View>
 
       {/* bottom multi-select bars (item 4) */}
       {allySel.selecting ? (
-        <BottomBar label={`${allySel.ids.size} selected`}>
+        <BottomBar label={`${allySel.ids.size} selected`} onCancel={allySel.clear}>
           {/* v0.35.1 (owner): ONE character selected reaches their own modifiers; the WHOLE party
               selected reaches the party's. Any other number reaches neither, because there is no
               such thing as "the modifiers of these three". */}
@@ -491,22 +590,24 @@ export function EncounterScreen() {
           ) : partyRef.current && partyRef.current.memberIds.length > 1 && partyRef.current.memberIds.every((id) => allySel.ids.has(id)) ? (
             <RuneButton label="Global modifiers" kind="ghost" height={30} dense dm onPress={() => { const p = partyRef.current; allySel.clear(); if (p) router.push(`/party-overview?partyId=${p.id}` as Href); }} />
           ) : null}
-          <RuneButton label="Toggle present" kind="ghost" height={30} dense dm onPress={() => { flipPresence(allySel.ids); allySel.clear(); }} />
+          {/* v0.36 (owner): presence belongs to PLAYER CHARACTERS. An NPC ally has no presence to
+              toggle, so with one selected the button used to be offered and then refuse. */}
+          {allyMembersOnly ? <RuneButton label="Toggle present" kind="ghost" height={30} dense dm onPress={() => { flipPresence(allySel.ids); allySel.clear(); }} /> : null}
+          {characterizable(allySel.ids) ? <RuneButton label="Characterize" kind="secondary" height={30} dense dm onPress={() => characterize([...allySel.ids][0], 'ally')} /> : null}
           <RuneButton label="Make adversary" kind="ghost" height={30} dense dm onPress={() => { convertToAdversaries(allySel.ids); allySel.clear(); }} />
-          <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDeleteAlly(new Set(allySel.ids))} />
-          <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={allySel.clear} />
+          <RuneButton label="Delete" kind="danger" height={30} dense dm onPress={() => setConfirmDeleteAlly(new Set(allySel.ids))} />
         </BottomBar>
       ) : advSel.selecting ? (
-        <BottomBar label={`${advSel.ids.size} selected`}>
+        <BottomBar label={`${advSel.ids.size} selected`} onCancel={advSel.clear}>
           {advSel.ids.size === 1 ? <RuneButton label="Save to Library" kind="ghost" height={30} dense dm onPress={() => { saveToLibrary([...advSel.ids][0]); advSel.clear(); }} /> : null}
+          {characterizable(advSel.ids) ? <RuneButton label="Characterize" kind="secondary" height={30} dense dm onPress={() => characterize([...advSel.ids][0], 'adversary')} /> : null}
           <RuneButton label="Make ally" kind="ghost" height={30} dense dm onPress={() => { convertToAllies(advSel.ids); advSel.clear(); }} />
-          <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDeleteAdv(new Set(advSel.ids))} />
-          <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={advSel.clear} />
+          <RuneButton label="Delete" kind="danger" height={30} dense dm onPress={() => setConfirmDeleteAdv(new Set(advSel.ids))} />
         </BottomBar>
       ) : null}
 
       {keypad ? (
-        <NumberKeypad dm title={`Set ${keypad.kind === 'member' ? KEY_LABEL[keypad.key] : keypad.stat.toUpperCase()}`} subtitle={keypad.kind === 'member' ? `Max ${Math.max(0, keypadMax)} · go higher to grant a bonus` : `0–${Math.max(0, keypadMax)}`} min={0} max={keypad.kind === 'member' ? Math.max(0, keypadMax) + 30 : Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
+        <NumberKeypad dm title={`Set ${keypad.kind === 'combatant' ? keypad.stat.toUpperCase() : KEY_LABEL[keypad.key]}`} subtitle={keypad.kind === 'member' ? `Max ${Math.max(0, keypadMax)} · go higher to grant a bonus` : `0–${Math.max(0, keypadMax)}`} min={0} max={keypad.kind === 'member' ? Math.max(0, keypadMax) + 30 : Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
       ) : null}
       {overMax ? (
         <PopupDialog

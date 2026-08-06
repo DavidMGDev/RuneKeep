@@ -19,7 +19,7 @@ import { showToast } from '@/components/toast';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type Party } from '@/lib/party';
 import { listParties, setActiveParty } from '@/lib/party-store';
-import { newSession, type Session } from '@/lib/session';
+import { type EncounterStatus, newSession, type Session } from '@/lib/session';
 import { deleteEncounter, deleteSession, listEncounters, listSessions, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
 import { DmEmpty, ColorDiamond, NameDialog, DmPress } from './dm-ui';
@@ -52,6 +52,33 @@ function PartyDropdown({ parties, selected, onSelect }: { parties: Party[]; sele
   );
 }
 
+/**
+ * A session's encounters, as bullets (v0.36, owner).
+ *
+ * ALL of them (owner), not a sample: the list is the answer to "which night was that", and a session
+ * you have to open to identify is the thing this replaced. A finished encounter is greyed, which makes
+ * the list double as a record of how far the night actually got.
+ */
+
+function EncounterBullets({ list }: { list?: { id: string; name: string; status: EncounterStatus }[] }) {
+  if (!list) return null; // still reading; a spinner per row would be noisier than the wait
+  if (list.length === 0) {
+    return <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.italic, marginTop: 5 }}>No encounters yet</Text>;
+  }
+  return (
+    <View style={{ marginTop: 6, gap: 2 }}>
+      {list.map((e) => (
+        <Text
+          key={e.id}
+          numberOfLines={1}
+          style={{ color: e.status === 'completed' ? DmRune.muted : e.status === 'active' ? DmRune.accent : DmRune.text, fontSize: DmType.micro, fontFamily: Body.medium, lineHeight: 15 }}>
+          {'•'} {e.name}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 export function SessionsScreen() {
   const router = useRouter();
   const [parties, setParties] = useState<Party[] | null>(null);
@@ -62,7 +89,25 @@ export function SessionsScreen() {
   const [confirmDelete, setConfirmDelete] = useState<Set<string> | null>(null);
   const sel = useSelection();
 
-  const loadSessions = useCallback((partyId: string) => { void listSessions(partyId).then(setSessions); }, []);
+  /**
+   * What is INSIDE each session (v0.36, owner).
+   *
+   * The list showed a name and a date, which is the same thing for every session anyone runs, so
+   * telling two apart meant opening both. Each session now carries its encounters as bullets, the
+   * way a character's timeline entry lists what happened in it.
+   */
+  const [encs, setEncs] = useState<Record<string, { id: string; name: string; status: EncounterStatus }[]>>({});
+
+  const loadSessions = useCallback((partyId: string) => {
+    void listSessions(partyId).then(async (list) => {
+      setSessions(list);
+      // A party has a handful of sessions, so reading their encounters up front costs less than a
+      // per-row loader would, and the list never reflows as they arrive one at a time.
+      const found: Record<string, { id: string; name: string; status: EncounterStatus }[]> = {};
+      for (const s of list) found[s.id] = (await listEncounters(s.id)).map((e) => ({ id: e.id, name: e.name, status: e.status }));
+      setEncs(found);
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -170,6 +215,7 @@ export function SessionsScreen() {
                       <View style={{ flex: 1 }}>
                         <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{item.name}</FitLine>
                         <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, marginTop: 3 }}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+                        <EncounterBullets list={encs[item.id]} />
                       </View>
                       {!sel.selecting ? <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={4} y1={2} x2={12} y2={8} stroke={DmRune.accentDim} strokeWidth={2} /><Line x1={12} y1={8} x2={4} y2={14} stroke={DmRune.accentDim} strokeWidth={2} /></Svg> : null}
                     </ChamferBox>

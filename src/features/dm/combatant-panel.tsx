@@ -6,16 +6,19 @@
  * Selection is bold — accent wash + check badge (item 4). Deletion stays hard (PRD #9): the X downs a live
  * unit to "Fallen"; only a fallen unit's X actually deletes.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { FitLine } from '@/components/fit-line';
 import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
+import { type CharacterFile } from '@/lib/character-file';
+import { type MemberVitals, type VitalKey } from '@/lib/party';
 import { type Combatant, type CombatantStat } from '@/lib/session';
+import { MemberPanel } from './member-panel';
 import { AdversaryPortrait, hasStatBlock, StatBlockDetail } from './adversary-detail';
 import { StatGlyph } from './stat-glyphs';
 import { StatPulse } from './stat-pulse';
@@ -52,6 +55,7 @@ export function CombatantPanel({
   onLongPress,
   onToggleSelect,
   onOpenImage,
+  dimmed,
 }: {
   combatant: Combatant;
   friendly?: boolean;
@@ -66,9 +70,16 @@ export function CombatantPanel({
   onLongPress?: () => void;
   onToggleSelect?: () => void;
   onOpenImage?: () => void;
+  /** v0.36 (owner): a prepared encounter fades its combatants; expanding one fades it back to full. */
+  dimmed?: boolean;
 }) {
   const c = combatant;
   const [open, setOpen] = useState(false);
+  // Fades in when expanded and back out when closed, so a stat block can be read while the encounter
+  // still says, everywhere else, that it has not started.
+  const fade = useSharedValue(1);
+  useEffect(() => { fade.value = withTiming(dimmed && !open ? 0.4 : 1, { duration: 220, easing: Easing.out(Easing.quad) }); }, [dimmed, open, fade]);
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
   const sideColor = friendly ? DmRune.ally : DmRune.red;
   const stroke = selected ? DmRune.accent : c.fallen ? 'rgba(139,144,154,0.5)' : `${sideColor}80`;
   const fill = selected ? 'rgba(196,200,208,0.16)' : c.fallen ? 'rgba(16,16,18,0.9)' : friendly ? 'rgba(15,20,20,0.92)' : 'rgba(20,15,15,0.92)';
@@ -77,7 +88,7 @@ export function CombatantPanel({
   // A fallen unit collapses to name + Fallen + Recover; its X deletes.
   if (c.fallen) {
     return (
-      <Animated.View layout={SPRING}>
+      <Animated.View layout={SPRING} style={fadeStyle}>
         <DmPress onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
           <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
             {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : null}
@@ -100,7 +111,7 @@ export function CombatantPanel({
   const anyTrack = c.show.hp || c.show.stress || c.show.thresholds;
   const headerTap = () => { if (selecting) onToggleSelect?.(); else if (canExpand) setOpen((o) => !o); };
   return (
-    <Animated.View layout={SPRING}>
+    <Animated.View layout={SPRING} style={fadeStyle}>
       <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || (c.show.description && !open) || open ? 10 : 0 }}>
         {/* header row — tap toggles the stat block; hold multi-selects */}
         <DmPress onPress={headerTap} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}${canExpand ? ', tap to expand' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -144,4 +155,29 @@ export function CombatantPanel({
       </ChamferBox>
     </Animated.View>
   );
+}
+
+/**
+ * A CHARACTERIZED entry in an encounter (v0.36, owner).
+ *
+ * It is a character, so it is drawn by the same panel a party member is: real hit points, stress,
+ * hope and armor, the DM's modifier and card tools, the same expand. What it is NOT is a party
+ * member, so its vitals are passed in from the encounter rather than resolved through the party, and
+ * `foe` outlines it red when it is fighting AGAINST the party rather than alongside it.
+ *
+ * A wrapper rather than a copy: the day the member panel gains a stat, this gains it too.
+ */
+export function CharacterCombatant(props: {
+  file: CharacterFile;
+  vitals: MemberVitals;
+  dimmed?: boolean;
+  foe?: boolean;
+  selected?: boolean;
+  onApply: (key: VitalKey, delta: number) => void;
+  onRequestSet: (key: VitalKey) => void;
+  onLongPress?: () => void;
+  onModifiers?: (edit: boolean) => void;
+  onCards?: () => void;
+}) {
+  return <MemberPanel {...props} editable />;
 }

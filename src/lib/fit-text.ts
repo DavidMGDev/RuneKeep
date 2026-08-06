@@ -145,3 +145,26 @@ export function fitText(text: string, box: FitBox): Fit {
   const lineHeight = Math.max(1, height / lines);
   return { fontSize: round(Math.min(HARD_MIN, lineHeight)), lineHeight: round(lineHeight), lines };
 }
+
+/**
+ * A card TITLE, fitted into a band that never changes height (v0.36, owner).
+ *
+ * A title that ran to two or more lines pushed its own description down a line each time, and the
+ * description had nowhere to go, so its last lines were clipped off the bottom of the card. It only
+ * showed on a phone because the two size mechanisms disagreed: `adjustsFontSizeToFit` shrinks a title
+ * on native and does NOTHING on react-native-web, so a browser drew titles at full size while the
+ * body's arithmetic assumed they might be smaller.
+ *
+ * Choosing the size here fixes both. The band is one line tall at the designed size:
+ *
+ *  - a title that fits on one line at full size is drawn exactly as it always was;
+ *  - a longer one steps down until one line fits;
+ *  - a much longer one steps down until TWO lines fit inside the SAME band, which is the owner's
+ *    rule: two lines only once the type is small enough that they cost the description nothing.
+ *
+ * `minRatio` is stated rather than left to default to `band / base`: at exactly one line the afford
+ * and the requirement are the same number, and floating point should not decide a card.
+ */
+export function fitTitle(text: string, width: number, band: number, base: number): Fit {
+  return fitText(text, { width, height: band, base, lineRatio: band / base, min: 5.5, minRatio: MIN_LINE_RATIO });
+}

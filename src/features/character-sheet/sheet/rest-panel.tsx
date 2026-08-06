@@ -193,7 +193,7 @@ export function RestPanel({ character, moveLimit = BASE_REST_MOVES, onApply, onC
           <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.medium }}>Prepare with party (gain 2 Hope)</Text>
         </Pressable>
       ) : null}
-      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, marginTop: 2 }}>Use + / − to pick up to {limitWord} (the same move twice is fine). Fewer is fine too — rest light, then Rest again.</Text>
+      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, marginTop: 2 }}>Use + / − to pick up to {limitWord} (the same move twice is fine). Fewer is fine too: rest light, then Rest again.</Text>
     </OverlayShell>
   );
 }

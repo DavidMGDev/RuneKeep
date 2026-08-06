@@ -9,7 +9,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
 import { type ArmorDef, type WeaponDef } from '@/data/equipment-data';
 import { type LootDef, lootTable } from '@/data/loot-data';
-import { fitText, MIN_LINE_RATIO, wrapLines } from '@/lib/fit-text';
+import { fitText, fitTitle, MIN_LINE_RATIO } from '@/lib/fit-text';
 
 /** Authoring size — same plane as the printed cards (5:7). Parents scale the whole card. */
 export const FORGED_W = 230;
@@ -144,17 +144,14 @@ function CardText({ style, ...rest }: TextProps) {
 /**
  * The generic card's description, sized to what is left under its own title (v0.30.0).
  *
- * The title is the variable: a three-line homebrew title leaves half the room a one-line title does,
- * so the space has to be worked out per card rather than assumed. Title lines are counted at the
- * UNSHRUNK size even though native may auto-fit it smaller, because over-estimating the title only
- * makes the body a shade smaller, and under-estimating it puts the body through the footer.
+ * v0.36: the title band is fixed (see `fitTitle`), so this no longer counts title lines. `multiline`
+ * survives on the props because callers pass it, and it no longer changes the geometry.
  */
-function BodyText({ body, title, hasSubtitle, multiline }: { body: string; title: string; hasSubtitle: boolean; multiline: boolean }) {
+function BodyText({ body, title, hasSubtitle }: { body: string; title: string; hasSubtitle: boolean }) {
   const named = !!title.trim();
-  const titleLines = named ? Math.min(multiline ? 4 : 1, wrapLines(title, Math.floor(BODY_TEXT_W / (17 * 0.53)))) : 0;
   const room =
     FORGED_H - ART_H - 20 - 24 // lower body, less paddingTop / paddingBottom
-    - titleLines * BODY_TITLE_H
+    - (named ? BODY_TITLE_H : 0)
     - (hasSubtitle ? BODY_SUB_H + 3 : 0) // its own marginTop rides with it
     - (named ? 6 : 0); // the body's marginTop
   // v0.32.0: the leading may tighten to 1.05 before the font gives way. A description full of blank
@@ -221,6 +218,9 @@ export function ForgedCard({
   modifier?: number;
 }) {
   const theme = getPlaqueTheme(kindLabel, classKey);
+  // v0.36: the title is sized here, from the text, into a band that never changes height.
+  const titleFit = fitTitle(title, BODY_TEXT_W, BODY_TITLE_H, 17);
+  void multilineTitle; // the band is fixed now, so a long title shrinks instead of taking rows.
   return (
     // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
@@ -271,10 +271,8 @@ export function ForgedCard({
           {title.trim() ? (
             <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
               <CardText
-                numberOfLines={multilineTitle ? 4 : 1}
-                adjustsFontSizeToFit
-                minimumFontScale={multilineTitle ? 0.42 : 0.55}
-                style={{ flexShrink: 1, color: Rune.inkText, fontSize: 17, lineHeight: BODY_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>
+                numberOfLines={titleFit.lines || 1}
+                style={{ flexShrink: 1, color: Rune.inkText, fontSize: titleFit.fontSize, lineHeight: titleFit.lineHeight, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>
                 {title}
               </CardText>
               {pageMark ? <CardText style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</CardText> : null}
@@ -290,7 +288,7 @@ export function ForgedCard({
           {/* v0.30.0: sized to the room actually left under this card's own title, so a long
               description shrinks instead of running into the footer. A body that already fits keeps
               the 10.5/14 typeset exactly, which is most of them. */}
-          <BodyText body={body} title={title} hasSubtitle={!!subtitle} multiline={!!multilineTitle} />
+          <BodyText body={body} title={title} hasSubtitle={!!subtitle} />
         </View>
       )}
       <ForgedFooter />
@@ -417,6 +415,25 @@ const EQUIP_LINE_RATIO = 12.5 / 8.5; // the typeset leading, kept as the text sh
 const EQUIP_TITLE_H = 19;
 
 /**
+ * A weapon / armour / loot title, fitted into the same fixed band the generic card uses (v0.36).
+ *
+ * These three carried `adjustsFontSizeToFit`, which is a no-op on react-native-web, so a long
+ * equipment name was auto-fitted on a phone and drawn at full size in a browser. The loot card was
+ * worse: it allowed two lines while the layout budget below only ever subtracted one, so a two-line
+ * potion name ate a line of its own rules text.
+ */
+function EquipTitle({ text }: { text: string }) {
+  const fit = fitTitle(text, EQUIP_TEXT_W, EQUIP_TITLE_H, 15);
+  return (
+    <CardText
+      numberOfLines={fit.lines || 1}
+      style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>
+      {text}
+    </CardText>
+  );
+}
+
+/**
  * How much vertical room is left for the feature, under a stat block of `rows`.
  *
  * Every term is a number declared in the layout right below: the lower body, its padding, the title,
@@ -480,7 +497,7 @@ export function ForgedWeaponCard({ weapon }: { weapon: WeaponDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <CardText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{weapon.name}</CardText>
+        <EquipTitle text={weapon.name} />
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Trait" value={weapon.trait} />
           <StatRow label="Range" value={weapon.range} />
@@ -541,7 +558,7 @@ export function ForgedLootCard({ loot }: { loot: LootDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <CardText numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.5} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{loot.name}</CardText>
+        <EquipTitle text={loot.name} />
         {/* v0.19.2 item 5: roll + which table it's from (Table 1 = base game, Table 2 = Hope and Fear). */}
         <View style={{ marginTop: 8 }}>
           <StatRow label="Roll" value={`${loot.roll}  ·  Table ${lootTable(loot)}`} />
@@ -616,7 +633,7 @@ export function ForgedArmorCard({ armor }: { armor: ArmorDef }) {
         </DividerPlaque>
       </View>
       <View style={{ flex: 1, paddingTop: 19, paddingHorizontal: 16, paddingBottom: 24 }}>
-        <CardText numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55} style={{ color: Rune.inkText, fontSize: 15, lineHeight: EQUIP_TITLE_H, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>{armor.name}</CardText>
+        <EquipTitle text={armor.name} />
         <View style={{ marginTop: 8, gap: 3 }}>
           <StatRow label="Thresholds" value={armor.thresholds} />
           <StatRow label="Base Score" value={String(armor.baseScore)} />

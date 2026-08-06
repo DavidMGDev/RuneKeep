@@ -19,8 +19,8 @@ import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/
 import { Body, Rune } from '@/constants/theme';
 import { CATALOG, cardById } from '@/data/catalog';
 import { type TraitKey } from '@/features/character-sheet/character';
-import { newCharacterId } from '@/lib/character-file';
-import { saveCharacter } from '@/lib/character-store';
+import { type CharacterFile, type CustomCardDef, newCharacterId, toSheetCharacter } from '@/lib/character-file';
+import { getCharacter, saveCharacter } from '@/lib/character-store';
 import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { contentForCreation, type CreationContent, type Expansion, featureSectionIndexes, isEnabledForCreation, type LibraryCard, subclassFamilyKey } from '@/lib/library';
 import { hasStrikeLines } from '@/data/ancestry-trait-regions';
@@ -43,7 +43,16 @@ import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } fro
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
 import { shouldShow } from '@/lib/onboarding-store';
 
-import { DECKS, deckDone, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
+import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
+import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
+import { carriesThresholds, carryItems, type CarryItem, itemHoldEffects, keptItems, keptLevel, levelForStatBlock } from '@/lib/characterize';
+import { addTemplate, loadAdversaries, saveAdversaries } from '@/lib/adversary-library';
+import { addMembers, type Party } from '@/lib/party';
+import { getParty, saveParty } from '@/lib/party-store';
+import { type Combatant } from '@/lib/session';
+import { getEncounter, getSession, saveEncounter } from '@/lib/session-store';
+import { initialVitals } from '@/lib/dm-vitals';
+import { randomCardColor } from '@/components/card-editor';
 import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
 import { DeckTab, SectionDivider, Segmented } from './create-ui';
@@ -202,7 +211,16 @@ export function CreateScreen() {
   // v0.13.0 item 6: the picker now lives on the CHARACTER SELECT screen, which passes the picks as the
   // `exp` route param (may be '' = base-only). The in-screen picker remains only as the fallback for
   // entry paths that skip the roster (deep links / older routes).
-  const params = useLocalSearchParams<{ exp?: string }>();
+  /**
+   * CHARACTERIZE (v0.36, owner): which encounter entry this creation is replacing.
+   *
+   * Ids rather than a payload, deliberately. The stat block is read back out of the encounter, so
+   * nothing large travels through a URL, a reload cannot lose it, and there is exactly one copy of
+   * the truth right up until Forge writes the character.
+   */
+  const params = useLocalSearchParams<{ exp?: string; encId?: string; cid?: string; side?: string }>();
+  const characterizing = !!params.encId && !!params.cid;
+  const [statBlock, setStatBlock] = useState<Combatant | null>(null);
   const [expansions, setExpansions] = useState<Expansion[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set([BASE_PICK_ID, ...(typeof params.exp === 'string' ? params.exp.split(',').filter(Boolean) : [])]),
@@ -222,11 +240,57 @@ export function CreateScreen() {
     [expansions, picked],
   );
   const [pendingDeck, setPendingDeck] = useState<DeckKey | null>(null);
+  /** The ally prompt, raised after a characterized ALLY is forged (never for an adversary). */
+  const [joinParty, setJoinParty] = useState<{ charId: string; name: string; party: Party } | null>(null);
+  const [forging, setForging] = useState(false);
   const [unlockPulse, setUnlockPulse] = useState(0);
   const hadClass = useRef(false);
   const deckIndexes = useRef<Partial<Record<DeckKey, number>>>({});
   const fade = useSharedValue(1);
   const set = useCallback((p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p })), []);
+
+  /**
+   * Read the stat block, and seed everything it already knows.
+   *
+   * Name and portrait come across because retyping them is work the DM has already done, and the
+   * level arrives worked out from the tier and difficulty so the common case needs no thought.
+   * Traits come across only when there are some, which is the case when the thing being
+   * characterized was characterized before; a plain stat block has none and everything starts at 0.
+   */
+  useEffect(() => {
+    if (!characterizing) return;
+    let live = true;
+    void getEncounter(params.encId!).then((enc) => {
+      if (!enc || !live) return;
+      const npc = enc.allies.flatMap((a) => (a.kind === 'npc' ? [a.combatant] : []));
+      const c = [...enc.adversaries, ...npc].find((x) => x.id === params.cid);
+      if (!c) return;
+      setStatBlock(c);
+      // Open ON the review step: what the stat block hands over should be settled first.
+      setDeck('carry');
+      setCenterIdx(0);
+      setDraft((d) => ({
+        ...d,
+        name: d.name || c.name,
+        portraitUri: d.portraitUri ?? c.portraitUri ?? null,
+        level: d.level ?? levelForStatBlock(c.tier, c.difficulty),
+        characterize: { encounterId: params.encId!, combatantId: params.cid!, side: params.side === 'ally' ? 'ally' : 'adversary' },
+      }));
+    });
+    return () => { live = false; };
+  }, [characterizing, params.encId, params.cid, params.side]);
+
+  /** Everything the stat block hands over, and what the DM has greyed out of it. */
+  const carry = useMemo<CarryItem[]>(() => (statBlock ? carryItems(statBlock) : []), [statBlock]);
+  const carryOff = useMemo(() => new Set(draft.carryDisabled ?? []), [draft.carryDisabled]);
+  /** One colour per carried card, picked once, so the review carousel and the forged card match. */
+  const carryColors = useRef<Record<string, string>>({});
+  const carryColor = useCallback((id: string) => (carryColors.current[id] ??= randomCardColor()), []);
+  /** The traits Reset restores: whatever the stat block carried, or nothing. */
+  const inheritedTraits = useMemo(() => ({ ...(statBlock as unknown as { traits?: Partial<Record<TraitKey, number>> } | null)?.traits }), [statBlock]);
+  /** Transformations follow the APP's expansion switch, not this character's picks (owner). */
+  const transformationsOn = !!expansions?.some((e) => e.id === 'void' && isEnabledForCreation(e));
+  const deckList = useMemo(() => decksFor(characterizing, transformationsOn), [characterizing, transformationsOn]);
 
   useEffect(() => {
     if (draft.className && !hadClass.current) {
@@ -500,6 +564,21 @@ export function CreateScreen() {
   );
 
   const items: StraightItem[] = useMemo(() => {
+    if (deck === 'carry') {
+      // A greyed card is DIMMED rather than outlined: an outline is what selection looks like
+      // everywhere else in the creator, and here selecting a card is how you throw it away.
+      return carry.map((it) =>
+        keep(`carry|${it.id}|${carryOff.has(it.id) ? 'off' : 'on'}`, () => ({
+          id: it.id,
+          label: it.title,
+          custom: (
+            <View style={{ opacity: carryOff.has(it.id) ? 0.3 : 1 }}>
+              <ForgedCard title={it.title} kindLabel={it.cardLabel} body={it.text} accentDeep={Rune.panel} colorArt={carryColor(it.id)} multilineTitle />
+            </View>
+          ),
+        })),
+      );
+    }
     if (deck === 'weapons') {
       // v0.19.2 item 5: HF (Hope and Fear) starting weapons only when that pack was picked for this hero.
       const base = weaponSlot === 'secondary' ? SECONDARY_WEAPONS : PRIMARY_WEAPONS.filter((w) => w.kind === weaponKind);
@@ -595,6 +674,8 @@ export function CreateScreen() {
           hasStrikeLines(lc.id) ? undefined : mix?.first === lc.id ? featureSectionIndexes(lc)[1] : mix?.second === lc.id ? featureSectionIndexes(lc)[0] : undefined;
         return [...base, ...(libContent?.ancestries ?? []).map((lc) => keepLib(lc, struckIdx(lc))), toggle];
       }
+      case 'transformation':
+        return CATALOG.filter((c) => c.kind === 'transformation').map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })));
       case 'community':
         return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))), ...(libContent?.communities ?? []).map((lc) => keepLib(lc))];
       case 'domains': {
@@ -606,9 +687,11 @@ export function CreateScreen() {
         ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, picked, creationClassCards]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, picked, creationClassCards, carry, carryOff, carryColor]);
 
   const selectedIds = useMemo(() => {
+    // The carry step never outlines anything: greying is its whole vocabulary (see `items`).
+    if (deck === 'carry') return [];
     if (deck === 'weapons') {
       if (weaponSlot === 'primary' && draft.weaponsSkipped) return ['weapons-skip'];
       const id = weaponSlot === 'secondary' ? draft.weaponSecondaryId : draft.weaponPrimaryId;
@@ -630,6 +713,8 @@ export function CreateScreen() {
         return draft.mixedAncestry
           ? [draft.mixedAncestry.first, draft.mixedAncestry.second].filter((x): x is string => !!x)
           : draft.ancestryCardId ? [draft.ancestryCardId] : [];
+      case 'transformation':
+        return draft.transformationCardId ? [draft.transformationCardId] : [];
       case 'community':
         return draft.communityCardId ? [draft.communityCardId] : [];
       case 'domains':
@@ -659,8 +744,20 @@ export function CreateScreen() {
   }, [mixedActive, modeFade]);
   const modeFadeStyle = useAnimatedStyle(() => ({ opacity: modeFade.value }));
 
+  /** Answering a step un-skips it: a Skip is the DM saying nothing, and this is them saying something. */
+  const unskip = useCallback((k: DeckKey) => {
+    setDraft((d) => (d.skipped?.includes(k) ? { ...d, skipped: d.skipped.filter((x) => x !== k) } : d));
+  }, []);
+
   const onToggle = useCallback(
     (id: string) => {
+      unskip(deck);
+      if (deck === 'carry') {
+        const off = new Set(draft.carryDisabled ?? []);
+        if (off.has(id)) off.delete(id); else off.add(id);
+        set({ carryDisabled: [...off] });
+        return;
+      }
       if (deck === 'weapons') {
         if (id === 'weapons-skip') { set({ weaponsSkipped: !draft.weaponsSkipped, weaponPrimaryId: null, weaponSecondaryId: null }); return; }
         if (weaponSlot === 'secondary') {
@@ -679,6 +776,11 @@ export function CreateScreen() {
       }
       if (deck === 'armor') {
         if (id === 'armor-skip') { set({ armorSkipped: !draft.armorSkipped, armorId: null }); return; }
+        // v0.36 (owner): armor SETS damage thresholds, and a characterized adversary is holding the
+        // ones its stat block had. Say so rather than letting the number quietly move.
+        if (draft.armorId !== id && carriesThresholds(carry, carryOff)) {
+          showToast('This one carries its own damage thresholds. Armor sets them instead, and with the level bonuses on top they will likely come out higher.');
+        }
         set({ armorId: draft.armorId === id ? null : id, armorSkipped: false });
         return;
       }
@@ -741,6 +843,9 @@ export function CreateScreen() {
           set({ ancestryCardId: draft.ancestryCardId === id ? null : id });
           return;
         }
+        case 'transformation':
+          set({ transformationCardId: draft.transformationCardId === id ? null : id });
+          return;
         case 'community':
           set({ communityCardId: draft.communityCardId === id ? null : id });
           return;
@@ -753,7 +858,7 @@ export function CreateScreen() {
         }
       }
     },
-    [deck, draft, set, weaponSlot, invChoice, secondaryAllowed, libContent],
+    [deck, draft, set, weaponSlot, invChoice, secondaryAllowed, libContent, unskip, carry, carryOff],
   );
 
   // v0.23.0: teach the creator when the creator opens, not on first launch.
@@ -777,33 +882,36 @@ export function CreateScreen() {
   useEffect(() => {
     if (resumeChecked) return;
     setResumeChecked(true);
+    // A characterize draft belongs to ONE combatant, so offering an unrelated hero back into it
+    // would put someone else's class on this adversary. Neither offered nor saved (below).
+    if (characterizing) return;
     const stored = loadDraft<Draft>();
     if (isResumable(stored, draftHasContent) && stored) setResumeOffer({ draft: stored.draft, deck: stored.deck, savedAt: stored.savedAt });
     else clearDraft();
-  }, [resumeChecked]);
+  }, [resumeChecked, characterizing]);
 
   // Persist after every edit. Cheap (one small JSON) and it means the draft survives anything.
   useEffect(() => {
-    if (!resumeChecked || resumeOffer) return; // don't overwrite a draft we're still offering back
+    if (!resumeChecked || resumeOffer || characterizing) return; // don't overwrite a draft we're still offering back
     if (draftHasContent(draft)) saveDraft(draft, { deck, picked: [...picked] });
-  }, [draft, deck, picked, resumeChecked, resumeOffer]);
+  }, [draft, deck, picked, resumeChecked, resumeOffer, characterizing]);
 
   draftRef.current = draft;
-  const complete = DECKS.every((d) => deckDone(d.key, draft)) && draft.name.trim().length > 0;
+  const complete = deckList.every((d) => deckDone(d.key, draft)) && draft.name.trim().length > 0;
   // Aggregate progress (v0.22.0). The rail showed per-step ticks but nothing showed how close you
   // were overall, and the NAME requirement had no representation on the rail at all — so a player
   // could hold ten gold ticks and a disabled Forge button with no explanation of why.
-  const steps = DECKS.length + 1; // +1 for the name
-  const stepsDone = DECKS.filter((d) => deckDone(d.key, draft)).length + (draft.name.trim().length > 0 ? 1 : 0);
-  const missingLabel = !draft.name.trim() ? 'a name' : (DECKS.find((d) => !deckDone(d.key, draft))?.label.toLowerCase() ?? null);
+  const steps = deckList.length + 1; // +1 for the name
+  const stepsDone = deckList.filter((d) => deckDone(d.key, draft)).length + (draft.name.trim().length > 0 ? 1 : 0);
+  const missingLabel = !draft.name.trim() ? 'a name' : (deckList.find((d) => !deckDone(d.key, draft))?.label.toLowerCase() ?? null);
 
   /** Tapping Forge while incomplete jumps to the first unmet step instead of doing nothing. */
   const jumpToMissing = useCallback(() => {
     playSfx('buttonTap');
-    const next = DECKS.find((d) => !deckDone(d.key, draft));
+    const next = deckList.find((d) => !deckDone(d.key, draft));
     if (next) switchDeck(next.key);
     else nameRef.current?.focus(); // every deck is done, so the name is what's left
-  }, [draft, switchDeck]);
+  }, [draft, switchDeck, deckList]);
 
   const forge = useCallback(async () => {
     if (!complete || !draft.className) return;
@@ -878,6 +986,140 @@ export function CreateScreen() {
     router.replace({ pathname: '/sheet', params: { id } });
   }, [complete, draft, router, libContent, picked]);
 
+  /**
+   * Forge a CHARACTERIZED adversary or ally (v0.36, owner).
+   *
+   * Three things happen that ordinary creation does not do, and the order between them matters:
+   *
+   *  1. Every carried item that survived the first step becomes a custom card in the Arsenal, with
+   *     its full text so the DM can read what it does, and the colour it was shown in.
+   *  2. The sheet is computed ONCE from everything else the character has, and only then are the
+   *     carried thresholds and vitals written as the single difference. That is what makes an 8/14
+   *     adversary read 8/14 whatever the class, the level bonuses and the chosen cards come to.
+   *  3. The combatant in the encounter is replaced by an entry naming this character, on the side it
+   *     was already fighting on, and the character joins both the roster and the adversary library.
+   */
+  const forgeCharacterized = useCallback(async () => {
+    const ch = draftRef.current.characterize;
+    const d = draftRef.current;
+    if (!d.className || !ch) return;
+    setForging(true);
+    const id = newCharacterId();
+    const kept = keptItems(carry, carryOff);
+    // Greying the level card out sends them to level 1 (owner); otherwise the Level step's number
+    // wins, falling back to what the tier and difficulty worked out to.
+    const level = carryOff.has('carry-level') ? 1 : (d.level ?? keptLevel(carry, carryOff));
+    // The level is the character's LEVEL, not a card. Everything else becomes one.
+    const carded = kept.filter((it) => it.kind !== 'level');
+    const cardOf = (it: CarryItem, effects: CardEffect[]): CustomCardDef => ({
+      id: `cz-${it.id}`,
+      title: it.title,
+      text: it.text,
+      imageUri: null,
+      color: carryColor(it.id),
+      typeLabel: it.cardLabel,
+      target: 'arsenal',
+      ...(effects.length ? { effects } : {}),
+    });
+
+    const libById = new Map<string, LibraryCard>();
+    if (libContent) for (const arr of [libContent.ancestries, libContent.communities, libContent.subclasses, libContent.domains, libContent.armor, libContent.inventory]) for (const c of arr) libById.set(c.id, c);
+    const pickedIds = [d.mixedAncestry ? d.mixedAncestry.first : d.ancestryCardId, d.mixedAncestry?.second, d.subclassCardId, d.communityCardId, d.armorId, ...d.domainCardIds, ...d.inventoryLibIds].filter((x): x is string => !!x);
+    const libraryCards = [...new Set(pickedIds)].map((pid) => libById.get(pid)).filter((c): c is LibraryCard => !!c);
+    const acquired = d.transformationCardId ? [d.transformationCardId] : [];
+
+    const common = {
+      schemaVersion: 1 as const,
+      id,
+      createdAt: new Date().toISOString(),
+      name: d.name.trim(),
+      portraitUri: d.portraitUri,
+      className: d.className,
+      subclassCardId: d.subclassCardId ?? '',
+      ancestryCardId: (d.mixedAncestry ? d.mixedAncestry.first : d.ancestryCardId) ?? '',
+      communityCardId: d.communityCardId ?? '',
+      domainCardIds: d.domainCardIds,
+      traits: d.traits as Record<TraitKey, number>,
+      experiences: d.experiences,
+      weaponPrimaryId: d.weaponPrimaryId ?? undefined,
+      weaponSecondaryId: d.weaponSecondaryId,
+      armorId: d.armorId ?? undefined,
+      inventoryItemIds: d.inventoryItemIds,
+      ...(libraryCards.length ? { libraryCards } : {}),
+      ...(acquired.length ? { acquiredCardIds: acquired } : {}),
+      ...([...picked].filter((x) => x !== BASE_PICK_ID).length ? { enabledExpansionIds: [...picked].filter((x) => x !== BASE_PICK_ID) } : {}),
+      gold: d.gold,
+      level,
+      characterized: true as const,
+      arsenalOnly: true as const,
+      // "A characterized adversary that skips the inventory step must have no inventory cards at
+      // all, no torches, no rope, no potions" (owner). Working through the step still takes the kit.
+      skipStartingKit: !!d.skipped?.includes('inventory'),
+    };
+
+    // Pass 1: the same file with the carried cards carrying NOTHING, so the sheet reports what
+    // everything else adds up to.
+    const provisional = { ...common, customCards: carded.map((it) => cardOf(it, [])) } as CharacterFile;
+    const sheet = toSheetCharacter(provisional);
+    const have = {
+      majorThreshold: sheet.damageThresholds.major,
+      severeThreshold: sheet.damageThresholds.severe,
+      maxHp: sheet.maxHp,
+      stressMax: sheet.stress.total - (sheet.stress.locked ?? 0),
+    };
+    const customCards = carded.map((it) => cardOf(it, itemHoldEffects(it, have)));
+    // Everything on, at once: a DM reading this sheet wants the true numbers, not a character with
+    // its own domain cards and armor switched off waiting to be discovered mid-fight.
+    const enabledCardIds = [
+      ...customCards.map((c) => c.id),
+      ...libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id),
+      ...(d.armorId ? [d.armorId] : []),
+      ...(d.weaponPrimaryId ? [d.weaponPrimaryId] : []),
+      ...(d.weaponSecondaryId ? [d.weaponSecondaryId] : []),
+      ...d.domainCardIds,
+      ...acquired,
+    ];
+    const file = { ...common, customCards, enabledCardIds: [...new Set(enabledCardIds)] } as CharacterFile;
+
+    try {
+      await saveCharacter(file);
+      // The encounter entry: same combatant, same side, now naming a character.
+      const enc = await getEncounter(ch.encounterId);
+      if (enc) {
+        const swap = (c: Combatant): Combatant => (c.id === ch.combatantId ? { ...c, charId: id, name: file.name, portraitUri: file.portraitUri ?? c.portraitUri } : c);
+        await saveEncounter({
+          ...enc,
+          adversaries: enc.adversaries.map(swap),
+          allies: enc.allies.map((a) => (a.kind === 'npc' ? { kind: 'npc' as const, combatant: swap(a.combatant) } : a)),
+          charVitals: { ...(enc.charVitals ?? {}), [id]: initialVitals(file) },
+        });
+        // Into the library too, in its own section, so it can be brought back in a later fight.
+        const held = [...enc.adversaries, ...enc.allies.flatMap((a) => (a.kind === 'npc' ? [a.combatant] : []))].find((c) => c.id === ch.combatantId);
+        if (held) {
+          const lib = await loadAdversaries();
+          await saveAdversaries(addTemplate(lib, { ...held, charId: id, name: file.name }));
+        }
+        // An ALLY is offered to the party; an adversary is not, because the app should not suggest
+        // recruiting the villain. Either way the character is on the roster and can be added by hand.
+        if (ch.side === 'ally') {
+          const ses = await getSession(enc.sessionId);
+          const party = ses ? await getParty(ses.partyId) : null;
+          if (party && !party.memberIds.includes(id)) {
+            setForging(false);
+            setJoinParty({ charId: id, name: file.name, party });
+            return;
+          }
+        }
+      }
+    } catch (e: unknown) {
+      setForging(false);
+      showToast('Could not save this character. Nothing was changed.', 'error');
+      throw e;
+    }
+    clearDraft();
+    router.replace(`/encounter?id=${ch.encounterId}` as Href);
+  }, [carry, carryOff, carryColor, libContent, picked, router]);
+
   /** Write an experience into its slot. Shared so the quick flow and the full editor cannot drift. */
   const saveExperience = useCallback((slot: number, d: { title: string; imageUri: string | null; color: string | null; effects?: CardEffect[] }) => {
     const next = [...draft.experiences];
@@ -896,12 +1138,33 @@ export function CreateScreen() {
   }, [set]);
 
   const locked = (k: DeckKey) =>
-    ((k === 'subclass' || k === 'domains') && !draft.className) || !!DECKS.find((d) => d.key === k)?.stub; // stubs land next issue
+    ((k === 'subclass' || k === 'domains') && !draft.className) || !!deckList.find((d) => d.key === k)?.stub; // stubs land next issue
   const maxSelect = deck === 'domains' || deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
   // 'domains' used to fall back to the word 'card' — the least specific label in the app, on the one
   // step where you pick two. It only shows now when the centred card's own name is too long to fit.
   const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'domain card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
+  const allCarryOff = carry.length > 0 && carryOff.size >= carry.length;
+  /**
+   * SKIP (v0.36, owner): answer a step with nothing and move on.
+   *
+   * Characterize only, and never on Class, which is the one thing a character cannot be without. It
+   * sits beside Random because that is where the thumb already is, and because the two are the same
+   * kind of control: a way past a decision you do not want to make card by card.
+   */
+  const skipStep = useCallback(() => {
+    const k = deckRef.current;
+    playSfx('buttonTap');
+    setDraft((d) => ({ ...d, skipped: [...new Set([...(d.skipped ?? []), k])] }));
+    const order = decksRef.current.filter((x) => !x.stub);
+    const at = order.findIndex((x) => x.key === k);
+    const next = order.slice(at + 1).find((x) => !deckDone(x.key, { ...draftRef.current, skipped: [...(draftRef.current.skipped ?? []), k] }));
+    if (next) switchDeckRef.current(next.key);
+  }, []);
+  const SkipStep = useCallback(
+    () => (characterizing && deck !== 'class' && deck !== 'carry' ? <RuneButton label={draft.skipped?.includes(deck) ? 'Skipped' : 'Skip'} kind="ghost" dense height={30} muteSfx onPress={skipStep} accessibilityLabel={`Skip ${deck}`} /> : null),
+    [characterizing, deck, draft.skipped, skipStep],
+  );
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
   // Live mirrors for the keyboard listener, which is registered once and must never close over a
   // stale render. `overlayUp` is everything that covers the creator and therefore owns the keyboard.
@@ -917,6 +1180,8 @@ export function CreateScreen() {
   deckRef.current = deck;
   const switchDeckRef = useRef(switchDeck);
   switchDeckRef.current = switchDeck;
+  const decksRef = useRef(deckList);
+  decksRef.current = deckList;
 
   /**
    * Keyboard control for the creator (v0.29.0). Web only, and a no-op on a phone.
@@ -968,7 +1233,7 @@ export function CreateScreen() {
           break;
         }
         case 'category': {
-          const order = DECKS.filter((d) => !d.stub).map((d) => d.key);
+          const order = decksRef.current.filter((d) => !d.stub).map((d) => d.key);
           const at = order.indexOf(deckRef.current);
           const to = order[Math.min(order.length - 1, Math.max(0, at + intent.step))];
           if (to && to !== deckRef.current) switchDeckRef.current(to);
@@ -1053,7 +1318,7 @@ export function CreateScreen() {
       // of claiming it from the first screen. It stays tappable on purpose: tapping it while
       // incomplete jumps to the step that is missing, which is more use than a dead control, and a
       // truly dead Forge with no explanation is the thing this replaced in the first place.
-      headerRight={<RuneButton label="Forge" kind={complete ? 'primary' : 'ghost'} height={26} dense onPress={() => { if (complete) void forge(); else jumpToMissing(); }} accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`} />}>
+      headerRight={<RuneButton label="Forge" kind={complete ? 'primary' : 'ghost'} height={26} dense onPress={() => { if (!complete) { jumpToMissing(); return; } void (characterizing ? forgeCharacterized() : forge()); }} accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`} />}>
       <Animated.View style={[{ flex: 1 }, entryStyle]}>
         {/* ---- details ---- */}
         <SectionDivider label="Details" />
@@ -1095,7 +1360,7 @@ export function CreateScreen() {
                   accessibilityLabel="Character name"
                 />
               </ChamferBox>
-              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the {"sheet's"} portrait frame.</Text>
+              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional, it sits in the {"sheet's"} portrait frame.</Text>
             </View>
             <RuneButton label={draft.portraitUri ? 'Change image' : 'Add image'} kind="ghost" height={32} onPress={pickPortrait} />
           </View>
@@ -1122,7 +1387,7 @@ export function CreateScreen() {
         {/* The deck rail (#107, nine steps): fixed-width tabs, free scroll. A thin custom scroll
             indicator (#110) tracks position instead of the old static chevron. */}
         <DeckRail>
-          {DECKS.map((d) => (
+          {deckList.map((d) => (
             <DeckTab
               key={d.key}
               deck={d.key}
@@ -1194,8 +1459,27 @@ export function CreateScreen() {
               />
             </Animated.View>
           ) : null}
-          {deck === 'traits' ? <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} spellcastTrait={spellcastTraitForSubclass(draft.subclassCardId ? cardById(draft.subclassCardId)?.subclass : undefined)} /> : null}
+          {deck === 'traits' ? (
+            characterizing ? (
+              <CharacterizeTraitsTab traits={draft.traits} initial={inheritedTraits} onTraits={(traits) => { unskip('traits'); set({ traits }); }} footer={<SkipStep />} />
+            ) : (
+              <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} spellcastTrait={spellcastTraitForSubclass(draft.subclassCardId ? cardById(draft.subclassCardId)?.subclass : undefined)} />
+            )
+          ) : null}
+          {deck === 'level' ? (
+            <LevelTab
+              level={carryOff.has('carry-level') ? 1 : (draft.level ?? levelForStatBlock(statBlock?.tier, statBlock?.difficulty))}
+              derived={carryOff.has('carry-level') ? 1 : levelForStatBlock(statBlock?.tier, statBlock?.difficulty)}
+              onLevel={(n) => { unskip('level'); set({ level: n }); }}
+              footer={<SkipStep />}
+            />
+          ) : null}
           {deck === 'experiences' ? <ExperiencesTab experiences={draft.experiences} onEdit={(slot) => setEditingExperience(slot)} /> : null}
+          {deck === 'experiences' && characterizing ? (
+            <View style={{ alignItems: 'center', paddingBottom: 14 }}>
+              <SkipStep />
+            </View>
+          ) : null}
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
         </View>
@@ -1232,17 +1516,21 @@ export function CreateScreen() {
         // reach further into this band) — the buttons must never overlap the carousel (owner).
         <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 14, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           <RuneButton
-            label={centerSelected ? 'Deselect' : `Select ${centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun}`}
-            kind={centerSelected ? 'ghost' : 'primary'}
+            label={
+              deck === 'carry'
+                ? carryOff.has(centerItem?.id ?? '') ? 'Keep this' : 'Do not carry this'
+                : centerSelected ? 'Deselect' : `Select ${centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun}`
+            }
+            kind={deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? 'primary' : 'ghost') : centerSelected ? 'ghost' : 'primary'}
             height={40}
             muteSfx
             onPress={() => {
               if (!centerItem) return;
               // #258: selecting a card uses the card-select/deselect chime, not the generic tap.
-              playSfx(centerSelected ? 'cardDeselect' : 'cardSelect');
+              playSfx(centerSelected || (deck === 'carry' && !carryOff.has(centerItem.id)) ? 'cardDeselect' : 'cardSelect');
               onToggle(centerItem.id);
             }}
-            accessibilityLabel={centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+            accessibilityLabel={deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? `Carry ${centerItem?.label ?? 'this'}` : `Do not carry ${centerItem?.label ?? 'this'}`) : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
           {/* v0.10.2 (Feature 2): roll a random valid choice for this section. */}
           {/* v0.29.0: on the ancestry step in MIXED mode, the reverse control sits BESIDE Random rather
@@ -1250,13 +1538,28 @@ export function CreateScreen() {
               of it, so a new row would push the cards up; a 30dp square next to a 30dp dense button
               costs nothing. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
+            {/* v0.36: the carry step has no Random. Nothing here is a choice to roll for, it is a
+                review of what the stat block said, so its second control clears the lot instead. */}
+            {deck === 'carry' ? (
+              <RuneButton
+                label={allCarryOff ? 'Reset' : 'Select all'}
+                kind="ghost"
+                dense
+                height={30}
+                muteSfx
+                onPress={() => { playSfx(allCarryOff ? 'cardSelect' : 'cardDeselect'); set({ carryDisabled: allCarryOff ? [] : carry.map((it) => it.id) }); }}
+                accessibilityLabel={allCarryOff ? 'Carry everything again' : 'Carry nothing'}
+              />
+            ) : (
+              <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
+            )}
             {deck === 'ancestry' && draft.mixedAncestry ? <MixReverseButton mixed={draft.mixedAncestry} onReverse={reverseMix} /> : null}
+            <SkipStep />
           </View>
           {/* v0.10.6: the class/weapons hint tooltips were removed — they pushed these buttons up into
               the card carousel (owner). */}
           <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
-            {deck === 'inventory' ? `Picked ${draft.inventoryItemIds.length}/2` : `Picked ${selectedIds.length}/${maxSelect}`}
+            {deck === 'carry' ? `Carrying ${carry.length - carryOff.size}/${carry.length}` : deck === 'inventory' ? `Picked ${draft.inventoryItemIds.length}/2` : `Picked ${selectedIds.length}/${maxSelect}`}
           </Text>
         </Animated.View>
       ) : null}
@@ -1285,6 +1588,32 @@ export function CreateScreen() {
             <RuneButton label="Discard draft" kind="ghost" height={40} onPress={() => { clearDraft(); setLeaveConfirm(false); router.back(); }} />
           </View>
         </PopupDialog>
+      ) : null}
+
+      {forging ? <CreateLoader done={false} onHidden={() => {}} /> : null}
+      {joinParty ? (
+        <PopupDialog
+          title={`Add ${joinParty.name} to ${joinParty.party.name}?`}
+          body="They are a character now, so they can be a member of the party like anyone else. Either way they stay in this encounter and on your character list, and you can add them later from the party editor."
+          confirmLabel="Add to party"
+          cancelLabel="Not now"
+          onConfirm={() => {
+            const j = joinParty;
+            setJoinParty(null);
+            void (async () => {
+              const f = await getCharacter(j.charId);
+              if (f) await saveParty(addMembers(j.party, [{ charId: j.charId, vitals: initialVitals(f) }]));
+              clearDraft();
+              router.replace(`/encounter?id=${draftRef.current.characterize?.encounterId}` as Href);
+            })();
+          }}
+          onCancel={() => {
+            const enc = draftRef.current.characterize?.encounterId;
+            setJoinParty(null);
+            clearDraft();
+            router.replace(`/encounter?id=${enc}` as Href);
+          }}
+        />
       ) : null}
 
       {resumeOffer ? (
