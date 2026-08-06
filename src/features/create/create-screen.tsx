@@ -1360,7 +1360,7 @@ export function CreateScreen() {
                   accessibilityLabel="Character name"
                 />
               </ChamferBox>
-              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional — it sits in the {"sheet's"} portrait frame.</Text>
+              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, lineHeight: 14 }}>Portrait optional, it sits in the {"sheet's"} portrait frame.</Text>
             </View>
             <RuneButton label={draft.portraitUri ? 'Change image' : 'Add image'} kind="ghost" height={32} onPress={pickPortrait} />
           </View>
