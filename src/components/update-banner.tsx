@@ -3,9 +3,10 @@ import { Linking, Platform, Pressable, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { PopupDialog } from '@/components/popup-dialog';
+import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
-import { ANDROID_DOWNLOAD_URL, hardReloadWeb, isNewerVersion, latestReleaseTag, webUpdateWaiting } from '@/lib/update-check';
+import { ANDROID_DOWNLOAD_URL, ANDROID_RELEASE_PAGE, hardReloadWeb, isNewerVersion, latestReleaseTag, webUpdateWaiting } from '@/lib/update-check';
 
 /** This build's version, as declared in app.json. */
 export function appVersion(): string | undefined {
@@ -71,12 +72,23 @@ export function UpdateBanner({ onDialog }: { onDialog?: (dialog: React.ReactNode
           body={
             Platform.OS === 'web'
               ? 'A newer build is already downloaded. Reloading clears the old files and starts it. Your characters are stored on this device and are not touched.'
-              : 'This opens the download page in your browser. Install it over the top of this one: your characters stay where they are.'
+              : 'This starts the download in your browser. Install it over the top of this one: your characters stay where they are. It is a large file, so give it a moment on a slow connection.'
           }
-          confirmLabel={Platform.OS === 'web' ? 'Reload' : 'Open the download'}
+          confirmLabel={Platform.OS === 'web' ? 'Reload' : 'Start the download'}
           onConfirm={confirm}
-          onCancel={() => setAsking(false)}
-        />
+          onCancel={() => setAsking(false)}>
+          {/* v0.35.3 (owner): some phones stall a big download near the end. The release page is the
+              way round it, so it is offered here rather than left for a player to find. */}
+          {Platform.OS === 'web' ? null : (
+            <RuneButton
+              label="Open the release page instead"
+              kind="ghost"
+              height={42}
+              style={{ marginTop: 12 }}
+              onPress={() => { setAsking(false); void Linking.openURL(ANDROID_RELEASE_PAGE); }}
+            />
+          )}
+        </PopupDialog>
       ) : null,
     );
   }, [asking, confirm, onDialog]);

@@ -18,8 +18,22 @@
  * worse bug than the one it exists to prevent.
  */
 
-/** Where the site sends people for the Android build (public/_redirects). */
-export const ANDROID_DOWNLOAD_URL = 'https://runekeep.pages.dev/android-app';
+/**
+ * Where the app sends people for the Android build.
+ *
+ * v0.35.3 (owner: "downloads to 99% and never completes"): this used to point at the site's
+ * `/android-app`, which is a redirect to a GitHub asset, which is itself a redirect to a SIGNED,
+ * EXPIRING URL. Two hops before the first byte, and a browser that has to resume a 90MB download near
+ * the end goes back to the start of that chain and asks for a fresh signature. Going straight to the
+ * asset removes one hop and one thing that can change under a resume.
+ *
+ * It is not a proven cure. A download that stalls at 99% is happening in the browser or at the CDN,
+ * where nothing in this app can reach; the release PAGE is the fallback worth trying, and it is one
+ * tap away from here.
+ */
+export const ANDROID_DOWNLOAD_URL = 'https://github.com/DavidMGDev/RuneKeep/releases/latest/download/RuneKeep-android.apk';
+/** Where to go when the direct download will not finish: the release, with its assets listed. */
+export const ANDROID_RELEASE_PAGE = 'https://github.com/DavidMGDev/RuneKeep/releases/latest';
 const RELEASES_API = 'https://api.github.com/repos/DavidMGDev/RuneKeep/releases/latest';
 
 /** Parse "v0.31.2" / "0.31.2" into numbers. Junk yields an empty list, which never compares newer. */

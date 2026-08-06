@@ -8,7 +8,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
-import { Body, DmRune, Rune } from '@/constants/theme';
+import { Body, Rune } from '@/constants/theme';
 
 export type ToastTone = 'info' | 'error' | 'success';
 interface ToastMsg { id: number; text: string; tone: ToastTone }

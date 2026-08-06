@@ -7,8 +7,8 @@ import { AppScreen } from '@/components/app-screen';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { finishTour, saveTourStep, type TourId, tourStep } from '@/lib/onboarding-store';
-import { isDesktopWeb } from '@/lib/pwa-install';
-import { useInstallMode } from '@/lib/pwa-install';
+import { isDesktopWeb , useInstallMode } from '@/lib/pwa-install';
+
 import { beginLoading, endLoading, playSfx } from '@/lib/sfx';
 
 import { CircleDemo, EquipDemo, HandDemo, HeartsDemo, WelcomeDemo, WheelDemo } from './demos';

@@ -18,9 +18,9 @@ import { listParties } from '@/lib/party-store';
 import { showToast } from '@/components/toast';
 import { resetTours, shouldShow } from '@/lib/onboarding-store';
 import { useLayout } from '@/hooks/use-layout';
-import { playSfx, preloadSfx } from '@/lib/sfx';
+import { playSfx, preloadSfx , sfxDiagnostics } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
-import { sfxDiagnostics } from '@/lib/sfx';
+
 
 const THUMB_W = 76;
 const THUMB_H = Math.round(THUMB_W * (263 / 188));
