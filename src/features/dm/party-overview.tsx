@@ -75,7 +75,6 @@ function PartyRoster({
         {ids.map((charId) => {
           const f = files[charId];
           const hp = party.global[charId]?.hp ?? 0;
-          const max = memberMaxes(f).maxHp;
           const downed = hp <= 0;
           return (
             <DmPress
@@ -84,7 +83,7 @@ function PartyRoster({
               onLongPress={() => onModifiers(charId)}
               delayLongPress={360}
               accessibilityRole="button"
-              accessibilityLabel={`${f.name}, ${hp} of ${max} hit points. Tap to find them, hold for their modifiers.`}
+              accessibilityLabel={`${f.name}, ${hp} hit points. Tap to find them, hold for their modifiers.`}
               style={{ width: `${100 / PER_ROW}%`, alignItems: 'center', gap: 4 }}>
               <ChamferBox chamfer={6} fill={DmRune.ink} stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.2} style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                 {f.portraitUri ? (
