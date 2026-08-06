@@ -1,12 +1,11 @@
 import { useEffect } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
+import Svg, {  Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Rune } from '@/constants/theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
-import { FORGED_H, FORGED_W } from './components/forged-card';
 import { DeckGlyph } from './deck-glyph';
 import { type DeckKey } from './create-types';
 

@@ -325,7 +325,7 @@ export function PipRow({
       ]}>
       {states.map((state, i) => (
         <PressableArt
-          // eslint-disable-next-line react/no-array-index-key
+           
           key={i}
           style={{ width: pipWidth, height: pipHeight }}
           pressedScale={1.25}

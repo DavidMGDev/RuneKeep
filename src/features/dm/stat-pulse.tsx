@@ -64,9 +64,10 @@ export function StatPulse({
   const color = STAT_COLOR[kind];
 
   // Only shared values and plain functions cross into a worklet, never the context object itself.
-  const { active, anchorX, anchorY, fingerX, fingerY, highlight } = radial;
+  const { active, anchorX, anchorY, fingerX, fingerY, lastWedge } = radial;
   const openWheel = radial.open;
   const commitWheel = radial.commit;
+  const setWedge = radial.setWedge;
 
   /** The callbacks, behind a ref, so the gesture below is built once and never replaced (v0.35). */
   const cb = useRef({ disabled, onApply, onRequestSet, onBlocked });
@@ -144,13 +145,20 @@ export function StatPulse({
           if (active.value !== 1) return;
           fingerX.value = windowToFrameX(e.absoluteX, frame);
           fingerY.value = windowToFrameY(e.absoluteY, frame);
-          highlight.value = pickWedge(fingerX.value - anchorX.value, fingerY.value - anchorY.value);
+          // v0.35.3: the wedge is REPORTED to the JS side, and only when it changes. Deciding it here
+          // and reacting to it there through `useAnimatedReaction` was the last piece of UI-thread
+          // machinery this had that the float menu does not.
+          const w = pickWedge(fingerX.value - anchorX.value, fingerY.value - anchorY.value);
+          if (w !== lastWedge.value) {
+            lastWedge.value = w;
+            runOnJS(setWedge)(w);
+          }
         })
         .onFinalize(() => {
           'worklet';
           runOnJS(endTouch)(movedSV.value === 1, active.value === 1);
         }),
-    [armHold, clearHold, endTouch, active, anchorX, anchorY, fingerX, fingerY, highlight, frame, startX, startY, movedSV],
+    [armHold, clearHold, endTouch, setWedge, active, anchorX, anchorY, fingerX, fingerY, lastWedge, frame, startX, startY, movedSV],
   );
 
   return (

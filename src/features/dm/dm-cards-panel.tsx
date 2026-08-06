@@ -13,8 +13,10 @@
  * Which category you are looking at is ASKED FIRST, before the panel opens, so it never opens on a
  * guess. See `DmCategoryPrompt`.
  *
- * It never forges: a catalog card is its own artwork and everything else is rendered live by the
- * carousel, which is exactly what the creation and level-up carousels do while cards are forging.
+ * v0.35.3: the cards come from the SHEET'S OWN job list (`dm-decks`), not from a second reading of the
+ * character file. The old resolver could not see the starting kit at all, because the kit comes from
+ * the class rather than the file. It never forges: a catalog card is its own artwork and everything
+ * else is rendered live, which is exactly what the creation and level-up carousels do.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
@@ -30,13 +32,11 @@ import { cardById } from '@/data/catalog';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
-import { ForgedArmorCard, ForgedLootCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
-import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
 import { CategoryGlyph } from '@/features/character-sheet/sheet/deck-toggle-icon';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
-import { cardToLibraryCard, catalogIdOf, sourceLabelForCardId } from '@/features/cards/card-effects';
-import { characterCardsByCategory, dmCategories } from '@/lib/dm-card-list';
+import { dmCategories } from '@/lib/dm-card-list';
+import { type DmCard, dmDecks } from './dm-decks';
 import type { CharacterFile, CustomCardDef } from '@/lib/character-file';
 import type { LibraryCard } from '@/lib/library';
 import { useScreenDim } from '@/lib/screen-dim';
@@ -52,19 +52,12 @@ function glyphMeta(file: CharacterFile): Record<string, { icon?: string; builtin
   return Object.fromEntries((file.customCategories ?? []).map((c) => [c.id, { icon: c.icon, builtin: false }]));
 }
 
-/** One card as the carousel wants it: printed artwork where there is any, live otherwise. */
-function carouselItem(file: CharacterFile, id: string): StraightItem {
-  const base = catalogIdOf(id);
-  const cat = cardById(base);
-  if (cat) return { id, thumb: cat.thumb, source: cat.source, label: cat.label };
-  const label = sourceLabelForCardId(id, file);
-  const weapon = weaponById(base);
-  if (weapon) return { id, custom: <ForgedWeaponCard weapon={weapon} />, label };
-  const armor = armorById(base);
-  if (armor) return { id, custom: <ForgedArmorCard armor={armor} />, label };
-  const loot = lootById(base);
-  if (loot) return { id, custom: <ForgedLootCard loot={loot} />, label };
-  return { id, custom: <LibraryForgedCard card={cardToLibraryCard(file, id, (x) => x)} />, label };
+/** One of the sheet's cards, as the carousel wants it. A multi-page card keeps its pages. */
+function carouselItem(c: DmCard): StraightItem {
+  const faces = c.faces?.length
+    ? [{ source: c.source, thumb: c.thumb, custom: c.node }, ...c.faces.map((f) => ({ custom: f }))]
+    : undefined;
+  return { id: c.id, thumb: c.thumb, source: c.source, custom: c.node, label: c.label, faces };
 }
 
 /**
@@ -74,7 +67,7 @@ function carouselItem(file: CharacterFile, id: string): StraightItem {
  * that saves several, and it means the panel never has to guess which category to land on.
  */
 export function DmCategoryPrompt({ file, onPick, onCancel }: { file: CharacterFile; onPick: (key: string) => void; onCancel: () => void }) {
-  const decks = useMemo(() => characterCardsByCategory(file), [file]);
+  const decks = useMemo(() => dmDecks(file), [file]);
   const cats = useMemo(() => dmCategories(file, decks), [file, decks]);
   const meta = useMemo(() => glyphMeta(file), [file]);
   useAndroidBack(() => { onCancel(); return true; });
@@ -130,7 +123,7 @@ export function DmCardsPanel({ file, category, onFile, onClose }: { file: Charac
   const panelStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 16 }] }));
   useScreenDim(0.98);
 
-  const decks = useMemo(() => characterCardsByCategory(file), [file]);
+  const decks = useMemo(() => dmDecks(file), [file]);
   const cats = useMemo(() => dmCategories(file, decks), [file, decks]);
   const meta = useMemo(() => glyphMeta(file), [file]);
   const [cat, setCat] = useState(category);
@@ -144,7 +137,7 @@ export function DmCardsPanel({ file, category, onFile, onClose }: { file: Charac
   });
 
   const ids = useMemo(() => decks[cat] ?? [], [decks, cat]);
-  const items = useMemo(() => ids.map((id) => carouselItem(file, id)), [ids, file]);
+  const items = useMemo(() => ids.map(carouselItem), [ids]);
   const acquiredIds = useMemo(() => new Set(file.acquiredCardIds ?? []), [file]);
 
   /** File a newly added card into the deck being viewed, unless it is already its natural home. */

@@ -38,7 +38,7 @@ function playGearPip() {
 }
 
 // The sheet's inner gear (U3) — here it IS the fast-scroll control, riding the bottom edge.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+ 
 const INNER_GEAR = require('../../../../assets/art/gears/raster/U3.webp') as number;
 
 /**

@@ -17,28 +17,25 @@ import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
-import { type CharacterFile, type CustomCardDef, experienceBreakdown, numberInputFor, toSheetCharacter } from '@/lib/character-file';
+import { type CharacterFile, type CustomCardDef, numberInputFor, toSheetCharacter } from '@/lib/character-file';
 import { CATALOG, cardById } from '@/data/catalog';
-import { CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identity';
+import { CLASSES, classInfo } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
-import { CLASS_CARDS, classBanner } from '@/features/create/components/class-cards';
+import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/data/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
-import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID, MARTIAL_STANCES, stanceColor } from '@/data/martial-form-data';
+import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID } from '@/data/martial-form-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardHasEffects, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
 import { applyPromotions, resolveCopyDeletions } from '@/lib/card-copies';
-import { imageForPrint, type PdfCard, shareCardsPdf } from '@/lib/card-pdf';
+import { imageForPrint, type PdfCard } from '@/lib/card-pdf';
 import { equipNoticeFor } from '@/data/card-notices';
 import { showToast } from '@/components/toast';
 import { NumberKeypad } from './number-keypad';
-import { authoredItemOptionId, CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
-import { itemColor } from '@/data/item-colors';
 import { GoldCard } from '@/features/create/components/gold-card';
 import { CompanionFacetCard, companionCardId, type CompanionFacet } from '../components/companion-card';
 import { isClassTrackerId, SummonerTrackerCard, SUMMONER_TRACKER_ID, WarlockTrackerCard, WARLOCK_TRACKER_ID } from '../components/class-tracker-card';
@@ -52,27 +49,20 @@ import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
-import { type Expansion, featureSectionIndexes, type LibraryCard } from '@/lib/library';
-import { libraryCardById, mixedCrossedTrait } from '@/lib/library-embed';
-import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
-import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
-import { contentSig } from '@/lib/content-sig';
+import { type Expansion, type LibraryCard } from '@/lib/library';
+import { libraryCardById } from '@/lib/library-embed';
 import { type MoodboardItem, readMoodboard } from '@/lib/moodboard';
 import { MOODBOARD_BG, MoodboardScreen } from '../moodboard/moodboard-screen';
-import { hasStrikeLines } from '@/data/ancestry-trait-regions';
 import { cardChoiceFor } from '@/data/card-choices';
 import { embedCardImageForNfc } from '@/lib/image-embed';
-import { inlineCardImage, nfcModulesPresent, SAFE_NFC_BYTES } from '@/lib/nfc';
+import {  nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { NfcReceiveCeremony, SheetNfcReceiver } from './nfc-receive-ceremony';
 import { CardChoiceDialog } from './card-choice-dialog';
 import { useKeyboardControl } from './use-keyboard-control';
-
-// A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
-// temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
-const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 import { useForgedSnapshots } from '@/features/create/components/forged-snapshots';
+import { buildDeckJobs } from './deck-jobs';
 import { PrintableImage, PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
 import { usePrintJob } from '@/features/share/print-job';
 import { Art } from '../art';
@@ -114,6 +104,10 @@ import { type CardMenuKind } from '../card-menu';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
 import { PortraitImage, PortraitTapButton, type PortraitTransform } from './portrait-image';
+
+// A generic require for the GOLD card's never-drawn source/thumb (it renders its live node). The old
+// temp item image was deleted (#248 item 4) — cards with no art now fall back to their panel colour.
+const GENERIC_CARD_ART = require('../../../../assets/images/icon.png') as number;
 
 // All sheet colors come from the Rune palette (no raw hex, per AGENTS / H3).
 const SHEET = Rune.sheet;
@@ -921,222 +915,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // Pre-render this character's forged cards on device (#104) so the carousel treats them like any
   // scanned card (uri-based two-LOD pair). The class feature pages become ONE multi-page card in
   // the hand (#108); the experiences are individual cards. Both appear once their bitmaps capture.
-  const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs } = useMemo(() => {
-    // v0.33.1: the deck-facing view of the file. Reference-identical to `file` unless something
-    // other than the cosmetic token fields changed, so a placed token cannot rebuild the whole deck.
-    const file = deckFile;
-    // `key` is the forge-cache key (hashed, changes on edit); `id` is the STABLE deck-card id used for
-    // enabling/toggling + effect lookup (#175). Equipment/origin/domain ids are already stable; custom
-    // & experience cards carry their own stable id here so a toggle survives an edit.
-    type Job = { key: string; node: ReactNode; raster?: boolean; id?: string };
-    type CustomJob = Job & { target: 'inventory' | 'arsenal' | 'both' };
-    const empty = { featJobs: [] as Job[], classJob: null as Job | null, mcClassJob: null as Job | null, mcFeatJobs: [] as Job[], expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], libJobs: [] as Job[], wildshapeFaceJobs: [] as Job[], martialJobs: [] as Job[] };
-    if (!file) return empty;
-    const cls = file.className;
-    const classDef = CLASS_CARDS.find((c) => c.key === cls);
-    const title = classDef?.title ?? cls.charAt(0).toUpperCase() + cls.slice(1);
-    const fpages = featurePages(cls);
-    const total = 1 + fpages.length;
-    // face 0 = the class card (#110: the missing first page); same deck-wide marks as the forge
-    const classJob = classDef
-      ? { key: `class-${cls}`, raster: isVoidClass(cls), node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} classKey={cls} /> }
-      : null;
-    // Void class banners are expo-image rasters (async decode) — settle before capture (raster flag)
-    const featJobs = fpages.map((p) => ({
-      key: `feat-${cls}-${p.pageIndex}`,
-      raster: isVoidClass(cls),
-      node: (
-        <ForgedTextCard
-          title={title}
-          kindLabel="Features"
-          pageMark={`${p.pageIndex + 2}/${total}`}
-          sections={p.sections}
-          accentDeep={classColor(cls).deep}
-          Banner={classBanner(cls)}
-          classKey={cls}
-        />
-      ),
-    }));
-    // Multiclass (#311): the ADDITIONAL class's feature card, forged exactly like the primary's — a
-    // multi-page deck (class card + each feature page). Appears whenever multiclassName is set.
-    const mc = file.multiclassName;
-    const mcDef = mc ? CLASS_CARDS.find((c) => c.key === mc) : null;
-    const mcTitle = mcDef?.title ?? (mc ? mc.charAt(0).toUpperCase() + mc.slice(1) : '');
-    const mcFpages = mc ? featurePages(mc) : [];
-    const mcTotal = 1 + mcFpages.length;
-    const mcClassJob: Job | null = mc && mcDef
-      ? { key: `mcclass-${mc}`, raster: isVoidClass(mc), node: <ForgedCard title={mcTitle} kindLabel="Class" body={mcDef.body} accentDeep={classColor(mc).deep} Banner={mcDef.Banner} pageMark={`1/${mcTotal}`} classKey={mc} /> }
-      : null;
-    const mcFeatJobs: Job[] = mc
-      ? mcFpages.map((p) => ({ key: `mcfeat-${mc}-${p.pageIndex}`, raster: isVoidClass(mc), node: <ForgedTextCard title={mcTitle} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${mcTotal}`} sections={p.sections} accentDeep={classColor(mc).deep} Banner={classBanner(mc)} classKey={mc} /> }))
-      : [];
-    // v0.14.0: the pill shows the EFFECTIVE bonus — the level-up total plus any equipped card boosting
-    // this Experience (the Honing Relic). The total rides the forge key so equipping it re-forges.
-    const expTotals = new Map(experienceBreakdown(file).map((b) => [b.id, b.total]));
-    const expJobs = (file.experiences ?? []).map((e) => ({
-      /**
-       * The LAST length-based cache key (v0.34.6, owner).
-       *
-       * This hashed the LENGTHS of the fields, which v0.33.0 replaced everywhere else with a real
-       * signature for exactly one reason: every owned image path is the same length, so re-picking a
-       * photo produced an IDENTICAL key. That is the black experience card. A capture that lost the
-       * race with the image decode was written to disk, and re-picking the image asked for the same
-       * key and got the same black bitmap back. Setting a COLOUR changed the key (0 to 7 characters),
-       * which is why that fixed it, and putting an image back returned to the poisoned key.
-       */
-      key: `exp-${e.id}-${contentSig(e.title, e.text, e.imageUri, e.color, String(expTotals.get(e.id) ?? e.modifier ?? 0))}`,
-      id: e.id,
-      node: <ForgedCard title={e.title} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={e.imageUri} colorArt={e.color} experience modifier={expTotals.get(e.id) ?? e.modifier ?? 2} />,
-      // player photo (file://) decodes async — needs the forge settle so it isn't captured black (#121)
-      raster: !!e.imageUri,
-      art: e.imageUri ?? undefined,
-    }));
-    // starting equipment (#121): the primary weapon, the optional secondary, and the armor card
-    const weaponJobs = [file.weaponPrimaryId, file.weaponSecondaryId]
-      .map((id) => (id ? weaponById(id) : undefined))
-      .filter((w): w is NonNullable<typeof w> => !!w)
-      .map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> }));
-    const armorDef = file.armorId ? armorById(file.armorId) : undefined;
-    const armorJob = armorDef ? { key: armorDef.id, node: <ForgedArmorCard armor={armorDef} /> } : null;
-    // Acquired gear/loot (#180): system cards picked up beyond creation, forged into the decks so
-    // tier 2+ equipment + loot can be equipped + enabled. Skip ids already held as starting equipment.
-    const startEquip = new Set([file.weaponPrimaryId, file.weaponSecondaryId, file.armorId].filter(Boolean) as string[]);
-    const acquired = (file.acquiredCardIds ?? []).filter((id) => !startEquip.has(id));
-    const acqWeaponJobs: Job[] = acquired
-      .map((id) => weaponById(id))
-      .filter((w): w is NonNullable<typeof w> => !!w)
-      .map((w) => ({ key: w.id, node: <ForgedWeaponCard weapon={w} /> }));
-    const acqArmorJobs: Job[] = acquired
-      .map((id) => armorById(id))
-      .filter((a): a is NonNullable<typeof a> => !!a)
-      .map((a) => ({ key: a.id, node: <ForgedArmorCard armor={a} /> }));
-    const acqLootJobs: Job[] = acquired
-      .map((id) => lootById(id))
-      .filter((l): l is NonNullable<typeof l> => !!l)
-      // v0.14.0: loot + consumables get their own forged card (chest / flask glyph, roll stat row,
-      // own plaque family) instead of the generic flat-color one, so they read like weapons and armor.
-      .map((l) => ({ key: l.id, node: <ForgedLootCard loot={l} /> }));
-    // Acquired CLASS cards (#250 item 4 / #328): a MULTI-PAGE card (class card + each feature page),
-    // forged exactly like the primary/multiclass class-feature card — NOT a single page (the old bug:
-    // catalog/added class cards showed "1 of 4"). NO stat effects. Forged per UNIQUE acquired class
-    // (duplicates share the bitmaps; the deck builder makes one item per copy).
-    const acqClassKeys = [...new Set(acquired.filter((id) => id.startsWith('class-')).map((id) => id.slice(6)))]
-      .filter((k) => CLASS_CARDS.some((c) => c.key === k)) as (typeof cls)[];
-    const acqClassJobs: Job[] = acqClassKeys.flatMap((k) => {
-      const def = CLASS_CARDS.find((c) => c.key === k)!;
-      const fp = featurePages(k);
-      const tot = 1 + fp.length;
-      return [
-        { key: `acqclass-${k}`, raster: isVoidClass(k), node: <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={classColor(k).deep} Banner={def.Banner} pageMark={`1/${tot}`} classKey={k} /> },
-        ...fp.map((p) => ({ key: `acqfeat-${k}-${p.pageIndex}`, raster: isVoidClass(k), node: <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${tot}`} sections={p.sections} accentDeep={classColor(k).deep} Banner={classBanner(k)} classKey={k} /> })),
-      ];
-    });
-    // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
-    const cinv = CLASS_INVENTORY[cls];
-    const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
-    const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
-    const chosenIds = file.inventoryItemIds ?? [];
-    /**
-     * The chosen starting items.
-     *
-     * v0.27.0: an item that exists in the ARCHIVE renders as its archive card, so the Minor Health
-     * Potion every class guide offers arrives saying "Clear 1d4 HP" instead of repeating its own
-     * name. Both ids are accepted: heroes made before this hold the authored id, and rewriting their
-     * files to chase a nicer card would be a migration for a cosmetic gain.
-     */
-    const chosenJobs: Job[] = cinv.choices
-      .flat()
-      .map((name): Job | null => {
-        const held = [itemOptionId(name), authoredItemOptionId(name)].find((id) => chosenIds.includes(id));
-        if (!held) return null;
-        const archive = lootById(held);
-        return archive
-          ? { key: held, id: held, node: <ForgedLootCard loot={archive} /> }
-          : { key: held, id: held, node: <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> };
-      })
-      .filter((j): j is Job => j !== null);
-    /**
-     * A card that IS one picture (v0.34.8, owner).
-     *
-     * Cards exported from cardcreator.daggerheart.com arrive finished, so there is nothing to lay
-     * out on top of them. `null` means this card is not one of those and forges normally.
-     */
-    const faceOf = (it: { imageUri?: string | null; fullImage?: boolean }) =>
-      it.fullImage && it.imageUri ? <ForgedFaceCard face={it.imageUri} /> : null;
-    const customJobs: Job[] = (file.inventoryCustom ?? []).map((it) => ({
-      // v0.34.3: a custom item's TYPE is the player's to set, and it was neither drawn nor part of the
-      // cache key, so changing it repainted nothing and the old bitmap stayed.
-      key: `itm-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.fullImage ? 'face' : '')}`,
-      id: it.id,
-      node: faceOf(it) ?? <ForgedCard title={it.title} kindLabel={it.typeLabel ?? 'Item'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
-      raster: !!it.imageUri,
-      art: it.imageUri ?? undefined,
-    }));
-    const invJobs = [...kitJobs, ...chosenJobs, ...customJobs];
-    // Player-authored cards (#164) → routed to the inventory and/or arsenal deck by `target`.
-    const customCardJobs: CustomJob[] = (file.customCards ?? []).map((it) => ({
-      key: `cc-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.target, it.fullImage ? 'face' : '')}`,
-      id: it.id,
-      node: faceOf(it) ?? <ForgedCard title={it.title} kindLabel={it.typeLabel ?? (it.target === 'arsenal' ? 'Ability' : it.target === 'both' ? 'Card' : 'Item')} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
-      raster: !!it.imageUri,
-      art: it.imageUri ?? undefined,
-      target: it.target,
-    }));
-    // Notes (#214): freeform note cards, their own category (every class). Optional title → 'Note'.
-    const notesJobs: Job[] = (file.notes ?? []).map((it) => ({
-      key: `note-${it.id}-${contentSig(it.title, it.text, it.imageUri, it.color, it.typeLabel, it.fullImage ? 'face' : '')}`,
-      id: it.id,
-      node: faceOf(it) ?? <ForgedCard title={it.title ?? ''} kindLabel={it.typeLabel ?? 'Note'} body={it.text} accentDeep={Rune.panel} imageUri={it.imageUri} colorArt={it.color} multilineTitle />,
-      raster: !!it.imageUri,
-      art: it.imageUri ?? undefined,
-    }));
-    // Embedded homebrew cards (v0.10.3): each picked LibraryCard forges to a card the carousel treats
-    // like any scanned card. Structural/domain ones slot into their positions below; loose ones (weapon/
-    // armor/inventory/generic added via ADD GEAR) ride the inventory deck.
-    const libJobs: Job[] = (file.libraryCards ?? []).map((lc) => {
-      // mixed-ancestry cross-out (v0.10.4): strike the feature the mix crosses out on THIS ancestry card.
-      // v0.13.0: features can sit at ANY section index — resolve trait 1|2 through featureSectionIndexes.
-      const crossed = lc.contentType === 'ancestry' ? mixedCrossedTrait(file, lc.id) : 0;
-      // v0.25.0: an ancestry with a PRINTED FACE has no text blocks to strike; TraitCrossOut draws
-      // measured lines over the bitmap instead. Striking here as well would cross the feature twice.
-      const struckIndex = crossed && !hasStrikeLines(lc.id) ? featureSectionIndexes(lc)[crossed - 1] : undefined;
-      // v0.13.0: order-sensitive section signature — re-arranging sections (same lengths) must NOT
-      // serve the stale pre-arrange snapshot.
-      const secSig = contentSig(...(lc.sections ?? []).flatMap((sec) => [sec.name, sec.body, sec.feature ? 'f' : '']));
-      return {
-        // v0.34.3: `typeLabel` rides the key too. It is printed on the plaque, so a card that arrives
-        // with one (or is given one) has to re-forge like any other content change.
-        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel, lc.fullImage ? 'face' : '')}`,
-        id: lc.id,
-        node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
-        // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
-        // image-bearing card (avoids the async-art flicker, per the forged-card cache rules).
-        raster: !!lc.imageUri || !!VOID_ANCESTRY_FACE[lc.id],
-        art: lc.imageUri ?? undefined,
-      };
-    });
-    // Beastform (#214/#227): Druid-only, each form its own color. TWO forged FACES per form — a flip
-    // deck like the class-feature card (#227 item 8) so the title stays a normal size and the rules
-    // text isn't crammed tiny: face 0 = overview (tier · stress · attack · stat deltas · examples),
-    // face 1 = the form's features. Static content → stable keys; the deck appears only for Druids.
-    // Beastform is tier-gated (#242 item 1): only forms of the player's current tier or lower.
-    const wsTier = tierForLevel(file.level);
-    const wildshapeFaceJobs: Job[] = hasBeastform(file)
-      ? WILDSHAPES.filter((w) => w.tier <= wsTier).flatMap((w) => [
-          { key: `ws-${w.id}-0`, node: <ForgedCard title={w.name} kindLabel="Beastform" body={`Tier ${w.tier} · ${w.stress} Stress\nAttack: ${w.attack}\n${wildshapeSummary(w)}\nExamples: ${w.examples}`} accentDeep={Rune.panel} colorArt={w.color} pageMark="1/2" multilineTitle /> },
-          { key: `ws-${w.id}-1`, node: <ForgedCard title={w.name} kindLabel="Features" body={w.features} accentDeep={Rune.panel} colorArt={w.color} pageMark="2/2" multilineTitle /> },
-        ])
-      : [];
-    // Martial Form (#357): Martial Artist Brawler stances — one forged card per stance of the
-    // character's tier or lower (the Beastform tier-gating convention), tier-tinted.
-    const martialJobs: Job[] = hasMartialForm(file)
-      ? MARTIAL_STANCES.filter((s) => s.tier <= wsTier).map((s) => ({
-          key: s.id,
-          node: <ForgedCard title={s.name} kindLabel="Stance" body={`Tier ${s.tier}\n${s.body}`} accentDeep={Rune.panel} colorArt={stanceColor(s)} multilineTitle />,
-        }))
-      : [];
-    return { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs };
-  }, [deckFile]);
+  const { featJobs, classJob, mcClassJob, mcFeatJobs, expJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs } = useMemo(() => buildDeckJobs(deckFile), [deckFile]);
   const allJobs = useMemo(
     () => [...expJobs, ...(classJob ? [classJob] : []), ...(mcClassJob ? [mcClassJob] : []), ...mcFeatJobs, ...featJobs, ...weaponJobs, ...(armorJob ? [armorJob] : []), ...invJobs, ...customCardJobs, ...acqWeaponJobs, ...acqArmorJobs, ...acqLootJobs, ...acqClassJobs, ...notesJobs, ...wildshapeFaceJobs, ...martialJobs],
     [expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, wildshapeFaceJobs, martialJobs],

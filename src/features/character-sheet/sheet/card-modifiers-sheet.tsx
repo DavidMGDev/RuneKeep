@@ -6,9 +6,9 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchOption, toEditableEffects } from '@/components/effects-editor';
 import { Body, Display, Rune } from '@/constants/theme';
-import { effectsForCardId, sourceLabelForCardId } from '@/features/cards/card-effects';
+import { effectsForCardId, sourceLabelForCardId , contentIdOf } from '@/features/cards/card-effects';
 import { copyRoleOf } from '@/lib/card-copies';
-import { contentIdOf } from '@/features/cards/card-effects';
+
 import { groupEffects, groupKey, isGroupOpen, setGroupOpen } from '@/lib/modifier-groups';
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
 import { type CharacterFile, numberInputFor } from '@/lib/character-file';

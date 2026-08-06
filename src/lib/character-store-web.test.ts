@@ -9,6 +9,9 @@
  * These pin the two halves of the fix: a save does not touch storage on its own, and nothing can
  * observe a queued character as stale in the meantime.
  */
+import type { CharacterFile } from './character-file';
+import { deleteCharacter, flushCharacters, getCharacter, listCharacters, saveCharacter } from './character-store';
+
 jest.mock('react-native', () => ({ Platform: { OS: 'web' } }));
 
 const mockStore = new Map<string, string>();
@@ -24,9 +27,6 @@ jest.mock('./web-store', () => ({
 // The share path drags in expo modules this test has no use for.
 jest.mock('./image-embed', () => ({ embedCharacterImages: async (f: unknown) => f }));
 jest.mock('./library-store', () => ({ canShareFiles: () => false, webShareFile: () => null }));
-
-import type { CharacterFile } from './character-file';
-import { deleteCharacter, flushCharacters, getCharacter, listCharacters, saveCharacter } from './character-store';
 
 const mk = (id: string, name: string): CharacterFile =>
   ({ schemaVersion: 1, id, createdAt: '2026-01-01T00:00:00.000Z', name, className: 'Wizard', level: 1, domainCardIds: [] }) as unknown as CharacterFile;

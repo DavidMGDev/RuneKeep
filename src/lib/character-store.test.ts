@@ -8,6 +8,9 @@
  * Coalescing a persistence path is only safe if a queued character is invisible as stale and can
  * never be lost, which is what these check.
  */
+import { type CharacterFile } from './character-file';
+import { deleteCharacter, flushCharacters, getCharacter, listCharacters, saveCharacter } from './character-store';
+
 const mockDisk = new Map<string, string>();
 const mockState = { writes: 0 };
 
@@ -40,9 +43,6 @@ jest.mock('expo-file-system', () => {
   }
   return { File, Directory, Paths: { document: 'doc', cache: 'cache' } };
 });
-
-import { type CharacterFile } from './character-file';
-import { deleteCharacter, flushCharacters, getCharacter, listCharacters, saveCharacter } from './character-store';
 
 function mk(id: string, name: string): CharacterFile {
   return {
