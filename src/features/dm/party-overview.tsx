@@ -9,9 +9,13 @@
  */
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList } from 'react-native';
+import { FlatList, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import Svg, { Polygon } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
+import { ChamferBox } from '@/components/chamfer-box';
+import { Body, Display, DmRune, DmType } from '@/constants/theme';
 import { LoadingScreen } from '@/components/loading-screen';
 import { showToast } from '@/components/toast';
 import { NumberKeypad } from '@/features/character-sheet/sheet/number-keypad';
@@ -27,10 +31,83 @@ import { useDmCharacterTools } from './dm-character-tools';
 import { PartyEffectsIcon } from './dm-icons';
 import { DmModifiersPanel } from './dm-modifiers-panel';
 import { MemberPanel } from './member-panel';
+import { StatGlyph } from './stat-glyphs';
 import { StatRadialProvider } from './stat-radial';
 import { DmPress } from './dm-ui';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
+
+/** Four to a row, and as many rows as the party needs. No cap: a party is however big it is. */
+const PER_ROW = 4;
+
+/**
+ * The party at a glance (v0.36, owner).
+ *
+ * A list is the right shape for running one character and the wrong shape for reading a party: with
+ * six members you cannot see the sixth without scrolling past the first five, and finding a
+ * particular one means scrolling for their name. One tile at the top solves both. Every member is a
+ * portrait with their current hit points under it, so it doubles as a status board, and tapping one
+ * jumps the list to them rather than making you hunt.
+ *
+ * A HOLD goes straight to their modifiers, which is the tool the DM reaches for most and was two
+ * taps and a scroll away.
+ */
+function PartyRoster({
+  ids,
+  files,
+  party,
+  onFocus,
+  onModifiers,
+}: {
+  ids: string[];
+  files: Record<string, CharacterFile>;
+  party: Party;
+  onFocus: (charId: string) => void;
+  onModifiers: (charId: string) => void;
+}) {
+  if (ids.length === 0) return null;
+  return (
+    <ChamferBox chamfer={11} fill="rgba(14,17,22,0.92)" stroke={DmRune.line} strokeWidth={1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 10, marginBottom: 12 }}>
+      <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+        {party.name} · {ids.length}
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 12 }}>
+        {ids.map((charId) => {
+          const f = files[charId];
+          const hp = party.global[charId]?.hp ?? 0;
+          const max = memberMaxes(f).maxHp;
+          const downed = hp <= 0;
+          return (
+            <DmPress
+              key={charId}
+              onPress={() => onFocus(charId)}
+              onLongPress={() => onModifiers(charId)}
+              delayLongPress={360}
+              accessibilityRole="button"
+              accessibilityLabel={`${f.name}, ${hp} of ${max} hit points. Tap to find them, hold for their modifiers.`}
+              style={{ width: `${100 / PER_ROW}%`, alignItems: 'center', gap: 4 }}>
+              <ChamferBox chamfer={6} fill={DmRune.ink} stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.2} style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {f.portraitUri ? (
+                  <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
+                    <Image source={f.portraitUri} style={{ width: 52, height: 52 }} contentFit="cover" />
+                  </View>
+                ) : (
+                  <Svg width={22} height={22} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.6} /></Svg>
+                )}
+                {downed ? <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(11,14,19,0.55)' }} /> : null}
+              </ChamferBox>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <StatGlyph kind="hp" color={downed ? DmRune.muted : DmRune.red} size={13} filled={!downed} />
+                <Text style={{ color: downed ? DmRune.muted : DmRune.ivory, fontSize: DmType.body, fontFamily: Display.black }}>{hp}</Text>
+              </View>
+              <Text numberOfLines={1} style={{ maxWidth: 78, color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{f.name}</Text>
+            </DmPress>
+          );
+        })}
+      </View>
+    </ChamferBox>
+  );
+}
 
 export function PartyOverviewScreen() {
   const router = useRouter();
@@ -39,6 +116,10 @@ export function PartyOverviewScreen() {
   const [files, setFiles] = useState<Record<string, CharacterFile>>({});
   const [keypad, setKeypad] = useState<{ charId: string; key: VitalKey } | null>(null);
   const [globalOpen, setGlobalOpen] = useState(false);
+  /** Which member the roster tile last jumped to, and a token that bumps on every jump so tapping
+   *  the same portrait twice flashes twice. */
+  const [landed, setLanded] = useState<{ id: string; n: number } | null>(null);
+  const listRef = useRef<FlatList<string>>(null);
 
   const onFile = useCallback((next: CharacterFile) => setFiles((f) => ({ ...f, [next.id]: next })), []);
   const tools = useDmCharacterTools(files, onFile);
@@ -119,8 +200,18 @@ export function PartyOverviewScreen() {
     showToast(effects.length ? 'Applied to the whole party' : 'Party effects cleared', 'success');
   }, [party, files, commit]);
 
+  /** Jump the list to a member and flash them, so the tap lands somewhere the DM can see. */
+  const focusMember = (charId: string) => {
+    const i = party?.memberIds.filter((id) => files[id]).indexOf(charId) ?? -1;
+    if (i < 0) return;
+    playSfx('buttonTap');
+    listRef.current?.scrollToIndex({ index: i, viewPosition: 0, animated: true });
+    setLanded((l) => ({ id: charId, n: (l?.n ?? 0) + 1 }));
+  };
+
   if (!party) return <LoadingScreen dm label="Reading the party" />;
 
+  const memberIds = party.memberIds.filter((id) => files[id]);
   const kpFile = keypad ? files[keypad.charId] : undefined;
   const kpMax = kpFile && keypad ? memberMaxes(kpFile)[keypad.key === 'hp' ? 'maxHp' : keypad.key === 'stress' ? 'stressMax' : keypad.key === 'hope' ? 'hopeMax' : 'armorMax'] : 0;
   const globalCount = party.globalEffects?.length ?? 0;
@@ -137,16 +228,33 @@ export function PartyOverviewScreen() {
         </DmPress>
       }>
       <FlatList
-        data={party.memberIds.filter((id) => files[id])}
+        ref={listRef}
+        data={memberIds}
         keyExtractor={(id) => id}
         contentContainerStyle={{ gap: 12, paddingTop: 4, paddingBottom: 16 }}
         showsVerticalScrollIndicator={false}
+        // Entries are different heights (an expanded one is much taller), so a jump can miss on the
+        // first try. Scrolling to the offset we do know and asking again lands it.
+        onScrollToIndexFailed={(info) => {
+          listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
+          setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0, animated: true }), 240);
+        }}
+        ListHeaderComponent={
+          <PartyRoster
+            ids={memberIds}
+            files={files}
+            party={party}
+            onFocus={focusMember}
+            onModifiers={(charId) => { playSfx('buttonTap'); tools.openModifiers(charId, true); }}
+          />
+        }
         renderItem={({ item: charId }) => (
           <MemberPanel
             file={files[charId]}
             vitals={party.global[charId] ?? { hp: 0, stress: 0, hope: 0, armor: 0 }}
             editable
             absent={!isPresent(party, charId)}
+            flash={landed?.id === charId ? landed.n : undefined}
             onApply={(key, delta) => onApply(charId, key, delta)}
             onRequestSet={(key) => setKeypad({ charId, key })}
             onModifiers={(edit) => tools.openModifiers(charId, edit)}

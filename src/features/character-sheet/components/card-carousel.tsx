@@ -1753,14 +1753,27 @@ export function CardCarousel() {
   // full-res LAYER windows around the center.
   const slots = [];
   for (let i = 0; i < count; i++) {
+    /**
+     * A card being CARRIED never leaves its own windows (v0.36, owner).
+     *
+     * Both layers window on the CENTRE of the row, and a drag scrolls the row, so dragging a card
+     * far enough from where it started took its own index out of the window: the full-res layer
+     * unmounted, and for a card with no forged bitmap the live body went with it, leaving a blank
+     * panel riding the finger. What the owner saw was the cards disappearing in mid-air with only
+     * the landing ghost left, then reappearing on release.
+     *
+     * Raised cards only exist during an edit drag and there are only ever a handful, so pinning
+     * their layers costs a few mounts for the length of one gesture.
+     */
+    const carried = raisedIds.has(deck[i].id);
     slots.push(
       <CardSlot
         key={deck[i].id}
         index={i}
         item={deck[i]}
         count={count}
-        withImage={Math.abs(i - c) <= IMG_MOUNT_HALF}
-        withLive={Math.abs(i - liveC) <= LIVE_MOUNT_HALF}
+        withImage={carried || Math.abs(i - c) <= IMG_MOUNT_HALF}
+        withLive={carried || Math.abs(i - liveC) <= LIVE_MOUNT_HALF}
         rotation={rotation}
         expandProgress={expandProgress}
         fullscreenProgress={fullscreenProgress}

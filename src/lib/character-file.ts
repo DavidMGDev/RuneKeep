@@ -94,6 +94,26 @@ export interface CharacterFile {
   ancestryCardId: string;
   communityCardId: string;
   domainCardIds: string[];
+  /**
+   * CHARACTERIZED (v0.36, owner): this character was an adversary or an ally before it was one.
+   *
+   * Three flags rather than one, because they are three separate decisions the DM made and each one
+   * has to be honoured somewhere different:
+   *
+   *  - `characterized` is provenance. It puts the character in its own section of the adversary and
+   *    ally library and marks the encounter entry that is backed by it.
+   *  - `arsenalOnly` sends every card to the Arsenal. A stat block has no inventory, no vault and no
+   *    notes, and a DM who wanted those can make them; what they must not have to do is unpick five
+   *    categories they never asked for.
+   *  - `skipStartingKit` refuses the class's default inventory outright. A wraith does not carry a
+   *    torch and fifty feet of rope because a Guardian would.
+   *
+   * The last two are read in exactly one place, the module that builds the deck jobs, so the
+   * character sheet and the DM's card view obey them without either of them knowing they exist.
+   */
+  characterized?: boolean;
+  arsenalOnly?: boolean;
+  skipStartingKit?: boolean;
   /** v0.12.2: which EXPANSIONS this character was created with (e.g. ['void'] + custom ids). Undefined
    *  or empty = base game only (back-compat). Gates which catalog/library content the sheet + ADD GEAR
    *  show; travels with the character so a shared hero still shows all its cards. */

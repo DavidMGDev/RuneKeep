@@ -5,12 +5,14 @@ import { type GoldAmount } from './components/gold-card';
 
 // ---------- draft ----------
 
-export type CardDeckKey = 'class' | 'subclass' | 'ancestry' | 'community' | 'domains';
-export type DeckKey = CardDeckKey | 'traits' | 'experiences' | 'weapons' | 'armor' | 'inventory';
+export type CardDeckKey = 'class' | 'subclass' | 'ancestry' | 'community' | 'domains' | 'transformation';
+/** v0.36 adds three CHARACTERIZE-only steps: `carry` (what the stat block hands over), `level`, and
+ *  `transformation`. They never appear in ordinary character creation. */
+export type DeckKey = CardDeckKey | 'carry' | 'level' | 'traits' | 'experiences' | 'weapons' | 'armor' | 'inventory';
 
-export const isCardDeck = (k: DeckKey): k is CardDeckKey => k === 'class' || k === 'subclass' || k === 'ancestry' || k === 'community' || k === 'domains';
+export const isCardDeck = (k: DeckKey): k is CardDeckKey => k === 'class' || k === 'subclass' || k === 'ancestry' || k === 'community' || k === 'domains' || k === 'transformation';
 /** Decks that drive the STRAIGHT carousel (card scans + forged cards), incl. weapons/armor/inventory. */
-export const isCarouselDeck = (k: DeckKey): boolean => isCardDeck(k) || k === 'weapons' || k === 'armor' || k === 'inventory';
+export const isCarouselDeck = (k: DeckKey): boolean => isCardDeck(k) || k === 'carry' || k === 'weapons' || k === 'armor' || k === 'inventory';
 
 /**
  * v0.10.6 (Feature 3): which mixed-ancestry slot the Random button fills next, and the alternation
@@ -60,4 +62,14 @@ export interface Draft {
    *  from. Per choice, because the two are separate questions. */
   inventorySkips?: number[];
   gold: GoldAmount;
+  // --- v0.36 CHARACTERIZE. All optional, so an ordinary creation draft is byte-identical. ---
+  /** The combatant this character is being made from, and where it came back to. */
+  characterize?: { encounterId: string; combatantId: string; side: 'adversary' | 'ally' };
+  /** Steps the DM pressed Skip on. A skipped step counts as done and contributes nothing. */
+  skipped?: DeckKey[];
+  /** Carry-over item ids the DM greyed out on the first step. Greyed = dropped entirely. */
+  carryDisabled?: string[];
+  /** The level chosen on the Level step (characterize only). Absent = whatever the stat block said. */
+  level?: number;
+  transformationCardId?: string | null;
 }

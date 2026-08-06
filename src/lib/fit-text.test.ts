@@ -1,4 +1,4 @@
-import { fitText, MIN_LINE_RATIO, wrapLines } from './fit-text';
+import { fitText, MIN_LINE_RATIO, wrapLines, fitTitle } from './fit-text';
 
 // The weapon card's feature box, in design px: 230 wide less 16 each side, with what is left under
 // the pinned title and the four pinned stat rows. Typeset at 8.5/12.5. Keep in step with
@@ -117,5 +117,43 @@ describe('the leading floor (v0.32.2)', () => {
       const fit = fitText(body, { ...BODY, minRatio: MIN_LINE_RATIO });
       expect(fit.lines * fit.lineHeight).toBeLessThanOrEqual(BODY.height + 0.5);
     }
+  });
+});
+
+describe('a card title, fitted into a fixed band', () => {
+  // The generic forged card's geometry: 200dp of usable width, a 21dp band, designed at 17pt.
+  const W = 200;
+  const BAND = 21;
+  const BASE = 17;
+  const t = (s: string) => fitTitle(s, W, BAND, BASE);
+
+  it('leaves a title that already fits exactly as it was', () => {
+    const f = t('Cleave');
+    expect(f.fontSize).toBe(BASE);
+    expect(f.lines).toBe(1);
+  });
+
+  it('shrinks a long title onto ONE line rather than wrapping it', () => {
+    const f = t('The Everburning Blade of the Fallen King');
+    expect(f.lines).toBe(1);
+    expect(f.fontSize).toBeLessThan(BASE);
+  });
+
+  it('allows two lines only once they fit the same band', () => {
+    const f = t('The Everburning Blade of the Fallen King of the Withered Marches and Beyond');
+    expect(f.lines).toBe(2);
+    expect(f.lines * f.lineHeight).toBeLessThanOrEqual(BAND);
+  });
+
+  it('never lets the band grow, whatever the title', () => {
+    for (const s of ['A', 'Riposte', 'A '.repeat(60), 'Supercalifragilisticexpialidocious'.repeat(3)]) {
+      const f = t(s);
+      expect(f.lines * f.lineHeight).toBeLessThanOrEqual(BAND + 0.01);
+    }
+  });
+
+  it('holds the same rule at the equipment cards’ smaller band', () => {
+    const f = fitTitle('Improvised Greatsword of Uncommon Length', 198, 19, 15);
+    expect(f.lines * f.lineHeight).toBeLessThanOrEqual(19.01);
   });
 });

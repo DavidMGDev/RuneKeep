@@ -5,22 +5,27 @@
  * the left/right gap, the centre dead-zone, or past the ring cancels. One shared host renders the wheel so
  * it never clips inside a scroll or panel; a StatPulse drives the finger from its own pan.
  *
- * ## v0.35.3: nothing left on the UI thread but the animation
+ * ## v0.36: the transform around the SVG, which is the last difference left
  *
- * Fourth attempt at a crash that has survived three. Each one removed something real and the app kept
- * dying, so this one finishes the job the last one started: making this component do NOTHING the
- * character sheet's float menu does not do, since that one holds the same wheel on the same phones and
- * has never crashed.
+ * Fifth attempt. The four before it each removed something genuinely wrong (a gesture rebuilt
+ * mid-gesture, an `AnimatedPath` with no animated props, an SVG mounted and unmounted inside a live
+ * hold, both `useAnimatedReaction`s) and the app kept dying on the same phone, so what is left is not
+ * a JavaScript fault at all: every callback here is guarded and every guard has stayed silent.
  *
- * What went, this time: both `useAnimatedReaction`s. They ran on the UI thread with no dependency
- * array, so every highlight change re-registered them, and each one called `runOnJS` twice, once into
- * a React state setter and once into the audio engine, in the middle of a live gesture. The wedge
- * under the finger is decided in JS now, from the pan's own callback, and the sound plays there. What
- * is left on the UI thread is shared values and `useAnimatedStyle`, which is exactly what the float
- * menu leaves there.
+ * One structural difference from the character sheet's float menu survived all four passes. That
+ * component holds the same kind of wheel, on the same phones, and has never crashed, and it animates
+ * **opacity only** on the view that contains its `<Svg>`. This one animated a TRANSFORM on that view:
+ * a translate to the anchor plus a bloom scale, recomputed every frame by a worklet. Committing a
+ * transform to a view whose children are react-native-svg nodes is a known Fabric failure, and it is
+ * invisible to an error boundary because it does not happen in JavaScript.
  *
- * If it STILL crashes, `RadialBoundary` and the guards around every callback will name the error
- * instead of taking the app with them; if nothing is named, the fault is native and needs a logcat.
+ * So the wheel is POSITIONED ONCE, in JavaScript, in the same callback that already sets its colour
+ * and raises it, and from then on only its opacity animates. The bloom scale is gone rather than
+ * moved: it was the only reason the container needed a transform, and a 180ms fade reads as a bloom
+ * on its own. The connector line and the finger dot keep their transforms, because they are plain
+ * Views and always have been.
+ *
+ * If it STILL crashes after this, the fault is native and a logcat is the only way forward.
  */
 import { Component, createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -102,12 +107,26 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
   const [color, setColor] = useState<string>(DmRune.accent);
   const [shown, setShown] = useState(false);
   const [hl, setHl] = useState(-1);
+  /**
+   * Where the wheel's top-left corner sits, as a PLAIN NUMBER PAIR (v0.36).
+   *
+   * This used to be a worklet reading `anchor - host - ROUT` every frame and writing it as a
+   * transform. It only ever changes when the wheel opens, so it is React state now and the SVG's
+   * container carries no transform at all.
+   */
+  const [pos, setPos] = useState({ x: 0, y: 0 });
   const wedgeRef = useRef(-1);
   const applyRef = useRef<((d: number) => void) | null>(null);
+  /** The host's measured origin in frame dp, on the JS side, so `pos` can be worked out here. */
+  const hostPos = useRef({ x: 0, y: 0 });
 
   const open = useCallback(guard('open', (ax: number, ay: number, c: string, onApply: (d: number) => void, touch?: { x: number; y: number }) => {
     applyRef.current = onApply;
-    measureRef.current(); // v0.35: the host may have moved since layout (a scroll, a rotation, a panel)
+    // Place it from the last known origin immediately, then correct it when the fresh measure lands
+    // (the host may have moved since layout: a scroll, a rotation, a panel). The correction arrives
+    // inside the 180ms fade, so nothing is ever seen in the wrong place.
+    setPos({ x: ax - hostPos.current.x - ROUT, y: ay - hostPos.current.y - ROUT });
+    measureRef.current((hx, hy) => setPos({ x: ax - hx - ROUT, y: ay - hy - ROUT }));
     anchorX.value = ax; anchorY.value = ay;
     // v0.23.0: seed the cursor at the REAL touch point, not the anchor. Seeding it to the glyph
     // centre made the dot appear a finger-width away from the thumb until the first drag update.
@@ -157,8 +176,14 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
 
   const frameRef = useRef<View>(null);
   const frame = useFrame();
-  const measureFrame = useCallback(() => {
-    frameRef.current?.measureInWindow((x, y) => { hostX.value = windowToFrameX(x, frame); hostY.value = windowToFrameY(y, frame); });
+  const measureFrame = useCallback((then?: (x: number, y: number) => void) => {
+    frameRef.current?.measureInWindow((x, y) => {
+      const fx = windowToFrameX(x, frame);
+      const fy = windowToFrameY(y, frame);
+      hostX.value = fx; hostY.value = fy;
+      hostPos.current = { x: fx, y: fy };
+      then?.(fx, fy);
+    });
   }, [hostX, hostY, frame]);
   // `open` is built once and must not be rebuilt when the frame changes, so it reaches the measure
   // through a ref rather than closing over it.
@@ -175,9 +200,9 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
       {/* A persistent, always-mounted full-screen sensor: its measured origin is the frame the
           absolute-fill wheel actually renders in, so subtracting it reconciles the measured anchor
           (item 4). Zero-cost — no paint, never interactive. */}
-      <View ref={frameRef} pointerEvents="none" style={StyleSheet.absoluteFill} collapsable={false} onLayout={measureFrame} />
+      <View ref={frameRef} pointerEvents="none" style={StyleSheet.absoluteFill} collapsable={false} onLayout={() => measureFrame()} />
       <RadialBoundary>
-        <StatRadialHost color={color} shown={shown} hl={hl} />
+        <StatRadialHost color={color} shown={shown} hl={hl} pos={pos} />
       </RadialBoundary>
     </Ctx.Provider>
   );
@@ -203,16 +228,15 @@ function sector(cx: number, cy: number, a0: number, a1: number, ri: number, ro: 
   return `M${x0},${y0} A${ro},${ro} 0 0 1 ${x1},${y1} L${x2},${y2} A${ri},${ri} 0 0 0 ${x3},${y3} Z`;
 }
 
-function StatRadialHost({ color, shown, hl }: { color: string; shown: boolean; hl: number }) {
+function StatRadialHost({ color, shown, hl, pos }: { color: string; shown: boolean; hl: number; pos: { x: number; y: number } }) {
   const { progress, anchorX, anchorY, fingerX, fingerY, hostX, hostY } = useStatRadial();
 
   // Anchor and finger are in frame space; so is the host's own origin (v0.35). Nothing here reads
   // React state on the UI thread and nothing writes it: these are the only worklets left.
   const dim = useAnimatedStyle(() => ({ opacity: progress.value * 0.34 }));
-  const wheel = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ translateX: anchorX.value - hostX.value - ROUT }, { translateY: anchorY.value - hostY.value - ROUT }, { scale: 0.72 + 0.28 * progress.value }],
-  }));
+  /** v0.36: OPACITY ONLY. See the note at the top of this file — the wheel's position is `pos`,
+   *  written once in JavaScript, so nothing commits a transform to the view holding the `<Svg>`. */
+  const wheel = useAnimatedStyle(() => ({ opacity: progress.value }));
   const line = useAnimatedStyle(() => {
     const dx = fingerX.value - anchorX.value; const dy = fingerY.value - anchorY.value;
     return { width: Math.min(ROUT, Math.hypot(dx, dy)), opacity: progress.value, transform: [{ translateX: anchorX.value - hostX.value }, { translateY: anchorY.value - hostY.value - 1.5 }, { rotateZ: `${Math.atan2(dy, dx)}rad` }] };
@@ -231,7 +255,7 @@ function StatRadialHost({ color, shown, hl }: { color: string; shown: boolean; h
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 9000 }]} pointerEvents="none">
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, dim]} />
-      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: ROUT * 2, height: ROUT * 2 }, wheel]}>
+      <Animated.View style={[{ position: 'absolute', left: pos.x, top: pos.y, width: ROUT * 2, height: ROUT * 2 }, wheel]}>
         <Svg width={ROUT * 2} height={ROUT * 2}>
           {WEDGES.map((w, i) => {
             const sel = hl === i;

@@ -5,8 +5,10 @@
  * list of features (passive/action/reaction). Plain inputs — this is prep, not the fast in-play pulse.
  */
 import { useCallback, useState } from 'react';
-import { Image, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+
+import { ScrollView } from 'react-native-gesture-handler';
 
 import { ownImage } from '@/lib/owned-image';
 import Svg, { Line, Polyline } from 'react-native-svg';
@@ -100,7 +102,28 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
     <DmModal onClose={onCancel}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 340, maxHeight: 660, padding: 18 }}>
         <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Configure</Text>
-        <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 13, paddingBottom: 4 }}>
+        {/**
+          * The GESTURE-HANDLER ScrollView, not the platform one (v0.36, owner).
+          *
+          * This panel would not scroll for the first few seconds after it opened, and stopped
+          * scrolling again once the bottom was reached. `DmModal` wraps its content in a view that
+          * claims the START responder so a tap on an empty patch of panel does not fall through to
+          * the dismiss scrim, and a platform ScrollView is a responder-system citizen too, so the
+          * two were negotiating for the same touch and the winner depended on where the finger
+          * landed and what had happened just before. The gesture-handler version claims touches
+          * natively instead, so there is nothing left to negotiate. The app has been bitten by this
+          * exact thing twice before, in the card list and the adversary detail.
+          *
+          * `paddingBottom` is 20 rather than 4 so the last field can be dragged clear of the
+          * buttons, and `keyboardDismissMode` lets a drag put the keyboard away instead of the
+          * keyboard eating the drag.
+          */}
+        <ScrollView
+          style={{ maxHeight: 500 }}
+          showsVerticalScrollIndicator
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ gap: 13, paddingBottom: 20 }}>
           {/* portrait + name */}
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
             <DmPress onPress={pickImage} accessibilityRole="button" accessibilityLabel="Choose image">

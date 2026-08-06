@@ -50,6 +50,19 @@ export interface Combatant {
   hordeNote?: string;
   /** Provenance: the BASE_ADVERSARIES id this was spawned from (item 12). Undefined = fully custom. */
   baseGameId?: string;
+  /**
+   * CHARACTERIZED (v0.36, owner): this entry is backed by a real character file.
+   *
+   * The combatant stays where it is, on whichever side it was fighting on, and the encounter draws it
+   * as a character panel instead of a stat block: real hit points, stress, hope and armor, and the
+   * DM's modifier and card tools on a hold, exactly as a party member has. Keeping it a `Combatant`
+   * rather than moving it into `allies` is what lets a characterized ADVERSARY go on being an
+   * adversary; a character on the players' side of the fight would be the wrong fight.
+   *
+   * Its vitals live on the encounter (`charVitals`), not on the party, because it does not have to
+   * be in the party and usually is not.
+   */
+  charId?: string;
 }
 
 /** An ally is either a party member (vitals resolved via the party) or a manually-added NPC (PRD #30). */
@@ -90,6 +103,9 @@ export interface Encounter {
    * different fight from the one being restarted.
    */
   archivedEffects?: { party: CardEffect[]; members: Record<string, CardEffect[]> };
+  /** v0.36: vitals for the CHARACTERIZED entries in this encounter, keyed by character id. They are
+   *  not party members, so `party.global` has nowhere to hold them and an absent entry means full. */
+  charVitals?: PartyGlobalState;
   /** v0.23.0: TEMPORARY max bonuses the DM granted for this fight only — bonus HP, a bigger stress
    *  track, extra armor slots. Encounter-scoped by definition, so it evaporates with the encounter
    *  and never touches the player's character file. A PERMANENT raise lives on the party instead. */

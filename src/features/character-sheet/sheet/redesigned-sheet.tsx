@@ -1218,7 +1218,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // Martial Form cards (#357) lock to their deck the same way (stances + the Focus card).
       const isWs = isWildshapeId(catalogIdOf(it.id));
       const isMf = isMartialStanceId(catalogIdOf(it.id)) || catalogIdOf(it.id) === MARTIAL_FOCUS_CARD_ID;
-      const target = isWs ? 'wildshape' : isMf ? 'martialform' : ov && validKeys.has(ov) && ov !== 'wildshape' && ov !== 'martialform' ? ov : cat;
+      // v0.36: a CHARACTERIZED character has one deck. A stat block has no inventory, no vault and no
+      // notes, so handing one five categories to unpick is work the DM did not ask for. An explicit
+      // move still wins (`ov`), and the live structural decks are not a category anyone chose.
+      const home = file.arsenalOnly && cat !== 'companion' ? 'abilities' : cat;
+      const target = isWs ? 'wildshape' : isMf ? 'martialform' : ov && validKeys.has(ov) && ov !== 'wildshape' && ov !== 'martialform' ? ov : home;
       (decks[target] ??= []).push(it);
     }
     // Card copies (#277): extra instances of an existing card, built from a template primary so they

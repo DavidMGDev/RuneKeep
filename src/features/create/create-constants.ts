@@ -29,7 +29,18 @@ export const MIXED_ANCESTRY_ID = 'ancestry-mixed';
 export const SINGLE_ANCESTRY_ID = 'ancestry-single';
 
 export function deckDone(deck: DeckKey, d: Draft): boolean {
+  // v0.36: SKIP answers a step. A stat block being characterized does not have to acquire a
+  // community it never had, so every step but Class can be answered with nothing, and Forge arms.
+  if (d.skipped?.includes(deck)) return true;
   switch (deck) {
+    case 'carry':
+      // Reviewing what is carried over is not a decision that can be left unmade: the DM either
+      // greys things out or does not, and either way the step is answered the moment it is seen.
+      return true;
+    case 'level':
+      return d.level !== undefined;
+    case 'transformation':
+      return !!d.transformationCardId;
     case 'class':
       return !!d.className;
     case 'subclass':
@@ -67,3 +78,29 @@ export const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
   { key: 'armor', label: 'Armor' },
   { key: 'inventory', label: 'Inventory' },
 ];
+
+/**
+ * The rail, for the kind of creation this is (v0.36, owner).
+ *
+ * Characterize leads with what the stat block hands over, because that is the one screen where the
+ * DM is reviewing rather than choosing, and it should be settled before anything else. Class comes
+ * second since it is the one step that cannot be skipped, then Level, then the ordinary order with
+ * Transformation sitting after Ancestry, where it reads as another thing you are rather than another
+ * thing you carry.
+ */
+export function decksFor(characterize: boolean, transformations: boolean): { key: DeckKey; label: string; stub?: boolean }[] {
+  if (!characterize) return DECKS;
+  const rest = DECKS.filter((d) => d.key !== 'class');
+  const out: { key: DeckKey; label: string; stub?: boolean }[] = [
+    { key: 'carry', label: 'Carried over' },
+    { key: 'class', label: 'Class' },
+    { key: 'level', label: 'Level' },
+  ];
+  for (const d of rest) {
+    out.push(d);
+    // Only when Hope and Fear is switched on in the app's own expansion list. A step listing six
+    // cards the app has been told not to show would be a step that cannot be answered.
+    if (d.key === 'ancestry' && transformations) out.push({ key: 'transformation', label: 'Transformation' });
+  }
+  return out;
+}

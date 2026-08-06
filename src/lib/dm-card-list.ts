@@ -38,8 +38,12 @@ export function fileDecks(file: CharacterFile, seeds: SeedCard[]): Record<string
   const out: Record<string, string[]> = {};
   const catOf = new Map<string, string>();
 
-  const place = (id: string, natural: string) => {
+  const place = (id: string, seedCat: string) => {
     if (removed.has(id)) return;
+    // v0.36: a CHARACTERIZED character has one deck, the Arsenal. Same rule the sheet applies, in the
+    // same shape, so the DM's view of their cards and the player's cannot disagree about where a card
+    // lives. The locked decks are structural rather than chosen, so they keep their own cards.
+    const natural = file.arsenalOnly && !LOCKED.has(seedCat) && seedCat !== 'companion' ? 'abilities' : seedCat;
     // A card locked to a special deck ignores any override, and nothing can be moved INTO one.
     const ov = override[id];
     const target = LOCKED.has(natural) ? natural : ov && valid.has(ov) && !LOCKED.has(ov) ? ov : natural;

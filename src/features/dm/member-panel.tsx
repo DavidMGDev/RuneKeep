@@ -5,8 +5,9 @@
  * Absent members render greyed with a tag. Tap the header (clear chevron) to expand into traits, level,
  * proficiency and the character's unique domain-card count (Armor is not repeated there).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits) — RN Image drops them on Android
 import Svg, { Polygon, Polyline } from 'react-native-svg';
 
@@ -46,6 +47,9 @@ export function MemberPanel({
   onLongPress,
   onModifiers,
   onCards,
+  dimmed,
+  foe,
+  flash,
 }: {
   file: CharacterFile;
   vitals: MemberVitals;
@@ -68,9 +72,31 @@ export function MemberPanel({
   onModifiers?: (edit: boolean) => void;
   /** v0.35: open this character's cards. */
   onCards?: () => void;
+  /**
+   * v0.36 (owner): a PREPARED encounter fades everything that is not a way to start it.
+   *
+   * Expanding the entry overrides it, because the point of expanding is to read the thing, and it
+   * fades back down on close. The state is already here, so the fade costs one animated style.
+   */
+  dimmed?: boolean;
+  /** This character is fighting AGAINST the party (a characterized adversary): outline it red. */
+  foe?: boolean;
+  /** Bumping this number flashes the panel once, so tapping a portrait in the roster tile lands
+   *  somewhere visible rather than silently scrolling. */
+  flash?: number;
 }) {
   const [open, setOpen] = useState(false);
   const s = memberSummary(file);
+  // The dim, and the roster tile's landing flash. Both are opacity only, on plain Views.
+  const fade = useSharedValue(1);
+  useEffect(() => { fade.value = withTiming(dimmed && !open ? 0.4 : 1, { duration: 220, easing: Easing.out(Easing.quad) }); }, [dimmed, open, fade]);
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
+  const lit = useSharedValue(0);
+  useEffect(() => {
+    if (!flash) return;
+    lit.value = withSequence(withTiming(1, { duration: 150, easing: Easing.out(Easing.quad) }), withTiming(0, { duration: 620, easing: Easing.in(Easing.quad) }));
+  }, [flash, lit]);
+  const litStyle = useAnimatedStyle(() => ({ opacity: lit.value * 0.3 }));
   const m = maxes ?? s.maxes;
   /**
    * v0.35.1 (owner): at zero hit points the portrait goes grey and dark.
@@ -93,7 +119,9 @@ export function MemberPanel({
   );
 
   return (
-    <ChamferBox chamfer={11} fill={selected ? 'rgba(196,200,208,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
+    <Animated.View style={fadeStyle}>
+    <ChamferBox chamfer={11} fill={selected ? 'rgba(196,200,208,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : foe ? DmRune.red : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: DmRune.accent }, litStyle]} />
       {/* header: portrait + identity (tap to expand) + read-only Evasion / thresholds + a clear chevron */}
       <DmPress onPress={() => setOpen((o) => !o)} onLongPress={onLongPress ?? (onModifiers ? () => onModifiers(false) : undefined)} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
         <ChamferBox chamfer={6} fill={DmRune.ink} stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
@@ -161,5 +189,6 @@ export function MemberPanel({
         </View>
       ) : null}
     </ChamferBox>
+    </Animated.View>
   );
 }

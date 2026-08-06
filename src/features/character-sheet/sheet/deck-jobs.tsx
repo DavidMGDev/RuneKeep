@@ -178,7 +178,11 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
     const cinv = CLASS_INVENTORY[cls];
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
-    const kitJobs: Job[] = cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
+    // v0.36: a characterized adversary takes NO starting kit. It is not a hero who packed a bag, and
+    // a wraith carrying a torch and fifty feet of rope because a Guardian would is simply wrong.
+    const kitJobs: Job[] = file.skipStartingKit
+      ? []
+      : cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const chosenIds = file.inventoryItemIds ?? [];
     /**
      * The chosen starting items.
