@@ -1,36 +1,25 @@
-RuneKeep v0.36.3 - Characterized characters stop reverting, card titles are measured letter by letter, and every card type gets its own colours.
+RuneKeep v0.37 - The cards panel stops dragging, Move can file cards into their own deck, Share draws where you can see it, and six more classes get their colours.
 
-CHARACTERIZED CHARACTERS STAYED CHARACTERS
+THE CARDS PANEL
 
-- THEY NO LONGER REVERT WHEN YOU LEAVE AND COME BACK. Forging opened a SECOND copy of the encounter on top of the one you started from. Everything looked right on the new one, but going back landed you on the old one, still holding the state it had before you characterized anything, and its next save wrote that over the top. Three separate reports were all this: the character turning back into an adversary, the back button appearing to do nothing because it moved from an encounter to the same encounter, and a characterized ally looking like it was never made at all. Forging now returns to the screen you left, and that screen re-reads everything each time you arrive.
-- THEY SHOW UP ON YOUR CHARACTER LIST, and can be added to a party like anyone else.
-- NO MORE REDUNDANT CARDS. Thresholds, Vitals and Evasion were three cards restating numbers the sheet already prints at the top. They are still separate cards on the review step, so you can still leave any of them behind, but only the Statblock is made, and it carries all of their numbers. No gold card either. The Statblock is the first card in the arsenal.
-- THE REVIEW STEP OPENS ON THE STATBLOCK, which is the card that says what the creature is. It is also first in the list, and the type is spelled "Statblock".
-- NOTHING IS MARKED FILLED IN THAT YOU DID NOT FILL IN. Name, Inherit and Level always arrived ticked because the stat block had seeded them, which made Skip everything warn about throwing away answers nobody had given. A step counts as filled in when you have actually touched it.
-- THE SKIP MENU IS ALSO ON THE INHERIT STEP, and its Skip everything button is at the top of the checklist.
+- HOLDING A CARD NO LONGER DRAGS IT. Dragging cards around in that panel was unreliable in a browser and crashed the app on a phone, and it had already been rebuilt twice. It is gone.
+- TAP A CARD TO LOOK AT IT. It fades in at the centre of the screen, full size, and fades out again when you tap. No flying, no shuffling, just the card.
+- HOLD A CARD TO START PICKING. The card you held is picked, and from then on tapping picks and unpicks, with Share, Favorite, Move and Delete below exactly as before. Unpicking the last card takes you back to looking at cards, so you can never end up in picking mode with no way out of it.
+- THE LIST SCROLLS FROM ANYWHERE IN THE BROWSER. Every card used to be a dead zone for scrolling, because each one was listening for a drag. Only the gaps between them worked.
 
-CARD TITLES
+MOVE
 
-- MEASURED LETTER BY LETTER. "Not strong enough" was cut off while the LONGER "Not strong enough yet" was fine, which no average width can explain. Titles are capitals in the heaviest weight, where an I is a third of the width of a W, so whether one fits depends on which letters are in it and not how many. Every title is now measured against the real widths, and on a phone the type shrinks a shade further if the font disagrees, so a title can no longer end in dots.
+- MOVE CAN NOW SEND CARDS TO THE CATEGORY THEY ARE ALREADY IN, which puts them at the front of it and pushes the cards that were there behind them. It is how you promote a set of cards to the top of a deck now that nothing is dragged.
+- A MOVE INTO ANY CATEGORY LANDS AT THE FRONT, which is where you look for a card you just filed, and a set of cards keeps its own order.
+- THE MOVE POP-UP SAYS ALL OF THIS before you choose.
 
-EVERY CARD TYPE HAS ITS OWN COLOURS
+SHARE
 
-- Around forty of them, from Action and Reaction to Story, Note, Quest, Relic and Statblock, each with a gradient and a text colour chosen to stay readable. Families share a hue: the arsenal runs warm, the inventory runs earth and metal, notes run paper and ink, and everything a stat block carries runs cold steel, so a characterized adversary's cards read as one set. The plain "Card" type is deliberately unchanged.
+- SHARE FROM THE CARDS PANEL WORKS AGAIN. The share panel was opening behind the panel that raised it, which meant picking cards and pressing Share appeared to do nothing at all.
 
-SHARED FILES
+CARDS
 
-- A CHARACTER WITH IMAGES OPENS AGAIN. The guard that stops a photo being decoded as a character was set at two megabytes, and a hero with several card images is about three, so real characters were being turned away. It sits at twelve now, which still rules out anything a camera produces, and if a file is genuinely too big the message says to use Import instead.
-
-THE DM'S SCREENS
-
-- RAISING A MAXIMUM IS A REAL MODIFIER now, so it shows in the Modifiers panel with everything else, travels with an export and can be rewound. Hope is no longer offered: it is always six, less any slot a scar has taken. Every other track holds at most twelve however high a modifier reads, because that is how many a character sheet has.
-- SELECTING NO LONGER SHRINKS AN ENTRY. The checkbox takes the portrait's place, at the portrait's size, on the left where every other list in the app puts it. Stats stop responding while selecting, and a tap anywhere on the entry selects it.
-- TAPS FADE INSTEAD OF FLASHING across the DM screens.
-- THE SECTION HEADERS MOVE WITH THE LIST when a combatant expands, instead of teleporting.
-- CHARACTERIZE TRANSITIONS CLEANLY. The selection used to clear one frame before the screen changed, so the whole list re-laid itself out in plain view first.
-- THE NUMBER PAD DIMS THE SCREEN BEHIND IT.
-- SCROLL WORKS IN THE LIBRARY'S DETAIL POP-UP, the last place it was still fighting the panel for the drag.
-- THE LIBRARY'S SELECTION BAR SITS ABOVE THE LIST instead of behind it, and characterized entries in the library do not offer to expand, because their abilities are cards on a sheet now and may have changed.
-- NAMES IN THE PARTY SUMMARY SHRINK TO FIT instead of being cut short.
+- THE CARD TYPE CHIP IS SURROUNDED BY GOLD. Zoomed in, a thin dark line showed down its left edge where the colour stopped just short of the frame.
+- ASSASSIN, WITCH, WARLOCK, BLOOD HUNTER, SUMMONER AND BRAWLER HAVE THEIR OWN CLASS COLOURS, taken from the two domains their banners are painted from, the same way the nine base classes got theirs. They were all showing the same plain red.
 
 Sideload: enable Install unknown apps, then open the APK.
