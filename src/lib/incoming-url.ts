@@ -40,6 +40,22 @@
  */
 const MEDIA_URI = /[/.](images|video|audio|photo_?picker)(\/|$)|document\/(image|video|audio)(%3a|:)/;
 
+/**
+ * Whether a LAUNCH URL is a file at all (v0.36.1, owner).
+ *
+ * Used only by `+native-intent`, which runs for URLs Android started the app with. Anything that gets
+ * that far was already selected by the app's own intent filter, so the only question left is whether
+ * it is a file rather than a deep link. `isFilePayload` below asks a narrower question, and asking it
+ * here is what made a Quick Share open the app and then sit on the menu: the media guard is there to
+ * reject a photo the app's own image picker handed back, which cannot happen on a launch intent.
+ */
+export function isLaunchFile(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  if (u.startsWith('runekeep://')) return false; // the app's own deep links are routes
+  return u.startsWith('content://') || u.startsWith('file://');
+}
+
 export function isFilePayload(url: string | null | undefined): boolean {
   if (!url) return false;
   const u = url.toLowerCase();

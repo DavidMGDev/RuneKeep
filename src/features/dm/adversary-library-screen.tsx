@@ -15,7 +15,7 @@ import { SectionList, Text, TextInput, View } from 'react-native';
 // v0.21.0 item 3: the RN ScrollView would not scroll inside the DmModal overlay (the modal's start-responder
 // wrapper starves it on Android). The gesture-handler ScrollView runs in the RNGH pipeline and wins the drag.
 import { ScrollView } from 'react-native-gesture-handler';
-import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (custom-adversary portraits)
+import {  } from 'expo-image'; // item 2: robust with base64 data-URIs (custom-adversary portraits)
 import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -33,6 +33,7 @@ import { AdversaryImageViewer, AdversaryPortrait, StatBlockDetail } from './adve
 import { AdversaryInfoPanel } from './adversary-info';
 import { DmModal, DmPress } from './dm-ui';
 import { useAndroidBack } from './use-android-back';
+import { Portrait } from '@/components/portrait';
 import { useSelection } from './use-selection';
 
 type Mode = 'adversary' | 'ally' | 'browse';
@@ -51,11 +52,17 @@ function savedItem(s: SavedAdversary): Item {
 const buildCombatant = (it: Item): Combatant => (it.base ? baseToCombatant(it.base) : (it.saved as Combatant));
 
 /** Cheap list avatar — no SVG: the image, or the first letter of the name in a bordered box. */
+/** v0.36.1: the shared chamfered portrait, with the initial as its empty state. */
 function Avatar({ uri, name, tint }: { uri?: string; name: string; tint: string }) {
   return (
-    <ChamferBox chamfer={5} fill={DmRune.ink} stroke={tint} strokeWidth={1} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {uri ? <Image source={uri} style={{ width: 36, height: 36 }} contentFit="cover" /> : <Text style={{ color: DmRune.accentDim, fontSize: DmType.title, fontFamily: Display.black }}>{(name[0] ?? '?').toUpperCase()}</Text>}
-    </ChamferBox>
+    <Portrait
+      uri={uri}
+      size={46}
+      chamfer={5}
+      tint={tint}
+      fill={DmRune.ink}
+      glyph={<Text style={{ color: DmRune.accentDim, fontSize: DmType.title, fontFamily: Display.black }}>{(name[0] ?? '?').toUpperCase()}</Text>}
+    />
   );
 }
 

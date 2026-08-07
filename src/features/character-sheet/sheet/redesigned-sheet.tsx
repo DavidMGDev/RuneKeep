@@ -66,7 +66,7 @@ import { buildDeckJobs } from './deck-jobs';
 import { PrintableImage, PrintStage, type PrintStageHandle } from '@/features/create/components/print-stage';
 import { usePrintJob } from '@/features/share/print-job';
 import { Art } from '../art';
-import { armorTrackLayout, chipWidth, trackBounds, washBands, wildshapeSummary } from './sheet-utils';
+import { armorTrackLayout, chipWidth, trackBounds, washBands } from './sheet-utils';
 import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
 import { OverlayShell } from './overlay-shell';

@@ -33,6 +33,28 @@ function Pencil() {
   );
 }
 
+/**
+ * Two different actions, two different marks (v0.36.1, owner).
+ *
+ * Both used to be an X, which said "remove" for a control that does not remove anything: downing an
+ * adversary keeps it in the fight as Fallen, and that is the whole point of the Fallen state. A
+ * downward arrow says what it does. The X survives on a FALLEN row, where it really does delete.
+ */
+function FellArrow() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 16 16">
+      <Line x1={8} y1={2} x2={8} y2={12} stroke={DmRune.red} strokeWidth={2} strokeLinecap="round" />
+      <Polyline points="3.5,8 8,13 12.5,8" fill="none" stroke={DmRune.red} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function RemoveX() {
+  return (
+    <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
+  );
+}
+
 function CheckBadge() {
   return (
     <ChamferBox chamfer={5} fill={DmRune.accent} stroke="transparent" strokeWidth={0} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
@@ -98,7 +120,7 @@ export function CombatantPanel({
               <>
                 <RuneButton label="Recover" kind="secondary" height={30} dense dm onPress={onRecover} />
                 <DmPress onPress={onDelete} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${c.name}`}>
-                  <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
+                  <RemoveX />
                 </DmPress>
               </>
             ) : null}
@@ -108,7 +130,9 @@ export function CombatantPanel({
     );
   }
 
-  const anyTrack = c.show.hp || c.show.stress || c.show.thresholds;
+  // v0.36.1 (owner): DIFFICULTY belongs in the compact row. It is the number the DM needs most
+  // often and it was only visible once the stat block was expanded.
+  const anyTrack = c.show.hp || c.show.stress || c.show.thresholds || !!c.difficulty;
   const headerTap = () => { if (selecting) onToggleSelect?.(); else if (canExpand) setOpen((o) => !o); };
   return (
     <Animated.View layout={SPRING} style={fadeStyle}>
@@ -124,7 +148,7 @@ export function CombatantPanel({
               {canExpand ? <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
               <DmPress onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Configure ${c.name}`}><Pencil /></DmPress>
               <DmPress onPress={onFell} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Down ${c.name}`}>
-                <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
+                <FellArrow />
               </DmPress>
             </>
           ) : null}
@@ -138,6 +162,12 @@ export function CombatantPanel({
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <StatGlyph kind="threshold" color={DmRune.accentDim} size={16} />
                 <Text style={{ color: DmRune.accent, fontSize: DmType.title, fontFamily: Display.black }}>{c.thresholds?.major ?? 0}/{c.thresholds?.severe ?? 0}</Text>
+              </View>
+            ) : null}
+            {c.difficulty ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <StatGlyph kind="difficulty" color={DmRune.accentDim} size={16} />
+                <Text style={{ color: DmRune.accent, fontSize: DmType.title, fontFamily: Display.black }}>{c.difficulty}</Text>
               </View>
             ) : null}
           </View>

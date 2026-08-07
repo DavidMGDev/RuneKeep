@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Image, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import {  Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
@@ -24,20 +24,12 @@ import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
 import { NameDialog } from '@/features/dm/dm-ui';
 import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picker';
+import { Portrait } from '@/components/portrait';
 import { DimScreen } from '@/lib/screen-dim';
 
+/** v0.36.1: the shared chamfered portrait, so the roster matches every other list in the app. */
 function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
-  return (
-    <ChamferBox chamfer={8} fill={Rune.ink} stroke={tint} strokeWidth={1.4} style={{ width: 58, height: 58, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {uri ? (
-        <Image source={{ uri }} style={{ width: 58, height: 58 }} resizeMode="cover" />
-      ) : (
-        <Svg width={26} height={26} viewBox="0 0 26 26">
-          <Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} strokeLinejoin="miter" />
-        </Svg>
-      )}
-    </ChamferBox>
-  );
+  return <Portrait uri={uri} size={58} chamfer={8} tint={tint} fill={Rune.ink} />;
 }
 
 function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOpen: () => void; onLongPress: () => void }) {

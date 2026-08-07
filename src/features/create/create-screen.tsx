@@ -45,7 +45,8 @@ import { shouldShow } from '@/lib/onboarding-store';
 
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
-import { carriesThresholds, carryItems, type CarryItem, itemHoldEffects, keptItems, keptLevel, levelForStatBlock } from '@/lib/characterize';
+import { canSkipClass, carriesThresholds, carryItems, type CarryItem, isGenericName, itemHoldEffects, keptItems, keptLevel, levelForStatBlock } from '@/lib/characterize';
+import { SkipMenu, SkipMenuButton, type SkipStepRow } from './skip-menu';
 import { addTemplate, loadAdversaries, saveAdversaries } from '@/lib/adversary-library';
 import { addMembers, type Party } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
@@ -225,13 +226,26 @@ export function CreateScreen() {
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set([BASE_PICK_ID, ...(typeof params.exp === 'string' ? params.exp.split(',').filter(Boolean) : [])]),
   );
-  const [pickerOpen, setPickerOpen] = useState(typeof params.exp !== 'string');
+  /**
+   * The picker never opens while CHARACTERIZING (v0.36.1, owner).
+   *
+   * A DM turning an adversary into a character has already said which packs they use, in the app's
+   * own expansion list, and asking again per adversary is a question with the same answer every
+   * time. The picks are taken from that list instead, which is exactly where the Transform step
+   * already looks.
+   */
+  const [pickerOpen, setPickerOpen] = useState(typeof params.exp !== 'string' && !(params.encId && params.cid));
   useEffect(() => {
     let live = true;
     // seed the bundled official expansions (The Void) so they show in the picker, then list all installed.
-    seedOfficialExpansions().catch(() => {}).then(() => listExpansions()).then((all) => { if (live) setExpansions(all); });
+    seedOfficialExpansions().catch(() => {}).then(() => listExpansions()).then((all) => {
+      if (!live) return;
+      setExpansions(all);
+      // Characterize takes the app's enabled packs as given; nothing is asked and nothing waits.
+      if (params.encId && params.cid) setPicked(new Set([BASE_PICK_ID, ...all.filter(isEnabledForCreation).map((e) => e.id)]));
+    });
     return () => { live = false; };
-  }, []);
+  }, [params.encId, params.cid]);
   // v0.10.3 (B4): homebrew content offered in the matching decks — now intersected with the PICKED set, so
   // only content from expansions this hero opted into shows. An official pack contributes nothing here (its
   // cards live in the catalog, gated by the same `picked`); custom expansions contribute their cards.
@@ -269,17 +283,31 @@ export function CreateScreen() {
       // Open ON the review step: what the stat block hands over should be settled first.
       setDeck('carry');
       setCenterIdx(0);
+      // v0.36.1 (owner): a name the APP made up is not a name. Carrying "Adversary #3" across just
+      // means the DM has to clear the field before they can type, so a placeholder is left behind
+      // and the name step stays open; a real name is inherited and counts as answered.
+      const inheritName = isGenericName(c.name) ? '' : c.name;
       setDraft((d) => ({
         ...d,
-        name: d.name || c.name,
+        name: d.name || inheritName,
         portraitUri: d.portraitUri ?? c.portraitUri ?? null,
         level: d.level ?? levelForStatBlock(c.tier, c.difficulty),
+        // Skipping traits must send what was inherited, not nothing (owner), so they are seeded
+        // here rather than only being offered as a Reset on the traits step.
+        traits: Object.keys(d.traits).length ? d.traits : { ...(c as unknown as { traits?: Partial<Record<TraitKey, number>> }).traits },
         characterize: { encounterId: params.encId!, combatantId: params.cid!, side: params.side === 'ally' ? 'ally' : 'adversary' },
       }));
     });
     return () => { live = false; };
   }, [characterizing, params.encId, params.cid, params.side]);
 
+  /**
+   * The CLASS step is optional when the numbers a class would give are already carried (v0.36.1).
+   *
+   * Leaving either of those cards behind puts it back, and un-skips it if it had been skipped, so the
+   * creator can never reach Forge with a character that has neither a class nor the numbers one
+   * would have provided.
+   */
   /** Everything the stat block hands over, and what the DM has greyed out of it. */
   const carry = useMemo<CarryItem[]>(() => (statBlock ? carryItems(statBlock) : []), [statBlock]);
   const carryOff = useMemo(() => new Set(draft.carryDisabled ?? []), [draft.carryDisabled]);
@@ -291,6 +319,19 @@ export function CreateScreen() {
   /** Transformations follow the APP's expansion switch, not this character's picks (owner). */
   const transformationsOn = !!expansions?.some((e) => e.id === 'void' && isEnabledForCreation(e));
   const deckList = useMemo(() => decksFor(characterizing, transformationsOn), [characterizing, transformationsOn]);
+  const classOptional = characterizing && canSkipClass(carry, carryOff);
+
+  /**
+   * The class comes BACK when its numbers stop being carried (v0.36.1, owner).
+   *
+   * Class is skippable only while the stat block is supplying the hit points and Evasion a class
+   * would. Leaving either card behind after skipping it would otherwise leave a character with
+   * neither, and a Forge button that claimed to be ready.
+   */
+  useEffect(() => {
+    if (!characterizing || classOptional) return;
+    setDraft((d) => (d.skipped?.includes('class') ? { ...d, skipped: d.skipped.filter((k) => k !== 'class') } : d));
+  }, [characterizing, classOptional]);
 
   useEffect(() => {
     if (draft.className && !hadClass.current) {
@@ -571,10 +612,24 @@ export function CreateScreen() {
         keep(`carry|${it.id}|${carryOff.has(it.id) ? 'off' : 'on'}`, () => ({
           id: it.id,
           label: it.title,
-          custom: (
-            <View style={{ opacity: carryOff.has(it.id) ? 0.3 : 1 }}>
-              <ForgedCard title={it.title} kindLabel={it.cardLabel} body={it.text} accentDeep={Rune.panel} colorArt={carryColor(it.id)} multilineTitle />
+          /**
+           * LEFT BEHIND, without transparency (v0.36.1, owner).
+           *
+           * Fading the card let the neighbours show through where the carousel overlaps them, and two
+           * translucent cards on top of each other read as a bright seam rather than as one dim card.
+           * The card is drawn solid and greyed instead: a slate art zone in place of its colour, and
+           * a band across it saying so. Nothing behind it shows through at all.
+           */
+          custom: carryOff.has(it.id) ? (
+            <View>
+              <ForgedCard title={it.title} kindLabel={it.cardLabel} body={it.text} accentDeep="#20242B" colorArt="#20242B" multilineTitle />
+              <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(20,24,31,0.62)' }} />
+              <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: '44%', backgroundColor: 'rgba(20,24,31,0.95)', borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(147,142,136,0.5)', paddingVertical: 5 }}>
+                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>Left behind</Text>
+              </View>
             </View>
+          ) : (
+            <ForgedCard title={it.title} kindLabel={it.cardLabel} body={it.text} accentDeep={Rune.panel} colorArt={carryColor(it.id)} multilineTitle />
           ),
         })),
       );
@@ -749,6 +804,70 @@ export function CreateScreen() {
     setDraft((d) => (d.skipped?.includes(k) ? { ...d, skipped: d.skipped.filter((x) => x !== k) } : d));
   }, []);
 
+  /**
+   * What a step goes back to when it is SKIPPED (v0.36.1, owner).
+   *
+   * "Skipping a step must be sensitive to changes on that step. If I skip traits they are sent as
+   * default, as inherited, or as all 0 if there were no traits to inherit." So a skip is not just a
+   * flag: it puts the step back to the answer the stat block implies, and where the stat block
+   * implies nothing, to nothing at all. That is also what the skip menu warns about before it throws
+   * an answer away.
+   */
+  const stepDefault = useCallback(
+    (k: DeckKey | 'name'): Partial<Draft> => {
+      switch (k) {
+        case 'name':
+          // Not blank: a character with no name at all cannot be forged, and whatever the stat block
+          // was called is the only name anybody has offered.
+          return { name: statBlock?.name ?? '' };
+        case 'carry':
+          return { carryDisabled: [] }; // the default is to inherit everything
+        case 'level':
+          return { level: levelForStatBlock(statBlock?.tier, statBlock?.difficulty) };
+        case 'class':
+          // Subclass and domains are chosen FROM a class, so they go with it.
+          return { className: null, subclassCardId: null, domainCardIds: [] };
+        case 'subclass':
+          return { subclassCardId: null };
+        case 'ancestry':
+          return { ancestryCardId: null, mixedAncestry: null };
+        case 'transformation':
+          return { transformationCardId: null };
+        case 'community':
+          return { communityCardId: null };
+        case 'domains':
+          return { domainCardIds: [] };
+        case 'traits':
+          return { traits: { ...inheritedTraits } }; // inherited, or nothing, never a player's spread
+        case 'experiences':
+          return { experiences: [] };
+        case 'weapons':
+          return { weaponPrimaryId: null, weaponSecondaryId: null, weaponsSkipped: false };
+        case 'armor':
+          return { armorId: null, armorSkipped: false };
+        case 'inventory':
+          return { inventoryItemIds: [], inventoryLibIds: [], inventorySkips: [] };
+      }
+    },
+    [statBlock, inheritedTraits],
+  );
+
+  /** Mark steps skipped and put each one back to its default, in one write. */
+  const applySkips = useCallback(
+    (keys: (DeckKey | 'name')[]) => {
+      setDraft((d) => {
+        let next: Draft = { ...d };
+        for (const k of keys) next = { ...next, ...stepDefault(k) };
+        // Skipping the class takes subclass and domains with it: neither can be chosen without one.
+        const all = keys.includes('class') ? [...keys, 'class' as const, 'subclass' as const, 'domains' as const] : keys;
+        const deckKeys = all.filter((k): k is DeckKey => k !== 'name');
+        // The menu is the WHOLE answer, not an add-only list: unchecking a step un-skips it.
+        return { ...next, skipped: [...new Set(deckKeys)], nameSkipped: all.includes('name') };
+      });
+    },
+    [stepDefault],
+  );
+
   const onToggle = useCallback(
     (id: string) => {
       unskip(deck);
@@ -882,33 +1001,45 @@ export function CreateScreen() {
   useEffect(() => {
     if (resumeChecked) return;
     setResumeChecked(true);
-    // A characterize draft belongs to ONE combatant, so offering an unrelated hero back into it
-    // would put someone else's class on this adversary. Neither offered nor saved (below).
-    if (characterizing) return;
     const stored = loadDraft<Draft>();
+    /**
+     * A characterize draft belongs to ONE combatant (v0.36.1, owner).
+     *
+     * There is one draft slot, so without this a DM's half-finished wraith would be offered back to
+     * a player starting an ordinary hero on the same device, and an ordinary draft would be offered
+     * into a characterize. A draft is only ever offered back to the thing it was started from.
+     */
+    const mine = stored?.draft?.characterize?.combatantId ?? null;
+    const want = characterizing ? params.cid! : null;
+    if (mine !== want) { if (!characterizing) clearDraft(); return; }
     if (isResumable(stored, draftHasContent) && stored) setResumeOffer({ draft: stored.draft, deck: stored.deck, savedAt: stored.savedAt });
     else clearDraft();
-  }, [resumeChecked, characterizing]);
+  }, [resumeChecked, characterizing, params.cid]);
 
   // Persist after every edit. Cheap (one small JSON) and it means the draft survives anything.
   useEffect(() => {
-    if (!resumeChecked || resumeOffer || characterizing) return; // don't overwrite a draft we're still offering back
-    if (draftHasContent(draft)) saveDraft(draft, { deck, picked: [...picked] });
+    if (!resumeChecked || resumeOffer) return; // don't overwrite a draft we're still offering back
+    // A characterize draft is saved once it knows WHICH combatant it belongs to, so a phone call
+    // mid-characterize loses nothing and the draft can never be handed to the wrong creation.
+    if (characterizing ? !!draft.characterize : draftHasContent(draft)) saveDraft(draft, { deck, picked: [...picked] });
   }, [draft, deck, picked, resumeChecked, resumeOffer, characterizing]);
 
   draftRef.current = draft;
-  const complete = deckList.every((d) => deckDone(d.key, draft)) && draft.name.trim().length > 0;
+  // v0.36.1: the name is a step in the skip menu, so skipping it answers it (it falls back to
+  // whatever the stat block was called, which is the only name anybody has offered).
+  const nameDone = draft.name.trim().length > 0 || !!draft.nameSkipped;
+  const complete = deckList.every((d) => deckDone(d.key, draft)) && nameDone;
   // Aggregate progress (v0.22.0). The rail showed per-step ticks but nothing showed how close you
   // were overall, and the NAME requirement had no representation on the rail at all — so a player
   // could hold ten gold ticks and a disabled Forge button with no explanation of why.
   const steps = deckList.length + 1; // +1 for the name
-  const stepsDone = deckList.filter((d) => deckDone(d.key, draft)).length + (draft.name.trim().length > 0 ? 1 : 0);
-  const missingLabel = !draft.name.trim() ? 'a name' : (deckList.find((d) => !deckDone(d.key, draft))?.label.toLowerCase() ?? null);
+  const stepsDone = deckList.filter((d) => deckDone(d.key, draft)).length + (nameDone ? 1 : 0);
+  const missingLabel = !nameDone ? 'a name' : (deckList.find((d) => !deckDone(d.key, draft))?.label.toLowerCase() ?? null);
 
   /** Tapping Forge while incomplete jumps to the first unmet step instead of doing nothing. */
   const jumpToMissing = useCallback(() => {
     playSfx('buttonTap');
-    const next = deckList.find((d) => !deckDone(d.key, draft));
+    const next = deckList.find((d) => !deckDone(d.key, draft) && !locked(d.key));
     if (next) switchDeck(next.key);
     else nameRef.current?.focus(); // every deck is done, so the name is what's left
   }, [draft, switchDeck, deckList]);
@@ -1066,6 +1197,7 @@ export function CreateScreen() {
       severeThreshold: sheet.damageThresholds.severe,
       maxHp: sheet.maxHp,
       stressMax: sheet.stress.total - (sheet.stress.locked ?? 0),
+      evasion: sheet.evasion,
     };
     const customCards = carded.map((it) => cardOf(it, itemHoldEffects(it, have)));
     // Everything on, at once: a DM reading this sheet wants the true numbers, not a character with
@@ -1137,14 +1269,49 @@ export function CreateScreen() {
     if (!res.canceled && res.assets[0]) set({ portraitUri: await ownImage(res.assets[0].uri) });
   }, [set]);
 
+  /** Read by the two skip paths, which must never land the DM on a step they cannot open. */
+  const lockedRef = useRef<(k: DeckKey) => boolean>(() => false);
   const locked = (k: DeckKey) =>
     ((k === 'subclass' || k === 'domains') && !draft.className) || !!deckList.find((d) => d.key === k)?.stub; // stubs land next issue
+  lockedRef.current = locked;
   const maxSelect = deck === 'domains' || deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
   // 'domains' used to fall back to the word 'card' — the least specific label in the app, on the one
   // step where you pick two. It only shows now when the centred card's own name is too long to fit.
   const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'domain card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const allCarryOff = carry.length > 0 && carryOff.size >= carry.length;
+  const [skipMenu, setSkipMenu] = useState(false);
+  /**
+   * Every step of creation as one list (v0.36.1, owner).
+   *
+   * `done` is deliberately SKIP-BLIND: a step that is only "done" because it was skipped is not an
+   * answer, and marking it as one would make the warning about losing answers meaningless. Transform
+   * is always listed, greyed when no enabled expansion offers any, because a step missing from the
+   * list looks like the list is wrong rather than like the content is off.
+   */
+  const skipRows = useMemo<SkipStepRow[]>(() => {
+    const bare = { ...draft, skipped: [] as DeckKey[] };
+    const rows: SkipStepRow[] = [
+      { key: 'name', label: 'Name', skippable: true, skipped: !!draft.nameSkipped, done: draft.name.trim().length > 0 },
+    ];
+    for (const d of deckList) {
+      const classRow = d.key === 'class';
+      rows.push({
+        key: d.key,
+        label: d.label,
+        skippable: !classRow || classOptional,
+        skipped: !!draft.skipped?.includes(d.key),
+        done: deckDone(d.key, bare),
+        note: classRow && !classOptional ? 'Gives the numbers' : undefined,
+      });
+    }
+    if (!transformationsOn) {
+      // Listed but off, so the DM can see the step exists and why it is not offered.
+      const at = rows.findIndex((r) => r.key === 'ancestry');
+      rows.splice(at + 1, 0, { key: 'transformation', label: 'Transform', skippable: false, skipped: false, done: false, note: 'No pack enabled' });
+    }
+    return rows;
+  }, [deckList, draft, classOptional, transformationsOn]);
   /**
    * SKIP (v0.36, owner): answer a step with nothing and move on.
    *
@@ -1155,10 +1322,12 @@ export function CreateScreen() {
   const skipStep = useCallback(() => {
     const k = deckRef.current;
     playSfx('buttonTap');
-    setDraft((d) => ({ ...d, skipped: [...new Set([...(d.skipped ?? []), k])] }));
-    const order = decksRef.current.filter((x) => !x.stub);
+    // The same reset the menu applies, so the two ways of skipping cannot mean different things.
+    setDraft((d) => ({ ...d, ...defaultRef.current(k), skipped: [...new Set([...(d.skipped ?? []), k])] }));
+    const skipped = [...(draftRef.current.skipped ?? []), k];
+    const order = decksRef.current.filter((x) => !x.stub && !lockedRef.current(x.key));
     const at = order.findIndex((x) => x.key === k);
-    const next = order.slice(at + 1).find((x) => !deckDone(x.key, { ...draftRef.current, skipped: [...(draftRef.current.skipped ?? []), k] }));
+    const next = order.slice(at + 1).find((x) => !deckDone(x.key, { ...draftRef.current, skipped }));
     if (next) switchDeckRef.current(next.key);
   }, []);
   const SkipStep = useCallback(
@@ -1182,6 +1351,8 @@ export function CreateScreen() {
   switchDeckRef.current = switchDeck;
   const decksRef = useRef(deckList);
   decksRef.current = deckList;
+  const defaultRef = useRef(stepDefault);
+  defaultRef.current = stepDefault;
 
   /**
    * Keyboard control for the creator (v0.29.0). Web only, and a no-op on a phone.
@@ -1454,7 +1625,10 @@ export function CreateScreen() {
                 selectedIds={selectedIds}
                 crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
                 reserveBottom={CONTROLS_BAND}
-                initialIndex={deckIndexes.current[deck] ?? Math.floor(items.length / 2)}
+                // v0.36.1 (owner): the LEFT of the two middles. With two cards `floor(n/2)` opened on
+                // the last one, so the deck arrived already scrolled to the end, which reads as a
+                // mistake. `floor((n-1)/2)` is the true middle for odd counts and the left one for even.
+                initialIndex={deckIndexes.current[deck] ?? Math.floor((items.length - 1) / 2)}
                 onIndexChange={onCenterIdx}
               />
             </Animated.View>
@@ -1518,7 +1692,7 @@ export function CreateScreen() {
           <RuneButton
             label={
               deck === 'carry'
-                ? carryOff.has(centerItem?.id ?? '') ? 'Keep this' : 'Do not carry this'
+                ? carryOff.has(centerItem?.id ?? '') ? 'Keep this' : 'Leave this behind'
                 : centerSelected ? 'Deselect' : `Select ${centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun}`
             }
             kind={deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? 'primary' : 'ghost') : centerSelected ? 'ghost' : 'primary'}
@@ -1530,7 +1704,7 @@ export function CreateScreen() {
               playSfx(centerSelected || (deck === 'carry' && !carryOff.has(centerItem.id)) ? 'cardDeselect' : 'cardSelect');
               onToggle(centerItem.id);
             }}
-            accessibilityLabel={deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? `Carry ${centerItem?.label ?? 'this'}` : `Do not carry ${centerItem?.label ?? 'this'}`) : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+            accessibilityLabel={deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? `Carry ${centerItem?.label ?? 'this'}` : `Leave ${centerItem?.label ?? 'this'} behind`) : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
           />
           {/* v0.10.2 (Feature 2): roll a random valid choice for this section. */}
           {/* v0.29.0: on the ancestry step in MIXED mode, the reverse control sits BESIDE Random rather
@@ -1554,7 +1728,9 @@ export function CreateScreen() {
               <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
             )}
             {deck === 'ancestry' && draft.mixedAncestry ? <MixReverseButton mixed={draft.mixedAncestry} onReverse={reverseMix} /> : null}
-            <SkipStep />
+            {/* v0.36.1 (owner): the class step's Skip is the whole checklist instead, because a class
+                is the one step you cannot answer with nothing and the one you always answer first. */}
+            {characterizing && deck === 'class' ? <SkipMenuButton armed={!!draft.className || classOptional} onPress={() => { playSfx('buttonTap'); setSkipMenu(true); }} /> : <SkipStep />}
           </View>
           {/* v0.10.6: the class/weapons hint tooltips were removed — they pushed these buttons up into
               the card carousel (owner). */}
@@ -1590,6 +1766,22 @@ export function CreateScreen() {
         </PopupDialog>
       ) : null}
 
+      {skipMenu ? (
+        <SkipMenu
+          rows={skipRows}
+          onCancel={() => setSkipMenu(false)}
+          onConfirm={(keys) => {
+            setSkipMenu(false);
+            applySkips(keys as (DeckKey | 'name')[]);
+            playSfx('cardSelect');
+            // Land on the nearest step that still needs an answer, or forge when none do.
+            const after = { ...draftRef.current, skipped: keys.filter((k) => k !== 'name') as DeckKey[], nameSkipped: keys.includes('name') };
+            const next = decksRef.current.find((d) => !deckDone(d.key, after) && !lockedRef.current(d.key));
+            if (next) switchDeck(next.key);
+            else setTimeout(() => { void forgeCharacterized(); }, 0); // the draft write lands first
+          }}
+        />
+      ) : null}
       {forging ? <CreateLoader done={false} onHidden={() => {}} /> : null}
       {joinParty ? (
         <PopupDialog

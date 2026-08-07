@@ -8,8 +8,8 @@
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits) — RN Image drops them on Android
-import Svg, { Polygon, Polyline } from 'react-native-svg';
+import {  } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits) — RN Image drops them on Android
+import Svg, {  Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { FitLine } from '@/components/fit-line';
@@ -18,6 +18,7 @@ import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { domainCardCount, memberSummary } from '@/lib/dm-vitals';
 import { type CharacterFile } from '@/lib/character-file';
 import { type MemberMaxes, type MemberVitals, type VitalKey } from '@/lib/party';
+import { DownedVeil, Portrait } from '@/components/portrait';
 import { StatPulse } from './stat-pulse';
 import { DmPress } from './dm-ui';
 
@@ -124,20 +125,13 @@ export function MemberPanel({
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: DmRune.accent }, litStyle]} />
       {/* header: portrait + identity (tap to expand) + read-only Evasion / thresholds + a clear chevron */}
       <DmPress onPress={() => setOpen((o) => !o)} onLongPress={onLongPress ?? (onModifiers ? () => onModifiers(false) : undefined)} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-        <ChamferBox chamfer={6} fill={DmRune.ink} stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          {s.portraitUri ? (
-            <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
-              <Image source={s.portraitUri} style={{ width: 46, height: 46 }} contentFit="cover" />
-            </View>
-          ) : (
-            <Svg width={20} height={20} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.6} /></Svg>
-          )}
+        {/* v0.36.1: chamfered, so the frame and the picture are one shape (see components/portrait). */}
+        <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
+          <Portrait uri={s.portraitUri} size={46} tint={downed ? DmRune.muted : DmRune.accentDim} fill={DmRune.ink} />
           {/* Greyed AND darkened: desaturation alone is easy to miss on a portrait that is already
               dim, and a scrim alone reads as a loading state. */}
-          {downed ? (
-            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(11,14,19,0.55)' }} />
-          ) : null}
-        </ChamferBox>
+          {downed ? <DownedVeil size={46} /> : null}
+        </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
             <FitLine style={{ flexShrink: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{s.name}</FitLine>
