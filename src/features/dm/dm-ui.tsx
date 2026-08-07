@@ -2,7 +2,7 @@
  *  small chrome helpers. */
 import { type ReactNode, useState } from 'react';
 import { Pressable, type PressableProps, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
@@ -127,11 +127,37 @@ export function DmEmpty({ glyph, title, body, actionLabel, onAction }: { glyph?:
  *
  * Drop-in for `Pressable`: whatever style is already there is kept, function form included.
  */
+/** One animated Pressable, built once: the fade below rides the pressable ITSELF, so no wrapper
+ *  view is introduced and every call site's layout is exactly what it was. */
+const FadePressable = Animated.createAnimatedComponent(Pressable);
+
 export function DmPress({ style, ...rest }: PressableProps) {
+  /**
+   * A FADE, not a flash (v0.36.3, owner).
+   *
+   * Driving `opacity` off the pressed flag switched it in a single frame each way, so a tap read as a
+   * blink: on and off before the eye had settled. 90ms down and 170ms back is still immediate, and
+   * still unmistakably a response, without the strobe.
+   *
+   * The style FUNCTION form is resolved against `pressed: false` on purpose. A handful of rows used
+   * it to paint their own press background, and two different press treatments on one control is
+   * exactly the harshness being removed; the fade is the feedback now, everywhere.
+   */
+  const dim = useSharedValue(0);
+  const anim = useAnimatedStyle(() => ({ opacity: 1 - dim.value * 0.42 }));
+  const resolved = typeof style === 'function' ? style({ pressed: false, hovered: false }) : style;
   return (
-    <Pressable
+    <FadePressable
       {...rest}
-      style={(state) => [typeof style === 'function' ? style(state) : style, { opacity: state.pressed && !rest.disabled ? 0.58 : 1 }]}
+      onPressIn={(e) => {
+        if (!rest.disabled) dim.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) });
+        rest.onPressIn?.(e);
+      }}
+      onPressOut={(e) => {
+        dim.value = withTiming(0, { duration: 170, easing: Easing.out(Easing.quad) });
+        rest.onPressOut?.(e);
+      }}
+      style={[resolved, anim]}
     />
   );
 }

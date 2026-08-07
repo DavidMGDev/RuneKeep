@@ -7,7 +7,7 @@
  * unit to "Fallen"; only a fallen unit's X actually deletes.
  */
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
@@ -52,14 +52,6 @@ function FellArrow() {
 function RemoveX() {
   return (
     <Svg width={15} height={15} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-  );
-}
-
-function CheckBadge() {
-  return (
-    <ChamferBox chamfer={5} fill={DmRune.accent} stroke="transparent" strokeWidth={0} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={13} height={13} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-    </ChamferBox>
   );
 }
 
@@ -113,7 +105,11 @@ export function CombatantPanel({
       <Animated.View layout={SPRING} style={fadeStyle}>
         <DmPress onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
           <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
-            {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : null}
+            {selecting ? (
+              <ChamferBox chamfer={6} fill={selected ? DmRune.accent : 'transparent'} stroke={selected ? 'transparent' : DmRune.accentDim} strokeWidth={1.3} style={{ width: 26, height: 26, alignItems: 'center', justifyContent: 'center' }}>
+                {selected ? <Svg width={13} height={13} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+              </ChamferBox>
+            ) : null}
             <FitLine style={{ flex: 1, color: DmRune.muted, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
             <Text style={{ color: DmRune.red, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Fallen</Text>
             {!selecting ? (
@@ -137,9 +133,29 @@ export function CombatantPanel({
   return (
     <Animated.View layout={SPRING} style={fadeStyle}>
       <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || (c.show.description && !open) || open ? 10 : 0 }}>
+        {/* While selecting, ANY tap on the entry selects it: the header is not the only target, and
+            hunting for it is the sort of precision a bulk action should not ask for. */}
+        {selecting ? (
+          <Pressable
+            onPress={onToggleSelect}
+            onLongPress={onLongPress}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: !!selected }}
+            accessibilityLabel={`${c.name}, ${selected ? 'selected' : 'not selected'}`}
+            style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 5 }}
+          />
+        ) : null}
         {/* header row — tap toggles the stat block; hold multi-selects */}
         <DmPress onPress={headerTap} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}${canExpand ? ', tap to expand' : ''}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {selecting ? (selected ? <CheckBadge /> : <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.accentDim} strokeWidth={1.3} style={{ width: 24, height: 24 }} />) : (
+          {/* v0.36.3 (owner): the checkbox takes the PORTRAIT'S place at the portrait's size, so an
+              entry does not shrink and reflow the moment it is selected. It used to swap a 38dp
+              portrait for a 24dp box, which pulled the name and every stat left and made the whole
+              row jump. */}
+          {selecting ? (
+            <ChamferBox chamfer={6} fill={selected ? DmRune.accent : 'transparent'} stroke={selected ? 'transparent' : DmRune.accentDim} strokeWidth={1.3} style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+              {selected ? <Svg width={18} height={18} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+            </ChamferBox>
+          ) : (
             <AdversaryPortrait uri={c.portraitUri} size={38} tint={sideColor} onPress={onOpenImage} />
           )}
           <FitLine style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
@@ -154,8 +170,10 @@ export function CombatantPanel({
           ) : null}
         </DmPress>
 
+        {/* The stats stay where they are, and stop responding, while selecting: a tap anywhere on the
+            entry is a selection then, and nudging a stat by accident mid-selection helps nobody. */}
         {anyTrack ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexWrap: 'wrap', paddingLeft: selecting ? 0 : 48 }}>
+          <View pointerEvents={selecting ? 'none' : 'auto'} style={{ flexDirection: 'row', alignItems: 'center', gap: 18, flexWrap: 'wrap', paddingLeft: 48 }}>
             {c.show.hp ? <StatPulse kind="hp" value={c.hp ?? 0} max={c.maxHp ?? 0} onApply={(d) => onApply('hp', d)} onRequestSet={() => onRequestSet('hp')} /> : null}
             {c.show.stress ? <StatPulse kind="stress" value={c.stress ?? 0} max={c.maxStress ?? 0} onApply={(d) => onApply('stress', d)} onRequestSet={() => onRequestSet('stress')} /> : null}
             {c.show.thresholds ? (
@@ -206,6 +224,7 @@ export function CharacterCombatant(props: {
   onApply: (key: VitalKey, delta: number) => void;
   onRequestSet: (key: VitalKey) => void;
   onLongPress?: () => void;
+  selecting?: boolean;
   onModifiers?: (edit: boolean) => void;
   onCards?: () => void;
 }) {

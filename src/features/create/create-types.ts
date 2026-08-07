@@ -69,6 +69,9 @@ export interface Draft {
   skipped?: DeckKey[];
   /** The NAME, which is not a deck but is a step in the skip menu. */
   nameSkipped?: boolean;
+  /** v0.36.3: steps the DM has actually touched. A value the stat block seeded is not one of them,
+   *  so the skip menu can tell 'you answered this' from 'this arrived with an answer'. */
+  touched?: (DeckKey | 'name')[];
   /** Carry-over item ids the DM greyed out on the first step. Greyed = dropped entirely. */
   carryDisabled?: string[];
   /** The level chosen on the Level step (characterize only). Absent = whatever the stat block said. */

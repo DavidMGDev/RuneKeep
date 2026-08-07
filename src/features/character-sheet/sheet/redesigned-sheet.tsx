@@ -1135,7 +1135,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       })
       .map((lc) => libItem(lc.id))
       .filter((x): x is CardItem => !!x);
-    const inv = [...invItems, goldItem, ...weaponItems, ...armorItems, ...acqArmorItems, ...acqLootItems, ...invCustom, ...looseLibItems];
+    // v0.36.3 (owner): a CHARACTERIZED character carries no purse. Gold is a player's running
+    // total; an adversary turned into a character has none and never will unless someone gives it
+    // one, and a permanent 0 gold card is one more thing in a deck that is meant to be lean.
+    const inv = [...invItems, ...(file.characterized ? [] : [goldItem]), ...weaponItems, ...armorItems, ...acqArmorItems, ...acqLootItems, ...invCustom, ...looseLibItems];
     // Acquired CATALOG cards (#248 item 5): domain/ancestry/community/subclass picked from the catalog
     // browser, added as their real card image (no forging). Skip ids already in a deck (e.g. an owned
     // domain card) so there's never a duplicate id.

@@ -14,6 +14,7 @@ import  {  } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
+import { FitLine } from '@/components/fit-line';
 import { Body, Display, DmRune, DmType } from '@/constants/theme';
 import { LoadingScreen } from '@/components/loading-screen';
 import { showToast } from '@/components/toast';
@@ -95,7 +96,10 @@ function PartyRoster({
                 <StatGlyph kind="hp" color={downed ? DmRune.muted : DmRune.red} size={13} filled={!downed} />
                 <Text style={{ color: downed ? DmRune.muted : DmRune.ivory, fontSize: DmType.body, fontFamily: Display.black }}>{hp}</Text>
               </View>
-              <Text numberOfLines={1} style={{ maxWidth: 78, color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>{f.name}</Text>
+              {/* v0.36.3 (owner): the name SHRINKS to fit rather than truncating. "Leonardo Corral"
+                  read as "Leonardo…", which is the one thing a name must never do in a tile whose
+                  whole job is telling people apart. */}
+              <FitLine style={{ maxWidth: 80, color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>{f.name}</FitLine>
             </DmPress>
           );
         })}

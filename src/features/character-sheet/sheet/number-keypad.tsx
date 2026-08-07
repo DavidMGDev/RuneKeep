@@ -6,6 +6,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { DmRune, Body, Display, Rune } from '@/constants/theme';
 import { scaled, useLayout } from '@/hooks/use-layout';
 import { playSfx } from '@/lib/sfx';
+import { DimScreen } from '@/lib/screen-dim';
 
 /** A flat chamfered keypad key (shared shape with the damage panel). */
 function Key({ label, onPress, accent, disabled, dm }: { label: string; onPress: () => void; accent?: boolean; disabled?: boolean; dm?: boolean }) {
@@ -77,8 +78,12 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, initial, dm, o
   // (zIndex 10001) so the keypad is never hidden behind a dim. Transparent tap-catcher closes it.
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
-      {/* #258r3: occluding bg so GH's hit-test can't reach the sheet's stat tracks underneath */}
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.01)' }]} collapsable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
+      {/* #258r3: occluding bg so GH's hit-test can't reach the sheet's stat tracks underneath.
+          v0.36.3 (owner): in DM MODE it is a real scrim. The sheet has its own `SheetDim` behind this,
+          which is why the tap-catcher was left all but transparent; the DM screens have nothing, so
+          the keypad floated over a fully lit encounter and was hard to pick out. */}
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: dm ? 'rgba(6,8,13,0.72)' : 'rgba(6,8,13,0.01)' }]} collapsable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
+      {dm ? <DimScreen opacity={0.72} /> : null}
       <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View style={panelStyle}>
         <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke={dm ? DmRune.line : 'rgba(218,162,73,0.6)'} strokeWidth={1.4} style={{ width: scaled(264, scale), maxWidth: '92%', padding: scaled(16, scale), gap: 12 }}>

@@ -1,4 +1,4 @@
-import { canSkipClass, carriesThresholds, carryItems, clampLevel, holdEffects, isGenericName, keptItems, keptLevel, levelForStatBlock, type StatBlockLike } from './characterize';
+import { canSkipClass, cardedItems, carriesThresholds, carryItems, heldEffectsFor, clampLevel, holdEffects, isGenericName, keptItems, keptLevel, levelForStatBlock, type StatBlockLike } from './characterize';
 
 const WRAITH: StatBlockLike = {
   name: 'Bramble Wraith',
@@ -59,8 +59,11 @@ describe('what level a stat block becomes', () => {
 describe('what a stat block hands over', () => {
   const items = carryItems(WRAITH);
 
-  it('leads with the ones that change the numbers', () => {
-    expect(items.slice(0, 4).map((i) => i.kind)).toEqual(['level', 'thresholds', 'vitals', 'evasion']);
+  it('leads with the STATBLOCK, which is what this creature is', () => {
+    // v0.36.3 (owner): the review step opens on the first card, and the first thing a DM should see
+    // is the creature, not its hit points.
+    expect(items[0].kind).toBe('statblock');
+    expect(items.slice(1, 5).map((i) => i.kind)).toEqual(['level', 'thresholds', 'vitals', 'evasion']);
   });
 
   it('carries the level it worked out', () => {
@@ -93,7 +96,7 @@ describe('what a stat block hands over', () => {
 
   it('offers nothing it does not have', () => {
     const bare = carryItems({ name: 'Rat' });
-    expect(bare.map((i) => i.kind)).toEqual(['level']); // no thresholds, vitals, evasion, attack or features
+    expect(bare.map((i) => i.kind)).toEqual(['level']); // no statblock either: nothing to say about it
   });
 
   it('gives every item a stable id, so greying one out survives a rebuild', () => {
@@ -196,5 +199,38 @@ describe('the weapon card', () => {
   it('does not say the damage type twice', () => {
     const abbreviated = carryItems({ ...WRAITH, attack: { name: 'Claws', range: 'Very Close', damage: '1d12+2 phy' } });
     expect(abbreviated.find((i) => i.kind === 'weapon')?.text).toContain('- **Damage:** 1d12+2 phy\n');
+  });
+});
+
+describe('which carried items become CARDS (v0.36.3, owner)', () => {
+  const items = carryItems(WRAITH);
+
+  it('makes a card only for the statblock, the weapon and the features', () => {
+    expect(cardedItems(items, new Set()).map((i) => i.kind)).toEqual(['statblock', 'weapon', 'feature', 'feature']);
+  });
+
+  it('gathers every carried number onto the statblock, not onto three cards of its own', () => {
+    const have = { majorThreshold: 5, severeThreshold: 10, maxHp: 6, stressMax: 6, evasion: 10 };
+    const carded = cardedItems(items, new Set());
+    const onBlock = heldEffectsFor(carded[0], items, new Set(), have);
+    expect(onBlock.map((e) => e.target).sort()).toEqual(['evasion', 'majorThreshold', 'maxHp', 'severeThreshold', 'stressMax']);
+    // and nothing lands on the others
+    expect(heldEffectsFor(carded[1], items, new Set(), have)).toEqual([]);
+  });
+
+  it('still drops what the DM left behind', () => {
+    const have = { majorThreshold: 5, severeThreshold: 10, maxHp: 6, stressMax: 6, evasion: 10 };
+    const off = new Set(['carry-evasion', 'carry-feature-0']);
+    expect(cardedItems(items, off).map((i) => i.title)).not.toContain('Cleave');
+    expect(heldEffectsFor(cardedItems(items, off)[0], items, off, have).map((e) => e.target)).not.toContain('evasion');
+  });
+
+  it('falls back to the first card there is when a stat block has no description at all', () => {
+    // Nothing to describe it with: no role, tier, numbers or text, so there is no statblock card.
+    const bare = carryItems({ name: 'Rat', attack: { name: 'Bite', range: 'Melee', damage: '1' } });
+    const have = { majorThreshold: 1, severeThreshold: 2, maxHp: 6, stressMax: 6, evasion: 10 };
+    const carded = cardedItems(bare, new Set());
+    expect(carded[0].kind).toBe('weapon');
+    expect(heldEffectsFor(carded[0], bare, new Set(), have)).toEqual([]); // and nothing to carry either
   });
 });

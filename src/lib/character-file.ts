@@ -517,6 +517,15 @@ function allEffectSources(file: CharacterFile): { sources: EffectSource[]; level
  * (#104: starting Evasion + starting Hit Points per class; hearts = HP slots, full at creation).
  * Traits and the other tracks stay at the sheet baseline until leveling/traits ship.
  */
+/**
+ * What to CALL a character's class in a list (v0.36.3).
+ *
+ * A classless character (a characterized adversary whose class step was skipped) still names one in
+ * its file, because every derived number starts from a class. Printing that name anywhere the player
+ * can see it would be the file's bookkeeping leaking out as a lie, so it prints nothing.
+ */
+export const classLabel = (file: CharacterFile): string => (file.classless ? '' : classInfo(file.className).label);
+
 export function toSheetCharacter(file: CharacterFile): Character {
   const cls = classInfo(file.className);
   const data = CLASS_DATA[file.className];
@@ -569,9 +578,23 @@ export function toSheetCharacter(file: CharacterFile): Character {
   // any scar card always releases the leftmost scarred slot. Hope in play can never sit on a scarred slot.
   const scars = Math.max(0, Math.min(sheet.hopeMax.total, sheet.scar.total));
   const usableHope = sheet.hopeMax.total - scars;
-  const maxHp = sheet.maxHp.total;
-  const stressMax = sheet.stressMax.total;
-  const armorMax = sheet.armorScore.total;
+  /**
+   * The GAME's ceilings, not the engine's (v0.36.3, owner).
+   *
+   * A character sheet is drawn with twelve hit point slots, twelve stress slots and twelve armour
+   * slots, because that is how Daggerheart is designed; six hope, less any taken by a scar. A
+   * modifier may total whatever it likes and the Modifiers panel will happily show it, but the sheet
+   * cannot hold more than it has room for, and a track that claims fourteen slots draws fourteen
+   * boxes into the panel below it.
+   *
+   * Clamped HERE, after the engine, so the breakdown still shows the DM their whole +6 and the sheet
+   * still shows twelve. Hope is not clamped by a number: `liveSources` already drops every effect
+   * aimed at it, so its only mover is a scar, which is the rulebook's own exception.
+   */
+  const TRACK_MAX = 12;
+  const maxHp = Math.min(TRACK_MAX, sheet.maxHp.total);
+  const stressMax = Math.min(TRACK_MAX, sheet.stressMax.total);
+  const armorMax = Math.min(TRACK_MAX, sheet.armorScore.total);
   const traits = Object.fromEntries(TRAIT_KEYS.map((k) => [k, sheet[k].total])) as Record<TraitKey, number>;
   // (v0.9.7) Rehydrate the in-play resource positions saved on the file, clamped to the current maxes.
   const res = file.resources;
