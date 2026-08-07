@@ -245,6 +245,22 @@ export function randomCardColor(): string {
   });
 }
 
+/**
+ * A MUTED random colour (v0.36.2, owner: "the saturated colours they have are very shocking").
+ *
+ * The player's own random colour is meant to be loud: they picked it, it is one card, and it is the
+ * whole personality of a card with no art. Characterize makes seven or eight cards at once and the
+ * DM did not choose any of them, so the same range arrives as a wall of clashing colour. Half the
+ * saturation and a darker band read as a set rather than as a paint chart.
+ */
+export function mutedCardColor(): string {
+  return hslToHex({
+    h: Math.floor(Math.random() * 360),
+    s: 16 + Math.floor(Math.random() * 14), // 16-30%
+    l: 24 + Math.floor(Math.random() * 14), // 24-38%
+  });
+}
+
 // v0.25.0: shorter, because the waterline no longer starts filling the instant you touch down, so
 // the hold has to complete sooner to still feel brief.
 const HOLD_MS = 460;

@@ -259,6 +259,7 @@ export function PartyOverviewScreen() {
       />
       {keypad ? (
         <NumberKeypad dm
+          initial={party.global[keypad.charId]?.[keypad.key]}
           title={`Set ${KEY_LABEL[keypad.key]}`}
           subtitle={`0–${Math.max(0, kpMax)}`}
           min={0}

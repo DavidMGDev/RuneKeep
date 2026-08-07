@@ -423,6 +423,21 @@ export function EncounterScreen() {
   const allyMembersOnly = allySel.ids.size > 0 && [...allySel.ids].every((cid) => enc.allies.some((a) => a.kind === 'member' && a.charId === cid));
   const npcAllies = enc.allies.filter((a): a is { kind: 'npc'; combatant: Combatant } => a.kind === 'npc');
 
+  /**
+   * The value the keypad OPENS on (v0.36.2, owner).
+   *
+   * On native the keypad is now the only way to change a stat, so its plus and minus have to step
+   * from where the stat actually is. Opening empty made them "0 plus one" rather than "eight less
+   * one", which is not a quick adjustment at all.
+   */
+  const keypadInitial = (() => {
+    if (!keypad) return undefined;
+    if (keypad.kind === 'char') return (enc.charVitals?.[keypad.charId] ?? (files[keypad.charId] ? initialVitals(files[keypad.charId]) : undefined))?.[keypad.key];
+    if (keypad.kind === 'member') { const pt = partyRef.current; return pt ? memberVitals(enc, pt, keypad.charId)?.[keypad.key] : undefined; }
+    const r = findCombatant(keypad.id);
+    return keypad.stat === 'hp' ? r?.c.hp : r?.c.stress;
+  })();
+
   const keypadMax = (() => {
     if (!keypad) return 0;
     if (keypad.kind === 'char') { const f = files[keypad.charId]; if (!f) return 0; const m = memberMaxes(f); return keypad.key === 'hp' ? m.maxHp : keypad.key === 'stress' ? m.stressMax : keypad.key === 'hope' ? m.hopeMax : m.armorMax; }
@@ -607,7 +622,7 @@ export function EncounterScreen() {
       ) : null}
 
       {keypad ? (
-        <NumberKeypad dm title={`Set ${keypad.kind === 'combatant' ? keypad.stat.toUpperCase() : KEY_LABEL[keypad.key]}`} subtitle={keypad.kind === 'member' ? `Max ${Math.max(0, keypadMax)} · go higher to grant a bonus` : `0–${Math.max(0, keypadMax)}`} min={0} max={keypad.kind === 'member' ? Math.max(0, keypadMax) + 30 : Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
+        <NumberKeypad dm initial={keypadInitial} title={`Set ${keypad.kind === 'combatant' ? keypad.stat.toUpperCase() : KEY_LABEL[keypad.key]}`} subtitle={keypad.kind === 'member' ? `Max ${Math.max(0, keypadMax)} · go higher to grant a bonus` : `0–${Math.max(0, keypadMax)}`} min={0} max={keypad.kind === 'member' ? Math.max(0, keypadMax) + 30 : Math.max(0, keypadMax)} onSubmit={onKeypadSubmit} onClose={() => setKeypad(null)} />
       ) : null}
       {overMax ? (
         <PopupDialog

@@ -6,7 +6,7 @@
  * component would have meant a second set of rules threaded through every branch of it, for a screen
  * only the DM ever sees.
  */
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
@@ -19,8 +19,15 @@ import { clampLevel, LEVEL_MAX, LEVEL_MIN } from '@/lib/characterize';
 import { playSfx } from '@/lib/sfx';
 import { TRAIT_POOL } from './create-constants';
 
-/** Two taps closer together than this are a DOUBLE tap, which lowers instead of raising. */
-const DOUBLE_MS = 300;
+/**
+ * HOLD to lower (v0.36.2, owner: "double-tap to lower the values of traits is ass").
+ *
+ * A double tap is invisible, easy to miss and easy to fire by accident, and there is no way to hold
+ * one down. A hold is none of those: it announces itself after a beat, and keeping it down keeps
+ * counting, one a second, so getting from +3 to -2 is one gesture rather than ten taps.
+ */
+const HOLD_MS = 380;
+const REPEAT_MS = 1000;
 /** How far a characterized trait may be pushed. Wide, because a stat block is not a starting hero. */
 const TRAIT_MIN = -5;
 const TRAIT_MAX = 12;
@@ -45,35 +52,55 @@ export function CharacterizeTraitsTab({
   onTraits: (t: Partial<Record<TraitKey, number>>) => void;
   footer?: React.ReactNode;
 }) {
-  const lastTap = useRef<{ key: TraitKey; at: number } | null>(null);
-  const [, force] = useState(0);
+  /** The live hold: its timers, and whether it has already lowered anything (so the release is not
+   *  also read as a tap). */
+  const hold = useRef<{ start: ReturnType<typeof setTimeout> | null; repeat: ReturnType<typeof setInterval> | null; fired: boolean }>({ start: null, repeat: null, fired: false });
+  const stopHold = useCallback(() => {
+    if (hold.current.start) clearTimeout(hold.current.start);
+    if (hold.current.repeat) clearInterval(hold.current.repeat);
+    hold.current.start = null;
+    hold.current.repeat = null;
+  }, []);
+  useEffect(() => stopHold, [stopHold]);
 
+  /** Reads the CURRENT traits through a ref, so a repeating hold does not step from a stale value. */
+  const live = useRef(traits);
+  live.current = traits;
   const bump = useCallback(
     (key: TraitKey, by: number) => {
-      const cur = traits[key] ?? 0;
+      const cur = live.current[key] ?? 0;
       const next = Math.max(TRAIT_MIN, Math.min(TRAIT_MAX, cur + by));
       if (next === cur) return;
       playSfx(by > 0 ? 'cardSelect' : 'cardDeselect');
-      onTraits({ ...traits, [key]: next });
+      const out = { ...live.current, [key]: next };
+      live.current = out;
+      onTraits(out);
     },
-    [traits, onTraits],
+    [onTraits],
   );
 
-  const onTapTrait = useCallback(
+  const startHold = useCallback(
     (key: TraitKey) => {
-      const now = Date.now();
-      const prev = lastTap.current;
-      if (prev && prev.key === key && now - prev.at < DOUBLE_MS) {
-        // The first tap of the pair already raised it, so this takes that back AND goes one lower.
-        lastTap.current = null;
-        bump(key, -2);
-        return;
-      }
-      lastTap.current = { key, at: now };
-      bump(key, 1);
-      force((n) => n + 1);
+      stopHold();
+      hold.current.fired = false;
+      hold.current.start = setTimeout(() => {
+        hold.current.fired = true;
+        bump(key, -1);
+        hold.current.repeat = setInterval(() => bump(key, -1), REPEAT_MS);
+      }, HOLD_MS);
     },
-    [bump],
+    [bump, stopHold],
+  );
+
+  /** A release that never became a hold is a TAP, and a tap raises. */
+  const endHold = useCallback(
+    (key: TraitKey) => {
+      const wasHold = hold.current.fired;
+      stopHold();
+      hold.current.fired = false;
+      if (!wasHold) bump(key, 1);
+    },
+    [bump, stopHold],
   );
 
   const randomize = useCallback(() => {
@@ -92,7 +119,7 @@ export function CharacterizeTraitsTab({
   return (
     <View style={{ flex: 1, paddingTop: 8 }}>
       <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.medium, textAlign: 'center', lineHeight: 15 }}>
-        Tap a trait to raise it. Double tap to lower it.
+        Tap a trait to raise it. Hold to lower it, and keep holding to keep going.
       </Text>
       <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'center', columnGap: 14, rowGap: 6 }}>
         {TRAIT_ORDER.map((t) => {
@@ -100,9 +127,10 @@ export function CharacterizeTraitsTab({
           return (
             <Pressable
               key={t.key}
-              onPress={() => onTapTrait(t.key)}
+              onPressIn={() => startHold(t.key)}
+              onPressOut={() => endHold(t.key)}
               accessibilityRole="adjustable"
-              accessibilityLabel={`${t.label}, ${formatModifier(v)}. Tap to raise, double tap to lower.`}
+              accessibilityLabel={`${t.label}, ${formatModifier(v)}. Tap to raise, hold to lower.`}
               style={{ width: 92, height: 150 }}>
               <View style={{ position: 'absolute', left: 6, top: 16, width: 80, height: 128, opacity: v !== 0 ? 1 : 0.55 }}>
                 <ArtImage source={Art.traitBanner} fit="fill" />

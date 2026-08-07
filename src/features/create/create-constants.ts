@@ -89,18 +89,24 @@ export const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
  * you ARE rather than another thing you carry.
  */
 export function decksFor(characterize: boolean, transformations: boolean): { key: DeckKey; label: string; stub?: boolean }[] {
-  if (!characterize) return DECKS;
+  /**
+   * TRANSFORM is not characterize-only (v0.36.2, owner).
+   *
+   * Enabling a pack that adds transformations turns the step on for everyone, players included, and
+   * a player gets a Skip on it because being a vampire is not something the game asks of you. The
+   * two new steps above it stay characterize-only: a player has nothing to inherit and levels up
+   * through play rather than choosing a level at creation.
+   */
+  const withTransform = (list: { key: DeckKey; label: string; stub?: boolean }[]) =>
+    !transformations ? list : list.flatMap((d) => (d.key === 'ancestry' ? [d, { key: 'transformation' as DeckKey, label: 'Transform' }] : [d]));
+  if (!characterize) return withTransform(DECKS);
   const out: { key: DeckKey; label: string; stub?: boolean }[] = [
     // v0.36.1 (owner): LEVEL sits with Inherit, not after Class. Both are things the stat block
     // decided; Class is the first thing the DM decides, so the two groups should not interleave.
     { key: 'carry', label: 'Inherit' },
     { key: 'level', label: 'Level' },
   ];
-  for (const d of DECKS) {
-    out.push(d);
-    // Only when Hope and Fear is switched on in the app's own expansion list. A step listing six
-    // cards the app has been told not to show would be a step that cannot be answered.
-    if (d.key === 'ancestry' && transformations) out.push({ key: 'transformation', label: 'Transform' });
-  }
-  return out;
+  // Only when the pack is switched on in the app's own expansion list. A step listing six cards the
+  // app has been told not to show would be a step that cannot be answered.
+  return [...out, ...withTransform(DECKS)];
 }

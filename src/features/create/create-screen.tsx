@@ -53,7 +53,7 @@ import { getParty, saveParty } from '@/lib/party-store';
 import { type Combatant } from '@/lib/session';
 import { getEncounter, getSession, saveEncounter } from '@/lib/session-store';
 import { initialVitals } from '@/lib/dm-vitals';
-import { randomCardColor } from '@/components/card-editor';
+import { mutedCardColor } from '@/components/card-editor';
 import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
 import { DeckTab, SectionDivider, Segmented } from './create-ui';
@@ -156,6 +156,16 @@ function draftHasContent(d: unknown): boolean {
  * card rests at a FRACTION of the rail, so roughly 2dp of that headroom goes back.
  */
 const CONTROLS_BAND = 102;
+
+/**
+ * The class a CLASSLESS characterized character is filed under (v0.36.2).
+ *
+ * A `CharacterFile` must name a class, because the sheet derives its starting numbers from one. The
+ * class step is only skippable when the stat block carries both of the numbers a class would give,
+ * so every one of this one's is overwritten and none of it is visible: `classless` also drops its
+ * cards and its label off the sheet. It exists to satisfy the shape of the file, nothing else.
+ */
+const FALLBACK_CLASS: ClassName = 'warrior';
 
 /**
  * Reverse the mixed-ancestry pair (v0.29.0).
@@ -313,7 +323,7 @@ export function CreateScreen() {
   const carryOff = useMemo(() => new Set(draft.carryDisabled ?? []), [draft.carryDisabled]);
   /** One colour per carried card, picked once, so the review carousel and the forged card match. */
   const carryColors = useRef<Record<string, string>>({});
-  const carryColor = useCallback((id: string) => (carryColors.current[id] ??= randomCardColor()), []);
+  const carryColor = useCallback((id: string) => (carryColors.current[id] ??= mutedCardColor()), []);
   /** The traits Reset restores: whatever the stat block carried, or nothing. */
   const inheritedTraits = useMemo(() => ({ ...(statBlock as unknown as { traits?: Partial<Record<TraitKey, number>> } | null)?.traits }), [statBlock]);
   /** Transformations follow the APP's expansion switch, not this character's picks (owner). */
@@ -852,18 +862,25 @@ export function CreateScreen() {
     [statBlock, inheritedTraits],
   );
 
-  /** Mark steps skipped and put each one back to its default, in one write. */
+  /**
+   * Mark steps skipped, put each back to its default, and HAND BACK the draft it wrote.
+   *
+   * Returning it is not a convenience: `setDraft` has not re-rendered by the time the caller wants to
+   * forge, so the caller cannot read the result from a ref. This is the only copy that is true.
+   */
   const applySkips = useCallback(
-    (keys: (DeckKey | 'name')[]) => {
-      setDraft((d) => {
-        let next: Draft = { ...d };
-        for (const k of keys) next = { ...next, ...stepDefault(k) };
-        // Skipping the class takes subclass and domains with it: neither can be chosen without one.
-        const all = keys.includes('class') ? [...keys, 'class' as const, 'subclass' as const, 'domains' as const] : keys;
-        const deckKeys = all.filter((k): k is DeckKey => k !== 'name');
-        // The menu is the WHOLE answer, not an add-only list: unchecking a step un-skips it.
-        return { ...next, skipped: [...new Set(deckKeys)], nameSkipped: all.includes('name') };
-      });
+    (keys: (DeckKey | 'name')[]): Draft => {
+      const d = draftRef.current;
+      let next: Draft = { ...d };
+      for (const k of keys) next = { ...next, ...stepDefault(k) };
+      // Skipping the class takes subclass and domains with it: neither can be chosen without one.
+      const all = keys.includes('class') ? [...keys, 'class' as const, 'subclass' as const, 'domains' as const] : keys;
+      const deckKeys = all.filter((k): k is DeckKey => k !== 'name');
+      // The menu is the WHOLE answer, not an add-only list: unchecking a step un-skips it.
+      const out: Draft = { ...next, skipped: [...new Set(deckKeys)], nameSkipped: all.includes('name') };
+      draftRef.current = out;
+      setDraft(out);
+      return out;
     },
     [stepDefault],
   );
@@ -1130,10 +1147,24 @@ export function CreateScreen() {
    *  3. The combatant in the encounter is replaced by an entry naming this character, on the side it
    *     was already fighting on, and the character joins both the roster and the adversary library.
    */
-  const forgeCharacterized = useCallback(async () => {
-    const ch = draftRef.current.characterize;
-    const d = draftRef.current;
-    if (!d.className || !ch) return;
+  const forgeCharacterized = useCallback(async (from?: Draft) => {
+    const d = from ?? draftRef.current;
+    const ch = d.characterize;
+    if (!ch) return;
+    /**
+     * A CLASSLESS character (v0.36.2, owner: "Skip and Forge did not forge").
+     *
+     * Skipping the class clears `className`, and this used to bail on that and say nothing, which is
+     * why both Skip and Forge and the header's Forge button went dead once the class was skipped.
+     *
+     * A saved character has to name a class, because every derived number starts from one. So a
+     * skipped class takes a fallback and is MARKED classless: `classless` drops its cards and its
+     * name off the sheet, and the carried Evasion and hit points overwrite its numbers, which is the
+     * whole reason the step was skippable in the first place. Class can only be skipped when both of
+     * those are carried, so nothing of the fallback survives except the shape of the file.
+     */
+    const classless = !d.className;
+    const className = d.className ?? FALLBACK_CLASS;
     setForging(true);
     const id = newCharacterId();
     const kept = keptItems(carry, carryOff);
@@ -1165,7 +1196,8 @@ export function CreateScreen() {
       createdAt: new Date().toISOString(),
       name: d.name.trim(),
       portraitUri: d.portraitUri,
-      className: d.className,
+      className,
+      ...(classless ? { classless: true as const } : {}),
       subclassCardId: d.subclassCardId ?? '',
       ancestryCardId: (d.mixedAncestry ? d.mixedAncestry.first : d.ancestryCardId) ?? '',
       communityCardId: d.communityCardId ?? '',
@@ -1331,7 +1363,13 @@ export function CreateScreen() {
     if (next) switchDeckRef.current(next.key);
   }, []);
   const SkipStep = useCallback(
-    () => (characterizing && deck !== 'class' && deck !== 'carry' ? <RuneButton label={draft.skipped?.includes(deck) ? 'Skipped' : 'Skip'} kind="ghost" dense height={30} muteSfx onPress={skipStep} accessibilityLabel={`Skip ${deck}`} /> : null),
+    () =>
+      // v0.36.2 (owner): TRANSFORMATION is skippable in ordinary creation too. It is the one step a
+      // player can reach without having asked for it (enabling the pack turns it on for everyone),
+      // so it is also the one step outside characterize that has to be answerable with nothing.
+      (characterizing ? deck !== 'class' && deck !== 'carry' : deck === 'transformation') ? (
+        <RuneButton label={draft.skipped?.includes(deck) ? 'Skipped' : 'Skip'} kind="ghost" dense height={30} muteSfx onPress={skipStep} accessibilityLabel={`Skip ${deck}`} />
+      ) : null,
     [characterizing, deck, draft.skipped, skipStep],
   );
   const centerSelected = !!centerItem && selectedIds.includes(centerItem.id);
@@ -1469,6 +1507,7 @@ export function CreateScreen() {
         const id = pick(anc); if (id) { set({ ancestryCardId: id, mixedAncestry: null }); focusId = id; }
         break;
       }
+      case 'transformation': { const id = pick(CATALOG.filter((c) => c.kind === 'transformation').map((c) => c.id)); if (id) { set({ transformationCardId: id }); focusId = id; } break; }
       case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
       case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
       case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind && (!x.expansion || picked.has(x.expansion)))); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
@@ -1489,7 +1528,22 @@ export function CreateScreen() {
       // of claiming it from the first screen. It stays tappable on purpose: tapping it while
       // incomplete jumps to the step that is missing, which is more use than a dead control, and a
       // truly dead Forge with no explanation is the thing this replaced in the first place.
-      headerRight={<RuneButton label="Forge" kind={complete ? 'primary' : 'ghost'} height={26} dense onPress={() => { if (!complete) { jumpToMissing(); return; } void (characterizing ? forgeCharacterized() : forge()); }} accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`} />}>
+      headerRight={
+        <RuneButton
+          label={forging ? 'Forging' : 'Forge'}
+          kind={complete ? 'primary' : 'ghost'}
+          height={26}
+          dense
+          disabled={forging}
+          onPress={() => {
+            if (forging) return;
+            if (!complete) { jumpToMissing(); return; }
+            // v0.36.2 (owner): never fail in silence. Forge either runs or says why it cannot.
+            void (characterizing ? forgeCharacterized() : forge()).catch(() => showToast('Could not forge this character. Nothing was changed.', 'error'));
+          }}
+          accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`}
+        />
+      }>
       <Animated.View style={[{ flex: 1 }, entryStyle]}>
         {/* ---- details ---- */}
         <SectionDivider label="Details" />
@@ -1730,7 +1784,9 @@ export function CreateScreen() {
             {deck === 'ancestry' && draft.mixedAncestry ? <MixReverseButton mixed={draft.mixedAncestry} onReverse={reverseMix} /> : null}
             {/* v0.36.1 (owner): the class step's Skip is the whole checklist instead, because a class
                 is the one step you cannot answer with nothing and the one you always answer first. */}
-            {characterizing && deck === 'class' ? <SkipMenuButton armed={!!draft.className || classOptional} onPress={() => { playSfx('buttonTap'); setSkipMenu(true); }} /> : <SkipStep />}
+            {/* v0.36.2 (owner): also on INHERIT, which is where a DM lands first and where they already know
+                how little this character needs. */}
+            {characterizing && (deck === 'class' || deck === 'carry') ? <SkipMenuButton armed={deck === 'carry' || !!draft.className || classOptional} onPress={() => { playSfx('buttonTap'); setSkipMenu(true); }} /> : <SkipStep />}
           </View>
           {/* v0.10.6: the class/weapons hint tooltips were removed — they pushed these buttons up into
               the card carousel (owner). */}
@@ -1770,15 +1826,24 @@ export function CreateScreen() {
         <SkipMenu
           rows={skipRows}
           onCancel={() => setSkipMenu(false)}
-          onConfirm={(keys) => {
+          onConfirm={(keys, andForge) => {
             setSkipMenu(false);
-            applySkips(keys as (DeckKey | 'name')[]);
+            const applied = applySkips(keys as (DeckKey | 'name')[]);
             playSfx('cardSelect');
-            // Land on the nearest step that still needs an answer, or forge when none do.
-            const after = { ...draftRef.current, skipped: keys.filter((k) => k !== 'name') as DeckKey[], nameSkipped: keys.includes('name') };
-            const next = decksRef.current.find((d) => !deckDone(d.key, after) && !lockedRef.current(d.key));
+            /**
+             * Forge from the draft the skip just produced, NOT from the ref (v0.36.2, owner).
+             *
+             * This used to write the skips with `setDraft` and then read `draftRef.current` inside a
+             * `setTimeout(0)`. React had not re-rendered yet, so the ref still held the pre-skip
+             * draft, `forgeCharacterized` found no class on it and returned without a word. Pressing
+             * Skip and Forge did nothing, and the Forge button in the header did nothing afterwards
+             * for the same reason. `applySkips` hands back exactly what it wrote, and that is what
+             * gets forged.
+             */
+            if (andForge) { void forgeCharacterized(applied); return; }
+            const next = decksRef.current.find((d) => !deckDone(d.key, applied) && !lockedRef.current(d.key));
             if (next) switchDeck(next.key);
-            else setTimeout(() => { void forgeCharacterized(); }, 0); // the draft write lands first
+            else void forgeCharacterized(applied);
           }}
         />
       ) : null}

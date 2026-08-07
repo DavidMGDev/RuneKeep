@@ -82,11 +82,13 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     const fpages = featurePages(cls);
     const total = 1 + fpages.length;
     // face 0 = the class card (#110: the missing first page); same deck-wide marks as the forge
-    const classJob = classDef
+    // v0.36.2: a CLASSLESS character shows no class card and no feature pages. Its file names a class
+    // only because the shape requires one; none of it is theirs.
+    const classJob = classDef && !file.classless
       ? { key: `class-${cls}`, raster: isVoidClass(cls), node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} classKey={cls} /> }
       : null;
     // Void class banners are expo-image rasters (async decode) — settle before capture (raster flag)
-    const featJobs = fpages.map((p) => ({
+    const featJobs = (file.classless ? [] : fpages).map((p) => ({
       key: `feat-${cls}-${p.pageIndex}`,
       raster: isVoidClass(cls),
       node: (

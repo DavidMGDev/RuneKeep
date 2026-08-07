@@ -75,7 +75,7 @@ function Row({ row, checked, onPress }: { row: SkipStepRow; checked: boolean; on
   );
 }
 
-export function SkipMenu({ rows, onConfirm, onCancel }: { rows: SkipStepRow[]; onConfirm: (keys: string[]) => void; onCancel: () => void }) {
+export function SkipMenu({ rows, onConfirm, onCancel }: { rows: SkipStepRow[]; onConfirm: (keys: string[], andForge: boolean) => void; onCancel: () => void }) {
   const [checked, setChecked] = useState<Set<string>>(() => new Set(rows.filter((r) => r.skipped && r.skippable).map((r) => r.key)));
   const [warn, setWarn] = useState<string[] | null>(null);
 
@@ -86,6 +86,20 @@ export function SkipMenu({ rows, onConfirm, onCancel }: { rows: SkipStepRow[]; o
       if (n.has(k)) n.delete(k); else n.add(k);
       return n;
     });
+  };
+
+  /**
+   * Check everything, then uncheck the few you want (v0.36.2, owner).
+   *
+   * The common case is "this adversary needs almost nothing", and checking eleven boxes to say so is
+   * the work this menu exists to remove. Pressing it again clears the lot, so the one control both
+   * fills and empties the list.
+   */
+  const skippable = rows.filter((r) => r.skippable);
+  const allOn = skippable.length > 0 && skippable.every((r) => checked.has(r.key));
+  const toggleAll = () => {
+    playSfx(allOn ? 'cardDeselect' : 'cardSelect');
+    setChecked(allOn ? new Set() : new Set(skippable.map((r) => r.key)));
   };
 
   /**
@@ -102,7 +116,9 @@ export function SkipMenu({ rows, onConfirm, onCancel }: { rows: SkipStepRow[]; o
   const confirm = () => {
     if (losing.length && !warn) { setWarn(losing); return; }
     setWarn(null);
-    onConfirm([...checked]);
+    // `ready` is captured HERE, from the same render the user pressed in, and handed over. Working it
+    // out again on the other side of the warning dialog is what dropped the forge (v0.36.2, owner).
+    onConfirm([...checked], ready);
   };
 
   if (warn) {
@@ -126,7 +142,10 @@ export function SkipMenu({ rows, onConfirm, onCancel }: { rows: SkipStepRow[]; o
       cancelLabel="Cancel"
       onConfirm={confirm}
       onCancel={onCancel}>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 14, marginBottom: 2 }}>
+      <View style={{ alignItems: 'flex-start', marginTop: 12 }}>
+        <RuneButton label={allOn ? 'Skip nothing' : 'Skip everything'} kind="ghost" dense height={28} muteSfx onPress={toggleAll} accessibilityLabel={allOn ? 'Clear every checkbox' : 'Check every step that can be skipped'} />
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8, marginBottom: 2 }}>
         {rows.map((r) => (
           <Row key={r.key} row={r} checked={checked.has(r.key)} onPress={() => toggle(r.key)} />
         ))}
