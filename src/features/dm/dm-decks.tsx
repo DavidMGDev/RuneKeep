@@ -105,7 +105,10 @@ export function dmDecks(file: CharacterFile): Record<string, DmCard[]> {
 
   // --- Inventory: the kit, the chosen items, gold, gear, authored items, loose homebrew ---
   for (const j of jobs.invJobs) push('inventory', jobCard(j, labelOf(file, j.id ?? j.key, 'Item')));
-  push('inventory', { id: 'gold', label: 'Gold', node: <GoldCard gold={file.gold ?? { handfuls: 1, bags: 0, chest: 0 }} onChange={() => {}} /> });
+  // v0.37.1 (owner): a CHARACTERIZED character has no purse, here either. The sheet has left the gold
+  // card out since v0.36.3, but this deck is what the DM's own card panel shows, and it was still
+  // adding one, so every characterized ally and adversary appeared to be carrying money.
+  if (!file.characterized) push('inventory', { id: 'gold', label: 'Gold', node: <GoldCard gold={file.gold ?? { handfuls: 1, bags: 0, chest: 0 }} onChange={() => {}} /> });
   if (jobs.armorJob) push('inventory', jobCard(jobs.armorJob, labelOf(file, jobs.armorJob.id ?? jobs.armorJob.key, 'Armor')));
   for (const j of jobs.acqArmorJobs) push('inventory', jobCard(j, labelOf(file, j.id ?? j.key, 'Armor')));
   for (const j of jobs.acqLootJobs) push('inventory', jobCard(j, labelOf(file, j.id ?? j.key, 'Loot')));

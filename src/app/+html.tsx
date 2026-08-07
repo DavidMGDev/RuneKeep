@@ -40,6 +40,7 @@ export default function Root({ children }: { children: ReactNode }) {
         <ScrollViewStyleReset />
         <style dangerouslySetInnerHTML={{ __html: WEB_RESET + BOOT_STYLE }} />
         <script dangerouslySetInnerHTML={{ __html: NO_NATIVE_DRAG }} />
+        <script dangerouslySetInnerHTML={{ __html: RELEASE_ANYWHERE }} />
         <script dangerouslySetInnerHTML={{ __html: MOUSE_SCROLL }} />
         <script dangerouslySetInnerHTML={{ __html: SERVICE_WORKER }} />
         <script dangerouslySetInnerHTML={{ __html: BOOT_SCREEN }} />
@@ -195,6 +196,70 @@ document.addEventListener('contextmenu', function (e) {
 `;
 
 /**
+ * A press ALWAYS gets its release, wherever the mouse lets go (v0.37.1, owner).
+ *
+ * On a desktop the app is a phone-shaped column in the middle of a much bigger window, so a drag that
+ * starts on a card very often ends somewhere that is not the app: the margin beside it, the page around
+ * it, another window. When that happened the press was never released, and everything downstream of it
+ * stayed stuck: a card kept following the pointer, a button stayed pressed, the next tap went nowhere.
+ *
+ * Why it happens: react-native-gesture-handler calls `setPointerCapture` on whatever element the press
+ * landed on, and while that holds, every later pointer event is retargeted to it however far the mouse
+ * travels. When it does NOT hold, and there are several ordinary ways for it not to (the element is an
+ * input, it was replaced by a re-render, the browser dropped the capture), the release is delivered to
+ * whatever is under the pointer instead, and nothing in the app's subtree ever hears it.
+ *
+ * So: watch the release at the window, in the BUBBLE phase, by which point the browser has already
+ * delivered it everywhere it was going to. If the element the press started on is in that event's path,
+ * the app has its release and this does nothing at all, which is the overwhelmingly common case. Only
+ * when it is NOT in the path is the release re-sent to that element, as both a pointer event and the
+ * mouse event react-native-web's own responder system listens for.
+ *
+ * MOUSE ONLY. A finger cannot leave the column, touch input has never had this problem, and a phone
+ * must not pay for a desktop's geometry.
+ */
+const RELEASE_ANYWHERE = `
+(function () {
+  var el = null, id = -1;
+  document.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'touch') return;
+    el = e.target; id = e.pointerId;
+  }, true);
+  function send(target, type, e, mouseType) {
+    var init = {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY,
+      button: e.button, buttons: 0, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+    };
+    try {
+      target.dispatchEvent(new PointerEvent(type, Object.assign({ pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: true }, init)));
+      if (mouseType) target.dispatchEvent(new MouseEvent(mouseType, init));
+    } catch (err) { /* a browser without the constructors simply keeps the old behaviour */ }
+  }
+  function release(e) {
+    var target = el;
+    el = null;
+    if (!target || e.pointerType === 'touch' || e.pointerId !== id) return;
+    if (!target.isConnected) return;
+    var path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    if (path.indexOf(target) !== -1) return; // the app already got it
+    send(target, e.type === 'pointercancel' ? 'pointercancel' : 'pointerup', e, e.type === 'pointercancel' ? null : 'mouseup');
+  }
+  window.addEventListener('pointerup', release);
+  window.addEventListener('pointercancel', release);
+  // Losing the window mid-drag (alt-tab, a devtools break, a dragged file) ends the press too. There is
+  // no event to copy here, so it is cancelled rather than completed: a gesture that was interrupted
+  // should not also count as a tap.
+  window.addEventListener('blur', function () {
+    var target = el;
+    el = null;
+    if (!target || !target.isConnected) return;
+    send(target, 'pointercancel', { clientX: 0, clientY: 0, screenX: 0, screenY: 0, button: 0, pointerId: id, pointerType: 'mouse' }, null);
+  });
+})();
+`;
+
+/**
  * Drag to scroll, with a mouse (v0.24.3).
  *
  * A `ScrollView` on web is a div with `overflow: auto`. A browser scrolls one of those with the wheel
@@ -243,9 +308,12 @@ const MOUSE_SCROLL = `
   }
 
   document.addEventListener('pointerdown', function (e) {
+    // Cleared FIRST (v0.37.1): a drag whose release landed somewhere that fires no click leaves this
+    // set, and the next press would then have its click swallowed instead. Every new press starts clean.
+    dragged = false;
     if (e.pointerType !== 'mouse' || e.button !== 0 || typing(e.target)) return;
     down = { x: e.clientX, y: e.clientY, target: e.target };
-    box = null; axis = ''; dragged = false;
+    box = null; axis = '';
   }, true);
 
   document.addEventListener('pointermove', function (e) {

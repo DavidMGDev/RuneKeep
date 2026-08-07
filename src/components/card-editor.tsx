@@ -20,7 +20,7 @@ import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
 import { type CardEffect } from '@/lib/modifiers';
 import { applyPickedOption, EffectPicker, EffectsField, type ExperienceRef, FormulaVarPicker, matchOption } from '@/components/effects-editor';
-import { isExperienceType } from '@/features/character-sheet/card-types';
+import { effectsForType, isExperienceType } from '@/features/character-sheet/card-types';
 import { playSfx } from '@/lib/sfx';
 import { DimScreen } from '@/lib/screen-dim';
 import { useFrame } from '@/hooks/use-layout';
@@ -873,7 +873,9 @@ export function CardEditor({
         <TypePicker
           groups={typeGroups}
           current={plaqueLabel}
-          onPick={(t) => { setDraft((d) => ({ ...d, typeLabel: t })); setPickType(false); }}
+          // v0.37.1 (owner): the Scar type carries a +1 scar with it, silently, and drops it again the
+          // moment the type changes. Nothing on screen says so; the type IS the statement.
+          onPick={(t) => { setDraft((d) => ({ ...d, typeLabel: t, effects: effectsForType(d.effects, t) })); setPickType(false); }}
           onClose={() => setPickType(false)}
         />
       ) : null}

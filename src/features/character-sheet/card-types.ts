@@ -4,21 +4,45 @@
  * picks from built-in + custom through one picker. Pure + testable (no React, no I/O).
  */
 
+import { type CardEffect } from '@/lib/modifiers';
+
 import { type CardCategory, isBuiltinCategory } from './card-data';
 
 /** The card type that authors a real Experience rather than a custom card (v0.14.0). */
 export const EXPERIENCE_TYPE = 'Experience';
 export const isExperienceType = (t: string | undefined): boolean => (t ?? '').trim().toLowerCase() === EXPERIENCE_TYPE.toLowerCase();
 
+/**
+ * The card type that IS a scar (v0.37.1, owner).
+ *
+ * Choosing it puts a +1 scar effect on the card and choosing anything else takes it off again, with no
+ * label saying so. A scar is not a thing you describe and then separately configure; the type is the
+ * whole statement, and a card that says SCAR while doing nothing to the Hope track would be a lie.
+ */
+export const SCAR_TYPE = 'Scar';
+export const isScarType = (t: string | undefined): boolean => (t ?? '').trim().toLowerCase() === SCAR_TYPE.toLowerCase();
+
 /** Built-in types grouped by the context they suit (used to pre-fill the default + group the picker). */
 export const BUILTIN_TYPE_GROUPS: { label: string; types: string[] }[] = [
-  { label: 'Arsenal', types: ['Ability', 'Skill', 'Weapon', 'Spell', 'Trick', 'Maneuver'] },
+  { label: 'Arsenal', types: ['Ability', 'Attack', 'Skill', 'Weapon', 'Spell', 'Trick', 'Maneuver'] },
   { label: 'Inventory', types: ['Item', 'Armor', 'Tool', 'Treasure', 'Key', 'Trinket', 'Supply', 'Relic'] },
-  { label: 'Notes', types: ['Note', 'Reminder', 'Important', 'Story', 'Place', 'Person', 'Quest'] },
-  // v0.14.0: the ONLY type that changes where the card is stored — an Experience card becomes a real
-  // Experience on the file, so level-up advancements and experience-targeting effects can find it.
-  { label: 'Character', types: [EXPERIENCE_TYPE] },
+  { label: 'Notes', types: ['Note', 'Reminder', 'Important', 'Story', 'Lore', 'Flavor', 'Mystery', 'Place', 'Person', 'Quest'] },
+  // v0.14.0: an Experience card becomes a real Experience on the file, so level-up advancements and
+  // experience-targeting effects can find it. v0.37.1: Scar carries its own effect (see SCAR_TYPE).
+  // These two are the only types that do anything beyond naming the ribbon.
+  { label: 'Character', types: [EXPERIENCE_TYPE, SCAR_TYPE] },
 ];
+
+/**
+ * The card's effects after its TYPE changes.
+ *
+ * Only Scar has anything to say: it adds one scar and takes it away again. Every other effect on the
+ * card is left exactly as the player wrote it, because the type is not allowed to edit their work.
+ */
+export function effectsForType(effects: CardEffect[] | undefined, nextType: string | undefined): CardEffect[] {
+  const kept = (effects ?? []).filter((e) => e.target !== 'scar');
+  return isScarType(nextType) ? [...kept, { target: 'scar', delta: 1 }] : kept;
+}
 
 /** Flat list of every built-in type, de-duplicated in group order. */
 export const BUILTIN_CARD_TYPES: string[] = (() => {
