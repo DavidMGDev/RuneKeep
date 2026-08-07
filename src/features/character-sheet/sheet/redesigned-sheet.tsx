@@ -1635,24 +1635,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return next;
     });
   }, []);
-  // Drag-drop apply (#252): `movedId` lands in `toCat` and `orderedIds` is the target category's full
-  // visible order (incl. movedId at its dropped index). Persist the override + the explicit order, and
-  // drop movedId from any other category's order list.
-  const onReorderCard = useCallback((movedId: string, toCat: string, orderedIds: string[]) => {
-    setFile((f) => {
-      if (!f) return f;
-      const cardCategory = { ...(f.cardCategory ?? {}), [movedId]: toCat };
-      const cardOrder = { ...(f.cardOrder ?? {}) };
-      for (const k of Object.keys(cardOrder)) if (k !== toCat) cardOrder[k] = cardOrder[k].filter((x) => x !== movedId);
-      cardOrder[toCat] = orderedIds;
-      const next = { ...f, cardCategory, cardOrder };
-      saveFileRef.current(next);
-      return next;
-    });
-  }, []);
-  // Group drag-drop apply (#311): several cards land together in `toCat`; `orderedIds` is the target's
-  // full visible order with the moved group spliced in at the drop index. Same as onReorderCard but for
-  // a set: re-file each moved id and drop them all from every other category's explicit order.
+  // File several cards into `toCat` with an explicit order (#311). v0.37: the Cards panel's Move is
+  // the only caller left (the gallery drag that used to raise it is gone), which is why the
+  // single-card variant went with it. Re-file each moved id, write the target's order, and drop them
+  // all from every other category's explicit order.
   // v0.11.0: imperative handle into the carousel (it's a CHILD of CarouselProvider, the sheet can't read
   // context). Used after a Duplicate to deselect + scroll the row onto the fresh copies.
   const carouselApiRef = useRef<CarouselApi | null>(null);
@@ -2674,7 +2660,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 onClose={() => setNumberCardId(null)}
               />
             ) : null}
-            {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onPdf={() => onPrintCards(nfcSend.ids)} onClose={() => setNfcSend(null)} /> : null}
             {/* v0.13.2 (#359): the received-card landing ceremony (confirm → drop from top → tuck into the hand). */}
             {/* v0.25.0: the card asks its question before it can be equipped. Answering stores the
                 pick and equips in one step, so the tap the player made is the tap that happens. */}
@@ -2749,8 +2734,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onUpdateCategory={onUpdateCategory}
               onDeleteCategory={onDeleteCategory}
               onReorder={onReorderCategories}
-              onMoveCards={onMoveCards}
-              onReorderCard={onReorderCard}
               onReorderCards={onReorderCards}
               onDeleteCards={onDeleteCards}
               onAddCardInCategory={onAddCardInCategory}
@@ -2768,6 +2751,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
           ) : null}
+          {/**
+            * Sharing, in FRONT of the panel that raised it (v0.37, owner).
+            *
+            * This modal used to render inside the stage container, two levels below the full-screen
+            * Cards panel, and `zIndex` only ranks SIBLINGS: its 10020 was competing with nothing while
+            * the panel's 10000 competed with the container. So picking cards and pressing Share put an
+            * unreachable share sheet underneath an opaque interface. Same fix, same reason, as the
+            * restore prompt below it.
+            */}
+          {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onPdf={() => onPrintCards(nfcSend.ids)} onClose={() => setNfcSend(null)} /> : null}
           {/**
             * Where a restored card goes back (v0.34.8, owner).
             *
