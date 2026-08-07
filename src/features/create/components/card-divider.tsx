@@ -11,8 +11,13 @@ import { type ClassName } from '@/constants/identity';
 const DIV_AR = 1978.811 / 151.3009;
 const MASK_W_FRAC = 1321.3586 / 1978.811;
 const MASK_AR = 1321.3586 / 192.1075;
-/** How far the coloured plaque reaches back under the divider's gold, in px (v0.37 — see DividerPlaque). */
-const PLAQUE_BLEED = 2;
+/**
+ * How far the coloured plaque reaches back under the divider's gold, in px.
+ *
+ * v0.37 took it to 2 and the owner called that one too many: the chip then read as wider than its
+ * frame on the left. One pixel covers the seam and nothing more.
+ */
+const PLAQUE_BLEED = 1;
 
 export interface PlaqueTheme {
   gradientStops?: { offset: string; color: string }[];
@@ -43,7 +48,10 @@ export interface PlaqueTheme {
  */
 const KIND_THEMES: Record<string, PlaqueTheme> = {
   // --- the character themselves -------------------------------------------------------------
-  experience: { gradientStops: [{ offset: '0%', color: '#3B2A12' }, { offset: '100%', color: '#5C3F16' }], textColor: '#FFD98A' },
+  // v0.37.1 (owner): was two browns, which on a 10dp band read as mud rather than as leather. Green:
+  // an Experience is something a character has grown into, and green is the only family the arsenal
+  // was not already using.
+  experience: { gradientStops: [{ offset: '0%', color: '#15442A' }, { offset: '100%', color: '#237848' }], textColor: '#9BF3BE' },
   ancestry: { gradientStops: [{ offset: '0%', color: '#1E3A34' }, { offset: '100%', color: '#2E5347' }], textColor: '#A7E8C9' },
   community: { gradientStops: [{ offset: '0%', color: '#243247' }, { offset: '100%', color: '#37496A' }], textColor: '#B9CDF2' },
   subclass: { gradientStops: [{ offset: '0%', color: '#2E2340' }, { offset: '100%', color: '#453257' }], textColor: '#D9C2F5' },
@@ -53,9 +61,14 @@ const KIND_THEMES: Record<string, PlaqueTheme> = {
   'wild shape': { gradientStops: [{ offset: '0%', color: '#2A3A1E' }, { offset: '100%', color: '#3F5730' }], textColor: '#C8E8A0' },
   'martial form': { gradientStops: [{ offset: '0%', color: '#3A2118' }, { offset: '100%', color: '#573324' }], textColor: '#F2C3A6' },
   companion: { gradientStops: [{ offset: '0%', color: '#33301C' }, { offset: '100%', color: '#4C472B' }], textColor: '#EDE0A8' },
+  // v0.37.1: a scar takes a Hope slot away, so it is painted in the colour of a wound going cold,
+  // and it is the only plaque in the character family that is not a colour you would choose.
+  scar: { gradientStops: [{ offset: '0%', color: '#4A1220' }, { offset: '100%', color: '#2A1A24' }], textColor: '#F0A8B4' },
 
   // --- the arsenal: warm, active ------------------------------------------------------------
   ability: { gradientStops: [{ offset: '0%', color: '#4A1C22' }, { offset: '100%', color: '#6B2A2E' }], textColor: '#FFC9A3' },
+  // v0.37.1: an Attack is the sharpest thing in the arsenal, so it takes the hottest red of the family.
+  attack: { gradientStops: [{ offset: '0%', color: '#6B1410' }, { offset: '100%', color: '#9E2318' }], textColor: '#FFD8C0' },
   skill: { gradientStops: [{ offset: '0%', color: '#33232E' }, { offset: '100%', color: '#4E3444' }], textColor: '#F2C6E0' },
   spell: { gradientStops: [{ offset: '0%', color: '#1F2C55' }, { offset: '100%', color: '#33417A' }], textColor: '#A9C8FF' },
   trick: { gradientStops: [{ offset: '0%', color: '#22303A' }, { offset: '100%', color: '#334857' }], textColor: '#9FE3F5' },
@@ -84,7 +97,18 @@ const KIND_THEMES: Record<string, PlaqueTheme> = {
   note: { gradientStops: [{ offset: '0%', color: '#E8E1CE' }, { offset: '100%', color: '#D6CCB2' }], textColor: '#3A3324' },
   reminder: { gradientStops: [{ offset: '0%', color: '#F0D9A8' }, { offset: '100%', color: '#E0BE7C' }], textColor: '#4A3410' },
   important: { gradientStops: [{ offset: '0%', color: '#7A1F1C' }, { offset: '100%', color: '#A62B24' }], textColor: '#FFE0D2' },
-  story: { gradientStops: [{ offset: '0%', color: '#2A2333' }, { offset: '100%', color: '#3F344E' }], textColor: '#E0D2F5' },
+  /**
+   * v0.37.1 (owner): the old Story was two near-blacks, which is not what a story looks like. This is
+   * the dusk end of the classic indigo-to-violet pair, deep enough to hold pale lilac type and bright
+   * enough to be a colour rather than an absence of one. It is the most saturated plaque in the set
+   * on purpose: Story is the note a player writes when something actually happened.
+   */
+  story: { gradientStops: [{ offset: '0%', color: '#3A2A7A' }, { offset: '100%', color: '#7B3FB5' }], textColor: '#F2E4FF' },
+  // The three notes that sit around it, each a clear hue of its own so a page of notes reads as a set
+  // of different things rather than one thing repeated (v0.37.1, owner).
+  lore: { gradientStops: [{ offset: '0%', color: '#123A4A' }, { offset: '100%', color: '#1F6076' }], textColor: '#B7ECFF' },
+  flavor: { gradientStops: [{ offset: '0%', color: '#6E2A46' }, { offset: '100%', color: '#A03C5E' }], textColor: '#FFD6E4' },
+  mystery: { gradientStops: [{ offset: '0%', color: '#1C1B3A' }, { offset: '100%', color: '#3B2C6B' }], textColor: '#C4BFF5' },
   place: { gradientStops: [{ offset: '0%', color: '#1F3A33' }, { offset: '100%', color: '#31564B' }], textColor: '#AEE6D2' },
   person: { gradientStops: [{ offset: '0%', color: '#3A2A2A' }, { offset: '100%', color: '#573F3F' }], textColor: '#F2D2C6' },
   quest: { gradientStops: [{ offset: '0%', color: '#233A4A' }, { offset: '100%', color: '#365468' }], textColor: '#B4DCF2' },

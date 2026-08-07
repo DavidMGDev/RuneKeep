@@ -1,4 +1,6 @@
-import { allCardTypes, BUILTIN_CARD_TYPES, defaultTypeForCategory, isBuiltinType, typePickerGroups } from './card-types';
+import { type CardEffect } from '@/lib/modifiers';
+
+import { allCardTypes, BUILTIN_CARD_TYPES, defaultTypeForCategory, effectsForType, isBuiltinType, SCAR_TYPE, typePickerGroups } from './card-types';
 
 describe('card types (#246)', () => {
   describe('defaultTypeForCategory', () => {
@@ -43,6 +45,47 @@ describe('card types (#246)', () => {
       const groups = typePickerGroups(['Ritual', 'Weapon']);
       expect(groups[0].label).toBe('Custom');
       expect(groups[0].types).toEqual(['Ritual']); // Weapon is built-in → excluded from Custom
+    });
+  });
+
+  /**
+   * v0.37.1: choosing the Scar type IS choosing the scar. Nothing on screen says so, so these say it
+   * instead: the effect arrives with the type, leaves with it, and never touches anything else.
+   */
+  describe('effectsForType (Scar)', () => {
+    const armor: CardEffect = { target: 'armorScore', delta: 2 };
+
+    it('adds one scar when the type becomes Scar', () => {
+      expect(effectsForType([], SCAR_TYPE)).toEqual([{ target: 'scar', delta: 1 }]);
+    });
+    it('takes the scar away when the type becomes anything else', () => {
+      expect(effectsForType([{ target: 'scar', delta: 1 }], 'Note')).toEqual([]);
+    });
+    it('never adds a second scar to a card that is already a Scar', () => {
+      const once = effectsForType([], SCAR_TYPE);
+      expect(effectsForType(once, SCAR_TYPE)).toEqual([{ target: 'scar', delta: 1 }]);
+    });
+    it("leaves the player's own effects alone, both ways", () => {
+      expect(effectsForType([armor], SCAR_TYPE)).toEqual([armor, { target: 'scar', delta: 1 }]);
+      expect(effectsForType([armor, { target: 'scar', delta: 1 }], 'Item')).toEqual([armor]);
+    });
+    it('is case-insensitive about the type, like every other type check', () => {
+      expect(effectsForType([], 'scar')).toEqual([{ target: 'scar', delta: 1 }]);
+    });
+    it('copes with a card that has no effects yet', () => {
+      expect(effectsForType(undefined, 'Note')).toEqual([]);
+    });
+  });
+
+  describe('the v0.37.1 types', () => {
+    it('offers Attack in the arsenal, three more notes, and Scar with Experience', () => {
+      expect(typePickerGroups().find((g) => g.label === 'Arsenal')?.types).toContain('Attack');
+      const notes = typePickerGroups().find((g) => g.label === 'Notes')?.types ?? [];
+      expect(notes).toEqual(expect.arrayContaining(['Lore', 'Flavor', 'Mystery']));
+      expect(typePickerGroups().find((g) => g.label === 'Character')?.types).toContain(SCAR_TYPE);
+    });
+    it('treats them as built-ins, so they cannot be deleted', () => {
+      for (const t of ['Attack', 'Lore', 'Flavor', 'Mystery', SCAR_TYPE]) expect(isBuiltinType(t)).toBe(true);
     });
   });
 });
