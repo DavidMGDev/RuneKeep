@@ -33,6 +33,7 @@ import Animated, { Easing, type SharedValue, useAnimatedStyle, useSharedValue, w
 import Svg, { Path } from 'react-native-svg';
 
 import { showToast } from '@/components/toast';
+import { WHEEL_ENABLED } from './wheel-enabled';
 import { DmType, Display, DmRune } from '@/constants/theme';
 import { useFrame, windowToFrameX, windowToFrameY } from '@/hooks/use-layout';
 import { RADIAL_WEDGES as WEDGES, WEDGE_HALF, WEDGE_RICON, WEDGE_RIN, WEDGE_ROUT } from './radial-wedges';
@@ -201,9 +202,16 @@ export function StatRadialProvider({ children }: { children: React.ReactNode }) 
           absolute-fill wheel actually renders in, so subtracting it reconciles the measured anchor
           (item 4). Zero-cost — no paint, never interactive. */}
       <View ref={frameRef} pointerEvents="none" style={StyleSheet.absoluteFill} collapsable={false} onLayout={() => measureFrame()} />
-      <RadialBoundary>
-        <StatRadialHost color={color} shown={shown} hl={hl} pos={pos} />
-      </RadialBoundary>
+      {/* v0.36.2 (owner): NOT DRAWN ON NATIVE. Five releases failed to stop this crashing an Android
+          phone, every JavaScript guard stayed silent throughout, and the owner's call is to take it
+          off the platform rather than attempt a sixth theory. Nothing here is mounted there, so
+          there is no SVG, no worklet and no wheel to crash. `StatPulse` opens the keypad instead,
+          which has its own plus and minus and the same clamps. */}
+      {WHEEL_ENABLED ? (
+        <RadialBoundary>
+          <StatRadialHost color={color} shown={shown} hl={hl} pos={pos} />
+        </RadialBoundary>
+      ) : null}
     </Ctx.Provider>
   );
 }

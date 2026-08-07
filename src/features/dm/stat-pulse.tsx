@@ -4,6 +4,17 @@
  * radial (+1/+2/+3 up, −1/−2/−3 down). The wheel's origin is measured on the ICON itself so it centres
  * exactly on the glyph (item 4). When disabled (member vitals before Start) any press fires onBlocked.
  *
+ * ## v0.36.2: the wheel is WEB ONLY (owner)
+ *
+ * Five releases tried to stop this crashing an Android phone. Each one removed something genuinely
+ * wrong and the app kept dying, and by v0.36 every callback here was guarded and every guard had
+ * stayed silent, which says the fault is not in JavaScript and cannot be reached from JavaScript.
+ * The owner's instruction is the right call and is taken literally: on native there is no wheel, no
+ * gesture and no radial context use at all. A stat is a TAP that opens the keypad, which has its own
+ * plus and minus and clamps to the same maximum the wheel did, so nothing the wheel did is lost.
+ *
+ * The browser keeps the wheel, where it has always worked.
+ *
  * ## v0.35.2: built like the float menu, because the float menu works
  *
  * This crashed the app on Android for three releases. Two attempts removed real problems (a gesture
@@ -26,7 +37,7 @@
  * is the job `activateAfterLongPress` was doing: the pan claims nothing until the wheel is really open.
  */
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
@@ -35,6 +46,7 @@ import { useFrame, windowToFrameX, windowToFrameY } from '@/hooks/use-layout';
 import { StatGlyph, STAT_COLOR, type StatGlyphKind } from './stat-glyphs';
 import { pickWedge } from './radial-wedges';
 import { useStatRadial } from './stat-radial';
+import { WHEEL_ENABLED } from './wheel-enabled';
 
 /** How long the finger has to stay put before the wheel blooms. */
 const HOLD_MS = 170;
@@ -42,6 +54,61 @@ const HOLD_MS = 170;
 const TAP_SLOP = 8;
 
 export function StatPulse({
+  kind,
+  value,
+  max,
+  disabled,
+  onApply,
+  onRequestSet,
+  onBlocked,
+}: {
+  kind: StatGlyphKind;
+  value: number;
+  max: number;
+  disabled?: boolean;
+  onApply: (delta: number) => void;
+  onRequestSet: () => void;
+  onBlocked?: () => void;
+}): ReactNode {
+  // v0.36.2: on native NONE of the wheel's machinery is built. No gesture, no radial context, no
+  // shared values, nothing that could reach the code that crashes. A tap is the whole control.
+  if (!WHEEL_ENABLED) {
+    return (
+      <Pressable
+        onPress={() => (disabled ? onBlocked?.() : onRequestSet())}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={`${kind}, ${value} of ${max}. Tap to set.`}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 7, opacity: pressed ? 0.58 : 1 })}>
+        <StatFace kind={kind} value={value} max={max} disabled={disabled} />
+      </Pressable>
+    );
+  }
+  // The wheel and everything it needs lives in its own component, so this one calls no hooks and
+  // the branch above is a plain early return rather than a conditional hook.
+  return <StatPulseWheel kind={kind} value={value} max={max} disabled={disabled} onApply={onApply} onRequestSet={onRequestSet} onBlocked={onBlocked} />;
+}
+
+/** The icon and the number. Identical on both platforms, so only the INPUT differs. */
+function StatFace({ kind, value, max, disabled, innerRef, onLayout }: { kind: StatGlyphKind; value: number; max: number; disabled?: boolean; innerRef?: React.RefObject<View | null>; onLayout?: () => void }) {
+  return (
+    <>
+      <View ref={innerRef} collapsable={false} onLayout={onLayout} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+        <StatGlyph kind={kind} color={disabled ? DmRune.muted : STAT_COLOR[kind]} size={24} filled={!disabled} />
+      </View>
+      {/* `title`, not `hero`: four of these sit in a row inside a panel whose NAME should dominate.
+          The audit's finding was that stat numbers read as loud as the adversary's name; promoting
+          them to the hero step would invert the hierarchy rather than fix it. The filled glyph
+          beside each one carries the visual weight instead. */}
+      <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.2, includeFontPadding: false }}>
+        {value}
+        <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold }}> /{max}</Text>
+      </Text>
+    </>
+  );
+}
+
+function StatPulseWheel({
   kind,
   value,
   max,
@@ -164,17 +231,7 @@ export function StatPulse({
   return (
     <GestureDetector gesture={gesture}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }} hitSlop={10} accessibilityRole="adjustable" accessibilityLabel={`${kind}, ${value} of ${max}. Tap to set, hold to adjust.`}>
-        <View ref={iconRef} collapsable={false} onLayout={measure} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-          <StatGlyph kind={kind} color={disabled ? DmRune.muted : color} size={24} filled={!disabled} />
-        </View>
-        {/* `title`, not `hero`: four of these sit in a row inside a panel whose NAME should dominate.
-            The audit's finding was that stat numbers read as loud as the adversary's name; promoting
-            them to the hero step would invert the hierarchy rather than fix it. The filled glyph
-            beside each one carries the visual weight instead. */}
-        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.2, includeFontPadding: false }}>
-          {value}
-          <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold }}> /{max}</Text>
-        </Text>
+        <StatFace kind={kind} value={value} max={max} disabled={disabled} innerRef={iconRef} onLayout={measure} />
       </View>
     </GestureDetector>
   );

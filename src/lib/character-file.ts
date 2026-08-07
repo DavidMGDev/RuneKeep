@@ -114,6 +114,13 @@ export interface CharacterFile {
   characterized?: boolean;
   arsenalOnly?: boolean;
   skipStartingKit?: boolean;
+  /**
+   * v0.36.2: this character has NO class. `className` still names one because every derived number
+   * starts from a class and the file has to have one, but the step was skipped, so its cards and its
+   * label are dropped and the carried Evasion and hit points overwrite its numbers. Only reachable
+   * when the stat block carries both of those, which is what makes the fallback invisible.
+   */
+  classless?: boolean;
   /** v0.12.2: which EXPANSIONS this character was created with (e.g. ['void'] + custom ids). Undefined
    *  or empty = base game only (back-compat). Gates which catalog/library content the sheet + ADD GEAR
    *  show; travels with the character so a shared hero still shows all its cards. */
@@ -576,7 +583,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     name: activeWildshapeName(file) ?? file.name,
     // v0.35: the level the sheet is computed at, so a DM's level modifier reads on the sheet too.
     level: sheet.level.total,
-    className: cls.label,
+    className: file.classless ? '' : cls.label, // v0.36.2: a classless character names no class
     subclass: subclass?.label.replace(/ Foundation$/, '') ?? libTitle(file.subclassCardId) ?? '',
     spellcastTrait,
     ancestry: ancestry?.label ?? libTitle(file.ancestryCardId) ?? '',

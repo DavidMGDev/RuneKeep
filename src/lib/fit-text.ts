@@ -53,6 +53,15 @@ export interface FitBox {
   /** The size to aim for. Text that needs less than this keeps its designed leading. */
   min?: number;
   /**
+   * How wide an average glyph is, as a fraction of the font size, for THIS text (v0.36.2).
+   *
+   * Defaults to the body face. A card TITLE is a different measurement entirely: uppercase, in the
+   * black weight, with letter spacing on top, which is far wider per character than running body
+   * text. Sizing a title with the body's number is what let a title overflow its own line and get
+   * cut off with an ellipsis (see `fitTitle`).
+   */
+  charRatio?: number;
+  /**
    * The tightest leading allowed before the FONT has to give way instead (v0.32.0).
    *
    * The owner's rule for overlong text is "shrink spacings, font size, whatever it takes, but never
@@ -118,13 +127,13 @@ const round = (n: number) => Math.round(n * 100) / 100;
 const HARD_MIN = 3.5;
 
 export function fitText(text: string, box: FitBox): Fit {
-  const { width, height, base, lineRatio, min = 6 } = box;
+  const { width, height, base, lineRatio, min = 6, charRatio = CHAR_RATIO } = box;
   // Never ask for tighter leading than the face's own line box, however tight the caller asked for.
   const minRatio = Math.max(box.minRatio ?? lineRatio, MIN_LINE_RATIO);
   const body = (text ?? '').trim();
   if (!body) return { fontSize: base, lineHeight: round(base * lineRatio), lines: 0 };
   for (let size = base; size >= Math.min(min, HARD_MIN); size -= 0.25) {
-    const lines = wrapLines(body, Math.floor(width / (size * CHAR_RATIO)));
+    const lines = wrapLines(body, Math.floor(width / (size * charRatio)));
     if (lines < 1 || !Number.isFinite(lines)) continue;
     // The tallest line this many lines can afford. Use the designed leading when there is room for
     // it and only tighten when there is not, so an ordinary card is typeset exactly as before.
@@ -141,7 +150,7 @@ export function fitText(text: string, box: FitBox): Fit {
    * height, so those 15 lines rendered taller there than the arithmetic said and ran into the footer
    * watermark. A browser honours the value exactly, which is why only the phone showed it.
    */
-  const lines = Math.max(1, wrapLines(body, Math.max(1, Math.floor(width / (HARD_MIN * CHAR_RATIO)))));
+  const lines = Math.max(1, wrapLines(body, Math.max(1, Math.floor(width / (HARD_MIN * charRatio)))));
   const lineHeight = Math.max(1, height / lines);
   return { fontSize: round(Math.min(HARD_MIN, lineHeight)), lineHeight: round(lineHeight), lines };
 }
@@ -165,6 +174,18 @@ export function fitText(text: string, box: FitBox): Fit {
  * `minRatio` is stated rather than left to default to `band / base`: at exactly one line the afford
  * and the requirement are the same number, and floating point should not decide a card.
  */
+/**
+ * How wide a card TITLE's average glyph is (v0.36.2, owner: titles bleeding off the card past ~17 characters).
+ *
+ * A title is not body text: it is UPPERCASE, set in the black weight, with letter spacing on top.
+ * Sizing it with the body's 0.53 said a 22 character title fitted one line at 17pt when the real
+ * limit is about 17, so anything longer overflowed its line and `numberOfLines` cut it with an
+ * ellipsis. The owner's report puts the break at "around 17 characters", which back-solves to
+ * 200 / (17 x 17) = 0.69 em; this is 0.72, biased a few percent high for the same reason the body
+ * ratio is, so the type comes out a shade small rather than a character too wide.
+ */
+const TITLE_CHAR_RATIO = 0.72;
+
 export function fitTitle(text: string, width: number, band: number, base: number): Fit {
-  return fitText(text, { width, height: band, base, lineRatio: band / base, min: 5.5, minRatio: MIN_LINE_RATIO });
+  return fitText(text, { width, height: band, base, lineRatio: band / base, min: 5.5, minRatio: MIN_LINE_RATIO, charRatio: TITLE_CHAR_RATIO });
 }

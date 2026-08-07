@@ -133,10 +133,32 @@ describe('a card title, fitted into a fixed band', () => {
     expect(f.lines).toBe(1);
   });
 
-  it('shrinks a long title onto ONE line rather than wrapping it', () => {
-    const f = t('The Everburning Blade of the Fallen King');
+  it('shrinks a slightly long title onto ONE line', () => {
+    const f = t('Rusted Longsword of Ash');
     expect(f.lines).toBe(1);
     expect(f.fontSize).toBeLessThan(BASE);
+  });
+
+  it('takes two readable lines over one unreadable one', () => {
+    // Stepping down finds the largest size that fits the BAND, and two lines at 9pt fits it long
+    // before one line at 7pt would. Legibility is the point: a title nobody can read is not a title.
+    const f = t('The Everburning Blade of the Fallen King');
+    expect(f.lines).toBe(2);
+    expect(f.fontSize).toBeGreaterThan(8);
+    expect(f.lines * f.lineHeight).toBeLessThanOrEqual(BAND);
+  });
+
+  it('never asks for a line wider than the card, which is what cut titles off with an ellipsis', () => {
+    // The regression: titles were measured with the BODY's glyph width, so a 22 character title was
+    // called one line at full size when about 17 is the truth, and the overflow was truncated.
+    const TITLE_RATIO = 0.72;
+    for (const s of ['Cleave', 'Rusted Longsword', 'A Story About The Long Road Home', 'The Everburning Blade of the Fallen King']) {
+      const f = t(s);
+      const longest = Math.max(...s.split(' ').map((w) => w.length));
+      const perLine = W / (f.fontSize * TITLE_RATIO);
+      expect(perLine).toBeGreaterThanOrEqual(longest); // no word is wider than its line
+      expect(s.length / f.lines).toBeLessThanOrEqual(perLine + 1);
+    }
   });
 
   it('allows two lines only once they fit the same band', () => {
