@@ -1,4 +1,4 @@
-import { isFilePayload, pushIncomingUrl, resetIncomingUrl, subscribeIncomingUrl, takeIncomingUrl } from './incoming-url';
+import { isFilePayload, pushIncomingUrl, resetIncomingUrl, subscribeIncomingUrl, takeIncomingUrl, isLaunchFile } from './incoming-url';
 
 /**
  * These shapes are the whole bug. v0.23.0 shipped a filter that only accepted URLs ending in `.rkp`,
@@ -79,5 +79,35 @@ describe('isFilePayload · picked photos are not shares (v0.33.0)', () => {
     ]) {
       expect(isFilePayload(u)).toBe(true);
     }
+  });
+});
+
+describe('a file handed over by a LAUNCH INTENT (v0.36.1)', () => {
+  it('takes any provider URI, because the intent filter already chose it', () => {
+    // Quick Share, CX File Explorer, WhatsApp: every one of these is a share the user asked for.
+    for (const u of [
+      'content://com.cxinventor.file.explorer.fileprovider/external_files/Download/auren.rune',
+      'content://com.samsung.android.app.sharelive.provider/shared/17',
+      'content://media/external/downloads/1000000123',
+      'content://com.whatsapp.provider.media/item/8a83',
+    ]) expect(isLaunchFile(u)).toBe(true);
+  });
+
+  it('does NOT apply the media guard, which exists for the app’s own image picker', () => {
+    // The picker cannot hand anything back through a launch intent, so refusing this here is how a
+    // Quick Share ended up opening the app and doing nothing at all.
+    expect(isLaunchFile('content://media/external/images/media/42')).toBe(true);
+    expect(isFilePayload('content://media/external/images/media/42')).toBe(false);
+  });
+
+  it('takes a file URI whatever it is called, since Android matched it for us', () => {
+    expect(isLaunchFile('file:///storage/emulated/0/Download/auren.rune')).toBe(true);
+    expect(isLaunchFile('file:///storage/emulated/0/Download/auren')).toBe(true);
+  });
+
+  it('still leaves the app’s own deep links alone', () => {
+    expect(isLaunchFile('runekeep://sheet?id=ch-1')).toBe(false);
+    expect(isLaunchFile('/sheet?id=ch-1')).toBe(false);
+    expect(isLaunchFile(null)).toBe(false);
   });
 });

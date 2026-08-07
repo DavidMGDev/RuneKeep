@@ -6,6 +6,33 @@ import { type DeckKey } from './create-types';
 export function DeckGlyph({ deck, color }: { deck: DeckKey; color: string }) {
   const s = { fill: 'none', stroke: color, strokeWidth: 1.8, strokeLinejoin: 'miter' as const };
   switch (deck) {
+    // v0.36.1: the three characterize-only steps had no glyph at all, so their tabs collapsed to a
+    // squashed box with nothing above the label while every other tab held a 20dp icon.
+    case 'carry':
+      // A hand receiving: what the stat block is passing over.
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Path d="M 3 12 v 4 a 3 3 0 0 0 3 3 h 10 a 3 3 0 0 0 3 -3 v -4" {...s} />
+          <Line x1={11} y1={2} x2={11} y2={13} {...s} />
+          <Polyline points="7,9 11,13 15,9" {...s} />
+        </Svg>
+      );
+    case 'level':
+      // The level-up chevrons, the same shape the float menu uses for Level Up.
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Polyline points="4,11 11,4 18,11" {...s} />
+          <Polyline points="4,18 11,11 18,18" {...s} />
+        </Svg>
+      );
+    case 'transformation':
+      // A crescent inside a circle: one thing becoming another.
+      return (
+        <Svg width={20} height={20} viewBox="0 0 22 22">
+          <Polygon points="11,1 20,6 20,16 11,21 2,16 2,6" {...s} />
+          <Path d="M 14 6.5 A 5.5 5.5 0 1 0 14 15.5 A 4.2 4.2 0 1 1 14 6.5" fill={color} stroke="none" />
+        </Svg>
+      );
     case 'class':
       return (
         <Svg width={20} height={20} viewBox="0 0 22 22">

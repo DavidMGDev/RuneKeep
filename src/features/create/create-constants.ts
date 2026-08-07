@@ -83,24 +83,24 @@ export const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
  * The rail, for the kind of creation this is (v0.36, owner).
  *
  * Characterize leads with what the stat block hands over, because that is the one screen where the
- * DM is reviewing rather than choosing, and it should be settled before anything else. Class comes
- * second since it is the one step that cannot be skipped, then Level, then the ordinary order with
- * Transformation sitting after Ancestry, where it reads as another thing you are rather than another
- * thing you carry.
+ * DM is reviewing rather than choosing, and it should be settled before anything is decided. Level
+ * rides with it for the same reason: it is another number the stat block worked out, not a choice.
+ * Then the ordinary order, with Transform sitting after Ancestry, where it reads as another thing
+ * you ARE rather than another thing you carry.
  */
 export function decksFor(characterize: boolean, transformations: boolean): { key: DeckKey; label: string; stub?: boolean }[] {
   if (!characterize) return DECKS;
-  const rest = DECKS.filter((d) => d.key !== 'class');
   const out: { key: DeckKey; label: string; stub?: boolean }[] = [
-    { key: 'carry', label: 'Carried over' },
-    { key: 'class', label: 'Class' },
+    // v0.36.1 (owner): LEVEL sits with Inherit, not after Class. Both are things the stat block
+    // decided; Class is the first thing the DM decides, so the two groups should not interleave.
+    { key: 'carry', label: 'Inherit' },
     { key: 'level', label: 'Level' },
   ];
-  for (const d of rest) {
+  for (const d of DECKS) {
     out.push(d);
     // Only when Hope and Fear is switched on in the app's own expansion list. A step listing six
     // cards the app has been told not to show would be a step that cannot be answered.
-    if (d.key === 'ancestry' && transformations) out.push({ key: 'transformation', label: 'Transformation' });
+    if (d.key === 'ancestry' && transformations) out.push({ key: 'transformation', label: 'Transform' });
   }
   return out;
 }

@@ -7,8 +7,8 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
-import { Image } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits)
-import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
+import {  } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits)
+import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { AppScreen, SectionLabel } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -26,16 +26,12 @@ import { deleteParty, getParty, saveParty, setActiveParty } from '@/lib/party-st
 import { playSfx } from '@/lib/sfx';
 import { showToast } from '@/components/toast';
 import { DimScreen } from '@/lib/screen-dim';
+import { Portrait as SharedPortrait } from '@/components/portrait';
 import { DmEmpty, ColorDiamond, NameDialog, DmPress } from './dm-ui';
 
+/** v0.36.1: the shared chamfered portrait (see components/portrait). */
 function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
-  return (
-    <ChamferBox chamfer={6} fill={DmRune.ink} stroke={tint} strokeWidth={1.3} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {uri ? <Image source={uri} style={{ width: 46, height: 46 }} contentFit="cover" /> : (
-        <Svg width={20} height={20} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={DmRune.accentDim} strokeWidth={1.6} strokeLinejoin="miter" /></Svg>
-      )}
-    </ChamferBox>
-  );
+  return <SharedPortrait uri={uri} size={46} tint={tint} fill={DmRune.ink} />;
 }
 
 function MemberRow({ file, present, onTogglePresent, onRemove }: { file: CharacterFile; present: boolean; onTogglePresent: () => void; onRemove: () => void }) {

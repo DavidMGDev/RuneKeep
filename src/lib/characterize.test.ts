@@ -1,4 +1,4 @@
-import { carriesThresholds, carryItems, clampLevel, holdEffects, keptItems, keptLevel, levelForStatBlock, type StatBlockLike } from './characterize';
+import { canSkipClass, carriesThresholds, carryItems, clampLevel, holdEffects, isGenericName, keptItems, keptLevel, levelForStatBlock, type StatBlockLike } from './characterize';
 
 const WRAITH: StatBlockLike = {
   name: 'Bramble Wraith',
@@ -59,8 +59,8 @@ describe('what level a stat block becomes', () => {
 describe('what a stat block hands over', () => {
   const items = carryItems(WRAITH);
 
-  it('leads with the two that change the numbers', () => {
-    expect(items.slice(0, 2).map((i) => i.kind)).toEqual(['level', 'thresholds']);
+  it('leads with the ones that change the numbers', () => {
+    expect(items.slice(0, 4).map((i) => i.kind)).toEqual(['level', 'thresholds', 'vitals', 'evasion']);
   });
 
   it('carries the level it worked out', () => {
@@ -93,7 +93,7 @@ describe('what a stat block hands over', () => {
 
   it('offers nothing it does not have', () => {
     const bare = carryItems({ name: 'Rat' });
-    expect(bare.map((i) => i.kind)).toEqual(['level']); // no thresholds, no vitals, no attack, no features
+    expect(bare.map((i) => i.kind)).toEqual(['level']); // no thresholds, vitals, evasion, attack or features
   });
 
   it('gives every item a stable id, so greying one out survives a rebuild', () => {
@@ -120,7 +120,7 @@ describe('greying an item out', () => {
 
 describe('holding the stat block’s numbers', () => {
   const items = carryItems(WRAITH);
-  const have = { majorThreshold: 5, severeThreshold: 10, maxHp: 6, stressMax: 6 };
+  const have = { majorThreshold: 5, severeThreshold: 10, maxHp: 6, stressMax: 6, evasion: 10 };
 
   it('writes exactly the difference, so the sheet reads what the stat block said', () => {
     const e = holdEffects(items, new Set(), have);
@@ -130,12 +130,12 @@ describe('holding the stat block’s numbers', () => {
   });
 
   it('writes nothing when the sheet already agrees', () => {
-    const e = holdEffects(items, new Set(), { majorThreshold: 8, severeThreshold: 14, maxHp: 8, stressMax: 4 });
+    const e = holdEffects(items, new Set(), { majorThreshold: 8, severeThreshold: 14, maxHp: 8, stressMax: 4, evasion: 15 });
     expect(e).toEqual([]);
   });
 
   it('writes nothing for an item the DM greyed out', () => {
-    const e = holdEffects(items, new Set(['carry-thresholds', 'carry-vitals']), have);
+    const e = holdEffects(items, new Set(['carry-thresholds', 'carry-vitals', 'carry-evasion']), have);
     expect(e).toEqual([]);
   });
 
@@ -143,5 +143,58 @@ describe('holding the stat block’s numbers', () => {
     expect(carriesThresholds(items, new Set())).toBe(true);
     expect(carriesThresholds(items, new Set(['carry-thresholds']))).toBe(false);
     expect(carriesThresholds(carryItems({ name: 'Rat' }), new Set())).toBe(false);
+  });
+});
+
+describe('difficulty becomes Evasion', () => {
+  const items = carryItems(WRAITH);
+
+  it('carries the difficulty across as the Evasion to hit', () => {
+    expect(items.find((i) => i.kind === 'evasion')?.evasion).toBe(15);
+  });
+
+  it('makes up the difference against whatever the class gives', () => {
+    // A Bard starts on 10 Evasion; a difficulty 15 adversary must still read 15.
+    const e = holdEffects(items, new Set(), { majorThreshold: 8, severeThreshold: 14, maxHp: 8, stressMax: 4, evasion: 10 });
+    expect(e).toContainEqual({ target: 'evasion', delta: 5, mode: 'bonus', note: 'Carried from the stat block' });
+  });
+});
+
+describe('when the class step can be skipped', () => {
+  it('lets it go once hit points AND evasion are both carried', () => {
+    expect(canSkipClass(carryItems(WRAITH), new Set())).toBe(true);
+  });
+
+  it('puts the class back the moment either is left behind', () => {
+    const items = carryItems(WRAITH);
+    expect(canSkipClass(items, new Set(['carry-evasion']))).toBe(false);
+    expect(canSkipClass(items, new Set(['carry-vitals']))).toBe(false);
+  });
+
+  it('never lets a bare stat block skip it', () => {
+    expect(canSkipClass(carryItems({ name: 'Rat' }), new Set())).toBe(false);
+  });
+});
+
+describe('a name the app made up', () => {
+  it('knows a placeholder when it sees one', () => {
+    for (const n of ['Adversary #3', 'adversary 12', 'NPC', 'Ally #1', 'Combatant']) expect(isGenericName(n)).toBe(true);
+  });
+
+  it('leaves a real name alone', () => {
+    for (const n of ['Bramble Wraith', 'Acid Burrower', 'Ser Adversary of Vale', 'Npcorax']) expect(isGenericName(n)).toBe(false);
+  });
+});
+
+describe('the weapon card', () => {
+  const w = carryItems(WRAITH).find((i) => i.kind === 'weapon');
+
+  it('puts every stat on its own row', () => {
+    expect(w?.text.split('\n')).toEqual(['- **Range:** Melee', '- **Damage:** 1d10+3 physical', '- **Attack:** +2']);
+  });
+
+  it('does not say the damage type twice', () => {
+    const abbreviated = carryItems({ ...WRAITH, attack: { name: 'Claws', range: 'Very Close', damage: '1d12+2 phy' } });
+    expect(abbreviated.find((i) => i.kind === 'weapon')?.text).toContain('- **Damage:** 1d12+2 phy\n');
   });
 });

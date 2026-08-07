@@ -65,8 +65,10 @@ export interface Draft {
   // --- v0.36 CHARACTERIZE. All optional, so an ordinary creation draft is byte-identical. ---
   /** The combatant this character is being made from, and where it came back to. */
   characterize?: { encounterId: string; combatantId: string; side: 'adversary' | 'ally' };
-  /** Steps the DM pressed Skip on. A skipped step counts as done and contributes nothing. */
+  /** Steps the DM pressed Skip on. A skipped step counts as done and takes its default. */
   skipped?: DeckKey[];
+  /** The NAME, which is not a deck but is a step in the skip menu. */
+  nameSkipped?: boolean;
   /** Carry-over item ids the DM greyed out on the first step. Greyed = dropped entirely. */
   carryDisabled?: string[];
   /** The level chosen on the Level step (characterize only). Absent = whatever the stat block said. */

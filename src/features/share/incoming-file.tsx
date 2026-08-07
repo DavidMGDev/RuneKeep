@@ -12,15 +12,6 @@ import { parseRkp } from '@/lib/rkp';
 import { type AppLocation, type RouteOutcome, routeIncoming } from '@/lib/rkp-route';
 
 /**
- * Read whatever the OS handed us.
- *
- * `content://` works here even though the URI is a provider row id with no path: the modern
- * filesystem module routes content URIs straight to `ContentResolver.openInputStream`, and its read
- * permission check passes them unconditionally. (The LEGACY module would not: it only recognises
- * `com.android.externalstorage` and throws "Unsupported scheme" on everything else, which rules out
- * WhatsApp, Gmail and Drive. Worth knowing before anyone reaches for it.)
- */
-/**
  * The largest thing that could plausibly be a character (v0.33.0).
  *
  * A character with an embedded portrait and card art runs to a few hundred KB; the image budget caps
@@ -29,15 +20,51 @@ import { type AppLocation, type RouteOutcome, routeIncoming } from '@/lib/rkp-ro
  */
 const MAX_INCOMING_BYTES = 2_000_000;
 
+/**
+ * Read whatever the OS handed us (v0.36.1, owner: "the file couldn't be read from where it was shared").
+ *
+ * A `content://` URI is COPIED through the ContentResolver first, and the copy is what gets read.
+ * That looks like a detour and is not, because the modern `File` API cannot open most of them.
+ *
+ * MEASURED, in expo-file-system 19.0.23: every content URI goes through `SAFDocumentFile`, whose
+ * document lookup is
+ *
+ *     if (uri.pathSegments[0] == "document") DocumentFile.fromSingleUri(...)
+ *     else                                   DocumentFile.fromTreeUri(...)
+ *
+ * A share from a FileProvider is neither. Quick Share, CX File Explorer and most file managers hand
+ * over something like `content://<authority>/external_files/Download/hero.rune`, whose first segment
+ * is `external_files`, so it takes the tree branch, and `fromTreeUri` throws `IllegalArgumentException`
+ * on a URI that is not a tree. That throw comes from `exists()`, which BOTH `File.size` and
+ * `File.text()` call before they do anything, so the read never even reaches the input stream that
+ * would have worked. It is not a permission problem and it is not the URI being opaque.
+ *
+ * The legacy module's `copyAsync` has a plain `scheme == "content"` branch that calls
+ * `contentResolver.openInputStream` with no DocumentFile anywhere near it, which is exactly the one
+ * operation that is correct for every provider. (Its `readAsStringAsync` is NOT usable: that one is
+ * gated on `isSAFUri` and throws "Unsupported scheme" here. The distinction is the whole fix.)
+ */
 async function readIncoming(uri: string): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { File } = require('expo-file-system') as typeof import('expo-file-system');
-  const f = new File(uri);
-  // v0.33.0: check the size first, and read ASYNCHRONOUSLY. `textSync` blocks the JS thread for as
-  // long as the read takes, which for anything that is not a character file is time spent freezing
-  // the app to produce an error message.
-  if ((f.size ?? 0) > MAX_INCOMING_BYTES) throw new Error('too large');
-  return f.text();
+  const { File, Paths } = require('expo-file-system') as typeof import('expo-file-system');
+  const readFile = async (f: InstanceType<typeof File>) => {
+    // v0.33.0: check the size first, and read ASYNCHRONOUSLY. `textSync` blocks the JS thread for as
+    // long as the read takes, which for anything that is not a character file is time spent freezing
+    // the app to produce an error message.
+    if ((f.size ?? 0) > MAX_INCOMING_BYTES) throw new Error('That file is too large to be a character.');
+    return f.text();
+  };
+  if (!uri.toLowerCase().startsWith('content://')) return readFile(new File(uri));
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const legacy = require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
+  const copy = new File(Paths.cache, `incoming-${Date.now().toString(36)}.rune`);
+  await legacy.copyAsync({ from: uri, to: copy.uri });
+  try {
+    return await readFile(copy);
+  } finally {
+    try { copy.delete(); } catch { /* a temp file in the cache; the OS clears it either way */ }
+  }
 }
 
 interface Incoming {
@@ -87,17 +114,31 @@ export function IncomingFileGate() {
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    // The app's own `runekeep://` deep links are routes, not this component's business.
-    const url = [captured, linked].find((u) => isFilePayload(u) && !seen.current.has(u!));
+    /**
+     * A LAUNCH INTENT is trusted; a link that merely arrives is filtered (v0.36.1, owner).
+     *
+     * `captured` came through `+native-intent`, which only ever runs for a URL Android launched the
+     * app with, and the intent filter already decided which files reach us. `linked` is anything the
+     * running app sees, which includes the system image picker handing back a photo, so that one
+     * still goes through `isFilePayload`.
+     *
+     * Filtering both the same way is what made a Quick Share do nothing at all: the media guard
+     * exists to reject a picker result and has no business judging a file the user explicitly chose
+     * to open with RuneKeep.
+     */
+    const url = [captured, linked].find((u, i) => !!u && !seen.current.has(u) && (i === 0 || isFilePayload(u)));
     if (!url) return;
     seen.current.add(url);
     void (async () => {
       try {
         await decide(await readIncoming(url), location);
-      } catch {
+      } catch (e) {
+        // v0.36.1: SAY what went wrong. A single generic sentence for every possible cause is what
+        // made the last report impossible to act on without the device.
+        const why = e instanceof Error && e.message ? ` (${e.message})` : '';
         setIncoming({
           text: '',
-          outcome: { action: 'reject', message: "That file couldn't be read from where it was shared. Save it to your device first, then use Import in the Card Library." },
+          outcome: { action: 'reject', message: `That file couldn't be read from where it was shared${why}. Save it to your device first, then use Import in the Card Library.` },
         });
       }
     })();

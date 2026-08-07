@@ -10,6 +10,7 @@ import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, wi
 import Svg, { Circle, Path, Polygon } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { Portrait } from '@/components/portrait';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type AdversaryFeature } from '@/data/adversaries';
 import { type Combatant } from '@/lib/session';
@@ -31,16 +32,8 @@ export function BaseGameEmblem({ size = 22, color = DmRune.accentDim }: { size?:
 
 /** A square portrait chip. Base-game default = the tome emblem; custom = the image. Tap → fullscreen. */
 export function AdversaryPortrait({ uri, size = 42, tint, onPress }: { uri?: string; size?: number; tint: string; onPress?: () => void }) {
-  const inner = uri ? (
-    <Image source={uri} style={{ width: size, height: size }} contentFit="cover" />
-  ) : (
-    <BaseGameEmblem size={size * 0.5} />
-  );
-  const box = (
-    <ChamferBox chamfer={6} fill={DmRune.ink} stroke={tint} strokeWidth={1.3} style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      {inner}
-    </ChamferBox>
-  );
+  // v0.36.1: clipped to its own frame, like every other portrait in the app.
+  const box = <Portrait uri={uri} size={size} tint={tint} fill={DmRune.ink} glyph={<BaseGameEmblem size={size * 0.5} />} />;
   if (!onPress) return box;
   return (
     <DmPress onPress={onPress} accessibilityRole="imagebutton" accessibilityLabel={uri ? 'View image' : 'Base Game adversary'} hitSlop={4}>

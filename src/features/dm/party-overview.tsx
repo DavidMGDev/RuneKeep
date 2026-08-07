@@ -10,8 +10,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
-import { Image } from 'expo-image';
-import Svg, { Polygon } from 'react-native-svg';
+import  {  } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
@@ -31,6 +30,7 @@ import { useDmCharacterTools } from './dm-character-tools';
 import { PartyEffectsIcon } from './dm-icons';
 import { DmModifiersPanel } from './dm-modifiers-panel';
 import { MemberPanel } from './member-panel';
+import { DownedVeil, Portrait } from '@/components/portrait';
 import { StatGlyph } from './stat-glyphs';
 import { StatRadialProvider } from './stat-radial';
 import { DmPress } from './dm-ui';
@@ -85,16 +85,12 @@ function PartyRoster({
               accessibilityRole="button"
               accessibilityLabel={`${f.name}, ${hp} hit points. Tap to find them, hold for their modifiers.`}
               style={{ width: `${100 / PER_ROW}%`, alignItems: 'center', gap: 4 }}>
-              <ChamferBox chamfer={6} fill={DmRune.ink} stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.2} style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                {f.portraitUri ? (
-                  <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
-                    <Image source={f.portraitUri} style={{ width: 52, height: 52 }} contentFit="cover" />
-                  </View>
-                ) : (
-                  <Svg width={22} height={22} viewBox="0 0 26 26"><Polygon points="13,2 23,12 23,14 13,24 3,14 3,12" fill="none" stroke={downed ? DmRune.muted : DmRune.accentDim} strokeWidth={1.6} /></Svg>
-                )}
-                {downed ? <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(11,14,19,0.55)' }} /> : null}
-              </ChamferBox>
+              {/* The press dim used to uncover four chamfered corners of frame hiding under a square
+                  image. Frame and picture are the same shape now, so there is nothing to uncover. */}
+              <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
+                <Portrait uri={f.portraitUri} size={52} tint={downed ? DmRune.muted : DmRune.accentDim} fill={DmRune.ink} />
+                {downed ? <DownedVeil size={52} /> : null}
+              </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                 <StatGlyph kind="hp" color={downed ? DmRune.muted : DmRune.red} size={13} filled={!downed} />
                 <Text style={{ color: downed ? DmRune.muted : DmRune.ivory, fontSize: DmType.body, fontFamily: Display.black }}>{hp}</Text>
