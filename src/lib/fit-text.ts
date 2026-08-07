@@ -186,6 +186,43 @@ export function fitText(text: string, box: FitBox): Fit {
  */
 const TITLE_CHAR_RATIO = 0.72;
 
+/**
+ * Per-letter widths for the title face, in em (v0.36.3, owner: "make it more stable").
+ *
+ * One average was never going to hold, and the owner's report is the proof: "Not strong enough" was
+ * cut off while "Not strong enough yet", which is LONGER, was fine. An average cannot explain that;
+ * the letters can. A title is set in the black weight in capitals, where an I is a third of the width
+ * of a W, so whether a particular string fits depends on which letters are in it, not how many.
+ *
+ * These are Archivo Black's cap advances, rounded to two places. Anything not listed (punctuation,
+ * accented letters) takes the average, which is close enough for a character or two of it.
+ */
+const CAP_EM: Record<string, number> = {
+  A: 0.72, B: 0.7, C: 0.71, D: 0.74, E: 0.63, F: 0.61, G: 0.74, H: 0.76, I: 0.34, J: 0.58,
+  K: 0.72, L: 0.6, M: 0.93, N: 0.77, O: 0.77, P: 0.68, Q: 0.79, R: 0.71, S: 0.65, T: 0.63,
+  U: 0.74, V: 0.7, W: 1.02, X: 0.7, Y: 0.66, Z: 0.64,
+  '0': 0.72, '1': 0.44, '2': 0.68, '3': 0.68, '4': 0.72, '5': 0.68, '6': 0.71, '7': 0.63, '8': 0.71, '9': 0.71,
+  ' ': 0.28, '-': 0.42, "'": 0.28, ',': 0.3, '.': 0.3, '!': 0.36, '?': 0.6, ':': 0.3, '/': 0.5, '(': 0.42, ')': 0.42,
+};
+
+/**
+ * The average glyph width of THIS title, in em.
+ *
+ * `fitText` wraps by counting characters, so instead of teaching it about letter widths, the title's
+ * own average is handed to it as `charRatio`. A title full of narrow letters gets a narrow ratio and
+ * keeps its size; one full of wide ones gets a wide ratio and shrinks. Letter spacing rides along as
+ * a fraction of the size, since that is the unit `charRatio` is in.
+ */
+export function titleCharRatio(text: string, letterSpacing = 0.3, base = 17): number {
+  const t = (text ?? '').trim().toUpperCase();
+  if (!t) return TITLE_CHAR_RATIO;
+  let em = 0;
+  for (const ch of t) em += CAP_EM[ch] ?? TITLE_CHAR_RATIO;
+  // A few percent over what the letters measure, for the same reason the body ratio is: coming out a
+  // shade small is invisible, and coming out a shade wide is a title with its end cut off.
+  return (em / t.length) * 1.06 + letterSpacing / base;
+}
+
 export function fitTitle(text: string, width: number, band: number, base: number): Fit {
-  return fitText(text, { width, height: band, base, lineRatio: band / base, min: 5.5, minRatio: MIN_LINE_RATIO, charRatio: TITLE_CHAR_RATIO });
+  return fitText(text, { width, height: band, base, lineRatio: band / base, min: 5.5, minRatio: MIN_LINE_RATIO, charRatio: titleCharRatio(text, 0.3, base) });
 }

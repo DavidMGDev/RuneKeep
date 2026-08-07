@@ -6,7 +6,7 @@
  * proficiency and the character's unique domain-card count (Armor is not repeated there).
  */
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import {  } from 'expo-image'; // item 2: robust with base64 data-URIs (imported/NFC portraits) — RN Image drops them on Android
 import Svg, {  Polyline } from 'react-native-svg';
@@ -42,6 +42,7 @@ export function MemberPanel({
   editable,
   absent,
   selected,
+  selecting,
   onApply,
   onRequestSet,
   onBlocked,
@@ -59,6 +60,8 @@ export function MemberPanel({
   editable: boolean;
   absent?: boolean;
   selected?: boolean;
+  /** v0.36.3: the LIST is selecting, whether or not this one is chosen. */
+  selecting?: boolean;
   onApply: (key: VitalKey, delta: number) => void;
   onRequestSet: (key: VitalKey) => void;
   onBlocked?: () => void;
@@ -123,15 +126,34 @@ export function MemberPanel({
     <Animated.View style={fadeStyle}>
     <ChamferBox chamfer={11} fill={selected ? 'rgba(196,200,208,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : foe ? DmRune.red : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: DmRune.accent }, litStyle]} />
+      {/* Any tap on the entry selects it while the list is selecting. */}
+      {selecting ? (
+        <Pressable
+          onPress={onLongPress}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: !!selected }}
+          accessibilityLabel={`${s.name}, ${selected ? 'selected' : 'not selected'}`}
+          style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 5 }}
+        />
+      ) : null}
       {/* header: portrait + identity (tap to expand) + read-only Evasion / thresholds + a clear chevron */}
       <DmPress onPress={() => setOpen((o) => !o)} onLongPress={onLongPress ?? (onModifiers ? () => onModifiers(false) : undefined)} delayLongPress={360} accessibilityRole="button" accessibilityLabel={`${s.name}${absent ? ', absent' : ''}, ${open ? 'collapse' : 'expand for traits'}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-        {/* v0.36.1: chamfered, so the frame and the picture are one shape (see components/portrait). */}
-        <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
-          <Portrait uri={s.portraitUri} size={46} tint={downed ? DmRune.muted : DmRune.accentDim} fill={DmRune.ink} />
-          {/* Greyed AND darkened: desaturation alone is easy to miss on a portrait that is already
-              dim, and a scrim alone reads as a loading state. */}
-          {downed ? <DownedVeil size={46} /> : null}
-        </View>
+        {/* v0.36.3 (owner): while selecting, the CHECKBOX takes the portrait's place at the
+            portrait's size. It used to sit on the right, opposite every other list in the app, and
+            the entry kept its full size only by accident. Same slot, same size, nothing moves. */}
+        {selecting ? (
+          <ChamferBox chamfer={6} fill={selected ? DmRune.accent : 'transparent'} stroke={selected ? 'transparent' : DmRune.accentDim} strokeWidth={1.3} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center' }}>
+            {selected ? <Svg width={22} height={22} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+          </ChamferBox>
+        ) : (
+          /* v0.36.1: chamfered, so the frame and the picture are one shape (see components/portrait). */
+          <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
+            <Portrait uri={s.portraitUri} size={46} tint={downed ? DmRune.muted : DmRune.accentDim} fill={DmRune.ink} />
+            {/* Greyed AND darkened: desaturation alone is easy to miss on a portrait that is already
+                dim, and a scrim alone reads as a loading state. */}
+            {downed ? <DownedVeil size={46} /> : null}
+          </View>
+        )}
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
             <FitLine style={{ flexShrink: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{s.name}</FitLine>
@@ -141,17 +163,14 @@ export function MemberPanel({
         </View>
         <ReadStat label="Eva" value={String(s.evasion)} />
         <ReadStat label="Thr" value={`${s.thresholds.major}/${s.thresholds.severe}`} color={DmRune.accent} />
-        {selected ? (
-          <ChamferBox chamfer={5} fill={DmRune.accent} stroke="transparent" strokeWidth={0} style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-            <Svg width={13} height={13} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-          </ChamferBox>
-        ) : (
+        {selecting ? null : (
           <Svg width={13} height={13} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
         )}
       </DmPress>
 
-      {/* vitals row: the four editable tracks, tightly grouped, sheet-coloured */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', columnGap: 14, rowGap: 8 }}>
+      {/* vitals row: the four editable tracks, tightly grouped, sheet-coloured. Inert while selecting
+          (v0.36.3): a tap on the entry is a selection then, not a stat change. */}
+      <View pointerEvents={selecting ? 'none' : 'auto'} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', columnGap: 14, rowGap: 8 }}>
         {pulse('hp', 'hp', m.maxHp)}
         {pulse('armor', 'armor', m.armorMax)}
         {pulse('stress', 'stress', m.stressMax)}

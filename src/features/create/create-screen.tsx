@@ -45,7 +45,7 @@ import { shouldShow } from '@/lib/onboarding-store';
 
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
-import { canSkipClass, carriesThresholds, carryItems, type CarryItem, isGenericName, itemHoldEffects, keptItems, keptLevel, levelForStatBlock } from '@/lib/characterize';
+import { canSkipClass, cardedItems, carriesThresholds, carryItems, type CarryItem, heldEffectsFor, isGenericName, keptLevel, levelForStatBlock } from '@/lib/characterize';
 import { SkipMenu, SkipMenuButton, type SkipStepRow } from './skip-menu';
 import { addTemplate, loadAdversaries, saveAdversaries } from '@/lib/adversary-library';
 import { addMembers, type Party } from '@/lib/party';
@@ -292,7 +292,10 @@ export function CreateScreen() {
       setStatBlock(c);
       // Open ON the review step: what the stat block hands over should be settled first.
       setDeck('carry');
+      // v0.36.3 (owner): the Statblock leads the carry list and the step opens ON it, rather than
+      // in the middle like every other deck. It is the card that says what this creature is.
       setCenterIdx(0);
+      deckIndexes.current.carry = 0;
       // v0.36.1 (owner): a name the APP made up is not a name. Carrying "Adversary #3" across just
       // means the DM has to clear the field before they can type, so a placeholder is left behind
       // and the name step stays open; a real name is inherited and counts as answered.
@@ -809,9 +812,21 @@ export function CreateScreen() {
   }, [mixedActive, modeFade]);
   const modeFadeStyle = useAnimatedStyle(() => ({ opacity: modeFade.value }));
 
-  /** Answering a step un-skips it: a Skip is the DM saying nothing, and this is them saying something. */
-  const unskip = useCallback((k: DeckKey) => {
-    setDraft((d) => (d.skipped?.includes(k) ? { ...d, skipped: d.skipped.filter((x) => x !== k) } : d));
+  /**
+   * Answering a step un-skips it AND marks it TOUCHED (v0.36.3, owner).
+   *
+   * "Filled in" used to mean `deckDone`, which is true for anything the stat block seeded, so Name,
+   * Inherit and Level always arrived marked. That is wrong twice: the DM did not fill them in, and
+   * it made Skip everything raise the "you are throwing an answer away" warning every single time,
+   * for answers nobody had given. A step is filled in when the DM has actually touched it.
+   */
+  const unskip = useCallback((k: DeckKey | 'name') => {
+    setDraft((d) => ({
+      ...d,
+      ...(k !== 'name' && d.skipped?.includes(k) ? { skipped: d.skipped.filter((x) => x !== k) } : {}),
+      ...(k === 'name' && d.nameSkipped ? { nameSkipped: false } : {}),
+      ...(d.touched?.includes(k) ? {} : { touched: [...(d.touched ?? []), k] }),
+    }));
   }, []);
 
   /**
@@ -1135,6 +1150,26 @@ export function CreateScreen() {
   }, [complete, draft, router, libContent, picked]);
 
   /**
+   * BACK to the encounter, never a second copy of it (v0.36.3, owner).
+   *
+   * `router.replace('/encounter?id=…')` pushed ANOTHER encounter screen on top of the one we came
+   * from, which caused three separate reports:
+   *
+   *  - Pressing back from the new one landed on the OLD one, still holding the state it had before
+   *    the characterize, and its next debounced save wrote that stale copy over the good one. That
+   *    is the characterized entry "reverting to an adversary after leaving and coming back".
+   *  - The back chevron appeared to do nothing, because it transitioned from an encounter to the
+   *    same encounter.
+   *  - A characterized ALLY looked like it had not been created at all, for the same reason.
+   *
+   * Going BACK returns to the screen we left, which reloads on focus and reads the truth off disk.
+   */
+  const backToEncounter = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace(`/encounter?id=${draftRef.current.characterize?.encounterId}` as Href);
+  }, [router]);
+
+  /**
    * Forge a CHARACTERIZED adversary or ally (v0.36, owner).
    *
    * Three things happen that ordinary creation does not do, and the order between them matters:
@@ -1167,12 +1202,13 @@ export function CreateScreen() {
     const className = d.className ?? FALLBACK_CLASS;
     setForging(true);
     const id = newCharacterId();
-    const kept = keptItems(carry, carryOff);
     // Greying the level card out sends them to level 1 (owner); otherwise the Level step's number
     // wins, falling back to what the tier and difficulty worked out to.
     const level = carryOff.has('carry-level') ? 1 : (d.level ?? keptLevel(carry, carryOff));
-    // The level is the character's LEVEL, not a card. Everything else becomes one.
-    const carded = kept.filter((it) => it.kind !== 'level');
+    // v0.36.3 (owner): only the Statblock, the weapon and the features become cards. The level is
+    // the character's level, and the thresholds, vitals and Evasion ride the Statblock rather than
+    // taking three cards to repeat numbers the sheet already prints at the top.
+    const carded = cardedItems(carry, carryOff);
     const cardOf = (it: CarryItem, effects: CardEffect[]): CustomCardDef => ({
       id: `cz-${it.id}`,
       title: it.title,
@@ -1231,7 +1267,7 @@ export function CreateScreen() {
       stressMax: sheet.stress.total - (sheet.stress.locked ?? 0),
       evasion: sheet.evasion,
     };
-    const customCards = carded.map((it) => cardOf(it, itemHoldEffects(it, have)));
+    const customCards = carded.map((it) => cardOf(it, heldEffectsFor(it, carry, carryOff, have)));
     // Everything on, at once: a DM reading this sheet wants the true numbers, not a character with
     // its own domain cards and armor switched off waiting to be discovered mid-fight.
     const enabledCardIds = [
@@ -1243,7 +1279,15 @@ export function CreateScreen() {
       ...d.domainCardIds,
       ...acquired,
     ];
-    const file = { ...common, customCards, enabledCardIds: [...new Set(enabledCardIds)] } as CharacterFile;
+    // v0.36.3 (owner): the Statblock is the FIRST card in the arsenal. `cardOrder` is the same
+    // field a player's own drag writes, so nothing new is needed and the DM can drag it elsewhere.
+    const lead = customCards.find((c) => c.id === 'cz-carry-statblock')?.id;
+    const file = {
+      ...common,
+      customCards,
+      enabledCardIds: [...new Set(enabledCardIds)],
+      ...(lead ? { cardOrder: { abilities: [lead] } } : {}),
+    } as CharacterFile;
 
     try {
       await saveCharacter(file);
@@ -1281,8 +1325,8 @@ export function CreateScreen() {
       throw e;
     }
     clearDraft();
-    router.replace(`/encounter?id=${ch.encounterId}` as Href);
-  }, [carry, carryOff, carryColor, libContent, picked, router]);
+    backToEncounter();
+  }, [carry, carryOff, carryColor, libContent, picked, backToEncounter]);
 
   /** Write an experience into its slot. Shared so the quick flow and the full editor cannot drift. */
   const saveExperience = useCallback((slot: number, d: { title: string; imageUri: string | null; color: string | null; effects?: CardEffect[] }) => {
@@ -1322,9 +1366,8 @@ export function CreateScreen() {
    * list looks like the list is wrong rather than like the content is off.
    */
   const skipRows = useMemo<SkipStepRow[]>(() => {
-    const bare = { ...draft, skipped: [] as DeckKey[] };
     const rows: SkipStepRow[] = [
-      { key: 'name', label: 'Name', skippable: true, skipped: !!draft.nameSkipped, done: draft.name.trim().length > 0 },
+      { key: 'name', label: 'Name', skippable: true, skipped: !!draft.nameSkipped, done: !!draft.touched?.includes('name') },
     ];
     for (const d of deckList) {
       const classRow = d.key === 'class';
@@ -1333,7 +1376,8 @@ export function CreateScreen() {
         label: d.label,
         skippable: !classRow || classOptional,
         skipped: !!draft.skipped?.includes(d.key),
-        done: deckDone(d.key, bare),
+        // Touched, not merely answered: an inherited value is not something the DM filled in.
+        done: !!draft.touched?.includes(d.key),
         note: classRow && !classOptional ? 'Gives the numbers' : undefined,
       });
     }
@@ -1575,7 +1619,7 @@ export function CreateScreen() {
               <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 48, justifyContent: 'center', paddingHorizontal: 13 }}>
                 <TextInput
                   value={draft.name}
-                  onChangeText={(name) => set({ name })}
+                  onChangeText={(name) => { unskip('name'); set({ name }); }}
                   ref={nameRef}
                   placeholder="Name"
                   placeholderTextColor={Rune.muted}
@@ -1861,14 +1905,13 @@ export function CreateScreen() {
               const f = await getCharacter(j.charId);
               if (f) await saveParty(addMembers(j.party, [{ charId: j.charId, vitals: initialVitals(f) }]));
               clearDraft();
-              router.replace(`/encounter?id=${draftRef.current.characterize?.encounterId}` as Href);
+              backToEncounter();
             })();
           }}
           onCancel={() => {
-            const enc = draftRef.current.characterize?.encounterId;
             setJoinParty(null);
             clearDraft();
-            router.replace(`/encounter?id=${enc}` as Href);
+            backToEncounter();
           }}
         />
       ) : null}

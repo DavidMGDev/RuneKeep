@@ -5,9 +5,10 @@
  * BOTTOM bar (item 4). Spawning pulls from a full-screen Adversary Library overlay in adversary/ally mode
  * (items 10/11). Portraits open fullscreen (item 8). The options panel holds auto-log, sync + card archive.
  */
-import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
+import Animated, { Easing, LinearTransition } from 'react-native-reanimated';
 import Svg, { Polyline } from 'react-native-svg';
 
 import { AppScreen, SectionLabel } from '@/components/app-screen';
@@ -116,6 +117,8 @@ const CTRL_H = 28;
 /** How far a prepared encounter fades what is not a way to start it. Enough to read as waiting,
  *  not so far that the DM cannot see who is in the fight while they set it up. */
 const DIM = 0.4;
+/** The same reflow the combatant panels use, so the headers move with them rather than after. */
+const ROW_SPRING = LinearTransition.duration(180).easing(Easing.out(Easing.cubic));
 
 export function EncounterScreen() {
   const router = useRouter();
@@ -158,19 +161,34 @@ export function EncounterScreen() {
   const encTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      const enc = await getEncounter(id);
-      if (!enc || !live) { if (live) setEncounter(enc); return; }
-      const [ses, all, lib] = await Promise.all([getSession(enc.sessionId), listCharacters(), loadAdversaries()]);
-      const pty = ses ? await getParty(ses.partyId) : null;
-      if (!live) return;
-      setEncounter(enc); setSession(ses); setParty(pty); setLibrary(lib);
-      setFiles(Object.fromEntries(all.map((f) => [f.id, f])));
-    })();
-    return () => { live = false; };
-  }, [id]);
+  /**
+   * Reload EVERY time this screen is focused (v0.36.3, owner).
+   *
+   * Characterizing leaves this screen, writes the encounter and a new character, and comes back. Read
+   * once at mount, this screen would still be holding the pre-characterize copy, and its next
+   * debounced save would write that back over the truth: the characterized entry reverting to an
+   * adversary "when I left and came back" was this, not the write failing.
+   *
+   * The pending save is flushed first, so returning cannot resurrect an edit made a moment before
+   * leaving, and cannot race the read either.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      if (encTimer.current) { clearTimeout(encTimer.current); encTimer.current = null; if (encRef.current) void saveEncounter(encRef.current); }
+      void (async () => {
+        const enc = await getEncounter(id);
+        if (!enc || !live) { if (live) setEncounter(enc); return; }
+        const [ses, all, lib] = await Promise.all([getSession(enc.sessionId), listCharacters(), loadAdversaries()]);
+        const pty = ses ? await getParty(ses.partyId) : null;
+        if (!live) return;
+        setEncounter(enc); encRef.current = enc;
+        setSession(ses); setParty(pty); setLibrary(lib);
+        setFiles(Object.fromEntries(all.map((f) => [f.id, f])));
+      })();
+      return () => { live = false; };
+    }, [id]),
+  );
   useEffect(() => () => { if (encTimer.current) clearTimeout(encTimer.current); if (partyTimer.current) clearTimeout(partyTimer.current); }, []);
 
   const commitEncounter = useCallback((next: Encounter) => {
@@ -215,8 +233,16 @@ export function EncounterScreen() {
   }, [findCombatant]);
   const characterize = useCallback((cid: string, side: 'adversary' | 'ally') => {
     playSfx('buttonTap');
-    advSel.clear(); allySel.clear();
+    /**
+     * NAVIGATE FIRST, tidy up after (v0.36.3, owner).
+     *
+     * Clearing the selection before the push re-laid the whole list out one frame before the screen
+     * transitioned: checkboxes vanished, entries resized, the bottom bar disappeared, and all of it
+     * was visible for exactly long enough to look broken. The push starts the transition, and the
+     * selection is cleared behind it once the new screen is over the top.
+     */
     router.push(`/create?encId=${id}&cid=${cid}&side=${side}` as Href);
+    setTimeout(() => { advSel.clear(); allySel.clear(); }, 420);
   }, [router, id, advSel, allySel]);
 
   /** Vitals for a characterized entry. They are not in the party, so the encounter holds them. */
@@ -282,10 +308,36 @@ export function EncounterScreen() {
     setKeypad(null);
   }, [keypad, files, findCombatant, updateCombatant, commitParty, commitEncounter]);
 
-  /** Grant the overflow as a bonus, then set the value now that it fits. */
+  /**
+   * Grant the overflow, then set the value now that it fits.
+   *
+   * v0.36.3 (owner): "Raise their maximum" writes a real MODIFIER on the character, not a number
+   * tucked into the party. It shows in the Modifiers panel with everything else, it travels with an
+   * export, history rewinds it, and the player can see where their extra hit points came from, which
+   * a hidden party-side bonus could never do. "Just this encounter" stays encounter-scoped, because
+   * that one is meant to evaporate with the fight.
+   *
+   * Hope is not offered: six is six for everyone and only a scar moves it (see `toSheetCharacter`).
+   */
   const applyOverMax = useCallback((scope: 'encounter' | 'party') => {
     const enc = encRef.current, pty = partyRef.current; if (!enc || !pty || !overMax) return;
     const f = files[overMax.charId];
+    if (scope === 'party' && f) {
+      const target = overMax.key === 'hp' ? 'maxHp' : overMax.key === 'stress' ? 'stressMax' : 'armorScore';
+      const next = setDmEffects(f, [
+        ...dmEffectsOf(f),
+        { target, delta: overMax.value - overMax.cap, note: `Raised by the DM on ${new Date().toLocaleDateString()}` },
+      ]);
+      setFiles((cur) => ({ ...cur, [f.id]: next }));
+      void saveCharacter(next);
+      const maxes = bonusMaxes(memberMaxes(next), memberBonus(enc, pty, overMax.charId));
+      const from = memberVitals(enc, pty, overMax.charId)?.[overMax.key] ?? 0;
+      const r = memberSet(enc, pty, overMax.charId, overMax.key, overMax.value, maxes);
+      commitParty(r.party);
+      commitEncounter(r.encounter.options.autoLog ? appendLog(r.encounter, 'stat', formatStatLog('Player', f.name, overMax.key, from, overMax.value)) : r.encounter);
+      setOverMax(null);
+      return;
+    }
     const g = grantMaxBonus(enc, pty, overMax.charId, overMax.key, overMax.value - overMax.cap, scope);
     commitParty(g.party);
     const maxes = bonusMaxes(memberMaxes(f), memberBonus(g.encounter, g.party, overMax.charId));
@@ -505,13 +557,13 @@ export function EncounterScreen() {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: allySel.selecting || advSel.selecting ? 150 : 90, gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Allies</SectionLabel></View>
             <View style={{ flexDirection: 'row', gap: 14 }}>
               <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} />
               <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} />
             </View>
-          </View>
+          </Animated.View>
           {memberAllies.length === 0 && npcAllies.length === 0 ? (
             <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>
               No allies yet. Present party members appear here automatically; add an NPC to fight alongside them.
@@ -559,13 +611,15 @@ export function EncounterScreen() {
             ),
           )}
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
+          {/* v0.36.3 (owner): the section header reflows WITH the list. Everything else animated when a
+              combatant expanded and this row teleported, which is what made the expand feel broken. */}
+          <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Adversaries</SectionLabel></View>
             <View style={{ flexDirection: 'row', gap: 14 }}>
               <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} />
               <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} />
             </View>
-          </View>
+          </Animated.View>
           {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>None yet, add one, or spawn a whole group from the library.</Text> : null}
           {enc.adversaries.map((c) =>
             // A characterized ADVERSARY stays an adversary. It is a character now, and it is still
@@ -628,14 +682,22 @@ export function EncounterScreen() {
         <PopupDialog
           dm
           title={`${overMax.value} is above ${overMax.name}'s maximum`}
-          body={`Their ${KEY_LABEL[overMax.key]} maximum is ${overMax.cap}. Raising it by ${overMax.value - overMax.cap} can last just this fight, or stay with them.`}
+          body={
+            overMax.key === 'hope'
+              ? `Hope is always six, less any slot a scar has taken, so ${overMax.name}'s cannot be raised. Every other track can.`
+              : `Their ${KEY_LABEL[overMax.key]} maximum is ${overMax.cap}. Raising it by ${overMax.value - overMax.cap} can last just this fight, or become a modifier they carry. A sheet holds twelve of any track however high the modifier reads.`
+          }
           confirmLabel="Cancel"
           cancelLabel="Cancel"
           onConfirm={() => setOverMax(null)}
           onCancel={() => setOverMax(null)}>
           <View style={{ marginTop: 14, gap: 10 }}>
-            <RuneButton label="Just this encounter" kind="primary" height={42} dm onPress={() => applyOverMax('encounter')} />
-            <RuneButton label="Raise their maximum" kind="secondary" height={42} dm onPress={() => applyOverMax('party')} />
+            {overMax.key === 'hope' ? null : (
+              <>
+                <RuneButton label="Just this encounter" kind="primary" height={42} dm onPress={() => applyOverMax('encounter')} />
+                <RuneButton label="Raise their maximum" kind="secondary" height={42} dm onPress={() => applyOverMax('party')} />
+              </>
+            )}
           </View>
         </PopupDialog>
       ) : null}

@@ -9,9 +9,9 @@ import { FitLine } from '@/components/fit-line';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
-import { classColor, classInfo } from '@/constants/identity';
+import { classColor } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
-import { type CharacterFile } from '@/lib/character-file';
+import { type CharacterFile, classLabel } from '@/lib/character-file';
 import { deleteCharacter, exportCharacter, listCharacters, pickCharacterFiles, saveCharacter } from '@/lib/character-store';
 import { seedOfficialExpansions } from '@/lib/expansions';
 import { addFolder, assign, EMPTY_INDEX, type Folder, type FolderIndex, loadFolders, recolorFolder, removeFolder, renameFolder, saveFolders, setCollapsed as setCollapsedIn } from '@/lib/folders';
@@ -33,7 +33,6 @@ function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
 }
 
 function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOpen: () => void; onLongPress: () => void }) {
-  const cls = classInfo(file.className);
   const tint = classColor(file.className);
   return (
     <Pressable
@@ -41,7 +40,7 @@ function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOp
       onLongPress={onLongPress}
       delayLongPress={380}
       accessibilityRole="button"
-      accessibilityLabel={`${file.name}, level ${file.level} ${cls.label}. Hold for actions`}>
+      accessibilityLabel={`${file.name}, level ${file.level} ${classLabel(file)}. Hold for actions`}>
       {({ pressed }) => (
         <ChamferBox
           chamfer={12}
@@ -55,7 +54,7 @@ function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOp
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <View style={{ width: 8, height: 8, backgroundColor: tint.bright, transform: [{ rotate: '45deg' }] }} />
               <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                Lvl {file.level} {cls.label}
+                Lvl {file.level} {classLabel(file)}
               </Text>
             </View>
           </View>

@@ -19,6 +19,85 @@ export interface PlaqueTheme {
 }
 
 /**
+ * Every card type's plaque (v0.36.2 -> v0.36.3, owner).
+ *
+ * Class cards are handled above, because their colour is the CLASS's rather than the type's. Every
+ * other kind the app can generate or a player can choose now has one here, which is what the owner
+ * asked for: the plaque is the one place a card says what it is, and until now most of them said it
+ * in the same parchment-and-red as everything else.
+ *
+ * Three rules held throughout, because a plaque is a 10dp strip of type on a coloured band and
+ * nothing else matters as much as being able to read it:
+ *
+ *  1. The two stops are always close in value. A gradient that runs light to dark leaves the label
+ *     legible at one end and lost at the other.
+ *  2. Text is either bright on a dark band or ink on a light one, never mid on mid.
+ *  3. Families share a hue. The arsenal runs warm through red and amber; the inventory runs earth
+ *     and metal; notes run paper and ink; everything a stat block carries runs cold steel and slate,
+ *     so a characterized adversary's cards read as one set.
+ *
+ * Keys are lower-cased kind labels. An unknown kind falls through to the parchment default, which is
+ * deliberately still there: the generic "Card" type is meant to look generic.
+ */
+const KIND_THEMES: Record<string, PlaqueTheme> = {
+  // --- the character themselves -------------------------------------------------------------
+  experience: { gradientStops: [{ offset: '0%', color: '#3B2A12' }, { offset: '100%', color: '#5C3F16' }], textColor: '#FFD98A' },
+  ancestry: { gradientStops: [{ offset: '0%', color: '#1E3A34' }, { offset: '100%', color: '#2E5347' }], textColor: '#A7E8C9' },
+  community: { gradientStops: [{ offset: '0%', color: '#243247' }, { offset: '100%', color: '#37496A' }], textColor: '#B9CDF2' },
+  subclass: { gradientStops: [{ offset: '0%', color: '#2E2340' }, { offset: '100%', color: '#453257' }], textColor: '#D9C2F5' },
+  domain: { gradientStops: [{ offset: '0%', color: '#2A2140' }, { offset: '100%', color: '#3E2F5E' }], textColor: '#CDB8F0' },
+  transformation: { gradientStops: [{ offset: '0%', color: '#301C2E' }, { offset: '100%', color: '#4A2A44' }], textColor: '#F0B8E4' },
+  beastform: { gradientStops: [{ offset: '0%', color: '#2A3A1E' }, { offset: '100%', color: '#3F5730' }], textColor: '#C8E8A0' },
+  'wild shape': { gradientStops: [{ offset: '0%', color: '#2A3A1E' }, { offset: '100%', color: '#3F5730' }], textColor: '#C8E8A0' },
+  'martial form': { gradientStops: [{ offset: '0%', color: '#3A2118' }, { offset: '100%', color: '#573324' }], textColor: '#F2C3A6' },
+  companion: { gradientStops: [{ offset: '0%', color: '#33301C' }, { offset: '100%', color: '#4C472B' }], textColor: '#EDE0A8' },
+
+  // --- the arsenal: warm, active ------------------------------------------------------------
+  ability: { gradientStops: [{ offset: '0%', color: '#4A1C22' }, { offset: '100%', color: '#6B2A2E' }], textColor: '#FFC9A3' },
+  skill: { gradientStops: [{ offset: '0%', color: '#33232E' }, { offset: '100%', color: '#4E3444' }], textColor: '#F2C6E0' },
+  spell: { gradientStops: [{ offset: '0%', color: '#1F2C55' }, { offset: '100%', color: '#33417A' }], textColor: '#A9C8FF' },
+  trick: { gradientStops: [{ offset: '0%', color: '#22303A' }, { offset: '100%', color: '#334857' }], textColor: '#9FE3F5' },
+  maneuver: { gradientStops: [{ offset: '0%', color: '#3A2E18' }, { offset: '100%', color: '#564526' }], textColor: '#F5D89B' },
+
+  // --- what a stat block carries: cold steel, one family --------------------------------------
+  statblock: { gradientStops: [{ offset: '0%', color: '#1C2430' }, { offset: '100%', color: '#2E3B4D' }], textColor: '#BFD4EC' },
+  level: { gradientStops: [{ offset: '0%', color: '#23303F' }, { offset: '100%', color: '#39506B' }], textColor: '#CBE2FF' },
+  thresholds: { gradientStops: [{ offset: '0%', color: '#3B2B22' }, { offset: '100%', color: '#573F31' }], textColor: '#FFCFA8' },
+  vitals: { gradientStops: [{ offset: '0%', color: '#3E1D22' }, { offset: '100%', color: '#5C2C31' }], textColor: '#FFB8B8' },
+  evasion: { gradientStops: [{ offset: '0%', color: '#1F3330' }, { offset: '100%', color: '#2F4C46' }], textColor: '#A8E6D4' },
+  action: { gradientStops: [{ offset: '0%', color: '#571F1B' }, { offset: '100%', color: '#7A2F26' }], textColor: '#FFD2B0' },
+  reaction: { gradientStops: [{ offset: '0%', color: '#1B3A4A' }, { offset: '100%', color: '#2A5468' }], textColor: '#A9DDF2' },
+  passive: { gradientStops: [{ offset: '0%', color: '#2C3038' }, { offset: '100%', color: '#414750' }], textColor: '#D6DDE6' },
+  feature: { gradientStops: [{ offset: '0%', color: '#2C3038' }, { offset: '100%', color: '#414750' }], textColor: '#D6DDE6' },
+
+  // --- the inventory: earth and metal ---------------------------------------------------------
+  tool: { gradientStops: [{ offset: '0%', color: '#33302A' }, { offset: '100%', color: '#4B463C' }], textColor: '#E4DCC6' },
+  treasure: { gradientStops: [{ offset: '0%', color: '#4A3410' }, { offset: '100%', color: '#6E4E17' }], textColor: '#FFE29A' },
+  key: { gradientStops: [{ offset: '0%', color: '#2E2A22' }, { offset: '100%', color: '#4A4231' }], textColor: '#F0D89A' },
+  trinket: { gradientStops: [{ offset: '0%', color: '#2B2536' }, { offset: '100%', color: '#413851' }], textColor: '#DCC8F0' },
+  supply: { gradientStops: [{ offset: '0%', color: '#25311F' }, { offset: '100%', color: '#3A4A30' }], textColor: '#CDE6B0' },
+  relic: { gradientStops: [{ offset: '0%', color: '#331E33' }, { offset: '100%', color: '#4E2F4E' }], textColor: '#EFC4EF' },
+
+  // --- notes: paper and ink -------------------------------------------------------------------
+  note: { gradientStops: [{ offset: '0%', color: '#E8E1CE' }, { offset: '100%', color: '#D6CCB2' }], textColor: '#3A3324' },
+  reminder: { gradientStops: [{ offset: '0%', color: '#F0D9A8' }, { offset: '100%', color: '#E0BE7C' }], textColor: '#4A3410' },
+  important: { gradientStops: [{ offset: '0%', color: '#7A1F1C' }, { offset: '100%', color: '#A62B24' }], textColor: '#FFE0D2' },
+  story: { gradientStops: [{ offset: '0%', color: '#2A2333' }, { offset: '100%', color: '#3F344E' }], textColor: '#E0D2F5' },
+  place: { gradientStops: [{ offset: '0%', color: '#1F3A33' }, { offset: '100%', color: '#31564B' }], textColor: '#AEE6D2' },
+  person: { gradientStops: [{ offset: '0%', color: '#3A2A2A' }, { offset: '100%', color: '#573F3F' }], textColor: '#F2D2C6' },
+  quest: { gradientStops: [{ offset: '0%', color: '#233A4A' }, { offset: '100%', color: '#365468' }], textColor: '#B4DCF2' },
+
+  // --- kept from before, unchanged ------------------------------------------------------------
+  item: { gradientStops: [{ offset: '0%', color: '#4A3B2A' }, { offset: '100%', color: '#6B5540' }], textColor: '#F5E6D3' },
+  weapon: { gradientStops: [{ offset: '0%', color: '#3A1A1A' }, { offset: '100%', color: '#5C2E2E' }], textColor: '#FFD7B5' },
+  secondary: { gradientStops: [{ offset: '0%', color: '#3A1A1A' }, { offset: '100%', color: '#5C2E2E' }], textColor: '#FFD7B5' },
+  armor: { gradientStops: [{ offset: '0%', color: '#3E352E' }, { offset: '100%', color: '#221C18' }], textColor: '#F59E0B' },
+  loot: { gradientStops: [{ offset: '0%', color: '#2B2113' }, { offset: '100%', color: '#6B4A12' }], textColor: '#FCD34D' },
+  consumable: { gradientStops: [{ offset: '0%', color: '#241B33' }, { offset: '100%', color: '#1B3A2E' }], textColor: '#6EE7B7' },
+  currency: { gradientStops: [{ offset: '0%', color: '#B45309' }, { offset: '100%', color: '#FBBF24' }], textColor: '#0B0E13' },
+};
+
+/**
  * Returns a custom plaque theme (gradient or solid background, and label text color)
  * based on the card's kindLabel and optional class key.
  */
@@ -113,77 +192,8 @@ export function getPlaqueTheme(kindLabel: string, classKey?: ClassName): PlaqueT
     };
   }
 
-  if (normalizedKind === 'experience') {
-    return {
-      gradientStops: [
-        { offset: '0%', color: '#5C2E0B' }, // rich mahogany
-        { offset: '100%', color: '#8B4F1D' }, // warm bronze
-      ],
-      textColor: '#FAF8F2', // Warm Ivory
-    };
-  }
-
-  if (normalizedKind === 'item') {
-    return {
-      gradientStops: [
-        { offset: '0%', color: '#2C3539' }, // dark charcoal
-        { offset: '100%', color: '#1B1E23' }, // deep slate
-      ],
-      textColor: '#CBD5E1', // Soft Silver-Blue
-    };
-  }
-
-  if (normalizedKind === 'weapon' || normalizedKind === 'secondary') {
-    return {
-      gradientStops: [
-        { offset: '0%', color: '#1E1F22' }, // dark iron
-        { offset: '100%', color: '#5A1818' }, // blood red
-      ],
-      textColor: '#E2E8F0', // Steel White
-    };
-  }
-
-  if (normalizedKind === 'armor') {
-    return {
-      gradientStops: [
-        { offset: '0%', color: '#3E352E' }, // plate iron
-        { offset: '100%', color: '#221C18' }, // burnished gold-brown
-      ],
-      textColor: '#F59E0B', // Bright Gold
-    };
-  }
-
-  // v0.14.0: loot + consumables are their own families, distinct from weapons/armor/items. Loot reads
-  // as buried treasure (deep earth → old gold); consumables as alchemy (nightshade → apothecary green).
-  if (normalizedKind === 'loot') {
-    return {
-      gradientStops: [
-        { offset: '0%', color: '#2B2113' }, // dug earth
-        { offset: '100%', color: '#6B4A12' }, // old gold
-      ],
-      textColor: '#FCD34D', // Lamplight Gold
-    };
-  }
-
-  if (normalizedKind === 'consumable') {
-    return {
-      gradientStops: [
-        { offset: '0%', color: '#241B33' }, // nightshade
-        { offset: '100%', color: '#1B3A2E' }, // apothecary green
-      ],
-      textColor: '#6EE7B7', // Elixir Green
-    };
-  }
-
-  if (normalizedKind === 'currency') {
-    return {
-      gradientStops: [
-        { offset: '0%', color: '#B45309' }, // golden honey
-        { offset: '100%', color: '#FBBF24' }, // sparkling amber
-      ],
-      textColor: '#0B0E13', // Deep Ink Navy
-    };
-  }
+  const themed = KIND_THEMES[normalizedKind];
+  if (themed) return themed;
 
   // General fallback
   return {

@@ -270,8 +270,15 @@ export function ForgedCard({
               the body fill from the top — no "Untitled"/"Note" placeholder. */}
           {title.trim() ? (
             <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 5, alignSelf: 'stretch' }}>
+              {/* v0.36.3: `adjustsFontSizeToFit` is BACK, on top of the computed size, as a backstop.
+                  It does nothing on the web, where the arithmetic is the only thing sizing the card,
+                  and on a phone it shrinks a shade further if the real font is a hair wider than the
+                  letter table says. The two used to disagree; now the calculation leads and native
+                  corrects, and neither can produce an ellipsis. */}
               <CardText
                 numberOfLines={titleFit.lines || 1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
                 style={{ flexShrink: 1, color: Rune.inkText, fontSize: titleFit.fontSize, lineHeight: titleFit.lineHeight, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>
                 {title}
               </CardText>
@@ -427,6 +434,8 @@ function EquipTitle({ text }: { text: string }) {
   return (
     <CardText
       numberOfLines={fit.lines || 1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.6}
       style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase', textAlign: 'center', ...NO_FONT_PAD }}>
       {text}
     </CardText>

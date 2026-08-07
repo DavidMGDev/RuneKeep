@@ -1,24 +1,36 @@
-RuneKeep v0.36.2 - The stat wheel leaves the phone, card titles stop bleeding off the card, and Skip and Forge actually forges.
+RuneKeep v0.36.3 - Characterized characters stop reverting, card titles are measured letter by letter, and every card type gets its own colours.
 
-THE STAT WHEEL
+CHARACTERIZED CHARACTERS STAYED CHARACTERS
 
-- IT IS GONE FROM PHONES. Five releases tried to stop it crashing an Android phone. Each one removed something genuinely wrong and the app kept dying, and by the last of them every step of it was guarded and every guard had stayed silent, which says the fault is somewhere the app cannot reach. So on a phone there is no wheel: no gesture, none of its machinery, nothing left to crash. Tapping a stat opens the number pad, which has its own plus and minus, opens on the value the stat is already at, and stops at the same maximum the wheel did. Nothing the wheel could do has been lost. The browser keeps it, where it has always worked.
+- THEY NO LONGER REVERT WHEN YOU LEAVE AND COME BACK. Forging opened a SECOND copy of the encounter on top of the one you started from. Everything looked right on the new one, but going back landed you on the old one, still holding the state it had before you characterized anything, and its next save wrote that over the top. Three separate reports were all this: the character turning back into an adversary, the back button appearing to do nothing because it moved from an encounter to the same encounter, and a characterized ally looking like it was never made at all. Forging now returns to the screen you left, and that screen re-reads everything each time you arrive.
+- THEY SHOW UP ON YOUR CHARACTER LIST, and can be added to a party like anyone else.
+- NO MORE REDUNDANT CARDS. Thresholds, Vitals and Evasion were three cards restating numbers the sheet already prints at the top. They are still separate cards on the review step, so you can still leave any of them behind, but only the Statblock is made, and it carries all of their numbers. No gold card either. The Statblock is the first card in the arsenal.
+- THE REVIEW STEP OPENS ON THE STATBLOCK, which is the card that says what the creature is. It is also first in the list, and the type is spelled "Statblock".
+- NOTHING IS MARKED FILLED IN THAT YOU DID NOT FILL IN. Name, Inherit and Level always arrived ticked because the stat block had seeded them, which made Skip everything warn about throwing away answers nobody had given. A step counts as filled in when you have actually touched it.
+- THE SKIP MENU IS ALSO ON THE INHERIT STEP, and its Skip everything button is at the top of the checklist.
 
 CARD TITLES
 
-- THEY FIT NOW, AT ANY LENGTH. A title past about seventeen characters ran off the edge of the card and was cut short with an ellipsis. Titles were being measured with the width of ordinary body text, and a title is not that: it is uppercase, in the heaviest weight, with letter spacing on top, which is far wider per character. Measured properly, a title shrinks to stay on one line, and once one line would be too small to read it takes two lines inside the same space instead. The description below never moves, whatever the title does.
+- MEASURED LETTER BY LETTER. "Not strong enough" was cut off while the LONGER "Not strong enough yet" was fine, which no average width can explain. Titles are capitals in the heaviest weight, where an I is a third of the width of a W, so whether one fits depends on which letters are in it and not how many. Every title is now measured against the real widths, and on a phone the type shrinks a shade further if the font disagrees, so a title can no longer end in dots.
 
-CHARACTERIZE
+EVERY CARD TYPE HAS ITS OWN COLOURS
 
-- SKIP AND FORGE FORGES. Pressing it did nothing, and the Forge button stayed dead afterwards. Skipping the class left the character with no class, and the forge quietly refused to make one and said nothing about it. A skipped class is now allowed: the character is filed without one, its class cards and its class name are dropped, and the carried hit points and Evasion supply the numbers a class would have, which is the only reason the step could be skipped in the first place. Forge also says when it cannot run instead of doing nothing.
-- SKIP EVERYTHING, THEN UNCHECK. One button at the top of the checklist fills every box, so the usual case, an adversary that needs almost nothing, is one press and a couple of corrections rather than eleven presses.
-- THE SKIP MENU IS ON THE INHERIT STEP TOO, which is where you land first and where you already know how little this character needs.
-- INHERITED CARDS ARE CALMER. Seven cards in colours nobody chose arrived as a wall of clashing brights. They are muted now, so they read as a set.
-- RANDOM WORKS ON THE TRANSFORM STEP. It did nothing there.
-- HOLD TO LOWER A TRAIT. Double tapping was invisible, easy to miss and easy to fire by accident. Hold instead, and keep holding to keep counting down, one a second.
+- Around forty of them, from Action and Reaction to Story, Note, Quest, Relic and Statblock, each with a gradient and a text colour chosen to stay readable. Families share a hue: the arsenal runs warm, the inventory runs earth and metal, notes run paper and ink, and everything a stat block carries runs cold steel, so a characterized adversary's cards read as one set. The plain "Card" type is deliberately unchanged.
 
-TRANSFORMATIONS
+SHARED FILES
 
-- PLAYERS GET THEM TOO. Enabling a pack that adds transformations now offers the step in ordinary character creation, not only when a DM is characterizing something, with a Skip on it because being a vampire is not something the game asks of you.
+- A CHARACTER WITH IMAGES OPENS AGAIN. The guard that stops a photo being decoded as a character was set at two megabytes, and a hero with several card images is about three, so real characters were being turned away. It sits at twelve now, which still rules out anything a camera produces, and if a file is genuinely too big the message says to use Import instead.
+
+THE DM'S SCREENS
+
+- RAISING A MAXIMUM IS A REAL MODIFIER now, so it shows in the Modifiers panel with everything else, travels with an export and can be rewound. Hope is no longer offered: it is always six, less any slot a scar has taken. Every other track holds at most twelve however high a modifier reads, because that is how many a character sheet has.
+- SELECTING NO LONGER SHRINKS AN ENTRY. The checkbox takes the portrait's place, at the portrait's size, on the left where every other list in the app puts it. Stats stop responding while selecting, and a tap anywhere on the entry selects it.
+- TAPS FADE INSTEAD OF FLASHING across the DM screens.
+- THE SECTION HEADERS MOVE WITH THE LIST when a combatant expands, instead of teleporting.
+- CHARACTERIZE TRANSITIONS CLEANLY. The selection used to clear one frame before the screen changed, so the whole list re-laid itself out in plain view first.
+- THE NUMBER PAD DIMS THE SCREEN BEHIND IT.
+- SCROLL WORKS IN THE LIBRARY'S DETAIL POP-UP, the last place it was still fighting the panel for the drag.
+- THE LIBRARY'S SELECTION BAR SITS ABOVE THE LIST instead of behind it, and characterized entries in the library do not offer to expand, because their abilities are cards on a sheet now and may have changed.
+- NAMES IN THE PARTY SUMMARY SHRINK TO FIT instead of being cut short.
 
 Sideload: enable Install unknown apps, then open the APK.

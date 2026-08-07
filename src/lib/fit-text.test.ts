@@ -1,4 +1,4 @@
-import { fitText, MIN_LINE_RATIO, wrapLines, fitTitle } from './fit-text';
+import { fitText, MIN_LINE_RATIO, wrapLines, fitTitle, titleCharRatio } from './fit-text';
 
 // The weapon card's feature box, in design px: 230 wide less 16 each side, with what is left under
 // the pinned title and the four pinned stat rows. Typeset at 8.5/12.5. Keep in step with
@@ -177,5 +177,36 @@ describe('a card title, fitted into a fixed band', () => {
   it('holds the same rule at the equipment cards’ smaller band', () => {
     const f = fitTitle('Improvised Greatsword of Uncommon Length', 198, 19, 15);
     expect(f.lines * f.lineHeight).toBeLessThanOrEqual(19.01);
+  });
+});
+
+describe('the owner’s three titles (v0.36.3)', () => {
+  // "Not strong enough" was cut off while "Not strong enough yet", which is LONGER, was fine. An
+  // average glyph width cannot produce that; the letters can, which is what found the bug.
+  const W = 200;
+  const BAND = 21;
+  const BASE = 17;
+  const drawn = (s: string) => {
+    const f = fitTitle(s, W, BAND, BASE);
+    // The width the phone will actually paint, from the same per-letter table.
+    const em = titleCharRatio(s, 0.3, BASE) / 1.06; // undo the safety bias to get the true measure
+    return { f, perLine: W / (f.fontSize * em) };
+  };
+
+  for (const title of ['Not strong enough', 'Not strong enough yet', 'Not strong enough today guys', 'Bladedance Jester', 'WWW MMM WWW']) {
+    it(`fits "${title}" without cutting it`, () => {
+      const { f, perLine } = drawn(title);
+      const longestLine = Math.ceil(title.length / f.lines);
+      expect(longestLine).toBeLessThanOrEqual(Math.floor(perLine) + 1);
+      expect(f.lines * f.lineHeight).toBeLessThanOrEqual(BAND + 0.01);
+    });
+  }
+
+  it('measures a wide title as wider than a narrow one of the same length', () => {
+    expect(titleCharRatio('WWWWWW')).toBeGreaterThan(titleCharRatio('IIIIII'));
+  });
+
+  it('keeps a short narrow title at full size', () => {
+    expect(fitTitle('Ill Will', W, BAND, BASE).fontSize).toBe(BASE);
   });
 });

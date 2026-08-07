@@ -98,16 +98,41 @@ function DetailSheet({ item, mode, onSpawn, onViewImage, onClose }: { item: Item
   const [count, setCount] = useState(1);
   const c = useMemo(() => buildCombatant(item), [item]);
   const spawnLabel = mode === 'ally' ? `Spawn Ally ×${count}` : `Spawn ×${count}`;
+  /**
+   * A CHARACTERIZED entry has no stat block to read (v0.36.3, owner).
+   *
+   * Its abilities are cards on a character sheet now, and the DM may have changed any of them, so
+   * printing the stat block it was made from would be showing something that is no longer true. The
+   * row still spawns; there is simply nothing to expand.
+   */
+  const characterEntry = !!c.charId;
   return (
     <DmModal onClose={onClose}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 344, maxHeight: 640, padding: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <AdversaryPortrait uri={c.portraitUri} size={48} tint={item.source === 'custom' ? DmRune.line : DmRune.accentDim} onPress={onViewImage} />
-          <Text numberOfLines={1} style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{c.name}</Text>
+          <View style={{ flex: 1 }}>
+            <Text numberOfLines={1} style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{c.name}</Text>
+            {characterEntry ? (
+              <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Character · its cards are on its sheet</Text>
+            ) : null}
+          </View>
         </View>
-        <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator nestedScrollEnabled keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 4 }}>
-          <StatBlockDetail c={c} />
-        </ScrollView>
+        {/**
+          * v0.36.3 (owner): `nestedScrollEnabled` is GONE, which is the difference between this and the
+          * Configure panel that was fixed in v0.36.1. Both already used the gesture-handler
+          * ScrollView; this one still asked Android to treat it as a nested scroller inside its
+          * parent, and inside a modal whose wrapper claims the start responder that hands the drag
+          * upwards to a parent that does not scroll. Nothing to hand it to, so nothing scrolled.
+          *
+          * The bottom padding matches too: without it the last line of a long stat block sits under
+          * the spawn controls and cannot be dragged clear.
+          */}
+        {characterEntry ? null : (
+          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ paddingBottom: 20 }}>
+            <StatBlockDetail c={c} />
+          </ScrollView>
+        )}
         {mode !== 'browse' ? (
           <View style={{ gap: 12, marginTop: 14, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -277,7 +302,8 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
                   <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
                     {on ? <Text style={{ color: DmRune.ink, fontSize: DmType.body, fontFamily: Display.black }}>✓</Text> : null}
                   </ChamferBox>
-                ) : (
+                ) : item.saved?.charId ? null : (
+                  /* v0.36.3: no chevron on a characterized entry. There is nothing to open into. */
                   <Text style={{ color: DmRune.accentDim, fontSize: DmType.title, fontFamily: Display.black }}>›</Text>
                 )}
                 </ChamferBox>
@@ -289,7 +315,10 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
       </View>
 
       {sel.selecting ? (
-        <View style={{ position: 'absolute', left: 12, right: 12, bottom: 16 }}>
+        /* v0.36.3 (owner): ABOVE the list. Without a zIndex the bar drew underneath every row, so its
+           count and its two buttons were a few readable pixels between whatever happened to be behind
+           them. The list is a plain child of the same parent, so paint order alone decided it. */
+        <View style={{ position: 'absolute', left: 12, right: 12, bottom: 16, zIndex: 60 }}>
           <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10 }}>
             <Text style={{ flex: 1, color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel.ids.size} selected</Text>
             <RuneButton label={`Delete ${sel.ids.size}`} kind="primary" height={34} dense dm onPress={() => setConfirmDelete(new Set([...sel.ids].map((k) => k.replace(/^custom-/, ''))))} />

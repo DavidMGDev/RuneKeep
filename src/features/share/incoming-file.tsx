@@ -12,13 +12,18 @@ import { parseRkp } from '@/lib/rkp';
 import { type AppLocation, type RouteOutcome, routeIncoming } from '@/lib/rkp-route';
 
 /**
- * The largest thing that could plausibly be a character (v0.33.0).
+ * The largest thing that could plausibly be a character (v0.33.0, raised v0.36.3).
  *
- * A character with an embedded portrait and card art runs to a few hundred KB; the image budget caps
- * each picture at 220 KB. Two megabytes is generous for the biggest deck anyone has, and small enough
- * that a photo or a video never gets decoded as UTF-8 to find out it is not a character.
+ * The point of the cap is that a photo or a video never gets decoded as UTF-8 just to discover it is
+ * not a character. Two megabytes was set when a character was a portrait and some text; the owner's
+ * own hero with several card images is about three, so the guard was refusing real characters. Twelve
+ * still rules out anything a camera produces, and a character large enough to hit it would have to
+ * carry fifty pictures.
+ *
+ * The read is asynchronous and the copy is a file on disk, so the cost of the larger ceiling is disk,
+ * not a frozen JS thread.
  */
-const MAX_INCOMING_BYTES = 2_000_000;
+const MAX_INCOMING_BYTES = 12_000_000;
 
 /**
  * Read whatever the OS handed us (v0.36.1, owner: "the file couldn't be read from where it was shared").
@@ -51,7 +56,9 @@ async function readIncoming(uri: string): Promise<string> {
     // v0.33.0: check the size first, and read ASYNCHRONOUSLY. `textSync` blocks the JS thread for as
     // long as the read takes, which for anything that is not a character file is time spent freezing
     // the app to produce an error message.
-    if ((f.size ?? 0) > MAX_INCOMING_BYTES) throw new Error('That file is too large to be a character.');
+    // Says what to do about it, not just that it happened: a file this big is not going to become
+    // a character however it arrives, and Import is the surface that can tell you why.
+    if ((f.size ?? 0) > MAX_INCOMING_BYTES) throw new Error('it is larger than any character should be, so try Import in the Card Library');
     return f.text();
   };
   if (!uri.toLowerCase().startsWith('content://')) return readFile(new File(uri));

@@ -134,6 +134,41 @@ export const isGenericName = (name: string): boolean => GENERIC_NAME.test((name 
 export function carryItems(c: StatBlockLike): CarryItem[] {
   const out: CarryItem[] = [];
 
+  /**
+   * The STATBLOCK leads, and it carries every number (v0.36.3, owner).
+   *
+   * v0.36 gave the thresholds, the vitals and the Evasion a card each so the DM could leave any one
+   * of them behind. In practice that is three cards in the arsenal restating numbers the character
+   * sheet already prints at the top, which is bloat on the one deck a characterized adversary has.
+   *
+   * They are still separate REVIEW cards on the first step, because leaving one behind individually
+   * is worth keeping, but at Forge their effects all ride the Statblock card and only that one is
+   * made. The Statblock is also first, and the step opens on it, because it is the card that says
+   * what this creature IS.
+   */
+  const numbers: string[] = [];
+  if (c.thresholds && (c.thresholds.major || c.thresholds.severe)) numbers.push(`**Thresholds:** ${c.thresholds.major}/${c.thresholds.severe}`);
+  if (c.maxHp) numbers.push(`**HP:** ${c.maxHp}`);
+  if (c.maxStress) numbers.push(`**Stress:** ${c.maxStress}`);
+  if (c.difficulty) numbers.push(`**Evasion:** ${c.difficulty}`);
+  const block = [
+    c.role ? `**Type:** ${c.role}` : null,
+    c.tier ? `**Tier:** ${c.tier}` : null,
+    ...numbers,
+    clean(c.motives) ? `**Motives & Tactics:** ${clean(c.motives)}` : null,
+    clean(c.experience) ? `**Experience:** ${clean(c.experience)}` : null,
+    clean(c.hordeNote) ? `**Horde:** ${clean(c.hordeNote)}` : null,
+  ].filter(Boolean);
+  if (block.length || clean(c.description)) {
+    out.push({
+      id: 'carry-statblock',
+      kind: 'statblock',
+      title: clean(c.name) || 'Statblock',
+      cardLabel: 'Statblock',
+      text: [...block, clean(c.description) ? `\n${clean(c.description)}` : null].filter(Boolean).join('\n'),
+    });
+  }
+
   const level = levelForStatBlock(c.tier, c.difficulty);
   out.push({
     id: 'carry-level',
@@ -230,24 +265,35 @@ Both are the number an attack has to beat, so it carries across as itself. Whate
     });
   }
 
-  const block = [
-    c.role ? `**Type:** ${c.role}` : null,
-    c.tier ? `**Tier:** ${c.tier}` : null,
-    c.difficulty ? `**Difficulty:** ${c.difficulty}` : null,
-    clean(c.motives) ? `**Motives & Tactics:** ${clean(c.motives)}` : null,
-    clean(c.experience) ? `**Experience:** ${clean(c.experience)}` : null,
-    clean(c.hordeNote) ? `**Horde:** ${clean(c.hordeNote)}` : null,
-    clean(c.description) ? `\n${clean(c.description)}` : null,
-  ].filter(Boolean);
-  if (block.length) {
-    out.push({ id: 'carry-statblock', kind: 'statblock', title: clean(c.name) || 'Stat block', cardLabel: 'Stat block', text: block.join('\n') });
-  }
-
   return out;
 }
 
 /** The items that survive the first step. */
 export const keptItems = (items: CarryItem[], disabled: Set<string>): CarryItem[] => items.filter((i) => !disabled.has(i.id));
+
+/**
+ * The kinds that become a CARD at Forge (v0.36.3, owner).
+ *
+ * `level` sets the character's level and was never a card. The three number-carriers are no longer
+ * cards either: their effects ride the Statblock, and a sheet already prints hit points, stress,
+ * thresholds and Evasion at the top, so a card each for them is three cards of nothing new.
+ */
+const CARDED: CarryKind[] = ['statblock', 'weapon', 'feature'];
+export const cardedItems = (items: CarryItem[], disabled: Set<string>): CarryItem[] => keptItems(items, disabled).filter((i) => CARDED.includes(i.kind));
+
+/**
+ * Every effect the kept items carry, gathered onto ONE card.
+ *
+ * The Statblock is that card when there is one, because it is the card that describes the creature
+ * these numbers belong to. With no Statblock (a stat block with nothing but a name) they fall to
+ * whatever card is made first, and with no cards at all there is nothing to carry them, which is
+ * correct: an empty stat block has no numbers to hold.
+ */
+export function heldEffectsFor(item: CarryItem, items: CarryItem[], disabled: Set<string>, have: ComputedNumbers): CardEffect[] {
+  const carriers = cardedItems(items, disabled);
+  if (carriers[0]?.id !== item.id) return [];
+  return keptItems(items, disabled).flatMap((i) => itemHoldEffects(i, have));
+}
 
 /** The level the kept items ask for, or 1 when the DM greyed the level card out. */
 export function keptLevel(items: CarryItem[], disabled: Set<string>): number {
