@@ -1,8 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
-import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import Animated, { runOnJS, type SharedValue, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -10,10 +9,10 @@ import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
-import { useFrame, windowToFrameX, windowToFrameY } from '@/hooks/use-layout';
 
 import { type CardCategory, type CardItem, isBuiltinCategory } from '../card-data';
 import { availableCategories, categoryLabel, type CustomCategory } from '../carousel-categories';
+import { type GallerySelection, NO_SELECTION, clearSelection, holdTile, movedFirst, tapTile } from '../gallery-select';
 import { BUILTIN_TYPE_GROUPS } from '../card-types';
 import { useCarousel } from '../carousel-context';
 import { CategoryGlyph, CompanionIcon } from './deck-toggle-icon';
@@ -34,10 +33,9 @@ const ON_BORDER = 'rgba(218,162,73,0.5)';
 const CURRENT_FILL = 'rgba(224,181,99,0.2)';
 const SCRIM = 'rgba(20,24,31,0.7)';
 const GOLD_BORDER = 'rgba(218,162,73,0.4)';
-/** Categories whose cards are LOCKED to them (#279/#311/v0.9.8): Beastform cards can't be moved out, and
- *  nothing can be moved in. Favorites is locked too — favoriting is the star action (creates a copy), not
- *  a drag/move. Companion cards are NOT locked (they're movable, just not deletable). */
-const LOCKED_CATS = new Set<string>(['wildshape', 'martialform', 'favorites']); // #357: Martial Form locks like Beastform
+// v0.37: LOCKED_CATS (#279/#311/#357) went with the drag it guarded. It only ever stopped a card
+// being DROPPED into Beastform, Martial Form or Favorites; the Move button never consulted it, then
+// or now, so nothing a player could do before has changed.
 
 /** Proper SVG icon buttons for the category row (#264 item 4) — no emoji. */
 function PencilIcon({ color }: { color: string }) {
@@ -81,9 +79,13 @@ interface Props {
   onUpdateCategory: (id: string, patch: { label?: string; icon?: string }) => void;
   onDeleteCategory: (id: string) => void;
   onReorder: (order: string[]) => void;
-  onMoveCards: (ids: string[], categoryKey: string) => void;
-  onReorderCard: (movedId: string, toCat: string, orderedIds: string[]) => void;
-  /** Group move (#311): move several cards to a category at a position, preserving their order. */
+  /**
+   * File several cards into a category with an explicit order (#311).
+   *
+   * v0.37: the panel's ONLY re-filing call. Move sends the selection first and everything already in
+   * the target after it, which is what makes moving into a card's own category mean something. The
+   * plain `onMoveCards` and the single-card `onReorderCard` went with the drag that used them.
+   */
   onReorderCards: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
   onDeleteCards: (ids: string[]) => void;
   onAddCardInCategory: (key: CardCategory) => void;
@@ -106,8 +108,6 @@ interface Props {
   editableIds?: Set<string>;
   onClose: () => void;
 }
-
-type Rect = { x: number; y: number; w: number; h: number };
 
 /** A small chamfer tile holding a category's glyph (built-in or custom icon). */
 function CatTile({ categoryKey, size = 38 }: { categoryKey: string; size?: number }) {
@@ -200,13 +200,18 @@ function LiveTile({ item }: { item: CardItem }) {
 }
 
 /**
- * Card Management (#246/#250/#252) — now a FULL-SCREEN interface (the Level Up shell): opaque,
+ * Card Management (#246/#250/#252) — a FULL-SCREEN interface (the Level Up shell): opaque,
  * SVG-bordered, button-close only, the sheet carousel unloaded behind it. Two tabs (Categories /
- * Cards) + a Types manager. In the Cards gallery: tap a card to multi-select (bulk move/delete), or
- * LONG-PRESS to pick it up and drag it to reorder within a category or move it to another.
+ * Cards) + a Types manager.
+ *
+ * v0.37 (owner) took hold-to-drag out of the Cards gallery entirely. It was the app's fourth gesture
+ * to be rebuilt underneath itself while running; v0.35.1 put the callbacks behind a ref, which is the
+ * fix that worked everywhere else, and this one still let go of itself in a browser and still took
+ * Android down. Reordering by hand was never what the panel was for. So: TAP looks at a card, HOLD
+ * starts selecting, and Move into a card's own category is what puts cards at the front of a deck.
  */
 export function CardManagementPanel(props: Props) {
-  const { isDruid, hasCompanion, hasMartialForm, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onMoveCards, onReorderCard, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onShare, onFavorite, editableIds, onClose } = props;
+  const { isDruid, hasCompanion, hasMartialForm, hidden, customCategories, customTypes, order, onToggle, onCreateCategory, onUpdateCategory, onDeleteCategory, onReorder, onReorderCards, onDeleteCards, onAddCardInCategory, onAddType, onDeleteType, onEditCard, onDuplicate, onShare, onFavorite, editableIds, onClose } = props;
   const { decks, category: currentCategory, setCategory } = useCarousel();
   // v0.32.2 (owner): open on CATEGORIES. It is what the panel is mostly used for, and Cards is one
   // tap away. #297 opened on Cards; this supersedes it.
@@ -232,32 +237,26 @@ export function CardManagementPanel(props: Props) {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<CustomCategory | null>(null);
   const [confirmDelCat, setConfirmDelCat] = useState<CustomCategory | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [moveOpen, setMoveOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
-  const toggleSelect = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) { n.delete(id); playSfx('cardDeselect'); } else { n.add(id); playSfx('cardSelect'); } return n; });
-  const clearSelect = () => setSelected(new Set());
-
-  // drag-drop state
-  const [dragId, setDragId] = useState<string | null>(null); // the primary (finger) card
-  const [dragGroup, setDragGroup] = useState<string[]>([]); // #311: all ids moving together (1 = single)
-  const [hover, setHover] = useState<{ overId: string; before: boolean } | null>(null); // live drop preview
-  const ghostX = useSharedValue(0);
-  const ghostY = useSharedValue(0);
-  const ghostOn = useSharedValue(0);
-  const tileRefs = useRef(new Map<string, View>());
-  const tileRects = useRef(new Map<string, Rect>());
-  const tileCat = useRef(new Map<string, string>());
-
-  // Live drop preview (#252 polish): which tile the gold insertion bar sits before/after as you drag.
-  const updateHover = useCallback((absX: number, absY: number) => {
-    let overId: string | null = null;
-    let before = true;
-    for (const [tid, r] of tileRects.current) {
-      if (absX >= r.x && absX <= r.x + r.w && absY >= r.y && absY <= r.y + r.h) { overId = tid; before = absX < r.x + r.w / 2; break; }
-    }
-    setHover((prev) => (prev?.overId === overId && prev?.before === before ? prev : overId ? { overId, before } : null));
-  }, []);
+  /**
+   * Tap looks, hold picks (v0.37, owner).
+   *
+   * The rules live in `gallery-select` rather than in this component, because the one that matters is
+   * a state rule and not a gesture rule: select mode with nothing selected shows no footer, so it
+   * offers no Clear, so every tap keeps missing. A test holds that shut.
+   */
+  const [sel, setSel] = useState<GallerySelection>(NO_SELECTION);
+  const selected = sel.selected;
+  const onTapTile = useCallback((id: string) => setSel((s) => {
+    const next = tapTile(s, id);
+    if (s.selecting) playSfx(next.selected.has(id) ? 'cardSelect' : 'cardDeselect');
+    return next;
+  }), []);
+  const onHoldTile = useCallback((id: string) => { playSfx('cardSelect'); setSel((s) => holdTile(s, id)); }, []);
+  const clearSelect = useCallback(() => setSel(clearSelection), []);
+  const closeFocus = useCallback(() => setSel((s) => ({ ...s, focusId: null })), []);
+  const focusItem = useMemo(() => (sel.focusId ? Object.values(decks).flat().find((c) => c.id === sel.focusId) ?? null : null), [sel.focusId, decks]);
 
   const quickSwitch = (key: CardCategory) => {
     if ((decks[key]?.length ?? 0) === 0) return; // can't switch to an empty category (#250)
@@ -275,76 +274,20 @@ export function CardManagementPanel(props: Props) {
     onReorder(next);
   };
 
-  // --- drag handlers ---
-  const beginDrag = useCallback((id: string) => {
-    playSfx('cardDragStart'); // #255
-    // measure all current tiles (post-scroll positions) for accurate drop targeting
-    tileRects.current.clear();
-    for (const [tid, ref] of tileRefs.current) {
-      ref.measureInWindow?.((x, y, w, h) => { if (w > 0) tileRects.current.set(tid, { x, y, w, h }); });
-    }
-    // #311 group drag: dragging a SELECTED card while several are selected drags them all together,
-    // in DISPLAY order (so the moved group keeps its relative order regardless of click order). A
-    // single or unselected card drags alone.
-    const group = selected.has(id) && selected.size > 1
-      ? ordered.flatMap((k) => (decks[k] ?? []).filter((c) => selected.has(c.id)).map((c) => c.id))
-      : [id];
-    setDragGroup(group);
-    setDragId(id);
-  }, [selected, ordered, decks]);
-
-  const srcCatOf = useCallback((id: string) => tileCat.current.get(id) ?? Object.keys(decks).find((k) => (decks[k] ?? []).some((c) => c.id === id)) ?? '', [decks]);
-
-  const endDrag = useCallback((absX: number, absY: number) => {
-    const primary = dragId;
-    const group = dragGroup.length ? dragGroup : primary ? [primary] : [];
-    setDragId(null);
-    setDragGroup([]);
-    setHover(null);
-    ghostOn.value = 0;
-    if (!primary || group.length === 0) return;
-    playSfx('cardDragEnd'); // #255: a card was picked up and dropped
-    // find the tile under the finger
-    let overId: string | null = null;
-    for (const [tid, r] of tileRects.current) {
-      if (absX >= r.x && absX <= r.x + r.w && absY >= r.y && absY <= r.y + r.h) { overId = tid; break; }
-    }
-    // a single card dropped on itself with no positional intent → no-op
-    if (group.length === 1 && overId === primary) return;
-    // resolve target category: the hovered tile's category, else the nearest section by Y band
-    let toCat: string | null = overId ? tileCat.current.get(overId) ?? null : null;
-    let afterOver = false;
-    if (overId) { const r = tileRects.current.get(overId)!; afterOver = absX > r.x + r.w / 2; }
-    if (!toCat) {
-      let bestDist = Infinity;
-      for (const [tid, r] of tileRects.current) { const cy = r.y + r.h / 2; const d = Math.abs(absY - cy); if (d < bestDist) { bestDist = d; toCat = tileCat.current.get(tid) ?? null; } }
-    }
-    if (!toCat || LOCKED_CATS.has(toCat)) return; // can't drop into a locked (Beastform) category
-    // movable = the group minus cards locked to their own category (Beastform stays put)
-    const movable = group.filter((id) => !LOCKED_CATS.has(srcCatOf(id)));
-    if (movable.length === 0) return;
-    const movableSet = new Set(movable);
-    const groupSet = new Set(group);
-    // target order: existing cards (minus the movable group) with the group spliced at the drop index
-    const base = (decks[toCat] ?? []).map((c) => c.id).filter((id) => !movableSet.has(id));
-    let idx = base.length; // default = append
-    if (overId && !groupSet.has(overId)) { const b = base.indexOf(overId); if (b >= 0) idx = b + (afterOver ? 1 : 0); }
-    const list = [...base];
-    list.splice(Math.max(0, Math.min(idx, list.length)), 0, ...movable);
-    if (movable.length === 1) {
-      onReorderCard(movable[0], toCat, list);
-    } else {
-      onReorderCards(movable, toCat, list);
-      clearSelect(); // the group has been re-filed; clear the now-stale selection
-    }
-  }, [dragId, dragGroup, decks, srcCatOf, onReorderCard, onReorderCards, ghostOn]);
-
-  const ghostStyle = useAnimatedStyle(() => ({
-    opacity: ghostOn.value,
-    transform: [{ translateX: ghostX.value - TILE_W / 2 }, { translateY: ghostY.value - TILE_H / 2 }, { scale: 1.08 }],
-  }));
-  const dragItem = dragId ? Object.values(decks).flat().find((c) => c.id === dragId) : null;
-  const dragSet = useMemo(() => new Set(dragGroup), [dragGroup]); // #311: every card lifted in this drag
+  /**
+   * Move the selection into `toCat`, moved cards FIRST (v0.37, owner).
+   *
+   * This is why choosing a card's own category is now offered: it promotes the set to the front of
+   * the deck it is already in and pushes the rest behind it. Cross-category moves land at the front
+   * too, which is where you look for a card you just filed. It goes through the group-reorder path
+   * the deleted drag used, so persistence is unchanged: re-file, write the target's explicit order,
+   * drop the ids from every other category's order.
+   */
+  const moveSelected = useCallback((toCat: string) => {
+    const ids = ordered.flatMap((k) => (decks[k] ?? []).filter((c) => selected.has(c.id)).map((c) => c.id));
+    if (!ids.length) return;
+    onReorderCards(ids, toCat, movedFirst(ids, (decks[toCat] ?? []).map((c) => c.id)));
+  }, [ordered, decks, selected, onReorderCards]);
 
   // Selection-footer derivations (#306): which actions apply, with the Gold card protected.
   const selArr = [...selected];
@@ -410,7 +353,7 @@ export function CardManagementPanel(props: Props) {
         <TabButton label={props.trash?.length ? `Trash · ${props.trash.length}` : 'Trash'} active={view === 'trash'} onPress={() => setView('trash')} />
       </View>
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 8 }} scrollEnabled={!dragId} keyboardShouldPersistTaps="handled">
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 8 }} keyboardShouldPersistTaps="handled">
         {view === 'trash' ? (
           <TrashView trash={props.trash ?? []} onRestore={props.onRestoreCard} />
         ) : view === 'categories' ? (
@@ -421,18 +364,10 @@ export function CardManagementPanel(props: Props) {
             decks={decks}
             customCategories={customCategories}
             selected={selected}
-            dragSet={dragSet}
-            hover={hover}
-            onToggleSelect={toggleSelect}
+            selecting={sel.selecting}
+            onTap={onTapTile}
+            onHold={onHoldTile}
             onAddCardInCategory={onAddCardInCategory}
-            tileRefs={tileRefs.current}
-            tileCat={tileCat.current}
-            onBeginDrag={beginDrag}
-            onEndDrag={endDrag}
-            onHover={updateHover}
-            ghostX={ghostX}
-            ghostY={ghostY}
-            ghostOn={ghostOn}
           />
         ) : (
           <TypesView customTypes={customTypes} onAddType={onAddType} onDeleteType={onDeleteType} onBack={() => setView('categories')} />
@@ -440,26 +375,13 @@ export function CardManagementPanel(props: Props) {
       </ScrollView>
     </FullScreenPanel>
 
-      {/* floating drag ghost (screen-space, OUTSIDE the clipped panel so it isn't cut off). For a group
-          drag (#311) a stacked backing card + a count badge show how many move together. */}
-      {dragItem ? (
-        <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: TILE_W, height: TILE_H, zIndex: 10006 }, ghostStyle]}>
-          {dragGroup.length > 1 ? <View style={{ position: 'absolute', left: 6, top: 6, width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 2, borderColor: Rune.red, backgroundColor: '#0c0f14', opacity: 0.6 }} /> : null}
-          <View style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: 2, borderColor: Rune.red, overflow: 'hidden', backgroundColor: '#0c0f14' }}>
-            {dragItem.live ? <LiveTile item={dragItem} /> : dragItem.thumb ? <Image source={dragItem.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" /> : null}
-          </View>
-          {dragGroup.length > 1 ? (
-            <View style={{ position: 'absolute', top: -8, right: -8, minWidth: 26, height: 26, paddingHorizontal: 6, borderRadius: 13, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: Rune.ivory }}>
-              <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>{dragGroup.length}</Text>
-            </View>
-          ) : null}
-        </Animated.View>
-      ) : null}
+      {/* v0.37: the tapped card, large, over the panel. */}
+      {focusItem ? <CardFocus item={focusItem} onClose={closeFocus} /> : null}
 
       {createOpen ? <CategoryForm title="New category" onCancel={() => setCreateOpen(false)} onSave={(label, icon) => { onCreateCategory(label, icon); setCreateOpen(false); }} /> : null}
       {editing ? <CategoryForm title="Edit category" initialLabel={editing.label} initialIcon={editing.icon} onCancel={() => setEditing(null)} onSave={(label, icon) => { onUpdateCategory(editing.id, { label, icon }); setEditing(null); }} /> : null}
       {confirmDelCat ? <Confirm title={`Delete "${confirmDelCat.label}"?`} body="The category is removed; its cards return to their default category." confirmLabel="Delete" onCancel={() => setConfirmDelCat(null)} onConfirm={() => { onDeleteCategory(confirmDelCat.id); setConfirmDelCat(null); }} /> : null}
-      {moveOpen ? <MoveSheet count={selected.size} ordered={ordered} customCategories={customCategories} onMove={(key) => { onMoveCards([...selected], key); clearSelect(); setMoveOpen(false); }} onCopy={onDuplicate ? (key) => { onDuplicate(dupIds, key); clearSelect(); setMoveOpen(false); } : undefined} onClose={() => setMoveOpen(false)} /> : null}
+      {moveOpen ? <MoveSheet count={selected.size} ordered={ordered} customCategories={customCategories} onMove={(key) => { moveSelected(key); clearSelect(); setMoveOpen(false); }} onCopy={onDuplicate ? (key) => { onDuplicate(dupIds, key); clearSelect(); setMoveOpen(false); } : undefined} onClose={() => setMoveOpen(false)} /> : null}
       {confirmDel ? <Confirm title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setConfirmDel(false)} onConfirm={() => { onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }} /> : null}
     </>
   );
@@ -539,103 +461,72 @@ function CategoriesView({ ordered, decks, hiddenSet, enabledCount, currentCatego
 // ---------------- Cards gallery view ----------------
 
 /**
- * Hand VERTICAL panning back to the browser on a gesture target (web only, v0.29.1).
+ * One gallery tile.
  *
- * react-native-gesture-handler's web delegate stamps `touch-action: none` inline on every element a
- * GestureDetector wraps, because on a phone the handler owns the touch outright. In a browser that one
- * property is the only switch for native panning, and it is latched from whatever is under the finger
- * when the touch starts. Every card in this gallery is a gesture target, so a finger landing on a card
- * could never scroll the list it sits in: the only live places left were the gutter beside the last
- * column and the gaps between rows. That is exactly the reported "it only scrolls at the very edges".
- *
- * `pan-y` gives vertical panning back and keeps everything else ours, so hold-to-drag still reads a
- * clean intent. Both gestures need it: they attach to the same element and whichever initialises last
- * wins. Native is untouched, the delegate is web only.
+ * v0.37 (owner): a plain Pressable. There is no gesture-handler here any more, which is the point of
+ * the change and not a side effect of it: every tile in the gallery used to be a gesture target, and
+ * on web the handler stamps `touch-action: none` on each one, so a finger landing on a card could
+ * never scroll the list it sat in. Pressable's own `onLongPress` costs nothing and leaves the browser
+ * its panning.
  */
-function letBrowserScroll<T extends GestureType>(gesture: T): T {
-  if (Platform.OS === 'web') (gesture as unknown as { config: { touchAction?: string } }).config.touchAction = 'pan-y';
-  return gesture;
-}
-function CardTile({ item, cat, selected, dimmed, insertBar, onToggleSelect, onBeginDrag, onEndDrag, onHover, setRef, setCat, ghostX, ghostY, ghostOn }: {
-  item: CardItem; cat: string; selected: boolean; dimmed: boolean; insertBar: 'before' | 'after' | null;
-  onToggleSelect: (id: string) => void; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void; onHover: (x: number, y: number) => void;
-  setRef: (id: string, ref: View | null) => void; setCat: (id: string, cat: string) => void;
-  ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
+function CardTile({ item, selected, selecting, onTap, onHold }: {
+  item: CardItem; selected: boolean; selecting: boolean;
+  onTap: (id: string) => void; onHold: (id: string) => void;
 }) {
-  const frame = useFrame();
-  /**
-   * The callbacks, behind a ref (v0.35.1, owner).
-   *
-   * Every one of these is rebuilt by the panel as the drag runs: `onEndDrag` depends on `dragId` and
-   * `dragGroup`, which the drag SETS the moment it starts, and `onBeginDrag` depends on the selection
-   * and the decks. So the gesture object was replaced underneath a gesture that was still running,
-   * every single time. react-native-gesture-handler says not to do that; on web it showed up as a
-   * drag that let go of itself, and on Android it took the app down.
-   *
-   * This is the third time this repo has been bitten by a gesture rebuilt mid-gesture (the v0.27.3
-   * creator lock-up, the v0.35 stat wheel). The shape of the fix is the same every time: build the
-   * gesture once and let it read the current callbacks through a ref.
-   */
-  const cb = useRef({ onToggleSelect, onBeginDrag, onEndDrag, onHover, id: item.id });
-  cb.current = { onToggleSelect, onBeginDrag, onEndDrag, onHover, id: item.id };
-  const toggle = useCallback(() => cb.current.onToggleSelect(cb.current.id), []);
-  const begin = useCallback(() => cb.current.onBeginDrag(cb.current.id), []);
-  const end = useCallback((x: number, y: number) => cb.current.onEndDrag(x, y), []);
-  const hover = useCallback((x: number, y: number) => cb.current.onHover(x, y), []);
-
-  const tap = useMemo(() => letBrowserScroll(Gesture.Tap().maxDuration(260).onEnd(() => runOnJS(toggle)())), [toggle]);
-  const drag = useMemo(
-    () =>
-      letBrowserScroll(
-      Gesture.Pan()
-        .activateAfterLongPress(420)
-        // A card is dragged ACROSS the panel, so leaving the tile it started on is the whole point.
-        .shouldCancelWhenOutside(false)
-        .onStart((e) => {
-          'worklet';
-          // v0.24.0: window coords, and the ghost is drawn inside the (possibly magnified) frame.
-          ghostX.value = windowToFrameX(e.absoluteX, frame);
-          ghostY.value = windowToFrameY(e.absoluteY, frame);
-          ghostOn.value = 1;
-          runOnJS(begin)();
-        })
-        .onUpdate((e) => { 'worklet'; ghostX.value = windowToFrameX(e.absoluteX, frame); ghostY.value = windowToFrameY(e.absoluteY, frame); runOnJS(hover)(e.absoluteX, e.absoluteY); })
-        .onEnd((e) => { 'worklet'; runOnJS(end)(e.absoluteX, e.absoluteY); })
-        .onFinalize(() => { 'worklet'; ghostOn.value = 0; })),
-    [begin, end, hover, ghostX, ghostY, ghostOn, frame],
-  );
-  const gesture = useMemo(() => Gesture.Race(drag, tap), [drag, tap]);
   return (
-    <GestureDetector gesture={gesture}>
-      <View collapsable={false} style={{ width: TILE_W }}>
-        {/* live drop preview (#252 polish): a gold insertion bar at the slot the card will land in */}
-        {insertBar ? <View pointerEvents="none" style={[{ position: 'absolute', top: -2, bottom: -2, width: 3.5, borderRadius: 2, backgroundColor: Rune.goldBright, zIndex: 5 }, insertBar === 'before' ? { left: -5 } : { right: -5 }]} /> : null}
-        <View
-          ref={(r) => { setRef(item.id, r); setCat(item.id, cat); }}
-          collapsable={false}
-          accessibilityRole="button"
-          accessibilityLabel="Card. Tap to select, hold to drag"
-          style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: selected ? 2.5 : 1, borderColor: selected ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden' }}>
-          {item.live ? <LiveTile item={item} /> : item.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>}
-          {selected ? <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text></View> : null}
-          {dimmed ? <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(12,15,20,0.6)' }} /> : null}
-        </View>
+    <Pressable
+      onPress={() => onTap(item.id)}
+      onLongPress={() => onHold(item.id)}
+      delayLongPress={380}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={selecting ? 'Card. Tap to select or deselect' : 'Card. Tap to look at it, hold to start selecting'}
+      style={({ pressed }) => ({ width: TILE_W, opacity: pressed ? 0.75 : 1 })}>
+      <View style={{ width: TILE_W, height: TILE_H, borderRadius: 6, borderWidth: selected ? 2.5 : 1, borderColor: selected ? Rune.red : GOLD_BORDER, backgroundColor: '#0c0f14', overflow: 'hidden' }}>
+        {item.live ? <LiveTile item={item} /> : item.thumb ? <Image source={item.thumb} style={{ width: '100%', height: '100%' }} contentFit="cover" transition={80} /> : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold }}>Card</Text></View>}
+        {selected ? <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text></View> : null}
       </View>
-    </GestureDetector>
+    </Pressable>
   );
 }
 
-function CardsView({ ordered, decks, customCategories, selected, dragSet, hover, onToggleSelect, onAddCardInCategory, tileRefs, tileCat, onBeginDrag, onEndDrag, onHover, ghostX, ghostY, ghostOn }: {
-  ordered: string[]; decks: Record<string, CardItem[]>; customCategories: CustomCategory[]; selected: Set<string>; dragSet: Set<string>; hover: { overId: string; before: boolean } | null;
-  onToggleSelect: (id: string) => void; onAddCardInCategory: (key: string) => void;
-  tileRefs: Map<string, View>; tileCat: Map<string, string>; onBeginDrag: (id: string) => void; onEndDrag: (x: number, y: number) => void; onHover: (x: number, y: number) => void;
-  ghostX: SharedValue<number>; ghostY: SharedValue<number>; ghostOn: SharedValue<number>;
+/**
+ * The tapped card, large, over the panel (v0.37, owner).
+ *
+ * The carousel's own focus GROWS the card in place, because there the card is already on screen at a
+ * known spot and the motion says which one you picked. A gallery tile is 92px in a wrapping grid, so
+ * a card flying out of it and back reads as a jump-cut; the owner asked for a fade, so it fades. It
+ * is a still card and nothing more: no flip, no tokens, no radial. Tap anywhere to send it back.
+ */
+const FOCUS_SCALE = 1.7;
+function CardFocus({ item, onClose }: { item: CardItem; onClose: () => void }) {
+  const w = FORGED_W * FOCUS_SCALE;
+  const h = FORGED_H * FOCUS_SCALE;
+  return (
+    <Animated.View entering={FadeIn.duration(190)} exiting={FadeOut.duration(150)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 10005, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close card" style={StyleSheet.absoluteFill}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(6,8,13,0.9)' }} />
+      </Pressable>
+      <View pointerEvents="none" style={{ width: w, height: h }}>
+        {item.live ? (
+          <View style={{ position: 'absolute', left: (w - FORGED_W) / 2, top: (h - FORGED_H) / 2, width: FORGED_W, height: FORGED_H, transform: [{ scale: FOCUS_SCALE }] }}>{item.live}</View>
+        ) : (
+          <Image source={item.source} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+        )}
+      </View>
+    </Animated.View>
+  );
+}
+
+function CardsView({ ordered, decks, customCategories, selected, selecting, onTap, onHold, onAddCardInCategory }: {
+  ordered: string[]; decks: Record<string, CardItem[]>; customCategories: CustomCategory[]; selected: Set<string>; selecting: boolean;
+  onTap: (id: string) => void; onHold: (id: string) => void; onAddCardInCategory: (key: string) => void;
 }) {
-  const setRef = useCallback((id: string, ref: View | null) => { if (ref) tileRefs.set(id, ref); else tileRefs.delete(id); }, [tileRefs]);
-  const setCat = useCallback((id: string, cat: string) => { tileCat.set(id, cat); }, [tileCat]);
   return (
     <>
-      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>Tap to select (move/delete below). Hold a card to drag it to reorder or move categories.</Text>
+      <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular }}>
+        {selecting ? 'Tap cards to pick them, then use the buttons below.' : 'Tap a card to look at it. Hold one to start picking cards.'}
+      </Text>
       {ordered.map((key) => {
         const items = decks[key] ?? [];
         return (
@@ -654,7 +545,7 @@ function CardsView({ ordered, decks, customCategories, selected, dragSet, hover,
             ) : (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {items.map((item) => (
-                  <CardTile key={item.id} item={item} cat={key} selected={selected.has(item.id)} dimmed={dragSet.has(item.id)} insertBar={hover?.overId === item.id ? (hover.before ? 'before' : 'after') : null} onToggleSelect={onToggleSelect} onBeginDrag={onBeginDrag} onEndDrag={onEndDrag} onHover={onHover} setRef={setRef} setCat={setCat} ghostX={ghostX} ghostY={ghostY} ghostOn={ghostOn} />
+                  <CardTile key={item.id} item={item} selected={selected.has(item.id)} selecting={selecting} onTap={onTap} onHold={onHold} />
                 ))}
               </View>
             )}
@@ -750,7 +641,14 @@ export function MoveSheet({ count, ordered, customCategories, onMove, onCopy, on
     <CenterDialog onClose={onClose} zIndex={10004}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase' }}>{`${verb} ${count} card${count > 1 ? 's' : ''}`}</Text>
-        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>Choose a category to {verb.toLowerCase()} into.</Text>
+        {/* v0.37 (owner): the CURRENT category is a real choice now, so the pop-up has to say what
+            choosing it does. It reads the same either way, which is the honest description: the
+            cards you picked go to the front and whatever was already there follows them. */}
+        <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16, marginTop: 3, marginBottom: 12 }}>
+          {copy
+            ? `Choose a category to copy into. The ${count > 1 ? 'copies go' : 'copy goes'} to the front of it.`
+            : `Choose a category, including the one ${count > 1 ? 'they are' : 'it is'} in now. ${count > 1 ? 'They go' : 'It goes'} to the front of it and the cards already there follow.`}
+        </Text>
         {onCopy ? (
           <Pressable onPress={() => setCopy((c) => !c)} accessibilityRole="switch" accessibilityState={{ checked: copy }} accessibilityLabel="Copy instead of move" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <View style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 1.5, borderColor: copy ? Rune.red : GOLD_BORDER, backgroundColor: copy ? Rune.red : 'transparent', alignItems: 'center', justifyContent: 'center' }}>

@@ -11,6 +11,8 @@ import { type ClassName } from '@/constants/identity';
 const DIV_AR = 1978.811 / 151.3009;
 const MASK_W_FRAC = 1321.3586 / 1978.811;
 const MASK_AR = 1321.3586 / 192.1075;
+/** How far the coloured plaque reaches back under the divider's gold, in px (v0.37 — see DividerPlaque). */
+const PLAQUE_BLEED = 2;
 
 export interface PlaqueTheme {
   gradientStops?: { offset: string; color: string }[];
@@ -180,6 +182,64 @@ export function getPlaqueTheme(kindLabel: string, classKey?: ClassName): PlaqueT
             ],
             textColor: '#FEF08A', // Bright Yellow-Gold
           };
+        /**
+         * The six expansion classes (v0.37, owner).
+         *
+         * They fell through to the generic red below, so an Assassin's card said CLASS in the same
+         * plaque a card with no class at all gets, while every base class carried its own banner.
+         * Each of these is its two DOMAINS, which is what the banner above the plaque is painted
+         * from: Midnight and Blade for the Assassin, Dread and Sage for the Witch, and so on. The
+         * stops are the sampled domain colours pulled toward each other in value, because a plaque
+         * is a 10dp strip of type and a gradient that runs light to dark loses the word at one end.
+         */
+        case 'assassin':
+          return {
+            gradientStops: [
+              { offset: '0%', color: '#2F2F26' }, // midnight ink
+              { offset: '100%', color: '#7E2420' }, // blade crimson
+            ],
+            textColor: '#F3D8A4', // Pale Gold
+          };
+        case 'witch':
+          return {
+            gradientStops: [
+              { offset: '0%', color: '#3A2C4E' }, // dread violet
+              { offset: '100%', color: '#1F4A32' }, // sage green
+            ],
+            textColor: '#DED2F5', // Pale Lilac
+          };
+        case 'warlock':
+          return {
+            gradientStops: [
+              { offset: '0%', color: '#3A2C4E' }, // dread violet
+              { offset: '100%', color: '#6B2A48' }, // grace magenta
+            ],
+            textColor: '#F2C4E2', // Soft Rose
+          };
+        case 'bloodhunter':
+          return {
+            gradientStops: [
+              { offset: '0%', color: '#5C1E1E' }, // blood crimson
+              { offset: '100%', color: '#4A4B42' }, // bone grey
+            ],
+            textColor: '#E8E1CA', // Bone White
+          };
+        case 'summoner':
+          return {
+            gradientStops: [
+              { offset: '0%', color: '#5C1E1E' }, // blood crimson
+              { offset: '100%', color: '#6B5A22' }, // splendor gold
+            ],
+            textColor: '#FFE7A8', // Warm Gold
+          };
+        case 'brawler':
+          return {
+            gradientStops: [
+              { offset: '0%', color: '#4E4F44' }, // bone grey
+              { offset: '100%', color: '#6E4426' }, // valor umber
+            ],
+            textColor: '#FFE0B8', // Lamplight
+          };
       }
     }
     // Fallback for Class / Features
@@ -263,8 +323,14 @@ export function DividerPlaque({
       <View style={{ width: maskW, height: maskH, marginTop: -maskH * 0.01, alignItems: 'center', justifyContent: 'center', transform: [{ translateX: -maskW * 0.076 }] }}>
         {/* The bbox over-extends LEFT of the divider's hollow (#108): the mask SVG renders inside
             a RIGHT-anchored sub-box trimmed from the left, so only its left edge moves right while
-            the right edge (and the text below) stay exactly where they are. Calibrated to 0.16. */}
-        <View style={{ position: 'absolute', left: maskW * 0.16, top: 0, width: maskW * 0.84, height: maskH }} pointerEvents="none">
+            the right edge (and the text below) stay exactly where they are. Calibrated to 0.16.
+
+            v0.37 (owner): and then two pixels back the other way. Zoomed in, the coloured body
+            stopped a hair short of the gold and left a sliver of the divider's dark hollow showing
+            down its left edge, so the chip was outlined in shadow rather than surrounded by gold.
+            Absolute rather than proportional: it is a rendering seam between two SVGs, the same
+            width whatever size the divider is drawn at. */}
+        <View style={{ position: 'absolute', left: maskW * 0.16 - PLAQUE_BLEED, top: 0, width: maskW * 0.84 + PLAQUE_BLEED, height: maskH }} pointerEvents="none">
           <PlaqueMask width="100%" height="100%" gradientStops={gradientStops} fill={maskFill} />
         </View>
         <View style={{ transform: [{ translateX: maskW * 0.076 }] }}>{children}</View>
