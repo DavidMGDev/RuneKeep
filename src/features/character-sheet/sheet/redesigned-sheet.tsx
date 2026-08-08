@@ -47,6 +47,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
+import { SortPanel } from './sort-panel';
 import Svg, { Path } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, type LibraryCard } from '@/lib/library';
@@ -627,13 +628,19 @@ const BULK_STEP_MS = 130;
 
 const EDIT_GRAY = '#C4C8D0';
 const EDIT_GRAY_DIM = '#9AA0AA';
-function EditHud() {
+function EditHud({ file }: { file?: CharacterFile }) {
   const { editing, editMode, raisedIds, decks, category, deselectAll, selectAll } = useCarousel();
   const total = decks[category]?.length ?? 0;
   const sel = raisedIds.size;
   const fade = useAnimatedStyle(() => ({ opacity: editMode.value }));
+  // v0.38: the sort panel. Held here rather than in the sheet because it is edit mode's own control,
+  // and closing edit mode has to take it with it.
+  const [sortOpen, setSortOpen] = useState(false);
+  useEffect(() => { if (!editing) setSortOpen(false); }, [editing]);
   if (!editing) return null;
   return (
+    <>
+    {sortOpen ? <SortPanel file={file} onClose={() => setSortOpen(false)} /> : null}
     <Animated.View pointerEvents="box-none" style={[box(0, 224, 412, 150), { zIndex: 40, alignItems: 'center' }, fade]}>
       {/* full-bleed banner: fill + top/bottom rules only (the side edges sit off-screen under the border) */}
       <View style={{ width: 452, height: 84, backgroundColor: 'rgba(24,28,35,0.9)', borderTopWidth: 1.4, borderBottomWidth: 1.4, borderColor: EDIT_GRAY_DIM, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
@@ -647,16 +654,31 @@ function EditHud() {
           selection it becomes Deselect All, as before. It never disappears, so the space below the
           banner stops jumping. */}
       {total > 0 ? (
-        <Pressable
-          onPress={sel > 0 ? deselectAll : selectAll}
-          accessibilityRole="button"
-          accessibilityLabel={sel > 0 ? 'Deselect all cards' : 'Select all cards'}
-          hitSlop={8}
-          style={({ pressed }) => ({ marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)' })}>
-          <Text style={{ color: EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel > 0 ? 'Deselect All' : 'Select All'}</Text>
-        </Pressable>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+          <Pressable
+            onPress={sel > 0 ? deselectAll : selectAll}
+            accessibilityRole="button"
+            accessibilityLabel={sel > 0 ? 'Deselect all cards' : 'Select all cards'}
+            hitSlop={8}
+            style={({ pressed }) => ({ paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)' })}>
+            <Text style={{ color: EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{sel > 0 ? 'Deselect All' : 'Select All'}</Text>
+          </Pressable>
+          {/* v0.38 (owner): beside the one that was already there. Dim until there is something to sort,
+              rather than absent, so the row does not move as cards are picked. */}
+          <Pressable
+            onPress={() => { if (sel >= 2) { playSfx('buttonTap'); setSortOpen(true); } }}
+            disabled={sel < 2}
+            accessibilityRole="button"
+            accessibilityLabel="Sort the selected cards"
+            accessibilityState={{ disabled: sel < 2 }}
+            hitSlop={8}
+            style={({ pressed }) => ({ paddingHorizontal: 14, paddingVertical: 5, borderRadius: 8, borderWidth: 1.2, borderColor: sel < 2 ? 'rgba(154,160,170,0.35)' : pressed ? EDIT_GRAY : EDIT_GRAY_DIM, backgroundColor: sel < 2 ? 'rgba(20,24,30,0.4)' : pressed ? 'rgba(60,66,74,0.9)' : 'rgba(20,24,30,0.7)', opacity: sel < 2 ? 0.5 : 1 })}>
+            <Text style={{ color: sel < 2 ? EDIT_GRAY_DIM : EDIT_GRAY, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Sort Selected</Text>
+          </Pressable>
+        </View>
       ) : null}
     </Animated.View>
+    </>
   );
 }
 
@@ -2045,21 +2067,23 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         if (isPermanentCard(ref, file)) permanent.add(ref);
         if (cardTakesNumberInput(ref, file)) numberInput.add(ref);
         const kind = cardById(catalogIdOf(ref))?.kind;
-        if (kind === 'domain') domain.add(ref);
         /**
-         * What may be switched off (owner, v0.34.5).
+         * What may be switched off (owner, v0.38).
          *
-         * It used to be domain cards alone, which left every homebrew ability and every authored card
-         * with modifiers no way to be quiet for a scene. The rule is now the owner's: anything that
-         * carries a modifier can be toggled, EXCEPT the cards that say who you are. An ancestry, a
-         * community, a class or a subclass is not a thing you switch off.
+         * Two rules, and no exceptions to either:
+         *
+         *  - **A card that carries a modifier can be toggled.** v0.34.5 held back the cards that say
+         *    who you are, on the grounds that an ancestry is not a thing you switch off. The owner
+         *    disagrees, and it is their sheet: a Human's extra Stress slot is a modifier like any
+         *    other, and an ancestry that grants one with no way to quiet it is the only card on the
+         *    sheet whose numbers cannot be checked against the table's.
+         *  - **Every domain card can be toggled, modifier or not.** A domain card is a spell you have
+         *    prepared; whether the app happens to model its rule as a number is not the player's
+         *    concern, and a hand where some domain cards have the control and others do not reads as
+         *    a bug rather than as a rule.
          */
-        // A homebrew ancestry or community is an identity card too, and it has no catalog kind to
-        // read: the Void's ancestries are library cards. Ask the embedded card what it is.
-        const libKind = libraryCardById(file, ref)?.contentType;
-        const identity = kind === 'ancestry' || kind === 'community' || kind === 'subclass'
-          || libKind === 'ancestry' || libKind === 'community' || libKind === 'subclass' || libKind === 'class';
-        if (!identity && cardHasEffects(ref, file)) toggleable.add(ref);
+        if (kind === 'domain') { domain.add(ref); toggleable.add(ref); }
+        if (cardHasEffects(ref, file)) toggleable.add(ref);
       }
     }
     return { permanent, numberInput, domain, toggleable, modsOff: new Set(file?.modifiersOffCardIds ?? []) };
@@ -2570,7 +2594,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenBoard={onOpenBoard} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} />
               <TraitBanners character={character} modifierSize={22} groupTop={614} />
               <ExpandVeil />
-              <EditHud />
+              <EditHud file={file ?? undefined} />
               {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the
                   carousel; a no-op on a phone. */}
               <KeyboardControl overlay={anyOverlay} />

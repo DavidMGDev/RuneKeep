@@ -21,7 +21,7 @@ import { libraryCardById, libraryCardEffects, mixedCrossedTrait } from '@/lib/li
 import { isDmCardId } from '@/lib/dm-cards';
 
 /** All player-authored cards on a file (experiences, inventory items, sheet-made cards). */
-function customCards(file?: CharacterFile): ExperienceDef[] {
+export function customCards(file?: CharacterFile): ExperienceDef[] {
   if (!file) return [];
   return [...(file.experiences ?? []), ...(file.inventoryCustom ?? []), ...(file.customCards ?? []), ...(file.notes ?? [])];
 }
