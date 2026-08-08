@@ -106,6 +106,18 @@ interface CarouselContextValue {
   /** Persist an in-edit drag-reorder (v0.9.8): move cards to a category at an explicit order. Same
    *  signature as the Cards panel's group reorder, so it inherits the override + order persistence. */
   onReorderCards?: (movedIds: string[], toCat: string, orderedIds: string[]) => void;
+  /**
+   * Put the deck in `ordered`, ANIMATED (v0.38).
+   *
+   * Filled in by the carousel itself, because the hard part is the motion and the motion lives in the
+   * row's transform: the sorted cards gather to the middle, the new order commits behind them, and
+   * they spread out into their new slots. The sort panel decides what the order should be and calls
+   * through here; nothing else knows how to move a card.
+   *
+   * A ref rather than a value: the carousel is a CHILD of this provider, so it cannot hand a callback
+   * upwards any other way, and a ref keeps the context value from changing every render.
+   */
+  sortFnRef: MutableRefObject<((ordered: string[], movedIds: string[]) => void) | null>;
   // --- Golden Gear Edit card-hold RADIAL menu (v0.11.0 rework): hold a card to open a MODAL icon wheel. ---
   /** 0 = closed .. 1 = open (fade). */
   cardMenuOpen: SharedValue<number>;
@@ -198,6 +210,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const [category, setCategoryState] = useState<CardCategory>('abilities');
   const [favDetour, setFavDetour] = useState<CardCategory | null>(null); // v0.9.8: disabled-Favorites detour origin
   const editMode = useSharedValue(0); // v0.9.8: Golden Gear Edit straighten progress (0 arc → 1 flat)
+  /** v0.38: the carousel registers its sort animation here (see the type above). */
+  const sortFnRef = useRef<((ordered: string[], movedIds: string[]) => void) | null>(null);
   const [editing, setEditing] = useState(false);
   const [raisedIds, setRaisedIds] = useState<Set<string>>(() => new Set());
   const raisedIdsRef = useRef(raisedIds);
@@ -621,6 +635,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       centerIndex,
       scrollToId,
       onReorderCards,
+      sortFnRef,
       cardMenuOpen,
       cardMenuAnchorX,
       cardMenuAnchorY,
@@ -648,7 +663,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, cardStates, emptyCardStates, crossOuts, emptyCrossOuts, onToggleCard, onToggleCardModifiers, onEditNumberInput, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, sortFnRef, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, cardStates, emptyCardStates, crossOuts, emptyCrossOuts, onToggleCard, onToggleCardModifiers, onEditNumberInput, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;

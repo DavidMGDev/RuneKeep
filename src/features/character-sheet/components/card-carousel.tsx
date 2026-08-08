@@ -238,6 +238,9 @@ interface SlotProps {
   grabIsGroup: SharedValue<number>;
   /** v0.12.3 (2c): 0..1 — suppresses the raised look (lift/scale/breathe/hint) while a pile is being dragged. */
   editFlat: SharedValue<number>;
+  /** v0.38 sort: 0 = in the row, 1 = gathered in the middle. Only the cards in `sortSetSV` move. */
+  sortGather: SharedValue<number>;
+  sortSetSV: SharedValue<Record<string, number> | null>;
   /** v0.12.5 (drop-flash): id → NEW index, written at drop-commit BEFORE React re-renders. Slots resolve
    *  their position through it, so stale worklet closures (old `index` props) still paint the new
    *  arrangement — teardown can never flash the previous order. null outside the commit window. */
@@ -255,7 +258,7 @@ interface SlotProps {
   menuBounce: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLive, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, cornerTone, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLive, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, cornerTone, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, sortGather, sortSetSV, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
   // Web reports gesture x in CSS pixels, not design pixels (see coordScale in CardCarousel):
   // without this the left/right half that decides which way a multi-page card turns lands at about a
   // quarter of the card instead of the middle.
@@ -355,6 +358,35 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
         opacity = opacity * (1 - e) + slotOpacityAt(Math.abs(slotOff), 1) * e;
         // Open-bounce feedback: the card the radial menu blooms on gives a small scale pop.
         if (Math.round(menuCardIdx.value) === idx) scale *= 1 + 0.09 * menuBounce.value;
+      }
+
+      /**
+       * The SORT gather (v0.38, owner).
+       *
+       * Sorting is a permutation, not a move: the cards end up in slots that are already on screen, so
+       * there is no finger to follow and no gap to open. What there IS, and what the owner asked to
+       * reuse, is the moment in a drag where a whole selection collapses into one pile. So the sorted
+       * cards slide to the middle of the row, the new order lands underneath them, and they slide back
+       * out — the position they slide back to is simply their new slot, because `idx` has changed by
+       * then. Nothing here interpolates between two orders: the row does that for free.
+       *
+       * The small per-card offsets stop the pile from being a single opaque card and give the return
+       * a fan, which is what makes it read as cards rather than as a crossfade.
+       */
+      const sg = sortGather.value;
+      if (sg > 0) {
+        const set = sortSetSV.value;
+        const rank = set ? set[slotId] : undefined;
+        if (rank !== undefined) {
+          const pileX = OX + overscrollX.value + (rank % 5) * 2.5 - 5;
+          const pileY = EDIT_ROW_Y - raiseSV.value * (1 - flat) * EDIT_RAISE + (rank % 5) * 1.5;
+          const g = sg * e;
+          x += (pileX - x) * g;
+          y += (pileY - y) * g;
+          scale *= 1 - 0.1 * g;
+          opacity = opacity * (1 - g) + 1 * g; // a gathered card is never faded out at the row's edge
+          z = 4000 - rank;
+        }
       }
     }
 
@@ -856,7 +888,7 @@ function GhostCard({ editMode, editGrabbed, rotation, hoverAnim, overscrollX, dr
  * object up, so there is no dizzying cross-fade (#8c).
  */
 export function CardCarousel() {
-  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, cardStates, crossOuts, toggleCard, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, onEmptyOpen } = useCarousel();
+  const { rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, decks, category, ring, closeFullscreen, collapse, cycleCategory, enabledIds, cardStates, crossOuts, toggleCard, cardTokens, editMode, editing, raisedIds, enterEdit, exitEdit, gearFlash, toggleRaise, deselectAll, onReorderCards, sortFnRef, nfcAvailable, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, openCardMenu, closeCardMenu, selectCardMenu, onEmptyOpen } = useCarousel();
   const deck = decks[category];
   const count = deck.length;
 
@@ -926,6 +958,8 @@ export function CardCarousel() {
   const editHandledSV = useSharedValue(0); // 1 = onEnd already fired the menu (skip onFinalize)
   const settling = useSharedValue(0); // v0.12.3 (2a): 1 while the staged release commit runs (make-room → spread); freezes the frame-callback so the reflow settles deterministically before the pile drops in
   const editFlat = useSharedValue(0); // v0.12.3 (2c): 0 = normal raised look, 1 = raised look SUPPRESSED — a grab visually deselects the pile so it drags/settles flat (re-raises only if dropped back home)
+  const sortGather = useSharedValue(0); // v0.38: 0 = in the row, 1 = gathered in the middle for a sort
+  const sortSetSV = useSharedValue<Record<string, number> | null>(null); // which cards gather, and their pile rank
   const menuDwell = useSharedValue(0); // hold-still timer on a selected card → opens the radial
   const menuCardIdx = useSharedValue(-1); // the card the radial opened on (for the open bounce feedback)
   const menuBounce = useSharedValue(0); // 0→1→0 scale pop when the menu blooms
@@ -1056,6 +1090,62 @@ export function CardCarousel() {
   useEffect(() => {
     if (dropPendingRef.current) finalizeCommittedDrop();
   }, [deck, finalizeCommittedDrop]);
+  /**
+   * Sort the deck into `ordered`, animated (v0.38, owner).
+   *
+   * Three beats, and every one of them reuses machinery a drag already proved:
+   *
+   *  1. GATHER. `editFlat` drops the selection's raised look and `sortGather` pulls those cards into a
+   *     pile in the middle of the row. The cards that are not sorted never move.
+   *  2. COMMIT, behind the pile. The id→index bridge (`pendingOrderSV`) is written BEFORE the reorder,
+   *     which is the v0.12.5 fix for the drop flash and works here for the same reason: every slot
+   *     resolves to its new index from that instant, so no frame can paint the old arrangement.
+   *  3. SPREAD. `sortGather` runs back to 0 and each card slides from the pile to wherever its NEW
+   *     index puts it. There is no separate "animate between two orders" path; the row's own transform
+   *     is a continuous function of the index, so changing the index under a gathered pile IS the sort.
+   *
+   * The selection is deliberately kept: sorting is something you may want to do twice (by type, then
+   * by colour), and losing the selection between the two would make that four gestures instead of one.
+   */
+  const sortTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const sortCards = useCallback((ordered: string[], movedIds: string[]) => {
+    if (!onReorderCards || ordered.length === 0) return;
+    for (const t of sortTimers.current) clearTimeout(t);
+    sortTimers.current = [];
+    const ranks: Record<string, number> = {};
+    movedIds.forEach((id, i) => { ranks[id] = i; });
+    sortSetSV.value = ranks;
+    playSfx('cardDragStart');
+    editFlat.value = withTiming(1, { duration: 170, easing: Easing.out(Easing.cubic) });
+    sortGather.value = withTiming(1, { duration: 230, easing: Easing.inOut(Easing.cubic) });
+    sortTimers.current.push(setTimeout(() => {
+      const map: Record<string, number> = {};
+      for (let i = 0; i < ordered.length; i++) map[ordered[i]] = i;
+      pendingOrderSV.value = map;
+      onReorderCards(movedIds, category, ordered);
+      sortGather.value = withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) });
+      playSfx('cardDragEnd');
+    }, 250));
+    sortTimers.current.push(setTimeout(() => {
+      // The bridge is only released once the new index props are long since live, so letting go of it
+      // swaps identical numbers and cannot be seen.
+      pendingOrderSV.value = null;
+      sortSetSV.value = null;
+      editFlat.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+    }, 700));
+  }, [onReorderCards, category, editFlat, sortGather, sortSetSV, pendingOrderSV]);
+  useEffect(() => {
+    sortFnRef.current = sortCards;
+    return () => { sortFnRef.current = null; };
+  }, [sortFnRef, sortCards]);
+  // Leaving edit mode must never strand a half-finished gather.
+  useEffect(() => {
+    if (editing) return;
+    for (const t of sortTimers.current) clearTimeout(t);
+    sortTimers.current = [];
+    sortGather.value = 0;
+    sortSetSV.value = null;
+  }, [editing, sortGather, sortSetSV]);
   // Safety: leaving edit mode must never strand the flatten envelope (which would hide future selections).
   useEffect(() => { if (!editing) editFlat.value = 0; }, [editing, editFlat]);
 
@@ -1809,6 +1899,8 @@ export function CardCarousel() {
         editGrabbed={editGrabbed}
         grabIsGroup={grabIsGroup}
         editFlat={editFlat}
+        sortGather={sortGather}
+        sortSetSV={sortSetSV}
         pendingOrderSV={pendingOrderSV}
         raiseOrderSV={raiseOrderSV}
         raisedBeforeSV={raisedBeforeSV}

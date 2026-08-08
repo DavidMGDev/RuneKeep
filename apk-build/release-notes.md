@@ -1,24 +1,24 @@
-RuneKeep v0.37.1 - Letting go of the mouse outside the app on a computer, five new card types, and colours that are actually colours.
+RuneKeep v0.38.0 - Every card that grants a bonus can be switched off, and edit mode can put a hand in order for you.
 
-ON A COMPUTER
+TOGGLES
 
-- LETTING GO OUTSIDE THE APP WORKS NOW. In a browser window the app is a phone-shaped column with space either side, and a drag that starts on a card very often ends out in that space. When it did, the app never learned you had let go: a card kept following the mouse, a button stayed looking pressed, and the next thing you tapped did nothing. The release is now caught wherever it happens and handed to whatever you were pressing. Phones and tablets are untouched, because a finger cannot leave the app in the first place.
-- A DRAG NO LONGER EATS THE NEXT TAP.
+- YOUR ANCESTRY CARD HAS A TOGGLE NOW, and so do your community, subclass and class cards. They were the only cards on the sheet that granted a bonus with no way to switch it off, on the old reasoning that an ancestry is not something you turn off. A Human's extra Stress slot is a modifier like any other, and now it can be checked against the table's numbers like any other.
+- EVERY DOMAIN CARD HAS ONE, whether or not the app models its rule as a number. Some had it and some did not, which read as a bug rather than as a rule.
+- The Toggle still only appears while a card is actually applying, because switching off a card that is doing nothing would be a button that does nothing.
 
-NEW CARD TYPES
+SORTING A HAND
 
-- FIVE MORE TO CHOOSE FROM: Attack in the arsenal, Lore, Flavor and Mystery among the notes, and Scar with Experience.
-- THE SCAR TYPE IS THE SCAR. Give a card that type and it takes a Hope slot, the way any scar does. Change the type and it gives the slot back. There is no switch to find and nothing to fill in.
-- Every one of them has its own plaque colour.
-
-COLOURS
-
-- STORY IS A COLOUR. It was two near-blacks, which is not what a story looks like. It runs indigo into violet now, with pale lilac lettering.
-- EXPERIENCE IS GREEN, instead of two browns that read as mud at the size the plaque is actually printed.
-- THE TYPE CHIP SITS RIGHT. Last release pushed it two pixels left to cover a dark seam; that was one too many.
-
-THE DM'S SCREENS
-
-- A CHARACTERIZED ALLY OR ADVERSARY CARRIES NO GOLD. Their sheet has left the gold card out since v0.36.3, but the DM's own card panel was still adding one, so every one of them looked like it was walking around with a purse.
+- SORT SELECTED, beside Deselect All in edit mode. Pick cards, press it, choose what to sort by, and press Ascending or Descending.
+- FIVE WAYS TO SORT:
+  - COLOUR, by hue and then by brightness, so a hand reads as a rainbow. A printed card's colour is taken from its art rather than from its parchment, so a Blade card is red and not cream.
+  - TITLE, A to Z. "The Broadsword" is filed under B, not under T.
+  - CARD TYPE, A to Z.
+  - CARD TYPE FAMILY, in the order the type picker lists them: Arsenal, Inventory, Notes, Character.
+  - DESCRIPTION LENGTH, so the long rules go to one end and the short reminders to the other.
+- ONLY THE CARDS YOU PICKED MOVE. They are dealt back into the slots they already held, so sorting three cards never rearranges the rest of the hand.
+- THE SAME HAND SORTS THE SAME WAY TWICE. Cards the sort cannot tell apart keep a fixed order rather than shuffling, and a card the app knows nothing about goes to the end whichever direction you choose.
+- THEY GATHER AND SPREAD. The sorted cards collect in the middle of the row and slide out into their new places, using the same motion a drag already uses.
+- YOUR SELECTION IS KEPT, so you can sort by type and then by colour without picking everything twice.
+- NOTHING ABOUT THE PANEL CAN DROP YOU OUT OF EDIT MODE. A tap anywhere outside it does nothing at all, including on the gear. Cancel is the way out.
 
 Sideload: enable Install unknown apps, then open the APK.
