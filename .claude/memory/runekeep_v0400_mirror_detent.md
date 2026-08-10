@@ -64,5 +64,26 @@ speak the same language.
 **`DiceTrayPanels` takes its geometry and palette as parameters**, which is how DM Mode gets the same
 tray in the dark with no second implementation (`features/dm/dm-dice-panel.tsx`).
 
-READ before sheet-geometry, mirrored-art, carousel-snap, web-tap-after-drag, dice-animation or
-repo-contents work.
+**v0.40.1 replaced the mirrored bitmap with a DERIVED POLYGON** (`sheet/dice-button.tsx`). A clipped
+copy of an asset has no rail on the cut side and nothing drawn over it can be masked to its fill,
+which is what a decoration needs. The derivation is the same arithmetic as above, run once offline:
+flatten both paths, map through the non-uniform stretch, mirror, clip, Douglas-Peucker. It comes out
+as NINE straight edges because the artwork is nine straight edges. `OUTER` is the gold silhouette,
+`INNER` is the same inset by the rail, and `INNER` doubles as the pattern's clip path.
+- A tiled pattern inside an irregular shape must be FILTERED, not just clipped: a half-drawn digit
+  against the rail reads as a mistake and a cut digit is a different digit. Point-in-polygon over the
+  glyph's corners at module load, and single digits only at 5dp.
+- The button's two states say what it will GIVE you: numbers on dark when shut (dice), hearts on red
+  when open (your hit points back).
+
+**Other v0.40.1 rules.** `dualityVerdict` no longer requires a pool of exactly two, so the pair still
+answers when thrown with other dice; only ONE pair may be added (`hasDuality`) and the refusal is a
+toast, never silence. The tray's critical is `DieWash`, the die's own SILHOUETTE, with the token
+board's timings; a translucent circle over a pentagon is a sticker. Every reaction fires at one
+shared `resultAt` (the last die's landing) while faces still turn up in sequence, and a throw gets ONE
+sound by precedence (critical, fumble, duality, tick) because five flourishes at once is noise. The
+total counts up per die and then reacts to `rollTally`; **purple means Fear and nothing else**, so the
+lean may tint a throw that has no pair but must never repaint one that does.
+
+READ before sheet-geometry, mirrored-art, svg-pattern, carousel-snap, web-tap-after-drag,
+dice-animation or repo-contents work.
