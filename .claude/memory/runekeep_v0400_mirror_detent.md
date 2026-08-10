@@ -85,5 +85,26 @@ sound by precedence (critical, fumble, duality, tick) because five flourishes at
 total counts up per die and then reacts to `rollTally`; **purple means Fear and nothing else**, so the
 lean may tint a throw that has no pair but must never repaint one that does.
 
+**v0.40.2: a tiled pattern must NOT be filtered, it must be MASKED.** The v0.40.1 rule above was
+wrong and the owner rejected it ("it looks like if someone just dropped a bag of numbers on that UI").
+Discarding cells that do not fit whole destroys the lattice: what survives is sparse, unaligned and
+upright, so it reads as spillage and the shape sits empty. The right shape is ONE grid rotated as a
+GROUP (`<G clipPath>` outside, `<G transform="rotate(...)">` inside, so the pattern turns and the mask
+does not), drawn past every edge and clipped. Rotating the group and not each glyph is what makes the
+rows straight lines; a glyph the rail cuts through is then correct, because a pattern is meant to run
+under its frame.
+
+**A reanimated value that is only ever ADDED to must be rounded before re-animating.** `turn.value =
+withTiming(turn.value + 1)` reads a FRACTIONAL angle if a previous spin is still in flight, so the die
+finishes on its side and stays there. `cancelAnimation` + `Math.round` first. Gating the button is not
+enough on its own: state updates are a render behind, and the entry/reflow animation is a second way in
+(hence a short `busy` window after add/remove).
+
+**Sound lengths matter and are checkable without listening**: bytes / 176400 is the seconds of a 44.1k
+16-bit stereo wav. `loseHope` is 2.15s (right for Fear, far too long for every 1 in a fistful of d20);
+`cardDisable` is 0.56s and is the fumble now. Failures fire at `resultAt`, criticals at
+`resultAt + 500`, and the TAIL is measured from whichever actually plays, or the tray sits locked over
+a finished number for a second and a half.
+
 READ before sheet-geometry, mirrored-art, svg-pattern, carousel-snap, web-tap-after-drag,
 dice-animation or repo-contents work.
