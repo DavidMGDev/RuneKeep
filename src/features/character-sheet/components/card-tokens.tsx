@@ -222,6 +222,28 @@ const SingleDie = memo(function SingleDie({ size, dieType, value, hideNumber, fi
   );
 });
 
+/**
+ * A die's own SILHOUETTE, in white (v0.40.1, owner).
+ *
+ * The critical on a card token washes the die's FACE white, which is why it reads as the die flaring
+ * rather than as something landing on top of it. The tray's first attempt drew a translucent white
+ * CIRCLE over every shape, which the owner called unsatisfying and was right to: a circle over a
+ * pentagon is a sticker. This is the die's real shape, in the same geometry the face uses, for the
+ * caller to fade in and out over the top.
+ */
+export const DieWash = memo(function DieWash({ size, dieType }: { size: number; dieType: DieType }) {
+  const geo = dieGeometry(dieType);
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${DIE_BOX} ${DIE_BOX}`} style={StyleSheet.absoluteFill} pointerEvents="none">
+      {geo.rect ? (
+        <Rect x={geo.rect[0] + 6} y={geo.rect[1] + 6} width={geo.rect[2] - 12} height={geo.rect[3] - 12} rx={geo.rect[4]} fill="#FFFFFF" />
+      ) : (
+        <Polygon points={scalePts(geo.points!, 6)} fill="#FFFFFF" />
+      )}
+    </Svg>
+  );
+});
+
 /** Render any token at `size`: a die gets the DieButton, everything else the sewing button. Memoized
  *  (#293 perf): the baked deck layer renders these gradient SVGs per token, so skipping re-renders when
  *  props are unchanged keeps decorated decks cheap to composite (e.g. under the float-menu dim). */

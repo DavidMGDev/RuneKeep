@@ -1,31 +1,26 @@
-RuneKeep v0.40.0 - The sheet lines up, the dice button becomes a real panel, and the tray learns to throw properly.
-
-THE SHEET
-
-- YOUR PORTRAIT LINES UP WITH THE HIT POINTS PANEL. Its frame started five design pixels left of the panel below it, so the two strongest vertical edges on the sheet never quite agreed. Everything to the right of the portrait moved with it, nothing crossed the right-hand edge it already sat on, and the Evasion and Armor panel gave up the same five from its left rather than growing.
-- THE HIT POINTS CORNER IS A SWORD. It was a circled "i", which describes an explainer; the button opens the damage calculator.
+RuneKeep v0.40.1 - The dice button becomes decoration, and the throw gets its suspense back.
 
 THE DICE BUTTON
 
-- IT IS THE EVASION AND ARMOR PANEL, MIRRORED. The triangle is gone. Your portrait's diamond button now falls into a matching notch on both sides, and the two panels read as one band with the button between them. It is drawn by reflecting that panel's own artwork about the diamond's centre line, so it is a true mirror rather than a shape that looks like one, it is exactly level with it, and it stops at the same left edge as the hit points panel.
-- THE DIE ON IT HAS ROOM. It sits in the largest square that actually fits inside the shape, inset on every side.
+- IT IS DRAWN FROM SCRATCH NOW, as a closed shape rather than a mirrored copy of the Evasion and Armor panel behind a clip. Same shape, same place, and a gold rail all the way round: the left side used to be bare fill, because a picture cut in half cannot close itself.
+- IT CARRIES A PATTERN. Closed, it is diagonal rows of numbers on dark. Pressed, it turns red and the numbers become hearts. The button shows what it will give you: dice when it is shut, your hit points back when it is open.
+- EVERY GLYPH IS WHOLE. The pattern is filtered to the ones that fit inside the shape, because half a number against a rail reads as a mistake rather than as a pattern running under an edge.
 
-THE DICE TRAY
+THE DUALITY PAIR
 
-- THE DUALITY PAIR IS IN THE CAROUSEL, shown as the two overlapping dice it is. Tapping it adds both; they fly in and settle separately but they are bound: you cannot add one on its own, and taking either one out takes the other with it.
-- A FLICK CARRIES. The carousel used to need a deliberate drag of more than half a die for every single change; a flick now reaches several dice and eases in.
-- ROLL WAITS FOR ITS OWN THROW. Pressing it again mid-flight restarted every die from whatever angle it had reached, which is why dice sometimes finished upside down or on a tilt. The tray is quiet for the length of a throw.
-- THE RESULT IS FELT, NOT ONLY READ. Fear jerks the die sharply and stops dead, with a quick fifteen percent breath. Hope sways it, wide and soft, breathing a third bigger. A critical rattles under a white flash. It is the same vocabulary the dice tokens on your cards have had all along.
-- AN ORDINARY DIE EARNS THEM TOO. A die that rolls its maximum gets the critical treatment, a die that rolls a one gets Fear's, and everything in between stays quiet so those two keep meaning something.
+- IT STILL SAYS HOPE OR FEAR WHEN YOU THROW IT WITH OTHER DICE. The total is everything you threw; Hope or Fear is still which of the two d12s came out on top. It used to go quiet the moment you added anything to it.
+- ONLY ONE PAIR AT A TIME, and the tray says so rather than ignoring the tap. Two pairs have no answer to which one won.
 
-CAROUSELS
+CRITICALS
 
-- NEITHER CAROUSEL CAN BE LEFT BETWEEN TWO OPTIONS. A tap, or a card opening, while the row was still gliding used to leave it parked half way between two cards with nothing in the middle until you nudged it. Both carousels now watch for the row coming to rest and put it on a card, which cannot interrupt a throw that is still travelling because it only acts once everything has stopped.
+- THEY LOOK LIKE THE ONES ON YOUR CARDS NOW. The die's own shape flares white, swells and rattles, with the same timing the dice tokens have had since v0.34.5. It used to be a translucent circle fading in over the top, which is a sticker rather than a die catching light.
+- THEY ALL FIRE AT ONCE. Roll five d20 for a 1, three 20s and a 15, and every reaction lands together the moment the last die shows its face, instead of trickling across the row.
+- ONE SOUND FOR THE THROW, the most important thing that happened: a critical first, then a fumble, then whatever the duality pair had to say. Five criticals used to mean five flourishes at the same time, which is noise.
 
-DM MODE
+THE TOTAL
 
-- A DICE TRAY, between Finish Encounter and the card archive. The same carousel, the same pool, the same Roll, total and Clear, the same animations, in the dark palette. The duality pair is there; there is no trait row, because you are not playing a character.
-
-The app still does not roll for you. This is a tray of dice for a table that has none, and nothing it does touches your sheet.
+- IT COUNTS UP as the dice land, one die at a time, with a kick on each. The second of animation after the dice stopped moving used to be dead time with a finished number sitting in it; it is the count now, and then the flourish.
+- IT REACTS TO THE THROW. More dice at their best than at their worst and the number swells and flares gold as the buttons come back; the other way and it drops sharply. A matched duality pair counts as one good thing, and a Fear roll is never a fumble.
+- PURPLE STILL MEANS FEAR AND NOTHING ELSE, so the number never argues with the words above it.
 
 Sideload: enable Install unknown apps, then open the APK.
