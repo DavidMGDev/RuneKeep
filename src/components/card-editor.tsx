@@ -20,7 +20,8 @@ import { composeSections } from '@/lib/card-markdown';
 import { type CardSection } from '@/lib/library';
 import { type CardEffect } from '@/lib/modifiers';
 import { applyPickedOption, EffectPicker, EffectsField, type ExperienceRef, FormulaVarPicker, matchOption } from '@/components/effects-editor';
-import { effectsForType, isExperienceType } from '@/features/character-sheet/card-types';
+import { effectsForType, isExperienceType, withTypeEffects } from '@/features/character-sheet/card-types';
+import { OverlayHost } from '@/components/overlay-host';
 import { playSfx } from '@/lib/sfx';
 import { DimScreen } from '@/lib/screen-dim';
 import { useFrame } from '@/hooks/use-layout';
@@ -628,9 +629,11 @@ export function CardEditor({
     JSON.stringify(draft.effects) !== JSON.stringify(base.current.effects) ||
     authoredRows(draft.sections) !== authoredRows(base.current.sections);
   const [leaving, setLeaving] = useState(false);
+  // v0.39.0: the type's own effects are re-settled on the way OUT as well as at the picker, so a card
+  // saved from here agrees with its type even if it arrived from somewhere that never applied them.
   const commit = useCallback(
-    () => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text }),
-    [draft, onSave, sectioned],
+    () => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text, effects: withTypeEffects(draft.effects, draft.typeLabel ?? kindLabel) }),
+    [draft, onSave, sectioned, kindLabel],
   );
   useBackGuard(useCallback(() => { if (dirty) setLeaving(true); else onCancel(); }, [dirty, onCancel]));
 
@@ -708,6 +711,10 @@ export function CardEditor({
 
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
+      {/* v0.39.0: the group dialogs the effects field raises are drawn HERE, at the editor's root,
+          for the same reason the effect picker already is: written inside the scrolling fields
+          column, they were positioned against the scroll content rather than the screen. */}
+      <OverlayHost>
       {scrimless ? (
         // In-sheet (#252): OPAQUE full-screen backdrop; closes only via the Cancel button, never by
         // tapping outside. OCCLUDES touches (#276 item 4): when editing a card from FULLSCREEN the
@@ -897,6 +904,7 @@ export function CardEditor({
           onStay={() => setLeaving(false)}
         />
       ) : null}
+      </OverlayHost>
     </View>
   );
 }

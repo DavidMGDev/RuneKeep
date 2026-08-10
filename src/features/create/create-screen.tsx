@@ -906,7 +906,17 @@ export function CreateScreen() {
       if (deck === 'carry') {
         const off = new Set(draft.carryDisabled ?? []);
         if (off.has(id)) off.delete(id); else off.add(id);
-        set({ carryDisabled: [...off] });
+        /**
+         * Leaving the LEVEL behind moves the level, it does not freeze it (v0.39.0, owner: "changing
+         * the level during characterize became impossible, it stayed stuck at LVL 1").
+         *
+         * The level is a real value on the draft, seeded from the tier and difficulty, so greying its
+         * card out has to WRITE the new default rather than have every reader special-case the
+         * disabled set. Putting the card back restores what the stat block implied. Either way the
+         * stepper, Random and Reset go on working from wherever it lands.
+         */
+        const nextLevel = id === 'carry-level' ? (off.has(id) ? 1 : levelForStatBlock(statBlock?.tier, statBlock?.difficulty)) : undefined;
+        set({ carryDisabled: [...off], ...(nextLevel === undefined ? {} : { level: nextLevel }) });
         return;
       }
       if (deck === 'weapons') {
@@ -1009,7 +1019,7 @@ export function CreateScreen() {
         }
       }
     },
-    [deck, draft, set, weaponSlot, invChoice, secondaryAllowed, libContent, unskip, carry, carryOff],
+    [deck, draft, set, weaponSlot, invChoice, secondaryAllowed, libContent, unskip, carry, carryOff, statBlock],
   );
 
   // v0.23.0: teach the creator when the creator opens, not on first launch.
@@ -1202,9 +1212,10 @@ export function CreateScreen() {
     const className = d.className ?? FALLBACK_CLASS;
     setForging(true);
     const id = newCharacterId();
-    // Greying the level card out sends them to level 1 (owner); otherwise the Level step's number
-    // wins, falling back to what the tier and difficulty worked out to.
-    const level = carryOff.has('carry-level') ? 1 : (d.level ?? keptLevel(carry, carryOff));
+    // The Level step's number wins whenever the DM set one; otherwise the kept items decide, and
+    // `keptLevel` already answers 1 when the level card was greyed out. v0.39.0: this used to force
+    // 1 whenever the card was greyed out, which threw away a level the DM had chosen by hand.
+    const level = d.level ?? keptLevel(carry, carryOff);
     // v0.36.3 (owner): only the Statblock, the weapon and the features become cards. The level is
     // the character's level, and the thresholds, vitals and Evasion ride the Statblock rather than
     // taking three cards to repeat numbers the sheet already prints at the top.
@@ -1739,8 +1750,12 @@ export function CreateScreen() {
             )
           ) : null}
           {deck === 'level' ? (
+            // v0.39.0 (owner): leaving the inherited level behind sets the DEFAULT to 1, it does not
+            // lock the step. This used to read `carryOff.has('carry-level') ? 1 : draft.level`, so
+            // greying the card out pinned the display at 1 and the stepper, Random and Reset all
+            // appeared dead: they were writing a level nothing ever showed.
             <LevelTab
-              level={carryOff.has('carry-level') ? 1 : (draft.level ?? levelForStatBlock(statBlock?.tier, statBlock?.difficulty))}
+              level={draft.level ?? (carryOff.has('carry-level') ? 1 : levelForStatBlock(statBlock?.tier, statBlock?.difficulty))}
               derived={carryOff.has('carry-level') ? 1 : levelForStatBlock(statBlock?.tier, statBlock?.difficulty)}
               onLevel={(n) => { unskip('level'); set({ level: n }); }}
               footer={<SkipStep />}

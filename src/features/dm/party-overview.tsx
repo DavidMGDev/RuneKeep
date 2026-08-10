@@ -20,15 +20,16 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { showToast } from '@/components/toast';
 import { NumberKeypad } from '@/features/character-sheet/sheet/number-keypad';
 import { type CharacterFile } from '@/lib/character-file';
-import { listCharacters, saveCharacter } from '@/lib/character-store';
+import { importCharacter, listCharacters, saveCharacter } from '@/lib/character-store';
 import { partyEffectsOf, setPartyEffects } from '@/lib/dm-cards';
-import { memberMaxes } from '@/lib/dm-vitals';
+import { initialVitals, memberMaxes } from '@/lib/dm-vitals';
 import { type CardEffect } from '@/lib/modifiers';
-import { applyVitalDelta, isPresent, type Party, setGlobalEffects, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
+import { addMembers, applyVitalDelta, isPresent, type Party, setGlobalEffects, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
 import { useDmCharacterTools } from './dm-character-tools';
-import { PartyEffectsIcon } from './dm-icons';
+import { AddMemberIcon, PartyEffectsIcon } from './dm-icons';
+import { MemberPicker } from './party-editor';
 import { DmModifiersPanel } from './dm-modifiers-panel';
 import { MemberPanel } from './member-panel';
 import { DownedVeil, Portrait } from '@/components/portrait';
@@ -115,6 +116,8 @@ export function PartyOverviewScreen() {
   const [files, setFiles] = useState<Record<string, CharacterFile>>({});
   const [keypad, setKeypad] = useState<{ charId: string; key: VitalKey } | null>(null);
   const [globalOpen, setGlobalOpen] = useState(false);
+  /** v0.39.0 (owner): the party sheet adds and imports characters, the way the party editor does. */
+  const [picking, setPicking] = useState(false);
   /** Which member the roster tile last jumped to, and a token that bumps on every jump so tapping
    *  the same portrait twice flashes twice. */
   const [landed, setLanded] = useState<{ id: string; n: number } | null>(null);
@@ -199,6 +202,32 @@ export function PartyOverviewScreen() {
     showToast(effects.length ? 'Applied to the whole party' : 'Party effects cleared', 'success');
   }, [party, files, commit]);
 
+  /**
+   * Add characters, and import one (v0.39.0, owner).
+   *
+   * The same `MemberPicker` the party editor opens, so the two doors cannot drift apart. Everything a
+   * new member needs beyond membership is their starting vitals, which is what `initialVitals` is for;
+   * the effect above then hands them the party's own modifier card on the next render, so someone who
+   * joins mid-storm is caught by it like everybody else.
+   */
+  const addSelected = useCallback((ids: string[]) => {
+    if (!party) return;
+    const entries = ids.map((cid) => files[cid]).filter((f): f is CharacterFile => !!f).map((f) => ({ charId: f.id, vitals: initialVitals(f) }));
+    playSfx('selectCharacter');
+    commit(addMembers(party, entries));
+    setPicking(false);
+  }, [party, files, commit]);
+
+  const onImport = useCallback(async () => {
+    const imported = await importCharacter();
+    if (!imported || !party) return;
+    const all = await listCharacters();
+    setFiles(Object.fromEntries(all.map((f) => [f.id, f])));
+    const f = all.find((c) => c.id === imported.id) ?? imported;
+    commit(addMembers(party, [{ charId: f.id, vitals: initialVitals(f) }]));
+    setPicking(false);
+  }, [party, commit]);
+
   /** Jump the list to a member and flash them, so the tap lands somewhere the DM can see. */
   const focusMember = (charId: string) => {
     const i = party?.memberIds.filter((id) => files[id]).indexOf(charId) ?? -1;
@@ -222,9 +251,14 @@ export function PartyOverviewScreen() {
       dm
       onBack={() => router.back()}
       headerRight={
-        <DmPress onPress={() => { playSfx('buttonTap'); setGlobalOpen(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Party modifiers, ${globalCount} set`}>
-          <PartyEffectsIcon />
-        </DmPress>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          <DmPress onPress={() => { playSfx('buttonTap'); setPicking(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Add characters to this party">
+            <AddMemberIcon />
+          </DmPress>
+          <DmPress onPress={() => { playSfx('buttonTap'); setGlobalOpen(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Party modifiers, ${globalCount} set`}>
+            <PartyEffectsIcon />
+          </DmPress>
+        </View>
       }>
       <FlatList
         ref={listRef}
@@ -270,6 +304,14 @@ export function PartyOverviewScreen() {
           max={Math.max(0, kpMax)}
           onSubmit={onSet}
           onClose={() => setKeypad(null)}
+        />
+      ) : null}
+      {picking ? (
+        <MemberPicker
+          candidates={Object.values(files).filter((f) => !party.memberIds.includes(f.id))}
+          onCancel={() => setPicking(false)}
+          onAdd={addSelected}
+          onImport={onImport}
         />
       ) : null}
       {tools.node}

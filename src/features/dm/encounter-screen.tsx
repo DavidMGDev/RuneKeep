@@ -171,12 +171,26 @@ export function EncounterScreen() {
    *
    * The pending save is flushed first, so returning cannot resurrect an edit made a moment before
    * leaving, and cannot race the read either.
+   *
+   * v0.39.0 (owner: "the adversary entry did not get replaced"): both halves of that were broken.
+   *
+   *  1. `commitEncounter`'s timeout never cleared its own handle, so after the DM had touched ANY
+   *     stat once — starting the encounter counts — `encTimer.current` stayed truthy for the life of
+   *     the screen. Every focus therefore "flushed a pending save" that had already fired minutes
+   *     ago, writing the copy this screen was holding: the pre-characterize adversary, straight over
+   *     the swap the creator had just made.
+   *  2. The flush was not awaited, so even a real one raced the read that follows it.
+   *
+   * The timer nulls itself when it fires, the flush is awaited, and leaving the screen flushes
+   * rather than abandoning the write. Intermittent because it was a race: it depended on whether the
+   * stale write landed before or after the read, which is why forging a portraitless adversary from
+   * the header looked fine and Skip and Forge with a portrait did not.
    */
   useFocusEffect(
     useCallback(() => {
       let live = true;
-      if (encTimer.current) { clearTimeout(encTimer.current); encTimer.current = null; if (encRef.current) void saveEncounter(encRef.current); }
       void (async () => {
+        if (encTimer.current) { clearTimeout(encTimer.current); encTimer.current = null; if (encRef.current) await saveEncounter(encRef.current); }
         const enc = await getEncounter(id);
         if (!enc || !live) { if (live) setEncounter(enc); return; }
         const [ses, all, lib] = await Promise.all([getSession(enc.sessionId), listCharacters(), loadAdversaries()]);
@@ -186,20 +200,28 @@ export function EncounterScreen() {
         setSession(ses); setParty(pty); setLibrary(lib);
         setFiles(Object.fromEntries(all.map((f) => [f.id, f])));
       })();
-      return () => { live = false; };
+      // Leaving flushes what is pending rather than abandoning it, so nothing is left for a later
+      // focus to write at the wrong moment.
+      return () => {
+        live = false;
+        if (encTimer.current) { clearTimeout(encTimer.current); encTimer.current = null; if (encRef.current) void saveEncounter(encRef.current); }
+        if (partyTimer.current) { clearTimeout(partyTimer.current); partyTimer.current = null; if (partyRef.current) void saveParty(partyRef.current); }
+      };
     }, [id]),
   );
   useEffect(() => () => { if (encTimer.current) clearTimeout(encTimer.current); if (partyTimer.current) clearTimeout(partyTimer.current); }, []);
 
+  // The handle is cleared BY the timeout as well as by the next commit: a fired timer is not pending,
+  // and treating it as though it were is what wrote a stale encounter over a characterized one.
   const commitEncounter = useCallback((next: Encounter) => {
     setEncounter(next); encRef.current = next;
     if (encTimer.current) clearTimeout(encTimer.current);
-    encTimer.current = setTimeout(() => { void saveEncounter(next); }, 200);
+    encTimer.current = setTimeout(() => { encTimer.current = null; void saveEncounter(next); }, 200);
   }, []);
   const commitParty = useCallback((next: Party) => {
     setParty(next); partyRef.current = next;
     if (partyTimer.current) clearTimeout(partyTimer.current);
-    partyTimer.current = setTimeout(() => { void saveParty(next); }, 200);
+    partyTimer.current = setTimeout(() => { partyTimer.current = null; void saveParty(next); }, 200);
   }, []);
   const commitLibrary = useCallback((next: SavedAdversary[]) => { setLibrary(next); void saveAdversaries(next); }, []);
 
@@ -247,12 +269,27 @@ export function EncounterScreen() {
 
   /** Vitals for a characterized entry. They are not in the party, so the encounter holds them. */
   const charVitalsOf = useCallback((charId: string) => encRef.current?.charVitals?.[charId], []);
+  /**
+   * Which side a characterized entry is fighting on (v0.39.0, owner: "characterized adversaries and
+   * allies do not get their stats auto-logged").
+   *
+   * They are a character AND a combatant, which is why they slipped through: the member path logs and
+   * the combatant path logs, and the one entry that is neither had no path of its own. The side comes
+   * from the list the entry actually sits in, so a characterized villain reads as an adversary in the
+   * log rather than as a player.
+   */
+  const charSide = useCallback((charId: string): 'Player' | 'Adversary' => {
+    const enc = encRef.current;
+    return enc?.adversaries.some((c) => c.charId === charId) ? 'Adversary' : 'Player';
+  }, []);
   const onCharApply = useCallback((charId: string, key: VitalKey, delta: number) => {
     const enc = encRef.current, f = files[charId];
     if (!enc || !f) return;
     const cur = enc.charVitals?.[charId] ?? initialVitals(f);
-    commitEncounter({ ...enc, charVitals: { ...(enc.charVitals ?? {}), [charId]: applyVitalDelta(cur, key, delta, memberMaxes(f)) } });
-  }, [files, commitEncounter]);
+    const after = applyVitalDelta(cur, key, delta, memberMaxes(f));
+    const next = { ...enc, charVitals: { ...(enc.charVitals ?? {}), [charId]: after } };
+    commitEncounter(enc.options.autoLog && cur[key] !== after[key] ? appendLog(next, 'stat', formatStatLog(charSide(charId), f.name, key, cur[key], after[key])) : next);
+  }, [files, commitEncounter, charSide]);
 
   // --- radial apply (one discrete change → one log entry, item 2) ---
   const onMemberApply = useCallback((charId: string, key: VitalKey, delta: number) => {
@@ -280,7 +317,9 @@ export function EncounterScreen() {
       // A characterized entry is not in the party, so its vitals are set on the encounter.
       const cf = files[keypad.charId]; if (!cf) { setKeypad(null); return; }
       const cur = enc.charVitals?.[keypad.charId] ?? initialVitals(cf);
-      commitEncounter({ ...enc, charVitals: { ...(enc.charVitals ?? {}), [keypad.charId]: setVital(cur, keypad.key, n, memberMaxes(cf)) } });
+      const after = setVital(cur, keypad.key, n, memberMaxes(cf));
+      const next = { ...enc, charVitals: { ...(enc.charVitals ?? {}), [keypad.charId]: after } };
+      commitEncounter(enc.options.autoLog && cur[keypad.key] !== after[keypad.key] ? appendLog(next, 'stat', formatStatLog(charSide(keypad.charId), cf.name, keypad.key, cur[keypad.key], after[keypad.key])) : next);
       setKeypad(null);
       return;
     }
@@ -306,7 +345,7 @@ export function EncounterScreen() {
       }
     }
     setKeypad(null);
-  }, [keypad, files, findCombatant, updateCombatant, commitParty, commitEncounter]);
+  }, [keypad, files, findCombatant, updateCombatant, commitParty, commitEncounter, charSide]);
 
   /**
    * Grant the overflow, then set the value now that it fits.

@@ -25,12 +25,18 @@ interface TraitBannerProps {
   icon: number;
   value: number;
   modifierSize: number;
+  /** v0.39.0: while the dice tray is open a trait throws the duality pair with its modifier. */
+  onRoll?: (label: string, value: number) => void;
 }
 
-function TraitBanner({ x, groupTop, label, icon, value, modifierSize }: TraitBannerProps) {
+function TraitBanner({ x, groupTop, label, icon, value, modifierSize, onRoll }: TraitBannerProps) {
   return (
     <View style={box(x, groupTop, GROUP_W, GROUP_H)}>
-      <PressableArt style={{ flex: 1 }} pressedScale={1.1} onPress={() => playSfx('numpadPress')} accessibilityLabel={`${label} ${formatModifier(value)}`}>
+      <PressableArt
+        style={{ flex: 1 }}
+        pressedScale={1.1}
+        onPress={() => { if (onRoll) { onRoll(label, value); return; } playSfx('numpadPress'); }}
+        accessibilityLabel={onRoll ? `Throw the duality dice with ${label} ${formatModifier(value)}` : `${label} ${formatModifier(value)}`}>
         {/* Hex shield background — a banner outline, so it fills its box (stretched 10px down,
             independent of the glyph above it, #48 H) */}
         <View style={box(0, 9.6, GROUP_W, 119.4)}>
@@ -58,10 +64,13 @@ export function TraitBanners({
   character,
   modifierSize = 18,
   groupTop = DEFAULT_GROUP_TOP,
+  onRoll,
 }: {
   character: Character;
   modifierSize?: number;
   groupTop?: number;
+  /** Set only while the dice tray is up: a trait becomes a throw of the pair, plus this modifier. */
+  onRoll?: (label: string, value: number) => void;
 }) {
   return (
     <>
@@ -74,6 +83,7 @@ export function TraitBanners({
           icon={trait.icon}
           value={character.traits[trait.key]}
           modifierSize={modifierSize}
+          onRoll={onRoll}
         />
       ))}
     </>
