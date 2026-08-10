@@ -55,8 +55,14 @@ function MemberRow({ file, present, onTogglePresent, onRemove }: { file: Charact
   );
 }
 
-/** The multi-select over roster characters not already in the party (PRD #13/#14). */
-function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candidates: CharacterFile[]; onCancel: () => void; onAdd: (ids: string[]) => void; onImport: () => void }) {
+/**
+ * The multi-select over roster characters not already in the party (PRD #13/#14).
+ *
+ * Exported since v0.39.0: the party SHEET adds characters too, and the owner's ask was for the same
+ * control, not a second one that drifts from this ("just like they can in the original party
+ * interface").
+ */
+export function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candidates: CharacterFile[]; onCancel: () => void; onAdd: (ids: string[]) => void; onImport: () => void }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   return (

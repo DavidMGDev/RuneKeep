@@ -21,6 +21,7 @@ import { ScrollView } from 'react-native-gesture-handler';
 import Svg, { Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { OverlayHost } from '@/components/overlay-host';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchOption, toEditableEffects } from '@/components/effects-editor';
@@ -107,6 +108,11 @@ export function DmModifiersPanel({
 
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 400, backgroundColor: DmRune.ink }}>
+      {/* v0.39.0 (owner): the group dialogs are written inside the ScrollView below and DRAWN here,
+          as children of this panel-sized view. An absolute inset inside a scroll view is measured
+          from the CONTENT, so those dialogs were centred on the content rather than on the panel and
+          landed partly off the top of the screen. */}
+      <OverlayHost>
       <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 14 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
           <View style={{ flex: 1 }}>
@@ -203,6 +209,7 @@ export function DmModifiersPanel({
           <RuneButton label="Leave without saving" kind="ghost" height={42} dm style={{ marginTop: 12 }} onPress={() => { setLeaving(false); setDraft(toEditableEffects(effects)); if (startEditing) onClose(); else setEditing(false); }} />
         </PopupDialog>
       ) : null}
+      </OverlayHost>
     </View>
   );
 }

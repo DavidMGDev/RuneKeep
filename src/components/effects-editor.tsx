@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { Overlay } from '@/components/overlay-host';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { deleteGroup, groupEffects, groupNames, isGroupOn, moveToGroup, renameGroup, setGroupOn } from '@/lib/modifier-groups';
@@ -547,7 +548,7 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
         <RuneButton label="+ Add effect" kind="secondary" dense height={36} style={{ flex: 1 }} onPress={() => onChange([...effects, { target: 'maxHp', delta: 1 }])} />
       </View>
       {naming != null ? (
-        <GroupNameDialog
+        <Overlay><GroupNameDialog
           title={naming ? 'Rename group' : 'Name the group'}
           initial={naming}
           taken={allGroups}
@@ -562,10 +563,10 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
             setNaming(null);
           }}
           onClose={() => setNaming(null)}
-        />
+        /></Overlay>
       ) : null}
       {groupPick != null && effects[groupPick] ? (
-        <GroupPicker
+        <Overlay><GroupPicker
           current={effects[groupPick].group}
           groups={allGroups}
           dm={dm}
@@ -575,7 +576,7 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
             setGroupPick(null);
           }}
           onClose={() => setGroupPick(null)}
-        />
+        /></Overlay>
       ) : null}
     </View>
   );

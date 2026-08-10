@@ -6,7 +6,7 @@ import { Keyboard, type NativeSyntheticEvent, Platform, Pressable, ScrollView, T
 import { useReducedMotion } from 'react-native-reanimated';
 
 import { ArtGesture, type CardDraft, CharCount, ColorNameFlash, ColorOverArtDialog, LeaveGuardDialog, PLAQUE_H, PLAQUE_TOP, randomCardColor, TEXT_MAX, TITLE_MAX, TypePicker, useBackGuard } from '@/components/card-editor';
-import { isExperienceType } from '@/features/character-sheet/card-types';
+import { effectsForType, isExperienceType, withTypeEffects } from '@/features/character-sheet/card-types';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
@@ -110,7 +110,19 @@ export function QuickCardFlow({
    * A quick card is worth keeping the moment there is a single character on it, which is the owner's
    * rule, and a picked photo counts too: choosing it took a trip out to the gallery and back.
    */
-  const commit = useCallback(() => onSave({ ...draft, title: draft.title.trim(), typeLabel: draft.typeLabel ?? kindLabel }), [draft, kindLabel, onSave]);
+  /**
+   * The type's own effects are settled at SAVE, not at the picker (v0.39.0, owner: "Scar-type cards
+   * created on the webapp do not have an inherent Add Scar modifier").
+   *
+   * v0.37.1 wired `effectsForType` into the full editor's type picker only, and this flow is the one
+   * the Add Card badge opens, so the type most cards are actually given carried nothing. Doing it on
+   * the way out instead means a card can never be saved with a type its effects disagree with,
+   * whichever door it came through and however many times the type was changed on the way.
+   */
+  const commit = useCallback(() => {
+    const typeLabel = draft.typeLabel ?? kindLabel;
+    onSave({ ...draft, title: draft.title.trim(), typeLabel, effects: withTypeEffects(draft.effects, typeLabel) });
+  }, [draft, kindLabel, onSave]);
   const dirty = draft.title.trim().length > 0 || draft.text.trim().length > 0 || !!draft.imageUri;
   const [leaving, setLeaving] = useState(false);
   useBackGuard(useCallback(() => {
@@ -302,7 +314,9 @@ export function QuickCardFlow({
         <TypePicker
           groups={typeGroups}
           current={plaqueLabel}
-          onPick={(t) => { setDraft((d) => ({ ...d, typeLabel: t })); setPickType(false); }}
+          // v0.39.0: the type's effects follow the type here too. Picking Scar gives the card its
+          // scar; picking anything else takes it back off, which is the half a save cannot do.
+          onPick={(t) => { setDraft((d) => ({ ...d, typeLabel: t, effects: effectsForType(d.effects, t) })); setPickType(false); }}
           onClose={() => setPickType(false)}
         />
       ) : null}

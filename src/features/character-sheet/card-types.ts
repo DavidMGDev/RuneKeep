@@ -44,6 +44,23 @@ export function effectsForType(effects: CardEffect[] | undefined, nextType: stri
   return isScarType(nextType) ? [...kept, { target: 'scar', delta: 1 }] : kept;
 }
 
+/**
+ * The effects a card of this type must ALREADY carry, applied on the way out of an editor (v0.39.0).
+ *
+ * Deliberately only additive, which is the difference between this and {@link effectsForType}. The
+ * picker knows the type CHANGED, so it may take the old type's effect away; a save knows nothing of
+ * the kind, and stripping every scar effect on every save would quietly delete one a player had put
+ * on a card of their own accord.
+ *
+ * It exists because the type picker is not the only door: the quick flow had its own, so a Scar card
+ * made from the Add Card badge carried no scar at all (owner, v0.39.0).
+ */
+export function withTypeEffects(effects: CardEffect[] | undefined, type: string | undefined): CardEffect[] {
+  const cur = effects ?? [];
+  if (!isScarType(type) || cur.some((e) => e.target === 'scar')) return cur;
+  return [...cur, { target: 'scar', delta: 1 }];
+}
+
 /** Flat list of every built-in type, de-duplicated in group order. */
 export const BUILTIN_CARD_TYPES: string[] = (() => {
   const seen = new Set<string>();

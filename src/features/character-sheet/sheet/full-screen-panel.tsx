@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { OverlayHost } from '@/components/overlay-host';
 import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
 import { useLayout } from '@/hooks/use-layout';
@@ -39,6 +40,11 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
   useScreenDim(0.985);
   return (
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
+      {/* v0.39.0: anything inside this panel that asks to be an OVERLAY is drawn here, as a child of
+          the full-screen view, rather than wherever it was written. A dialog written inside one of
+          the panel's scrolling columns would otherwise be positioned against the scroll CONTENT and
+          land off the top of the screen (see components/overlay-host). */}
+      <OverlayHost>
       {/* opaque catching backdrop — no onPress (button-only close), but a touch target so nothing
           behind can ever be tapped through. */}
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, bgStyle]} />
@@ -58,6 +64,7 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
           {footer ? <View style={{ marginTop: 10 }}>{footer}</View> : null}
         </ChamferBox>
       </Animated.View>
+      </OverlayHost>
     </View>
   );
 }

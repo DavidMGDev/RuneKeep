@@ -5,7 +5,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useDerivedValue, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AccentProvider, useAccentTint } from '../components/accent';
@@ -82,6 +82,7 @@ import { ChargeTrack, type ChargeTrackHandle } from '../components/charge-track'
 import { HeartTrack, type HeartTrackHandle } from '../components/heart-track';
 import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
+import { DiceTray, type DiceTrayHandle } from './dice-tray';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
@@ -273,7 +274,22 @@ function FavoritesBadge({ left, top, w, h }: { left: number; top: number; w: num
 
 type TrackKey = 'stress' | 'armor' | 'hope';
 
-function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onOpenBoard, onAddCard, onAddGear, onFavoritesBlocked }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onOpenBoard: () => void; onAddCard: () => void; onAddGear: () => void; onFavoritesBlocked: () => void }) {
+/** Hit points, stress and hope, fading together as the dice tray takes their place (v0.39.0). */
+function VitalsGroup({ hidden, children }: { hidden: boolean; children: React.ReactNode }) {
+  const reduced = useReducedMotion();
+  const fade = useSharedValue(1);
+  useEffect(() => {
+    fade.value = reduced ? (hidden ? 0 : 1) : withTiming(hidden ? 0 : 1, { duration: 240, easing: Easing.out(Easing.cubic) });
+  }, [hidden, fade, reduced]);
+  const style = useAnimatedStyle(() => ({ opacity: fade.value }));
+  return (
+    <Animated.View style={[box(0, 0, SHEET_DESIGN_WIDTH, SHEET_DESIGN_HEIGHT), style]} pointerEvents={hidden ? 'none' : 'box-none'}>
+      {children}
+    </Animated.View>
+  );
+}
+
+function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onOpenBoard, onAddCard, onAddGear, onFavoritesBlocked, diceUp }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onOpenBoard: () => void; onAddCard: () => void; onAddGear: () => void; onFavoritesBlocked: () => void; /** v0.39.0: the dice tray has taken the three vitals panels' places. */ diceUp: boolean }) {
   const tint = useAccentTint();
   // v0.10.7: the hidden Favorites mirror can't take new cards — Add Card / Add Gear toast instead of
   // authoring a copy into the mirror. `category` comes from the carousel (this body is inside it).
@@ -415,6 +431,12 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
         trackLabel="Armor"
       />
 
+      {/* v0.39.0: hit points, stress and hope are ONE fading group, because the dice tray takes all
+          three of their places at once. The wrapper spans the whole design and is transparent, so
+          every child keeps the exact coordinates it was authored at; `box-none` means the wrapper
+          itself catches nothing and its children go on catching everything, right up until the tray
+          switches the whole group off. */}
+      <VitalsGroup hidden={diceUp}>
       {/* ---------- HP — hearts fit inside the frame, spaced ----------
           Panel raised 5px: the gap to the portrait/armor band above shrinks ~30% (#37). */}
       {/* Left edge pulled in 3px — the frame overshot the sheet's left rhythm (#43 I). */}
@@ -511,6 +533,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
         zone={{ left: -10, top: -6, width: 344, height: 56 }}
         trackLabel="Hope"
       />
+      </VitalsGroup>
 
       {/* The deck-toggle trigger (now opens the radial float menu, #161). Lives at the same screen
           spot the old toggle did (header group 16,12 + child 39,211 → absolute 55,223); kept here in
@@ -2405,6 +2428,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const moodboard = useMemo(() => readMoodboard(file?.moodboard), [file?.moodboard]);
   const onMoodboard = useCallback((next: MoodboardItem[]) => mutateFile({ moodboard: next }), [mutateFile]);
   const onOpenBoard = useCallback(() => setBoardOpen(true), []);
+
+  /**
+   * The dice tray (v0.39.0, owner).
+   *
+   * Its state lives HERE rather than inside the tray because two things outside the tray answer to it:
+   * the three vitals panels, which fade out to make room, and the trait row, which is rendered beside
+   * the sheet body and becomes a way to throw the duality pair while the tray is up. Nothing about it
+   * is saved: a handful of dice is not part of a character.
+   */
+  const [diceUp, setDiceUp] = useState(false);
+  const trayRef = useRef<DiceTrayHandle | null>(null);
+  const toggleDice = useCallback(() => {
+    setDiceUp((v) => {
+      playSfx(v ? 'panelClose' : 'panelOpen');
+      return !v;
+    });
+  }, []);
+  const rollTrait = useCallback((label: string, value: number) => trayRef.current?.rollDuality(label, value), []);
   /**
    * Coming back from the board (v0.34.1).
    *
@@ -2591,8 +2632,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenBoard={onOpenBoard} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} />
-              <TraitBanners character={character} modifierSize={22} groupTop={614} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenBoard={onOpenBoard} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} diceUp={diceUp} />
+              {/* v0.39.0: the dice tray sits between the sheet and the traits, so its panels cover the
+                  vitals fading out behind them and the cards still ride over everything. */}
+              <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
+              <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={diceUp ? rollTrait : undefined} />
               <ExpandVeil />
               <EditHud file={file ?? undefined} />
               {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the

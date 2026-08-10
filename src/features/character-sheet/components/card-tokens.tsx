@@ -91,14 +91,14 @@ function scalePts(pts: string, pad: number): string {
  * either re-rendering the whole gradient SVG per frame or duplicating the offset maths, and the second
  * copy would drift from this one the first time a die's nudge was tuned.
  */
-export const DieNumber = memo(function DieNumber({ size, dieType, value }: { size: number; dieType: DieType; value: number }) {
+export const DieNumber = memo(function DieNumber({ size, dieType, value, fill, ink }: { size: number; dieType: DieType; value: number; /** v0.39.0: the tray draws a d12 in the Hope or Fear colours. */ fill?: string; ink?: string }) {
   const geo = dieGeometry(dieType);
   const noff = dieNumberOffset(dieType);
-  const rim = shade(DIE_COLOR[dieType], -0.34);
+  const rim = shade(fill ?? DIE_COLOR[dieType], -0.34);
   return (
     <Text
       allowFontScaling={false}
-      style={{ color: DIE_INK[dieType] ?? '#F2ECDC', fontFamily: Display.black, fontSize: size * dieNumberFrac(dieType), textAlign: 'center', textShadowColor: rim, textShadowRadius: 1, textShadowOffset: { width: 0, height: 1 }, transform: [{ translateX: (noff.dx / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2 + noff.dy) / DIE_BOX) * size }] }}>
+      style={{ color: ink ?? DIE_INK[dieType] ?? '#F2ECDC', fontFamily: Display.black, fontSize: size * dieNumberFrac(dieType), textAlign: 'center', textShadowColor: rim, textShadowRadius: 1, textShadowOffset: { width: 0, height: 1 }, transform: [{ translateX: (noff.dx / DIE_BOX) * size }, { translateY: ((geo.numberY - DIE_BOX / 2 + noff.dy) / DIE_BOX) * size }] }}>
       {value}
     </Text>
   );
@@ -166,7 +166,14 @@ export const DualityNumber = memo(function DualityNumber({ size, side, value }: 
   );
 });
 
-export const DieButton = memo(function DieButton({ size, dieType, value, value2, hideNumber }: { size: number; dieType: DieType; value: number; /** v0.34.4: the Fear die of a duality token. */ value2?: number; /** v0.32.0: the roll draws its own cross-fading numbers over the face. */ hideNumber?: boolean }) {
+export const DieButton = memo(function DieButton({ size, dieType, value, value2, hideNumber, fill, ink }: { size: number; dieType: DieType; value: number; /** v0.34.4: the Fear die of a duality token. */ value2?: number; /** v0.32.0: the roll draws its own cross-fading numbers over the face. */ hideNumber?: boolean; /**
+ * Paint this die a colour that is not its own (v0.39.0).
+ *
+ * The dice tray throws the duality pair as two SEPARATE dice, so it needs a d12 in Hope gold and a
+ * d12 in Fear purple. The pair TOKEN cannot do that job: its two halves share one box and one
+ * gesture, which is exactly what a pair on a card should be and exactly what a die in a grid of nine
+ * others should not.
+ */ fill?: string; ink?: string }) {
   if (dieType === 'duality') {
     return (
       <View style={{ width: size, height: size }} pointerEvents="none">
@@ -181,12 +188,12 @@ export const DieButton = memo(function DieButton({ size, dieType, value, value2,
       </View>
     );
   }
-  return <SingleDie size={size} dieType={dieType} value={value} hideNumber={hideNumber} />;
+  return <SingleDie size={size} dieType={dieType} value={value} hideNumber={hideNumber} fillOverride={fill} ink={ink} />;
 });
 
-const SingleDie = memo(function SingleDie({ size, dieType, value, hideNumber }: { size: number; dieType: DieType; value: number; hideNumber?: boolean }) {
+const SingleDie = memo(function SingleDie({ size, dieType, value, hideNumber, fillOverride, ink }: { size: number; dieType: DieType; value: number; hideNumber?: boolean; fillOverride?: string; ink?: string }) {
   const gid = useId();
-  const fill = DIE_COLOR[dieType];
+  const fill = fillOverride ?? DIE_COLOR[dieType];
   const rim = shade(fill, -0.34);
   const geo = dieGeometry(dieType);
   const face = (pad: number, fillv: string, stroke?: string, sw?: number) =>
@@ -210,7 +217,7 @@ const SingleDie = memo(function SingleDie({ size, dieType, value, hideNumber }: 
         {face(2, rim)}
         {face(8, `url(#${gid})`, shade(fill, -0.42), 2)}
       </Svg>
-      {hideNumber ? null : <DieNumber size={size} dieType={dieType} value={value} />}
+      {hideNumber ? null : <DieNumber size={size} dieType={dieType} value={value} fill={fillOverride} ink={ink} />}
     </View>
   );
 });

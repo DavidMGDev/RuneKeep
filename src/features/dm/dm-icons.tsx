@@ -39,6 +39,18 @@ export function PartyEffectsIcon({ size = 22, color = DmRune.accent, dim = DmRun
   );
 }
 
+/** Add someone to the party (v0.39.0): a figure with a plus beside it. */
+export function AddMemberIcon({ size = 22, color = DmRune.accent, dim = DmRune.accentDim }: { size?: number; color?: string; dim?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={9} cy={8} r={3.4} fill="none" stroke={color} strokeWidth={1.8} />
+      <Path d="M3 20c0-3.4 2.7-5.6 6-5.6s6 2.2 6 5.6" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+      <Line x1={18.5} y1={5} x2={18.5} y2={12} stroke={dim} strokeWidth={2} strokeLinecap="round" />
+      <Line x1={15} y1={8.5} x2={22} y2={8.5} stroke={dim} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 /** The party sheet: three figures side by side. */
 export function PartySheetIcon({ size = 18, color = DmRune.accent, dim = DmRune.accentDim }: { size?: number; color?: string; dim?: string }) {
   return (
