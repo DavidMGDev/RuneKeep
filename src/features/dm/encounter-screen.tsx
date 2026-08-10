@@ -69,6 +69,7 @@ import { MemberPanel } from './member-panel';
 import { StatRadialProvider } from './stat-radial';
 import { useDmCharacterTools } from './dm-character-tools';
 import { ArchiveIcon, PartySheetIcon } from './dm-icons';
+import { DmDiceButton, DmDicePanel } from './dm-dice-panel';
 import { useSelection } from './use-selection';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
@@ -149,6 +150,8 @@ export function EncounterScreen() {
   const [startConflict, setStartConflict] = useState(false);
   const [restartPrompt, setRestartPrompt] = useState(false);
   const [muted, setMuted] = useState(isUiMuted); // item 6: DM-side UI-sound mute
+  // v0.40.0 (owner): the character sheet's dice tray, in the dark, over the encounter.
+  const [diceOpen, setDiceOpen] = useState(false);
 
   const advSel = useSelection();
   const allySel = useSelection();
@@ -579,6 +582,8 @@ export function EncounterScreen() {
               {enc.status === 'active' ? <RuneButton label="Finish Encounter" kind="secondary" height={CTRL_H} dense dm onPress={() => setConfirmComplete(true)} /> : null}
               {enc.status === 'completed' ? <RuneButton label="Restart" kind="secondary" height={CTRL_H} dense dm onPress={() => setRestartPrompt(true)} /> : null}
             </View>
+            {/* v0.40.0 (owner): the dice tray, between Finish Encounter and the archive. */}
+            <DmDiceButton height={CTRL_H} onPress={() => setDiceOpen(true)} />
             {/* v0.35.1 (owner): an OPEN BOOK for the archive, and the party sheet beside it. */}
             <DmPress onPress={() => { playSfx('buttonTap'); router.push('/gallery' as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open card archive">
               <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ width: CTRL_H, height: CTRL_H, alignItems: 'center', justifyContent: 'center' }}>
@@ -785,6 +790,7 @@ export function EncounterScreen() {
         </DmModal>
       ) : null}
 
+      {diceOpen ? <DmDicePanel onClose={() => setDiceOpen(false)} /> : null}
       {tools.node}
       {confirmComplete ? <PopupDialog dm title="Finish this encounter?" body="This freezes the party's current state onto the encounter as a record, modifiers included. The party keeps its live state, and its modifiers, for the next encounter." confirmLabel="Finish" onConfirm={complete} onCancel={() => setConfirmComplete(false)} /> : null}
       {confirmDeleteAlly ? <PopupDialog dm title="Remove these allies?" body={`${confirmDeleteAlly.size === 1 ? 'This ally' : `These ${confirmDeleteAlly.size} allies`} will be removed from this encounter. Player characters are never removed this way.`} confirmLabel="Remove" destructive onConfirm={() => { deleteNpcAllies(confirmDeleteAlly); setConfirmDeleteAlly(null); allySel.clear(); }} onCancel={() => setConfirmDeleteAlly(null)} /> : null}

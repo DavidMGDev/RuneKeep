@@ -81,6 +81,7 @@ import {
   snapRot,
   SNAP_SPRING,
 } from '../carousel-geometry';
+import { useDetentGuard } from '@/hooks/use-detent';
 import { reorderBlock } from '../edit-drag';
 import { cardMenuOptions } from '../card-menu';
 import { CardRadialMenu } from './card-radial-menu';
@@ -956,6 +957,27 @@ export function CardCarousel() {
   const editDecided = useSharedValue(0); // 0 undecided, 1 grabbed, 2 scrolling the row, 3 radial menu open
   const editPadTouch = useSharedValue(0); // 1 = this edit touch began on the gear pad (tap → exit edit)
   const editHandledSV = useSharedValue(0); // 1 = onEnd already fired the menu (skip onFinalize)
+  /**
+   * The row always lands on a card (v0.40.0). See `hooks/use-detent`: it samples the rotation after a
+   * release and settles it only once it has come to rest, so nothing it does can interrupt a throw.
+   * It stands down while a card is focused, while a deck is switching and while a card is being
+   * dragged, because in each of those the rotation legitimately belongs to something else.
+   */
+  const detentSnap = useCallback((v: number) => snapRot(v, count), [count]);
+  const detentSettle = useCallback((to: number) => { rotation.value = withSpring(to, SNAP_SPRING); }, [rotation]);
+  const detentIdle = useCallback(() => machineState.value !== 'fullscreen' && switching.value !== 1 && editGrabbed.value !== 1, [machineState, switching, editGrabbed]);
+  const detent = useDetentGuard(rotation, detentSnap, detentSettle, detentIdle);
+  /**
+   * Reached through a REF, never through the gesture's dependency list.
+   *
+   * `arm` changes whenever the deck's length does, and a gesture rebuilt under a finger that is
+   * already down is the bug that has cost this project four releases. The ref is read at call time,
+   * so the gesture closes over nothing that can change.
+   */
+  const armRef = useRef(detent.arm);
+  armRef.current = detent.arm;
+  const armDetent = useCallback(() => armRef.current(), []);
+
   const settling = useSharedValue(0); // v0.12.3 (2a): 1 while the staged release commit runs (make-room → spread); freezes the frame-callback so the reflow settles deterministically before the pile drops in
   const editFlat = useSharedValue(0); // v0.12.3 (2c): 0 = normal raised look, 1 = raised look SUPPRESSED — a grab visually deselects the pile so it drags/settles flat (re-raises only if dropped back home)
   const sortGather = useSharedValue(0); // v0.38: 0 = in the row, 1 = gathered in the middle for a sort
@@ -1830,6 +1852,19 @@ export function CardCarousel() {
             const settled = snapRot(rotation.value, count);
             if (Math.abs(settled - rotation.value) > 0.0001) rotation.value = withSpring(settled, SNAP_SPRING);
           }
+          /**
+           * ...and the watchdog behind it (v0.40.0, owner).
+           *
+           * The check above only covers the case it was written for: a tap that never activated the
+           * pan while the deck was in a state that has no other owner. It does not cover a card
+           * OPENING mid-scroll, a deck switch that ate the release, or a browser taking pointer
+           * capture, and the owner still finds the row stranded between two cards.
+           *
+           * `useDetentGuard` waits for the rotation to STOP and only then puts it on a detent, so it
+           * cannot fight a fling that is still travelling and it does not care which path failed to
+           * snap. It is armed on every release, including the ones that return early above.
+           */
+          runOnJS(armDetent)();
           padTouch.value = false;
         });
     },

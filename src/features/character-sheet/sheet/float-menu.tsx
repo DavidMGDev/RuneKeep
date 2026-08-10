@@ -37,7 +37,7 @@ interface Slot {
 }
 
 // Trigger centre in DESIGN px (header group box(16,12) + child centre (65,237)).
-const T = { x: 81, y: 249 };
+const T = { x: 86, y: 249 }; // v0.40.0: +5 with the portrait band (see redesigned-sheet)
 const N = 5; // wedge count (#174: the Switch slot moved to the gear, 6 -> 5)
 // Slot centre angles (deg, screen coords: 0 = +x right, -90 = straight up, +90 = straight down).
 // Settings sits due-NORTH, the class-feature slot due-SOUTH (owner #168); the rest fan down the
@@ -286,7 +286,7 @@ export function FloatMenuTrigger() {
     <GestureDetector gesture={gesture}>
       <View
         ref={ref}
-        style={box(55, 223, 52, 52)}
+        style={box(60, 223, 52, 52)}
         hitSlop={10}
         accessibilityRole="button"
         accessibilityLabel={`Card deck: ${category}. Opens the actions menu`}

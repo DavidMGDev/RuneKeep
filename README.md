@@ -116,6 +116,9 @@ The web build is `npx expo export --platform web`, which writes a static `dist/`
 [`apk-build/README.md`](./apk-build/README.md) for toolchain notes and
 [`docs/web-deploy.md`](./docs/web-deploy.md) for hosting.
 
+Setting the project up from nothing on a new machine, including restoring Claude's project memory from
+`.claude/memory/`, is [`docs/fresh-machine.md`](./docs/fresh-machine.md).
+
 ## Project layout
 
 ```
@@ -127,6 +130,7 @@ src/lib/            pure logic: modifier engine, leveling, rest, character file,
 src/constants/      theme (the Rune palette sampled from the art), identity
 assets/             card art, images, sounds
 docs/               architecture notes (responsive strategy, carousel, perf rules)
+.claude/memory/     Claude's project memory: the release gotchas and standing rules (see docs/fresh-machine.md)
 scripts/            codegen and browser-driving tools (web-probe, web-profile, forge-hash)
 ```
 

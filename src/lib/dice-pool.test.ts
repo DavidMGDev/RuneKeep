@@ -1,4 +1,4 @@
-import { dualityVerdict, type PoolDie, poolGrid, poolTotal, rollCents, sortPool } from './dice-pool';
+import { addDie, dieVerdicts, dualityVerdict, type PoolDie, poolGrid, poolTotal, removeDie, rollCents, sortPool } from './dice-pool';
 
 const die = (type: PoolDie['type'], value: number | null = null, side?: PoolDie['side'], id = `${type}-${Math.random()}`): PoolDie => ({ id, type, value, side });
 
@@ -111,5 +111,107 @@ describe('rollCents', () => {
     const same = [die('d6'), die('d6')];
     const grown = [die('d6'), die('d20')];
     expect(rollCents(grown, 1) - rollCents(grown, 0)).toBeGreaterThan(rollCents(same, 1) - rollCents(same, 0));
+  });
+});
+
+describe('addDie / removeDie', () => {
+  const ids = (base: string) => (n: number) => `${base}-${n}`;
+
+  it('adds one die for an ordinary type', () => {
+    const pool = addDie([], 'd20', ids('a'));
+    expect(pool.map((d) => d.type)).toEqual(['d20']);
+    expect(pool[0].pairId).toBeUndefined();
+  });
+
+  it('adds TWO bound dice for the duality entry', () => {
+    const pool = addDie([], 'duality', ids('a'));
+    expect(pool).toHaveLength(2);
+    expect(pool.map((d) => d.type)).toEqual(['d12', 'd12']);
+    expect(pool.map((d) => d.side)).toEqual(['hope', 'fear']);
+    expect(pool[0].pairId).toBe(pool[1].pairId);
+    expect(pool[0].id).not.toBe(pool[1].id);
+  });
+
+  it('takes the partner out with either half', () => {
+    const pool = addDie(addDie([], 'd6', ids('a')), 'duality', ids('b'));
+    expect(pool).toHaveLength(3);
+    const hope = pool.find((d) => d.side === 'hope')!;
+    const fear = pool.find((d) => d.side === 'fear')!;
+    expect(removeDie(pool, hope.id).map((d) => d.type)).toEqual(['d6']);
+    expect(removeDie(pool, fear.id).map((d) => d.type)).toEqual(['d6']);
+  });
+
+  it('leaves a lone die alone when a pair is removed', () => {
+    const pool = addDie(addDie([], 'duality', ids('a')), 'd20', ids('b'));
+    const hope = pool.find((d) => d.side === 'hope')!;
+    expect(removeDie(pool, hope.id).map((d) => d.type)).toEqual(['d20']);
+  });
+
+  it('never leaves an odd half in the pool', () => {
+    let pool = addDie(addDie([], 'duality', ids('a')), 'duality', ids('b'));
+    expect(pool).toHaveLength(4);
+    pool = removeDie(pool, pool[2].id);
+    expect(pool).toHaveLength(2);
+    expect(pool.filter((d) => d.side === 'hope')).toHaveLength(1);
+    expect(pool.filter((d) => d.side === 'fear')).toHaveLength(1);
+  });
+
+  it('ignores an id that is not in the pool', () => {
+    const pool = addDie([], 'd6', ids('a'));
+    expect(removeDie(pool, 'nope')).toBe(pool);
+  });
+});
+
+describe('dieVerdicts', () => {
+  it('calls an ordinary die at its maximum a critical', () => {
+    expect(dieVerdicts([die('d20', 20, undefined, 'x')]).x).toBe('critical');
+    expect(dieVerdicts([die('d6', 6, undefined, 'x')]).x).toBe('critical');
+  });
+
+  it('gives an ordinary die that rolls one the fear treatment', () => {
+    expect(dieVerdicts([die('d20', 1, undefined, 'x')]).x).toBe('fear');
+  });
+
+  it('keeps everything in between quiet', () => {
+    for (const v of [2, 7, 19]) expect(dieVerdicts([die('d20', v, undefined, 'x')]).x).toBe('plain');
+  });
+
+  it('says nothing about a die that has not been rolled', () => {
+    expect(dieVerdicts([die('d20', null, undefined, 'x')]).x).toBe('plain');
+  });
+
+  it('moves only the winner of a duality pair', () => {
+    const hope: PoolDie = { id: 'h', type: 'd12', value: 9, side: 'hope', pairId: 'p' };
+    const fear: PoolDie = { id: 'f', type: 'd12', value: 4, side: 'fear', pairId: 'p' };
+    const v = dieVerdicts([hope, fear]);
+    expect(v.h).toBe('hope');
+    expect(v.f).toBe('plain');
+  });
+
+  it('moves the fear die when Fear wins', () => {
+    const v = dieVerdicts([
+      { id: 'h', type: 'd12', value: 2, side: 'hope', pairId: 'p' },
+      { id: 'f', type: 'd12', value: 11, side: 'fear', pairId: 'p' },
+    ]);
+    expect(v.f).toBe('fear');
+    expect(v.h).toBe('plain');
+  });
+
+  it('moves both on a critical', () => {
+    const v = dieVerdicts([
+      { id: 'h', type: 'd12', value: 7, side: 'hope', pairId: 'p' },
+      { id: 'f', type: 'd12', value: 7, side: 'fear', pairId: 'p' },
+    ]);
+    expect(v.h).toBe('critical');
+    expect(v.f).toBe('critical');
+  });
+
+  it('does not give a duality d12 the ordinary maximum critical', () => {
+    // A 12 on the Hope die is not a critical on its own — only a matching pair is.
+    const v = dieVerdicts([
+      { id: 'h', type: 'd12', value: 12, side: 'hope', pairId: 'p' },
+      { id: 'f', type: 'd12', value: 3, side: 'fear', pairId: 'p' },
+    ]);
+    expect(v.h).toBe('hope');
   });
 });

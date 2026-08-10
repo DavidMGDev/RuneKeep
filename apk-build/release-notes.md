@@ -1,26 +1,31 @@
-RuneKeep v0.39.0 - A dice tray on your sheet, and six repairs to DM Mode and card types.
+RuneKeep v0.40.0 - The sheet lines up, the dice button becomes a real panel, and the tray learns to throw properly.
 
-DICE
+THE SHEET
 
-- A TRIANGLE UNDER YOUR PORTRAIT turns the sheet into a dice tray. Hit points, stress and hope fade out, and a carousel of dice and a pool take their place. Press it again to fold it away.
-- SWIPE THE CAROUSEL to find a die, tap the one in the middle to pick it up. Tapping a die that is not in the middle brings it there first, so you cannot pick up the wrong one by accident.
-- THE POOL LAYS ITSELF OUT. One die is as big as the panel allows; twenty rearrange into a grid that stays readable. They are always sorted smallest first, however you added them, so four d20s and six d8s always read the same way.
-- ROLL throws them one after another, quickly, with the pitch climbing through the handful and jumping when the die size changes, so you can hear what you threw.
-- THE TOTAL sits between Roll and Clear.
-- THE DICE STAY after a roll, so you can throw the same handful again. Tap one to take it out, or press Clear to empty the pool.
-- TAP A TRAIT while the tray is open and it throws the duality pair with that trait's modifier already added. The total is gold when Hope wins and purple when Fear does, so one tap tells you both things.
-- The app still does not roll for you. This is a tray of dice for a table that has none, and nothing it does touches your sheet.
+- YOUR PORTRAIT LINES UP WITH THE HIT POINTS PANEL. Its frame started five design pixels left of the panel below it, so the two strongest vertical edges on the sheet never quite agreed. Everything to the right of the portrait moved with it, nothing crossed the right-hand edge it already sat on, and the Evasion and Armor panel gave up the same five from its left rather than growing.
+- THE HIT POINTS CORNER IS A SWORD. It was a circled "i", which describes an explainer; the button opens the damage calculator.
+
+THE DICE BUTTON
+
+- IT IS THE EVASION AND ARMOR PANEL, MIRRORED. The triangle is gone. Your portrait's diamond button now falls into a matching notch on both sides, and the two panels read as one band with the button between them. It is drawn by reflecting that panel's own artwork about the diamond's centre line, so it is a true mirror rather than a shape that looks like one, it is exactly level with it, and it stops at the same left edge as the hit points panel.
+- THE DIE ON IT HAS ROOM. It sits in the largest square that actually fits inside the shape, inset on every side.
+
+THE DICE TRAY
+
+- THE DUALITY PAIR IS IN THE CAROUSEL, shown as the two overlapping dice it is. Tapping it adds both; they fly in and settle separately but they are bound: you cannot add one on its own, and taking either one out takes the other with it.
+- A FLICK CARRIES. The carousel used to need a deliberate drag of more than half a die for every single change; a flick now reaches several dice and eases in.
+- ROLL WAITS FOR ITS OWN THROW. Pressing it again mid-flight restarted every die from whatever angle it had reached, which is why dice sometimes finished upside down or on a tilt. The tray is quiet for the length of a throw.
+- THE RESULT IS FELT, NOT ONLY READ. Fear jerks the die sharply and stops dead, with a quick fifteen percent breath. Hope sways it, wide and soft, breathing a third bigger. A critical rattles under a white flash. It is the same vocabulary the dice tokens on your cards have had all along.
+- AN ORDINARY DIE EARNS THEM TOO. A die that rolls its maximum gets the critical treatment, a die that rolls a one gets Fear's, and everything in between stays quiet so those two keep meaning something.
+
+CAROUSELS
+
+- NEITHER CAROUSEL CAN BE LEFT BETWEEN TWO OPTIONS. A tap, or a card opening, while the row was still gliding used to leave it parked half way between two cards with nothing in the middle until you nudged it. Both carousels now watch for the row coming to rest and put it on a card, which cannot interrupt a throw that is still travelling because it only acts once everything has stopped.
 
 DM MODE
 
-- A CHARACTERIZED ADVERSARY STAYS CHARACTERIZED. In a started encounter the entry could turn back into the stat block it came from. The screen was flushing a save it had already made and writing its own older copy back over the new one, and because it raced the read that followed it, it went wrong only some of the time.
-- LEAVING THE INHERITED LEVEL BEHIND no longer freezes the Level step at 1. It sets the default to 1, which is what it always meant; the stepper, Random and Reset all work from there.
-- CHARACTERIZED ALLIES AND ADVERSARIES ARE AUTO-LOGGED like everyone else. They are a character and a combatant at once, which is how they fell between the two paths that already logged.
-- THE PARTY SHEET CAN ADD CHARACTERS, and import one, with the same picker the party editor has. It is in the top right, beside the party modifiers.
-- POP-UPS OPENED FROM A PANEL LAND IN THE MIDDLE OF IT. Naming a group of modifiers put the dialog partly off the top of the screen: it was being placed against the scrolling list it was written in rather than against the panel. Every dialog raised from inside a panel is fixed by the same change.
+- A DICE TRAY, between Finish Encounter and the card archive. The same carousel, the same pool, the same Roll, total and Clear, the same animations, in the dark palette. The duality pair is there; there is no trait row, because you are not playing a character.
 
-CARDS
-
-- A SCAR CARD MADE FROM THE ADD CARD BADGE now carries its scar. The type was wired up in the full editor and not in the quick one, which is the one most cards are made in. Changing the type away still takes it back off.
+The app still does not roll for you. This is a tray of dice for a table that has none, and nothing it does touches your sheet.
 
 Sideload: enable Install unknown apps, then open the APK.

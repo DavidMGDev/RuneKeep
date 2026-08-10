@@ -6,7 +6,7 @@
  * that read as noise. Both are here so the same drawing is used everywhere and there is one place to
  * change it.
  */
-import Svg, { Circle, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Polygon } from 'react-native-svg';
 
 import { DmRune } from '@/constants/theme';
 
@@ -47,6 +47,16 @@ export function AddMemberIcon({ size = 22, color = DmRune.accent, dim = DmRune.a
       <Path d="M3 20c0-3.4 2.7-5.6 6-5.6s6 2.2 6 5.6" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
       <Line x1={18.5} y1={5} x2={18.5} y2={12} stroke={dim} strokeWidth={2} strokeLinecap="round" />
       <Line x1={15} y1={8.5} x2={22} y2={8.5} stroke={dim} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** The dice tray (v0.40.0): a d20 read as a hexagon with one facet, the same glyph the sheet uses. */
+export function DmDiceIcon({ size = 16, color = DmRune.accent }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Polygon points="12,1.6 21.4,7 21.4,17 12,22.4 2.6,17 2.6,7" fill="none" stroke={color} strokeWidth={1.9} strokeLinejoin="round" />
+      <Polygon points="12,7 17.2,15.4 6.8,15.4" fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" />
     </Svg>
   );
 }

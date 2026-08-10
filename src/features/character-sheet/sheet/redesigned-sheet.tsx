@@ -48,7 +48,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { RuneButton } from '@/components/rune-button';
 import { CenterDialog } from './full-screen-panel';
 import { SortPanel } from './sort-panel';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, type LibraryCard } from '@/lib/library';
 import { libraryCardById } from '@/lib/library-embed';
@@ -244,6 +244,31 @@ function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active 
 }
 
 // v0.9.8 action-badge glyphs (replace the origin badges): a card-with-plus and a shield-with-plus.
+/**
+ * The hit points panel's corner control (v0.40.0, owner).
+ *
+ * It was a circled "i", which named the wrong thing: the control opens the damage calculator, and a
+ * lower-case i opens an explainer. A sword says what the number it asks for is, and it is the one
+ * glyph on the sheet that can be read at 14dp.
+ *
+ * Drawn to sit INSIDE the red corner it is painted on, so nothing of it reaches the parchment: the
+ * blade runs corner to corner along the diagonal the red triangle already has, which is why it fits
+ * a shape that has only half a square to work with.
+ */
+function ThresholdSword() {
+  return (
+    <Svg width="100%" height="100%" viewBox="0 0 16 16">
+      {/* blade, point to the top right along the corner's diagonal */}
+      <Polyline points="3.4,12.6 12.4,3.6" fill="none" stroke={IVORY} strokeWidth={2.1} strokeLinecap="round" />
+      <Polyline points="12.9,3.1 13.6,2.4 13.1,5.2 10.3,5.7" fill="none" stroke={IVORY} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      {/* crossguard, square to the blade */}
+      <Polyline points="2.2,8.4 6.9,13.1" fill="none" stroke={IVORY} strokeWidth={1.5} strokeLinecap="round" />
+      {/* pommel */}
+      <Circle cx={2.2} cy={13.4} r={1.25} fill="none" stroke={IVORY} strokeWidth={1.4} />
+    </Svg>
+  );
+}
+
 function AddCardGlyph() {
   // v0.11.2 item 2: a plain, wider card that's a touch TALLER (was reading too square) + a centered plus.
   return (
@@ -320,7 +345,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
           the portrait so its tail tucks UNDER the portrait diamond instead of occluding it; the
           panel's texts/pips live in the defenses section below. */}
       {/* Stretched 5px DOWN only so it stands level with the portrait frame (#48 C). */}
-      <ProvidedFrame Svg={FrameSvg.ArmorBg} left={100} top={200} w={296} h={95} />
+      {/* v0.40.0: the panel gives up the portrait's five px from its LEFT. Its right edge is the one
+          every other element on this band is aligned to, so it does not move; the art simply gets
+          shorter. Its texts and shields stay exactly where they were (owner). */}
+      <ProvidedFrame Svg={FrameSvg.ArmorBg} left={105} top={200} w={291} h={95} />
 
       {/* ---------- header: portrait + deck toggle, ONE locked group (#43 G) ----------
           Sized to the midpoint of the last two iterations (163x295 grew over the defense panel;
@@ -328,7 +356,17 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
           drifts apart. No press bounce on either, per owner — plain Pressables. The toggle sits
           ON TOP (bigger symbol + generous hitSlop); the portrait keeps its full-frame hitbox
           underneath. */}
-      <View style={box(16, 12, 150, 282)}>
+      {/**
+        * v0.40.0 (owner): x=21, not 16.
+        *
+        * The portrait's frame and the hit points panel are the two strongest vertical edges on the
+        * sheet and they did not line up: the frame's box began at 16 and the panel's at 21, so the
+        * portrait hung five design px into the margin. Everything to the RIGHT of it moves with it
+        * (the bio column, the badges, the float-menu diamond) and anything whose right edge already
+        * sits on the panel's right edge at 396 keeps that edge and loses the five from its width,
+        * because that edge was correct and is what the whole upper band is measured against.
+        */}
+      <View style={box(21, 12, 150, 282)}>
         {/* the player's photo, clipped to the portrait mask, UNDER the gold frame (#135). When set
             it's INTERACTIVE (drag/pinch/hold-to-replace, #155); when not, a tap-to-add Pressable. */}
         {character.portraitUri ? (
@@ -359,19 +397,19 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
         {/* FILL the box (#214): the largest font that fits — a SHORT one-word name grows up to fill
             the row, a LONG name shrinks + wraps to ≤2 lines (no more one tiny line). Glyphs are only
             sized, never stretched; a touch of letter-spacing for openness. */}
-        <FillText left={176} top={12} width={220} height={58} color={INK} family={Display.black} align="left" vAlign="center" uppercase letterSpacing={0.3} maxLines={2} minSize={15} maxSize={60}>{character.name}</FillText>
+        <FillText left={181} top={12} width={215} height={58} color={INK} family={Display.black} align="left" vAlign="center" uppercase letterSpacing={0.3} maxLines={2} minSize={15} maxSize={60}>{character.name}</FillText>
       </View>
       {/* Domains as two separate chamfered chips (no ×) under the name (#37). v0.11.2: pulled up toward
           the name so name → domains → lvl read as one tight group, freeing negative space before the badges. */}
-      <DomainChip left={176} top={71} label={character.domains[0]} />
-      <DomainChip left={176 + chipWidth(character.domains[0]) + 8} top={71} label={character.domains[1]} />
+      <DomainChip left={181} top={71} label={character.domains[0]} />
+      <DomainChip left={181 + chipWidth(character.domains[0]) + 8} top={71} label={character.domains[1]} />
       {/* Level/class + proficiency lines between the chips and the badges — nudged 3px up for
           clear air above the origin strip (#54 E). */}
       {/* One size smaller + a taller box than the glyphs need (#95 B): native line metrics ran
           taller than web's and the 17px box clipped the descender band off "LVL 4 SORCERER". */}
       {/* level/class + proficiency on ONE line now (#128): "Prof" abbreviation, no arrow, middot
           separator — the freed vertical space goes to the (taller, squarer) origin badges below. */}
-      <SheetText left={176} top={95} width={224} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1} fit minScale={0.85}>
+      <SheetText left={181} top={95} width={219} height={18} color={INK} size={12} family={Body.bold} align="left" uppercase letterSpacing={0.4} numberOfLines={1} fit minScale={0.85}>
         Lvl {character.level} {character.className} · Prof {character.proficiency}
       </SheetText>
 
@@ -386,11 +424,11 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* v0.9.8: the Ancestry/Community/Subclass origin badges are replaced — same three slots — by the
           card-management actions: Add Card (author for the current category), Add Gear (catalog), and
           Favorites (star). The two dividers stay so the trio still reads as one banded group. */}
-      <OctaBadge left={176} top={126} w={48} h={48} glyph={<AddCardGlyph />} label="Add Card" onPress={guardFav(onAddCard)} a11y="Add a card to the current category" />
-      <OctaBadge left={254} top={126} w={48} h={48} glyph={<AddGearGlyph />} label="Add Gear" onPress={guardFav(onAddGear)} a11y="Add gear from the catalog" />
-      <FavoritesBadge left={332} top={126} w={48} h={48} />
-      <GoldRuleV left={239} top={134} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
-      <GoldRuleV left={317} top={134} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <OctaBadge left={181} top={126} w={48} h={48} glyph={<AddCardGlyph />} label="Add Card" onPress={guardFav(onAddCard)} a11y="Add a card to the current category" />
+      <OctaBadge left={259} top={126} w={48} h={48} glyph={<AddGearGlyph />} label="Add Gear" onPress={guardFav(onAddGear)} a11y="Add gear from the catalog" />
+      <FavoritesBadge left={337} top={126} w={48} h={48} />
+      <GoldRuleV left={244} top={134} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      <GoldRuleV left={322} top={134} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
 
       {/* ---------- Evasion + Armor — image-11 ribbon panel (#30 H) ----------
           Art is drawn earlier (under the portrait diamond); content sits clear of the left tail.
@@ -401,7 +439,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       <SheetText left={158} top={213} width={84} height={15} color={Rune.goldText} size={11} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
       <SheetText left={158} top={231} width={84} height={44} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
-      <GoldRuleV left={252} top={217} height={64} />
+      <GoldRuleV left={250} top={217} height={64} />
       <SheetText left={262} top={213} width={100} height={15} color={Rune.goldText} size={11} family={Body.bold} align="left" uppercase letterSpacing={0.8}>Armor</SheetText>
       {/* Armor (#89 E): zone mode — the shields are too small to hunt, so two big halves split at
           the barrier after the LAST filled shield own the gestures: left of it clears, right of it
@@ -444,10 +482,8 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* Info button: SMALL, fully inside the red corner (the old 17px ring bled onto the parchment
           and half-vanished, #43 I); slightly thicker ring so it still reads. Generous hitSlop keeps
           it easy to hit. Opens the HP explainer overlay (NOT the carousel's random-card path). */}
-      <PressableArt style={box(27, 305, 12, 12)} pressedScale={1.2} hitSlop={16} onPress={onInfo} accessibilityLabel="Hit points info" accessibilityHint="Shows an explainer">
-        <View style={{ flex: 1, borderRadius: 6, borderWidth: 1.6, borderColor: IVORY, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: IVORY, fontSize: 7, fontFamily: Display.bold, lineHeight: 9 }}>i</Text>
-        </View>
+      <PressableArt style={box(26, 304, 14, 14)} pressedScale={1.2} hitSlop={16} onPress={onInfo} accessibilityLabel="Damage thresholds" accessibilityHint="Opens the damage calculator">
+        <ThresholdSword />
       </PressableArt>
       {/* Label raised a touch + one size smaller (#48 E); it and the readout share ONE left column
           (#43 I/K): the numbers sit directly under HIT POINTS and never grow past its width. */}

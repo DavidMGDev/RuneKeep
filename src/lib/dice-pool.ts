@@ -12,8 +12,16 @@
 
 import { DIE_MAX, type DieType } from '@/features/character-sheet/components/card-tokens-data';
 
-/** Which dice the tray offers. `duality` is not one of them: it is a PAIR, and it arrives as two. */
-export const TRAY_DICE: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
+/**
+ * What the carousel offers, in order.
+ *
+ * `duality` is one ENTRY and two DICE (v0.40.0, owner). It is shown as the overlapping pair, exactly
+ * as it looks on a card, because that is what it is: adding it puts a Hope die and a Fear die in the
+ * pool, they animate in and settle separately, and neither can be added or taken out on its own. The
+ * binding is a shared {@link PoolDie.pairId} and nothing else, so everything downstream (the order,
+ * the grid, the roll) goes on treating them as two ordinary d12s.
+ */
+export const TRAY_DICE: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', 'duality'];
 
 export interface PoolDie {
   id: string;
@@ -27,6 +35,30 @@ export interface PoolDie {
    * Hope or the Fear colours, and it is what decides the verdict.
    */
   side?: 'hope' | 'fear';
+  /** Set on both halves of a duality pair. They are added and removed together (v0.40.0, owner). */
+  pairId?: string;
+}
+
+/**
+ * Add a die, or a bound duality PAIR, to the pool.
+ *
+ * `id` mints the ids, so the caller keeps its own counter and this stays pure and testable.
+ */
+export function addDie(pool: PoolDie[], type: DieType, id: (n: number) => string): PoolDie[] {
+  if (type !== 'duality') return [...pool, { id: id(0), type, value: null }];
+  const pairId = id(0);
+  return [
+    ...pool,
+    { id: id(1), type: 'd12', value: null, side: 'hope', pairId },
+    { id: id(2), type: 'd12', value: null, side: 'fear', pairId },
+  ];
+}
+
+/** Take a die out. A half of a pair takes its partner with it. */
+export function removeDie(pool: PoolDie[], dieId: string): PoolDie[] {
+  const gone = pool.find((d) => d.id === dieId);
+  if (!gone) return pool;
+  return pool.filter((d) => (gone.pairId ? d.pairId !== gone.pairId : d.id !== dieId));
 }
 
 /**
@@ -116,9 +148,46 @@ export type Duality = 'hope' | 'fear' | 'critical' | null;
 export function dualityVerdict(pool: PoolDie[]): Duality {
   const hope = pool.find((d) => d.side === 'hope');
   const fear = pool.find((d) => d.side === 'fear');
+  // Exactly the pair and nothing else: mixing it with four d6 makes "with Hope" meaningless.
   if (!hope || !fear || pool.length !== 2 || hope.value == null || fear.value == null) return null;
   if (hope.value === fear.value) return 'critical';
   return hope.value > fear.value ? 'hope' : 'fear';
+}
+
+/**
+ * What a single die's result deserves when it lands (v0.40.0, owner).
+ *
+ * The dice tokens on a card already say this with their bodies: Fear jerks, Hope sways, a critical
+ * flourishes. The tray now says it too, and says it about ORDINARY dice as well, which the tokens
+ * never had to: a natural 20 is a critical and a natural 1 gets the Fear treatment, so the two
+ * results anyone cares about are felt rather than only read. Everything between them stays quiet,
+ * which is what keeps the other two worth noticing.
+ *
+ * For a duality pair only the WINNER moves, because "it rolled with Hope" is a statement about which
+ * die won and a pair where both dice animate says nothing. Two equal faces is the critical, and then
+ * they both go.
+ *
+ * It is here, and not in the animation, so that "a natural 20 is a critical" is a testable sentence.
+ */
+export type DieVerdict = 'critical' | 'hope' | 'fear' | 'plain';
+
+export function dieVerdicts(pool: PoolDie[]): Record<string, DieVerdict> {
+  const out: Record<string, DieVerdict> = {};
+  const pairs = new Map<string, PoolDie[]>();
+  for (const d of pool) {
+    if (d.pairId) { pairs.set(d.pairId, [...(pairs.get(d.pairId) ?? []), d]); continue; }
+    out[d.id] = d.value == null ? 'plain' : d.value >= DIE_MAX[d.type] ? 'critical' : d.value <= 1 ? 'fear' : 'plain';
+  }
+  for (const half of pairs.values()) {
+    const hope = half.find((d) => d.side === 'hope');
+    const fear = half.find((d) => d.side === 'fear');
+    for (const d of half) out[d.id] = 'plain';
+    if (!hope || !fear || hope.value == null || fear.value == null) continue;
+    if (hope.value === fear.value) { out[hope.id] = 'critical'; out[fear.id] = 'critical'; }
+    else if (hope.value > fear.value) out[hope.id] = 'hope';
+    else out[fear.id] = 'fear';
+  }
+  return out;
 }
 
 /**
