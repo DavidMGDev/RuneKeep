@@ -73,3 +73,9 @@ dm210-build.log
 
 # Zipped web export, produced for uploading to Cloudflare Pages (see docs/web-deploy.md).
 RuneKeep-web-*.zip
+
+# Claude's project memory lives at .claude/memory/ and IS committed (see docs/fresh-machine.md).
+# Everything else Claude Code writes into .claude/ is per-machine.
+.claude/*
+!.claude/settings.json
+!.claude/memory/
