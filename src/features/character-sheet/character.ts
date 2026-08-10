@@ -19,6 +19,15 @@ export interface Character {
   /** v0.21.0: the trait the subclass casts with (Wizard→knowledge, …), or null for a non-caster. Lets the
    *  Modifiers panel resolve a `spellcast` formula amount (Mage Robes). */
   spellcastTrait?: TraitKey | null;
+  /**
+   * What this character's cards add to an attack or a spellcast roll (v0.41.0, owner).
+   *
+   * Not sheet numbers: nothing is printed for them and the app never applies them, because it does
+   * not roll your checks. They ride the character so the dice tray's roll presets can read them, and
+   * so the Modifiers panel can preview a formula built on one.
+   */
+  attackRoll?: number;
+  spellcastRoll?: number;
   ancestry: string;
   community: string;
   /** Two domain names shown as "A × B". */

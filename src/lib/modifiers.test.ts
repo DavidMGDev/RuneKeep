@@ -4,6 +4,9 @@ const ZERO: BaseStats = {
   agility: 0, strength: 0, finesse: 0, instinct: 0, presence: 0, knowledge: 0,
   evasion: 10, armorScore: 0, maxHp: 6, stressMax: 6, hopeMax: 6, proficiency: 1, majorThreshold: 0, severeThreshold: 0, scar: 0, restMoves: 0,
   level: 1,
+  // v0.41.0: what cards add to a roll. No base: nothing on the sheet has one.
+  attackRoll: 0,
+  spellcastRoll: 0,
 };
 const src = (source: string, effects: CardEffect[]): EffectSource => ({ source, effects });
 

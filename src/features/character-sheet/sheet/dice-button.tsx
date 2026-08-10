@@ -42,12 +42,22 @@ const HEART_INK = 'rgba(255,255,255,0.94)';
  * cells away is what wrecked it: the survivors were sparse, unaligned with each other and upright, so
  * they read as spillage rather than as a pattern, and the shape was mostly empty.
  *
- * The fix is the opposite of a filter. ONE rotated grid, regular, dense, drawn well past every edge of
- * the panel and then MASKED by it. Rotating the whole group rather than each glyph is what makes it a
+ * The fix is the opposite of a filter. ONE rotated grid, regular, dense, drawn past every edge of the
+ * panel and then MASKED by it. Rotating the whole group rather than each glyph is what makes it a
  * pattern: the rows are straight lines running off the panel at {@link ANGLE}, the glyphs are turned
  * with them, and the spacing is identical everywhere because it is one grid. A glyph the rail cuts
- * through is now correct rather than embarrassing, because a pattern is supposed to run under its
- * frame.
+ * through is correct rather than embarrassing, because a pattern is supposed to run under its frame.
+ *
+ * v0.41.0 makes it CHEAP (owner: "it causes incredible lag during the transition"). Two things cost:
+ *
+ *  1. The grid was generated over the shape's bounding CIRCLE in the rotated frame, which is most of a
+ *     square: about 175 cells, of which the panel's tapering wedge shows perhaps a quarter. Every one
+ *     of the rest was still a real node in the tree, laid out and clipped away. They are now tested
+ *     against the panel itself, once at module load, and the misses never reach the renderer.
+ *  2. Toggling swapped 175 text nodes for 175 paths, which is a mount and an unmount of the whole
+ *     pattern in the same frame that the vitals were cross-fading. Both layers are mounted ONCE now
+ *     and the toggle only changes their opacity, so pressing the button touches three properties
+ *     instead of rebuilding a subtree.
  */
 const ANGLE = -32;
 const STEP = 8.4;
@@ -56,6 +66,33 @@ const GLYPH = 6.2;
 const CX = DICE_PANEL.w / 2;
 const CY = DICE_PANEL.h / 2;
 const REACH = Math.hypot(CX, CY) + STEP;
+
+const INNER_PTS: [number, number][] = INNER.split(' ').map((q) => q.split(',').map(Number) as [number, number]);
+
+/** Ray casting, the ordinary way. */
+function inside(poly: [number, number][], x: number, y: number): boolean {
+  let hit = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+const RAD = (ANGLE * Math.PI) / 180;
+/** Where a cell of the rotated grid actually lands on the panel. */
+function onPanel(x: number, y: number): boolean {
+  const dx = x - CX, dy = y - CY;
+  const px = CX + dx * Math.cos(RAD) - dy * Math.sin(RAD);
+  const py = CY + dx * Math.sin(RAD) + dy * Math.cos(RAD);
+  // A glyph the rail clips is still drawn, so the test is generous by half a cell on every side.
+  const r = GLYPH / 2;
+  return (
+    inside(INNER_PTS, px, py) ||
+    inside(INNER_PTS, px - r, py - r) || inside(INNER_PTS, px + r, py - r) ||
+    inside(INNER_PTS, px - r, py + r) || inside(INNER_PTS, px + r, py + r)
+  );
+}
 
 const CELLS: { x: number; y: number; i: number }[] = (() => {
   const out: { x: number; y: number; i: number }[] = [];
@@ -66,7 +103,7 @@ const CELLS: { x: number; y: number; i: number }[] = (() => {
     for (let u = -REACH; u <= REACH; u += STEP) {
       const x = CX + u + shift;
       const y = CY + v;
-      if (Math.hypot(x - CX, y - CY) <= REACH) out.push({ x, y, i: i++ });
+      if (onPanel(x, y)) out.push({ x, y, i: i++ });
     }
   }
   return out;
@@ -83,6 +120,29 @@ const FACES = [4, 7, 2, 9, 6, 3, 8, 5, 1, 7, 4, 9, 2, 6, 8, 3, 5, 1, 9, 4, 6, 2,
 /** A small heart, drawn in a 10x10 box with its own top-left at (0,0). */
 const HEART = 'M5 9.1 C1.4 6.6 0.4 5 0.4 3.4 C0.4 1.9 1.6 0.8 3 0.8 C3.9 0.8 4.6 1.25 5 1.9 C5.4 1.25 6.1 0.8 7 0.8 C8.4 0.8 9.6 1.9 9.6 3.4 C9.6 5 8.6 6.6 5 9.1 z';
 
+/** Both layers exist for the life of the button; only their opacity changes when it is pressed. */
+const Numbers = memo(function Numbers() {
+  return (
+    <>
+      {CELLS.map((c) => (
+        <SvgText key={c.i} x={c.x} y={c.y + GLYPH * 0.36} fill={NUMBER_INK} fontSize={GLYPH} fontFamily={Body.bold} textAnchor="middle">
+          {FACES[c.i % FACES.length]}
+        </SvgText>
+      ))}
+    </>
+  );
+});
+
+const Hearts = memo(function Hearts() {
+  return (
+    <>
+      {CELLS.map((c) => (
+        <Path key={c.i} d={HEART} fill={HEART_INK} transform={`translate(${c.x - GLYPH / 2} ${c.y - GLYPH / 2}) scale(${GLYPH / 10})`} />
+      ))}
+    </>
+  );
+});
+
 export const DiceButtonArt = memo(function DiceButtonArt({ on }: { on: boolean }) {
   return (
     <Svg width="100%" height="100%" viewBox={`0 0 ${DICE_PANEL.w} ${DICE_PANEL.h}`}>
@@ -95,18 +155,12 @@ export const DiceButtonArt = memo(function DiceButtonArt({ on }: { on: boolean }
       <Polygon points={OUTER} fill={RAIL} />
       <Polygon points={INNER} fill={on ? RED : INK} />
       {/* The clip sits on the OUTER group so it stays in the panel's own axes; the rotation is inside
-          it, so the pattern turns and the mask does not. */}
+          it, so the pattern turns and the mask does not. Both layers stay mounted (see the note on
+          the weave): pressing the button changes opacity, it does not rebuild a subtree. */}
       <G clipPath="url(#dicePanelFill)">
         <G transform={`rotate(${ANGLE} ${CX} ${CY})`}>
-          {CELLS.map((c) =>
-            on ? (
-              <Path key={c.i} d={HEART} fill={HEART_INK} transform={`translate(${c.x - GLYPH / 2} ${c.y - GLYPH / 2}) scale(${GLYPH / 10})`} />
-            ) : (
-              <SvgText key={c.i} x={c.x} y={c.y + GLYPH * 0.36} fill={NUMBER_INK} fontSize={GLYPH} fontFamily={Body.bold} textAnchor="middle">
-                {FACES[c.i % FACES.length]}
-              </SvgText>
-            ),
-          )}
+          <G opacity={on ? 0 : 1}><Numbers /></G>
+          <G opacity={on ? 1 : 0}><Hearts /></G>
         </G>
       </G>
     </Svg>

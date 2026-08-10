@@ -9,6 +9,7 @@ import { type ClassName, classInfo } from '@/constants/identity';
 import { CATALOG, cardById } from '@/data/catalog';
 import { withRequiredExpansions } from '@/lib/expansion-membership';
 import type { CharacterHistory } from '@/lib/character-history';
+import type { DicePreset } from '@/lib/dice-presets';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, refOf, sourceLabelForCardId, unequippedPermanentSources } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
@@ -112,6 +113,14 @@ export interface CharacterFile {
    * character sheet and the DM's card view obey them without either of them knowing they exist.
    */
   characterized?: boolean;
+  /**
+   * The dice tray's three roll presets (v0.41.0, owner). A hole is an empty slot.
+   *
+   * On the character rather than in a setting because a preset is built out of that character's dice
+   * and reads that character's modifiers: "duality + 1d6 + Attack Rolls" means something different
+   * for everyone, and it travels with an export like everything else they own.
+   */
+  dicePresets?: (DicePreset | null)[];
   arsenalOnly?: boolean;
   skipStartingKit?: boolean;
   /**
@@ -560,6 +569,9 @@ export function toSheetCharacter(file: CharacterFile): Character {
     maxHp: file.maxHp ?? data.startingHp,
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
+    // v0.41.0: what cards add to a ROLL. No base, because the sheet has no such number.
+    attackRoll: 0,
+    spellcastRoll: 0,
     proficiency: proficiencyForLevel(level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
     // #320: base thresholds are 0/0 — ALL value is per-level bonuses (levelThresholdSources), so the
     // character's level is always added to an armor/Bare-Bones `set`, and an unarmored character scales
@@ -609,6 +621,9 @@ export function toSheetCharacter(file: CharacterFile): Character {
     className: file.classless ? '' : cls.label, // v0.36.2: a classless character names no class
     subclass: subclass?.label.replace(/ Foundation$/, '') ?? libTitle(file.subclassCardId) ?? '',
     spellcastTrait,
+    // v0.41.0: what cards add to a roll. Carried, never applied: the app does not roll your checks.
+    attackRoll: sheet.attackRoll?.total ?? 0,
+    spellcastRoll: sheet.spellcastRoll?.total ?? 0,
     ancestry: ancestry?.label ?? libTitle(file.ancestryCardId) ?? '',
     community: community?.label ?? libTitle(file.communityCardId) ?? '',
     domains: [cap(cls.domains[0]), cap(cls.domains[1])],
@@ -655,6 +670,9 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     maxHp: file.maxHp ?? data.startingHp,
     stressMax: file.stressMax ?? 6,
     hopeMax: 6,
+    // v0.41.0: what cards add to a ROLL. No base, because the sheet has no such number.
+    attackRoll: 0,
+    spellcastRoll: 0,
     proficiency: proficiencyForLevel(level) + (file.proficiencyBonus ?? 0),
     majorThreshold: 0, // #320: thresholds come entirely from per-level bonuses (see toSheetCharacter)
     severeThreshold: 0,
