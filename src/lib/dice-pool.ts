@@ -46,6 +46,9 @@ export interface PoolDie {
  */
 export function addDie(pool: PoolDie[], type: DieType, id: (n: number) => string): PoolDie[] {
   if (type !== 'duality') return [...pool, { id: id(0), type, value: null }];
+  // One pair at a time (v0.40.1, owner). Two pairs have no answer to "with Hope or with Fear", so the
+  // second is refused rather than quietly averaged; the caller says so out loud.
+  if (hasDuality(pool)) return pool;
   const pairId = id(0);
   return [
     ...pool,
@@ -53,6 +56,9 @@ export function addDie(pool: PoolDie[], type: DieType, id: (n: number) => string
     { id: id(2), type: 'd12', value: null, side: 'fear', pairId },
   ];
 }
+
+/** Whether a duality pair is already in the pool. */
+export const hasDuality = (pool: PoolDie[]): boolean => pool.some((d) => !!d.pairId);
 
 /** Take a die out. A half of a pair takes its partner with it. */
 export function removeDie(pool: PoolDie[], dieId: string): PoolDie[] {
@@ -146,12 +152,42 @@ export type Duality = 'hope' | 'fear' | 'critical' | null;
  * saying it about four d6 would be meaningless.
  */
 export function dualityVerdict(pool: PoolDie[]): Duality {
+  /**
+   * v0.40.1 (owner): the pair still answers when it is thrown WITH other dice.
+   *
+   * This used to insist the pool was exactly two dice, on the reasoning that "with Hope" is a
+   * statement about a pair. It is, and the pair is still there when you add two d4 to it: the total
+   * is everything, and Hope or Fear is which of those two d12s came out on top. Only one pair can be
+   * in the pool (see `addDie`), so there is never a second one to disagree.
+   */
   const hope = pool.find((d) => d.side === 'hope');
   const fear = pool.find((d) => d.side === 'fear');
-  // Exactly the pair and nothing else: mixing it with four d6 makes "with Hope" meaningless.
-  if (!hope || !fear || pool.length !== 2 || hope.value == null || fear.value == null) return null;
+  if (!hope || !fear || hope.value == null || fear.value == null) return null;
   if (hope.value === fear.value) return 'critical';
   return hope.value > fear.value ? 'hope' : 'fear';
+}
+
+/**
+ * How the throw went, as two counts (v0.40.1, owner).
+ *
+ * The total's own animation hangs on which way the handful leaned: more dice at their best than at
+ * their worst is a good throw and the number celebrates, otherwise it just lands. A duality pair
+ * contributes a success when it comes up matched and NOTHING otherwise, because a low Hope die is not
+ * a fumble, it is a Fear roll, which the pair has already said in its own way.
+ */
+export interface RollTally { crits: number; fails: number }
+
+export function rollTally(pool: PoolDie[]): RollTally {
+  const v = dieVerdicts(pool);
+  let crits = 0, fails = 0;
+  for (const d of pool) {
+    if (v[d.id] === 'critical') crits++;
+    else if (v[d.id] === 'fear' && !d.pairId) fails++;
+  }
+  // Both halves of a matched pair are marked critical; that is ONE good thing happening, not two.
+  const pairIds = new Set(pool.filter((d) => d.pairId && v[d.id] === 'critical').map((d) => d.pairId));
+  crits -= pool.filter((d) => d.pairId && v[d.id] === 'critical').length - pairIds.size;
+  return { crits, fails };
 }
 
 /**

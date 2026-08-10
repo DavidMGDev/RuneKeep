@@ -1,4 +1,4 @@
-import { addDie, dieVerdicts, dualityVerdict, type PoolDie, poolGrid, poolTotal, removeDie, rollCents, sortPool } from './dice-pool';
+import { addDie, dieVerdicts, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollCents, rollTally, sortPool } from './dice-pool';
 
 const die = (type: PoolDie['type'], value: number | null = null, side?: PoolDie['side'], id = `${type}-${Math.random()}`): PoolDie => ({ id, type, value, side });
 
@@ -93,9 +93,11 @@ describe('dualityVerdict', () => {
     expect(dualityVerdict([die('d12', 7, 'hope'), die('d12', 7, 'fear')])).toBe('critical');
   });
 
-  it('says nothing about a pool that is not the pair', () => {
+  it('says nothing about a pool with no pair in it', () => {
     expect(dualityVerdict([die('d6', 3), die('d6', 5)])).toBeNull();
-    expect(dualityVerdict([die('d12', 3, 'hope'), die('d12', 5, 'fear'), die('d6', 2)])).toBeNull();
+  });
+
+  it('says nothing until both halves have landed', () => {
     expect(dualityVerdict([die('d12', null, 'hope'), die('d12', 5, 'fear')])).toBeNull();
   });
 });
@@ -148,12 +150,11 @@ describe('addDie / removeDie', () => {
   });
 
   it('never leaves an odd half in the pool', () => {
-    let pool = addDie(addDie([], 'duality', ids('a')), 'duality', ids('b'));
+    let pool = addDie(addDie(addDie([], 'd6', ids('a')), 'duality', ids('b')), 'd20', ids('c'));
     expect(pool).toHaveLength(4);
-    pool = removeDie(pool, pool[2].id);
-    expect(pool).toHaveLength(2);
-    expect(pool.filter((d) => d.side === 'hope')).toHaveLength(1);
-    expect(pool.filter((d) => d.side === 'fear')).toHaveLength(1);
+    pool = removeDie(pool, pool.find((d) => d.side === 'fear')!.id);
+    expect(pool.map((d) => d.type)).toEqual(['d6', 'd20']);
+    expect(pool.some((d) => d.side)).toBe(false);
   });
 
   it('ignores an id that is not in the pool', () => {
@@ -213,5 +214,90 @@ describe('dieVerdicts', () => {
       { id: 'f', type: 'd12', value: 3, side: 'fear', pairId: 'p' },
     ]);
     expect(v.h).toBe('hope');
+  });
+});
+
+describe('one duality pair at a time (v0.40.1)', () => {
+  const ids = (base: string) => (n: number) => `${base}-${n}`;
+
+  it('refuses a second pair, unchanged', () => {
+    const one = addDie([], 'duality', ids('a'));
+    expect(addDie(one, 'duality', ids('b'))).toBe(one);
+  });
+
+  it('still takes ordinary dice alongside the pair', () => {
+    let pool = addDie([], 'duality', ids('a'));
+    pool = addDie(pool, 'd4', ids('b'));
+    pool = addDie(pool, 'd4', ids('c'));
+    expect(pool).toHaveLength(4);
+    expect(hasDuality(pool)).toBe(true);
+  });
+
+  it('lets a new pair in once the first is taken out', () => {
+    const one = addDie([], 'duality', ids('a'));
+    const gone = removeDie(one, one[0].id);
+    expect(hasDuality(gone)).toBe(false);
+    expect(addDie(gone, 'duality', ids('b'))).toHaveLength(2);
+  });
+});
+
+describe('dualityVerdict in company (v0.40.1)', () => {
+  const pair = (h: number, f: number): PoolDie[] => [
+    { id: 'h', type: 'd12', value: h, side: 'hope', pairId: 'p' },
+    { id: 'f', type: 'd12', value: f, side: 'fear', pairId: 'p' },
+  ];
+
+  it('still reads Hope with two d4 alongside', () => {
+    expect(dualityVerdict([...pair(9, 4), die('d4', 3, undefined, 'a'), die('d4', 1, undefined, 'b')])).toBe('hope');
+  });
+
+  it('still reads Fear with company', () => {
+    expect(dualityVerdict([...pair(2, 11), die('d20', 19, undefined, 'a')])).toBe('fear');
+  });
+
+  it('still reads a critical with company', () => {
+    expect(dualityVerdict([...pair(7, 7), die('d6', 6, undefined, 'a')])).toBe('critical');
+  });
+
+  it('says nothing when there is no pair', () => {
+    expect(dualityVerdict([die('d12', 12, undefined, 'a'), die('d12', 3, undefined, 'b')])).toBeNull();
+  });
+
+  it('totals everything, pair included', () => {
+    expect(poolTotal([...pair(9, 4), die('d4', 3, undefined, 'a')], 2)).toBe(18);
+  });
+});
+
+describe('rollTally', () => {
+  it('counts maximums as successes and ones as failures', () => {
+    const pool = [die('d20', 20, undefined, 'a'), die('d20', 1, undefined, 'b'), die('d20', 20, undefined, 'c'), die('d20', 11, undefined, 'd')];
+    expect(rollTally(pool)).toEqual({ crits: 2, fails: 1 });
+  });
+
+  it('counts a matched pair as ONE success, not two', () => {
+    expect(rollTally([
+      { id: 'h', type: 'd12', value: 7, side: 'hope', pairId: 'p' },
+      { id: 'f', type: 'd12', value: 7, side: 'fear', pairId: 'p' },
+    ])).toEqual({ crits: 1, fails: 0 });
+  });
+
+  it('never counts a Fear roll as a failure', () => {
+    expect(rollTally([
+      { id: 'h', type: 'd12', value: 2, side: 'hope', pairId: 'p' },
+      { id: 'f', type: 'd12', value: 11, side: 'fear', pairId: 'p' },
+    ])).toEqual({ crits: 0, fails: 0 });
+  });
+
+  it('counts nothing for a quiet handful', () => {
+    expect(rollTally([die('d20', 11, undefined, 'a'), die('d6', 3, undefined, 'b')])).toEqual({ crits: 0, fails: 0 });
+  });
+
+  it('adds the pair success to the ordinary dice', () => {
+    expect(rollTally([
+      { id: 'h', type: 'd12', value: 7, side: 'hope', pairId: 'p' },
+      { id: 'f', type: 'd12', value: 7, side: 'fear', pairId: 'p' },
+      die('d6', 6, undefined, 'a'),
+      die('d6', 1, undefined, 'b'),
+    ])).toEqual({ crits: 2, fails: 1 });
   });
 });

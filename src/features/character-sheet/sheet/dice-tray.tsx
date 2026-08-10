@@ -20,17 +20,17 @@ import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, use
 import { Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedReaction, useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { Polygon } from 'react-native-svg';
 
+import { showToast } from '@/components/toast';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { useDetentGuard } from '@/hooks/use-detent';
 import { box } from '@/lib/design';
 import { playSfx } from '@/lib/sfx';
 import { DIE_MAX, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK } from '../components/card-tokens-data';
-import { DieButton } from '../components/card-tokens';
-import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, type PoolDie, poolGrid, poolTotal, removeDie, rollCents, rollValue, sortPool, TRAY_DICE } from '@/lib/dice-pool';
+import { DieButton, DieWash } from '../components/card-tokens';
+import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollCents, rollTally, rollValue, sortPool, TRAY_DICE } from '@/lib/dice-pool';
 import { ChamferFrame } from './chamfer';
-import { FrameSvg } from './frame-svgs';
+import { DiceButtonArt } from './dice-button';
 
 // ---------------------------------------------------------------------------------- the geometry
 
@@ -84,7 +84,7 @@ const CAROUSEL_SPRING = { damping: 15, stiffness: 120, mass: 0.7 };
 // ------------------------------------------------------------------------------------- the trigger
 
 /**
- * The dice panel (v0.40.0, owner) — the Evasion and Armor panel, mirrored.
+ * The dice button (v0.40.0, owner) — the Evasion and Armor panel, mirrored.
  *
  * v0.39.0 put a plain triangle in the gap under the portrait, and it read as a shape dropped onto the
  * parchment rather than a piece of the sheet: it sat lower than the panel opposite it and shared none
@@ -92,16 +92,10 @@ const CAROUSEL_SPRING = { damping: 15, stiffness: 120, mass: 0.7 };
  * falls into a NOTCH in the left end of the Evasion and Armor panel, so the same notch belongs on the
  * other side of that button, and the two panels then read as one band with the button between them.
  *
- * It is drawn by REFLECTING the panel's own artwork rather than by hand-cutting a matching path:
- *
- *  - `MIRROR_AXIS` is the diamond's vertical centre line. A copy of the panel flipped about its own
- *    centre and placed so that its right edge lands as far LEFT of that axis as the real panel's left
- *    edge lands right of it is, by construction, the mirror image. There is no fitting involved and
- *    nothing to re-tune if the artwork is ever replaced.
- *  - It takes the panel's own `top` and `height`, which is what makes the two level. The triangle was
- *    44px lower, which is the "not a triangle that is lower vertically" the owner called out.
- *  - The window is clipped at {@link PANEL_LEFT}, the hit points panel's left edge, which is the
- *    margin the whole upper band was aligned to in v0.40.0.
+ * The geometry below is the derivation; `dice-button.tsx` is the drawing, and v0.40.1 rebuilt it as a
+ * closed polygon so it has a gold rail on the cut side and an interior its decoration can be clipped
+ * to. The numbers here are what that polygon was mirrored and clipped against, kept because they are
+ * the reason it sits where it does.
  */
 const ARMOR_PANEL = { left: 105, top: 200, w: 291, h: 95 };
 /** The float-menu diamond, whose centre both notches are cut around. */
@@ -113,19 +107,7 @@ const PANEL_LEFT = 21;
 const MIRROR_RIGHT = MIRROR_AXIS - (ARMOR_PANEL.left - MIRROR_AXIS);
 const TRAY_PANEL = { left: PANEL_LEFT, top: ARMOR_PANEL.top, w: MIRROR_RIGHT - PANEL_LEFT, h: ARMOR_PANEL.h };
 
-/**
- * The die on that panel.
- *
- * Placed inside the FILLED part of the mirrored tail, not in the middle of the clip box: the tail
- * tapers, so most of that box is parchment and an icon centred in it would sit half outside the
- * shape, which is what the first attempt did. The largest square that fits entirely within the fill,
- * clear of the diamond, is 21dp at design (21,259); this is that square inset on every side, which is
- * the padding the owner asked for.
- */
-const TRAY_ICON = { left: 1, top: 60, size: 19 };
-
 function DiceTrayTrigger({ on, onPress }: { on: boolean; onPress: () => void }) {
-  const stroke = on ? Rune.goldBright : 'rgba(226,192,138,0.92)';
   return (
     <Pressable
       onPress={onPress}
@@ -133,23 +115,8 @@ function DiceTrayTrigger({ on, onPress }: { on: boolean; onPress: () => void }) 
       accessibilityRole="button"
       accessibilityState={{ selected: on }}
       accessibilityLabel={on ? 'Close the dice tray' : 'Open the dice tray'}
-      style={({ pressed }) => [box(TRAY_PANEL.left, TRAY_PANEL.top, TRAY_PANEL.w, TRAY_PANEL.h), { overflow: 'hidden', opacity: pressed ? 0.72 : 1 }]}>
-      <View
-        style={[
-          box(MIRROR_RIGHT - ARMOR_PANEL.w - TRAY_PANEL.left, 0, ARMOR_PANEL.w, ARMOR_PANEL.h),
-          { transform: [{ scaleX: -1 }] },
-        ]}
-        pointerEvents="none">
-        <FrameSvg.ArmorBg width="100%" height="100%" preserveAspectRatio="none" />
-      </View>
-      <View style={box(TRAY_ICON.left, TRAY_ICON.top, TRAY_ICON.size, TRAY_ICON.size)} pointerEvents="none">
-        {/* A d20 at 19dp: the hexagon and ONE inner facet, and nothing else. The first version drew the
-            full three-facet star and at this size the strokes merged into a blob. */}
-        <Svg width="100%" height="100%" viewBox="0 0 30 30">
-          <Polygon points="15,1.6 26.4,8.3 26.4,21.7 15,28.4 3.6,21.7 3.6,8.3" fill="none" stroke={stroke} strokeWidth={2.6} strokeLinejoin="round" />
-          <Polygon points="15,8.4 22,19.6 8,19.6" fill="none" stroke={stroke} strokeWidth={2.2} strokeLinejoin="round" />
-        </Svg>
-      </View>
+      style={({ pressed }) => [box(TRAY_PANEL.left, TRAY_PANEL.top, TRAY_PANEL.w, TRAY_PANEL.h), { opacity: pressed ? 0.72 : 1 }]}>
+      <DiceButtonArt on={on} />
     </Pressable>
   );
 }
@@ -192,7 +159,7 @@ interface Slot { x: number; y: number; cell: number }
  * but a die must not show its answer before its own spin has finished, or the last die of a big
  * handful would be readable half a second before it lands.
  */
-const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, verdict, reduced, onRemove }: {
+const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, resultAt, verdict, reduced, onRemove }: {
   die: PoolDie;
   slot: Slot;
   /** Where it enters from, on its first frame only. Null for a die that is already on the table. */
@@ -200,6 +167,14 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, ve
   /** Bumped on every throw. Zero means "never thrown". */
   roll: number;
   delay: number;
+  /**
+   * When the RESULT animation fires, measured from the start of the throw.
+   *
+   * The same for every die on purpose (v0.40.1, owner): "when the last 20 is about to show its
+   * critical animation all other critical animations and the animation for the 1 are shown at the
+   * same time". Faces still land one after another; the reactions are a chord, not an arpeggio.
+   */
+  resultAt: number;
   /** What this die's result earned it. See `dice-pool`'s `dieVerdicts`. */
   verdict: DieVerdict;
   reduced: boolean;
@@ -251,11 +226,20 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, ve
         if (done) swell.value = withTiming(0, { duration: SPIN_MS * 0.55, easing: Easing.inOut(Easing.cubic) });
       });
     }, delay);
-    const land = setTimeout(() => {
-      setFace(live.current.value);
+    const land = setTimeout(() => setFace(live.current.value), delay + SPIN_MS * 0.84);
+    const react = setTimeout(() => {
       const v = live.current.verdict;
       if (v === 'plain') return;
       if (v === 'critical') {
+        /**
+         * The critical, taken from the card token verbatim (v0.40.1, owner).
+         *
+         * The token's flourish is a white wash over the die's own FACE with a back-eased rise, a hold
+         * and a fall, a swell underneath it and a rattle that changes direction three times. v0.40.0
+         * approximated all of that with a translucent circle fading in, which the owner called
+         * unsatisfying: a circle over a pentagon is a sticker rather than the die flaring. Same
+         * durations, same easings, same shape as the token's (see `DieWash`).
+         */
         flash.value = withSequence(
           withTiming(1, { duration: 260, easing: Easing.out(Easing.back(2)) }),
           withTiming(0.82, { duration: 420, easing: Easing.inOut(Easing.sin) }),
@@ -301,8 +285,8 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, ve
         withTiming(0.75, { duration: 70, easing: Easing.out(Easing.quad) }),
         withTiming(0, { duration: 150, easing: Easing.out(Easing.quad) }),
       );
-    }, delay + SPIN_MS * 0.84);
-    return () => { clearTimeout(spin); clearTimeout(land); };
+    }, resultAt);
+    return () => { clearTimeout(spin); clearTimeout(land); clearTimeout(react); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roll]);
 
@@ -319,7 +303,7 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, ve
       { rotate: `${turn.value * 360 + shake.value}deg` },
     ],
   }));
-  const washStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.5 }));
+  const washStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.86 }));
 
   const hope = die.side === 'hope';
   const fear = die.side === 'fear';
@@ -338,7 +322,9 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, ve
           fill={hope ? HOPE_GOLD : fear ? FEAR_PURPLE : undefined}
           ink={hope ? HOPE_INK : fear ? FEAR_INK : undefined}
         />
-        <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: '20%', top: '20%', width: '60%', height: '60%', borderRadius: DIE_BASE, backgroundColor: '#FFFFFF' }, washStyle]} />
+        <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }, washStyle]}>
+          <DieWash size={DIE_BASE} dieType={die.type} />
+        </Animated.View>
       </Pressable>
     </Animated.View>
   );
@@ -380,7 +366,17 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   const [pool, setPool] = useState<PoolDie[]>([]);
   const [roll, setRoll] = useState(0);
   const [rolling, setRolling] = useState(false);
-  const [total, setTotal] = useState<number | null>(null);
+  /** The number on screen: it rises as the dice land, then lands on the total (v0.40.1). */
+  const [shown, setShown] = useState<number | null>(null);
+  /** The throw is over: the number is the total, not a running count. */
+  const [settled, setSettled] = useState(false);
+  /** Which way the handful leaned, once it is over. Null when nothing special happened. */
+  const [lean, setLean] = useState<'good' | 'bad' | null>(null);
+  /** When every die's reaction fires, measured from the start of the throw. */
+  const [resultAt, setResultAt] = useState(0);
+  /** A small kick on each step of the count, and the flourish on the total at the end. */
+  const tick = useSharedValue(0);
+  const totalPop = useSharedValue(0);
   const [modifier, setModifier] = useState<{ label: string; value: number } | null>(null);
   const [verdict, setVerdict] = useState<Duality>(null);
   const [centreLabel, setCentreLabel] = useState<DieType>(TRAY_DICE[Math.floor(TRAY_DICE.length / 2)]);
@@ -391,6 +387,8 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   useEffect(() => () => clearTimers(), [clearTimers]);
   const rollingRef = useRef(false);
   rollingRef.current = rolling;
+  const poolRef = useRef<PoolDie[]>([]);
+  poolRef.current = pool;
 
   // --- the carousel ------------------------------------------------------------------------------
   /** Where the carousel is, as a fractional index. A whole number is a die in the middle. */
@@ -443,12 +441,21 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   );
 
   const add = useCallback((type: DieType) => {
+    // One pair at a time (owner, v0.40.1). Refused out loud rather than silently: a tap that does
+    // nothing and says nothing reads as the button being broken.
+    if (type === 'duality' && hasDuality(poolRef.current)) {
+      showToast('Only one pair of duality dice can be rolled at a time');
+      playSfx('cardDeselect');
+      return;
+    }
     setPool((p) => {
       const next = addDie(p, type, () => nextId());
       for (const d of next.slice(p.length)) entering.current.add(d.id);
       return next;
     });
-    setTotal(null);
+    setShown(null);
+    setSettled(false);
+    setLean(null);
     setVerdict(null);
     setModifier(null); // a trait's modifier belongs to the pair it was thrown with, not to a new pool
     playSfx('placeToken', { cents: 140 });
@@ -478,46 +485,97 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     clearTimers();
     const thrown = dice.map((d) => ({ ...d, value: rollValue(d.type) }));
     const order = sortPool(thrown);
+    const tally = rollTally(order);
+    const final = poolTotal(order, mod?.value ?? 0);
     setPool(thrown);
     setModifier(mod);
-    setTotal(null);
     setVerdict(null);
+    setShown(mod?.value ?? 0);
+    setSettled(false);
+    setLean(null);
     setRolling(true);
     setRoll((n) => n + 1);
-    order.forEach((_, i) => {
-      timers.current.push(setTimeout(() => playSfx('placeToken', { cents: rollCents(order, i) }), reduced ? 0 : i * STAGGER_MS));
+
+    const land = (i: number) => (reduced ? 0 : i * STAGGER_MS + SPIN_MS * 0.84);
+    const resultAtMs = reduced ? 0 : land(order.length - 1);
+    setResultAt(resultAtMs);
+
+    /**
+     * The number RISES while the dice are landing (v0.40.1, owner).
+     *
+     * "The animation of dice rolling has a long extra time where nothing is moving but I still cannot
+     * roll or clear the dice yet the total result is already shown." It was: the total appeared whole
+     * at the settle and then a second of result animations played over a finished number. Now each
+     * die adds itself as its own face turns up, so the wait IS the count, and the flourish at the end
+     * is what the last of that second is for.
+     */
+    order.forEach((d, i) => {
+      timers.current.push(setTimeout(() => {
+        playSfx('placeToken', { cents: rollCents(order, i) });
+        setShown((n) => (n ?? 0) + (d.value ?? 0));
+        tick.value = withSequence(withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) }), withTiming(0, { duration: 140, easing: Easing.out(Easing.sin) }));
+      }, land(i)));
     });
-    const settle = reduced ? 0 : (order.length - 1) * STAGGER_MS + SPIN_MS * 0.84;
+
     timers.current.push(
       setTimeout(() => {
         const v = dualityVerdict(order);
         setVerdict(v);
-        setTotal(poolTotal(order, mod?.value ?? 0));
-        if (v === 'critical') playSfx('gainGoldenHp');
+        setShown(final);
+        setSettled(true);
+        const good = tally.crits > tally.fails;
+        setLean(tally.crits === 0 && tally.fails === 0 ? null : good ? 'good' : 'bad');
+        /**
+         * ONE sound, the most relevant one (owner).
+         *
+         * Five dice landing on five criticals used to mean five flourishes at once, which is noise
+         * rather than emphasis. The throw gets a single voice, and this is its order of precedence: a
+         * critical anywhere beats everything, then a fumble, then what the duality pair had to say,
+         * then the plain landing tick.
+         */
+        if (tally.crits > 0) playSfx('gainGoldenHp');
+        else if (tally.fails > 0) playSfx('loseHope', { cents: -260 });
         else if (v === 'hope') playSfx('gainHope');
         else if (v === 'fear') playSfx('loseHope', { cents: -200 });
         else playSfx('transitionIconFilled');
-      }, settle),
+
+        if (!reduced && (tally.crits > 0 || tally.fails > 0)) {
+          // The total reacts the way the dice do: a good throw swells and flares, a bad one drops.
+          totalPop.value = good
+            ? withSequence(
+                withTiming(1, { duration: 260, easing: Easing.out(Easing.back(2.4)) }),
+                withTiming(0.55, { duration: 380, easing: Easing.inOut(Easing.sin) }),
+                withTiming(0, { duration: 320, easing: Easing.in(Easing.cubic) }),
+              )
+            : withSequence(
+                withTiming(-0.5, { duration: 90, easing: Easing.out(Easing.quad) }),
+                withTiming(0.16, { duration: 120, easing: Easing.out(Easing.quad) }),
+                withTiming(0, { duration: 220, easing: Easing.out(Easing.sin) }),
+              );
+        }
+      }, resultAtMs),
     );
+
     /**
      * The tray is inert until the last die has come to rest (v0.40.0, owner).
      *
      * A second throw over the top of the first restarted every die's turn from wherever the
      * interrupted one had got to, so dice finished at whatever angle they happened to be at: numbers
      * upside down and faces on the tilt. The whole tray goes quiet for the length of a throw rather
-     * than only the Roll button, because a die added mid-flight would be left out of the total as
-     * well, which is the "numeric bugs" half of the same complaint. The extra beat past the settle is
-     * the result animations, which are the longest thing in a throw.
+     * than only the Roll button, because a die added mid-flight would be left out of the total too.
+     * The beat past the settle is the reactions and the total's flourish, which now end together.
      */
-    timers.current.push(setTimeout(() => setRolling(false), settle + (reduced ? 0 : 1000)));
-  }, [clearTimers, reduced]);
+    timers.current.push(setTimeout(() => setRolling(false), resultAtMs + (reduced ? 0 : 960)));
+  }, [clearTimers, reduced, tick, totalPop]);
 
   const clear = useCallback(() => {
     if (rollingRef.current) return;
     clearTimers();
     entering.current.clear();
     setPool([]);
-    setTotal(null);
+    setShown(null);
+    setSettled(false);
+    setLean(null);
     setModifier(null);
     setVerdict(null);
     playSfx('tokenRemove');
@@ -527,7 +585,9 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     if (rollingRef.current) return;
     // A half of a duality pair takes its partner with it: they are added and removed together.
     setPool((p) => removeDie(p, id));
-    setTotal(null);
+    setShown(null);
+    setSettled(false);
+    setLean(null);
     setVerdict(null);
     playSfx('tokenRemove');
   }, []);
@@ -555,7 +615,26 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     },
   }), [throwPool]);
 
-  const totalColor = verdict === 'fear' ? totalFear : verdict ? totalHope : totalInk;
+  /**
+   * The number's own animation (v0.40.1).
+   *
+   * `tick` is the small kick as each die adds itself; `totalPop` is the flourish once the throw is
+   * over, which grows and settles on a good handful and drops sharply on a bad one. Colour is state
+   * rather than an animated prop, because a colour that has to be interpolated on a worklet buys a
+   * shared value and an animated component for something one repaint says just as well.
+   */
+  const totalStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + tick.value * 0.11 + Math.max(0, totalPop.value) * 0.42 + Math.min(0, totalPop.value) * 0.22 }],
+  }));
+  /**
+   * Purple means FEAR, and nothing else (v0.40.1).
+   *
+   * The lean drives the number's ANIMATION, not its colour. Painting a bad-leaning throw purple put
+   * "WITH HOPE" in gold over a purple 18, which is two statements disagreeing: purple is the answer to
+   * which of the two d12s won, and a d4 rolling a one has no opinion about that. A good lean can tint
+   * a throw that has no pair to speak for it, because there is nothing for it to contradict.
+   */
+  const totalColor = verdict === 'fear' ? totalFear : verdict ? totalHope : settled && lean === 'good' ? totalHope : totalInk;
   const note = verdict === 'critical' ? 'Critical' : verdict === 'hope' ? 'With Hope' : verdict === 'fear' ? 'With Fear' : modifier ? modifier.label : null;
 
   return (
@@ -591,6 +670,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
             from={entering.current.has(d.id) ? { x: POOL.w / 2, y: CAROUSEL.top + CAROUSEL.h / 2 - POOL.top } : null}
             roll={roll}
             delay={i * STAGGER_MS}
+            resultAt={resultAt}
             verdict={verdicts[d.id] ?? 'plain'}
             reduced={reduced}
             onRemove={remove}
@@ -607,9 +687,14 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
               {note}{modifier ? ` ${modifier.value >= 0 ? '+' : ''}${modifier.value}` : ''}
             </Text>
           ) : null}
-          <Text numberOfLines={1} style={{ color: totalColor, fontSize: total == null ? 16 : 25, lineHeight: total == null ? 22 : 29, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>
-            {total ?? '·'}
-          </Text>
+          <Animated.View style={totalStyle}>
+            <Text
+              numberOfLines={1}
+              accessibilityLabel={shown == null ? 'No result yet' : `Total ${shown}${note ? `, ${note.toLowerCase()}` : ''}`}
+              style={{ color: totalColor, fontSize: shown == null ? 16 : 25, lineHeight: shown == null ? 22 : 29, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>
+              {shown ?? '·'}
+            </Text>
+          </Animated.View>
         </View>
         <TrayButton label="Clear" dm={dm} h={ROW.h} disabled={ordered.length === 0 || rolling} onPress={clear} />
       </View>
