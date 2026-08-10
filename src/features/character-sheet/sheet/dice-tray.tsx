@@ -69,6 +69,10 @@ const SPIN_MS = 420;
 const STAGGER_MS = 88;
 /** Every pool die is DRAWN at this size and scaled by a transform, so its SVG never re-renders. */
 const DIE_BASE = 110;
+/** How long a die takes to reach its slot after being added, or after the grid reflows around it. */
+const ENTRY_MS = 280;
+/** How long the criticals wait for the failures to have said their piece (owner, v0.40.2). */
+const CRIT_GAP_MS = 500;
 
 /**
  * How much a flick carries (v0.40.0, owner: "i want more momentum preserved in my dice swiping").
@@ -159,7 +163,7 @@ interface Slot { x: number; y: number; cell: number }
  * but a die must not show its answer before its own spin has finished, or the last die of a big
  * handful would be readable half a second before it lands.
  */
-const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, resultAt, verdict, reduced, onRemove }: {
+const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, resultAt, critAt, verdict, reduced, onRemove }: {
   die: PoolDie;
   slot: Slot;
   /** Where it enters from, on its first frame only. Null for a die that is already on the table. */
@@ -170,11 +174,15 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
   /**
    * When the RESULT animation fires, measured from the start of the throw.
    *
-   * The same for every die on purpose (v0.40.1, owner): "when the last 20 is about to show its
-   * critical animation all other critical animations and the animation for the 1 are shown at the
-   * same time". Faces still land one after another; the reactions are a chord, not an arpeggio.
+   * Every die of a kind reacts at the same instant (v0.40.1, owner): "when the last 20 is about to
+   * show its critical animation all other critical animations are shown at the same time". Faces still
+   * land one after another; the reactions are two chords rather than an arpeggio.
+   *
+   * v0.40.2 splits them: the FAILURES go first and the criticals follow half a second later, so a
+   * handful that went both ways tells its bad news and then its good news instead of shouting both.
    */
   resultAt: number;
+  critAt: number;
   /** What this die's result earned it. See `dice-pool`'s `dieVerdicts`. */
   verdict: DieVerdict;
   reduced: boolean;
@@ -221,6 +229,17 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
     if (roll === 0 || reduced) { setFace(live.current.value); return; }
     setFace(null);
     const spin = setTimeout(() => {
+      /**
+       * Start from a WHOLE turn, always (v0.40.2, owner).
+       *
+       * `turn` is only ever added to, so a spin that began while a previous one was still running took
+       * a fractional angle as its base and landed on a fractional angle: numbers sideways, and no way
+       * back until the die was rolled again cleanly. Cancelling and rounding first means the die is
+       * upright at the end of every throw whatever interrupted the one before it. It costs a frame of
+       * snap in a case that should not happen anyway, and it is the only thing that can guarantee it.
+       */
+      cancelAnimation(turn);
+      turn.value = Math.round(turn.value);
       turn.value = withTiming(turn.value + 1, { duration: SPIN_MS, easing: Easing.inOut(Easing.cubic) });
       swell.value = withTiming(1, { duration: SPIN_MS * 0.45, easing: Easing.out(Easing.cubic) }, (done) => {
         if (done) swell.value = withTiming(0, { duration: SPIN_MS * 0.55, easing: Easing.inOut(Easing.cubic) });
@@ -285,7 +304,7 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
         withTiming(0.75, { duration: 70, easing: Easing.out(Easing.quad) }),
         withTiming(0, { duration: 150, easing: Easing.out(Easing.quad) }),
       );
-    }, resultAt);
+    }, live.current.verdict === 'critical' ? critAt : resultAt);
     return () => { clearTimeout(spin); clearTimeout(land); clearTimeout(react); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roll]);
@@ -372,8 +391,23 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   const [settled, setSettled] = useState(false);
   /** Which way the handful leaned, once it is over. Null when nothing special happened. */
   const [lean, setLean] = useState<'good' | 'bad' | null>(null);
-  /** When every die's reaction fires, measured from the start of the throw. */
+  /** When the failures react, and when the criticals do, measured from the start of the throw. */
   const [resultAt, setResultAt] = useState(0);
+  const [critAt, setCritAt] = useState(0);
+  /**
+   * True while the pool is still rearranging after a die was added or taken out (v0.40.2, owner).
+   *
+   * Rolling into that reflow interrupted it. It lasts one entry animation, which is short enough that
+   * a deliberate press never meets it and long enough that a press chasing a tap does.
+   */
+  const [busy, setBusy] = useState(false);
+  const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleSoon = useCallback(() => {
+    setBusy(true);
+    if (busyTimer.current) clearTimeout(busyTimer.current);
+    busyTimer.current = setTimeout(() => setBusy(false), ENTRY_MS + 40);
+  }, []);
+  useEffect(() => () => { if (busyTimer.current) clearTimeout(busyTimer.current); }, []);
   /** A small kick on each step of the count, and the flourish on the total at the end. */
   const tick = useSharedValue(0);
   const totalPop = useSharedValue(0);
@@ -459,7 +493,8 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     setVerdict(null);
     setModifier(null); // a trait's modifier belongs to the pair it was thrown with, not to a new pool
     playSfx('placeToken', { cents: 140 });
-  }, []);
+    settleSoon();
+  }, [settleSoon]);
 
   const tapCarousel = useCallback((index: number) => {
     if (rollingRef.current || dragged.value === 1) return;
@@ -498,16 +533,23 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
 
     const land = (i: number) => (reduced ? 0 : i * STAGGER_MS + SPIN_MS * 0.84);
     const resultAtMs = reduced ? 0 : land(order.length - 1);
+    /**
+     * The criticals wait for the failures to have their moment (v0.40.2, owner).
+     *
+     * Only when there is something to wait for: with no critical in the handful the gap would be half
+     * a second of nothing, which is the dead time item 4 is about.
+     */
+    const critAtMs = tally.crits > 0 ? resultAtMs + (reduced ? 0 : CRIT_GAP_MS) : resultAtMs;
     setResultAt(resultAtMs);
+    setCritAt(critAtMs);
 
     /**
      * The number RISES while the dice are landing (v0.40.1, owner).
      *
      * "The animation of dice rolling has a long extra time where nothing is moving but I still cannot
      * roll or clear the dice yet the total result is already shown." It was: the total appeared whole
-     * at the settle and then a second of result animations played over a finished number. Now each
-     * die adds itself as its own face turns up, so the wait IS the count, and the flourish at the end
-     * is what the last of that second is for.
+     * at the settle and then a second of result animations played over a finished number. Now each die
+     * adds itself as its own face turns up, so the wait IS the count.
      */
     order.forEach((d, i) => {
       timers.current.push(setTimeout(() => {
@@ -517,55 +559,62 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
       }, land(i)));
     });
 
+    /**
+     * The failures' moment, and the total's if the throw had nothing to celebrate.
+     *
+     * ONE sound each time, the most relevant one. A fumble gets a SHORT negative (v0.40.2): the old
+     * one ran for over two seconds, which is right as the voice of Fear and far too much for every 1
+     * in a fistful of d20.
+     */
     timers.current.push(
       setTimeout(() => {
         const v = dualityVerdict(order);
         setVerdict(v);
         setShown(final);
         setSettled(true);
-        const good = tally.crits > tally.fails;
-        setLean(tally.crits === 0 && tally.fails === 0 ? null : good ? 'good' : 'bad');
-        /**
-         * ONE sound, the most relevant one (owner).
-         *
-         * Five dice landing on five criticals used to mean five flourishes at once, which is noise
-         * rather than emphasis. The throw gets a single voice, and this is its order of precedence: a
-         * critical anywhere beats everything, then a fumble, then what the duality pair had to say,
-         * then the plain landing tick.
-         */
-        if (tally.crits > 0) playSfx('gainGoldenHp');
-        else if (tally.fails > 0) playSfx('loseHope', { cents: -260 });
+        setLean(tally.crits === 0 && tally.fails === 0 ? null : tally.crits > tally.fails ? 'good' : 'bad');
+        if (tally.fails > 0) playSfx('cardDisable', { cents: -220 });
+        else if (tally.crits > 0) playSfx('transitionIconFilled');
         else if (v === 'hope') playSfx('gainHope');
         else if (v === 'fear') playSfx('loseHope', { cents: -200 });
         else playSfx('transitionIconFilled');
-
-        if (!reduced && (tally.crits > 0 || tally.fails > 0)) {
-          // The total reacts the way the dice do: a good throw swells and flares, a bad one drops.
-          totalPop.value = good
-            ? withSequence(
-                withTiming(1, { duration: 260, easing: Easing.out(Easing.back(2.4)) }),
-                withTiming(0.55, { duration: 380, easing: Easing.inOut(Easing.sin) }),
-                withTiming(0, { duration: 320, easing: Easing.in(Easing.cubic) }),
-              )
-            : withSequence(
-                withTiming(-0.5, { duration: 90, easing: Easing.out(Easing.quad) }),
-                withTiming(0.16, { duration: 120, easing: Easing.out(Easing.quad) }),
-                withTiming(0, { duration: 220, easing: Easing.out(Easing.sin) }),
-              );
+        // The number drops with the failures; a good throw's flourish waits for the criticals below.
+        if (!reduced && tally.fails > 0 && tally.crits <= tally.fails) {
+          totalPop.value = withSequence(
+            withTiming(-0.5, { duration: 90, easing: Easing.out(Easing.quad) }),
+            withTiming(0.16, { duration: 120, easing: Easing.out(Easing.quad) }),
+            withTiming(0, { duration: 220, easing: Easing.out(Easing.sin) }),
+          );
         }
       }, resultAtMs),
     );
 
+    /** The criticals' moment, and the total's flourish with them. */
+    if (tally.crits > 0) {
+      timers.current.push(
+        setTimeout(() => {
+          playSfx('gainGoldenHp');
+          if (!reduced && tally.crits > tally.fails) {
+            totalPop.value = withSequence(
+              withTiming(1, { duration: 260, easing: Easing.out(Easing.back(2.4)) }),
+              withTiming(0.5, { duration: 300, easing: Easing.inOut(Easing.sin) }),
+              withTiming(0, { duration: 240, easing: Easing.in(Easing.cubic) }),
+            );
+          }
+        }, critAtMs),
+      );
+    }
+
     /**
-     * The tray is inert until the last die has come to rest (v0.40.0, owner).
+     * The tray comes back the moment the last thing stops moving (v0.40.2, owner).
      *
-     * A second throw over the top of the first restarted every die's turn from wherever the
-     * interrupted one had got to, so dice finished at whatever angle they happened to be at: numbers
-     * upside down and faces on the tilt. The whole tray goes quiet for the length of a throw rather
-     * than only the Roll button, because a die added mid-flight would be left out of the total too.
-     * The beat past the settle is the reactions and the total's flourish, which now end together.
+     * It used to wait a flat second past the settle whatever had happened, so a quiet handful left
+     * about a second and a half of a finished number that could be neither rolled nor cleared. The
+     * tail is measured from what actually plays: the criticals' flourish, the failures' short drop, or
+     * nothing at all.
      */
-    timers.current.push(setTimeout(() => setRolling(false), resultAtMs + (reduced ? 0 : 960)));
+    const tail = reduced ? 0 : tally.crits > 0 ? CRIT_GAP_MS + 820 : tally.fails > 0 ? 450 : 150;
+    timers.current.push(setTimeout(() => setRolling(false), resultAtMs + tail));
   }, [clearTimers, reduced, tick, totalPop]);
 
   const clear = useCallback(() => {
@@ -590,7 +639,8 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     setLean(null);
     setVerdict(null);
     playSfx('tokenRemove');
-  }, []);
+    settleSoon();
+  }, [settleSoon]);
 
   /**
    * A trait, tapped while the tray is open.
@@ -635,7 +685,16 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
    * a throw that has no pair to speak for it, because there is nothing for it to contradict.
    */
   const totalColor = verdict === 'fear' ? totalFear : verdict ? totalHope : settled && lean === 'good' ? totalHope : totalInk;
-  const note = verdict === 'critical' ? 'Critical' : verdict === 'hope' ? 'With Hope' : verdict === 'fear' ? 'With Fear' : modifier ? modifier.label : null;
+  /**
+   * The trait's NAME is not shown while the dice are in the air (v0.40.2, owner).
+   *
+   * "Presence +3" appeared for a split second and was replaced by "With Hope +3", which is a label
+   * that exists only long enough to flicker. The modifier is the part that matters mid-throw, because
+   * it is what the rising number already has in it; the verdict arrives when the dice do.
+   */
+  const verdictWord = verdict === 'critical' ? 'Critical' : verdict === 'hope' ? 'With Hope' : verdict === 'fear' ? 'With Fear' : null;
+  const modWord = modifier ? `${modifier.value >= 0 ? '+' : ''}${modifier.value}` : null;
+  const note = [settled ? verdictWord : null, modWord].filter(Boolean).join(' ') || null;
 
   return (
     <>
@@ -671,6 +730,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
             roll={roll}
             delay={i * STAGGER_MS}
             resultAt={resultAt}
+            critAt={critAt}
             verdict={verdicts[d.id] ?? 'plain'}
             reduced={reduced}
             onRemove={remove}
@@ -680,11 +740,11 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
 
       {/* Roll, the total, Clear */}
       <View style={[box(ROW.left, ROW.top, ROW.w, ROW.h), { flexDirection: 'row', alignItems: 'center' }]}>
-        <TrayButton label="Roll" primary dm={dm} h={ROW.h} disabled={ordered.length === 0 || rolling} onPress={() => throwPool(pool, modifier)} />
+        <TrayButton label="Roll" primary dm={dm} h={ROW.h} disabled={ordered.length === 0 || rolling || busy} onPress={() => throwPool(pool, modifier)} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
           {note ? (
             <Text numberOfLines={1} style={{ color: verdict === 'fear' ? totalFear : label, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase' }}>
-              {note}{modifier ? ` ${modifier.value >= 0 ? '+' : ''}${modifier.value}` : ''}
+              {note}
             </Text>
           ) : null}
           <Animated.View style={totalStyle}>

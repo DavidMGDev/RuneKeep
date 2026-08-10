@@ -1,26 +1,16 @@
-RuneKeep v0.40.1 - The dice button becomes decoration, and the throw gets its suspense back.
+RuneKeep v0.40.2 - The dice button gets a real pattern, and the throw stops making you wait.
 
 THE DICE BUTTON
 
-- IT IS DRAWN FROM SCRATCH NOW, as a closed shape rather than a mirrored copy of the Evasion and Armor panel behind a clip. Same shape, same place, and a gold rail all the way round: the left side used to be bare fill, because a picture cut in half cannot close itself.
-- IT CARRIES A PATTERN. Closed, it is diagonal rows of numbers on dark. Pressed, it turns red and the numbers become hearts. The button shows what it will give you: dice when it is shut, your hit points back when it is open.
-- EVERY GLYPH IS WHOLE. The pattern is filtered to the ones that fit inside the shape, because half a number against a rail reads as a mistake rather than as a pattern running under an edge.
+- THE PATTERN IS A PATTERN NOW. It was a scatter: the last version drew a grid and then threw away every glyph that did not fit whole, which left a handful of upright numbers at odd spacings with gaps between them. It is one rotated grid, dense and regular, running diagonally off every edge of the panel and masked by its shape, so the glyphs are turned with the rows and a glyph the rail cuts through is a pattern running under its frame rather than a mistake.
+- HEARTS THE SAME, turned with the rows and filling the shape instead of leaving holes in it.
 
-THE DUALITY PAIR
+THE THROW
 
-- IT STILL SAYS HOPE OR FEAR WHEN YOU THROW IT WITH OTHER DICE. The total is everything you threw; Hope or Fear is still which of the two d12s came out on top. It used to go quiet the moment you added anything to it.
-- ONLY ONE PAIR AT A TIME, and the tray says so rather than ignoring the tap. Two pairs have no answer to which one won.
-
-CRITICALS
-
-- THEY LOOK LIKE THE ONES ON YOUR CARDS NOW. The die's own shape flares white, swells and rattles, with the same timing the dice tokens have had since v0.34.5. It used to be a translucent circle fading in over the top, which is a sticker rather than a die catching light.
-- THEY ALL FIRE AT ONCE. Roll five d20 for a 1, three 20s and a 15, and every reaction lands together the moment the last die shows its face, instead of trickling across the row.
-- ONE SOUND FOR THE THROW, the most important thing that happened: a critical first, then a fumble, then whatever the duality pair had to say. Five criticals used to mean five flourishes at the same time, which is noise.
-
-THE TOTAL
-
-- IT COUNTS UP as the dice land, one die at a time, with a kick on each. The second of animation after the dice stopped moving used to be dead time with a finished number sitting in it; it is the count now, and then the flourish.
-- IT REACTS TO THE THROW. More dice at their best than at their worst and the number swells and flares gold as the buttons come back; the other way and it drops sharply. A matched duality pair counts as one good thing, and a Fear roll is never a fumble.
-- PURPLE STILL MEANS FEAR AND NOTHING ELSE, so the number never argues with the words above it.
+- ROLLING CANNOT INTERRUPT A DIE THAT IS STILL MOVING. Pressing Roll while dice were sliding into place left them finishing at whatever angle they were at, with the numbers on their side. Roll waits out the reshuffle, and every spin now starts from a whole turn, so a die is upright at the end of a throw whatever happened before it.
+- CRITICAL FAILURES GO FIRST, and the criticals follow half a second later. A handful that went both ways tells its bad news and then its good news instead of shouting both at once.
+- A FUMBLE HAS A SHORTER VOICE. The old one ran for over two seconds, which is right for Fear and far too much for every 1 in a fistful of d20.
+- THE WAIT IS OVER WHEN THE MOVEMENT IS. The tray used to stay locked for a flat second after the last die settled, whatever had happened, so a quiet throw left about a second and a half of a finished number you could neither roll nor clear. The tail is measured from what actually plays now: the criticals' flourish, the failures' short drop, or nothing at all.
+- A TRAIT ROLL SHOWS JUST THE MODIFIER while the dice are in the air, and adds Hope or Fear to it when they land. The trait's name used to flash up for a moment and then be replaced.
 
 Sideload: enable Install unknown apps, then open the APK.

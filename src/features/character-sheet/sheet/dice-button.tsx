@@ -32,49 +32,41 @@ const INNER = '1.7,92.34 10.66,81.61 43.26,81.59 10.48,48.59 21.52,37.72 1.7,18.
 const RAIL = Rune.goldEdge;
 const INK = '#0A0D11';
 const RED = '#A11A18';
-const NUMBER_INK = 'rgba(244,220,160,0.9)';
-const HEART_INK = 'rgba(255,255,255,0.92)';
+const NUMBER_INK = 'rgba(246,222,164,0.94)';
+const HEART_INK = 'rgba(255,255,255,0.94)';
 
 /**
- * The diagonal rows.
+ * The weave (v0.40.2, owner: "it looks like if someone just dropped a bag of numbers on that UI").
  *
- * A square lattice sheared half a step per row, which is what makes the rows read as diagonals rather
- * than as a grid, and then filtered: a cell survives only if its whole glyph fits inside the panel.
+ * v0.40.1 sheared a lattice and then threw away every cell whose glyph did not fit whole. Throwing
+ * cells away is what wrecked it: the survivors were sparse, unaligned with each other and upright, so
+ * they read as spillage rather than as a pattern, and the shape was mostly empty.
  *
- * The filter is the difference between decoration and mess. Clipping alone leaves half a "18" against
- * the rail, which does not read as a pattern running under an edge, it reads as a mistake, and a
- * cut-off digit is a different digit. Testing the glyph's four corners against the polygon costs
- * nothing once at module load and leaves only whole numbers.
+ * The fix is the opposite of a filter. ONE rotated grid, regular, dense, drawn well past every edge of
+ * the panel and then MASKED by it. Rotating the whole group rather than each glyph is what makes it a
+ * pattern: the rows are straight lines running off the panel at {@link ANGLE}, the glyphs are turned
+ * with them, and the spacing is identical everywhere because it is one grid. A glyph the rail cuts
+ * through is now correct rather than embarrassing, because a pattern is supposed to run under its
+ * frame.
  */
-const STEP = 7.0;
-const GLYPH = 5.0;
-/** How much of the glyph must be inside. Its ink is well within its box, so a little under half is right. */
-const INSET = 0.32;
-
-/** Ray casting, the ordinary way. */
-function inside(poly: [number, number][], x: number, y: number): boolean {
-  let hit = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
-  }
-  return hit;
-}
-
-const INNER_PTS: [number, number][] = INNER.split(' ').map((p) => p.split(',').map(Number) as [number, number]);
+const ANGLE = -32;
+const STEP = 8.4;
+const GLYPH = 6.2;
+/** The panel's centre, which the grid turns about, and how far the grid must reach to cover a corner. */
+const CX = DICE_PANEL.w / 2;
+const CY = DICE_PANEL.h / 2;
+const REACH = Math.hypot(CX, CY) + STEP;
 
 const CELLS: { x: number; y: number; i: number }[] = (() => {
   const out: { x: number; y: number; i: number }[] = [];
-  const h = GLYPH * INSET;
   let i = 0;
-  for (let r = 0; r < 16; r++) {
-    for (let c = -2; c < 9; c++) {
-      const x = c * STEP + r * (STEP / 2) - 6;
-      const y = 10 + r * STEP;
-      const fits = [
-        [x - h, y - h], [x + h, y - h], [x - h, y + h], [x + h, y + h],
-      ].every(([px, py]) => inside(INNER_PTS, px, py));
-      if (fits) out.push({ x, y, i: i++ });
+  for (let v = -REACH; v <= REACH; v += STEP) {
+    // Every other row is offset half a step, so the rows interlock instead of stacking into columns.
+    const shift = (Math.round((v + REACH) / STEP) % 2) * (STEP / 2);
+    for (let u = -REACH; u <= REACH; u += STEP) {
+      const x = CX + u + shift;
+      const y = CY + v;
+      if (Math.hypot(x - CX, y - CY) <= REACH) out.push({ x, y, i: i++ });
     }
   }
   return out;
@@ -83,10 +75,10 @@ const CELLS: { x: number; y: number; i: number }[] = (() => {
 /**
  * Fixed, not random-per-render: a pattern that reshuffled on every repaint would be a flicker.
  *
- * Single digits only. A two-digit number in a 5dp cell is either unreadable or wider than the lattice,
- * and at this size the pattern's job is texture rather than arithmetic.
+ * Single digits. Two-digit numbers at this size are a smudge, and they make the cells different
+ * widths, which is the one thing a lattice cannot absorb.
  */
-const FACES = [4, 7, 2, 9, 6, 3, 8, 5, 1, 7, 4, 9, 2, 6, 8, 3, 5, 1, 9, 4];
+const FACES = [4, 7, 2, 9, 6, 3, 8, 5, 1, 7, 4, 9, 2, 6, 8, 3, 5, 1, 9, 4, 6, 2, 7, 3];
 
 /** A small heart, drawn in a 10x10 box with its own top-left at (0,0). */
 const HEART = 'M5 9.1 C1.4 6.6 0.4 5 0.4 3.4 C0.4 1.9 1.6 0.8 3 0.8 C3.9 0.8 4.6 1.25 5 1.9 C5.4 1.25 6.1 0.8 7 0.8 C8.4 0.8 9.6 1.9 9.6 3.4 C9.6 5 8.6 6.6 5 9.1 z';
@@ -102,16 +94,20 @@ export const DiceButtonArt = memo(function DiceButtonArt({ on }: { on: boolean }
       {/* the rail, and the fill inset inside it: the left edge is a real edge now, not a cut */}
       <Polygon points={OUTER} fill={RAIL} />
       <Polygon points={INNER} fill={on ? RED : INK} />
+      {/* The clip sits on the OUTER group so it stays in the panel's own axes; the rotation is inside
+          it, so the pattern turns and the mask does not. */}
       <G clipPath="url(#dicePanelFill)">
-        {CELLS.map((c) =>
-          on ? (
-            <Path key={c.i} d={HEART} fill={HEART_INK} transform={`translate(${c.x - GLYPH / 2} ${c.y - GLYPH / 2}) scale(${GLYPH / 10})`} />
-          ) : (
-            <SvgText key={c.i} x={c.x} y={c.y + GLYPH * 0.36} fill={NUMBER_INK} fontSize={GLYPH} fontFamily={Body.bold} textAnchor="middle">
-              {FACES[c.i % FACES.length]}
-            </SvgText>
-          ),
-        )}
+        <G transform={`rotate(${ANGLE} ${CX} ${CY})`}>
+          {CELLS.map((c) =>
+            on ? (
+              <Path key={c.i} d={HEART} fill={HEART_INK} transform={`translate(${c.x - GLYPH / 2} ${c.y - GLYPH / 2}) scale(${GLYPH / 10})`} />
+            ) : (
+              <SvgText key={c.i} x={c.x} y={c.y + GLYPH * 0.36} fill={NUMBER_INK} fontSize={GLYPH} fontFamily={Body.bold} textAnchor="middle">
+                {FACES[c.i % FACES.length]}
+              </SvgText>
+            ),
+          )}
+        </G>
       </G>
     </Svg>
   );
