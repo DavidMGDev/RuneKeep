@@ -53,6 +53,17 @@ export const EFFECT_GROUPS: { label: string; options: EffectOption[] }[] = [
     { key: 'presence', label: 'Presence', target: 'presence' },
     { key: 'knowledge', label: 'Knowledge', target: 'knowledge' },
   ] },
+  /**
+   * v0.41.0 (owner): what a card adds to a ROLL, rather than to the sheet.
+   *
+   * Nothing on the character sheet moves when these change, because the app does not roll your checks.
+   * They are read by the dice tray's roll presets, so "+2 to attack rolls" written on a card turns up
+   * in the total of any preset built to use it.
+   */
+  { label: 'Rolls', options: [
+    { key: 'attackRoll', label: 'Attack Rolls', target: 'attackRoll' },
+    { key: 'spellcastRoll', label: 'Spellcast Rolls', target: 'spellcastRoll' },
+  ] },
   // v0.13.0 SCARS: no amount, no formula — equipping the card scars one Hope slot, full stop.
   { label: 'Misc', options: [
     { key: 'scar', label: 'Add Scar', target: 'scar' },
@@ -99,15 +110,18 @@ export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
 /** Formula variables a player can scale (#278). v0.21.0: `spellcast` = your subclass's Spellcast trait.
  *  v0.32.0 adds two that are not sheet stats: the Stress currently marked, and a NUMBER INPUT the
  *  card asks its owner for (per card, never shared). */
-const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'attackRoll', 'spellcastRoll', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
 const VAR_LABEL: Record<EffectFormula['variable'], string> = {
   level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', stress: 'Current Stress', input: 'Number Input',
+  attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls',
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
 };
 /** What a variable means, for the ones a player cannot guess from the name alone. */
 const VAR_HINT: Partial<Record<EffectFormula['variable'], string>> = {
   stress: 'How much Stress is marked right now. Changes as you play.',
   input: 'A number you type on this card. Tap # under the card to set it.',
+  attackRoll: 'Everything your cards add to an attack roll. Used by dice tray presets.',
+  spellcastRoll: 'Everything your cards add to a spellcast roll. Used by dice tray presets.',
 };
 
 /**

@@ -32,6 +32,10 @@ function resolvedDelta(e: CardEffect, character: Character, level: number, numbe
       : f.variable === 'spellcast' ? (character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0)
       : f.variable === 'stress' ? character.stress.active
       : f.variable === 'input' ? numberInput
+      // v0.41.0: the two roll bonuses are not on the sheet, so this preview shows what the character
+      // currently has for them, which `Character` carries alongside the sheet's own numbers.
+      : f.variable === 'attackRoll' ? character.attackRoll ?? 0
+      : f.variable === 'spellcastRoll' ? character.spellcastRoll ?? 0
       : character.traits[f.variable] ?? 0;
     const div = f.divide && f.divide !== 0 ? f.divide : 1;
     const scaled = (base * (f.multiply ?? 1)) / div;

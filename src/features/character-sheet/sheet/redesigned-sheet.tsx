@@ -83,6 +83,8 @@ import { HeartTrack, type HeartTrackHandle } from '../components/heart-track';
 import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { DiceTray, type DiceTrayHandle } from './dice-tray';
+import { DicePresetSlots } from './dice-preset-slots';
+import { type DicePreset, modifierValue, slotsOf, writeSlot } from '@/lib/dice-presets';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
@@ -436,6 +438,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* Contents nudged 3px into the taller panel and CENTERED as a band (#48 C): titles level,
           and the evasion numeral's vertical center matches the shield rows' center — the two
           halves read as one piece. */}
+      {/* v0.41.0 (owner): the panel stays, its CONTENTS change. Evasion and the shields are no use
+          mid-throw, so while the dice are out they give way to the three roll presets, which line up
+          with the badges above them. Same fade as the vitals, so the whole band changes together. */}
+      <VitalsGroup hidden={diceUp}>
       <SheetText left={158} top={213} width={84} height={15} color={Rune.goldText} size={11} family={Body.bold} align="center" uppercase letterSpacing={0.8}>Evasion</SheetText>
       <SheetText left={158} top={231} width={84} height={44} color={IVORY} size={38} family={Display.black} align="center" tabularNums>{character.evasion}</SheetText>
       {/* the ONE separator — between Evasion and Armor, clear of the shields */}
@@ -468,6 +474,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
         zone={{ left: -10, top: -8, width: 142, height: 56 }}
         trackLabel="Armor"
       />
+      </VitalsGroup>
 
       {/* v0.39.0: hit points, stress and hope are ONE fading group, because the dice tray takes all
           three of their places at once. The wrapper spans the whole design and is transparent, so
@@ -2482,6 +2489,42 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     });
   }, []);
   const rollTrait = useCallback((label: string, value: number) => trayRef.current?.rollDuality(label, value), []);
+
+  /**
+   * The three roll presets (v0.41.0, owner).
+   *
+   * They live on the character file, so they travel with an export and belong to the person whose
+   * cards their variables read. Writing one goes through the same save path as everything else.
+   */
+  const presets = useMemo(() => slotsOf(file?.dicePresets), [file?.dicePresets]);
+  const writePreset = useCallback((slot: number, preset: DicePreset | null) => {
+    // Through the ONE save choke point, like every other change to the file: `setFile` alone updates
+    // the screen and never reaches the disk, so a preset saved that way was gone on the next visit.
+    const f = fileRef.current;
+    if (f) commitFileRef.current({ ...f, dicePresets: writeSlot(f.dicePresets, slot, preset) });
+  }, []);
+  /** What the tray holds right now, asked for only while a preset dialog needs it. */
+  const trayDice = useCallback(() => trayRef.current?.currentDice() ?? [], []);
+  /**
+   * Rolling a preset.
+   *
+   * Its modifier is resolved HERE, against the character as it stands, because that is the point of a
+   * preset naming a variable: "+ Attack Rolls" should mean whatever the cards you have equipped today
+   * add, not whatever they added the day it was saved.
+   */
+  const playPreset = useCallback((preset: DicePreset) => {
+    const ctx = {
+      level: character.level,
+      tier: tierForLevel(character.level),
+      proficiency: character.proficiency,
+      stress: character.stress.active,
+      attackRoll: character.attackRoll ?? 0,
+      spellcastRoll: character.spellcastRoll ?? 0,
+      spellcast: character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0,
+      traits: character.traits as Partial<Record<string, number>>,
+    };
+    trayRef.current?.playPreset(preset.dice, preset.name, modifierValue(preset.modifier, ctx));
+  }, [character]);
   /**
    * Coming back from the board (v0.34.1).
    *
@@ -2672,6 +2715,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* v0.39.0: the dice tray sits between the sheet and the traits, so its panels cover the
                   vitals fading out behind them and the cards still ride over everything. */}
               <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
+              {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
+              {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} onWrite={writePreset} onPlay={playPreset} /> : null}
               <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={diceUp ? rollTrait : undefined} />
               <ExpandVeil />
               <EditHud file={file ?? undefined} />
