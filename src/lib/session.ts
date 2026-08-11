@@ -5,6 +5,7 @@
  */
 import { type AdversaryFeature, type AdversaryRole } from '@/data/adversaries';
 import { type MemberMaxes, type MemberVitals, type PartyGlobalState, type Party, applyVitalDelta, presentMemberIds, setGlobalEffects, setVital, type VitalKey } from './party';
+import { type AdversaryCounter, resetCounter, stepCounter } from './dm-counters';
 import { type CardEffect } from './modifiers';
 
 export const SESSION_SCHEMA_VERSION = 1;
@@ -47,6 +48,14 @@ export interface Combatant {
   motives?: string;
   experience?: string;
   features?: AdversaryFeature[];
+  /**
+   * COUNTERS (v0.41.3, owner): numbers this entry carries that no stat block has a place for.
+   *
+   * Charges, rounds, hostages, ritual steps. Additive and optional like everything else here, and
+   * one of them may TAKE OVER the entry entirely, which is how a bare timer gets into an encounter
+   * without pretending to be a creature. See `lib/dm-counters` for what one is and what it does.
+   */
+  counters?: AdversaryCounter[];
   hordeNote?: string;
   /** Provenance: the BASE_ADVERSARIES id this was spawned from (item 12). Undefined = fully custom. */
   baseGameId?: string;
@@ -275,7 +284,24 @@ export function recover(c: Combatant): Combatant {
 
 /** A fresh copy of a combatant for reuse (library spawn / encounter duplicate): new id, full HP, upright. */
 export function cloneCombatant(c: Combatant, newName?: string): Combatant {
-  return { ...c, id: rid('cb'), name: newName ?? c.name, hp: c.maxHp ?? c.hp ?? 0, stress: 0, fallen: false, recoverHp: undefined };
+  return {
+    ...c,
+    id: rid('cb'),
+    name: newName ?? c.name,
+    hp: c.maxHp ?? c.hp ?? 0,
+    stress: 0,
+    fallen: false,
+    recoverHp: undefined,
+    // A fresh copy starts its counters where they were configured to start, for the same reason it
+    // starts at full hit points: it is a new one of these, not the one that has been fighting.
+    counters: c.counters?.map(resetCounter),
+  };
+}
+
+/** Move one of a combatant's counters (v0.41.3). Unknown ids are left alone rather than throwing. */
+export function counterDelta(c: Combatant, counterId: string, delta: number): Combatant {
+  if (!c.counters) return c;
+  return { ...c, counters: c.counters.map((x) => (x.id === counterId ? stepCounter(x, delta) : x)) };
 }
 
 // --- log (PRD #43-46) ------------------------------------------------------------------------------

@@ -242,14 +242,44 @@ export function dieVerdicts(pool: PoolDie[]): Record<string, DieVerdict> {
  * instead of jumping about, and nothing here has to know that.
  */
 const CENTS_BASE = -140;
-/** The whole span between a die's worst face and its best. */
+/** The whole span between the first die of a throw and the last, however many there are. */
 const CENTS_SPREAD = 900;
 
-export function rollCents(die: PoolDie | undefined): number {
-  if (!die) return CENTS_BASE;
-  // A face of null is a die that has not landed; treat it as the middle rather than as its worst.
-  const frac = die.value == null ? 0.5 : die.value / DIE_MAX[die.type];
-  return Math.round(CENTS_BASE + (frac - 0.5) * CENTS_SPREAD);
+/**
+ * The pitch of every die of one throw, in cents, in landing order (v0.41.3, owner).
+ *
+ * "Dice pitches must always increase never decrease, right now when changing dice category the pitch
+ * lowers, that is not the idea."
+ *
+ * v0.41.2 pitched each die by its face as a fraction of its own maximum, which rises beautifully
+ * within one kind of die and then falls off a cliff at the next: the last d4 of a handful is a 4 out
+ * of 4 and the first d6 might be a 1 out of 6. A per-die function cannot fix that, because whether it
+ * has to rise depends on what came before it. So the whole SERIES is worked out at once.
+ *
+ * Each KIND of die gets a band of its own, in order, and a die's face places it within its band. The
+ * arithmetic then guarantees the rise: the top of band k is (k+1)/G and the bottom of band k+1 is
+ * strictly above it, so no die can ever be quieter than the one before it however the faces fell.
+ *
+ * It also bounds the whole throw. However many dice are in it, the pitch spans exactly one
+ * CENTS_SPREAD from first to last, so twenty dice do not climb out of hearing.
+ *
+ * The final pass is belt and braces for the duality pair, the one place where the faces are NOT
+ * sorted (Hope's face is Hope's, so Hope 12 and Fear 2 land in that order). Nothing may go down.
+ */
+export function rollCentsSeries(pool: PoolDie[]): number[] {
+  if (pool.length === 0) return [];
+  // The kinds of die, in the order they appear. `sortPool` groups them; this does not assume it.
+  const bands: number[] = [];
+  for (const d of pool) if (!bands.includes(DIE_MAX[d.type])) bands.push(DIE_MAX[d.type]);
+  const g = bands.length;
+  const out = pool.map((d) => {
+    const band = bands.indexOf(DIE_MAX[d.type]);
+    // A face of null has not landed; put it in the middle of its band rather than at its worst.
+    const frac = d.value == null ? 0.5 : d.value / DIE_MAX[d.type];
+    return CENTS_BASE + ((band + frac) / g - 0.5) * CENTS_SPREAD;
+  });
+  for (let i = 1; i < out.length; i++) if (out[i] < out[i - 1]) out[i] = out[i - 1];
+  return out.map((c) => Math.round(c));
 }
 
 /**
@@ -290,12 +320,15 @@ export function layoutRolled(pool: PoolDie[]): PoolDie[] {
  * How much longer than usual the gap between two landing dice is (v0.41.2, owner).
  *
  * A pair of dice thrown at the tray's ordinary pace is over before it has begun, and a fistful of ten
- * at a leisurely one takes long enough to stop being a throw. So the gap is stretched a third for two
- * dice and gives a twentieth of that back for every die after them, reaching the ordinary pace at
- * eight and never going below it.
+ * at a leisurely one takes long enough to stop being a throw. So the gap is stretched for two dice
+ * and gives a twentieth of that back for every die after them, reaching the ordinary pace at fourteen
+ * and never going below it.
+ *
+ * v0.41.3 (owner) raised the stretch from a third to three fifths. The give-back per die is unchanged,
+ * so the ramp simply runs longer.
  */
 export function staggerScale(count: number): number {
-  return Math.max(1, 1.3 - 0.05 * Math.max(0, count - 2));
+  return Math.max(1, 1.6 - 0.05 * Math.max(0, count - 2));
 }
 
 /**

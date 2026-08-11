@@ -13,10 +13,12 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { Portrait } from '@/components/portrait';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type AdversaryFeature } from '@/data/adversaries';
+import { detailCounters } from '@/lib/dm-counters';
 import { type Combatant } from '@/lib/session';
 import { useLayout } from '@/hooks/use-layout';
 import { useScreenDim } from '@/lib/screen-dim';
 import { useAndroidBack } from './use-android-back';
+import { CounterRow } from './counter-control';
 import { DmPress } from './dm-ui';
 
 /** A stylised tome/rune emblem marking a Base Game adversary that carries no custom image (item 12). */
@@ -65,8 +67,15 @@ function StatCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** The full SRD stat block for a combatant that carries the rich fields (base game or configured custom). */
-export function StatBlockDetail({ c }: { c: Combatant }) {
+/**
+ * The full SRD stat block for a combatant that carries the rich fields (base game or configured custom).
+ *
+ * `onCounter` is what makes the counters USABLE rather than merely listed (v0.41.3, owner). The
+ * library passes none, because browsing a roster is not playing an encounter, and the same rows then
+ * draw their buttons dimmed and inert.
+ */
+export function StatBlockDetail({ c, onCounter }: { c: Combatant; onCounter?: (counterId: string, delta: number) => void }) {
+  const counters = detailCounters(c.counters);
   const hasHeader = !!(c.tier || c.role);
   const thr = c.thresholds && (c.thresholds.major || c.thresholds.severe) ? `${c.thresholds.major}/${c.thresholds.severe}` : 'None';
   return (
@@ -95,6 +104,12 @@ export function StatBlockDetail({ c }: { c: Combatant }) {
       ) : null}
       {c.experience ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular }}><Text style={{ fontFamily: Body.bold }}>Experience: </Text>{c.experience}</Text> : null}
 
+      {counters.length ? (
+        <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 9 }}>
+          {counters.map((x) => <CounterRow key={x.id} c={x} onStep={onCounter ? (d) => onCounter(x.id, d) : undefined} />)}
+        </View>
+      ) : null}
+
       {c.features && c.features.length ? (
         <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 9 }}>
           {c.features.map((f, i) => <FeatureRow key={i} f={f} />)}
@@ -106,7 +121,7 @@ export function StatBlockDetail({ c }: { c: Combatant }) {
 
 /** Whether a combatant has any rich detail worth an expand chevron. */
 export const hasStatBlock = (c: Combatant): boolean =>
-  !!(c.tier || c.role || c.difficulty != null || c.motives || c.experience || (c.features && c.features.length) || (c.attack && (c.attack.name || c.attack.damage)));
+  !!(c.tier || c.role || c.difficulty != null || c.motives || c.experience || (c.features && c.features.length) || detailCounters(c.counters).length || (c.attack && (c.attack.name || c.attack.damage)));
 
 /** Fullscreen image viewer for an adversary portrait (item 8). Tap anywhere to close. */
 export function AdversaryImageViewer({ uri, name, onClose }: { uri?: string; name: string; onClose: () => void }) {

@@ -28,7 +28,7 @@ import { box } from '@/lib/design';
 import { playSfx } from '@/lib/sfx';
 import { DIE_MAX, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK } from '../components/card-tokens-data';
 import { DieButton, DieWash } from '../components/card-tokens';
-import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, hasDuality, layoutRolled, type PoolDie, poolGrid, poolTotal, removeDie, rollBand, rollCents, rollTally, rollValue, rollVoice, sortPool, staggerScale, TRAY_DICE } from '@/lib/dice-pool';
+import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, hasDuality, layoutRolled, type PoolDie, poolGrid, poolTotal, removeDie, rollBand, rollCentsSeries, rollTally, rollValue, rollVoice, sortPool, staggerScale, TRAY_DICE } from '@/lib/dice-pool';
 import { diceOf } from '@/lib/dice-presets';
 import { ChamferFrame } from './chamfer';
 import { DiceButtonArt } from './dice-button';
@@ -624,7 +624,19 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     // being a throw. `staggerScale` stretches the gap by a third for a pair and hands it back a
     // twentieth per extra die (owner, v0.41.2).
     const gap = STAGGER_MS * staggerScale(order.length);
+    /**
+     * The die's sound belongs to its SPIN, not to its landing (v0.41.3, owner).
+     *
+     * "It feels like it doesn't play when rolling, rather it plays when it already rolled." It did:
+     * both the sound and the face were scheduled at `land`, a whole spin after the die started
+     * moving. The asset is not the problem, it peaks 30ms in. So the sound goes at `throwAt`, the
+     * same instant `PoolDieView` starts turning that die, and only the face and the total wait.
+     */
+    const throwAt = (i: number) => (reduced ? 0 : i * gap);
     const land = (i: number) => (reduced ? 0 : i * gap + SPIN_MS * 0.84);
+    // Worked out for the whole throw at once, because whether a die has to rise depends on the one
+    // before it. See `rollCentsSeries`.
+    const cents = rollCentsSeries(order);
     const resultAtMs = reduced ? 0 : land(order.length - 1);
     setResultAt(resultAtMs);
 
@@ -636,10 +648,15 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
      * at the settle and then a second of result animations played over a finished number. Now each die
      * adds itself as its own face turns up, so the wait IS the count.
      */
+    order.forEach((_, i) => {
+      timers.current.push(setTimeout(() => {
+        if (throwId.current === id) playSfx('placeToken', { cents: cents[i] });
+      }, throwAt(i)));
+    });
+
     order.forEach((d, i) => {
       timers.current.push(setTimeout(() => {
         if (throwId.current !== id) return;
-        playSfx('placeToken', { cents: rollCents(d) });
         /**
          * The running total is DERIVED, not accumulated (v0.41.0, owner).
          *
