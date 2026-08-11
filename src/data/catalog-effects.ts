@@ -65,9 +65,10 @@ export const CATALOG_EFFECTS: Record<string, CardEffect[]> = {
     { target: "armorScore", delta: 0, overwrite: true, note: "Frenzy: while Frenzied you can't use Armor Slots" },
     { target: "severeThreshold", mode: "bonus", delta: 8, note: "Frenzy: +8 to your Severe damage threshold while Frenzied" },
   ],
-  // Blade 4. Deadly Focus: while focused on one target, +2 to any roll against them. Proficiency is
+  // Blade 4. Deadly Focus: while focused on one target, you gain a bonus against them. Proficiency is
   // the only sheet number that carries a roll bonus, so that is where it lands; mute when the focus ends.
-  "blade-04-1": [{ target: "proficiency", delta: 2, note: "Deadly Focus: +2 to rolls against the target you are focused on" }],
+  // v0.41.3 (owner): +1, not +2.
+  "blade-04-1": [{ target: "proficiency", delta: 1, note: "Deadly Focus: +1 to rolls against the target you are focused on" }],
   // Midnight 8. Shadowhunter: while cloaked in shadow, +3 Evasion. Mute when you step into the light.
   "midnight-08-1": [{ target: "evasion", delta: 3, note: "Shadowhunter: +3 Evasion while cloaked in shadow" }],
   // Valor 8. Full Surge: +2 to all character traits while surging. Mute when the surge ends.

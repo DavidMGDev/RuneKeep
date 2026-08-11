@@ -35,6 +35,7 @@ import {
   cloneCombatant,
   type Combatant,
   type CombatantStat,
+  counterDelta,
   combatantDelta,
   combatantSet,
   completeEncounter,
@@ -312,6 +313,18 @@ export function EncounterScreen() {
     const next = updateCombatant(cid, () => after);
     if (next) commitEncounter(next.options.autoLog && from !== to ? appendLog(next, 'stat', formatStatLog(r.side, r.c.name, stat, from, to)) : next);
   }, [findCombatant, updateCombatant, commitEncounter]);
+
+  /**
+   * Moving a counter (v0.41.3, owner).
+   *
+   * It goes through the same one commit path every other change does, so a counter survives leaving
+   * the screen exactly as hit points do. It is deliberately NOT auto-logged: a countdown ticking once
+   * a round would bury the log in a fight, and the number is on screen the whole time anyway.
+   */
+  const onCombatantCounter = useCallback((cid: string, counterId: string, delta: number) => {
+    const next = updateCombatant(cid, (c) => counterDelta(c, counterId, delta));
+    if (next) commitEncounter(next);
+  }, [updateCombatant, commitEncounter]);
 
   // --- keypad set (one log entry) ---
   const onKeypadSubmit = useCallback((n: number) => {
@@ -650,6 +663,7 @@ export function EncounterScreen() {
             ) : (
             <CombatantPanel key={a.combatant.id} combatant={a.combatant} friendly dimmed={notStarted} selecting={allySel.selecting} selected={allySel.ids.has(a.combatant.id)}
               onApply={(s, delta) => onCombatantApply(a.combatant.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: a.combatant.id, stat: s })}
+              onCounter={(counterId, d) => onCombatantCounter(a.combatant.id, counterId, d)}
               onEdit={() => setEditing(a.combatant)} onFell={() => fellCombatant(a.combatant.id)} onRecover={() => recoverCombatant(a.combatant.id)} onDelete={() => deleteCombatants(new Set([a.combatant.id]))}
               onLongPress={() => startAlly(a.combatant.id)} onToggleSelect={() => allySel.toggle(a.combatant.id)} onOpenImage={() => setViewImage(a.combatant)} />
             ),
@@ -685,6 +699,7 @@ export function EncounterScreen() {
             ) : (
             <CombatantPanel key={c.id} combatant={c} dimmed={notStarted} selecting={advSel.selecting} selected={advSel.ids.has(c.id)}
               onApply={(s, delta) => onCombatantApply(c.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: c.id, stat: s })}
+              onCounter={(counterId, d) => onCombatantCounter(c.id, counterId, d)}
               onEdit={() => setEditing(c)} onFell={() => fellCombatant(c.id)} onRecover={() => recoverCombatant(c.id)} onDelete={() => deleteCombatants(new Set([c.id]))}
               onLongPress={() => startAdv(c.id)} onToggleSelect={() => advSel.toggle(c.id)} onOpenImage={() => setViewImage(c)} />
             ),

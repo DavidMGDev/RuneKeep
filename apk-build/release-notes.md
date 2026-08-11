@@ -1,22 +1,21 @@
-RuneKeep v0.41.2 - A throw that reads low to high, and dice that only turn when they are thrown.
+RuneKeep v0.41.3 - Counters for the DM, and a throw that only ever climbs.
 
-THE THROW
+COUNTERS (DM MODE)
 
-- THE FACES ARE DEALT OUT LOW TO HIGH within each kind of die. Roll 4d4 and 4d6 and the d4 read lowest to highest, then the d6 lowest to highest. Which of four d6 shows the 2 was never a fact about your roll, so the pool now shows it in the order that reads.
-- SO THE PITCH CLIMBS INSTEAD OF SCRIBBLING. A die's sound is now decided by nothing but the die and the face it landed on, which means two criticals on the same kind of die sound identical, and a throw rises through each kind of die rather than jumping about. The deep note for a 1 and the bright one for a maximum are unchanged.
-- A SMALL HANDFUL TAKES ITS TIME. Two dice land a third slower than before, and every die past the second gives a twentieth of that back, reaching the old pace at eight and never going below it.
+- A NEW SECTION IN AN ADVERSARY'S CONFIGURE POP-UP, above Features. Add as many as you like: a name, what it means, and where it starts.
+- A RESOURCE is a plain number. Charges, doses, arrows, hostages.
+- A COUNTDOWN can RESTART BELOW ZERO, so pushing it past the bottom puts it back where it began and the same button that runs the timer down also resets it.
+- TAKE OVER turns the adversary into the counter. Mark one and the entry keeps its name and description, loses its stats, and carries the number beside its title. Mark two or more and the entry becomes a title you tap to open all of them. It is how you put "the ritual completes in 6" into a fight without inventing a creature to hang it on.
+- COUNTERS THAT HAVE NOT TAKEN OVER live in the expanded stat block, alongside the features, and can be moved from there. They show in the adversary and ally library too.
 
-DICE THAT STAY STILL
+THE DICE
 
-- NOTHING TURNS EXCEPT A DIE BEING THROWN. A die picked up after a throw was spinning, swelling and reacting on arrival exactly as though it had been rolled, which is what made pressing Roll during it leave dice at crooked angles. It arrives flat now, at every size, on every platform.
+- THE PITCH ONLY EVER CLIMBS. Reaching a new kind of die used to drop it off a cliff, because the last d4 is a 4 out of 4 and the first d6 might be a 1 out of 6. Each kind of die now gets a band of its own, and a face places the die within its band, so no die can ever sound lower than the one before it. Twenty dice span exactly the same range as two, so a big handful never climbs out of hearing.
+- THE SOUND PLAYS WHEN THE DIE STARTS SPINNING, not when it lands. It was a whole spin late.
+- A SMALL HANDFUL TAKES LONGER. Two dice now land three fifths slower than the base pace rather than a third, still giving a twentieth back per extra die.
 
-WHAT A ROLL SAYS AT THE END
+CARDS
 
-- HOPE AND FEAR SPEAK FIRST. When the duality pair is in the pool it decides the sound, whatever the rest of the handful did. A pair thrown with Fear never gets the critical fanfare, however high the total lands.
-- A CRITICAL THAT CAME WITH FEAR still flares on the die, but the room does not cheer: the fanfare plays well down in pitch. With Hope it rings out in full.
-
-ROLL PRESETS
-
-- THE POP-UP DIMS THE WHOLE SCREEN. It was drawn inside the sheet's scaled design box, so on a phone whose shape does not match it, strips of bright parchment survived above and below the dialog. It is drawn at the screen's own root now, like every other panel on the sheet.
+- DEADLY FOCUS (Blade, level 4) grants +1 proficiency, not +2.
 
 Sideload: enable Install unknown apps, then open the APK.

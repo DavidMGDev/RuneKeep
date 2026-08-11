@@ -1,4 +1,5 @@
-import { addDie, dieVerdicts, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, layoutRolled, removeDie, rollBand, rollCents, rollTally, rollVoice, staggerScale, sortPool } from './dice-pool';
+import { DIE_MAX } from '@/features/character-sheet/components/card-tokens-data';
+import { addDie, dieVerdicts, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, layoutRolled, removeDie, rollBand, rollCentsSeries, rollTally, rollVoice, staggerScale, sortPool } from './dice-pool';
 
 const die = (type: PoolDie['type'], value: number | null = null, side?: PoolDie['side'], id = `${type}-${Math.random()}`): PoolDie => ({ id, type, value, side });
 
@@ -102,22 +103,48 @@ describe('dualityVerdict', () => {
   });
 });
 
-describe('rollCents', () => {
-  it('pitches the same fraction of any die the same way', () => {
-    // The owner's own example: a 2 on a d4 and a 4 on a d8 are both half of what the die could do.
-    expect(rollCents(die('d4', 2))).toBe(rollCents(die('d8', 4)));
-    expect(rollCents(die('d12', 6))).toBe(rollCents(die('d20', 10)));
+describe('rollCentsSeries', () => {
+  const rising = (cents: number[]) => cents.every((c, i) => i === 0 || c >= cents[i - 1]);
+
+  it('never goes down when the kind of die changes', () => {
+    // The owner's report: the last d4 is a 4 of 4 and the first d6 a 1 of 6, and the pitch fell off
+    // a cliff between them.
+    const pool = [die('d4', 1, undefined, 'a'), die('d4', 4, undefined, 'b'), die('d6', 1, undefined, 'c'), die('d6', 6, undefined, 'd')];
+    const cents = rollCentsSeries(pool);
+    expect(rising(cents)).toBe(true);
+    expect(cents[2]).toBeGreaterThan(cents[1]);
   });
 
-  it('deepens with a bad face and lifts with a good one', () => {
-    expect(rollCents(die('d20', 1))).toBeLessThan(rollCents(die('d20', 10)));
-    expect(rollCents(die('d20', 10))).toBeLessThan(rollCents(die('d20', 20)));
+  it('never goes down for any ordering of any handful', () => {
+    const kinds = ['d4', 'd6', 'd8', 'd12', 'd20'] as const;
+    for (let seed = 1; seed <= 60; seed++) {
+      const pool = Array.from({ length: (seed % 9) + 1 }, (_, i) => {
+        const t = kinds[(seed * 7 + i * 3) % kinds.length];
+        return die(t, ((seed * 13 + i * 5) % DIE_MAX[t]) + 1, undefined, `d${i}`);
+      });
+      expect(rising(rollCentsSeries(sortPool(pool)))).toBe(true);
+    }
   });
 
-  it('says the same thing about the same die and face wherever it sits', () => {
-    // v0.41.2: two criticals on one kind of die have to sound identical, so the place in the throw
-    // cannot be part of it.
-    expect(rollCents(die('d6', 6, undefined, 'a'))).toBe(rollCents(die('d6', 6, undefined, 'z')));
+  it('spans the same range however many dice there are', () => {
+    const two = rollCentsSeries([die('d6', 1, undefined, 'a'), die('d6', 6, undefined, 'b')]);
+    const many = rollCentsSeries(Array.from({ length: 20 }, (_, i) => die('d6', (i % 6) + 1, undefined, `d${i}`)));
+    // The last die of a twenty-strong throw is no higher than the last of a pair: the ceiling is the
+    // ceiling, so a big handful cannot climb out of hearing.
+    expect(Math.max(...many)).toBeLessThanOrEqual(Math.max(...two));
+  });
+
+  it('still deepens a bad face and lifts a good one', () => {
+    expect(rollCentsSeries([die('d20', 1, undefined, 'a')])[0]).toBeLessThan(rollCentsSeries([die('d20', 20, undefined, 'a')])[0]);
+  });
+
+  it('gives the same face on the same kind of die the same pitch', () => {
+    const cents = rollCentsSeries([die('d6', 4, undefined, 'a'), die('d6', 4, undefined, 'b')]);
+    expect(cents[0]).toBe(cents[1]);
+  });
+
+  it('has nothing to say about an empty pool', () => {
+    expect(rollCentsSeries([])).toEqual([]);
   });
 });
 
@@ -150,18 +177,18 @@ describe('layoutRolled', () => {
 });
 
 describe('staggerScale', () => {
-  it('stretches a pair by a third', () => {
-    expect(staggerScale(2)).toBeCloseTo(1.3);
+  it('stretches a pair by three fifths', () => {
+    expect(staggerScale(2)).toBeCloseTo(1.6);
   });
 
   it('gives a twentieth back per extra die', () => {
-    expect(staggerScale(3)).toBeCloseTo(1.25);
-    expect(staggerScale(4)).toBeCloseTo(1.2);
+    expect(staggerScale(3)).toBeCloseTo(1.55);
+    expect(staggerScale(4)).toBeCloseTo(1.5);
   });
 
-  it('reaches the ordinary pace at eight and never goes below it', () => {
-    expect(staggerScale(8)).toBeCloseTo(1);
-    expect(staggerScale(20)).toBe(1);
+  it('reaches the ordinary pace at fourteen and never goes below it', () => {
+    expect(staggerScale(14)).toBeCloseTo(1);
+    expect(staggerScale(30)).toBe(1);
   });
 });
 

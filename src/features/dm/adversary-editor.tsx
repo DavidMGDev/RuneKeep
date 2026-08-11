@@ -11,12 +11,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { ownImage } from '@/lib/owned-image';
-import Svg, { Line, Polyline } from 'react-native-svg';
+import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { ADVERSARY_ROLES, type AdversaryFeature, type AdversaryRole, type FeatureKind } from '@/data/adversaries';
+import { type AdversaryCounter, type CounterKind, meaningfulCounters, newCounter, setStart } from '@/lib/dm-counters';
 import { type Combatant } from '@/lib/session';
 import { AdversaryPortrait } from './adversary-detail';
 import { DmModal, DmPress } from './dm-ui';
@@ -24,6 +25,10 @@ import { DmModal, DmPress } from './dm-ui';
 const FIELD_LABEL = { color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const INPUT_FILL = 'rgba(20,24,30,0.9)';
 const KINDS: FeatureKind[] = ['Passive', 'Action', 'Reaction'];
+
+/** Counter ids only have to be unique within one adversary, and a counter is minted by hand. */
+let counterN = 0;
+const counterSeq = () => `${++counterN}-${Math.round(Math.random() * 1e6).toString(36)}`;
 
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
@@ -61,6 +66,76 @@ function Toggle({ label, on, onPress }: { label: string; on: boolean; onPress: (
   );
 }
 
+/**
+ * A small checkbox whose meaning lives behind an info mark (v0.41.3, owner).
+ *
+ * "Take Over" changes what the whole entry looks like, so it needs explaining, and the explanation is
+ * three lines long, which is three lines this panel cannot spare beside every counter. The mark opens
+ * it in place; nothing else on screen moves except the row growing downwards.
+ */
+function InfoToggle({ label, on, onPress, info }: { label: string; on: boolean; onPress: () => void; info: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+        <DmPress onPress={onPress} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={label} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          <ChamferBox chamfer={3} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.1} style={{ width: 15, height: 15, alignItems: 'center', justifyContent: 'center' }}>
+            {on ? <Svg width={9} height={9} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+          </ChamferBox>
+          <Text style={{ color: DmRune.text, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>{label}</Text>
+        </DmPress>
+        <DmPress onPress={() => setShow((v) => !v)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`What ${label} does`}>
+          <Svg width={14} height={14} viewBox="0 0 16 16">
+            <Circle cx={8} cy={8} r={6.6} fill="none" stroke={DmRune.accentDim} strokeWidth={1.3} />
+            <Circle cx={8} cy={4.7} r={0.95} fill={DmRune.accentDim} />
+            <Line x1={8} y1={7} x2={8} y2={11.6} stroke={DmRune.accentDim} strokeWidth={1.5} strokeLinecap="round" />
+          </Svg>
+        </DmPress>
+      </View>
+      {show ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.regular, lineHeight: 15 }}>{info}</Text> : null}
+    </View>
+  );
+}
+
+const TAKE_OVER_INFO =
+  'The entry becomes this counter: it keeps its name and description and loses its stats. Mark two or more and the entry becomes a title you tap to open them all.';
+
+const COUNTER_KINDS: { key: CounterKind; label: string }[] = [
+  { key: 'resource', label: 'Resource' },
+  { key: 'countdown', label: 'Countdown' },
+];
+
+function CounterEditor({ c, onChange, onRemove }: { c: AdversaryCounter; onChange: (c: AdversaryCounter) => void; onRemove: () => void }) {
+  return (
+    <ChamferBox chamfer={8} fill="rgba(16,20,26,0.8)" stroke={DmRune.line} strokeWidth={1.1} style={{ padding: 10, gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ flex: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 9 }}>
+          <TextInput value={c.name} onChangeText={(name) => onChange({ ...c, name })} placeholder="Counter name" placeholderTextColor={DmRune.muted} maxLength={50} style={{ color: DmRune.ivory, fontSize: DmType.body, fontFamily: Body.bold, paddingVertical: 6, lineHeight: 18, textAlignVertical: 'center' }} />
+        </ChamferBox>
+        <DmPress onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove counter">
+          <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
+        </DmPress>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {COUNTER_KINDS.map((k) => <Chip key={k.key} label={k.label} on={c.kind === k.key} onPress={() => onChange({ ...c, kind: k.key, loop: k.key === 'countdown' ? c.loop : undefined })} />)}
+      </View>
+      <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ minHeight: 52, paddingHorizontal: 9, paddingVertical: 7 }}>
+        <TextInput value={c.text} onChangeText={(text) => onChange({ ...c, text })} placeholder="What it means…" placeholderTextColor={DmRune.muted} multiline maxLength={600} style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.regular, textAlignVertical: 'top', minHeight: 38 }} />
+      </ChamferBox>
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
+        <NumField label="Starts at" value={c.start} onChange={(start) => onChange(setStart(c, start))} />
+        {/* A resource has nowhere to come back to, so the wrap belongs to the countdown alone. */}
+        {c.kind === 'countdown' ? (
+          <View style={{ flex: 1, paddingBottom: 11 }}>
+            <Toggle label="Restart below zero" on={!!c.loop} onPress={() => onChange({ ...c, loop: !c.loop })} />
+          </View>
+        ) : <View style={{ flex: 1 }} />}
+      </View>
+      <InfoToggle label="Take Over" on={!!c.takeOver} onPress={() => onChange({ ...c, takeOver: !c.takeOver })} info={TAKE_OVER_INFO} />
+    </ChamferBox>
+  );
+}
+
 function FeatureEditor({ f, onChange, onRemove }: { f: AdversaryFeature; onChange: (f: AdversaryFeature) => void; onRemove: () => void }) {
   return (
     <ChamferBox chamfer={8} fill="rgba(16,20,26,0.8)" stroke={DmRune.line} strokeWidth={1.1} style={{ padding: 10, gap: 8 }}>
@@ -92,6 +167,11 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
     // v0.26.0: own the file, or an update clears the cache it came from (see lib/owned-image).
     if (!res.canceled && res.assets[0]) set({ portraitUri: (await ownImage(res.assets[0].uri)) ?? undefined });
   }, []);
+
+  const counters = c.counters ?? [];
+  const setCounter = (i: number, nc: AdversaryCounter) => set({ counters: counters.map((x, j) => (j === i ? nc : x)) });
+  const addCounter = () => set({ counters: [...counters, newCounter(`ct-${counterSeq()}`)] });
+  const removeCounter = (i: number) => set({ counters: counters.filter((_, j) => j !== i) });
 
   const features = c.features ?? [];
   const setFeature = (i: number, nf: AdversaryFeature) => set({ features: features.map((x, j) => (j === i ? nf : x)) });
@@ -211,6 +291,16 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
             <TextField label="Description" value={c.description ?? ''} onChange={(description) => set({ description })} multiline maxLength={400} />
           ) : null}
 
+          {/* counters (v0.41.3, owner): ABOVE Features, because a counter is about this FIGHT and a
+              feature is about the creature, and prep reads top to bottom. */}
+          <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={FIELD_LABEL}>Counters</Text>
+              <DmPress onPress={addCounter} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add counter"><Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>+ Add</Text></DmPress>
+            </View>
+            {counters.map((x, i) => <CounterEditor key={x.id} c={x} onChange={(nc) => setCounter(i, nc)} onRemove={() => removeCounter(i)} />)}
+          </View>
+
           {/* features */}
           <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -222,7 +312,7 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
         </ScrollView>
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
           <RuneButton label="Cancel" kind="ghost" height={44} dm style={{ flex: 1 }} onPress={onCancel} />
-          <RuneButton label="Save" kind="secondary" height={44} dm style={{ flex: 1 }} onPress={() => onSave({ ...c, features: features.filter((f) => f.name.trim() || f.text.trim()) })} />
+          <RuneButton label="Save" kind="secondary" height={44} dm style={{ flex: 1 }} onPress={() => onSave({ ...c, counters: meaningfulCounters(counters), features: features.filter((f) => f.name.trim() || f.text.trim()) })} />
         </View>
       </ChamferBox>
     </DmModal>

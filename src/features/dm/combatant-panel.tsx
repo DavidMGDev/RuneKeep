@@ -12,14 +12,17 @@ import Animated, { Easing, FadeIn, FadeOut, LinearTransition, useAnimatedStyle, 
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { Portrait } from '@/components/portrait';
 import { FitLine } from '@/components/fit-line';
 import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
 import { type MemberVitals, type VitalKey } from '@/lib/party';
+import { counterMode, soleCounter } from '@/lib/dm-counters';
 import { type Combatant, type CombatantStat } from '@/lib/session';
 import { MemberPanel } from './member-panel';
-import { AdversaryPortrait, hasStatBlock, StatBlockDetail } from './adversary-detail';
+import { AdversaryPortrait, BaseGameEmblem, hasStatBlock, StatBlockDetail } from './adversary-detail';
+import { CounterRow, CounterStepper } from './counter-control';
 import { StatGlyph } from './stat-glyphs';
 import { StatPulse } from './stat-pulse';
 import { DmPress } from './dm-ui';
@@ -69,6 +72,7 @@ export function CombatantPanel({
   onLongPress,
   onToggleSelect,
   onOpenImage,
+  onCounter,
   dimmed,
 }: {
   combatant: Combatant;
@@ -84,6 +88,8 @@ export function CombatantPanel({
   onLongPress?: () => void;
   onToggleSelect?: () => void;
   onOpenImage?: () => void;
+  /** Move one of this entry's counters (v0.41.3). Absent draws them read-only. */
+  onCounter?: (counterId: string, delta: number) => void;
   /** v0.36 (owner): a prepared encounter fades its combatants; expanding one fades it back to full. */
   dimmed?: boolean;
 }) {
@@ -97,7 +103,19 @@ export function CombatantPanel({
   const sideColor = friendly ? DmRune.ally : DmRune.red;
   const stroke = selected ? DmRune.accent : c.fallen ? 'rgba(139,144,154,0.5)' : `${sideColor}80`;
   const fill = selected ? 'rgba(196,200,208,0.16)' : c.fallen ? 'rgba(16,16,18,0.9)' : friendly ? 'rgba(15,20,20,0.92)' : 'rgba(20,15,15,0.92)';
-  const canExpand = hasStatBlock(c);
+  /**
+   * TAKEN OVER (v0.41.3, owner).
+   *
+   * One counter marked Take Over and the entry IS that counter: the name, the description and the
+   * number, with the stat block gone. Two or more and no single number can sit beside the name, so
+   * the entry becomes a title that opens into all of them and drops everything else, which is the
+   * owner's rule verbatim: "all other info has been dropped in favor of the Title and description of
+   * the adversary entry, as well as each counter".
+   */
+  const mode = counterMode(c.counters);
+  const sole = soleCounter(c.counters);
+  const canExpand = mode === 'list' || (mode === 'none' && hasStatBlock(c));
+  const headerTap = () => { if (selecting) onToggleSelect?.(); else if (canExpand) setOpen((o) => !o); };
 
   // A fallen unit collapses to name + Fallen + Recover; its X deletes.
   if (c.fallen) {
@@ -126,10 +144,59 @@ export function CombatantPanel({
     );
   }
 
+  if (mode !== 'none') {
+    return (
+      <Animated.View layout={SPRING} style={fadeStyle}>
+        <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: 10 }}>
+          {selecting ? (
+            <Pressable onPress={onToggleSelect} onLongPress={onLongPress} accessibilityRole="checkbox" accessibilityState={{ checked: !!selected }} accessibilityLabel={`${c.name}, ${selected ? 'selected' : 'not selected'}`} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 5 }} />
+          ) : null}
+          {/* The title's press wraps the NAME only, and the controls sit beside it rather than
+              inside it. A stepper nested in the header press is a button inside a button, which is
+              invalid on the web and asks the two presses to negotiate on a phone; the counter is the
+              one control here that must never miss. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <DmPress
+              onPress={headerTap}
+              onLongPress={onLongPress}
+              delayLongPress={340}
+              accessibilityRole="button"
+              accessibilityLabel={`${c.name}${sole ? `, ${sole.name || 'counter'} at ${sole.value}` : ', tap to open its counters'}`}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {selecting ? (
+                <ChamferBox chamfer={6} fill={selected ? DmRune.accent : 'transparent'} stroke={selected ? 'transparent' : DmRune.accentDim} strokeWidth={1.3} style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+                  {selected ? <Svg width={18} height={18} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+                </ChamferBox>
+              ) : (
+                <Portrait uri={c.portraitUri} size={38} tint={sideColor} fill={DmRune.ink} glyph={<BaseGameEmblem size={19} />} />
+              )}
+              <View style={{ flex: 1, gap: 1 }}>
+                <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{c.name}</FitLine>
+                {sole?.name ? <Text numberOfLines={1} style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>{sole.name}</Text> : null}
+              </View>
+              {/* Several counters cannot all ride the title, so a chevron opens them instead. */}
+              {!selecting && !sole ? <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+            </DmPress>
+            {/* One counter DOES ride the title, and this is the whole entry, so it gets the space. */}
+            {!selecting && sole ? <CounterStepper c={sole} size={32} onStep={onCounter ? (d) => onCounter(sole.id, d) : undefined} /> : null}
+            {!selecting ? <DmPress onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Configure ${c.name}`}><Pencil /></DmPress> : null}
+          </View>
+
+          {c.description ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 17 }}>{c.description}</Text> : null}
+
+          {open && mode === 'list' ? (
+            <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)} style={{ gap: 8 }}>
+              {(c.counters ?? []).map((x) => <CounterRow key={x.id} c={x} onStep={onCounter ? (d) => onCounter(x.id, d) : undefined} />)}
+            </Animated.View>
+          ) : null}
+        </ChamferBox>
+      </Animated.View>
+    );
+  }
+
   // v0.36.1 (owner): DIFFICULTY belongs in the compact row. It is the number the DM needs most
   // often and it was only visible once the stat block was expanded.
   const anyTrack = c.show.hp || c.show.stress || c.show.thresholds || !!c.difficulty;
-  const headerTap = () => { if (selecting) onToggleSelect?.(); else if (canExpand) setOpen((o) => !o); };
   return (
     <Animated.View layout={SPRING} style={fadeStyle}>
       <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || (c.show.description && !open) || open ? 10 : 0 }}>
@@ -197,7 +264,7 @@ export function CombatantPanel({
 
         {open ? (
           <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-            <StatBlockDetail c={c} />
+            <StatBlockDetail c={c} onCounter={onCounter} />
           </Animated.View>
         ) : null}
       </ChamferBox>
