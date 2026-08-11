@@ -1,6 +1,6 @@
 ---
 name: runekeep-v0410-presets
-description: v0.41.0 + v0.41.1 - roll presets (lib/dice-presets, on the character file); NEVER accumulate a running total, derive it; a props snapshot of another component's state is always stale so pass a getter; setFile alone does not persist, commitFileRef does; SVG cost is node COUNT and mount churn; ALSO v0.41.1/v0.41.2 - a die may rotate ONLY while rolling and an effect keyed on the throw counter runs on MOUNT too, crits must not be compared against fumbles, dice pitch is the FACE alone, and a dialog written inside DesignStage dims only the design box
+description: v0.41.0 + v0.41.1 - roll presets (lib/dice-presets, on the character file); NEVER accumulate a running total, derive it; a props snapshot of another component's state is always stale so pass a getter; setFile alone does not persist, commitFileRef does; SVG cost is node COUNT and mount churn; ALSO v0.41.1/v0.41.2 - a die may rotate ONLY while rolling and an effect keyed on the throw counter runs on MOUNT too, crits must not be compared against fumbles, dice pitch is the FACE alone, a dialog written inside DesignStage dims only the design box, and a monotonic pitch needs the whole SERIES not a per-die function
 metadata:
   type: project
 ---
@@ -111,5 +111,32 @@ gold on the total follows the voice, so a high Fear roll is not celebrated.
 
 `staggerScale(n)` = max(1, 1.3 - 0.05 x (n - 2)): a pair lands a third slower, eight dice at the old pace.
 
-READ before dice-tray, dice-rotation, dice-sound, dice-order, roll-preset, running-total,
-cross-component-state, dialog-dim, character-persistence, svg-performance or effect-target work.
+## v0.41.3 (PR #443)
+
+**A MONOTONIC PITCH CANNOT BE A PER-DIE FUNCTION.** v0.41.2 sorted the faces within each kind of die,
+which rises beautifully inside a group and falls off a cliff between them (the last d4 is 4/4, the
+first d6 might be 1/6). Whether a die HAS to be higher depends on the one before it, so
+`rollCentsSeries` computes the whole throw at once: each kind of die gets a band `(k + frac)/G`, which
+makes the rise arithmetic rather than a check, and the span is one CENTS_SPREAD however many dice
+there are so a big handful cannot climb out of hearing. A final never-decrease pass covers the duality
+pair, the one place the faces are not sorted.
+
+**A DIE'S SOUND BELONGS TO ITS SPIN, NOT ITS LANDING.** The owner heard the roll sound "when it already
+rolled" and suspected leading silence in the asset. It was not: OnPlaceToken.wav peaks 30ms in (measure
+with `wave` + a peak scan before blaming a file). Both the sound and the face were scheduled at `land`,
+a whole SPIN_MS x 0.84 late. The sound moved to `throwAt`; the face still waits.
+
+**COUNTERS ON ADVERSARIES** (`lib/dm-counters` + `features/dm/counter-control.tsx`). A resource is a
+plain number; a countdown may LOOP, meaning below zero it returns to `start` (up past the start is left
+alone). `takeOver` replaces the entry's stat block: one counter and the entry is name + description +
+that number, two or more and it is a title that opens into all of them. `counterMode` is the whole rule.
+Counters live on the `Combatant` so history, export and import handle them for free (the v0.35 DM
+modifier lesson); `cloneCombatant` resets them like hit points.
+
+**DO NOT NEST A CONTROL INSIDE A ROW'S HEADER PRESS.** react-native-web renders a Pressable as a
+`<button>`, so a stepper inside the header press is a button inside a button (invalid HTML, React logs
+it) and on a phone the two presses negotiate. Put the press around the NAME and the controls beside it.
+
+READ before dice-tray, dice-rotation, dice-sound, dice-order, dice-pitch, roll-preset, running-total,
+cross-component-state, dialog-dim, dm-counter, dm-adversary, character-persistence, svg-performance or
+effect-target work.
