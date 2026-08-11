@@ -70,6 +70,7 @@ import { Art } from '../art';
 import { armorTrackLayout, chipWidth, trackBounds, washBands } from './sheet-utils';
 import { type CarouselApi, CarouselProvider, useCarousel } from '../carousel-context';
 import { activeRing, availableCategories, categoryLabel } from '../carousel-categories';
+import { OverlayHost } from '@/components/overlay-host';
 import { OverlayShell } from './overlay-shell';
 import { BUILTIN_CATEGORIES, type CardCategory, type CardItem, dedupeIds, isBuiltinCategory, printFaces } from '../card-data';
 import { isExperienceType } from '../card-types';
@@ -2689,6 +2690,19 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           onReject={onNfcReject}
         />
         <View style={{ flex: 1, backgroundColor: Rune.ink }}>
+          {/**
+            * Everything in the sheet can put a dialog at THIS level (v0.41.2, owner).
+            *
+            * The preset editor is written inside `DesignStage`, whose content is a scaled box, so its
+            * `absoluteFill` scrim covered the design box and nothing else. On a phone whose aspect is
+            * not 412x892 that leaves a strip of the parchment matte above and below, undimmed, which
+            * is the "white sections on my device while the Save to slot 1 pop-up is active".
+            *
+            * `OverlayHost` draws a published dialog here instead, outside the stage and outside the
+            * safe-area insets, so its scrim is the screen. See `components/overlay-host`; the modifier
+            * panel has been doing this since v0.39 for the same reason.
+            */}
+          <OverlayHost>
           <View
             style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}
             onLayout={(e) => setStageBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
@@ -2997,6 +3011,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {(character.scars ?? 0) >= character.hope.total ? (
             <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#8A8A8A', mixBlendMode: 'saturation', zIndex: 99999 }} />
           ) : null}
+          </OverlayHost>
         </View>
        </FloatMenuProvider>
       </CarouselProvider>

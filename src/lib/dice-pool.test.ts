@@ -1,4 +1,4 @@
-import { addDie, dieVerdicts, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollBand, rollCents, rollTally, sortPool } from './dice-pool';
+import { addDie, dieVerdicts, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, layoutRolled, removeDie, rollBand, rollCents, rollTally, rollVoice, staggerScale, sortPool } from './dice-pool';
 
 const die = (type: PoolDie['type'], value: number | null = null, side?: PoolDie['side'], id = `${type}-${Math.random()}`): PoolDie => ({ id, type, value, side });
 
@@ -103,26 +103,101 @@ describe('dualityVerdict', () => {
 });
 
 describe('rollCents', () => {
-  it('climbs across the throw', () => {
-    const pool = [die('d6', 3), die('d6', 3), die('d6', 3)];
-    expect(rollCents(pool, 1)).toBeGreaterThan(rollCents(pool, 0));
-    expect(rollCents(pool, 2)).toBeGreaterThan(rollCents(pool, 1));
-  });
-
   it('pitches the same fraction of any die the same way', () => {
     // The owner's own example: a 2 on a d4 and a 4 on a d8 are both half of what the die could do.
-    expect(rollCents([die('d4', 2)], 0)).toBe(rollCents([die('d8', 4)], 0));
-    expect(rollCents([die('d12', 6)], 0)).toBe(rollCents([die('d20', 10)], 0));
+    expect(rollCents(die('d4', 2))).toBe(rollCents(die('d8', 4)));
+    expect(rollCents(die('d12', 6))).toBe(rollCents(die('d20', 10)));
   });
 
   it('deepens with a bad face and lifts with a good one', () => {
-    const worst = rollCents([die('d20', 1)], 0);
-    const middling = rollCents([die('d20', 10)], 0);
-    const best = rollCents([die('d20', 20)], 0);
-    expect(worst).toBeLessThan(middling);
-    expect(middling).toBeLessThan(best);
-    // The face matters far more than the die's place in the throw, which is the whole point.
-    expect(middling - worst).toBeGreaterThan(rollCents([die('d6', 3), die('d6', 3)], 1) - rollCents([die('d6', 3), die('d6', 3)], 0));
+    expect(rollCents(die('d20', 1))).toBeLessThan(rollCents(die('d20', 10)));
+    expect(rollCents(die('d20', 10))).toBeLessThan(rollCents(die('d20', 20)));
+  });
+
+  it('says the same thing about the same die and face wherever it sits', () => {
+    // v0.41.2: two criticals on one kind of die have to sound identical, so the place in the throw
+    // cannot be part of it.
+    expect(rollCents(die('d6', 6, undefined, 'a'))).toBe(rollCents(die('d6', 6, undefined, 'z')));
+  });
+});
+
+describe('layoutRolled', () => {
+  it('deals each kind of die out low to high', () => {
+    const pool = layoutRolled([
+      die('d4', 3, undefined, 'a'), die('d4', 1, undefined, 'b'), die('d4', 4, undefined, 'c'),
+      die('d6', 5, undefined, 'd'), die('d6', 2, undefined, 'e'),
+    ]);
+    expect(pool.map((d) => d.value)).toEqual([1, 3, 4, 2, 5]);
+  });
+
+  it('keeps the total exactly', () => {
+    const before = [die('d8', 7, undefined, 'a'), die('d8', 2, undefined, 'b'), die('d4', 4, undefined, 'c')];
+    expect(poolTotal(layoutRolled(before), 3)).toBe(poolTotal(before, 3));
+  });
+
+  it('never moves a duality face, because the pair is not interchangeable', () => {
+    const pool = layoutRolled([
+      { id: 'h', type: 'd12', value: 11, side: 'hope', pairId: 'p' },
+      { id: 'f', type: 'd12', value: 2, side: 'fear', pairId: 'p' },
+    ]);
+    expect(pool.map((d) => d.value)).toEqual([11, 2]);
+    expect(dualityVerdict(pool)).toBe('hope');
+  });
+
+  it('leaves an unrolled pool alone', () => {
+    expect(layoutRolled([die('d6'), die('d6')]).map((d) => d.value)).toEqual([null, null]);
+  });
+});
+
+describe('staggerScale', () => {
+  it('stretches a pair by a third', () => {
+    expect(staggerScale(2)).toBeCloseTo(1.3);
+  });
+
+  it('gives a twentieth back per extra die', () => {
+    expect(staggerScale(3)).toBeCloseTo(1.25);
+    expect(staggerScale(4)).toBeCloseTo(1.2);
+  });
+
+  it('reaches the ordinary pace at eight and never goes below it', () => {
+    expect(staggerScale(8)).toBeCloseTo(1);
+    expect(staggerScale(20)).toBe(1);
+  });
+});
+
+describe('rollVoice', () => {
+  const pair = (h: number, f: number) => [
+    { id: 'h', type: 'd12' as const, value: h, side: 'hope' as const, pairId: 'p' },
+    { id: 'f', type: 'd12' as const, value: f, side: 'fear' as const, pairId: 'p' },
+  ];
+
+  it('never celebrates a Fear roll, however high it lands', () => {
+    // 11 + 12 is 23 of a possible 24, deep in the top quarter, and it is still a Fear roll.
+    expect(rollVoice(pair(11, 12))).toBe('fear');
+  });
+
+  it('mutes an ordinary critical that came with Fear', () => {
+    expect(rollVoice([...pair(3, 9), die('d20', 20, undefined, 'x')])).toBe('muted');
+  });
+
+  it('lets an ordinary critical ring out when the pair rolled with Hope', () => {
+    expect(rollVoice([...pair(9, 3), die('d20', 20, undefined, 'x')])).toBe('critical');
+  });
+
+  it('says Hope and Fear when nothing else happened', () => {
+    expect(rollVoice(pair(9, 3))).toBe('hope');
+    expect(rollVoice(pair(3, 9))).toBe('fear');
+  });
+
+  it('calls a matched pair critical', () => {
+    expect(rollVoice(pair(7, 7))).toBe('critical');
+  });
+
+  it('falls back to the bands with no pair in the pool', () => {
+    expect(rollVoice([die('d20', 20, undefined, 'x')])).toBe('critical');
+    expect(rollVoice([die('d4', 4, undefined, 'a'), die('d8', 8, undefined, 'b'), die('d12', 10, undefined, 'c')])).toBe('critical');
+    expect(rollVoice([die('d20', 2, undefined, 'x')])).toBe('bad');
+    expect(rollVoice([die('d20', 10, undefined, 'x')])).toBe('plain');
   });
 });
 

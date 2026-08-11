@@ -227,29 +227,75 @@ export function dieVerdicts(pool: PoolDie[]): Record<string, DieVerdict> {
 }
 
 /**
- * How far a die's roll sound is pitched, in cents (rewritten v0.41.1, owner).
+ * How far a die's roll sound is pitched, in cents.
  *
  * v0.40.0 pitched a die by its PLACE in the throw and by the size of die it had reached, which said
  * something true but useless: you could hear how far through the handful you were and nothing about
- * how it was going. A critical failure then needed a sound of its own to be noticed at all.
+ * how it was going. v0.41.1 made it the RESULT, as a fraction of what the die could have rolled, so a
+ * 2 on a d4 and a 4 on a d8 are the same lift (the owner's own example) and a 1 on a d20 is the
+ * deepest thing in the app.
  *
- * It is the RESULT that is pitched now, as a fraction of what the die could have rolled, so a 2 on a
- * d4 and a 4 on a d8 are the same lift (the owner's own example) and a 1 on a d20 is the deepest
- * thing in the app. The handful still climbs as it goes, but by a twelfth of what it used to, because
- * that climb is now the quiet bed under the part worth hearing rather than the tune itself.
+ * v0.41.2 takes the index out entirely (owner: "it sounds bad because it is rising and falling
+ * constantly"). The pitch is now a pure function of the die and its face, which has two consequences
+ * worth having: two criticals on the same kind of die sound identical, and the ORDER of the faces is
+ * what shapes the tune. {@link layoutRolled} sorts them, so a throw climbs within each kind of die
+ * instead of jumping about, and nothing here has to know that.
  */
 const CENTS_BASE = -140;
-/** How much each further die of one throw lifts the pitch. Small on purpose (owner: "lower the amount"). */
-const CENTS_PER_DIE = 12;
 /** The whole span between a die's worst face and its best. */
 const CENTS_SPREAD = 900;
 
-export function rollCents(pool: PoolDie[], index: number): number {
-  const d = pool[index];
-  if (!d) return CENTS_BASE;
+export function rollCents(die: PoolDie | undefined): number {
+  if (!die) return CENTS_BASE;
   // A face of null is a die that has not landed; treat it as the middle rather than as its worst.
-  const frac = d.value == null ? 0.5 : d.value / DIE_MAX[d.type];
-  return Math.round(CENTS_BASE + index * CENTS_PER_DIE + (frac - 0.5) * CENTS_SPREAD);
+  const frac = die.value == null ? 0.5 : die.value / DIE_MAX[die.type];
+  return Math.round(CENTS_BASE + (frac - 0.5) * CENTS_SPREAD);
+}
+
+/**
+ * Deal the faces out so each kind of die reads low to high (v0.41.2, owner).
+ *
+ * "If I roll 4d4 and 4d6, the results of the d4s appear first, in order from lowest to highest, and
+ * then the results of the d6 from lowest to highest. That way the pitch does not rise and fall."
+ *
+ * Dice of one kind are interchangeable, so which of the four d6 shows the 2 is a presentation
+ * decision and nothing else: the total, the criticals and the band are all identical whichever way
+ * round they go. Sorting them turns the throw into a rising line per kind of die rather than a
+ * scribble, which is the whole point.
+ *
+ * A duality die is left exactly where it is. Hope's face belongs to Hope, and swapping the two would
+ * change the verdict, which is the one thing in this file that is not interchangeable.
+ *
+ * Expects the pool in {@link sortPool} order, so the ascending faces land left to right in the grid.
+ */
+export function layoutRolled(pool: PoolDie[]): PoolDie[] {
+  const faces = new Map<DieType, number[]>();
+  for (const d of pool) {
+    if (d.pairId || d.value == null) continue;
+    const list = faces.get(d.type);
+    if (list) list.push(d.value);
+    else faces.set(d.type, [d.value]);
+  }
+  for (const list of faces.values()) list.sort((a, b) => a - b);
+  const taken = new Map<DieType, number>();
+  return pool.map((d) => {
+    if (d.pairId || d.value == null) return d;
+    const i = taken.get(d.type) ?? 0;
+    taken.set(d.type, i + 1);
+    return { ...d, value: faces.get(d.type)![i] };
+  });
+}
+
+/**
+ * How much longer than usual the gap between two landing dice is (v0.41.2, owner).
+ *
+ * A pair of dice thrown at the tray's ordinary pace is over before it has begun, and a fistful of ten
+ * at a leisurely one takes long enough to stop being a throw. So the gap is stretched a third for two
+ * dice and gives a twentieth of that back for every die after them, reaching the ordinary pace at
+ * eight and never going below it.
+ */
+export function staggerScale(count: number): number {
+  return Math.max(1, 1.3 - 0.05 * Math.max(0, count - 2));
 }
 
 /**
@@ -264,6 +310,37 @@ export function rollCents(pool: PoolDie[], index: number): number {
  * deliberately left out of it, because a flat +3 says nothing about how the dice fell.
  */
 export type RollBand = 'low' | 'mid' | 'high';
+
+/**
+ * What a finished throw SAYS, as one word (v0.41.2, owner).
+ *
+ * One sound plays when the last die lands, and choosing it is the whole of this function so that the
+ * rule can be read and tested rather than traced through a chain of `else if`.
+ *
+ * **The duality pair outranks everything.** "When duality dice are present, their sound effects are
+ * priority above the regular sound effects." A pair thrown with Fear must never take the critical
+ * fanfare however well the rest of the handful did: landing in the top quarter with Fear is still
+ * Fear, and celebrating it contradicts the thing the player is actually being told.
+ *
+ * A non-duality critical alongside a Fear roll keeps its own flourish on the die (that is decided in
+ * {@link dieVerdicts}, not here) but speaks with `muted`: the fanfare, dulled, because a natural 20
+ * is worth hearing and a natural 20 with Fear is not worth cheering.
+ *
+ * With no pair in the pool, the bands speak, which is v0.41.1 unchanged.
+ */
+export type RollVoice = 'critical' | 'muted' | 'hope' | 'fear' | 'bad' | 'plain';
+
+export function rollVoice(pool: PoolDie[]): RollVoice {
+  const duality = dualityVerdict(pool);
+  // A matched pair is already counted as one critical, so this asks about ORDINARY dice.
+  const crit = pool.some((d) => !d.pairId && d.value != null && d.value >= DIE_MAX[d.type]);
+  if (duality === 'critical') return 'critical';
+  if (duality === 'fear') return crit ? 'muted' : 'fear';
+  if (duality === 'hope') return crit ? 'critical' : 'hope';
+  const band = rollBand(pool);
+  if (crit || band === 'high') return 'critical';
+  return band === 'low' ? 'bad' : 'plain';
+}
 
 export function rollBand(pool: PoolDie[]): RollBand {
   const max = pool.reduce((s, d) => s + DIE_MAX[d.type], 0);
