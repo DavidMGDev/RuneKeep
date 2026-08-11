@@ -1,6 +1,6 @@
 ---
 name: runekeep-v0410-presets
-description: v0.41.0 + v0.41.1 - roll presets (lib/dice-presets, on the character file); NEVER accumulate a running total, derive it; a props snapshot of another component's state is always stale so pass a getter; setFile alone does not persist, commitFileRef does; SVG cost is node COUNT and mount churn; ALSO v0.41.1 - a die may rotate ONLY while rolling, crits must not be compared against fumbles, and dice pitch is the FACE as a fraction of the die
+description: v0.41.0 + v0.41.1 - roll presets (lib/dice-presets, on the character file); NEVER accumulate a running total, derive it; a props snapshot of another component's state is always stale so pass a getter; setFile alone does not persist, commitFileRef does; SVG cost is node COUNT and mount churn; ALSO v0.41.1/v0.41.2 - a die may rotate ONLY while rolling and an effect keyed on the throw counter runs on MOUNT too, crits must not be compared against fumbles, dice pitch is the FACE alone, and a dialog written inside DesignStage dims only the design box
 metadata:
   type: project
 ---
@@ -79,5 +79,37 @@ in a 72 wide band that reaches into the gaps BETWEEN slots (they are 78 apart), 
 
 `PopupDialog` gained `actionsGap` (default 22) for dialogs whose children already end in a button row.
 
-READ before dice-tray, dice-rotation, dice-sound, roll-preset, running-total, cross-component-state,
-character-persistence, svg-performance or effect-target work.
+## v0.41.2 (PR #442)
+
+**AN EFFECT KEYED ON A COUNTER RUNS ON MOUNT TOO, and that was the real arrival spin.** v0.41.1
+deleted the entry tumble and dice were STILL rotating on arrival, because the cause predates it: the
+throw effect is `useEffect(..., [roll])`, so a die tapped in after a throw mounted with `roll` already
+past zero and spun, swelled and reacted exactly as though it had been thrown. Pressing Roll during
+that phantom spin is a throw interrupting a throw, which is how the angles got mangled. The
+discriminator with no extra bookkeeping: a die being THROWN mounts with a `value` (a trait roll mints
+its pair and throws it in one commit), a die being PICKED UP mounts with `value: null`. Measured: 12
+samples across the entry, all 0 degrees.
+
+**SORT THE FACES, NOT THE SOUND.** Dice of one kind are interchangeable, so which of four d6 shows the
+2 is presentation. `layoutRolled` deals each kind its own faces ascending (never a duality die: Hope's
+face is Hope's, and swapping them changes the verdict), which turns a throw into a rising line per kind
+of die. `rollCents` then needs no index at all: pitch is a pure function of (die, face), so two
+criticals on one kind of die sound identical. The owner's complaint was that pitch "rising and falling
+constantly" sounded bad; the fix was the ORDER, not the formula.
+
+**A DIALOG WRITTEN INSIDE `DesignStage` DIMS ONLY THE DESIGN BOX.** `StyleSheet.absoluteFill` covers
+the nearest positioned ancestor, which inside the stage is a scaled 412x892 box, so on a phone whose
+aspect differs the parchment matte survives above and below the scrim (the owner's "white sections").
+The sheet root now wraps its children in `OverlayHost` and the preset dialogs publish through
+`Overlay`. Same mechanism, same reason as the v0.39 ScrollView case. `DimScreen` does NOT fix this: it
+only tells the tablet margins what colour to be.
+
+**`rollVoice`** is the single pure decision for the end-of-roll sound. The duality pair outranks the
+bands: a pair thrown with Fear never takes the critical fanfare however high the total, and an ordinary
+critical alongside it keeps its flourish on the die but speaks `muted` (the fanfare pitched down). The
+gold on the total follows the voice, so a high Fear roll is not celebrated.
+
+`staggerScale(n)` = max(1, 1.3 - 0.05 x (n - 2)): a pair lands a third slower, eight dice at the old pace.
+
+READ before dice-tray, dice-rotation, dice-sound, dice-order, roll-preset, running-total,
+cross-component-state, dialog-dim, character-persistence, svg-performance or effect-target work.
