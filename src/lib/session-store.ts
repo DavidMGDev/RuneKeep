@@ -5,6 +5,7 @@
  */
 import { Platform } from 'react-native';
 
+import { migrateEncounter, migrateList, migrateSession } from './dm-migrate';
 import { type Encounter, type Session } from './session';
 import { webGet, webSet } from './web-store';
 
@@ -20,9 +21,15 @@ function dir(name: string) {
   if (!d.exists) d.create({ intermediates: true });
   return d;
 }
-function webList<T>(key: string): T[] {
+/**
+ * Every read goes through the migrator (v0.41.4). See `lib/dm-migrate`.
+ *
+ * `one` repairs a single record and returns null for one that cannot be repaired, so a single bad
+ * encounter costs that encounter and never the night around it.
+ */
+function webList<T>(key: string, one: (v: unknown) => T | null): T[] {
   try {
-    return JSON.parse(webGet(key) ?? '[]') as T[];
+    return migrateList(JSON.parse(webGet(key) ?? '[]'), one);
   } catch {
     return [];
   }
@@ -30,13 +37,14 @@ function webList<T>(key: string): T[] {
 function webWrite<T>(key: string, all: T[]) {
   webSet(key, JSON.stringify(all));
 }
-function diskList<T>(dirName: string): T[] {
+function diskList<T>(dirName: string, one: (v: unknown) => T | null): T[] {
   const { File } = fs();
   const files = dir(dirName).list().filter((f): f is InstanceType<typeof File> => f instanceof File && f.name.endsWith('.json'));
   const out: T[] = [];
   for (const f of files) {
     try {
-      out.push(JSON.parse(f.textSync()) as T);
+      const r = one(JSON.parse(f.textSync()));
+      if (r) out.push(r);
     } catch {
       /* skip corrupt */
     }
@@ -47,20 +55,20 @@ function diskList<T>(dirName: string): T[] {
 // --- sessions --------------------------------------------------------------------------------------
 
 export async function listSessions(partyId: string): Promise<Session[]> {
-  const all = Platform.OS === 'web' ? webList<Session>(SESSION_KEY) : diskList<Session>('sessions');
+  const all = Platform.OS === 'web' ? webList<Session>(SESSION_KEY, migrateSession) : diskList<Session>('sessions', migrateSession);
   return all.filter((s) => s.partyId === partyId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function saveSession(session: Session): Promise<void> {
   if (Platform.OS === 'web') {
-    webWrite(SESSION_KEY, [...webList<Session>(SESSION_KEY).filter((s) => s.id !== session.id), session]);
+    webWrite(SESSION_KEY, [...webList<Session>(SESSION_KEY, migrateSession).filter((s) => s.id !== session.id), session]);
     return;
   }
   new (fs().File)(dir('sessions'), `${session.id}.json`).write(JSON.stringify(session, null, 2));
 }
 
 export async function getSession(id: string): Promise<Session | null> {
-  if (Platform.OS === 'web') return webList<Session>(SESSION_KEY).find((s) => s.id === id) ?? null;
+  if (Platform.OS === 'web') return webList<Session>(SESSION_KEY, migrateSession).find((s) => s.id === id) ?? null;
   const f = new (fs().File)(dir('sessions'), `${id}.json`);
   if (!f.exists) return null;
   try {
@@ -72,32 +80,32 @@ export async function getSession(id: string): Promise<Session | null> {
 
 export async function deleteSession(id: string): Promise<void> {
   if (Platform.OS === 'web') {
-    webWrite(SESSION_KEY, webList<Session>(SESSION_KEY).filter((s) => s.id !== id));
-    for (const e of webList<Encounter>(ENCOUNTER_KEY).filter((e) => e.sessionId === id)) await deleteEncounter(e.id);
+    webWrite(SESSION_KEY, webList<Session>(SESSION_KEY, migrateSession).filter((s) => s.id !== id));
+    for (const e of webList<Encounter>(ENCOUNTER_KEY, migrateEncounter).filter((e) => e.sessionId === id)) await deleteEncounter(e.id);
     return;
   }
   const f = new (fs().File)(dir('sessions'), `${id}.json`);
   if (f.exists) f.delete();
-  for (const e of diskList<Encounter>('encounters').filter((e) => e.sessionId === id)) await deleteEncounter(e.id);
+  for (const e of diskList<Encounter>('encounters', migrateEncounter).filter((e) => e.sessionId === id)) await deleteEncounter(e.id);
 }
 
 // --- encounters ------------------------------------------------------------------------------------
 
 export async function listEncounters(sessionId: string): Promise<Encounter[]> {
-  const all = Platform.OS === 'web' ? webList<Encounter>(ENCOUNTER_KEY) : diskList<Encounter>('encounters');
+  const all = Platform.OS === 'web' ? webList<Encounter>(ENCOUNTER_KEY, migrateEncounter) : diskList<Encounter>('encounters', migrateEncounter);
   return all.filter((e) => e.sessionId === sessionId).sort((a, b) => a.index - b.index);
 }
 
 export async function saveEncounter(encounter: Encounter): Promise<void> {
   if (Platform.OS === 'web') {
-    webWrite(ENCOUNTER_KEY, [...webList<Encounter>(ENCOUNTER_KEY).filter((e) => e.id !== encounter.id), encounter]);
+    webWrite(ENCOUNTER_KEY, [...webList<Encounter>(ENCOUNTER_KEY, migrateEncounter).filter((e) => e.id !== encounter.id), encounter]);
     return;
   }
   new (fs().File)(dir('encounters'), `${encounter.id}.json`).write(JSON.stringify(encounter, null, 2));
 }
 
 export async function getEncounter(id: string): Promise<Encounter | null> {
-  if (Platform.OS === 'web') return webList<Encounter>(ENCOUNTER_KEY).find((e) => e.id === id) ?? null;
+  if (Platform.OS === 'web') return webList<Encounter>(ENCOUNTER_KEY, migrateEncounter).find((e) => e.id === id) ?? null;
   const f = new (fs().File)(dir('encounters'), `${id}.json`);
   if (!f.exists) return null;
   try {
@@ -109,7 +117,7 @@ export async function getEncounter(id: string): Promise<Encounter | null> {
 
 export async function deleteEncounter(id: string): Promise<void> {
   if (Platform.OS === 'web') {
-    webWrite(ENCOUNTER_KEY, webList<Encounter>(ENCOUNTER_KEY).filter((e) => e.id !== id));
+    webWrite(ENCOUNTER_KEY, webList<Encounter>(ENCOUNTER_KEY, migrateEncounter).filter((e) => e.id !== id));
     return;
   }
   const f = new (fs().File)(dir('encounters'), `${id}.json`);

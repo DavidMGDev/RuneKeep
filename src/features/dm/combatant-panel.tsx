@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Path, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -27,8 +27,24 @@ import { StatGlyph } from './stat-glyphs';
 import { StatPulse } from './stat-pulse';
 import { DmPress } from './dm-ui';
 
-// item 4: short, smooth reflow — no spring bounce.
-const SPRING = LinearTransition.duration(180).easing(Easing.out(Easing.cubic));
+/**
+ * NO LAYOUT TRANSITION ON THE ENTRY (v0.41.4, owner).
+ *
+ * v0.16.0 wrapped every entry in `LinearTransition` so that expanding one made its neighbours glide
+ * rather than jump. What that transition actually does is interpolate the entry's FRAME, and React
+ * Native lays the children out afresh at each interpolated height: text given a box that is briefly
+ * the wrong height is text that is briefly the wrong shape. That is the owner's report exactly, "a
+ * stretch of all its contents so hard that it morphs all of the text vertically".
+ *
+ * There is no way to keep the glide and lose the morph, because the morph IS the glide. So the frame
+ * is left alone and the expanded detail fades in and out on its own. Neighbours now reflow at once
+ * instead of gliding, which is the smaller loss, and it is the option the owner sanctioned.
+ *
+ * It also cannot break the list's scrolling, which the owner asked about specifically: with no layout
+ * animation there is nothing racing the scroll view's own measurement.
+ */
+const DETAIL_IN = FadeIn.duration(170);
+const DETAIL_OUT = FadeOut.duration(110);
 
 function Pencil() {
   return (
@@ -120,7 +136,7 @@ export function CombatantPanel({
   // A fallen unit collapses to name + Fallen + Recover; its X deletes.
   if (c.fallen) {
     return (
-      <Animated.View layout={SPRING} style={fadeStyle}>
+      <Animated.View style={fadeStyle}>
         <DmPress onPress={selecting ? onToggleSelect : undefined} onLongPress={onLongPress} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`${c.name}, fallen`}>
           <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 }}>
             {selecting ? (
@@ -146,7 +162,7 @@ export function CombatantPanel({
 
   if (mode !== 'none') {
     return (
-      <Animated.View layout={SPRING} style={fadeStyle}>
+      <Animated.View style={fadeStyle}>
         <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: 10 }}>
           {selecting ? (
             <Pressable onPress={onToggleSelect} onLongPress={onLongPress} accessibilityRole="checkbox" accessibilityState={{ checked: !!selected }} accessibilityLabel={`${c.name}, ${selected ? 'selected' : 'not selected'}`} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 5 }} />
@@ -178,15 +194,15 @@ export function CombatantPanel({
               {!selecting && !sole ? <Svg width={14} height={14} viewBox="0 0 16 16" style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}><Polyline points="5,3 11,8 5,13" fill="none" stroke={DmRune.accentDim} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
             </DmPress>
             {/* One counter DOES ride the title, and this is the whole entry, so it gets the space. */}
-            {!selecting && sole ? <CounterStepper c={sole} size={32} onStep={onCounter ? (d) => onCounter(sole.id, d) : undefined} /> : null}
+            {!selecting && sole ? <CounterStepper c={sole} size={32} onStep={onCounter ? (d) => onCounter(sole.id, d) : undefined} onSpent={onFell} /> : null}
             {!selecting ? <DmPress onPress={onEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Configure ${c.name}`}><Pencil /></DmPress> : null}
           </View>
 
           {c.description ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 17 }}>{c.description}</Text> : null}
 
           {open && mode === 'list' ? (
-            <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)} style={{ gap: 8 }}>
-              {(c.counters ?? []).map((x) => <CounterRow key={x.id} c={x} onStep={onCounter ? (d) => onCounter(x.id, d) : undefined} />)}
+            <Animated.View entering={DETAIL_IN} exiting={DETAIL_OUT} style={{ gap: 8 }}>
+              {(c.counters ?? []).map((x) => <CounterRow key={x.id} c={x} onStep={onCounter ? (d) => onCounter(x.id, d) : undefined} onSpent={onFell} />)}
             </Animated.View>
           ) : null}
         </ChamferBox>
@@ -198,7 +214,7 @@ export function CombatantPanel({
   // often and it was only visible once the stat block was expanded.
   const anyTrack = c.show.hp || c.show.stress || c.show.thresholds || !!c.difficulty;
   return (
-    <Animated.View layout={SPRING} style={fadeStyle}>
+    <Animated.View style={fadeStyle}>
       <ChamferBox chamfer={11} fill={fill} stroke={stroke} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 11, gap: anyTrack || (c.show.description && !open) || open ? 10 : 0 }}>
         {/* While selecting, ANY tap on the entry selects it: the header is not the only target, and
             hunting for it is the sort of precision a bulk action should not ask for. */}
@@ -263,8 +279,8 @@ export function CombatantPanel({
         ) : null}
 
         {open ? (
-          <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-            <StatBlockDetail c={c} onCounter={onCounter} />
+          <Animated.View entering={DETAIL_IN} exiting={DETAIL_OUT}>
+            <StatBlockDetail c={c} onCounter={onCounter} onCounterSpent={onFell} />
           </Animated.View>
         ) : null}
       </ChamferBox>

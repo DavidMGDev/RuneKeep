@@ -24,7 +24,21 @@ export type VitalKey = keyof MemberVitals;
 /** Per-member current vitals — the party's shared "global" state (PRD #34). Keyed by character id. */
 export type PartyGlobalState = Record<string, MemberVitals>;
 
+/**
+ * A CAMPAIGN, as the user now calls it (v0.41.4, owner).
+ *
+ * The record is unchanged in kind: it is still the DM's collection of roster characters plus the
+ * party's living vitals. What changed is what sits on top of it. A campaign owns its own sessions,
+ * it can be opened at any time, and it carries an identity of its own (see `lib/dm-identity`).
+ *
+ * `enabled` no longer means "active". There is no active campaign any more, and migration forces it
+ * true everywhere; it is kept on the record so an older build still reads a well-formed party.
+ */
 export interface Party {
+  /** A line about the campaign, shown under its title (v0.41.4). */
+  description?: string;
+  /** A picture for the campaign. Beats the colour, which beats the title's initial. */
+  imageUri?: string;
   /** v0.23.0: PERMANENT max bonuses the DM granted, per character. Kept on the party rather than
    *  written into the player's character file, which belongs to the player. */
   maxBonus?: Record<string, Partial<Record<VitalKey, number>>>;

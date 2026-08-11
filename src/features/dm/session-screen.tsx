@@ -1,7 +1,12 @@
 /**
- * Session (v0.15.0; reworked v0.16.0) — one session's encounters, active pinned on top, rest newest-first.
- * A Players button opens the party overview; New Encounter adds "Encounter #X". Hold an encounter to
- * multi-select: delete (confirm), duplicate (single), or move to an existing/new session (PRD #8/#9).
+ * Session (v0.15.0; reworked v0.16.0; overhauled v0.41.4) — one session's encounters, active pinned on
+ * top, rest newest-first. A Players button opens the party overview; New Encounter adds "Encounter #X".
+ * Hold an encounter to multi-select: delete, duplicate, or send it to another session.
+ *
+ * v0.41.4 (owner) adds three things. A SESSION SWITCHER at the top, matching the campaign switcher one
+ * level up, so moving between two nights is one tap. An IDENTITY on every encounter, so a prepared
+ * fight is recognisable before it is opened. And a send picker that reaches every campaign, with a
+ * COPY beside the move.
  */
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -10,41 +15,24 @@ import Svg, { Line, Polyline } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
-import { FitLine } from '@/components/fit-line';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
-import { DmType, Body, Display, DmRune } from '@/constants/theme';
+import { DmType, Body, DmRune } from '@/constants/theme';
+import { type DmIdentity } from '@/lib/dm-identity';
 import { type Party } from '@/lib/party';
-import { getParty } from '@/lib/party-store';
-import { duplicateEncounter, type Encounter, moveEncounterToSession, newEncounter, newSession, nextIndex, type Session, sortedEncounters } from '@/lib/session';
+import { getParty, listParties } from '@/lib/party-store';
+import { copyEncounterToSession, duplicateEncounter, type Encounter, moveEncounterToSession, newEncounter, newSession, nextIndex, type Session, sortedEncounters } from '@/lib/session';
 import { deleteEncounter, getSession, listEncounters, listSessions, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
-import { DmEmpty, DmModal, NameDialog, DmPress } from './dm-ui';
+import { IdentityBadge, IdentityDropdown, IdentityLines } from './dm-identity-ui';
+import { EncounterMovePicker, type MoveTarget } from './encounter-move-picker';
+import { IdentityEditor } from './identity-editor';
+import { DmEmpty, DmPress } from './dm-ui';
 import { useSelection } from './use-selection';
 
 const STATUS_COLOR = (s: Encounter['status']) => (s === 'active' ? DmRune.accent : s === 'completed' ? DmRune.muted : DmRune.accentDim);
-
-/** Choose an existing session (of this party, not the current one) or a new one to move encounters to. */
-function MoveTargetPicker({ sessions, onPick, onNew, onCancel }: { sessions: Session[]; onPick: (id: string) => void; onNew: () => void; onCancel: () => void }) {
-  return (
-    <DmModal onClose={onCancel}>
-      <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 312, padding: 20, gap: 6 }}>
-        <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to session</Text>
-        {sessions.map((s) => (
-          <DmPress key={s.id} onPress={() => onPick(s.id)} accessibilityRole="button" accessibilityLabel={s.name} style={({ pressed }) => ({ paddingVertical: 12, paddingHorizontal: 8, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent', borderRadius: 6 })}>
-            <Text style={{ color: DmRune.text, fontSize: DmType.title, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{s.name}</Text>
-          </DmPress>
-        ))}
-        <View style={{ marginTop: 8, gap: 8 }}>
-          <RuneButton label="New session" kind="secondary" height={42} dm onPress={onNew} />
-          <RuneButton label="Cancel" kind="ghost" height={42} dm onPress={onCancel} />
-        </View>
-      </ChamferBox>
-    </DmModal>
-  );
-}
 
 export function SessionScreen() {
   const router = useRouter();
@@ -53,17 +41,23 @@ export function SessionScreen() {
   const [party, setParty] = useState<Party | null>(null);
   const [encounters, setEncounters] = useState<Encounter[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<Set<string> | null>(null);
-  const [moving, setMoving] = useState<Session[] | null>(null);
-  const [renaming, setRenaming] = useState<Encounter | null>(null);
+  const [moving, setMoving] = useState<{ here: MoveTarget; elsewhere: MoveTarget[] } | null>(null);
+  const [editing, setEditing] = useState<Encounter | null>(null);
+  /** The other sessions of THIS campaign, for the switcher at the top. */
+  const [siblings, setSiblings] = useState<Session[]>([]);
   const sel = useSelection();
 
   const reload = useCallback(() => {
     let live = true;
     void (async () => {
       const ses = await getSession(id);
-      const [pty, encs] = await Promise.all([ses ? getParty(ses.partyId) : Promise.resolve(null), listEncounters(id)]);
+      const [pty, encs, sibs] = await Promise.all([
+        ses ? getParty(ses.partyId) : Promise.resolve(null),
+        listEncounters(id),
+        ses ? listSessions(ses.partyId) : Promise.resolve([]),
+      ]);
       if (!live) return;
-      setSession(ses); setParty(pty); setEncounters(encs);
+      setSession(ses); setParty(pty); setEncounters(encs); setSiblings(sibs);
     })();
     return () => { live = false; };
   }, [id]);
@@ -91,13 +85,27 @@ export function SessionScreen() {
     sel.clear(); showToast('Deleted', 'success'); reload();
   }, [session, sel, reload]);
 
+  /**
+   * Everywhere this encounter could go (v0.41.4, owner).
+   *
+   * The current campaign's other sessions lead, expanded; every other campaign is a folder. Reading
+   * all of them up front is a handful of small files and makes the picker instant, which matters more
+   * here than the read does: the DM opened this to make one decision.
+   */
   const openMove = useCallback(async () => {
-    if (!session) return;
-    const all = await listSessions(session.partyId);
-    setMoving(all.filter((s) => s.id !== session.id));
-  }, [session]);
+    if (!session || !party) return;
+    const campaigns = await listParties();
+    const here: MoveTarget = { campaign: party, sessions: (await listSessions(session.partyId)).filter((s) => s.id !== session.id) };
+    const elsewhere: MoveTarget[] = [];
+    for (const c of campaigns) {
+      if (c.id === session.partyId) continue;
+      elsewhere.push({ campaign: c, sessions: await listSessions(c.id) });
+    }
+    setMoving({ here, elsewhere });
+  }, [session, party]);
 
-  const moveTo = useCallback(async (targetId: string) => {
+  /** Move takes the original; copy leaves it. One function, because that is the only difference. */
+  const sendTo = useCallback(async (targetId: string, mode: 'move' | 'copy') => {
     setMoving(null);
     const targetEncs = await listEncounters(targetId);
     let idx = targetEncs.length;
@@ -105,10 +113,11 @@ export function SessionScreen() {
       const e = encounters.find((x) => x.id === eid);
       if (!e) continue;
       idx += 1;
-      await saveEncounter(moveEncounterToSession(e, targetId, idx));
+      await saveEncounter(mode === 'move' ? moveEncounterToSession(e, targetId, idx) : copyEncounterToSession(e, targetId, idx));
     }
-    sel.clear(); showToast('Moved', 'success'); reload();
+    sel.clear(); showToast(mode === 'move' ? 'Moved' : 'Copied', 'success'); reload();
   }, [sel, encounters, reload]);
+  const moveTo = useCallback((targetId: string) => sendTo(targetId, 'move'), [sendTo]);
 
   const moveToNew = useCallback(async () => {
     if (!session) return;
@@ -117,18 +126,29 @@ export function SessionScreen() {
     await moveTo(s.id);
   }, [session, moveTo]);
 
-  const renameEncounter = useCallback(async (name: string) => {
-    if (!renaming) return;
-    await saveEncounter({ ...renaming, name });
-    setRenaming(null); sel.clear(); reload();
-  }, [renaming, sel, reload]);
+  const saveIdentity = useCallback(async (idn: DmIdentity) => {
+    if (!editing) return;
+    await saveEncounter({ ...editing, name: idn.name, description: idn.description, color: idn.color, imageUri: idn.imageUri });
+    setEditing(null); sel.clear(); reload();
+  }, [editing, sel, reload]);
 
   if (!session) return <LoadingScreen dm label="Opening the session" />;
   const ordered = sortedEncounters(encounters, session.activeEncounterId);
 
   return (
     <AppScreen title={session.name} dm onBack={() => router.back()}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, gap: 12 }}>
+        {/* The session switcher (v0.41.4, owner): the same control the campaign list has, one level
+            down. Choosing simply navigates; nothing is written by looking. */}
+        {siblings.length > 1 ? (
+          <IdentityDropdown
+            label="Session"
+            items={siblings}
+            selected={siblings.find((s) => s.id === session.id) ?? session}
+            fallback={(s) => new Date(s.createdAt).toLocaleDateString()}
+            onSelect={(s) => { if (s.id !== session.id) { playSfx('buttonTap'); router.replace(`/session?id=${s.id}` as Href); } }}
+          />
+        ) : null}
         {ordered.length === 0 ? (
           <DmEmpty
             title="No encounters yet"
@@ -159,14 +179,14 @@ export function SessionScreen() {
                           {on ? <Svg width={11} height={11} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
                         </ChamferBox>
                       ) : (
-                        <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: STATUS_COLOR(item.status) }} />
+                        <View>
+                          <IdentityBadge id={item} size={42} />
+                          {/* The status dot rides the badge's corner rather than taking a column of
+                              its own: prepared, active or finished is a detail OF the encounter. */}
+                          <View style={{ position: 'absolute', right: -3, top: -3, width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: 'rgba(14,17,22,1)', backgroundColor: STATUS_COLOR(item.status) }} />
+                        </View>
                       )}
-                      <View style={{ flex: 1 }}>
-                        <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{item.name}</FitLine>
-                        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginTop: 3 }}>
-                          {pinned ? 'Active · ' : ''}{item.adversaries.length} {item.adversaries.length === 1 ? 'Adversary' : 'Adversaries'}
-                        </Text>
-                      </View>
+                      <IdentityLines id={item} fallback={`${pinned ? 'Active · ' : ''}${item.adversaries.length} ${item.adversaries.length === 1 ? 'adversary' : 'adversaries'}`} />
                       {!sel.selecting ? <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={4} y1={2} x2={12} y2={8} stroke={DmRune.accentDim} strokeWidth={2} /><Line x1={12} y1={8} x2={4} y2={14} stroke={DmRune.accentDim} strokeWidth={2} /></Svg> : null}
                     </ChamferBox>
                   )}
@@ -186,9 +206,9 @@ export function SessionScreen() {
         <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>
           <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
             <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{sel.ids.size} selected</Text>
-            {sel.ids.size === 1 ? <RuneButton label="Rename" kind="ghost" height={30} dense dm onPress={() => { const e = ordered.find((x) => x.id === [...sel.ids][0]); if (e) setRenaming(e); }} /> : null}
+            {sel.ids.size === 1 ? <RuneButton label="Edit details" kind="ghost" height={30} dense dm onPress={() => { const e = ordered.find((x) => x.id === [...sel.ids][0]); if (e) setEditing(e); }} /> : null}
             {sel.ids.size === 1 ? <RuneButton label="Duplicate" kind="ghost" height={30} dense dm onPress={duplicate} /> : null}
-            <RuneButton label="Move" kind="ghost" height={30} dense dm onPress={openMove} />
+            <RuneButton label="Move" kind="ghost" height={30} dense dm onPress={() => void openMove()} />
             <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDelete(new Set(sel.ids))} />
             <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={sel.clear} />
           </ChamferBox>
@@ -196,8 +216,18 @@ export function SessionScreen() {
       ) : null}
 
       {confirmDelete ? <PopupDialog dm title="Delete encounters?" body={`${confirmDelete.size} removed.`} confirmLabel="Delete" destructive onConfirm={() => void doDelete(confirmDelete)} onCancel={() => setConfirmDelete(null)} /> : null}
-      {moving ? <MoveTargetPicker sessions={moving} onPick={(sid) => void moveTo(sid)} onNew={() => void moveToNew()} onCancel={() => setMoving(null)} /> : null}
-      {renaming ? <NameDialog title="Rename Encounter" initial={renaming.name} confirmLabel="Rename" onConfirm={(name) => void renameEncounter(name)} onCancel={() => setRenaming(null)} /> : null}
+      {moving ? (
+        <EncounterMovePicker
+          count={sel.ids.size}
+          here={moving.here}
+          elsewhere={moving.elsewhere}
+          onMove={(sid) => void sendTo(sid, 'move')}
+          onCopy={(sid) => void sendTo(sid, 'copy')}
+          onNewSession={() => void moveToNew()}
+          onCancel={() => setMoving(null)}
+        />
+      ) : null}
+      {editing ? <IdentityEditor title="Edit encounter" namePlaceholder="Encounter" initial={editing} onSave={(idn) => void saveIdentity(idn)} onCancel={() => setEditing(null)} /> : null}
     </AppScreen>
   );
 }

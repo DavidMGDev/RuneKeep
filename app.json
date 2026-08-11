@@ -2,7 +2,7 @@
   "expo": {
     "name": "RuneKeep",
     "slug": "RuneKeep",
-    "version": "0.41.3",
+    "version": "0.41.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "runekeep",

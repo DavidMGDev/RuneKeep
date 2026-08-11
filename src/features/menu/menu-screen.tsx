@@ -1,4 +1,4 @@
-import { type Href, useFocusEffect, useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
@@ -14,7 +14,6 @@ import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
-import { listParties } from '@/lib/party-store';
 import { showToast } from '@/components/toast';
 import { resetTours, shouldShow } from '@/lib/onboarding-store';
 import { useLayout } from '@/hooks/use-layout';
@@ -205,7 +204,6 @@ export function MenuScreen() {
   const driftY = (f: number) => Math.round(screenH * f);
   const [dm, setDm] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [hasEnabledParty, setHasEnabledParty] = useState(false);
   useEffect(() => {
     setMuted(applyStoredMute()); // item 6: honour the persisted UI-sound mute before anything plays
     preloadSfx(); // warm the audio engine + decode latency-sensitive sounds (#255)
@@ -226,15 +224,8 @@ export function MenuScreen() {
     setTourChecked(true);
     if (shouldShow('welcome')) router.push('/onboarding?tour=welcome' as Href);
   }, [ready, tourChecked, router]);
-  // Sessions unlocks only once a party is enabled (PRD #17/#18). Re-checked whenever the menu regains
-  // focus (returning from Parties may have just enabled one).
-  useFocusEffect(
-    useCallback(() => {
-      let live = true;
-      void listParties().then((all) => { if (live) setHasEnabledParty(all.some((p) => p.enabled)); });
-      return () => { live = false; };
-    }, []),
-  );
+  // v0.41.4: nothing on this menu is gated any more. A campaign owns its own sessions, so there is
+  // no "enabled party" to check for and no locked card to explain.
 
   const toggleDm = useCallback(() => {
     playSfx('buttonTap');
@@ -293,21 +284,11 @@ export function MenuScreen() {
         <View style={{ flex: 1, justifyContent: 'flex-end', gap: 16, paddingBottom: 28 }}>
           {dm ? (
             <>
-              <MenuAction label="Parties" sub="Build parties from your roster" glyph="characters" dm delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/parties' as Href); }} />
-              <MenuAction
-                label="Sessions"
-                sub="Encounters for an enabled party"
-                glyph="cards"
-                dm
-                locked={!hasEnabledParty}
-                delayIndex={1}
-                onPress={() => {
-                  // v0.22.0: a dead tap on a dimmed card reads as a bug. Say why it's locked.
-                  if (!hasEnabledParty) { playSfx('buttonTap'); showToast('Open Parties and set one active to run its sessions.'); return; }
-                  playSfx('enterCardViewer');
-                  router.push('/sessions' as Href);
-                }}
-              />
+{/* v0.41.4 (owner): Campaigns, and no lock. A campaign owns its own sessions, so there is
+                  nothing left for a second top-level destination to point at and nothing to unlock. The
+                  slot goes to the card library, which a DM had no way to reach without leaving DM Mode. */}
+              <MenuAction label="Campaigns" sub="Your games, their casts and their nights" glyph="characters" dm delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/parties' as Href); }} />
+              <MenuAction label="Cards" sub="Browse the archive, build homebrew" glyph="cards" dm delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
             </>
           ) : (
             <>

@@ -5,6 +5,7 @@
  */
 import { Platform } from 'react-native';
 
+import { migrateList, migrateParty } from './dm-migrate';
 import { type Party } from './party';
 import { webGet, webSet } from './web-store';
 
@@ -20,9 +21,16 @@ function partiesDir() {
   return dir;
 }
 
+/**
+ * Every read goes through the migrator (v0.41.4).
+ *
+ * A cast is a promise about data this build did not write, and the DM's store holds records from
+ * every version they have ever run. See `lib/dm-migrate` for why this is a read rather than a
+ * one-shot rewrite.
+ */
 function webList(): Party[] {
   try {
-    return JSON.parse(webGet(WEB_KEY) ?? '[]') as Party[];
+    return migrateList(JSON.parse(webGet(WEB_KEY) ?? '[]'), migrateParty);
   } catch {
     return [];
   }
@@ -38,7 +46,8 @@ export async function listParties(): Promise<Party[]> {
   const out: Party[] = [];
   for (const f of files) {
     try {
-      out.push(JSON.parse(f.textSync()) as Party);
+      const p = migrateParty(JSON.parse(f.textSync()));
+      if (p) out.push(p);
     } catch {
       // corrupt/foreign file is simply not listed
     }
