@@ -5,7 +5,7 @@
  */
 import { type AdversaryFeature, type AdversaryRole } from '@/data/adversaries';
 import { type MemberMaxes, type MemberVitals, type PartyGlobalState, type Party, applyVitalDelta, presentMemberIds, setGlobalEffects, setVital, type VitalKey } from './party';
-import { type AdversaryCounter, resetCounter, stepCounter } from './dm-counters';
+import { type AdversaryCounter, resetCounter, restartCountdowns, stepCounter } from './dm-counters';
 import { type CardEffect } from './modifiers';
 
 export const SESSION_SCHEMA_VERSION = 1;
@@ -16,6 +16,10 @@ export interface Session {
   partyId: string;
   createdAt: string; // ISO
   name: string;
+  /** v0.41.4: the same identity a campaign carries. See `lib/dm-identity`. */
+  description?: string;
+  color?: string;
+  imageUri?: string;
   /** The one encounter that may write global state (PRD #35). Undefined = none active. */
   activeEncounterId?: string;
 }
@@ -93,6 +97,10 @@ export interface Encounter {
   index: number; // 1-based (PRD #26)
   createdAt: string; // ISO
   name: string;
+  /** v0.41.4: the same identity a campaign and a session carry. See `lib/dm-identity`. */
+  description?: string;
+  color?: string;
+  imageUri?: string;
   status: EncounterStatus;
   allies: Ally[];
   adversaries: Combatant[];
@@ -277,9 +285,22 @@ export function fell(c: Combatant): Combatant {
   return { ...c, fallen: true, recoverHp: (c.hp ?? 0) > 0 ? c.hp : Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)) };
 }
 
-/** Bring a fallen combatant back (PRD #9/#11): to its recover HP (half if it hit 0, else prior HP). */
+/**
+ * Bring a fallen combatant back (PRD #9/#11): to its recover HP (half if it hit 0, else prior HP).
+ *
+ * v0.41.4 (owner): every COUNTDOWN winds back to its start as well, even one that does not loop.
+ * That is the pair to the spent countdown's X: an entry that fell because its timer ran out comes
+ * back with the timer reset, so a recurring threat is two presses rather than a trip to the editor.
+ * Resource counters are left alone, because a supply that refills itself is not a supply.
+ */
 export function recover(c: Combatant): Combatant {
-  return { ...c, fallen: false, hp: c.recoverHp ?? c.hp ?? Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)), recoverHp: undefined };
+  return {
+    ...c,
+    fallen: false,
+    hp: c.recoverHp ?? c.hp ?? Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)),
+    recoverHp: undefined,
+    counters: restartCountdowns(c.counters),
+  };
 }
 
 /** A fresh copy of a combatant for reuse (library spawn / encounter duplicate): new id, full HP, upright. */
@@ -370,6 +391,24 @@ export function duplicateEncounter(enc: Encounter, index: number): Encounter {
 /** Move an encounter to another session (PRD #8) with a new index there. */
 export function moveEncounterToSession(enc: Encounter, sessionId: string, index: number): Encounter {
   return { ...enc, sessionId, index, status: enc.status === 'active' ? 'prepared' : enc.status };
+}
+
+/**
+ * COPY an encounter into another session (v0.41.4, owner) — "just like cards when they get moved
+ * around card categories in the character sheet".
+ *
+ * A copy is a NEW fight, so it is prepared whatever the original was, its adversaries and NPCs are
+ * cloned rather than shared (so damage to one is not damage to the other) and it carries no log. The
+ * original is untouched, which is the whole difference from a move.
+ */
+export function copyEncounterToSession(enc: Encounter, sessionId: string, index: number): Encounter {
+  return {
+    ...duplicateEncounter(enc, index),
+    sessionId,
+    // A duplicate names itself "Encounter #n", which is right in the session it came from and wrong
+    // in a session it was deliberately copied INTO. A copy keeps the name that made it worth copying.
+    name: enc.name,
+  };
 }
 
 /**

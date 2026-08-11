@@ -1,8 +1,14 @@
 /**
- * Party editor (v0.15.0, PRD #12-17). Manage a party's members: add characters from the roster
- * (multi-select, very like the player character picker) or import one; toggle each member present/absent;
- * remove; rename / re-roll colour; and Enable the party (which unlocks Sessions). No character CREATION
- * here (PRD #15) — only select/import existing ones.
+ * The CAMPAIGN'S CAST (v0.15.0 as the party editor; reworked v0.41.4, owner).
+ *
+ * Add characters from the roster (multi-select, very like the player character picker) or import one;
+ * toggle each present or absent; remove. No character CREATION here (PRD #15), only select or import.
+ *
+ * v0.41.4 changed what surrounds it rather than what it does. There is no Enable and no Set active,
+ * because there is no active campaign; the top right corner opens the campaign's identity (its
+ * picture, colour, title and description) with the same editor the campaign list uses; and DELETE is
+ * gone from here entirely. The owner's rule is exact: deleting a campaign is reachable "from pressing
+ * and holding a campaign entry from the campaign list UI, never from inside the edit campaign/party UI".
  */
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -21,13 +27,15 @@ import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
 import { importCharacter, listCharacters } from '@/lib/character-store';
 import { initialVitals } from '@/lib/dm-vitals';
-import { addMembers, isPresent, type Party, randomColor, removeMember, togglePresent } from '@/lib/party';
-import { deleteParty, getParty, saveParty, setActiveParty } from '@/lib/party-store';
+import { type DmIdentity } from '@/lib/dm-identity';
+import { addMembers, isPresent, type Party, removeMember, togglePresent } from '@/lib/party';
+import { getParty, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
-import { showToast } from '@/components/toast';
 import { DimScreen } from '@/lib/screen-dim';
 import { Portrait as SharedPortrait } from '@/components/portrait';
-import { DmEmpty, ColorDiamond, NameDialog, DmPress } from './dm-ui';
+import { IdentityBadge } from './dm-identity-ui';
+import { IdentityEditor } from './identity-editor';
+import { DmEmpty, DmPress } from './dm-ui';
 
 /** v0.36.1: the shared chamfered portrait (see components/portrait). */
 function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
@@ -111,8 +119,8 @@ export function PartyEditorScreen() {
   const [party, setParty] = useState<Party | null>(null);
   const [roster, setRoster] = useState<CharacterFile[]>([]);
   const [picking, setPicking] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  /** The campaign's picture, colour, title and description (v0.41.4). */
+  const [editingIdentity, setEditingIdentity] = useState(false);
   // v0.22.0: removing a member ALSO drops that character's global vitals record (party.ts), so one
   // mistap silently wiped the HP/Stress/Hope/Armor the DM had been tracking all session.
   const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
@@ -135,13 +143,11 @@ export function PartyEditorScreen() {
     setPicking(false);
   }, [party, fileFor, commit]);
 
-  const makeActive = useCallback(async () => {
+  const saveIdentity = useCallback((idn: DmIdentity) => {
+    setEditingIdentity(false);
     if (!party) return;
-    playSfx('buttonTap');
-    await setActiveParty(party.id); // exclusive — clears any other active party (item 1)
-    setParty({ ...party, enabled: true });
-    showToast(`${party.name} is now the active party`, 'success');
-  }, [party]);
+    commit({ ...party, name: idn.name, description: idn.description, color: idn.color ?? party.color, imageUri: idn.imageUri });
+  }, [party, commit]);
 
   const onImport = useCallback(async () => {
     const imported = await importCharacter();
@@ -157,7 +163,6 @@ export function PartyEditorScreen() {
   if (!party) return <LoadingScreen dm label="Reading the party" />;
 
   const candidates = roster.filter((f) => !party.memberIds.includes(f.id));
-  const canEnable = party.memberIds.length > 0;
 
   return (
     <AppScreen
@@ -165,15 +170,17 @@ export function PartyEditorScreen() {
       dm
       onBack={() => router.back()}
       headerRight={
-        <DmPress onPress={() => commit({ ...party, color: randomColor() })} hitSlop={10} accessibilityRole="button" accessibilityLabel="Re-roll party colour">
-          <ColorDiamond color={party.color} size={16} />
+        /* The identity lives in the top right corner (owner): picture, colour or letter, title and
+           description, in the same dialog the campaign list opens. */
+        <DmPress onPress={() => { playSfx('buttonTap'); setEditingIdentity(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Edit campaign details">
+          <IdentityBadge id={party} size={30} />
         </DmPress>
       }>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <SectionLabel dm>{party.memberIds.length} {party.memberIds.length === 1 ? 'Member' : 'Members'}</SectionLabel>
-          <DmPress onPress={() => setRenaming(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Rename party">
-            <Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Rename</Text>
+          <SectionLabel dm>{party.memberIds.length} {party.memberIds.length === 1 ? 'Character' : 'Character'}</SectionLabel>
+          <DmPress onPress={() => setEditingIdentity(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Edit campaign details">
+            <Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Details</Text>
           </DmPress>
         </View>
 
@@ -210,27 +217,13 @@ export function PartyEditorScreen() {
             <RuneButton label="Add characters" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => setPicking(true)} />
             {party.memberIds.length > 0 ? <RuneButton label="Party sheet" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => router.push(`/party-overview?partyId=${party.id}` as Href)} /> : null}
           </View>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <RuneButton label="Delete party" kind="ghost" height={46} dm style={{ flex: 1 }} onPress={() => setConfirmDelete(true)} />
-            {party.enabled ? (
-              <RuneButton label="Sessions" kind="primary" height={46} dm style={{ flex: 1.4 }} onPress={() => { playSfx('enterCardViewer'); router.push('/sessions' as Href); }} />
-            ) : (
-              <RuneButton
-                label="Set active"
-                kind="primary"
-                height={46}
-                dm
-                disabled={!canEnable}
-                style={{ flex: 1.4 }}
-                onPress={() => void makeActive()}
-              />
-            )}
-          </View>
+          {/* Sessions are always reachable now: a campaign owns them, and none of them is gated. */}
+          <RuneButton label="Sessions" kind="primary" height={46} dm onPress={() => { playSfx('enterCardViewer'); router.push(`/sessions?campaign=${party.id}` as Href); }} />
         </View>
       </View>
 
       {picking ? <MemberPicker candidates={candidates} onCancel={() => setPicking(false)} onAdd={addSelected} onImport={onImport} /> : null}
-      {renaming ? <NameDialog title="Rename Party" initial={party.name} confirmLabel="Rename" onConfirm={(name) => { setRenaming(false); commit({ ...party, name }); }} onCancel={() => setRenaming(false)} /> : null}
+      {editingIdentity ? <IdentityEditor title="Edit campaign" namePlaceholder="Campaign" initial={party} onSave={saveIdentity} onCancel={() => setEditingIdentity(false)} /> : null}
       {confirmRemove ? (
         <PopupDialog dm
           title="Remove from party?"
@@ -242,9 +235,7 @@ export function PartyEditorScreen() {
         />
       ) : null}
 
-      {confirmDelete ? (
-        <PopupDialog dm title="Delete party?" body={`${party.name} will be removed. The characters themselves are untouched.`} confirmLabel="Delete" destructive onConfirm={() => { setConfirmDelete(false); void deleteParty(party.id).then(() => router.back()); }} onCancel={() => setConfirmDelete(false)} />
-      ) : null}
+
     </AppScreen>
   );
 }

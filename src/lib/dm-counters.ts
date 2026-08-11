@@ -7,11 +7,14 @@
  * fight rather than to the creature, which is why they are additive on the combatant and why the
  * whole of what one IS lives here, apart from any component.
  *
- * Two kinds, and the difference is only what happens at the bottom:
+ * Two kinds, and the difference is what they can do:
  *
- *  - a RESOURCE is a plain number. It starts somewhere and the DM moves it.
- *  - a COUNTDOWN may LOOP: pushed below zero it goes back to where it started, so a recurring timer
- *    is reset by the same button that runs it down rather than by opening the editor.
+ *  - a RESOURCE is a plain number. It starts somewhere and the DM moves it either way.
+ *  - a COUNTDOWN only ever counts DOWN (v0.41.4, owner). It may LOOP, in which case pushing it below
+ *    zero puts it back where it started, so a recurring timer is reset by the same button that runs
+ *    it down. If it does not loop, reaching zero is the END: the minus becomes an X, and pressing
+ *    that X fells the adversary exactly as the X on any other entry does. Recovering it winds every
+ *    countdown back to its start, so the same threat can come round again.
  *
  * TAKE OVER is the third idea and the one worth reading twice. A counter marked that way stops being
  * a detail of the adversary and becomes the reason the entry exists: the stats go, and what is left
@@ -51,9 +54,51 @@ export function newCounter(id: string): AdversaryCounter {
  * the start is left alone, because a DM who wants six rounds instead of four should get six.
  */
 export function stepCounter(c: AdversaryCounter, delta: number): AdversaryCounter {
+  if (!canStep(c, delta)) return c;
   const next = c.value + delta;
   if (c.kind === 'countdown' && c.loop && next < 0) return { ...c, value: c.start };
   return { ...c, value: next };
+}
+
+/**
+ * Whether this counter may be moved this way at all (v0.41.4, owner).
+ *
+ * "Countdown type counters should just be to decrease, they cannot increase their counter." A timer
+ * that can be wound backwards by a mis-tap is not a timer, and the plus button was there only because
+ * a resource needs one. The rule lives here rather than in the control so that the control can simply
+ * draw what is possible, and so that the rule is a sentence a test can state.
+ */
+export function canStep(c: AdversaryCounter, delta: number): boolean {
+  if (delta >= 0 && c.kind === 'countdown') return false;
+  return !isSpent(c);
+}
+
+/**
+ * A non-looping countdown that has reached the bottom.
+ *
+ * There is nowhere further for it to go and nothing for it to come back to, so its minus button turns
+ * into an X and the press means "this is over": the adversary falls. A LOOPING countdown is never
+ * spent, because zero is where its wrap is reached from.
+ */
+export function isSpent(c: AdversaryCounter): boolean {
+  return c.kind === 'countdown' && !c.loop && c.value <= 0;
+}
+
+/** Wind every countdown back to its start. What Recover does to a felled counter (v0.41.4, owner). */
+export const restartCountdowns = (list: AdversaryCounter[] | undefined): AdversaryCounter[] | undefined =>
+  list?.map((c) => (c.kind === 'countdown' ? { ...c, value: c.start } : c));
+
+/**
+ * Commit an edited START (v0.41.4, owner: the counter "must get reset to that start at value when
+ * pressing save").
+ *
+ * {@link setStart} is the right rule WHILE TYPING: it carries a counter that has not been used yet
+ * and leaves one that is mid-fight alone, so a stray keystroke does not undo the night. Save is a
+ * deliberate act, so a start that actually changed moves the value with it, no questions.
+ */
+export function commitStarts(before: AdversaryCounter[] | undefined, after: AdversaryCounter[]): AdversaryCounter[] {
+  const was = new Map((before ?? []).map((c) => [c.id, c.start]));
+  return after.map((c) => (was.has(c.id) && was.get(c.id) !== c.start ? { ...c, value: c.start } : c));
 }
 
 /** Put a counter back where it started, without touching anything else about it. */

@@ -74,7 +74,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
  * library passes none, because browsing a roster is not playing an encounter, and the same rows then
  * draw their buttons dimmed and inert.
  */
-export function StatBlockDetail({ c, onCounter }: { c: Combatant; onCounter?: (counterId: string, delta: number) => void }) {
+export function StatBlockDetail({ c, onCounter, onCounterSpent }: { c: Combatant; onCounter?: (counterId: string, delta: number) => void; onCounterSpent?: () => void }) {
   const counters = detailCounters(c.counters);
   const hasHeader = !!(c.tier || c.role);
   const thr = c.thresholds && (c.thresholds.major || c.thresholds.severe) ? `${c.thresholds.major}/${c.thresholds.severe}` : 'None';
@@ -106,7 +106,7 @@ export function StatBlockDetail({ c, onCounter }: { c: Combatant; onCounter?: (c
 
       {counters.length ? (
         <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 9 }}>
-          {counters.map((x) => <CounterRow key={x.id} c={x} onStep={onCounter ? (d) => onCounter(x.id, d) : undefined} />)}
+          {counters.map((x) => <CounterRow key={x.id} c={x} onStep={onCounter ? (d) => onCounter(x.id, d) : undefined} onSpent={onCounterSpent} />)}
         </View>
       ) : null}
 

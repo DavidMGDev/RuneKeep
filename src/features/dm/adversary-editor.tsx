@@ -17,7 +17,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { ADVERSARY_ROLES, type AdversaryFeature, type AdversaryRole, type FeatureKind } from '@/data/adversaries';
-import { type AdversaryCounter, type CounterKind, meaningfulCounters, newCounter, setStart } from '@/lib/dm-counters';
+import { type AdversaryCounter, commitStarts, type CounterKind, meaningfulCounters, newCounter, setStart } from '@/lib/dm-counters';
 import { type Combatant } from '@/lib/session';
 import { AdversaryPortrait } from './adversary-detail';
 import { DmModal, DmPress } from './dm-ui';
@@ -312,7 +312,7 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
         </ScrollView>
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
           <RuneButton label="Cancel" kind="ghost" height={44} dm style={{ flex: 1 }} onPress={onCancel} />
-          <RuneButton label="Save" kind="secondary" height={44} dm style={{ flex: 1 }} onPress={() => onSave({ ...c, counters: meaningfulCounters(counters), features: features.filter((f) => f.name.trim() || f.text.trim()) })} />
+          <RuneButton label="Save" kind="secondary" height={44} dm style={{ flex: 1 }} onPress={() => onSave({ ...c, counters: commitStarts(initial.counters, meaningfulCounters(counters)), features: features.filter((f) => f.name.trim() || f.text.trim()) })} />
         </View>
       </ChamferBox>
     </DmModal>
