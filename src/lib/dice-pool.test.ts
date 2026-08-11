@@ -1,4 +1,4 @@
-import { addDie, dieVerdicts, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollCents, rollTally, sortPool } from './dice-pool';
+import { addDie, dieVerdicts, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollBand, rollCents, rollTally, sortPool } from './dice-pool';
 
 const die = (type: PoolDie['type'], value: number | null = null, side?: PoolDie['side'], id = `${type}-${Math.random()}`): PoolDie => ({ id, type, value, side });
 
@@ -104,15 +104,53 @@ describe('dualityVerdict', () => {
 
 describe('rollCents', () => {
   it('climbs across the throw', () => {
-    const pool = [die('d6'), die('d6'), die('d6')];
+    const pool = [die('d6', 3), die('d6', 3), die('d6', 3)];
     expect(rollCents(pool, 1)).toBeGreaterThan(rollCents(pool, 0));
     expect(rollCents(pool, 2)).toBeGreaterThan(rollCents(pool, 1));
   });
 
-  it('climbs further when the die size changes', () => {
-    const same = [die('d6'), die('d6')];
-    const grown = [die('d6'), die('d20')];
-    expect(rollCents(grown, 1) - rollCents(grown, 0)).toBeGreaterThan(rollCents(same, 1) - rollCents(same, 0));
+  it('pitches the same fraction of any die the same way', () => {
+    // The owner's own example: a 2 on a d4 and a 4 on a d8 are both half of what the die could do.
+    expect(rollCents([die('d4', 2)], 0)).toBe(rollCents([die('d8', 4)], 0));
+    expect(rollCents([die('d12', 6)], 0)).toBe(rollCents([die('d20', 10)], 0));
+  });
+
+  it('deepens with a bad face and lifts with a good one', () => {
+    const worst = rollCents([die('d20', 1)], 0);
+    const middling = rollCents([die('d20', 10)], 0);
+    const best = rollCents([die('d20', 20)], 0);
+    expect(worst).toBeLessThan(middling);
+    expect(middling).toBeLessThan(best);
+    // The face matters far more than the die's place in the throw, which is the whole point.
+    expect(middling - worst).toBeGreaterThan(rollCents([die('d6', 3), die('d6', 3)], 1) - rollCents([die('d6', 3), die('d6', 3)], 0));
+  });
+});
+
+describe('rollBand', () => {
+  // d4 + d8 + d12 = 24, so the top quarter starts at 18 and the bottom one ends at 6 (owner).
+  const mixed = (a: number, b: number, c: number) => [die('d4', a), die('d8', b), die('d12', c)];
+
+  it('calls the top quarter high', () => {
+    expect(rollBand(mixed(4, 8, 12))).toBe('high');
+    expect(rollBand(mixed(3, 5, 10))).toBe('high'); // exactly 18
+  });
+
+  it('calls the bottom quarter low', () => {
+    expect(rollBand(mixed(1, 1, 1))).toBe('low');
+    expect(rollBand(mixed(2, 2, 2))).toBe('low'); // exactly 6
+  });
+
+  it('calls everything between them middling', () => {
+    expect(rollBand(mixed(2, 2, 3))).toBe('mid');
+    expect(rollBand(mixed(3, 5, 9))).toBe('mid'); // one under the top quarter
+  });
+
+  it('ignores the modifier, because a flat bonus says nothing about the dice', () => {
+    expect(rollBand([die('d20', 3)])).toBe('low');
+  });
+
+  it('has no opinion about an empty pool', () => {
+    expect(rollBand([])).toBe('mid');
   });
 });
 

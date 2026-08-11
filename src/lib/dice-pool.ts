@@ -227,17 +227,52 @@ export function dieVerdicts(pool: PoolDie[]): Record<string, DieVerdict> {
 }
 
 /**
- * How far a die's roll sound is pitched up, in cents.
+ * How far a die's roll sound is pitched, in cents (rewritten v0.41.1, owner).
  *
- * The owner asked to hear the shape of the handful: "starting at a lower pitch and raising the pitch
- * on each individual dice and even more raised when changing dice size so that it can be felt". So a
- * die's place in the throw lifts it a little and reaching a bigger die lifts it a lot, which makes a
- * pool of mixed dice sound like a staircase with landings rather than a ramp.
+ * v0.40.0 pitched a die by its PLACE in the throw and by the size of die it had reached, which said
+ * something true but useless: you could hear how far through the handful you were and nothing about
+ * how it was going. A critical failure then needed a sound of its own to be noticed at all.
+ *
+ * It is the RESULT that is pitched now, as a fraction of what the die could have rolled, so a 2 on a
+ * d4 and a 4 on a d8 are the same lift (the owner's own example) and a 1 on a d20 is the deepest
+ * thing in the app. The handful still climbs as it goes, but by a twelfth of what it used to, because
+ * that climb is now the quiet bed under the part worth hearing rather than the tune itself.
  */
+const CENTS_BASE = -140;
+/** How much each further die of one throw lifts the pitch. Small on purpose (owner: "lower the amount"). */
+const CENTS_PER_DIE = 12;
+/** The whole span between a die's worst face and its best. */
+const CENTS_SPREAD = 900;
+
 export function rollCents(pool: PoolDie[], index: number): number {
-  let step = 0;
-  for (let i = 1; i <= index && i < pool.length; i++) if (DIE_MAX[pool[i].type] !== DIE_MAX[pool[i - 1].type]) step++;
-  return -420 + index * 34 + step * 150;
+  const d = pool[index];
+  if (!d) return CENTS_BASE;
+  // A face of null is a die that has not landed; treat it as the middle rather than as its worst.
+  const frac = d.value == null ? 0.5 : d.value / DIE_MAX[d.type];
+  return Math.round(CENTS_BASE + index * CENTS_PER_DIE + (frac - 0.5) * CENTS_SPREAD);
+}
+
+/**
+ * Where a throw landed in its own range of outcomes (v0.41.1, owner).
+ *
+ * "This way it de-clutters the soundscape and it explains to the player when they rolled high no
+ * matter if they landed 0 crits." One sound at the end of a throw, chosen by how the dice actually
+ * fell rather than by whether any single one of them hit its extreme.
+ *
+ * The bands are measured against ZERO and the maximum, which is the owner's arithmetic verbatim: for
+ * d4 + d8 + d12 the top quarter is 18 and up and the bottom quarter is 6 and down. The modifier is
+ * deliberately left out of it, because a flat +3 says nothing about how the dice fell.
+ */
+export type RollBand = 'low' | 'mid' | 'high';
+
+export function rollBand(pool: PoolDie[]): RollBand {
+  const max = pool.reduce((s, d) => s + DIE_MAX[d.type], 0);
+  if (max <= 0) return 'mid';
+  const sum = pool.reduce((s, d) => s + (d.value ?? 0), 0);
+  const quarter = max / 4;
+  if (sum >= max - quarter) return 'high';
+  if (sum <= quarter) return 'low';
+  return 'mid';
 }
 
 /** The one impure line in the file: a fair face of this die. */
