@@ -28,7 +28,7 @@ import { box } from '@/lib/design';
 import { playSfx } from '@/lib/sfx';
 import { DIE_MAX, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK } from '../components/card-tokens-data';
 import { DieButton, DieWash } from '../components/card-tokens';
-import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollBand, rollCents, rollTally, rollValue, sortPool, TRAY_DICE } from '@/lib/dice-pool';
+import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, hasDuality, layoutRolled, type PoolDie, poolGrid, poolTotal, removeDie, rollBand, rollCents, rollTally, rollValue, rollVoice, sortPool, staggerScale, TRAY_DICE } from '@/lib/dice-pool';
 import { diceOf } from '@/lib/dice-presets';
 import { ChamferFrame } from './chamfer';
 import { DiceButtonArt } from './dice-button';
@@ -252,8 +252,25 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
    * start the spin twice for one throw. The new face and verdict are read from a ref when the spin
    * is over.
    */
+  const firstRun = useRef(true);
   useEffect(() => {
-    if (roll === 0 || reduced) { setFace(live.current.value); return; }
+    const first = firstRun.current;
+    firstRun.current = false;
+    /**
+     * A die added to a pool that has ALREADY been thrown must not spin (v0.41.2, owner).
+     *
+     * This is what was still turning dice on arrival after v0.41.1 deleted the entry tumble, and it
+     * had been here since v0.39. The effect is keyed on `roll`, and an effect keyed on anything runs
+     * on MOUNT as well as on change, so a die tapped into the tray after a throw mounted with `roll`
+     * already past zero and immediately spun, swelled and reacted, exactly as though it had been
+     * thrown. Pressing Roll during that phantom spin is then a throw interrupting a throw, which is
+     * how the angles got mangled.
+     *
+     * The face tells the two apart with no extra bookkeeping: a die being THROWN mounts with a value
+     * (a trait roll mints its pair and throws it in one commit), and a die being PICKED UP mounts with
+     * none. So a first run with no face is an arrival, and it is silent.
+     */
+    if (roll === 0 || reduced || (first && die.value == null)) { setFace(live.current.value); return; }
     setFace(null);
     const spin = setTimeout(() => {
       /**
@@ -569,8 +586,11 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     if (dice.length === 0) return;
     clearTimers();
     const id = ++throwId.current;
-    const thrown = dice.map((d) => ({ ...d, value: rollValue(d.type) }));
-    const order = sortPool(thrown);
+    // Every face is decided HERE, in one go, and then dealt out low to high within each kind of die
+    // (v0.41.2, owner). See `layoutRolled`: which of four d6 shows the 2 is presentation, and sorting
+    // them is what stops the pitch scribbling up and down across a mixed handful.
+    const order = layoutRolled(sortPool(dice.map((d) => ({ ...d, value: rollValue(d.type) }))));
+    const thrown = order;
     const tally = rollTally(order);
     const verdictsFor = dieVerdicts(order);
     const final = poolTotal(order, mod?.value ?? 0);
@@ -579,12 +599,16 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
      *
      * `crit` is unconditional: a critical is a critical whatever else happened alongside it, which is
      * the fix for "the total number sometimes fails to get highlighted with its golden critical
-     * success effect". `celebrate` widens that to a throw in its own top quarter, and `boost` is the
-     * two of them together.
+     * success effect". `boost` is a critical that ALSO put the throw in its top quarter.
+     *
+     * `celebrate` is the number going gold, and v0.41.2 hangs it on the VOICE rather than on the band
+     * directly, so that the duality pair's priority reaches the picture as well as the sound: a pair
+     * thrown with Fear does not celebrate on the strength of a high total, because it is a Fear roll.
      */
     const band = rollBand(order);
+    const voice = rollVoice(order);
     const crit = tally.crits > 0;
-    const celebrate = crit || band === 'high';
+    const celebrate = crit || voice === 'critical';
     const boost = crit && band === 'high';
     setPool(thrown);
     setBoostDice(boost);
@@ -596,7 +620,11 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     setRolling(true);
     setRoll((n) => n + 1);
 
-    const land = (i: number) => (reduced ? 0 : i * STAGGER_MS + SPIN_MS * 0.84);
+    // Two dice at the ordinary pace are over before they have begun; ten at a leisurely one stop
+    // being a throw. `staggerScale` stretches the gap by a third for a pair and hands it back a
+    // twentieth per extra die (owner, v0.41.2).
+    const gap = STAGGER_MS * staggerScale(order.length);
+    const land = (i: number) => (reduced ? 0 : i * gap + SPIN_MS * 0.84);
     const resultAtMs = reduced ? 0 : land(order.length - 1);
     setResultAt(resultAtMs);
 
@@ -611,7 +639,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     order.forEach((d, i) => {
       timers.current.push(setTimeout(() => {
         if (throwId.current !== id) return;
-        playSfx('placeToken', { cents: rollCents(order, i) });
+        playSfx('placeToken', { cents: rollCents(d) });
         /**
          * The running total is DERIVED, not accumulated (v0.41.0, owner).
          *
@@ -664,22 +692,21 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
         setSettled(true);
         setOutcome({ crit, celebrate, boost });
         /**
-         * ONE sound, chosen by where the throw landed in its own range (v0.41.1, owner).
+         * ONE sound, and `rollVoice` alone decides which (v0.41.2, owner).
          *
-         * The old rule asked whether any single die had hit its extreme, which says very little about
-         * the handful: five d6 totalling 28 out of 30 was a shrug and a lone 20 that came with three
-         * 1s was silence. The bands say it properly. "This way it de-clutters the soundscape and it
-         * explains to the player when they rolled high no matter if they landed 0 crits."
-         *
-         * Hope and Fear keep their own voices in between, because a duality roll is a statement of its
-         * own and the pair has been making it since v0.39.
+         * `muted` is the new one: the critical fanfare pitched well down, for an ordinary die that hit
+         * its maximum on a throw the duality pair lost. The die still flares; the room does not cheer.
          */
-        if (celebrate) playSfx('gainGoldenHp');
-        else if (v === 'hope') playSfx('gainHope');
-        else if (v === 'fear') playSfx('loseHope', { cents: -200 });
-        else if (band === 'low') playSfx('cardDisable', { cents: -260 });
-        else playSfx('transitionIconFilled');
-        if (!reduced && (celebrate || band === 'low' || tally.fails > 0)) {
+        playSfx(
+          voice === 'critical' ? 'gainGoldenHp'
+          : voice === 'muted' ? 'gainGoldenHp'
+          : voice === 'hope' ? 'gainHope'
+          : voice === 'fear' ? 'loseHope'
+          : voice === 'bad' ? 'cardDisable'
+          : 'transitionIconFilled',
+          voice === 'muted' ? { cents: -520 } : voice === 'fear' ? { cents: -200 } : voice === 'bad' ? { cents: -260 } : undefined,
+        );
+        if (!reduced && (celebrate || voice === 'bad' || tally.fails > 0)) {
           totalPop.value = celebrate
             ? withSequence(
                 // Both at once grows a lot further, which is the point of noticing that it is both.

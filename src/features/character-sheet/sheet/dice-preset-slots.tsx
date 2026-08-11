@@ -16,6 +16,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { Overlay } from '@/components/overlay-host';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
@@ -345,19 +346,22 @@ export function DicePresetSlots({ presets, trayDice, onWrite, onPlay }: {
         <Slot key={i} index={i} preset={presets[i] ?? null} onPress={() => tap(i)} onHold={() => hold(i)} />
       ))}
 
+      {/* Drawn at the sheet's root rather than here (v0.41.2, owner): a dialog written inside the
+          DesignStage dims only the scaled design box, which on a phone leaves the parchment showing
+          above and below it. See `components/overlay-host`. */}
       {empty ? (
-        <PopupDialog
+        <Overlay><PopupDialog
           title="Nothing to save yet"
           body="A preset remembers the dice you have out. Pick some up from the carousel first, then tap this slot again."
           confirmLabel="Got it"
           cancelLabel="Got it"
           onConfirm={() => setEmpty(false)}
           onCancel={() => setEmpty(false)}
-        />
+        /></Overlay>
       ) : null}
 
       {editing ? (
-        <PresetEditor
+        <Overlay><PresetEditor
           title={editing.existing ? 'Edit preset' : `Save to slot ${editing.slot + 1}`}
           initial={{ name: editing.existing?.name ?? '', icon: editing.existing?.icon, modifier: editing.existing?.modifier }}
           dice={editing.dice}
@@ -385,7 +389,7 @@ export function DicePresetSlots({ presets, trayDice, onWrite, onPlay }: {
               : undefined
           }
           onCancel={() => setEditing(null)}
-        />
+        /></Overlay>
       ) : null}
     </>
   );
