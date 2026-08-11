@@ -35,6 +35,7 @@ export function PopupDialog({
   cancelLabel = 'Cancel',
   destructive,
   dm,
+  actionsGap = 22,
   onConfirm,
   onCancel,
   children,
@@ -47,6 +48,13 @@ export function PopupDialog({
   destructive?: boolean;
   /** Desaturated frame + buttons for DM Mode. */
   dm?: boolean;
+  /**
+   * How far the Cancel and Confirm row sits below `children` (v0.41.1, owner).
+   *
+   * 22 is right under a paragraph of text. A dialog whose children END in a row of buttons of their
+   * own wants far less, or the two rows read as belonging to different dialogs.
+   */
+  actionsGap?: number;
   onConfirm: () => void;
   onCancel: () => void;
   children?: ReactNode;
@@ -70,7 +78,7 @@ export function PopupDialog({
         {/* v0.35.1 (owner): a dialog whose two buttons say the SAME thing shows ONE. Some dialogs put
             their real choices in `children` and use this row only to get out (the encounter restart
             offered "Cancel" twice, side by side, which reads as a bug because it is one). */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: actionsGap }}>
           <RuneButton label={cancelLabel} kind={cancelLabel === confirmLabel ? 'secondary' : 'ghost'} height={42} dm={dm} style={{ flex: 1 }} onPress={onCancel} />
           {cancelLabel === confirmLabel ? null : (
             <RuneButton label={confirmLabel} kind={destructive ? 'primary' : 'secondary'} height={42} dm={dm} style={{ flex: 1 }} onPress={onConfirm} />

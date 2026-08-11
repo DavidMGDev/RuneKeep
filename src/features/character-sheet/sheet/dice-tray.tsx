@@ -28,7 +28,7 @@ import { box } from '@/lib/design';
 import { playSfx } from '@/lib/sfx';
 import { DIE_MAX, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK } from '../components/card-tokens-data';
 import { DieButton, DieWash } from '../components/card-tokens';
-import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollCents, rollTally, rollValue, sortPool, TRAY_DICE } from '@/lib/dice-pool';
+import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, hasDuality, type PoolDie, poolGrid, poolTotal, removeDie, rollBand, rollCents, rollTally, rollValue, sortPool, TRAY_DICE } from '@/lib/dice-pool';
 import { diceOf } from '@/lib/dice-presets';
 import { ChamferFrame } from './chamfer';
 import { DiceButtonArt } from './dice-button';
@@ -166,7 +166,7 @@ interface Slot { x: number; y: number; cell: number }
  * but a die must not show its answer before its own spin has finished, or the last die of a big
  * handful would be readable half a second before it lands.
  */
-const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, resultAt, verdict, reduced, onRemove }: {
+const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, resultAt, verdict, boost, reduced, onRemove }: {
   die: PoolDie;
   slot: Slot;
   /** Where it enters from, on its first frame only. Null for a die that is already on the table. */
@@ -191,6 +191,13 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
   resultAt: number;
   /** What this die's result earned it. See `dice-pool`'s `dieVerdicts`. */
   verdict: DieVerdict;
+  /**
+   * A critical that ALSO put the throw in its top quarter grows twice as far (v0.41.1, owner).
+   *
+   * "If both are fulfilled, make the dice grow double the amount during the crit animation and then
+   * shrink back to normal." Two good things at once should not look the same as one.
+   */
+  boost: boolean;
   reduced: boolean;
   onRemove: (id: string) => void;
 }) {
@@ -205,8 +212,8 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
   /** The critical's white wash, drawn over the face at rising opacity. */
   const flash = useSharedValue(0);
   const [face, setFace] = useState<number | null>(die.value);
-  const live = useRef({ value: die.value, verdict });
-  live.current = { value: die.value, verdict };
+  const live = useRef({ value: die.value, verdict, boost });
+  live.current = { value: die.value, verdict, boost };
 
   useEffect(() => {
     const ms = reduced ? 0 : ENTRY_MS;
@@ -217,23 +224,18 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
   }, [slot.x, slot.y, slot.cell, cx, cy, scale, reduced]);
 
   /**
-   * A die tumbles ON THE WAY IN, not after it arrives (v0.41.0, owner).
+   * A die NEVER turns except while it is being rolled (v0.41.1, owner).
    *
-   * The entry moved the die and then, separately, a roll turned it, so a die tapped into the tray slid
-   * flat into place and only afterwards rotated, which reads as two animations bolted together. It
-   * turns as it travels now, over the same 280ms, so picking a die up is one motion.
+   * v0.41.0 tumbled a die on its way into the tray, and the owner's report is the case against it:
+   * "the dice now depending on where they are placed in the UI get very buggy with their rotation,
+   * many times being placed on native at very awkward angles". Two turning animations that can
+   * interrupt each other have too many ways to end mid-turn, and every one of them strands a die on
+   * its side with no way back but rolling again.
    *
-   * It is safe to interrupt: every spin rounds `turn` to a whole number before animating (see the
-   * throw below), so a roll pressed during the entry no longer has to be held off and the tray does
-   * not make you wait to set a handful up.
+   * So `turn` has exactly one writer, the throw below, and it is the only rotation in this component
+   * apart from a landing die's shake, which always returns to zero. A die at rest is upright, always,
+   * by construction rather than by care.
    */
-  const entered = useRef(false);
-  useEffect(() => {
-    if (entered.current || !from || reduced) { entered.current = true; return; }
-    entered.current = true;
-    turn.value = withTiming(turn.value + 1, { duration: ENTRY_MS, easing: Easing.out(Easing.cubic) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   /**
    * The throw, and what the result does when it lands (v0.40.0, owner).
@@ -290,7 +292,7 @@ const PoolDieView = memo(function PoolDieView({ die, slot, from, roll, delay, re
           withTiming(0, { duration: 320, easing: Easing.in(Easing.cubic) }),
         );
         swell.value = withSequence(
-          withTiming(1.9, { duration: 220, easing: Easing.out(Easing.back(2)) }),
+          withTiming(live.current.boost ? 3.8 : 1.9, { duration: 220, easing: Easing.out(Easing.back(2)) }),
           withTiming(0, { duration: 460, easing: Easing.inOut(Easing.sin) }),
         );
         shake.value = withSequence(
@@ -426,10 +428,19 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   const [shown, setShown] = useState<number | null>(null);
   /** The throw is over: the number is the total, not a running count. */
   const [settled, setSettled] = useState(false);
-  /** Which way the handful leaned, once it is over. Null when nothing special happened. */
-  const [lean, setLean] = useState<'good' | 'bad' | null>(null);
+  /**
+   * How the finished throw is being celebrated, or not (v0.41.1, owner).
+   *
+   * v0.41.0 kept a single "lean", worked out as `crits > tally.fails`, and that comparison is the bug
+   * the owner reported: one critical alongside one fumble is not a tie to be resolved in the fumble's
+   * favour, it is a critical, and the number simply refused to go gold. A critical is now unconditional
+   * and `celebrate` is the only thing the gold hangs on.
+   */
+  const [outcome, setOutcome] = useState<{ crit: boolean; celebrate: boolean; boost: boolean } | null>(null);
   /** When every critical reacts, measured from the start of the throw. Failures use their own. */
   const [resultAt, setResultAt] = useState(0);
+  /** Whether this throw's criticals grow twice as far. Set with the throw, read by every die. */
+  const [boostDice, setBoostDice] = useState(false);
   /**
    * Which throw is current (v0.41.0, owner: "dice results sometimes get added twice at random").
    *
@@ -529,7 +540,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     });
     setShown(null);
     setSettled(false);
-    setLean(null);
+    setOutcome(null);
     setVerdict(null);
     setModifier(null); // a trait's modifier belongs to the pair it was thrown with, not to a new pool
     playSfx('placeToken', { cents: 140 });
@@ -563,12 +574,25 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     const tally = rollTally(order);
     const verdictsFor = dieVerdicts(order);
     const final = poolTotal(order, mod?.value ?? 0);
+    /**
+     * What the throw came to, decided once and read everywhere (v0.41.1, owner).
+     *
+     * `crit` is unconditional: a critical is a critical whatever else happened alongside it, which is
+     * the fix for "the total number sometimes fails to get highlighted with its golden critical
+     * success effect". `celebrate` widens that to a throw in its own top quarter, and `boost` is the
+     * two of them together.
+     */
+    const band = rollBand(order);
+    const crit = tally.crits > 0;
+    const celebrate = crit || band === 'high';
+    const boost = crit && band === 'high';
     setPool(thrown);
+    setBoostDice(boost);
     setModifier(mod);
     setVerdict(null);
     setShown(mod?.value ?? 0);
     setSettled(false);
-    setLean(null);
+    setOutcome(null);
     setRolling(true);
     setRoll((n) => n + 1);
 
@@ -615,16 +639,15 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     });
 
     /**
-     * A fumble speaks when it lands, once for the throw (v0.41.0, owner).
+     * A fumble has NO sound of its own any more (v0.41.1, owner).
      *
-     * The sound is short (`cardDisable`, 0.56s) where it used to be `loseHope` at 2.15s, which is
-     * right as the voice of Fear and far too much for every 1 in a fistful of d20. Only the FIRST
-     * fumble of a throw is heard: four 1s at 88ms apart is a stutter, not emphasis.
+     * It does not need one: `rollCents` pitches every die by how well it rolled, so a 1 is already the
+     * deepest thing you will hear, and a second sound on top of it was one more thing in a soundscape
+     * the owner asked to declutter. "Instead they should just have their diceroll sound be deeper in
+     * pitch so that the user can feel the difference between that specific rolled 1 and the rest."
+     *
+     * The fumble still SHOWS: it shakes twice and washes the total dark red. Only the voice is gone.
      */
-    if (tally.fails > 0) {
-      const firstFail = order.findIndex((d) => verdictsFor[d.id] === 'fear' && !d.pairId);
-      timers.current.push(setTimeout(() => { if (throwId.current === id) playSfx('cardDisable', { cents: -220 }); }, land(firstFail)));
-    }
 
     /**
      * The last die lands: the criticals all flare together, the verdict is read and the total settles.
@@ -639,15 +662,28 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
         setVerdict(v);
         setShown(final);
         setSettled(true);
-        setLean(tally.crits === 0 && tally.fails === 0 ? null : tally.crits > tally.fails ? 'good' : 'bad');
-        if (tally.crits > 0) playSfx('gainGoldenHp');
+        setOutcome({ crit, celebrate, boost });
+        /**
+         * ONE sound, chosen by where the throw landed in its own range (v0.41.1, owner).
+         *
+         * The old rule asked whether any single die had hit its extreme, which says very little about
+         * the handful: five d6 totalling 28 out of 30 was a shrug and a lone 20 that came with three
+         * 1s was silence. The bands say it properly. "This way it de-clutters the soundscape and it
+         * explains to the player when they rolled high no matter if they landed 0 crits."
+         *
+         * Hope and Fear keep their own voices in between, because a duality roll is a statement of its
+         * own and the pair has been making it since v0.39.
+         */
+        if (celebrate) playSfx('gainGoldenHp');
         else if (v === 'hope') playSfx('gainHope');
         else if (v === 'fear') playSfx('loseHope', { cents: -200 });
-        else if (tally.fails === 0) playSfx('transitionIconFilled');
-        if (!reduced && (tally.crits > 0 || tally.fails > 0)) {
-          totalPop.value = tally.crits > tally.fails
+        else if (band === 'low') playSfx('cardDisable', { cents: -260 });
+        else playSfx('transitionIconFilled');
+        if (!reduced && (celebrate || band === 'low' || tally.fails > 0)) {
+          totalPop.value = celebrate
             ? withSequence(
-                withTiming(1, { duration: 260, easing: Easing.out(Easing.back(2.4)) }),
+                // Both at once grows a lot further, which is the point of noticing that it is both.
+                withTiming(boost ? 1.7 : 1, { duration: 260, easing: Easing.out(Easing.back(2.4)) }),
                 withTiming(0.5, { duration: 300, easing: Easing.inOut(Easing.sin) }),
                 withTiming(0, { duration: 240, easing: Easing.in(Easing.cubic) }),
               )
@@ -657,7 +693,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
                 withTiming(0, { duration: 220, easing: Easing.out(Easing.sin) }),
               );
           // A critical takes the number back off the failures the moment it flares.
-          if (tally.crits > 0) hurt.value = withTiming(0, { duration: 120 });
+          if (crit) hurt.value = withTiming(0, { duration: 120 });
         }
       }, resultAtMs),
     );
@@ -681,7 +717,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     setPool([]);
     setShown(null);
     setSettled(false);
-    setLean(null);
+    setOutcome(null);
     setModifier(null);
     setVerdict(null);
     playSfx('tokenRemove');
@@ -693,7 +729,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
     setPool((p) => removeDie(p, id));
     setShown(null);
     setSettled(false);
-    setLean(null);
+    setOutcome(null);
     setVerdict(null);
     playSfx('tokenRemove');
   }, []);
@@ -727,7 +763,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
       setPool([]);
       setShown(null);
       setSettled(false);
-      setLean(null);
+      setOutcome(null);
       setVerdict(null);
       setModifier(null);
       /**
@@ -767,12 +803,15 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   /**
    * Purple means FEAR, and nothing else (v0.40.1).
    *
-   * The lean drives the number's ANIMATION, not its colour. Painting a bad-leaning throw purple put
-   * "WITH HOPE" in gold over a purple 18, which is two statements disagreeing: purple is the answer to
-   * which of the two d12s won, and a d4 rolling a one has no opinion about that. A good lean can tint
-   * a throw that has no pair to speak for it, because there is nothing for it to contradict.
+   * Painting a bad-leaning throw purple put "WITH HOPE" in gold over a purple 18, which is two
+   * statements disagreeing: purple is the answer to which of the two d12s won, and a d4 rolling a one
+   * has no opinion about that.
+   *
+   * A CRITICAL outranks even that (v0.41.1, owner: the effect "must take priority and never fail to
+   * fire"). It is not a lean and it is not a mood, it is a thing that happened, and a Fear roll with a
+   * natural 20 in it has a natural 20 in it. The purple label still says which d12 won.
    */
-  const totalColor = verdict === 'fear' ? totalFear : verdict ? totalHope : settled && lean === 'good' ? totalHope : totalInk;
+  const totalColor = outcome?.crit ? totalHope : verdict === 'fear' ? totalFear : verdict || outcome?.celebrate ? totalHope : totalInk;
   /**
    * The trait's NAME is not shown while the dice are in the air (v0.40.2, owner).
    *
@@ -820,6 +859,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
             delay={i * STAGGER_MS}
             resultAt={resultAt}
             verdict={verdicts[d.id] ?? 'plain'}
+            boost={boostDice}
             reduced={reduced}
             onRemove={remove}
           />

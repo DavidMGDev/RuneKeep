@@ -1,28 +1,21 @@
-RuneKeep v0.41.0 - Roll presets, a dice button that costs nothing, and a total you can trust.
-
-ROLL PRESETS
-
-- THREE SLOTS, where Evasion and Armor sit. Open the dice tray and the panel keeps its place while its contents change: three squares lined up with Add Card, Add Gear and Favorites above them.
-- SAVE THE DICE YOU HAVE OUT. Pick up a handful, tap an empty slot, give it a name and an icon, and it is yours. Tap an empty slot with nothing in the tray and it says so rather than doing nothing.
-- A MODIFIER, IF YOU WANT ONE, behind its own button so the common case stays simple. It takes a number from a keypad, a variable from your sheet, or both: a preset can be "Hope and Fear, a d6, plus Attack Rolls, plus 2".
-- A VARIABLE IS WORKED OUT WHEN YOU ROLL, so "plus Attack Rolls" keeps up with the cards you have equipped today rather than the ones you had the day you saved it.
-- TAP TO PLAY. The dice deal into the tray one at a time and throw themselves, and the modifier appears over the total the way a trait's does.
-- HOLD TO EDIT. Change the name, the icon or the modifier, press Update dice to make it hold whatever is in the tray now, or delete it.
-
-TWO NEW MODIFIERS
-
-- ATTACK ROLLS and SPELLCAST ROLLS can be granted by any card. Nothing on your sheet moves, because the app does not roll your checks; they exist so a preset can read them.
+RuneKeep v0.41.1 - Dice that stay upright, and a roll you can hear the shape of.
 
 THE DICE
 
-- THE TOTAL IS THE SUM OF THE FACES YOU CAN SEE. It used to add each die to a running number as it landed, which drifted: a pair of d12 showing 11 and 10 with a +1 could total 34. It is worked out from the dice themselves now, so it cannot.
-- CRITICAL FAILURES SHAKE TWICE, the moment they land. They no longer wait for the rest of the handful, and the total takes a brief dark red hit as each one arrives.
-- CRITICAL SUCCESSES ALL FLARE TOGETHER as soon as the last die shows its face. They used to be held half a second behind the failures.
-- DICE TUMBLE ON THE WAY IN. Picking one up used to slide it flat into place and rotate it after it arrived, which also made you wait before rolling. It turns as it travels, and there is nothing to wait for.
-- NO MORE SIDEWAYS NUMBERS. A throw that interrupted another could leave a die stopped at an angle. Every spin starts from a whole turn now.
+- NO ROTATION EXCEPT WHILE ROLLING. A die tumbling on its way into the tray had too many ways to be interrupted, and it was leaving dice parked at odd angles on a phone and turning at random in a browser. Only a throw turns a die now, and a die at rest is upright by construction.
+- THE GOLDEN CRITICAL ALWAYS FIRES. The total decided whether to celebrate by comparing criticals against critical failures, so one of each cancelled out and a natural 20 went unremarked. A critical is a critical, whatever else the handful did.
 
-THE DICE BUTTON
+WHAT A ROLL SOUNDS LIKE
 
-- IT COSTS ALMOST NOTHING TO PRESS. The pattern was drawn over the whole square the panel sits in and then clipped, and pressing it swapped every glyph for a different one. Only the glyphs that touch the panel are built at all, and both layers stay put while the button just changes their opacity.
+- EVERY DIE IS PITCHED BY ITS RESULT, as a fraction of what it could have rolled. A 2 on a d4 and a 4 on a d8 sound the same; a 1 on a d20 is the deepest thing in the app. The handful still climbs as it goes, but far more gently, so what you hear is how it is going rather than how far through it you are.
+- CRITICAL FAILURES HAVE NO SOUND OF THEIR OWN any more. They do not need one: the deep pitch is the sound. They still shake twice and still mark the total.
+- ONE SOUND AT THE END, chosen by where the throw landed in its own range. The top quarter gets the critical fanfare and the golden flourish on the total even with no criticals in it, the bottom quarter gets the short bad-news note, and everything between gets the plain one. Hope and Fear keep their own voices.
+- A CRITICAL IN THE TOP QUARTER grows the dice and the total roughly twice as far. Two good things at once should not look like one.
+
+ROLL PRESETS
+
+- A VARIABLE WITHOUT A NUMBER. The Add a variable button used to appear only once the keypad held something other than zero, so "no flat bonus, just Attack Rolls" was a preset you could not build. It is always there now.
+- LONG NAMES FIT. A slot showed about one short word and cut the rest. A name is now typeset across three lines in a band wider than the tile, at whatever size it takes, so five words fit and a longer one keeps shrinking rather than ever being cut.
+- THE EDIT DIALOG LINES UP. Delete sits over Cancel and Update dice over Save preset, with the two rows close together instead of a gap between them.
 
 Sideload: enable Install unknown apps, then open the APK.

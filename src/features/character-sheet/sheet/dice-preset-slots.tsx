@@ -21,6 +21,7 @@ import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
+import { fitText } from '@/lib/fit-text';
 import { type DicePreset, diceSummary, hasModifier, type PresetModifier, PRESET_SLOTS, presetInitial } from '@/lib/dice-presets';
 import type { EffectFormula } from '@/lib/modifiers';
 import { DimScreen } from '@/lib/screen-dim';
@@ -33,6 +34,17 @@ import { NumberKeypad } from './number-keypad';
 const SLOT_X = [181, 259, 337];
 const SLOT_Y = 216;
 const SLOT_W = 48;
+/**
+ * The band the NAME is typeset into (v0.41.1, owner).
+ *
+ * Wider than the slot, because the slots are 78 apart and only 48 of that is the tile, so there is
+ * room either side that a name may lean into. Three lines tall, which is everything left between the
+ * tile and the bottom of the Evasion panel it all sits inside.
+ */
+const NAME_W = 72;
+const NAME_H = 27;
+/** An uppercase bold glyph as a fraction of its size, biased high so a name comes out small, not cut. */
+const NAME_CHAR_RATIO = 0.68;
 const GOLD = Rune.goldEdge;
 
 /** The variables a preset may carry. `input` is missing on purpose: it belongs to a card, not a roll. */
@@ -53,10 +65,23 @@ const PRESET_VARS: { key: EffectFormula['variable']; label: string }[] = [
 ];
 const varLabel = (v: EffectFormula['variable'] | undefined) => PRESET_VARS.find((p) => p.key === v)?.label;
 
+/**
+ * What the modifier button says.
+ *
+ * A flat zero is not printed (v0.41.1): "+0 + Attack Rolls" reads like a mistake, and a variable with
+ * no flat part alongside it is now a normal thing to want.
+ */
+const modLabel = (mod: PresetModifier | undefined): string => {
+  if (!hasModifier(mod)) return '+ Modifier';
+  const flat = mod!.value !== 0 ? `${mod!.value > 0 ? '+' : ''}${mod!.value}` : null;
+  return [flat, mod!.variable ? varLabel(mod!.variable) : null].filter(Boolean).join(' + ');
+};
+
 // ------------------------------------------------------------------------------------- the slots
 
 function Slot({ index, preset, onPress, onHold }: { index: number; preset: DicePreset | null; onPress: () => void; onHold: () => void }) {
   const label = preset ? preset.name : `Slot ${index + 1}`;
+  const fit = fitText(label.toUpperCase(), { width: NAME_W, height: NAME_H, base: 8.5, lineRatio: 1.2, min: 5, charRatio: NAME_CHAR_RATIO });
   return (
     <Pressable
       onPress={onPress}
@@ -64,7 +89,7 @@ function Slot({ index, preset, onPress, onHold }: { index: number; preset: DiceP
       delayLongPress={380}
       accessibilityRole="button"
       accessibilityLabel={preset ? `${preset.name}. ${diceSummary(preset.dice)}. Tap to roll, hold to edit.` : `Empty preset, slot ${index + 1}. Tap to save the dice you have out.`}
-      style={({ pressed }) => [box(SLOT_X[index], SLOT_Y, SLOT_W, 62), { opacity: pressed ? 0.66 : 1 }]}>
+      style={({ pressed }) => [box(SLOT_X[index], SLOT_Y, SLOT_W, SLOT_W + 3 + NAME_H), { opacity: pressed ? 0.66 : 1 }]}>
       <ChamferBox
         chamfer={9}
         fill={preset ? 'rgba(218,162,73,0.14)' : 'transparent'}
@@ -82,13 +107,24 @@ function Slot({ index, preset, onPress, onHold }: { index: number; preset: DiceP
           <Text style={{ color: Rune.goldText, fontSize: 24, fontFamily: Display.black }}>{presetInitial(preset.name)}</Text>
         )}
       </ChamferBox>
-      {/* The name shrinks to fit rather than truncating: a preset you cannot read is a preset you
-          cannot tell from the one beside it. */}
+      {/**
+        * The name in FULL, however long it is (v0.41.1, owner: "right now only 1 small word fits").
+        *
+        * Two things were stopping it. `adjustsFontSizeToFit` does nothing on react-native-web, so the
+        * browser drew every name at 8.5 and cut it, and `numberOfLines={1}` meant even a phone had one
+        * line of a 48 wide slot to work with, which is about seven characters.
+        *
+        * So the size is chosen by arithmetic instead (the same `fitText` the forged cards use, for the
+        * same reason), and the name is given a band WIDER than the slot it belongs to, reaching into
+        * the gaps on either side, over three lines. Five words fit at a readable size; a longer one
+        * keeps stepping down rather than ever being cut.
+        */}
       <Text
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.6}
-        style={{ width: SLOT_W, marginTop: 3, textAlign: 'center', color: preset ? Rune.goldText : Rune.bronze, fontSize: 8.5, lineHeight: 11, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+        style={{
+          position: 'absolute', left: (SLOT_W - NAME_W) / 2, top: SLOT_W + 3, width: NAME_W, height: NAME_H,
+          textAlign: 'center', color: preset ? Rune.goldText : Rune.bronze,
+          fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.bold, letterSpacing: 0.4, textTransform: 'uppercase',
+        }}>
         {label}
       </Text>
     </Pressable>
@@ -201,6 +237,7 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
         body={diceSummary(dice)}
         confirmLabel="Save preset"
         cancelLabel="Cancel"
+        actionsGap={10}
         onConfirm={() => onSave({ ...draft, name: draft.name.trim() || 'Preset' })}
         onCancel={onCancel}>
         <View style={{ marginTop: 14, gap: 10 }}>
@@ -212,7 +249,7 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
               placeholder="Name it"
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
-              maxLength={22}
+              maxLength={40}
               style={{ color: Rune.sheet, fontSize: 15, fontFamily: Body.semibold, padding: 0 }}
               accessibilityLabel="Preset name"
             />
@@ -228,24 +265,27 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
             <Pressable onPress={() => setKeypad(true)} style={{ flex: 1.2 }} accessibilityRole="button" accessibilityLabel="Set a modifier">
               <ChamferBox chamfer={7} fill="rgba(20,24,31,0.8)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.1} style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
                 <Text numberOfLines={1} style={{ color: hasModifier(mod) ? Rune.goldText : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-                  {hasModifier(mod) ? `${mod!.value >= 0 ? '+' : ''}${mod!.value}${mod!.variable ? ` + ${varLabel(mod!.variable)}` : ''}` : '+ Modifier'}
+                  {modLabel(mod)}
                 </Text>
               </ChamferBox>
             </Pressable>
           </View>
 
-          {hasModifier(mod) ? (
-            <Pressable onPress={() => setPickVar(true)} accessibilityRole="button" accessibilityLabel="Add a variable to the modifier">
-              <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', textAlign: 'center' }}>
-                {mod?.variable ? `Variable: ${varLabel(mod.variable)}` : '+ Add a variable'}
-              </Text>
-            </Pressable>
-          ) : null}
+          {/* Always offered (v0.41.1, owner). It used to appear only once the keypad held something
+              other than zero, so "no flat bonus, just my Attack Rolls" was a modifier you could not
+              express: setting 0 took the button that would have let you name the variable away. */}
+          <Pressable onPress={() => setPickVar(true)} accessibilityRole="button" accessibilityLabel="Add a variable to the modifier">
+            <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', textAlign: 'center' }}>
+              {mod?.variable ? `Variable: ${varLabel(mod.variable)}` : '+ Add a variable'}
+            </Text>
+          </Pressable>
 
+          {/* Delete sits on the LEFT, over Cancel, so the two ways out of this dialog are one column
+              and Update dice is over Save preset (owner, v0.41.1). */}
           {onUpdateDice || onDelete ? (
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 2 }}>
-              {onUpdateDice ? <RuneButton label="Update dice" kind="secondary" dense height={38} style={{ flex: 1 }} onPress={onUpdateDice} /> : null}
               {onDelete ? <RuneButton label="Delete" kind="ghost" dense height={38} style={{ flex: 1 }} onPress={() => setConfirmDelete(true)} /> : null}
+              {onUpdateDice ? <RuneButton label="Update dice" kind="secondary" dense height={38} style={{ flex: 1 }} onPress={onUpdateDice} /> : null}
             </View>
           ) : null}
         </View>
