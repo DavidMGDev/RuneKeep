@@ -10,6 +10,7 @@ import { CATALOG, cardById } from '@/data/catalog';
 import { withRequiredExpansions } from '@/lib/expansion-membership';
 import type { CharacterHistory } from '@/lib/character-history';
 import type { DicePreset } from '@/lib/dice-presets';
+import type { CardAdvance, CardFunction } from '@/lib/card-functions';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, refOf, sourceLabelForCardId, unequippedPermanentSources } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
@@ -62,6 +63,15 @@ export interface ExperienceDef {
    *  faces made somewhere else (the official Daggerheart card creator) that already have their own
    *  layout. The title/type/effects still exist as data; they are simply not printed. */
   fullImage?: boolean;
+  /**
+   * v0.42.1: FUNCTIONAL ELEMENTS on an authored card, the same ones a library card carries.
+   *
+   * A bundled class card can have them too, which is how the Brawler's Combo Die is a tracker rather
+   * than a sentence about one. A card with any of these renders LIVE, never as a bitmap.
+   */
+  functions?: CardFunction[];
+  /** v0.42.1: level advancements this card offers. See `lib/card-advances`. */
+  advances?: CardAdvance[];
 }
 
 /** A player-authored card created on the sheet (#164), routed to one or both decks. */
@@ -262,6 +272,14 @@ export interface CharacterFile {
    * derived rather than stored (see `lib/card-functions`), so a card nobody has touched costs nothing.
    */
   cardFunctions?: Record<string, Record<string, { n?: number; s?: string; i?: number }>>;
+  /**
+   * v0.42.1 (owner): level advancements taken FROM A CARD, such as the Brawler's Combo Die.
+   *
+   * The takes are stored, never their result. Folding them over the authored element at read time is
+   * what lets an expansion fix a counter's ceiling without stranding a character mid-campaign, and it
+   * is the same rule as everywhere else: derive the total, never accumulate it. See `lib/card-advances`.
+   */
+  cardAdvances?: { key: string; tier: number }[];
   /** Explicit category order for the over-scroll ring (#246): keys lead in this order, rest follow. */
   categoryOrder?: string[];
   /** Player-created card "type" labels (#246) for the middle ribbon, on top of the built-in types. */

@@ -1,22 +1,31 @@
-RuneKeep v0.42.1 - Class cards you can actually read.
+RuneKeep v0.42.2 - Make a class by making cards, and a campaign that says what it allows.
 
-CLASS CARDS
+CLASS CREATION IS ASSIGNMENT, NOT CREATION
 
-- LONG ABILITIES ARE SPLIT, AND SAY WHICH PART THEY ARE. "Beastform (1/2)", "Beastform (2/2)". Never "(cont.)", which tells you there is more without telling you how much.
-- SHORT ABILITIES SHARE A CARD. The Guardian's four-word Hope feature no longer sits alone on a card while Unstoppable is crushed onto the one before it.
-- EVERY CLASS IS NOW THREE OR FOUR CARDS, and no card is a wall of text. The Druid was eight.
-- THE RULES ARE LAID OUT TO READ. Line breaks where the book has clauses, bullets where the rule is really a list: Unstoppable's three benefits, Prayer Dice's three uses, Attack of Opportunity's three effects, Commune's chart, Sneak Attack's tier table. Not one word is changed, only where the lines fall.
-- ON THE SHEET, THE CLASS CARD HAS NO COVER PAGE. The flavour text is what you read while choosing a class; mid-session you want the abilities. "Bard 2/3" now reads "Bard 1/2". Character creation keeps the cover.
+- CARDS ARE MADE ON THEIR OWN MERITS, then assigned. A subclass, a feature, a tracker, an item: each is written as its own card and names the class it belongs to. The class card is the centre, and it REPORTS what points at it rather than containing it.
+- ANY CARD CAN NAME A CLASS, and one of that class's subclasses. So a tracker can belong to the whole class or to one subclass of it, and a subclass can be written for a class the base game already has.
+- THE CLASS TELLS YOU WHAT IS MISSING, in the same words the Share button uses. No subclass, no feature card, no starting items: it says so while you are still in the form.
+- STARTING ITEMS ARE ONE EVERYONE GETS AND TWO CHOICES, which is how the printed classes work. Pick from the expansion's own gear or from the base game's loot and consumables.
+- CUSTOM DOMAINS. Write a domain of your own and fill it: one card at every level from 1 to 10, and two at level 1. The domain card counts them and names every level still missing.
+- DOMAIN CARDS CHOOSE THEIR DOMAIN from a list, your own domains first.
 
-AUTHORING
+LEVEL ADVANCEMENTS FROM CARDS
 
-- COUNTERS TAKE A RANGE. A lowest and a highest, so a number can be held between two values instead of only under a ceiling.
-- ELEMENTS CAN BE LOCKED, or hidden until unlocked. A locked counter shows its number and refuses to move, which is how a class says "your Combo Die is a d4" and means it.
-- A LINE ABOVE AND A LINE BELOW any functional element, so a locked one can explain how it is raised right where it sits.
-- LEVEL ADVANCEMENTS, in the model: an element can be raised, set or unlocked, at chosen tiers, once or twice per tier.
-- DOMAINS ARE CHOSEN, NOT TYPED. A typed domain matched nothing, so a custom class granted no cards at all. They are chips now, and a class takes exactly two.
-- VERSIONS RAISE THEMSELVES. Every save bumps the number, so an update always reaches players who already have the pack. It is still shown, for when a player asks which one they are on.
-- THE "WHAT ARE YOU MAKING?" LIST IS GROUPED: a class and what belongs to it, who a character is, what they carry, anything else.
-- The class form no longer prints its own heading twice.
+- THE BRAWLER'S COMBO DIE IS A REAL TRACKER. It sits on the ability card as a d4, it cannot be pressed, and it goes up a size when you take the level advancement, which is now in the level-up list where the rulebook says it should be.
+- ANY AUTHORED ELEMENT CAN OFFER ONE. Tick it, choose the tiers, choose once or twice per tier, and choose what taking it does: moves it, sets it, or unlocks it.
+- WHAT IS STORED IS THE TAKE, never the result. So a pack can fix a counter's ceiling later without stranding a character mid-campaign.
+
+CAMPAIGN SETTINGS
+
+- A DM SAYS WHAT THEIR CAMPAIGN ALLOWS, in a checklist that works like Characterize: classes, ancestries, communities and whole creation steps, with Enable all and Disable all on every group.
+- IT SHIPS INSIDE THE EXPANSION. Anyone who enables the pack creates characters inside those rules, and is told which pack is limiting them rather than left looking at a creator with four classes missing.
+- A STEP WITH NOTHING LEFT HIDES ITSELF. Turning off every ancestry is the same statement as turning off the ancestry step.
+- ONLY WHAT IS TURNED OFF IS SAVED, so an option added to the app next month arrives available instead of arriving banned.
+
+THE EXPANSION EDITOR
+
+- CARDS ARE SORTED AND PAGED. The class first, its subclasses and features after it, every domain's cards together in level order, cut into pages with headings. A finished class is a table of contents instead of a seventy-card scroll.
+- MOVE OR COPY A CARD TO ANOTHER EXPANSION, and what it needs travels with it: a subclass takes its class, a domain card takes its domain, a class takes its subclasses, its features and its items. You are told what is coming before you commit.
+- THE CREATOR WEARS THE DM COLOURS, and asks first. Authoring is DM work, so opening an expansion offers to turn DM mode on, once, and explains what that changes.
 
 Sideload: enable Install unknown apps, then open the APK.

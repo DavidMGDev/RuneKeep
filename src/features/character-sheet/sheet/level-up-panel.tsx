@@ -9,7 +9,8 @@ import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { useScreenInsets } from '@/components/app-screen';
 import { Body, Display, Rune } from '@/constants/theme';
-import { advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, MAX_LEVEL, picksUsed, tierForLevel } from '@/lib/leveling';
+import { advanceSummary, offeredAdvances } from '@/lib/card-advances';
+import { advanceCardsOf, advOption, advRemaining, applyLevelUp, availableAdvancements, type ChosenAdv, isTierStart, type LevelDefaults, type LevelUpPlan, MAX_LEVEL, picksUsed, tierForLevel } from '@/lib/leveling';
 import type { CharacterFile } from '@/lib/character-file';
 import { type CompanionState, COMPANION_OPTIONS, companionOptionDef } from '@/lib/companion';
 import { playSfx } from '@/lib/sfx';
@@ -191,6 +192,8 @@ export function LevelUpPanel({
     });
   };
 
+  /** v0.42.1: the character's cards that offer a level advancement. See `lib/card-advances`. */
+  const advanceCards = advanceCardsOf(file);
   const picks = picksUsed(takes);
   const remainingPicks = 2 - picks;
   const takesOfKey = (k: string) => takes.filter((t) => t.key === k).length;
@@ -227,6 +230,7 @@ export function LevelUpPanel({
     if (needs === 'traits') return (t.traits ?? []).length === 2;
     if (needs === 'exps') return (t.expIds ?? []).length === 2;
     if (needs === 'domain') return selectedDomains.length === 2;
+    if (needs === 'card') return !!t.cardAdvanceKey;
     // #311: multiclass needs a class + a subclass foundation card, and a domain from that class unless
     // the class offers no domain the character lacks (can't happen with real data, but don't soft-lock).
     if (needs === 'multiclass') {
@@ -298,6 +302,8 @@ export function LevelUpPanel({
         out.push(names.length ? `+1 to ${names.join(' and ')}` : opt.label);
       } else if (a.key === 'domain' && a.domainCardId) {
         out.push(`Extra domain card: ${cardTitle(a.domainCardId)}`);
+      } else if (a.key === 'card' && a.cardAdvanceKey) {
+        out.push(advanceCards.flatMap((c) => c.advances ?? []).find((x) => a.cardAdvanceKey!.endsWith(`|${x.id}`))?.label ?? opt.label);
       } else if (a.key === 'multiclass' && a.multiclass) {
         out.push(`Multiclassed into ${classOptions.find((c) => c.key === a.multiclass)?.label ?? a.multiclass}`);
       } else {
@@ -473,6 +479,21 @@ export function LevelUpPanel({
                           const sel = (t.expIds ?? []).includes(e.id);
                           return <Chip key={e.id} label={e.title} on={sel} disabled={!sel && (t.expIds ?? []).length >= 2} onPress={() => toggleIn(i, 'expIds', e.id, 2)} />;
                         })}
+                      </View>
+                    ) : null}
+                    {/* v0.42.1 (owner): the advancements a CARD offers, such as the Brawler's Combo
+                        Die. Only what is still available at this tier is listed, and a pick made in
+                        another take on this same level-up is already excluded. */}
+                    {opt.needs === 'card' ? (
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                        {offeredAdvances(
+                          advanceCards,
+                          tier,
+                          file.cardAdvances,
+                          takes.flatMap((x, j) => (j !== i && x.cardAdvanceKey ? [x.cardAdvanceKey] : [])),
+                        ).map((o) => (
+                          <Chip key={o.key} label={o.advance.label || advanceSummary(o)} on={t.cardAdvanceKey === o.key} onPress={() => setField(i, { cardAdvanceKey: t.cardAdvanceKey === o.key ? undefined : o.key })} />
+                        ))}
                       </View>
                     ) : null}
                     {opt.needs === 'multiclass' ? (

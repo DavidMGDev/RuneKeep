@@ -210,6 +210,18 @@ export function applyAdvance(f: CardFunction, state: FunctionState, effect: Adva
     if (f.kind === 'cycle') { const i = clampIndex(effect.value, f.options?.length ?? 0); return { fn: { ...f, startIndex: i }, state: { i } }; }
     return { fn: { ...f, placeholder: effect.text ?? f.placeholder }, state: { s: effect.text ?? '' } };
   }
+  /**
+   * A step on a CYCLE moves it along its own list and CLAMPS at the end (v0.42.1).
+   *
+   * A cycle wraps when the player presses it, because that is what a toggle does. An advancement is
+   * not a press: "one step bigger" on a d12 Combo Die is not a d4, it is a d12, so the last option is
+   * where it stops.
+   */
+  if (f.kind === 'cycle') {
+    const last = Math.max(0, (f.options?.length ?? 0) - 1);
+    const at = (n: number) => Math.max(0, Math.min(last, n));
+    return { fn: { ...f, startIndex: at((f.startIndex ?? 0) + effect.by) }, state: { i: at((stateOf(f, state).i ?? 0) + effect.by) } };
+  }
   // A step moves the whole range, which is what "one step bigger" means for a die.
   if (f.kind !== 'counter') return { fn: f, state: stateOf(f, state) };
   const fn: CardFunction = {
