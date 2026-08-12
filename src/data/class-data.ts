@@ -36,7 +36,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Rally',
-        text: 'Once per session, describe how you rally the party and give yourself and each of your allies a Rally Die. At level 1, your Rally Die is a d6. A PC can spend their Rally Die to roll it, adding the result to their action roll, reaction roll, damage roll, or to clear a number of Stress equal to the result. At the end of each session, clear all unspent Rally Dice. At level 5, your Rally Die increases to a d8.',
+        text: 'Once per session, describe how you rally the party and give yourself and each of your allies a Rally Die.\nAt level 1, your Rally Die is a d6.\nA PC can spend their Rally Die to roll it, adding the result to their action roll, reaction roll, damage roll, or to clear a number of Stress equal to the result.\nAt the end of each session, clear all unspent Rally Dice.\nAt level 5, your Rally Die increases to a d8.',
       },
     ],
     summary: 'The most charismatic people in all the realms, masters of captivation who thrive in any social situation. A bard can bring a party together, or, in ill temper, tear one apart just as easily.',
@@ -52,7 +52,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Beastform',
-        text: 'Mark a Stress to magically transform into a creature of your tier or lower from the Beastform list. You can drop out of this form at any time. While transformed, you can’t use weapons or cast spells from domain cards, but you can still use other features or abilities you have access to. Spells you cast before you transform stay active and last for their normal duration, and you can talk and communicate as normal. Additionally, you gain the Beastform’s features, add their Evasion bonus to your Evasion, and use the trait specified in their statistics for your attack. While you’re in a Beastform, your armor becomes part of your body and you mark Armor Slots as usual; when you drop out of a Beastform, those marked Armor Slots remain marked. If you mark your last Hit Point, you automatically drop out of this form.',
+        text: 'Mark a Stress to magically transform into a creature of your tier or lower from the Beastform list. You can drop out of this form at any time.\nWhile transformed, you can’t use weapons or cast spells from domain cards, but you can still use other features or abilities you have access to.\nSpells you cast before you transform stay active and last for their normal duration, and you can talk and communicate as normal.\nAdditionally, you gain the Beastform’s features, add their Evasion bonus to your Evasion, and use the trait specified in their statistics for your attack.\nWhile you’re in a Beastform, your armor becomes part of your body and you mark Armor Slots as usual; when you drop out of a Beastform, those marked Armor Slots remain marked.\nIf you mark your last Hit Point, you automatically drop out of this form.',
       },
       {
         name: 'Wildtouch',
@@ -72,7 +72,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Unstoppable',
-        text: 'Once per long rest, you can become Unstoppable. You gain an Unstoppable Die. At level 1, your Unstoppable Die is a d4. Place it on your character sheet, starting with the 1 value facing up. After you make a damage roll that deals 1 or more Hit Points to a target, increase the Unstoppable Die value by one. When the die’s value would exceed its maximum value or when the scene ends, remove the die and drop out of Unstoppable. At level 5, your Unstoppable Die increases to a d6. While Unstoppable: you reduce the severity of physical damage by one threshold; you add the current value of the Unstoppable Die to your damage roll; and you can’t be Restrained or Vulnerable.',
+        text: 'Once per long rest, you can become Unstoppable. You gain an Unstoppable Die.\nAt level 1, your Unstoppable Die is a d4. Place it on your character sheet, starting with the 1 value facing up.\nAfter you make a damage roll that deals 1 or more Hit Points to a target, increase the Unstoppable Die value by one.\nWhen the die’s value would exceed its maximum value or when the scene ends, remove the die and drop out of Unstoppable.\nAt level 5, your Unstoppable Die increases to a d6.\nWhile Unstoppable:\n• you reduce the severity of physical damage by one threshold;\n• you add the current value of the Unstoppable Die to your damage roll;\n• and you can’t be Restrained or Vulnerable.',
       },
     ],
     summary: 'Fortitude with a moral compass. Guardians fight with remarkable ferocity against overwhelming odds, defending the few they truly care for above all else, and answering every injury in kind.',
@@ -88,7 +88,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Ranger’s Focus',
-        text: 'Spend a Hope and make an attack against a target. On a success, deal your attack’s normal damage and temporarily make the attack’s target your Focus. Until this feature ends or you make a different creature your Focus, you gain the following benefits against your Focus: you know precisely what direction they are in; when you deal damage to them, they must mark a Stress; and when you fail an attack against them, you can end your Ranger’s Focus feature to reroll your Duality Dice.',
+        text: 'Spend a Hope and make an attack against a target.\nOn a success, deal your attack’s normal damage and temporarily make the attack’s target your Focus.\nUntil this feature ends or you make a different creature your Focus, you gain the following benefits against your Focus:\n• you know precisely what direction they are in;\n• when you deal damage to them, they must mark a Stress;\n• and when you fail an attack against them, you can end your Ranger’s Focus feature to reroll your Duality Dice.',
       },
     ],
     summary: 'Sly tacticians of the wilds, hunting with cunning and patience rather than armies. Expert trackers, as likely to ensnare their quarry in a trap as to assail it head-on, often beside a bonded companion.',
@@ -104,11 +104,11 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Cloaked',
-        text: 'Any time you would be Hidden, you are instead Cloaked. In addition to the benefits of the Hidden condition, while Cloaked you remain unseen if you are stationary when an adversary moves to where they would normally see you. After you make an attack or end a move within line of sight of an adversary, you are no longer Cloaked.',
+        text: 'Any time you would be Hidden, you are instead Cloaked.\nIn addition to the benefits of the Hidden condition, while Cloaked you remain unseen if you are stationary when an adversary moves to where they would normally see you.\nAfter you make an attack or end a move within line of sight of an adversary, you are no longer Cloaked.',
       },
       {
         name: 'Sneak Attack',
-        text: 'When you succeed on an attack while Cloaked or while an ally is within Melee range of your target, add a number of d6s equal to your tier to your damage roll. Level 1 → Tier 1; levels 2–4 → Tier 2; levels 5–7 → Tier 3; levels 8–10 → Tier 4.',
+        text: 'When you succeed on an attack while Cloaked or while an ally is within Melee range of your target, add a number of d6s equal to your tier to your damage roll.\n• Level 1 → Tier 1\n• Levels 2–4 → Tier 2\n• Levels 5–7 → Tier 3\n• Levels 8–10 → Tier 4',
       },
     ],
     summary: 'Scoundrels in attitude and practice, moving through the world anonymously. Sharp wits and sharper blades: social manipulation, broken locks, shadows bent into useful and deadly tools.',
@@ -124,7 +124,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Prayer Dice',
-        text: 'At the beginning of each session, roll a number of d4s equal to your subclass’s Spellcast trait and place them on your character sheet. These are your Prayer Dice. You can spend any number of Prayer Dice to aid yourself or an ally within Far range. You can use a spent die’s value to reduce incoming damage, add to a roll’s result after the roll is made, or gain Hope equal to the result. At the end of each session, clear all unspent Prayer Dice.',
+        text: 'At the beginning of each session, roll a number of d4s equal to your subclass’s Spellcast trait and place them on your character sheet. These are your Prayer Dice.\nYou can spend any number of Prayer Dice to aid yourself or an ally within Far range. Use a spent die’s value to:\n• reduce incoming damage;\n• add to a roll’s result after the roll is made;\n• or gain Hope equal to the result.\nAt the end of each session, clear all unspent Prayer Dice.',
       },
     ],
     summary: 'Divine fighters and healers imbued with sacred purpose, appointed by the realms’ many gods. Better to stand beside a seraph than against one, they are terrifying foes to those who defy their purpose.',
@@ -148,7 +148,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
       },
       {
         name: 'Channel Raw Power',
-        text: 'Once per long rest, you can place a domain card from your loadout into your vault and choose to either: gain Hope equal to the level of the card, or enhance a spell that deals damage, gaining a bonus to your damage roll equal to twice the level of the card.',
+        text: 'Once per long rest, you can place a domain card from your loadout into your vault and choose to either:\n• gain Hope equal to the level of the card;\n• or enhance a spell that deals damage, gaining a bonus to your damage roll equal to twice the level of the card.',
       },
     ],
     summary: 'Innate magic, inherited and honed. Becoming formidable is not acquiring power but learning to control the power already in your blood, undisciplined, that same gift is a dangerous force indeed.',
@@ -164,7 +164,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Attack of Opportunity',
-        text: 'If an adversary within Melee range attempts to leave that range, make a reaction roll using a trait of your choice against their Difficulty. Choose one effect on a success, or two if you critically succeed: they can’t move from where they are; you deal damage to them equal to your primary weapon’s damage; or you move with them.',
+        text: 'If an adversary within Melee range attempts to leave that range, make a reaction roll using a trait of your choice against their Difficulty.\nChoose one effect on a success, or two if you critically succeed:\n• they can’t move from where they are;\n• you deal damage to them equal to your primary weapon’s damage;\n• or you move with them.',
       },
       {
         name: 'Combat Training',
@@ -204,7 +204,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Marked for Death',
-        text: 'On a successful weapon attack, you can mark a Stress to make the target Marked for Death. Attacks you make against a target that’s Marked for Death gain a bonus to damage equal to +1d4 per tier. You can only have one adversary Marked for Death at a time, and can’t transfer or remove the condition except by defeating the target. The GM can spend a number of Fear equal to your tier to remove the Marked for Death condition. Otherwise, it ends automatically when you take a rest.',
+        text: 'On a successful weapon attack, you can mark a Stress to make the target Marked for Death.\nAttacks you make against a target that’s Marked for Death gain a bonus to damage equal to +1d4 per tier.\nYou can only have one adversary Marked for Death at a time, and can’t transfer or remove the condition except by defeating the target.\nThe GM can spend a number of Fear equal to your tier to remove the Marked for Death condition. Otherwise, it ends automatically when you take a rest.',
       },
       {
         name: 'Get In & Get Out',
@@ -224,11 +224,11 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Hex',
-        text: 'Mark a Stress to temporarily Hex a target within Far range. While Hexed, the target gains a penalty to their damage rolls and Difficulty equal to your tier. The maximum number of creatures you can Hex at one time is equal to your Spellcast trait.',
+        text: 'Mark a Stress to temporarily Hex a target within Far range.\nWhile Hexed, the target gains a penalty to their damage rolls and Difficulty equal to your tier.\nThe maximum number of creatures you can Hex at one time is equal to your Spellcast trait.',
       },
       {
         name: 'Commune',
-        text: 'Once per long rest, during a moment of calm, you can commune with an ancestor, deity, nature spirit, or otherworldly being. Ask them a question, then roll a number of d6s equal to your Spellcast trait. Choose one value from the rolled results and reference the chart below for the effect: 1-3: You taste a flavor, smell a scent, or feel a sensation relevant to the answer. 4-5: You hear sounds or see a vision relevant to the answer. 6: You psychically experience a scene relevant to the answer as if you were there.',
+        text: 'Once per long rest, during a moment of calm, you can commune with an ancestor, deity, nature spirit, or otherworldly being.\nAsk them a question, then roll a number of d6s equal to your Spellcast trait. Choose one value from the rolled results:\n• 1-3: You taste a flavor, smell a scent, or feel a sensation relevant to the answer.\n• 4-5: You hear sounds or see a vision relevant to the answer.\n• 6: You psychically experience a scene relevant to the answer as if you were there.',
       },
     ],
     summary: 'Weavers of earth, sky, and spirit, crafting protective charms for those they love and grim hexes for those they don’t. Cross a witch and their curse rides you until the scene runs cold.',
@@ -244,11 +244,11 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Warlock Patron',
-        text: 'You have committed yourself to a patron supernatural entity, such as a god, fae, or demon, in exchange for power. Write their name on your character sheet, then work with your GM to determine their sphere of influence (such as Nature, Chaos, Wisdom, Mischief, Love, War, Justice, or Death). Before making an action roll that relates to one of your patron’s spheres of influence, you can spend a Favor to call on their aid, rolling your Patron Die and adding its result to the total. Your Patron Die starts at a d6 and increases to a d8 at level 5.',
+        text: 'You have committed yourself to a patron supernatural entity, such as a god, fae, or demon, in exchange for power.\nWrite their name on your character sheet, then work with your GM to determine their sphere of influence (such as Nature, Chaos, Wisdom, Mischief, Love, War, Justice, or Death).\nBefore making an action roll that relates to one of your patron’s spheres of influence, you can spend a Favor to call on their aid, rolling your Patron Die and adding its result to the total.\nYour Patron Die starts at a d6 and increases to a d8 at level 5.',
       },
       {
         name: 'Favor',
-        text: 'Start with 3 Favor. During a rest, spend one of your downtime moves to show tribute to your patron. Describe how and gain Favor equal to your Spellcast trait. Additionally, when you succeed on an action roll with Hope, you can choose to gain a Favor instead of a Hope.',
+        text: 'Start with 3 Favor.\nDuring a rest, spend one of your downtime moves to show tribute to your patron. Describe how and gain Favor equal to your Spellcast trait.\nAdditionally, when you succeed on an action roll with Hope, you can choose to gain a Favor instead of a Hope.',
       },
     ],
     summary: 'A life pledged to a patron, god, demon, or fae, in exchange for borrowed power. The warlock trades tithes and favor for might, and every gift carries the weight of the bargain that bought it.',
@@ -264,7 +264,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Crimson Rite',
-        text: 'Mark a Hit Point to enchant one of your active weapons with bloodthirsty power until the end of your next rest or you use this feature again. When you succeed on an attack with the enchanted weapon, it deals an extra 1d4 magic damage. This extra damage increases to 2d4 at level 2, 3d4 at level 5, and 4d4 at level 8.',
+        text: 'Mark a Hit Point to enchant one of your active weapons with bloodthirsty power until the end of your next rest or you use this feature again.\nWhen you succeed on an attack with the enchanted weapon, it deals an extra 1d4 magic damage.\nThis extra damage increases to 2d4 at level 2, 3d4 at level 5, and 4d4 at level 8.',
       },
       {
         name: 'Grim Psychometry',
@@ -284,7 +284,7 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'Summon Entity',
-        text: 'You can summon otherworldly Entities: Fate Spirits and other Entities from your subclass. Each Entity is associated with a summoning circle below. Mark a Stress to summon a number of your Entities equal to your tier, and add them to the appropriate circles. You can hold a total number of Entities equal to your level. Summoned Entities stay within Very Close range, can perform harmless tasks within that range, and cannot be targeted. If a task requires an action roll, make a Spellcast Roll to command the Entity.',
+        text: 'You can summon otherworldly Entities: Fate Spirits and other Entities from your subclass. Each Entity is associated with a summoning circle below.\nMark a Stress to summon a number of your Entities equal to your tier, and add them to the appropriate circles. You can hold a total number of Entities equal to your level.\nSummoned Entities stay within Very Close range, can perform harmless tasks within that range, and cannot be targeted.\nIf a task requires an action roll, make a Spellcast Roll to command the Entity.',
       },
       {
         name: 'First Circle. Fate Spirit',
@@ -304,11 +304,11 @@ export const CLASS_DATA: Record<ClassName, ClassData> = {
     features: [
       {
         name: 'I Am the Weapon',
-        text: 'Your barehanded attacks are as strong as any blade. You have a primary weapon called Brawler’s Strike equipped while you have no other Active Weapons. It uses a trait of your choice, has Melee range, and deals d8+d6 physical damage using your Proficiency (both the d8 and the d6 scale off your Proficiency). While this weapon is active, you gain a +1 bonus to your Evasion.',
+        text: 'Your barehanded attacks are as strong as any blade.\nYou have a primary weapon called Brawler’s Strike equipped while you have no other Active Weapons.\nIt uses a trait of your choice, has Melee range, and deals d8+d6 physical damage using your Proficiency (both the d8 and the d6 scale off your Proficiency).\nWhile this weapon is active, you gain a +1 bonus to your Evasion.',
       },
       {
         name: 'Combo Strike',
-        text: 'After rolling damage on a successful attack with a Melee weapon, you can mark a Stress to start a combo strike. When you do, roll your Combo Die and note the result, then continue rolling your Combo Die until the result of your latest roll is lower than the roll that preceded it. You deal extra damage equal to the total of all rolled Combo Die results on this attack. The results can’t be modified by any means. Your Combo Die starts as a d4. Once per tier, you can increase your Combo Die by one step as a level advancement option.',
+        text: 'After rolling damage on a successful attack with a Melee weapon, you can mark a Stress to start a combo strike.\nWhen you do, roll your Combo Die and note the result, then continue rolling your Combo Die until the result of your latest roll is lower than the roll that preceded it.\nYou deal extra damage equal to the total of all rolled Combo Die results on this attack. The results can’t be modified by any means.\nYour Combo Die starts as a d4.\nOnce per tier, you can increase your Combo Die by one step as a level advancement option.',
       },
     ],
     summary: 'Fighters who need no blade, a brawler’s fists are weapon enough, chaining blow into blow until the threat stops moving. Take away their armaments and they only grow more dangerous.',
@@ -367,28 +367,93 @@ export interface FeaturePage {
 }
 
 /**
- * ONE FEATURE PER PAGE, always (v0.42.0, owner).
+ * How a class's rules are laid out across its cards (v0.42.1, owner).
  *
- * Until now a class's rules were PACKED into cards by a line budget, and a feature longer than the
- * budget was cut into "Beastform", "Beastform (cont.)", "Beastform (cont.)"... The druid ran to eight
- * cards, six of them one ability sliced up. The owner's rule is the opposite one: "entire abilities
- * per page", and at most three or four cards for a whole class.
+ * v0.42.0 gave every feature a card of its own, which removed the "(cont.)" pages but left the
+ * imbalance underneath them: the druid's Beastform is 800 characters and the guardian's Hope feature
+ * is 64, so one card was unreadably dense and the next was almost empty. The owner's rule for this
+ * release is both halves of that at once.
  *
- * Both fall out of the same change. Every class in the app has at most FOUR features counting its
- * hope feature, so a page per feature lands every one of them at two to four pages with the book's
- * wording untouched. What made packing necessary was the card body being drawn at a fixed size and
- * clipped; the body is typeset to fit now (see `ForgedTextCard`), so a long feature is set smaller
- * rather than continued.
+ *  - A feature too long for one card is SPLIT, and each part says which part it is: "Beastform (1/2)",
+ *    "Beastform (2/2)". Never "(cont.)", which tells you there is more without telling you how much.
+ *  - A card with room left over may CARRY THE NEXT FEATURE, or the tail of the one before it. The
+ *    guardian's tiny Hope feature shares with the end of Unstoppable rather than sitting alone.
+ *  - And the whole class stays within {@link MAX_FEATURE_PAGES} cards.
  *
- * The hope feature is last because it is the class's 3-Hope move and reads as the pay-off, which is
- * where the printed cards put it too.
+ * So this is a packer, not a rule. Every unit is measured, anything over the split threshold is cut
+ * at a line boundary into equal parts, and the units are then filled into as few pages as the budget
+ * allows. If that overflows the page cap the budget is raised and it runs again, which is what
+ * guarantees the cap without ever cutting a rule off.
+ */
+
+/** The whole class, cover included, is at most six cards; the cover is one, so five is the rest. */
+export const MAX_FEATURE_PAGES = 4;
+/** Characters of body text one card holds at a readable size. Measured against the 9.5pt body. */
+const PAGE_BUDGET = 480;
+/** Longer than this and one card cannot hold it at a size worth reading, so it is split. */
+const SPLIT_AT = 520;
+/** The budget is raised by this much per attempt when a class will not fit the page cap. */
+const BUDGET_STEP = 60;
+
+/** A newline costs the rest of its line, so it counts for more than the character it is. */
+const LINE_COST = 12;
+const weight = (f: ClassFeature): number => f.name.length + 2 + f.text.length + f.text.split('\n').length * LINE_COST;
+
+/**
+ * Cut one feature into `parts` pieces at LINE boundaries, naming each "Name (i/n)".
+ *
+ * Lines, because the text has been reflowed so that each line is a complete thought (see the feature
+ * texts above): breaking between them never strands half a clause. A feature with fewer lines than
+ * parts simply yields fewer parts, which is right: there is nowhere honest to cut it.
+ */
+function splitFeature(f: ClassFeature, parts: number): ClassFeature[] {
+  const lines = f.text.split('\n');
+  if (parts <= 1 || lines.length < 2) return [f];
+  const n = Math.min(parts, lines.length);
+  const per = Math.ceil(lines.length / n);
+  const chunks: string[][] = [];
+  for (let i = 0; i < lines.length; i += per) chunks.push(lines.slice(i, i + per));
+  return chunks.map((c, i) => ({ name: `${f.name} (${i + 1}/${chunks.length})`, text: c.join('\n') }));
+}
+
+/** Fill units into pages, never exceeding `budget` unless a single unit already does. */
+function pack(units: ClassFeature[], budget: number): ClassFeature[][] {
+  const pages: ClassFeature[][] = [];
+  let current: ClassFeature[] = [];
+  let used = 0;
+  for (const u of units) {
+    const w = weight(u);
+    if (current.length && used + w > budget) {
+      pages.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(u);
+    used += w;
+  }
+  if (current.length) pages.push(current);
+  return pages;
+}
+
+/**
+ * Split a class's features across its cards.
+ *
+ * The hope feature comes last because it is the class's 3-Hope move and reads as the pay-off, which
+ * is where the printed cards put it too. It is a unit like any other, so a short one will share a
+ * card with whatever came before it rather than taking one to itself.
  */
 export function featurePages(cls: ClassName): FeaturePage[] {
   const data = CLASS_DATA[cls];
-  const units: ClassFeature[] = [
+  const raw: ClassFeature[] = [
     ...data.features,
     { name: `${data.hopeFeature.name}, Hope Feature`, text: data.hopeFeature.text },
   ];
-  return units.map((u, i) => ({ pageIndex: i, pageCount: units.length, sections: [u] }));
+  for (let budget = PAGE_BUDGET; ; budget += BUDGET_STEP) {
+    const units = raw.flatMap((f) => (weight(f) > SPLIT_AT ? splitFeature(f, Math.ceil(weight(f) / budget)) : [f]));
+    const pages = pack(units, budget);
+    if (pages.length <= MAX_FEATURE_PAGES || budget > PAGE_BUDGET * 4) {
+      return pages.map((p, i) => ({ pageIndex: i, pageCount: pages.length, sections: p }));
+    }
+  }
 }
 

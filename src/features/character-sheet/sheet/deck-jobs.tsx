@@ -80,7 +80,14 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
     const title = classDef?.title ?? cls.charAt(0).toUpperCase() + cls.slice(1);
     const fpages = featurePages(cls);
-    const total = 1 + fpages.length;
+    /**
+     * On the SHEET the class card has no cover (v0.42.1, owner).
+     *
+     * The cover is the class's flavour text, which is what you read while DECIDING to be a druid and
+     * has nothing to tell you mid-session. Dropping it makes "Bard 2/3" read "Bard 1/2", which is the
+     * owner's own example. Character creation keeps the cover, because there it is the whole point.
+     */
+    const total = fpages.length;
     // face 0 = the class card (#110: the missing first page); same deck-wide marks as the forge
     // v0.36.2: a CLASSLESS character shows no class card and no feature pages. Its file names a class
     // only because the shape requires one; none of it is theirs.
@@ -95,7 +102,7 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
         <ForgedTextCard
           title={title}
           kindLabel="Features"
-          pageMark={`${p.pageIndex + 2}/${total}`}
+          pageMark={`${p.pageIndex + 1}/${total}`}
           sections={p.sections}
           accentDeep={classColor(cls).deep}
           Banner={classBanner(cls)}
@@ -109,12 +116,12 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     const mcDef = mc ? CLASS_CARDS.find((c) => c.key === mc) : null;
     const mcTitle = mcDef?.title ?? (mc ? mc.charAt(0).toUpperCase() + mc.slice(1) : '');
     const mcFpages = mc ? featurePages(mc) : [];
-    const mcTotal = 1 + mcFpages.length;
+    const mcTotal = mcFpages.length;
     const mcClassJob: Job | null = mc && mcDef
       ? { key: `mcclass-${mc}`, raster: isVoidClass(mc), node: <ForgedCard title={mcTitle} kindLabel="Class" body={mcDef.body} accentDeep={classColor(mc).deep} Banner={mcDef.Banner} pageMark={`1/${mcTotal}`} classKey={mc} /> }
       : null;
     const mcFeatJobs: Job[] = mc
-      ? mcFpages.map((p) => ({ key: `mcfeat-${mc}-${p.pageIndex}`, raster: isVoidClass(mc), node: <ForgedTextCard title={mcTitle} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${mcTotal}`} sections={p.sections} accentDeep={classColor(mc).deep} Banner={classBanner(mc)} classKey={mc} /> }))
+      ? mcFpages.map((p) => ({ key: `mcfeat-${mc}-${p.pageIndex}`, raster: isVoidClass(mc), node: <ForgedTextCard title={mcTitle} kindLabel="Features" pageMark={`${p.pageIndex + 1}/${mcTotal}`} sections={p.sections} accentDeep={classColor(mc).deep} Banner={classBanner(mc)} classKey={mc} /> }))
       : [];
     // v0.14.0: the pill shows the EFFECTIVE bonus — the level-up total plus any equipped card boosting
     // this Experience (the Honing Relic). The total rides the forge key so equipping it re-forges.

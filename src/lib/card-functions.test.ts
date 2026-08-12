@@ -1,4 +1,4 @@
-import { type CardFunction, canStepFunction, clampCounter, cycleFunction, cycleLabel, defaultState, functionSummary, functionsAt, meaningfulFunctions, newFunction, setTextValue, stateOf, stepFunction } from './card-functions';
+import { advanceRemaining, applyAdvance, type CardFunction, canStepFunction, clampCounter, cycleFunction, cycleLabel, defaultState, functionSummary, functionsAt, meaningfulFunctions, newFunction, setTextValue, stateOf, stepFunction } from './card-functions';
 
 const counter = (over: Partial<CardFunction> = {}): CardFunction => ({ ...newFunction('f1', 'counter'), ...over });
 const cycle = (over: Partial<CardFunction> = {}): CardFunction => ({ ...newFunction('f2', 'cycle'), ...over });
@@ -104,7 +104,8 @@ describe('setTextValue', () => {
 
 describe('functionSummary', () => {
   it('says what an author configured', () => {
-    expect(functionSummary(counter({ start: 2, max: 5 }))).toBe('Counter, 2 of 5');
+    expect(functionSummary(counter({ start: 2, max: 5 }))).toBe('Counter, 2, 5');
+    expect(functionSummary(counter({ start: 2, min: 1, max: 5 }))).toBe('Counter, 2, 1 to 5');
     expect(functionSummary(counter({ countdown: true, loop: true, start: 3 }))).toBe('Countdown, 3, restarts');
     expect(functionSummary(text({ lines: 3 }))).toBe('Text, 3 lines');
     expect(functionSummary(cycle({ options: ['A', 'B', 'C'] }))).toBe('Cycle, 3 options');
@@ -127,5 +128,89 @@ describe('functionsAt', () => {
     const below = text({ id: 'b', placement: 'below' });
     expect(functionsAt([above, below], 'above').map((f) => f.id)).toEqual(['a']);
     expect(functionsAt([above, below], 'below').map((f) => f.id)).toEqual(['b']);
+  });
+});
+
+// ------------------------------------- v0.42.1: ranges, locking and level advancements ----------
+
+describe('a counter with a RANGE (v0.42.1)', () => {
+  it('never goes below its floor', () => {
+    const c = counter({ min: 1, start: 2 });
+    expect(stepFunction(c, { n: 1 }, -1)).toEqual({ n: 1 });
+    expect(canStepFunction(c, { n: 1 }, -1)).toBe(false);
+  });
+
+  it('never goes above its ceiling', () => {
+    expect(stepFunction(counter({ min: 1, max: 4 }), { n: 4 }, 1)).toEqual({ n: 4 });
+  });
+
+  it('holds a start outside the range inside it', () => {
+    expect(defaultState(counter({ min: 2, max: 6, start: 0 }))).toEqual({ n: 2 });
+  });
+});
+
+describe('a LOCKED element', () => {
+  it('cannot be stepped', () => {
+    const c = counter({ locked: true, start: 4 });
+    expect(canStepFunction(c, { n: 4 }, -1)).toBe(false);
+    expect(stepFunction(c, { n: 4 }, -1)).toEqual({ n: 4 });
+  });
+
+  it('cannot be cycled', () => {
+    const f = cycle({ locked: true, options: ['A', 'B'] });
+    expect(cycleFunction(f, { i: 0 })).toEqual({ i: 0 });
+  });
+
+  it('says so in its summary', () => {
+    expect(functionSummary(counter({ locked: true }))).toContain('locked');
+    expect(functionSummary(counter({ hidden: true }))).toContain('hidden until unlocked');
+  });
+});
+
+describe('applyAdvance', () => {
+  it('steps a die: the value and the whole range move together', () => {
+    // The Brawler's Combo Die going d4 to d6, which is the case the owner named.
+    const die = counter({ start: 4, min: 4, max: 4, locked: true });
+    const out = applyAdvance(die, { n: 4 }, { kind: 'step', by: 2 });
+    expect(out.fn).toMatchObject({ start: 6, min: 6, max: 6 });
+    expect(out.state).toEqual({ n: 6 });
+  });
+
+  it('sets a counter outright', () => {
+    const out = applyAdvance(counter({ start: 1, max: 9 }), { n: 1 }, { kind: 'set', value: 5 });
+    expect(out.state).toEqual({ n: 5 });
+  });
+
+  it('sets a cycle to one of its options', () => {
+    const out = applyAdvance(cycle({ options: ['A', 'B', 'C'] }), { i: 0 }, { kind: 'set', value: 2 });
+    expect(out.state).toEqual({ i: 2 });
+  });
+
+  it('unlocks without disturbing the number', () => {
+    const out = applyAdvance(counter({ start: 3, locked: true, hidden: true }), { n: 2 }, { kind: 'unlock' });
+    expect(out.fn.locked).toBe(false);
+    expect(out.fn.hidden).toBe(false);
+    expect(out.state).toEqual({ n: 2 });
+  });
+});
+
+describe('advanceRemaining', () => {
+  const adv = { id: 'a', label: 'Raise the Combo Die', functionId: 'f1', tiers: [2, 3, 4], perTier: 1 as const, effect: { kind: 'step' as const, by: 2 } };
+
+  it('is nothing at a tier it does not offer', () => {
+    expect(advanceRemaining(adv, 1, 0)).toBe(0);
+  });
+
+  it('is once per tier, and only once', () => {
+    expect(advanceRemaining(adv, 2, 0)).toBe(1);
+    expect(advanceRemaining(adv, 2, 1)).toBe(0);
+  });
+
+  it('is twice when the author said twice', () => {
+    expect(advanceRemaining({ ...adv, perTier: 2 }, 3, 1)).toBe(1);
+  });
+
+  it('is offered at every tier when the author named none', () => {
+    expect(advanceRemaining({ ...adv, tiers: [] }, 1, 0)).toBe(1);
   });
 });

@@ -44,18 +44,25 @@ export const isClassCard = (id: string): boolean => id.startsWith('cls-');
 export function classCards(cls: ClassName): CustomCardDef[] {
   const info = classInfo(cls);
   const color = classColor(cls).deep;
-  return featurePages(cls).map((page) => {
-    const section = page.sections[0];
-    return {
-      id: classCardId(cls, page.pageIndex),
+  /**
+   * One card per SECTION, not per page (v0.42.1).
+   *
+   * The pages are a printing decision: they pack a short Hope feature onto the end of the ability
+   * before it so a printed card is not half empty. A card in the arsenal has no such problem, and
+   * the owner's rule for the sheet is one ability per card, so the sections are unpacked again. A
+   * long ability that had to be split keeps its "(1/2)" name, which is the same promise on both.
+   */
+  return featurePages(cls)
+    .flatMap((page) => page.sections)
+    .map((section, i) => ({
+      id: classCardId(cls, i),
       title: section.name,
       text: section.text,
       imageUri: null,
       color,
       typeLabel: `${info.label} Feature`,
       target: 'arsenal' as const,
-    };
-  });
+    }));
 }
 
 /**
@@ -70,4 +77,4 @@ export function missingClassCards(cls: ClassName, existing: { id: string }[] | u
 }
 
 /** How many cards a class comes to. What the confirmation dialog counts. */
-export const classCardCount = (cls: ClassName): number => featurePages(cls).length;
+export const classCardCount = (cls: ClassName): number => featurePages(cls).reduce((n, p) => n + p.sections.length, 0);

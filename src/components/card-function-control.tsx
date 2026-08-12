@@ -44,28 +44,36 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
   const st = stateOf(fn, state);
   const gap = compact ? 4 : 6;
   const label = fn.label?.trim();
+  /**
+   * A LOCKED element is read-only, and a HIDDEN one is not there at all (v0.42.1, owner).
+   *
+   * The difference matters: locked says "your Combo Die is a d4" and means it; hidden says nothing,
+   * because a feature you do not have yet is not a greyed-out feature. Only a level advancement
+   * opens either (see `applyAdvance`).
+   */
+  const move = fn.locked ? undefined : onChange;
 
   const body = () => {
     if (fn.kind === 'counter') {
       const n = st.n ?? 0;
       return (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <StepButton plus={false} label={`Lower ${label || 'the counter'}`} disabled={!onChange || !canStepFunction(fn, st, -1)} onPress={() => onChange?.(stepFunction(fn, st, -1))} />
+          <StepButton plus={false} label={`Lower ${label || 'the counter'}`} disabled={!move || !canStepFunction(fn, st, -1)} onPress={() => move?.(stepFunction(fn, st, -1))} />
           <Text
             accessibilityLabel={`${label || 'Counter'} at ${n}${fn.max ? ` of ${fn.max}` : ''}`}
             style={{ minWidth: 34, textAlign: 'center', color: Rune.inkText, fontSize: compact ? 16 : 19, lineHeight: compact ? 20 : 23, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>
             {n}{fn.max != null && fn.max > 0 ? <Text style={{ fontSize: compact ? 10 : 12, color: Rune.inkMuted }}>{` /${fn.max}`}</Text> : null}
           </Text>
           {/* A countdown has no plus at all: its direction is part of what it is. */}
-          {fn.countdown ? null : <StepButton plus label={`Raise ${label || 'the counter'}`} disabled={!onChange || !canStepFunction(fn, st, 1)} onPress={() => onChange?.(stepFunction(fn, st, 1))} />}
+          {fn.countdown ? null : <StepButton plus label={`Raise ${label || 'the counter'}`} disabled={!move || !canStepFunction(fn, st, 1)} onPress={() => move?.(stepFunction(fn, st, 1))} />}
         </View>
       );
     }
     if (fn.kind === 'cycle') {
       return (
         <Pressable
-          onPress={() => { if (!onChange) return; playSfx('buttonTap'); onChange(cycleFunction(fn, st)); }}
-          disabled={!onChange}
+          onPress={() => { if (!move) return; playSfx('buttonTap'); move(cycleFunction(fn, st)); }}
+          disabled={!move}
           accessibilityRole="button"
           accessibilityLabel={`${label || 'Option'}: ${cycleLabel(fn, st)}. Tap to change.`}>
           <ChamferBox chamfer={6} fill="rgba(218,162,73,0.14)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ minWidth: 96, height: compact ? 26 : 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
@@ -79,8 +87,8 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
       <ChamferBox chamfer={5} fill="rgba(20,24,31,0.06)" stroke={GOLD_EDGE} strokeWidth={1.1} style={{ minHeight: 8 + lines * 15, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 4 }}>
         <TextInput
           value={st.s ?? ''}
-          onChangeText={(s) => onChange?.(setTextValue(s))}
-          editable={!!onChange}
+          onChangeText={(s) => move?.(setTextValue(s))}
+          editable={!!move}
           multiline={lines > 1}
           placeholder={fn.placeholder || ''}
           placeholderTextColor={Rune.inkMuted}
@@ -91,12 +99,21 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
     );
   };
 
+  if (fn.hidden) return null;
+  const note = (t: string | undefined) =>
+    t?.trim() ? <Text style={{ color: Rune.inkText, fontSize: compact ? 9 : 11, fontFamily: Body.regular, lineHeight: compact ? 12.5 : 15 }}>{t}</Text> : null;
   return (
     <View style={{ gap }}>
+      {/* v0.42.1 (owner): a line before and a line after, so a locked element can say how it is
+          raised without the card having to explain it somewhere else. */}
+      {note(fn.before)}
       {label ? (
-        <Text style={{ color: Rune.inkMuted, fontSize: compact ? 8 : 9.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
+        <Text style={{ color: Rune.inkMuted, fontSize: compact ? 8 : 9.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+          {label}{fn.locked ? ' · LOCKED' : ''}
+        </Text>
       ) : null}
       {body()}
+      {note(fn.after)}
     </View>
   );
 }

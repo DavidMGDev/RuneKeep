@@ -288,7 +288,7 @@ export function MenuScreen() {
                   nothing left for a second top-level destination to point at and nothing to unlock. The
                   slot goes to the card library, which a DM had no way to reach without leaving DM Mode. */}
               <MenuAction label="Campaigns" sub="Your games, their casts and their nights" glyph="characters" dm delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/parties' as Href); }} />
-              <MenuAction label="Cards" sub="Browse the archive, build homebrew" glyph="cards" dm delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
+              <MenuAction label="Cards" sub="The archive, and the expansions you author" glyph="cards" dm delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
             </>
           ) : (
             <>
