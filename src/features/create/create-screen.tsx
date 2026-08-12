@@ -26,7 +26,7 @@ import { contentForCreation, type CreationContent, type Expansion, featureSectio
 import { hasStrikeLines } from '@/data/ancestry-trait-regions';
 import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { LibraryForgedCard } from './components/library-forged-card';
-import { listExpansions } from '@/lib/library-store';
+import { listExpansions, saveExpansion } from '@/lib/library-store';
 import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
@@ -44,7 +44,7 @@ import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } fro
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
 import { shouldShow } from '@/lib/onboarding-store';
 
-import { campaignNote, isOptionOn, isStepOn, mergeSettings } from '@/lib/campaign-settings';
+import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
 import { canSkipClass, cardedItems, carriesThresholds, carryItems, type CarryItem, heldEffectsFor, isGenericName, keptLevel, levelForStatBlock } from '@/lib/characterize';
@@ -239,8 +239,25 @@ export function CreateScreen() {
    * nothing large travels through a URL, a reload cannot lose it, and there is exactly one copy of
    * the truth right up until Forge writes the character.
    */
-  const params = useLocalSearchParams<{ exp?: string; encId?: string; cid?: string; side?: string }>();
+  const params = useLocalSearchParams<{ exp?: string; encId?: string; cid?: string; side?: string; campaign?: string }>();
   const characterizing = !!params.encId && !!params.cid;
+  /**
+   * CAMPAIGN MODE (v0.42.3, owner) — the creator, used to say what a campaign ALLOWS.
+   *
+   * "I LITERALLY MEAN HAVING THE DM GO INTO THE MENU AND MAKE SURE HE DISABLES ALL THE CONTENT HE
+   * DOES NOT WANT FROM INSIDE THE CHARACTER CREATOR, LIKE CREATING A CHARACTER BUT INSTEAD OF
+   * CHOOSING WHAT THEY WANT, THEY CHOOSE WHAT THEY WANT TO DISABLE."
+   *
+   * So this is not a second screen that looks like the creator. It IS the creator: the same rail, the
+   * same carousels, the same cards, reached with the id of the expansion being authored. A tap turns
+   * a card off instead of picking it, a disabled card is greyed exactly the way a left-behind card in
+   * the Inherit step already is, and Forge becomes Done.
+   *
+   * Everything underneath is untouched: `lib/campaign-settings` still stores only what is off, still
+   * unions across packs, and still hides a step whose last card went.
+   */
+  const campaignId = typeof params.campaign === 'string' ? params.campaign : undefined;
+  const authoring = !!campaignId;
   const [statBlock, setStatBlock] = useState<Combatant | null>(null);
   const [expansions, setExpansions] = useState<Expansion[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(
@@ -280,9 +297,26 @@ export function CreateScreen() {
    * first one allows. Absent from every pack, which is every character made before this existed,
    * merges to inert and every filter below is a pass-through. See `lib/campaign-settings`.
    */
+  /** The expansion being authored, and its rules as they are being edited. */
+  const [campaignExp, setCampaignExp] = useState<Expansion | null>(null);
+  const [draftCampaign, setDraftCampaign] = useState<CampaignSettings | null>(null);
+  useEffect(() => {
+    if (!campaignId) return;
+    void listExpansions().then((all) => {
+      const e = all.find((x) => x.id === campaignId);
+      if (!e) return;
+      setCampaignExp(e);
+      // Authoring always starts with the limits ON: the DM came here to set them.
+      setDraftCampaign({ ...(e.campaign ?? EMPTY_CAMPAIGN_SETTINGS), on: true });
+    });
+  }, [campaignId]);
   const campaign = useMemo(
-    () => mergeSettings((expansions ?? []).filter((e) => picked.has(e.id)).map((e) => e.campaign)),
-    [expansions, picked],
+    // While AUTHORING, the rules in force are the ones being written, not the ones already shipped:
+    // a card the DM has just turned off must grey out at once, and turning it back on must un-grey it.
+    () => (authoring
+      ? (draftCampaign ?? EMPTY_CAMPAIGN_SETTINGS)
+      : mergeSettings((expansions ?? []).filter((e) => picked.has(e.id)).map((e) => e.campaign))),
+    [expansions, picked, authoring, draftCampaign],
   );
   /** Which packs are doing the limiting, so the player is told rather than left guessing. */
   const campaignNames = useMemo(
@@ -302,6 +336,17 @@ export function CreateScreen() {
     noted.current = note;
     showToast(note);
   }, [campaign.on, campaignNames]);
+  /**
+   * The rules are SAVED AS THEY ARE MADE (v0.42.3).
+   *
+   * There is no Save button because there is nothing to lose: every tap is a complete, valid rule,
+   * and the DM should be able to walk away mid-list. Guarded on having loaded the expansion first, so
+   * the initial read cannot write an empty ruleset over a real one.
+   */
+  useEffect(() => {
+    if (!campaignExp || !draftCampaign) return;
+    void saveExpansion({ ...campaignExp, campaign: draftCampaign });
+  }, [campaignExp, draftCampaign]);
   const [pendingDeck, setPendingDeck] = useState<DeckKey | null>(null);
   /** The ally prompt, raised after a characterized ALLY is forged (never for an adversary). */
   const [joinParty, setJoinParty] = useState<{ charId: string; name: string; party: Party } | null>(null);
@@ -371,8 +416,8 @@ export function CreateScreen() {
   /** Transformations follow the APP's expansion switch, not this character's picks (owner). */
   const transformationsOn = !!expansions?.some((e) => e.id === 'void' && isEnabledForCreation(e));
   const deckList = useMemo(
-    () => decksFor(characterizing, transformationsOn).filter((d) => isStepOn(campaign, d.key)),
-    [characterizing, transformationsOn, campaign],
+    () => decksFor(characterizing, transformationsOn).filter((d) => authoring || isStepOn(campaign, d.key)),
+    [characterizing, transformationsOn, campaign, authoring],
   );
   const classOptional = characterizing && canSkipClass(carry, carryOff);
 
@@ -805,12 +850,19 @@ export function CreateScreen() {
       }
     }
   }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, picked, creationClassCards, carry, carryOff, carryColor]);
-  const items: StraightItem[] = useMemo(
-    () => (campaign.on ? rawItems.filter((it) => !CAMPAIGN_DECKS.includes(deck) || isOptionOn(campaign, deck, it.id)) : rawItems),
-    [rawItems, campaign, deck],
-  );
+  const items: StraightItem[] = useMemo(() => {
+    if (!campaign.on || !CAMPAIGN_DECKS.includes(deck)) return rawItems;
+    // AUTHORING marks the off cards; PLAYING drops them. Same rule, two sides of it: the DM needs to
+    // see what they turned off in order to turn it back on, and the player must not see it at all.
+    return authoring
+      ? rawItems.map((it) => (isOptionOn(campaign, deck, it.id) ? it : { ...it, disabledLabel: 'Not in this campaign' }))
+      : rawItems.filter((it) => isOptionOn(campaign, deck, it.id));
+  }, [rawItems, campaign, deck, authoring]);
 
   const selectedIds = useMemo(() => {
+    // v0.42.3: authoring outlines nothing. A red outline means "this is your pick", and in this mode
+    // there are no picks: greying is the whole vocabulary, exactly as it is on the Inherit step.
+    if (authoring) return [];
     // The carry step never outlines anything: greying is its whole vocabulary (see `items`).
     if (deck === 'carry') return [];
     if (deck === 'weapons') {
@@ -955,6 +1007,23 @@ export function CreateScreen() {
 
   const onToggle = useCallback(
     (id: string) => {
+      /**
+       * AUTHORING: a tap is a rule, not a pick (v0.42.3).
+       *
+       * It comes first, before any deck's own handling, because in this mode none of that applies:
+       * the DM is not building a character and nothing should be written to the draft. `syncSteps`
+       * runs on every change, so turning off the last ancestry turns the ancestry step off too.
+       */
+      if (authoring) {
+        if (!CAMPAIGN_DECKS.includes(deck)) return;
+        playSfx('cardSelect');
+        setDraftCampaign((cs) => {
+          const base = cs ?? EMPTY_CAMPAIGN_SETTINGS;
+          const next = toggleKey(base, optionKey(deck, id));
+          return syncSteps(next, [{ deck, keys: rawItems.map((it) => optionKey(deck, it.id)) }]);
+        });
+        return;
+      }
       unskip(deck);
       if (deck === 'carry') {
         const off = new Set(draft.carryDisabled ?? []);
@@ -1643,13 +1712,23 @@ export function CreateScreen() {
 
   return (
     <AppScreen
-      title="New hero"
-      onBack={() => { if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); router.back(); } }}
+      dm={authoring}
+      title={authoring ? (campaignExp?.name ?? 'Campaign settings') : 'New hero'}
+      onBack={() => {
+        // Authoring writes as it goes, so leaving is leaving. Nothing is half-saved and there is
+        // nothing to warn about.
+        if (authoring) { router.back(); return; }
+        if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); router.back(); }
+      }}
       // v0.25.0: Forge is DIM until the character is finished, so the button reports readiness instead
       // of claiming it from the first screen. It stays tappable on purpose: tapping it while
       // incomplete jumps to the step that is missing, which is more use than a dead control, and a
       // truly dead Forge with no explanation is the thing this replaced in the first place.
       headerRight={
+        authoring ? (
+          // v0.42.3: Done, not Forge. Nothing is being built; the rules are already saved.
+          <RuneButton dm label="Done" kind="primary" height={26} dense onPress={() => router.back()} accessibilityLabel="Finish setting the campaign rules" />
+        ) : (
         <RuneButton
           label={forging ? 'Forging' : 'Forge'}
           kind={complete ? 'primary' : 'ghost'}
@@ -1664,6 +1743,7 @@ export function CreateScreen() {
           }}
           accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`}
         />
+        )
       }>
       <Animated.View style={[{ flex: 1 }, entryStyle]}>
         {/* ---- details ---- */}
@@ -1915,9 +1995,27 @@ export function CreateScreen() {
           </View>
           {/* v0.10.6: the class/weapons hint tooltips were removed — they pushed these buttons up into
               the card carousel (owner). */}
+          {authoring ? (
+            /**
+             * The STEP switch (v0.42.3, owner: "keep that but MAKE SURE IT USES THE FUCKING EXISTING
+             * CHARACTER CREATION UI"). It sits where the pick counter sits when playing, because it
+             * answers the same question about this step: what does it hold?
+             */
+            <Pressable
+              onPress={() => { playSfx('buttonTap'); setDraftCampaign((cs) => toggleKey(cs ?? EMPTY_CAMPAIGN_SETTINGS, stepKey(deck))); }}
+              hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isStepOn(campaign, deck) }}
+              accessibilityLabel={`This step is ${isStepOn(campaign, deck) ? 'in' : 'not in'} the campaign`}>
+              <Text style={{ color: isStepOn(campaign, deck) ? Rune.goldBright : '#E2705A', fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
+                {isStepOn(campaign, deck) ? 'STEP IS ON' : 'STEP IS OFF'}
+              </Text>
+            </Pressable>
+          ) : (
           <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
             {deck === 'carry' ? `Carrying ${carry.length - carryOff.size}/${carry.length}` : deck === 'inventory' ? `Picked ${draft.inventoryItemIds.length}/2` : `Picked ${selectedIds.length}/${maxSelect}`}
           </Text>
+          )}
         </Animated.View>
       ) : null}
       {stage}

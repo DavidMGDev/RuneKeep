@@ -27,8 +27,29 @@ import type { Expansion, LibraryCard } from './library';
  * nothing else: its numbers, its Hope feature, its voice, and the two domains it grants.
  */
 export interface CustomClassSpec {
+  /**
+   * WHICH KIND OF CLASS CARD THIS IS (v0.42.3, owner).
+   *
+   * "A class card is either a new first page (summary base) of a newly created class or it is an
+   * additional page for details of an existing class."
+   *
+   * The two are genuinely different cards and it is the first thing the author should decide, because
+   * everything after it differs: a `base` card IS the class, carries its numbers and its domains, and
+   * is what every other card points at; a `page` card belongs to a class that already exists (custom
+   * or built-in, which is how you expand a base-game class) and carries only its own text.
+   *
+   * Absent means `base`, which is what every class authored before this release is.
+   */
+  role?: 'base' | 'page';
   startingEvasion: number;
   startingHp: number;
+  /**
+   * @deprecated v0.42.3. The 3-Hope move.
+   *
+   * Removed from the form (owner: "the hope feature should NOT be present on the creator, it should
+   * be something the user decides to place into sections"). A class authored before this keeps it and
+   * it is offered once as a section the author can keep or delete, so nothing written is lost.
+   */
   hopeFeature: { name: string; text: string };
   /** The card-voiced introduction, for the pick card. */
   summary: string;
@@ -52,6 +73,7 @@ export interface CustomClassSpec {
 }
 
 export const EMPTY_CLASS_SPEC: CustomClassSpec = {
+  role: 'base',
   startingEvasion: 10,
   startingHp: 6,
   hopeFeature: { name: '', text: '' },
@@ -81,10 +103,20 @@ export function classProblems(card: LibraryCard, attached?: { features: number; 
   const spec = card.classSpec;
   if (!card.title.trim()) out.push('give the class a name');
   if (!spec) return [...out, 'fill in the class details'];
+  /**
+   * A PAGE owes almost nothing (v0.42.3).
+   *
+   * It is another page of a class that already exists, so the numbers, the domains and the items are
+   * that class's business and asking for them again would be asking the author to enter them twice
+   * and then keep them in step. All it owes is a class to belong to and something on it.
+   */
+  if (spec.role === 'page') {
+    if (!classKeyOf(card.className)) out.push('say which class this page belongs to');
+    return out;
+  }
   if (!spec.summary.trim()) out.push('write the class summary');
   if (!(spec.startingEvasion > 0)) out.push('set a starting Evasion');
   if (!(spec.startingHp > 0)) out.push('set starting Hit Points');
-  if (!spec.hopeFeature.name.trim() || !spec.hopeFeature.text.trim()) out.push('write the Hope feature');
   /**
    * The features are CARDS (v0.42.1, owner), so this counts what points at the class rather than
    * what is embedded in it. A class authored in v0.42.0 still carries its own list, and that counts
@@ -115,7 +147,10 @@ export const classKeyOf = (name: string | undefined): string => (name ?? '').tri
  * merely warning.
  */
 export function expansionClassProblems(exp: Pick<Expansion, 'cards'>): string[] {
-  const classes = exp.cards.filter((c) => c.contentType === 'class');
+  // v0.42.3: only BASE class cards are validated as classes. A page card belongs to a class that may
+  // not even be in this expansion (that is how a base-game class is expanded), so demanding a subclass
+  // and a feature of it would make an entirely reasonable pack unshareable.
+  const classes = exp.cards.filter((c) => c.contentType === 'class' && c.classSpec?.role !== 'page');
   if (!classes.length) return [];
   const out: string[] = [];
   for (const c of classes) {
@@ -123,7 +158,9 @@ export function expansionClassProblems(exp: Pick<Expansion, 'cards'>): string[] 
     const key = classKeyOf(c.title);
     const linked = exp.cards.filter((x) => classKeyOf(x.className) === key);
     const attached = {
-      features: linked.filter((x) => x.contentType === 'generic' && x.classRole === 'feature').length,
+      // v0.42.3: a Feature card counts as a feature by BEING one. A generic card marked as a feature
+      // still counts, because that is what an author had to do before the type existed.
+      features: linked.filter((x) => x.contentType === 'feature' || (x.contentType === 'generic' && x.classRole === 'feature')).length,
       subclasses: linked.filter((x) => x.contentType === 'subclass').length,
     };
     for (const p of classProblems(c, attached)) out.push(`${name}: ${p}`);

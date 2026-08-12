@@ -14,7 +14,18 @@
 
 # -NoRelease builds the APK and stops there, for when the build is wanted but publishing it is not
 # the same decision.
-param([switch]$NoRelease)
+#
+# -PublishOnly skips the build and uploads the APK already on disk (v0.42.3, owner).
+#
+# This exists because of how v0.42.2 shipped. A full build takes long enough that it has to be run in
+# the foreground, so the release was published afterwards with a hand-written `gh release create` --
+# which uploaded the versioned asset and not the stable-named one. The site's Android button points
+# at /releases/latest/download/RuneKeep-android.apk, so it 404'd for everybody until it was noticed.
+#
+# There is now no reason to ever type `gh release create` by hand: build with -NoRelease, then run
+# this script again with -PublishOnly. Both assets go up, and the check below refuses to publish if
+# either is missing.
+param([switch]$NoRelease, [switch]$PublishOnly)
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path $PSScriptRoot -Parent   # repo root = parent of apk-build/ (portable; no hardcoded path)
@@ -122,6 +133,8 @@ if (Test-Path $rnaDir) {
   } else { Write-Host "  audio-api prebuilt libs present." -ForegroundColor Green }
 }
 
+if ($PublishOnly) { Section "Publish only: skipping the build, using the APK on disk" }
+if (-not $PublishOnly) {
 Section "Build release APK (arm64-v8a). First run downloads Gradle + compiles native (~10-20 min)."
 Set-Location (Join-Path $repo 'android')
 Section 'Prebuild (regenerate android/ from app.json)'
@@ -139,6 +152,7 @@ Pop-Location
 
 & .\gradlew.bat assembleRelease "-PreactNativeArchitectures=arm64-v8a" --console=plain
 if ($LASTEXITCODE -ne 0) { Fail "gradle build (exit $LASTEXITCODE) - paste the red error lines to Claude" }
+}
 
 Section "Locate APK"
 $apk = Get-ChildItem (Join-Path $repo 'android\app\build\outputs\apk\release') -Filter *.apk -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -158,6 +172,7 @@ Write-Host "ASSET: $niceApk" -ForegroundColor Green
 # stays, because that is the one a player ends up with in their downloads folder.
 $latestApk = Join-Path (Split-Path $apk.FullName -Parent) 'RuneKeep-android.apk'
 Copy-Item -Force $apk.FullName $latestApk
+Write-Host "LATEST: $latestApk" -ForegroundColor Green
 
 if ($NoRelease) {
   Write-Host "`n===ALL DONE=== APK $mb MB at $niceApk (not published: -NoRelease)" -ForegroundColor Green
@@ -167,6 +182,11 @@ if ($NoRelease) {
 Section "Upload GitHub release"
 Set-Location $repo
 $tag = $ver
+# Both assets, or nothing (v0.42.3). The stable-named one is what the website's Android button
+# resolves to, so a release without it is a release that breaks updating for everyone who has the
+# app. It is not optional and it is not a nice-to-have; publishing stops here if it is missing.
+if (-not (Test-Path $niceApk))   { Fail "versioned asset missing: $niceApk" }
+if (-not (Test-Path $latestApk)) { Fail "stable-named asset missing: $latestApk - /releases/latest/download/RuneKeep-android.apk would 404" }
 # Release notes live in apk-build/release-notes.md, NOT in this script. They were a literal here
 # once, and the v0.24.3 build shipped v0.24.2's notes because a string buried in a build script
 # is the thing nobody remembers to edit. `$mb` is substituted so the size stays accurate.
@@ -191,5 +211,12 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "gh release step failed (gh not logged in? run: gh auth login). APK is built at the path above." -ForegroundColor Yellow
   exit 2
 }
+
+# Read the release back and prove BOTH assets are on it. The upload can partly succeed (a dropped
+# connection on the second 90 MB file looks like success from here), and the whole point of this
+# section is that nobody finds out from a player.
+$assets = (gh release view $tag --json assets --jq '.assets[].name') -join ' '
+if ($assets -notmatch 'RuneKeep-android\.apk') { Fail "published $tag WITHOUT RuneKeep-android.apk - run again with -PublishOnly" }
+Write-Host "ASSETS: $assets" -ForegroundColor Green
 
 Write-Host "`n===ALL DONE=== APK $mb MB uploaded to release $tag" -ForegroundColor Green

@@ -95,7 +95,16 @@ export interface EffectFormula {
    *    ("+Evasion equal to the Hit Points your target marked") cannot be derived from anything the
    *    app knows, so the card asks. See `numberInputs` on the character file.
    */
-  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | 'stress' | 'input' | 'attackRoll' | 'spellcastRoll' | 'damageRoll' | TraitKey;
+  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | 'stress' | 'input' | 'function' | 'attackRoll' | 'spellcastRoll' | 'damageRoll' | TraitKey;
+  /**
+   * v0.42.3: which FUNCTIONAL ELEMENT `variable: 'function'` reads, as `cardId|functionId`.
+   *
+   * A counter or a numeric cycling button on a card is a number the player is already keeping, so a
+   * formula and a dice preset should be able to read it. Note what is deliberately absent: there is
+   * no matching EffectTarget, so a modifier can READ an element and can never write one. A number the
+   * player holds stays theirs.
+   */
+  functionKey?: string;
   multiply?: number;
   divide?: number;
   /** #325: a flat constant ADDED after the ×/÷ round-up (e.g. Bare Bones' Armor = Strength + 3). */
@@ -225,6 +234,8 @@ export interface SheetContext {
   stress?: number;
   /** Per-card numbers the player typed, keyed by `EffectSource.key`, for `variable: 'input'`. */
   inputs?: Record<string, number>;
+  /** v0.42.3: the live value of every numeric functional element, keyed `cardId|functionId`. */
+  functions?: Record<string, number>;
 }
 
 /** The targets that are actually SHEET stats — one base value, one row in the Modifiers panel. Excludes
@@ -332,6 +343,9 @@ function resolveFormula(
     // per-card input is whatever the player last typed on THIS card (0 until they do).
     : f.variable === 'stress' ? ctx?.stress ?? 0
     : f.variable === 'input' ? (sourceKey ? ctx?.inputs?.[sourceKey] ?? 0 : 0)
+    // v0.42.3: a card's own counter. Zero when the card is gone, which is the same answer every
+    // other missing source gives and keeps a formula from breaking a sheet.
+    : f.variable === 'function' ? (f.functionKey ? ctx?.functions?.[f.functionKey] ?? 0 : 0)
     : out[f.variable]?.total ?? 0; // a trait total (from pass 1)
   const div = f.divide && f.divide !== 0 ? f.divide : 1;
   const scaled = (base * (f.multiply ?? 1)) / div;

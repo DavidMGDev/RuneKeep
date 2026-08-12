@@ -23,7 +23,7 @@ import type { LibraryCard, LibraryContentType } from './library';
  * are the parts you dip into rather than read through.
  */
 const TYPE_ORDER: LibraryContentType[] = [
-  'class', 'subclass', 'customDomain', 'domain', 'ancestry', 'community', 'weapon', 'armor', 'inventory', 'generic',
+  'class', 'subclass', 'feature', 'customDomain', 'domain', 'ancestry', 'community', 'weapon', 'armor', 'inventory', 'generic',
 ];
 
 const rank = (t: LibraryContentType): number => {
@@ -72,6 +72,7 @@ export function sortExpansionCards(cards: LibraryCard[]): LibraryCard[] {
 export function sectionOf(c: LibraryCard): string {
   if (c.contentType === 'domain') return `${(c.domain ?? 'No domain').trim()} cards`;
   if (c.contentType === 'subclass') return `${(c.className ?? 'Unattached').trim()} subclasses`;
+  if (c.contentType === 'feature') return `${(c.className ?? 'Unattached').trim()} features`;
   if (c.contentType === 'customDomain') return 'Domains';
   if (c.contentType === 'class') return 'Classes';
   if (c.contentType === 'weapon' || c.contentType === 'armor' || c.contentType === 'inventory') return 'Gear and items';

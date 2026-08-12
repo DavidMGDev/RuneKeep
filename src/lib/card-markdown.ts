@@ -28,6 +28,9 @@ export type MdBlock =
 export function composeSections(sections?: CardSection[]): string {
   if (!sections?.length) return '';
   return sections
+    // v0.42.3: a section that IS a functional element has no text to compose. It is drawn as a
+    // control by the card, and its absence here is what keeps the composed fallback readable.
+    .filter((s) => !s.functionId)
     .map((s) => {
       const body = s.body.trim();
       const name = (s.name ?? '').trim();

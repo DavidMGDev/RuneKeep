@@ -15,7 +15,7 @@
  * app follows: derive the total, never accumulate it.
  */
 
-import { advanceRemaining, applyAdvance, type CardAdvance, type CardFunction, type FunctionState, stateOf } from './card-functions';
+import { advanceAt, advanceRemaining, applyAdvance, type CardAdvance, type CardFunction, type FunctionState, stateOf } from './card-functions';
 
 /** One advancement taken, and the tier it was taken at (the per-tier limits need the tier). */
 export interface AdvanceTake {
@@ -58,7 +58,11 @@ export function offeredAdvances(cards: AdvanceCard[], tier: number, taken: Advan
       const key = advanceKey(c.id, a.id);
       const used = takesOf(taken, key, tier) + pending.filter((p) => p === key).length;
       if (advanceRemaining(a, tier, used) <= 0) continue;
-      out.push({ key, cardId: c.id, cardTitle: c.title, advance: a });
+      // v0.42.3: the advancement AS IT IS AT THIS TIER. A per-tier override changes both what the
+      // level-up list says and what taking it does, so resolving it here is what keeps the two in
+      // step wherever it is drawn.
+      const at = advanceAt(a, tier);
+      out.push({ key, cardId: c.id, cardTitle: c.title, advance: { ...a, label: at.label, effect: at.effect } });
     }
   }
   return out;
@@ -83,7 +87,10 @@ export function advancedFunctions(card: AdvanceCard, taken: AdvanceTake[] | unde
   for (const t of mine) {
     const a = card.advances.find((x) => advanceKey(card.id, x.id) === t.key);
     if (!a) continue; // an advancement the author has since deleted simply stops applying
-    out = out.map((f) => (f.id === a.functionId ? applyAdvance(f, {}, a.effect).fn : f));
+    // The effect of the tier it was TAKEN at, not of the character's current tier: what a player
+    // took at Tier 2 is theirs, and reaching Tier 3 must not silently rewrite it.
+    const { effect } = advanceAt(a, t.tier);
+    out = out.map((f) => (f.id === a.functionId ? applyAdvance(f, {}, effect).fn : f));
   }
   return out;
 }
@@ -108,7 +115,7 @@ export function advancedStates(
     const a = card.advances.find((x) => advanceKey(card.id, x.id) === t.key);
     const f = a && (card.functions ?? []).find((x) => x.id === a.functionId);
     if (!a || !f || !out[a.functionId]) continue;
-    out[a.functionId] = applyAdvance(f, stateOf(f, out[a.functionId]), a.effect).state;
+    out[a.functionId] = applyAdvance(f, stateOf(f, out[a.functionId]), advanceAt(a, t.tier).effect).state;
   }
   return out;
 }

@@ -23,7 +23,8 @@ describe('what the detail form writes onto a card', () => {
   });
 
   it('drops a row nobody filled in rather than printing it blank', () => {
-    expect(formMarkdown({ contentType: 'domain', domain: 'arcana' })).toBe('**Domain:** arcana');
+    // v0.42.3: the KEY stays lower-case, the printing is capitalised. See `lib/domain-label`.
+    expect(formMarkdown({ contentType: 'domain', domain: 'arcana' })).toBe('**Domain:** Arcana');
     expect(formMarkdown({ contentType: 'class', className: '  ' })).toBe('');
   });
 

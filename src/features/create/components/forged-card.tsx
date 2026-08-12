@@ -147,17 +147,23 @@ function CardText({ style, ...rest }: TextProps) {
  * v0.36: the title band is fixed (see `fitTitle`), so this no longer counts title lines. `multiline`
  * survives on the props because callers pass it, and it no longer changes the geometry.
  */
-function BodyText({ body, title, hasSubtitle }: { body: string; title: string; hasSubtitle: boolean }) {
+/** How much vertical room the body has, under this card's own title and subtitle. */
+function bodyRoom(title: string, hasSubtitle: boolean): number {
   const named = !!title.trim();
-  const room =
+  return (
     FORGED_H - ART_H - 20 - 24 // lower body, less paddingTop / paddingBottom
     - (named ? BODY_TITLE_H : 0)
     - (hasSubtitle ? BODY_SUB_H + 3 : 0) // its own marginTop rides with it
-    - (named ? 6 : 0); // the body's marginTop
+    - (named ? 6 : 0) // the body's marginTop
+  );
+}
+
+function BodyText({ body, title, hasSubtitle }: { body: string; title: string; hasSubtitle: boolean }) {
+  const named = !!title.trim();
   // v0.32.0: the leading may tighten to 1.05 before the font gives way. A description full of blank
   // lines is the case that needed it: it could not fit at the old fixed leading, so it fell through
   // to a truncated line count and printed over the footer on Android.
-  const fit = fitText(body, { width: BODY_TEXT_W, height: room - FOOTER_GUARD, base: 10.5, lineRatio: BODY_LINE_RATIO, minRatio: MIN_LINE_RATIO });
+  const fit = fitText(body, { width: BODY_TEXT_W, height: bodyRoom(title, hasSubtitle) - FOOTER_GUARD, base: 10.5, lineRatio: BODY_LINE_RATIO, minRatio: MIN_LINE_RATIO });
   return (
     <CardMarkdownBody
       body={body}
@@ -165,6 +171,47 @@ function BodyText({ body, title, hasSubtitle }: { body: string; title: string; h
       // measure), black-weight title above.
       style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'left', alignSelf: 'stretch', marginTop: named ? 6 : 0, flexShrink: 1, ...NO_FONT_PAD }}
     />
+  );
+}
+
+/** One run of a card's body: authored text, or a functional element the author placed there. */
+export interface BodyBlock {
+  key: string;
+  /** Markdown, for a text run. */
+  text?: string;
+  /** v0.42.3: how this run is set. Absent is left, which is every card that came before. */
+  align?: 'left' | 'center' | 'right' | 'justify';
+  /** A control, for an element run. */
+  node?: ReactNode;
+}
+
+/**
+ * A body made of RUNS (v0.42.3, owner) — text, a control, more text, in the order the author put them.
+ *
+ * The type size is computed ONCE, from every text run together, and then used by all of them. That is
+ * the whole reason this is not just a column of BodyTexts: sizing each run on its own would print one
+ * paragraph at 10.5 and the next at 8, which no printed card does. The elements' own heights are
+ * counted against the room, so a card with three controls shrinks its prose to make space for them
+ * rather than running off the bottom.
+ */
+function BodyBlocks({ blocks, title, hasSubtitle, controlHeight }: { blocks: BodyBlock[]; title: string; hasSubtitle: boolean; controlHeight: number }) {
+  const named = !!title.trim();
+  const text = blocks.map((x) => x.text ?? '').filter(Boolean).join('\n\n');
+  const fit = fitText(text, { width: BODY_TEXT_W, height: Math.max(24, bodyRoom(title, hasSubtitle) - FOOTER_GUARD - controlHeight), base: 10.5, lineRatio: BODY_LINE_RATIO, minRatio: MIN_LINE_RATIO });
+  return (
+    <View style={{ alignSelf: 'stretch', marginTop: named ? 6 : 0, flexShrink: 1, gap: 4 }}>
+      {blocks.map((x) =>
+        x.node ? (
+          <View key={x.key} style={{ alignSelf: 'stretch' }}>{x.node}</View>
+        ) : x.text ? (
+          <CardMarkdownBody
+            key={x.key}
+            body={x.text}
+            style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: x.align ?? 'left', alignSelf: 'stretch', flexShrink: 1, ...NO_FONT_PAD }}
+          />
+        ) : null,
+      )}
+    </View>
   );
 }
 
@@ -192,6 +239,8 @@ export function ForgedCard({
   modifier,
   bodyAbove,
   bodyBelow,
+  bodyBlocks,
+  blocksHeight = 0,
 }: {
   title: string;
   kindLabel: string;
@@ -202,6 +251,15 @@ export function ForgedCard({
   /** v0.42.0: functional elements the author placed above or below the description. */
   bodyAbove?: ReactNode;
   bodyBelow?: ReactNode;
+  /**
+   * v0.42.3: the body as ORDERED RUNS, so an element can sit between two paragraphs.
+   *
+   * Supplied instead of `body`, not as well: a card whose author arranged its blocks has no separate
+   * "the text" left to print. Every other card keeps `body` and nothing about it changes.
+   */
+  bodyBlocks?: BodyBlock[];
+  /** How much of the body's room the elements take, so the prose is sized around them. */
+  blocksHeight?: number;
   accentDeep: string;
   Banner?: FC<SvgProps>;
   /** Player-supplied art (#107 experiences): fills the art zone instead of a banner. */
@@ -301,7 +359,9 @@ export function ForgedCard({
               description shrinks instead of running into the footer. A body that already fits keeps
               the 10.5/14 typeset exactly, which is most of them. */}
           {bodyAbove}
-          <BodyText body={body} title={title} hasSubtitle={!!subtitle} />
+          {bodyBlocks
+            ? <BodyBlocks blocks={bodyBlocks} title={title} hasSubtitle={!!subtitle} controlHeight={blocksHeight} />
+            : <BodyText body={body} title={title} hasSubtitle={!!subtitle} />}
           {bodyBelow}
         </View>
       )}

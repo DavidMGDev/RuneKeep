@@ -24,6 +24,7 @@
  */
 import type { ArmorSpec, CardSection, LibraryContentType, WeaponSpec } from './library';
 import { SUBCLASS_TIER_LABEL } from './library';
+import { domainLabel } from './domain-label';
 
 /** Everything the authoring form can set that is worth printing. Mirrors the editor's config block. */
 export interface CardFormFacts {
@@ -72,7 +73,8 @@ export function formMarkdown(f: CardFormFacts): string {
       return join([row('Thresholds', a.thresholds), row('Base Score', a.baseScore), row('Tier', a.tier)]);
     }
     case 'domain':
-      return join([row('Domain', f.domain), row('Level', f.level)]);
+      // v0.42.3: printed the way the book prints it. The stored key is untouched (`lib/domain-label`).
+      return join([row('Domain', domainLabel(f.domain)), row('Level', f.level)]);
     case 'subclass':
       return join([row('Class', f.className), row('Subclass', f.subclass), row('Tier', SUBCLASS_TIER_LABEL[f.tier ?? 1])]);
     case 'class':

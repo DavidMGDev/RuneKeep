@@ -6,7 +6,7 @@
  * expansion you already have updates it in place.
  */
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -19,7 +19,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
-import { Body, Display, DmRune, Rune } from '@/constants/theme';
+import { Body, Display, DmRune, Gap, Rune } from '@/constants/theme';
 import { ALL_DOMAINS, CLASSES } from '@/constants/identity';
 import { playSfx } from '@/lib/sfx';
 import {
@@ -47,13 +47,19 @@ import { embedCardImageForNfc, embedExpansionImages } from '@/lib/image-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { type CardAdvance, type CardFunction, type FunctionState, meaningfulFunctions } from '@/lib/card-functions';
+import { prunedFunctions } from '@/lib/card-blocks';
 import { attachmentsFor, classTitlesIn, subclassNamesFor } from '@/lib/class-links';
 import { paginate, sectionOf } from '@/lib/expansion-sort';
 import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/lib/card-move';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
-import { type CustomClassSpec, domainProblems } from '@/lib/custom-class';
+import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
+import { domainLabel } from '@/lib/domain-label';
+import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
-import { CampaignSettingsForm } from './campaign-settings-form';
+import { CounterField, SelectRow, TextField } from '@/components/form-controls';
+import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
+import { ExpansionGallery } from './expansion-gallery-view';
+import { FunctionEditor } from './function-editor';
 import { CardFunctionsForm, ClassSpecForm } from './class-spec-form';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { DimScreen } from '@/lib/screen-dim';
@@ -72,12 +78,25 @@ const SPELLCAST_TRAITS: { key: string; label: string }[] = [
  * Ordered by what an author is usually doing: building a class needs several of the first group in
  * one sitting, so those lead. Every type in `CHOOSABLE_TYPES` appears in exactly one group.
  */
+/**
+ * What an author can make, grouped (v0.42.3, owner).
+ *
+ * The class group leads and now offers the FEATURE CARD in place of the plain Card, because a feature
+ * card is what a class's abilities are and the group's own sentence says so: advanced tracking and
+ * level advancements are done there, not on some other card that happens to carry a counter.
+ *
+ * "Anything else" is gone. It was a group of one, named after the absence of a reason to pick it, and
+ * a plain Card belongs with the rest of the content rather than in a shrug at the bottom.
+ */
 const TYPE_GROUPS: { label: string; hint: string; types: LibraryContentType[] }[] = [
-  { label: 'A class, and what belongs to it', hint: 'Make the class card first, then link its subclasses, features and trackers to it. A feature is a Card marked as one.', types: ['class', 'subclass', 'generic'] },
-  { label: 'Domains', hint: 'A domain of your own, and the cards that fill it. Eleven per domain: one at each level, two at level 1.', types: ['customDomain', 'domain'] },
+  {
+    label: 'A class, and what belongs to it',
+    hint: 'Make the class card first, then point its subclasses and features at it. A Feature card is where a class gives the player something to track: a counter, a switch, a line to write on, and the level advancements that change them.',
+    types: ['class', 'subclass', 'feature'],
+  },
+  { label: 'Domains', hint: 'A domain of your own, and the cards that fill it. A playable domain needs at least eleven: one at each level, two at level 1, and as many more as you like.', types: ['customDomain', 'domain'] },
   { label: 'Who a character is', hint: 'Options offered at character creation.', types: ['ancestry', 'community'] },
-  { label: 'What they carry', hint: 'Gear, and anything that lands in the inventory.', types: ['weapon', 'armor', 'inventory'] },
-  { label: 'Anything else', hint: 'A plain card. Give it a functional element to make it a tracker.', types: ['generic'] },
+  { label: 'What they carry', hint: 'Gear, anything that lands in the inventory, and a plain card for whatever the rest of this list does not cover.', types: ['weapon', 'armor', 'inventory', 'generic'] },
 ];
 const WEAPON_TRAITS = ['Agility', 'Strength', 'Finesse', 'Instinct', 'Presence', 'Knowledge'];
 const WEAPON_RANGES = ['Melee', 'Very Close', 'Close', 'Far', 'Very Far'];
@@ -116,7 +135,10 @@ interface CardConfig {
 
 /** Fresh config for a newly-chosen content type (Feature 5). */
 function defaultConfigFor(t: LibraryContentType): CardConfig {
-  if (t === 'domain') return { contentType: t, domain: '', level: 1 };
+  // v0.42.3: a domain card is an Ability unless its author says otherwise, which is what most of the
+  // published ones are, and a class card is a NEW class unless its author says otherwise.
+  if (t === 'domain') return { contentType: t, domain: '', level: 1, typeLabel: 'Ability' };
+  if (t === 'class') return { contentType: t, classSpec: { ...EMPTY_CLASS_SPEC } };
   if (t === 'ancestry') return { contentType: t, ancestryEffectTrait: 1 };
   if (t === 'subclass') return { contentType: t, tier: 1 };
   if (t === 'weapon') return { contentType: t, weapon: { ...DEFAULT_WEAPON } };
@@ -163,9 +185,11 @@ function ExpansionToggle({ on, onToggle }: { on: boolean; onToggle: () => void }
 
 /** A single expansion row on the hub — name + version/count/author, with the enable toggle on the right.
  *  Shared by the "Official Expansions" and "My expansions" sections (identical layout). */
-function ExpansionRow({ e, on, cardCount, onOpen, onToggle }: { e: Expansion; on: boolean; cardCount: number; onOpen: () => void; onToggle: () => void }) {
+function ExpansionRow({ e, on, cardCount, onOpen, onToggle, onHold }: { e: Expansion; on: boolean; cardCount: number; onOpen: () => void; onToggle: () => void; onHold?: () => void }) {
   return (
-    <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`Open ${e.name}`}>
+    // v0.42.3: HOLD opens the row's menu, which is where Delete lives. The same gesture, the same
+    // place and the same escalation a DM campaign uses, because an expansion is more work than one.
+    <Pressable onPress={onOpen} onLongPress={onHold} delayLongPress={340} accessibilityRole="button" accessibilityLabel={`Open ${e.name}`}>
       {({ pressed }) => (
         <ChamferBox chamfer={10} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, paddingVertical: 12 }}>
           <View style={{ flex: 1, opacity: on ? 1 : 0.5 }}>
@@ -195,15 +219,27 @@ const BUILTIN_CLASSES = CLASSES.map((c) => c.key);
 const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6 };
 
+/**
+ * The three types the published DOMAIN CARDS carry (v0.42.3, owner).
+ *
+ * "It is important for Domain Card creation to customize what the card type is... since they are
+ * based on images that already have those card types painted on them."
+ *
+ * Each has a plaque of its own keyed to exactly these words, so a homebrew Spell reads as a Spell.
+ */
+const DOMAIN_CARD_TYPES = ['Ability', 'Spell', 'Grimoire'] as const;
+
 /** The per-type mechanical/config fields shown inside the card editor (its `extraField`). The content
  *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
-function ContentConfig({ config, onChange, card, siblings }: {
+function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
   config: CardConfig;
   onChange: (c: CardConfig) => void;
   /** The card being edited, for the class report. */
   card: LibraryCard;
   /** Every OTHER card in this expansion, so links point at real things (v0.42.1). */
   siblings: LibraryCard[];
+  /** v0.42.3: open the card browser to pick starting items for one of a class's three lists. */
+  onPickItems: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
 }) {
   const set = (patch: Partial<CardConfig>) => onChange({ ...config, ...patch });
   /**
@@ -247,19 +283,34 @@ function ContentConfig({ config, onChange, card, siblings }: {
           {/* v0.42.1 (owner): CHOSEN, never typed, and the domains this expansion defines lead the
               list. A typed domain matched nothing, so the card belonged to no domain at all. */}
           <Text style={smallLabel}>Which domain</Text>
-          <View style={chipRow}>{domainChoices.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
+          <View style={chipRow}>{domainChoices.map((d) => <Chip key={d} label={domainLabel(d)} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
           {customDomains.length === 0 ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Make a Domain card in this expansion to offer one of your own.</Text>
           ) : null}
-          <LibInput label="Level (1–10)" value={config.level ? String(config.level) : ''} onChangeText={(s) => set({ level: Math.max(1, Math.min(10, parseInt(s || '1', 10) || 1)) })} placeholder="1" keyboardType="number-pad" />
+          {/* v0.42.3 (owner): a counter. A level is 1 to 10 and a keyboard can produce 47. */}
+          <CounterField label="Level" value={config.level ?? 1} min={1} max={10} onChange={(level) => set({ level })} />
+          {/* v0.42.3 (owner): the printed TYPE. The real domain cards carry one of three, painted
+              into their art, so a homebrew card that cannot pick one never looks like the real thing.
+              Each has a plaque of its own in `KIND_THEMES`, keyed to these labels. */}
+          <SelectRow
+            label="What kind of card it is"
+            hint="The word printed on the plaque, the same three the published domain cards use."
+            value={(config.typeLabel as (typeof DOMAIN_CARD_TYPES)[number]) ?? 'Ability'}
+            options={DOMAIN_CARD_TYPES.map((x) => ({ value: x, label: x }))}
+            onChange={(typeLabel) => set({ typeLabel })}
+          />
         </>
       ) : null}
       {/* v0.42.1 (owner): a CUSTOM DOMAIN. It owes eleven cards, and says so until it has them. */}
       {t === 'customDomain' ? (
         <View style={{ gap: 6 }}>
+          {/* v0.42.3 (owner): "clear up the domain section description because it sounds like the
+              user cannot make more than 11 domain cards". Eleven is the FLOOR: what a domain needs to
+              be playable at every level. Above that, as many as you like. */}
           <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
             A domain of your own. Write its cards as Domain cards in this expansion and set each one&apos;s domain to this.
-            It needs one at every level from 1 to 10, and two at level 1, so eleven in all.
+            A playable domain needs at least one card at every level from 1 to 10, and two at level 1, so eleven at a minimum.
+            Write as many more as you like: several cards can share a level, and the published domains do exactly that.
           </Text>
           {card.title.trim() ? (
             <Text style={{ color: domainProblems(card.title, siblings).length ? Rune.red : Rune.goldText, fontSize: 11, fontFamily: Body.bold, lineHeight: 15 }}>
@@ -298,21 +349,24 @@ function ContentConfig({ config, onChange, card, siblings }: {
       {t === 'class' ? (
         <ClassSpecForm
           spec={config.classSpec}
-          card={card}
+          card={{ ...card, className: config.className }}
           attachments={attachmentsFor(siblings, card.title)}
-          itemOptions={itemOptions}
+          classChoices={classChoices}
+          itemTitle={(id) => itemOptions.find((o) => o.id === id)?.title ?? 'A card that is no longer here'}
+          onPickItems={onPickItems}
+          onClassName={(className) => set({ className })}
           onChange={(classSpec) => set({ classSpec })}
         />
       ) : null}
       {t === 'subclass' ? (
         <View style={{ gap: 4 }}>
-          <LibInput label="Subclass name (its family)" value={config.subclass ?? ''} onChangeText={(subclass) => set({ subclass })} placeholder="e.g. Stalwart" />
-          <Text style={smallLabel}>Progression tier</Text>
-          <View style={chipRow}>
-            <Chip label="Foundation" on={(config.tier ?? 1) === 1} onPress={() => set({ tier: 1 })} />
-            <Chip label="Specialization" on={config.tier === 2} onPress={() => set({ tier: 2 })} />
-            <Chip label="Mastery" on={config.tier === 3} onPress={() => set({ tier: 3 })} />
-          </View>
+          <TextField label="Subclass name (its family)" value={config.subclass ?? ''} placeholder="e.g. Stalwart" onChangeText={(subclass) => set({ subclass })} />
+          <SelectRow
+            label="Progression tier"
+            value={config.tier === 3 ? 'mastery' : config.tier === 2 ? 'spec' : 'foundation'}
+            options={[{ value: 'foundation', label: 'Foundation' }, { value: 'spec', label: 'Specialization' }, { value: 'mastery', label: 'Mastery' }]}
+            onChange={(v) => set({ tier: v === 'mastery' ? 3 : v === 'spec' ? 2 : 1 })}
+          />
           {/* v0.42.0 (owner): the spellcast trait, exactly as an official subclass carries one. */}
           <Text style={smallLabel}>Spellcast trait (optional)</Text>
           <View style={chipRow}>
@@ -325,18 +379,15 @@ function ContentConfig({ config, onChange, card, siblings }: {
       {/* v0.13.2 (#359): the old "Passive on feature line" chip is gone. Which feature is crossed out in a
           mix is decided by SELECTION ORDER (like Void ancestries), and the passive rides Feature 1 by
           convention — no author choice needed. The section editor still organizes Feature 1 / 2 by position. */}
-      {/* v0.42.0 (owner): functional elements, on any card. A class's trackers are the reason they
-          exist, but nothing about them is class-specific, so nothing here restricts them to one. */}
+      {/**
+        * WHERE A FEATURE CARD LANDS (v0.42.3).
+        *
+        * The elements themselves are configured in the SECTION LIST now, not here: an element is a
+        * block of the card, so it is authored where the card's blocks are. What is left in this panel
+        * is the one thing that is about the card rather than about an element.
+        */}
       <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
-        <CardFunctionsForm
-          functions={config.functions}
-          states={fnStates}
-          advances={config.advances}
-          onChange={(functions) => set({ functions })}
-          onStates={setFnStates}
-          onAdvances={(advances) => set({ advances: advances.length ? advances : undefined })}
-        />
-        {(config.functions ?? []).length ? (
+        {t === 'feature' ? (
           <View style={{ gap: 5 }}>
             <Text style={smallLabel}>Where this card lands</Text>
             <View style={chipRow}>
@@ -345,7 +396,7 @@ function ContentConfig({ config, onChange, card, siblings }: {
             </View>
             {config.functionCategory ? (
               <View style={{ gap: 5 }}>
-                <LibInput label="Category name" value={config.functionCategory.label} onChangeText={(label) => set({ functionCategory: { ...config.functionCategory!, label } })} placeholder="e.g. Rites" />
+                <TextField label="Category name" value={config.functionCategory.label} placeholder="e.g. Rites" onChangeText={(label) => set({ functionCategory: { ...config.functionCategory!, label } })} />
                 <Text style={smallLabel}>Icon</Text>
                 <View style={chipRow}>
                   {CATEGORY_ICON_KEYS.slice(0, 14).map((k) => (
@@ -366,7 +417,7 @@ function ContentConfig({ config, onChange, card, siblings }: {
         <View style={{ gap: 6 }}>
           <Text style={smallLabel}>Trait</Text><View style={chipRow}>{WEAPON_TRAITS.map((x) => <Chip key={x} label={x} on={w.trait === x} onPress={() => setW({ trait: x })} />)}</View>
           <Text style={smallLabel}>Range</Text><View style={chipRow}>{WEAPON_RANGES.map((x) => <Chip key={x} label={x} on={w.range === x} onPress={() => setW({ range: x })} />)}</View>
-          <LibInput label="Damage (e.g. d8+2)" value={w.damage} onChangeText={(damage) => setW({ damage })} placeholder="d6" />
+          <TextField label="Damage" hint="A die and an optional bonus, the way the printed weapons write it." value={w.damage} placeholder="d8+2" onChangeText={(damage) => setW({ damage })} />
           <View style={chipRow}>
             <Chip label="Physical" on={w.damageType === 'phy'} onPress={() => setW({ damageType: 'phy', kind: 'physical' })} />
             <Chip label="Magic" on={w.damageType === 'mag'} onPress={() => setW({ damageType: 'mag', kind: 'magic' })} />
@@ -384,13 +435,13 @@ function ContentConfig({ config, onChange, card, siblings }: {
       ) : null}
       {t === 'armor' ? (
         <View style={{ gap: 6 }}>
-          <LibInput label="Base armor score" value={String(a.baseScore)} onChangeText={(s) => setA({ baseScore: Math.max(0, parseInt(s || '0', 10) || 0) })} placeholder="3" keyboardType="number-pad" />
-          <LibInput label="Thresholds (major/severe)" value={a.thresholds} onChangeText={(thresholds) => setA({ thresholds })} placeholder="7/15" />
+          <CounterField label="Base armor score" value={a.baseScore} min={0} max={20} onChange={(baseScore) => setA({ baseScore })} />
+          <TextField label="Thresholds" hint="Major and severe, separated by a slash." value={a.thresholds} placeholder="7/15" onChangeText={(thresholds) => setA({ thresholds })} />
           <Text style={smallLabel}>Tier</Text><View style={chipRow}>{[1, 2, 3, 4].map((n) => <Chip key={n} label={`T${n}`} on={a.tier === n} onPress={() => setA({ tier: n as 1 | 2 | 3 | 4 })} />)}</View>
         </View>
       ) : null}
-      {t === 'generic' ? (
-        <LibInput label="Type label (optional)" value={config.typeLabel ?? ''} onChangeText={(typeLabel) => set({ typeLabel })} placeholder="e.g. Consumable, Relic, shows on the plaque" />
+      {t === 'generic' || t === 'feature' ? (
+        <TextField label="Type label (optional)" hint="The word printed on the plaque. Left blank it says what kind of card this is." value={config.typeLabel ?? ''} placeholder="e.g. Consumable, Relic" onChangeText={(typeLabel) => set({ typeLabel })} />
       ) : null}
     </View>
   );
@@ -440,21 +491,22 @@ function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => v
  * expansion and a hole in the other, so the cluster travels together and the author is told what is
  * coming with it before they commit. See `lib/card-move`.
  */
-function MoveCardModal({ card, source, targets, onPick, onClose }: {
-  card: LibraryCard;
+function MoveCardModal({ cards, source, targets, onPick, onClose }: {
+  cards: LibraryCard[];
   source: LibraryCard[];
   targets: Expansion[];
   onPick: (dest: Expansion, mode: MoveMode) => void;
   onClose: () => void;
 }) {
   const [dest, setDest] = useState<Expansion | null>(targets[0] ?? null);
-  const extra = extraDependencies([card.id], source);
+  const extra = extraDependencies(cards.map((c) => c.id), source);
+  const what = cards.length === 1 ? `"${cards[0].title || 'Untitled'}"` : `${cards.length} cards`;
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
       <DimScreen opacity={0.9} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 10 }}>
-        <Text style={{ color: Rune.goldText, fontSize: 17, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Send &quot;{card.title || 'Untitled'}&quot; where?</Text>
+        <Text style={{ color: Rune.goldText, fontSize: 17, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Send {what} where?</Text>
         {targets.length === 0 ? (
           <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>There is nowhere to send it. Make another expansion first.</Text>
         ) : (
@@ -515,7 +567,7 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
 
 const cardSummary = (c: LibraryCard) => {
   const parts = [CONTENT_TYPE_LABEL[c.contentType]];
-  if (c.contentType === 'domain' && c.domain) parts.push(`${c.domain} L${c.level ?? 1}`);
+  if (c.contentType === 'domain' && c.domain) parts.push(`${domainLabel(c.domain)} L${c.level ?? 1}`);
   if ((c.contentType === 'subclass' || c.contentType === 'class') && c.className) parts.push(c.className);
   // v0.14.0: show the tier AND the family a subclass card is linked into, so an author can see the
   // grouping in the list instead of finding out at level-up whether it worked.
@@ -541,24 +593,41 @@ export function LibraryScreen() {
   const [choosingType, setChoosingType] = useState(false);
   /** v0.42.1: which page of the (sorted) card list is showing. */
   const [cardPage, setCardPage] = useState(0);
-  /** v0.42.1: the card being sent to another expansion. */
-  const [movingCard, setMovingCard] = useState<LibraryCard | null>(null);
-  /** v0.42.1: the campaign settings editor, and the warning that leads to it. */
-  const [campaignForm, setCampaignForm] = useState(false);
-  const [campaignWarn, setCampaignWarn] = useState(false);
   /**
-   * The DM palette in the creator (v0.42.1, owner).
-   *
-   * Authoring content is DM work, so the creator wears the DM colours. The flag is the same persisted
-   * one the DM screens read, which is why the hub only changes colour for someone already in DM mode:
-   * nothing here paints DM on its own, it reflects a mode the user is in. Opening an expansion to edit
-   * it offers to turn that mode on, once, with the warning below.
+   * v0.42.1: the cards being sent to another expansion. v0.42.3 made it a LIST, because the gallery
+   * can select several and moving them one at a time was never the point of dependency tracking.
    */
-  const [dm, setDm] = useState(false);
-  const [dmOffer, setDmOffer] = useState(false);
-  useEffect(() => { void getDmMode().then(setDm); }, []);
+  const [movingCards, setMovingCards] = useState<LibraryCard[]>([]);
+  /** v0.42.3: the cards a delete is being confirmed for. */
+  const [confirmDeleteCards, setConfirmDeleteCards] = useState<LibraryCard[]>([]);
+  /** v0.42.3: which of a class's three starting-item lists the card browser is filling. */
+  const [pickingItems, setPickingItems] = useState<'fixed' | 'choiceA' | 'choiceB' | null>(null);
+  /** v0.42.3: which element row is open in the editor, and the live state of the preview's controls. */
+  const [editingFn, setEditingFn] = useState<string | null>(null);
+  const [fnStates, setFnStates] = useState<Record<string, FunctionState>>({});
+/**
+   * THE DM PALETTE, AND NOT THE DM MODE (v0.42.3, owner).
+   *
+   * v0.42.1 read the persisted DM flag here and offered to turn it on. The DM playtesters disliked
+   * both halves: they wanted the colours the library already suits, and they did not want opening an
+   * expansion to re-label their main menu, still less to be asked about it in a pop-up on the way in.
+   *
+   * So it is a constant. This screen is grey because authoring content looks better grey, and it
+   * changes nothing anywhere else in the app.
+   */
+  const dm = true;
   const [metaForm, setMetaForm] = useState<'new' | 'edit' | null>(null);
-  const [confirmDeleteExp, setConfirmDeleteExp] = useState<Expansion | null>(null);
+  /**
+   * DELETING AN EXPANSION (v0.42.3, owner: "deleting an expansion must be a very hard thing to pull
+   * off just like entire campaigns in the DM UI are hard to delete").
+   *
+   * Exactly the campaign flow, because it is exactly the same kind of loss: hold the row, choose
+   * Delete from its menu, confirm what goes, then confirm again against a dialog that shouts. It was
+   * one button at the bottom of the editor next to Add card, which is a mis-tap away from months of
+   * work, and it is not there any more.
+   */
+  const [holdingExp, setHoldingExp] = useState<Expansion | null>(null);
+  const [confirmDeleteExp, setConfirmDeleteExp] = useState<{ exp: Expansion; step: 1 | 2 } | null>(null);
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<number | null>(null);
   const [message, setMessage] = useState<{ title: string; body: string } | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null);
@@ -571,8 +640,6 @@ export function LibraryScreen() {
   const openExpansion = (e: Expansion) => {
     setSelectedId(e.id);
     warnIncomplete(e);
-    // v0.42.1 (owner): the offer, once per visit, and only for someone not already in DM mode.
-    if (!dm && !isOfficialExpansion(e.id)) setDmOffer(true);
   };
   const toggleExpansion = (e: Expansion, turningOn: boolean) => {
     playSfx('buttonTap');
@@ -665,6 +732,45 @@ export function LibraryScreen() {
         }
       : undefined;
     const isAncestry = cfg.contentType === 'ancestry';
+    /**
+     * A FEATURE CARD is the only card with elements (v0.42.3, owner), so it is the only card whose
+     * editor offers "+ Add function", and the only one that may not be replaced by a whole picture:
+     * a picture cannot be pressed, and the elements are the entire reason the card exists.
+     */
+    const isFeature = cfg.contentType === 'feature' || (cfg.functions ?? []).length > 0;
+    /** Which ids one of the three starting-item lists is holding. */
+    const itemIdsFor = (spec: CustomClassSpec | undefined, which: 'fixed' | 'choiceA' | 'choiceB'): string[] =>
+      (which === 'fixed' ? spec?.fixedItemIds : which === 'choiceA' ? spec?.choiceAItemIds : spec?.choiceBItemIds) ?? [];
+    /** Put a picked card into one of them, without letting the same card in twice. */
+    const addStartingItem = (which: 'fixed' | 'choiceA' | 'choiceB', id: string) =>
+      setEditingCard((st) => {
+        if (!st) return st;
+        const spec = st.config.classSpec ?? EMPTY_CLASS_SPEC;
+        const key = which === 'fixed' ? 'fixedItemIds' : which === 'choiceA' ? 'choiceAItemIds' : 'choiceBItemIds';
+        const cur = itemIdsFor(spec, which);
+        if (cur.includes(id)) return st;
+        return { ...st, config: { ...st.config, classSpec: { ...spec, [key]: [...cur, id] } } };
+      });
+    /** The card as it will be saved, so the preview above is the card and not an impression of it. */
+    const previewCard = (d: CardDraft): LibraryCard => ({
+      id: existing?.id ?? 'preview',
+      contentType: cfg.contentType,
+      title: d.title,
+      text: d.text,
+      imageUri: d.imageUri,
+      color: d.color,
+      typeLabel: cfg.typeLabel ?? d.typeLabel,
+      sections: d.sections,
+      functions: cfg.functions,
+      domain: cfg.domain,
+      level: cfg.level,
+      className: cfg.className,
+      subclass: cfg.subclass,
+      tier: cfg.tier,
+      weapon: cfg.weapon,
+      armor: cfg.armor,
+      fullImage: d.fullImage,
+    });
     return (
       <CardEditor
         kindLabel={cfg.typeLabel || CONTENT_TYPE_LABEL[cfg.contentType]}
@@ -672,6 +778,43 @@ export function LibraryScreen() {
         initial={initial}
         sectioned
         sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
+        noFullImage={isFeature}
+        /**
+         * THE PREVIEW (v0.42.3, owner): the real `LibraryForgedCard`, which is the component the
+         * character sheet draws, with this card's own elements and live state. Not a mock-up of the
+         * card and not a swatch in a panel: what is approved here is what ships.
+         */
+        renderPreview={(d) => (
+          <LibraryForgedCard
+            card={previewCard(d)}
+            functionStates={fnStates}
+            onFunction={(fid, next) => setFnStates((st) => ({ ...st, [fid]: next }))}
+          />
+        )}
+        sectionFunctions={
+          isFeature
+            ? {
+                list: cfg.functions ?? [],
+                editingId: editingFn,
+                onEdit: setEditingFn,
+                onChange: (functions) => setEditingCard((st) => (st ? { ...st, config: { ...st.config, functions } } : st)),
+                renderEditor: (fn) => (
+                  <FunctionEditor
+                    fn={fn}
+                    advance={(cfg.advances ?? []).find((a) => a.functionId === fn.id)}
+                    onChange={(next) => setEditingCard((st) => (st ? { ...st, config: { ...st.config, functions: (st.config.functions ?? []).map((x) => (x.id === fn.id ? next : x)) } } : st))}
+                    onAdvance={(a) =>
+                      setEditingCard((st) =>
+                        st
+                          ? { ...st, config: { ...st.config, advances: [...(st.config.advances ?? []).filter((x) => x.functionId !== fn.id), ...(a ? [a] : [])] } }
+                          : st,
+                      )
+                    }
+                  />
+                ),
+              }
+            : undefined
+        }
         // v0.30.0: the details block, rewritten as the form below is filled in.
         generatedBody={formMarkdown(cfg)}
         extraField={
@@ -679,8 +822,28 @@ export function LibraryScreen() {
             config={cfg}
             card={existing ?? { id: 'new', contentType: cfg.contentType, title: '', text: '', imageUri: null }}
             siblings={selected.cards.filter((c) => c.id !== existing?.id)}
+            onPickItems={setPickingItems}
             onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))}
           />
+        }
+        overlay={
+          /**
+           * THE CARD BROWSER, picking a class's starting items (v0.42.3, owner).
+           *
+           * The same component the sheet's Add Gear opens, in a select mode: adding a card here puts
+           * its id in one of the class's three lists instead of on a character. It already draws real
+           * cards, already has the category tabs, and already surfaces this expansion's own records,
+           * which is exactly why it is reused rather than rebuilt as another chip cloud.
+           */
+          pickingItems ? (
+            <GearBrowser
+              acquiredIds={new Set(itemIdsFor(cfg.classSpec, pickingItems))}
+              enabledExpansionIds={[selected.id]}
+              onAdd={(id) => { addStartingItem(pickingItems, id); setPickingItems(null); }}
+              onAddCustom={(lc) => { addStartingItem(pickingItems, lc.id); setPickingItems(null); }}
+              onClose={() => setPickingItems(null)}
+            />
+          ) : undefined
         }
         onCancel={() => setEditingCard(null)}
         onSave={(d) => {
@@ -701,7 +864,10 @@ export function LibraryScreen() {
             linkSubclass: cfg.contentType === 'class' ? undefined : cfg.linkSubclass,
             classRole: cfg.classRole,
             classSpec: cfg.contentType === 'class' ? cfg.classSpec : undefined,
-            functions: meaningfulFunctions(cfg.functions).length ? meaningfulFunctions(cfg.functions) : undefined,
+            // v0.42.3: elements ride a FEATURE card. A card that has them from before this release
+            // keeps them (it is still `isFeature` above, and its type can be changed); nothing else
+            // can gain them, which is what makes the other forms stay short.
+            functions: meaningfulFunctions(cfg.functions).length ? prunedFunctions(d.sections, meaningfulFunctions(cfg.functions)) : undefined,
             functionCategory: cfg.functionCategory?.label.trim() ? cfg.functionCategory : undefined,
             // v0.42.1: an advancement whose element has gone is dropped with it, never left dangling.
             advances: (cfg.advances ?? []).filter((a) => meaningfulFunctions(cfg.functions).some((f) => f.id === a.functionId)).length
@@ -753,103 +919,80 @@ export function LibraryScreen() {
   // ---- expansion detail ----
   if (selected) {
     const s = expansionSummary(selected);
-    // v0.42.1 (owner): sorted, then cut into pages, so a finished class is a table of contents
-    // instead of a seventy-card scroll. See `lib/expansion-sort`.
-    const pages = paginate(selected.cards);
-    const page = pages[Math.min(cardPage, pages.length - 1)];
+    /**
+     * The header, re-laid out (v0.42.3, owner: "this entire interface is pretty ass").
+     *
+     * What it was: three identical ghost buttons over a wall of rows, one of them labelled "Campaign",
+     * which said nothing and then walked you through two pop-ups. What it is:
+     *
+     *  - the pack's own line (author, version, count), then its description, as one quiet block
+     *  - ONE row of actions, in the order you would use them: edit the pack, set its campaign rules,
+     *    send it. Labels that say what they do. Campaign settings opens in one tap.
+     *  - the destructive action is NOT here. It lives on the hold menu, like a DM campaign's does.
+     *
+     * The gallery gets everything below, because the cards are what the screen is about, and the two
+     * creation buttons close it off at the bottom where the primary action belongs.
+     */
+    const share = (cards: LibraryCard[]) => {
+      playSfx('buttonTap');
+      const pack = cards === selected.cards ? selected : { ...selected, cards };
+      const issues = expansionShareIssues(pack);
+      if (issues.length) { setMessage({ title: 'Finish these cards first', body: `${issues.slice(0, 6).join('\n')}${issues.length > 6 ? `\nand ${issues.length - 6} more.` : ''}` }); return; }
+      // v0.34.8: the pictures travel INSIDE the file. A card's imageUri is a path into this phone, so
+      // a pack shared without this arrived with every image blank.
+      void embedExpansionImages(pack)
+        .then((packed) => exportRkp({ kind: 'expansion', payload: packed }, pack.name))
+        .catch(() => showToast('Could not share that expansion.', 'error'));
+    };
     return (
       <AppScreen dm={dm} title={selected.name} onBack={() => setSelectedId(null)}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
-          <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ padding: 12, gap: 4 }}>
-            <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}</Text>
-            {selected.description ? <Text style={{ color: P.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
-            {/* v0.12.0: the enable/disable button moved OUT to the hub row toggle — no in-detail button. */}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              <RuneButton dm={dm} label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
-              {/* v0.42.1 (owner): the campaign's own rules, shipped with the pack. */}
-              <RuneButton dm={dm} label="Campaign" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); if (selected.campaign?.on) setCampaignForm(true); else setCampaignWarn(true); }} />
-              {/* v0.34.8 (owner): saving a half-finished pack is fine, sending one is not. A card
-                  bulk-made from an image starts with no name and no type, and on the other person's
-                  phone that is a card nobody can use or file. */}
-              <RuneButton dm={dm} label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => {
-                playSfx('buttonTap');
-                const issues = expansionShareIssues(selected);
-                if (issues.length) { setMessage({ title: 'Finish these cards first', body: `${issues.slice(0, 6).join('\n')}${issues.length > 6 ? `\nand ${issues.length - 6} more.` : ''}` }); return; }
-                // v0.34.8: the pictures travel INSIDE the file. A card's imageUri is a path into
-                // this phone, so a pack shared without this arrived with every image blank.
-                void embedExpansionImages(selected)
-                  .then((packed) => exportRkp({ kind: 'expansion', payload: packed }, selected.name))
-                  .catch(() => showToast('Could not share that expansion.', 'error'));
-              }} />
-            </View>
-          </ChamferBox>
-
-          {selected.cards.length === 0 ? (
-            <Text style={{ color: P.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 18 }}>No cards yet. Add your first homebrew card.</Text>
-          ) : (
-            page.map((c, pi) => (
-              <View key={c.id} style={{ gap: 8 }}>
-              {/* the section heading, drawn once at the top of each run */}
-              {pi === 0 || sectionOf(page[pi - 1]) !== sectionOf(c) ? (
-                <Text style={{ color: P.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.9, textTransform: 'uppercase', marginTop: pi === 0 ? 0 : 6 }}>{sectionOf(c)}</Text>
+        <View style={{ flex: 1, gap: Gap.group }}>
+          <View style={{ gap: Gap.intra }}>
+            <View style={{ gap: Gap.hair }}>
+              <Text style={{ color: P.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}
+              </Text>
+              {selected.description ? (
+                <Text style={{ color: P.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>{selected.description}</Text>
               ) : null}
-              {/* the index is into the REAL array: the row on screen is a sorted view of it. */}
-              <Pressable onPress={() => setEditingCard({ index: selected.cards.findIndex((x) => x.id === c.id), config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
-                {({ pressed }) => (
-                  <ChamferBox chamfer={8} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 11 }}>
-                    {/* v0.13.1 (#357): a catalog-reference card (NFC-granted system card) shows the REAL
-                        bundled card art instead of the homebrew color diamond. */}
-                    {c.catalogId && cardById(c.catalogId) ? (
-                      <View style={{ width: 30, height: 42 }}>
-                        <ArtImage source={cardById(c.catalogId)!.thumb} fit="contain" />
-                      </View>
-                    ) : (
-                      <View style={{ width: 10, height: 10, backgroundColor: c.color ?? P.bronze, transform: [{ rotate: '45deg' }] }} />
-                    )}
-                    <View style={{ flex: 1 }}>
-                      <Text numberOfLines={1} style={{ color: P.ivory, fontSize: 15, fontFamily: Body.bold }}>{c.title || 'Untitled'}</Text>
-                      <Text style={{ color: P.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2 }}>{cardSummary(c)}</Text>
-                    </View>
-                    {/* v0.14.0: INLINE the art. `imageUri` is a device-local file path — it serialized
-                        fine but resolved to nothing on the receiving phone, so every shared card with an
-                        uploaded image arrived blank. The sheet's send path always did this. */}
-                    {/* v0.30.0: always here. It said NFC and only appeared on a phone with the radio;
-                        the panel it opens exports a .rune file everywhere else, so a browser can share
-                        a card too. */}
-                    <Pressable onPress={() => { playSfx('buttonTap'); void embedCardImageForNfc(c).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Share ${c.title || 'card'}`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
-                      <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>{nfcOn ? 'SHARE' : 'EXPORT'}</Text>
-                    </Pressable>
-                    {/* v0.42.1 (owner): move or copy into another expansion, dependencies and all. */}
-                    <Pressable onPress={() => { playSfx('buttonTap'); setMovingCard(c); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Move ${c.title || 'card'}`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
-                      <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>MOVE</Text>
-                    </Pressable>
-                    <Pressable onPress={() => setConfirmDeleteCard(selected.cards.findIndex((x) => x.id === c.id))} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${c.title || 'card'}`} style={{ padding: 4 }}>
-                      <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
-                    </Pressable>
-                  </ChamferBox>
-                )}
-              </Pressable>
-              </View>
-            ))
-          )}
-
-          {/* v0.42.1 (owner): the pager. Horizontal, so the author steps through sections rather
-              than scrolling past them. Only drawn when there is more than one page. */}
-          {pages.length > 1 ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingTop: 4 }}>
-              <RuneButton dm={dm} label="Back" kind="ghost" dense height={32} style={{ width: 84 }} onPress={() => setCardPage((p) => Math.max(0, Math.min(pages.length - 1, p) - 1))} />
-              <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8 }}>{Math.min(cardPage, pages.length - 1) + 1} / {pages.length}</Text>
-              <RuneButton dm={dm} label="Next" kind="ghost" dense height={32} style={{ width: 84 }} onPress={() => setCardPage((p) => Math.min(pages.length - 1, p + 1))} />
             </View>
-          ) : null}
-        </ScrollView>
-        {/* v0.34.8 (owner): a whole folder of finished card faces becomes a whole pack in one go, one
-            card per image. They land untitled and generic on purpose — naming and configuring them is
-            the editing pass, and the Share button will not let a pack out until that pass is done. */}
-        <RuneButton dm={dm} label="Add cards from images" kind="ghost" dense height={38} onPress={() => void addCardsFromImages(selected)} />
-        <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
-          <RuneButton dm={dm} label="Delete expansion" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => setConfirmDeleteExp(selected)} />
-          <RuneButton dm={dm} label="Add card" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setChoosingType(true)} />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <RuneButton dm={dm} label="Edit details" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
+              {/* v0.42.3 (owner): the real name, and one tap. */}
+              {/* v0.42.3 (owner): campaign settings ARE the character creator. The DM walks the same
+                  carousels a player walks and turns cards off from inside them. One tap to get there,
+                  and no pop-up on the way. See `create-screen`'s campaign mode. */}
+              <RuneButton dm={dm} label="Campaign settings" kind="ghost" dense height={36} style={{ flex: 1.4 }} onPress={() => { playSfx('buttonTap'); router.push(`/create?campaign=${selected.id}` as Href); }} />
+              {/* v0.34.8 (owner): saving a half-finished pack is fine, sending one is not. */}
+              <RuneButton dm={dm} label="Share pack" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => share(selected.cards)} />
+            </View>
+          </View>
+
+          {/* v0.42.3 (owner): the cards, drawn as cards. See `expansion-gallery-view`. */}
+          <ExpansionGallery
+            cards={selected.cards}
+            dm={dm}
+            actions={{
+              onEdit: (c) =>
+                setEditingCard({
+                  index: selected.cards.findIndex((x) => x.id === c.id),
+                  config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel },
+                }),
+              onShare: (cs) => {
+                // One card goes as a card (it can travel by NFC); several go as a pack of their own.
+                if (cs.length === 1) { void embedCardImageForNfc(cs[0]).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); return; }
+                share(cs);
+              },
+              onMove: (cs) => setMovingCards(cs),
+              onDelete: (cs) => setConfirmDeleteCards(cs),
+            }}
+          />
+
+          <View style={{ gap: 8, paddingBottom: 4 }}>
+            {/* v0.34.8 (owner): a whole folder of finished card faces becomes a whole pack in one go. */}
+            <RuneButton dm={dm} label="Add cards from images" kind="ghost" dense height={36} onPress={() => void addCardsFromImages(selected)} />
+            <RuneButton dm={dm} label="Add card" kind="primary" height={46} onPress={() => setChoosingType(true)} />
+          </View>
         </View>
 
         {metaForm === 'edit' ? (
@@ -858,25 +1001,31 @@ export function LibraryScreen() {
         {choosingType ? (
           <TypeChooser onPick={(t) => { setChoosingType(false); setEditingCard({ index: 'new', config: defaultConfigFor(t) }); }} onClose={() => setChoosingType(false)} />
         ) : null}
-        {confirmDeleteCard != null ? (
-          <PopupDialog title="Delete card?" body={`"${selected.cards[confirmDeleteCard]?.title || 'Untitled'}" will be removed from this expansion.`} confirmLabel="Delete" destructive
-            onConfirm={() => { const cards = selected.cards.filter((_, j) => j !== confirmDeleteCard); void persist({ ...selected, cards }); setConfirmDeleteCard(null); }}
-            onCancel={() => setConfirmDeleteCard(null)} />
+        {confirmDeleteCards.length ? (
+          <PopupDialog
+            title={confirmDeleteCards.length === 1 ? 'Delete card?' : `Delete ${confirmDeleteCards.length} cards?`}
+            body={confirmDeleteCards.length === 1
+              ? `"${confirmDeleteCards[0].title || 'Untitled'}" will be removed from this expansion.`
+              : 'They will be removed from this expansion. Anything that pointed at them keeps its own text.'}
+            confirmLabel="Delete"
+            destructive
+            onConfirm={() => {
+              const gone = new Set(confirmDeleteCards.map((c) => c.id));
+              void persist({ ...selected, cards: selected.cards.filter((c) => !gone.has(c.id)) });
+              setConfirmDeleteCards([]);
+            }}
+            onCancel={() => setConfirmDeleteCards([])} />
         ) : null}
-        {confirmDeleteExp ? (
-          <PopupDialog title="Delete expansion?" body={`${confirmDeleteExp.name} and its ${confirmDeleteExp.cards.length} removed from this device. Files you have already exported are unaffected.`} confirmLabel="Delete" destructive
-            onConfirm={() => { const id = confirmDeleteExp.id; setConfirmDeleteExp(null); setSelectedId(null); if (isOfficialExpansion(id)) return; void deleteExpansion(id).then(reload); }}
-            onCancel={() => setConfirmDeleteExp(null)} />
-        ) : null}
-        {movingCard ? (
+
+        {movingCards.length ? (
           <MoveCardModal
-            card={movingCard}
+            cards={movingCards}
             source={selected.cards}
             targets={(expansions ?? []).filter((e) => e.id !== selected.id && !isOfficialExpansion(e.id))}
-            onClose={() => setMovingCard(null)}
+            onClose={() => setMovingCards([])}
             onPick={(dest, mode) => {
-              const r = moveCards(selected.cards, dest.cards, [movingCard.id], mode);
-              setMovingCard(null);
+              const r = moveCards(selected.cards, dest.cards, movingCards.map((c) => c.id), mode);
+              setMovingCards([]);
               // Two saves, source first, so a crash between them leaves the cards duplicated rather
               // than lost. Duplicates the author can delete; a hole they cannot get back.
               void persist({ ...dest, cards: r.to })
@@ -884,38 +1033,6 @@ export function LibraryScreen() {
                 .then(() => showToast(`${r.moved.length === 1 ? '1 card' : `${r.moved.length} cards`} ${mode === 'move' ? 'moved' : 'copied'} to ${dest.name}.`, 'success'))
                 .catch(() => showToast('Could not send that card.', 'error'));
             }}
-          />
-        ) : null}
-        {/* v0.42.1 (owner): the warning. Authoring is DM work, so the creator asks before it
-            recolours the app: the flag it sets is the same one the DM screens read, and the menu
-            will be the DM menu when they go back. Declining leaves everything as it was. */}
-        {dmOffer ? (
-          <PopupDialog
-            title="Switch to DM mode?"
-            body={'Making an expansion is DM work, so the creator wears the DM colours. Turning DM mode on also re-labels the main menu and opens the DM screens. You can turn it off again from the menu at any time, and nothing you have made is changed either way.'}
-            confirmLabel="Turn it on"
-            cancelLabel="Not now"
-            onConfirm={() => { setDmOffer(false); setDm(true); void setDmMode(true); }}
-            onCancel={() => setDmOffer(false)}
-          />
-        ) : null}
-        {/* v0.42.1 (owner): the warning. Campaign settings do not add anything, they TAKE things away
-            from everyone who enables the pack, which is not what an expansion has ever done before. */}
-        {campaignWarn ? (
-          <PopupDialog
-            title="This limits other people"
-            body={'Campaign settings travel with the expansion. Anyone who enables it will only see the classes, ancestries, communities and steps you leave available, and they will be told which pack is limiting them. Nothing is taken away until you turn limits on inside.'}
-            confirmLabel="Set them up"
-            cancelLabel="Not now"
-            onConfirm={() => { setCampaignWarn(false); setCampaignForm(true); }}
-            onCancel={() => setCampaignWarn(false)}
-          />
-        ) : null}
-        {campaignForm ? (
-          <CampaignSettingsForm
-            exp={selected}
-            onChange={(campaign) => void persist({ ...selected, campaign })}
-            onClose={() => setCampaignForm(false)}
           />
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
@@ -995,6 +1112,7 @@ export function LibraryScreen() {
               cardCount={expansionSummary(e).cardCount}
               onOpen={() => openExpansion(e)}
               onToggle={() => toggleExpansion(e, !isExpansionEnabled(e))}
+              onHold={() => { playSfx('cardSelect'); setHoldingExp(e); }}
             />
           ))
         )}
@@ -1015,6 +1133,52 @@ export function LibraryScreen() {
         />
       ) : null}
       {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
+
+      {/* The hold menu. Delete lives HERE and nowhere else, the same rule the DM campaigns follow. */}
+      {holdingExp ? (
+        <PopupDialog
+          dm
+          title={holdingExp.name}
+          body="Open it to author its cards, or remove it from this device."
+          confirmLabel="Open it"
+          cancelLabel="Close"
+          actionsGap={10}
+          onConfirm={() => { const e = holdingExp; setHoldingExp(null); openExpansion(e); }}
+          onCancel={() => setHoldingExp(null)}>
+          <View style={{ marginTop: 14 }}>
+            <RuneButton dm label="Delete expansion" kind="ghost" height={40} onPress={() => { const e = holdingExp; setHoldingExp(null); setConfirmDeleteExp({ exp: e, step: 1 }); }} />
+          </View>
+        </PopupDialog>
+      ) : null}
+
+      {confirmDeleteExp?.step === 1 ? (
+        <PopupDialog
+          dm
+          destructive
+          title={`Delete ${confirmDeleteExp.exp.name}?`}
+          body={`All ${confirmDeleteExp.exp.cards.length} of its cards go with it. Characters already built with them keep their copies, and any file you have exported is untouched.`}
+          confirmLabel="Delete"
+          onConfirm={() => setConfirmDeleteExp({ exp: confirmDeleteExp.exp, step: 2 })}
+          onCancel={() => setConfirmDeleteExp(null)}
+        />
+      ) : confirmDeleteExp?.step === 2 ? (
+        <PopupDialog
+          dm
+          destructive
+          title="THIS CANNOT BE UNDONE"
+          body={`DELETE ${confirmDeleteExp.exp.name.toUpperCase()} AND ALL ${confirmDeleteExp.exp.cards.length} OF ITS CARDS?`}
+          confirmLabel="DELETE IT"
+          cancelLabel="KEEP IT"
+          onConfirm={() => {
+            const id = confirmDeleteExp.exp.id;
+            setConfirmDeleteExp(null);
+            setSelectedId(null);
+            if (isOfficialExpansion(id)) return; // a bundled pack is never deleted, only switched off
+            void deleteExpansion(id).then(reload).then(() => showToast(`${confirmDeleteExp.exp.name} deleted`, 'success'));
+          }}
+          onCancel={() => setConfirmDeleteExp(null)}
+        />
+      ) : null}
     </AppScreen>
   );
 }

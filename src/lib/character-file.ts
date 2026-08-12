@@ -11,6 +11,7 @@ import { withRequiredExpansions } from '@/lib/expansion-membership';
 import type { CharacterHistory } from '@/lib/character-history';
 import type { DicePreset } from '@/lib/dice-presets';
 import type { CardAdvance, CardFunction } from '@/lib/card-functions';
+import { functionVars, functionVarValues } from '@/lib/function-vars';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, refOf, sourceLabelForCardId, unequippedPermanentSources } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
@@ -537,7 +538,14 @@ export function numberInputFor(file: CharacterFile | undefined, id: string): num
  * restores them with everything else.
  */
 function sheetContext(file: CharacterFile): import('@/lib/modifiers').SheetContext {
-  return { stress: file.resources?.stress ?? 0, inputs: file.numberInputs };
+  return {
+    stress: file.resources?.stress ?? 0,
+    inputs: file.numberInputs,
+    // v0.42.3: every numeric functional element the character is carrying, so a formula can scale by
+    // one. Derived rather than stored, like everything else a card element is, so an advancement that
+    // raised a Combo Die is already folded in. See `lib/function-vars`.
+    functions: functionVarValues(functionVars([...(file.libraryCards ?? []), ...(file.customCards ?? [])], file.cardFunctions, file.cardAdvances)),
+  };
 }
 
 /**

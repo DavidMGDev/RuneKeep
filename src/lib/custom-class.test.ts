@@ -51,8 +51,27 @@ describe('classProblems', () => {
     expect(classProblems(card({ title: '  ', classSpec: GOOD_SPEC }), ATTACHED)).toContain('give the class a name');
   });
 
-  it('reports a missing hope feature', () => {
-    expect(classProblems(card({ classSpec: { ...GOOD_SPEC, hopeFeature: { name: 'Root', text: '' } } }), ATTACHED)).toContain('write the Hope feature');
+  // v0.42.3 (owner): the Hope feature left the class form. It is a section the author writes like any
+  // other, so a class without one is not incomplete, it is a class whose author has not got there yet.
+  it('says nothing about a missing hope feature, which is a section now', () => {
+    expect(classProblems(card({ classSpec: { ...GOOD_SPEC, hopeFeature: { name: '', text: '' } } }), ATTACHED)).toEqual([]);
+  });
+
+  describe('a PAGE card (v0.42.3)', () => {
+    const page = (over = {}) => card({ classSpec: { ...GOOD_SPEC, role: 'page' as const }, className: 'Warden', ...over });
+
+    it('owes nothing but the class it belongs to', () => {
+      expect(classProblems(page())).toEqual([]);
+    });
+
+    it('is not asked for numbers, domains or items the base class already carries', () => {
+      const bare = card({ classSpec: { ...EMPTY_CLASS_SPEC, role: 'page' }, className: 'Warden' });
+      expect(classProblems(bare)).toEqual([]);
+    });
+
+    it('says so when it belongs to nothing', () => {
+      expect(classProblems(page({ className: '  ' }))[0]).toContain('which class');
+    });
   });
 
   it('reports a class no feature card points at', () => {

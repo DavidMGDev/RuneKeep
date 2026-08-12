@@ -1,10 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { scrollFieldIntoView, RESERVES_KEYBOARD_SPACE } from '@/lib/web-keyboard';
 import { BackHandler, Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Svg, { Circle, Line } from 'react-native-svg';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,9 +18,13 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { ART_H, FORGED_H, FORGED_W, ForgedCard, ForgedFaceCard } from '@/features/create/components/forged-card';
 import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
+import { addFunction, removeFunction } from '@/lib/card-blocks';
+import { type CardFunction, functionSummary, newFunction } from '@/lib/card-functions';
+import { type MarkCycle, pressMark, toggleBullet } from '@/lib/markdown-marks';
 import { type CardSection } from '@/lib/library';
 import { type CardEffect } from '@/lib/modifiers';
 import { applyPickedOption, EffectPicker, EffectsField, type ExperienceRef, FormulaVarPicker, matchOption } from '@/components/effects-editor';
+import type { FunctionVar } from '@/lib/function-vars';
 import { effectsForType, isExperienceType, withTypeEffects } from '@/features/character-sheet/card-types';
 import { OverlayHost } from '@/components/overlay-host';
 import { playSfx } from '@/lib/sfx';
@@ -82,14 +87,68 @@ export function CharCount({ value, max }: { value: string; max: number }) {
   );
 }
 
-/** A tiny markdown-toolbar button (Bold / Italic / bullet / reorder). */
-function MarkBtn({ label, onPress }: { label: string; onPress: () => void }) {
+/**
+ * A tiny toolbar button (Bold / Italic / bullet / reorder).
+ *
+ * `onPressIn` rather than `onPress` for the FORMAT buttons (v0.42.3, owner: "without closing the
+ * keyboard on webapp/native"). A press that begins on a button outside the focused input blurs it on
+ * both platforms; acting on press-in fires before the blur can be delivered, so the caret and the
+ * keyboard survive. `children` is an icon for the ones a letter cannot describe.
+ */
+function MarkBtn({ label, on, wide, onPress, children }: { label: string; on?: boolean; wide?: boolean; onPress: () => void; children?: ReactNode }) {
   return (
-    <Pressable onPress={onPress} hitSlop={5} accessibilityRole="button" accessibilityLabel={label} style={{ width: 30, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: 4, backgroundColor: 'rgba(20,24,31,0.85)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
-      <Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>{label}</Text>
+    <Pressable
+      onPressIn={onPress}
+      hitSlop={5}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!on }}
+      accessibilityLabel={label}
+      style={{ width: wide ? 38 : 30, height: 27, alignItems: 'center', justifyContent: 'center', borderRadius: 4, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.85)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
+      {children ?? <Text style={{ color: on ? Rune.ivory : Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>{label}</Text>}
     </Pressable>
   );
 }
+
+/**
+ * The BULLET LIST icon (v0.42.3, owner: "right now it does not read like a bullet point button, just
+ * as a dot"). Three dots with three rules beside them, which is what the button does.
+ */
+const BulletIcon = ({ c }: { c: string }) => (
+  <Svg width={15} height={13} viewBox="0 0 16 14">
+    {[3, 7, 11].map((y) => (
+      <React.Fragment key={y}>
+        <Circle cx={2.5} cy={y} r={1.4} fill={c} />
+        <Line x1={6} y1={y} x2={14} y2={y} stroke={c} strokeWidth={1.5} strokeLinecap="round" />
+      </React.Fragment>
+    ))}
+  </Svg>
+);
+
+/**
+ * The ITALIC icon (owner: "it just looks like a capital I which does not communicate the italic
+ * effect"). A slanted serifed I, which is the mark itself rather than a letter naming it.
+ */
+const ItalicIcon = ({ c }: { c: string }) => (
+  <Svg width={13} height={13} viewBox="0 0 14 14">
+    <Line x1={5} y1={2.5} x2={10} y2={2.5} stroke={c} strokeWidth={1.6} strokeLinecap="round" />
+    <Line x1={3.5} y1={11.5} x2={8.5} y2={11.5} stroke={c} strokeWidth={1.6} strokeLinecap="round" />
+    <Line x1={8} y1={2.5} x2={5.5} y2={11.5} stroke={c} strokeWidth={1.8} strokeLinecap="round" />
+  </Svg>
+);
+
+/** The four ways a section's text can be set, drawn as the lines they produce. */
+const ALIGNS: { value: NonNullable<CardSection['align']>; label: string; rows: [number, number][] }[] = [
+  { value: 'left', label: 'Left', rows: [[1, 13], [1, 9], [1, 12], [1, 7]] },
+  { value: 'center', label: 'Centred', rows: [[1, 13], [3, 11], [2, 12], [4, 10]] },
+  { value: 'right', label: 'Right', rows: [[1, 13], [5, 13], [2, 13], [7, 13]] },
+  { value: 'justify', label: 'Justified', rows: [[1, 13], [1, 13], [1, 13], [1, 8]] },
+];
+
+const AlignIcon = ({ rows, c }: { rows: [number, number][]; c: string }) => (
+  <Svg width={14} height={13} viewBox="0 0 14 14">
+    {rows.map(([x1, x2], i) => <Line key={i} x1={x1} y1={2.5 + i * 3} x2={x2} y2={2.5 + i * 3} stroke={c} strokeWidth={1.4} strokeLinecap="round" />)}
+  </Svg>
+);
 
 /** v0.13.0 ancestry mode: guarantee the two mandatory feature rows. No flags yet (a NEW card, or a
  *  legacy one saved before flags existed) → seed/adopt: new = description first then two features
@@ -110,7 +169,28 @@ function ensureAncestryRows(sections: CardSection[]): CardSection[] {
  * feature-flagged rows that can be MOVED anywhere but never deleted — their "Feature 1/2" identity is
  * their relative order (the upper flagged row is always Feature 1), re-labelled live on every move.
  */
-function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryFeatures = false }: { sections: CardSection[]; onChange: (s: CardSection[]) => void; minRows?: number; fixedLabels?: string[]; ancestryFeatures?: boolean }) {
+function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryFeatures = false, functions }: {
+  sections: CardSection[];
+  onChange: (s: CardSection[]) => void;
+  minRows?: number;
+  fixedLabels?: string[];
+  ancestryFeatures?: boolean;
+  /**
+   * FEATURE CARDS ONLY (v0.42.3, owner): the elements this card carries, so they can be arranged
+   * among its paragraphs rather than pinned above or below all of them.
+   *
+   * Absent means no "+ Add Function" button and no element rows, which is every other card type.
+   */
+  functions?: {
+    list: CardFunction[];
+    /** The row the author has open. One at a time: a card's worth of expanded forms is a wall. */
+    editingId: string | null;
+    onEdit: (id: string | null) => void;
+    onChange: (f: CardFunction[]) => void;
+    /** Drawn inside the open row: the configuration form. The PREVIEW is the card at the top. */
+    renderEditor: (fn: CardFunction) => ReactNode;
+  };
+}) {
   const [sel, setSel] = useState<{ row: number; start: number; end: number }>({ row: -1, start: 0, end: 0 });
   const rows: CardSection[] = ancestryFeatures
     ? ensureAncestryRows(sections)
@@ -129,21 +209,60 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
     [next[i], next[j]] = [next[j], next[i]];
     commit(next);
   };
+  /**
+   * BOLD and ITALIC as a press CYCLE (v0.42.3, owner): word, then whole section, then cleared.
+   *
+   * The rule is in `lib/markdown-marks`, which is pure and tested. What lives here is only the cycle
+   * STATE, and the one thing it must do: forget itself the moment the author types, so the next press
+   * is a first press again.
+   */
+  const cycle = useRef<MarkCycle | undefined>(undefined);
   const applyMark = (i: number, mark: '**' | '*' | 'bullet') => {
     if (sel.row !== i) return;
     const body = rows[i].body;
     if (mark === 'bullet') {
-      const ls = body.lastIndexOf('\n', Math.max(0, sel.start - 1)) + 1;
-      update(i, { body: `${body.slice(0, ls)}- ${body.slice(ls)}` });
+      cycle.current = undefined;
+      update(i, { body: toggleBullet(body, sel.start) });
       return;
     }
-    const mid = body.slice(sel.start, sel.end);
-    update(i, { body: `${body.slice(0, sel.start)}${mark}${mid}${mark}${body.slice(sel.end)}` });
+    const r = pressMark(body, sel, mark, cycle.current);
+    cycle.current = r.cycle;
+    update(i, { body: r.text });
   };
+  const typed = (i: number, body: string) => { cycle.current = undefined; update(i, { body }); };
   return (
     <View style={{ gap: 8 }}>
       {rows.map((r, i) => {
         const rank = ancestryFeatures && r.feature ? ++featureRank : 0; // Feature 1/2 by vertical order
+        const fn = r.functionId ? functions?.list.find((f) => f.id === r.functionId) : undefined;
+        /**
+         * A FUNCTION row (v0.42.3). It sits in the list exactly like a paragraph, moves with the same
+         * two arrows and deletes with the same cross, because to the author it IS a block of the card.
+         * Tapping it opens its configuration; the card at the top of the editor is where it is seen.
+         */
+        if (r.functionId) {
+          const open = functions?.editingId === r.functionId;
+          return (
+            <ChamferBox key={r.functionId} chamfer={8} fill="rgba(14,17,22,0.96)" stroke={open ? Rune.goldEdge : 'rgba(218,162,73,0.5)'} strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Pressable onPress={() => { playSfx('buttonTap'); functions?.onEdit(open ? null : r.functionId!); }} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`${fn?.title || 'Element'} settings`}>
+                  <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>{fn?.title || 'Element'}</Text>
+                  <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, marginTop: 2 }}>{fn ? functionSummary(fn) : 'Configure it'}</Text>
+                </Pressable>
+                <MarkBtn label="Move up" onPress={() => move(i, -1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↑</Text></MarkBtn>
+                <MarkBtn label="Move down" onPress={() => move(i, 1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↓</Text></MarkBtn>
+                <MarkBtn label="Remove this element" onPress={() => {
+                  playSfx('cardDeselect');
+                  const next = removeFunction(rows, functions?.list, r.functionId!);
+                  commit(next.sections);
+                  functions?.onChange(next.functions);
+                  functions?.onEdit(null);
+                }}><Text style={{ color: '#E2705A', fontSize: 12.5, fontFamily: Body.bold }}>✕</Text></MarkBtn>
+              </View>
+              {open && fn ? functions?.renderEditor(fn) : null}
+            </ChamferBox>
+          );
+        }
         return (
         <ChamferBox key={i} chamfer={8} fill="rgba(14,17,22,0.96)" stroke={rank ? Rune.goldEdge : 'rgba(218,162,73,0.5)'} strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
           {rank ? (
@@ -165,19 +284,32 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
             accessibilityLabel={rank ? `Feature ${rank} name` : `Section ${i + 1} name`}
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <MarkBtn label="B" onPress={() => applyMark(i, '**')} />
-            <MarkBtn label="I" onPress={() => applyMark(i, '*')} />
-            <MarkBtn label="•" onPress={() => applyMark(i, 'bullet')} />
+            <MarkBtn label="Bold" onPress={() => applyMark(i, '**')} />
+            <MarkBtn label="Italic" onPress={() => applyMark(i, '*')}><ItalicIcon c={Rune.goldText} /></MarkBtn>
+            <MarkBtn label="Bullet list" onPress={() => applyMark(i, 'bullet')}><BulletIcon c={Rune.goldText} /></MarkBtn>
             <View style={{ flex: 1 }} />
-            <MarkBtn label="↑" onPress={() => move(i, -1)} />
-            <MarkBtn label="↓" onPress={() => move(i, 1)} />
-            {canRemove(i) ? <MarkBtn label="✕" onPress={() => removeRow(i)} /> : null}
+            <MarkBtn label="Move up" onPress={() => move(i, -1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↑</Text></MarkBtn>
+            <MarkBtn label="Move down" onPress={() => move(i, 1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↓</Text></MarkBtn>
+            {canRemove(i) ? <MarkBtn label="Remove section" onPress={() => removeRow(i)}><Text style={{ color: '#E2705A', fontSize: 12.5, fontFamily: Body.bold }}>✕</Text></MarkBtn> : null}
+          </View>
+          {/* v0.42.3 (owner): how this section's text is set. Drawn as the lines each one produces,
+              because four words would be four words to read and these are four pictures. */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {ALIGNS.map((a) => (
+              <MarkBtn
+                key={a.value}
+                label={`${a.label} aligned`}
+                on={(r.align ?? 'left') === a.value}
+                onPress={() => update(i, { align: a.value === 'left' ? undefined : a.value })}>
+                <AlignIcon rows={a.rows} c={(r.align ?? 'left') === a.value ? Rune.ivory : Rune.goldText} />
+              </MarkBtn>
+            ))}
           </View>
           <TextInput
             value={r.body}
-            onChangeText={(body) => update(i, { body })}
+            onChangeText={(body) => typed(i, body)}
             onSelectionChange={(e) => setSel({ row: i, start: e.nativeEvent.selection.start, end: e.nativeEvent.selection.end })}
-            placeholder="Describe it. Select text, then tap B, I or bullet to format."
+            placeholder="Describe it. Put the cursor in a word and tap B or I."
             placeholderTextColor={Rune.muted}
             selectionColor={Rune.goldBright}
             multiline
@@ -189,7 +321,29 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
         </ChamferBox>
         );
       })}
-      <RuneButton label="+ Add section" kind="ghost" dense height={32} muteSfx onPress={addRow} />
+      {/* v0.42.3 (owner): "there should be two buttons now". Both append to the SAME list, which is
+          what lets a feature card be arranged however the author wants. */}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <RuneButton label="+ Add section" kind="ghost" dense height={34} style={{ flex: 1 }} muteSfx onPress={addRow} />
+        {functions ? (
+          <RuneButton
+            label="+ Add function"
+            kind="ghost"
+            dense
+            height={34}
+            style={{ flex: 1 }}
+            muteSfx
+            onPress={() => {
+              playSfx('buttonTap');
+              const fn = newFunction(`fn-${Date.now().toString(36)}-${functions.list.length}`, 'counter');
+              const next = addFunction(rows, functions.list, fn);
+              commit(next.sections);
+              functions.onChange(next.functions);
+              functions.onEdit(fn.id);
+            }}
+          />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -464,9 +618,14 @@ export function CardEditor({
   experienceMode = false,
   modifier,
   typeGroups,
+  functionVars,
+  renderPreview,
+  noFullImage = false,
+  overlay,
   scrimless = false,
   sectioned = false,
   sectionsConfig,
+  sectionFunctions,
   generatedBody,
 }: {
   kindLabel: string;
@@ -484,6 +643,19 @@ export function CardEditor({
   /** v0.10.2: fixed minimum rows + their placeholder names. v0.13.0: `ancestryFeatures` = two mandatory
    *  movable feature rows (Feature 1/2 identity = relative order), description-first default. */
   sectionsConfig?: { minRows?: number; fixedLabels?: string[]; ancestryFeatures?: boolean };
+  /**
+   * v0.42.3: the FUNCTIONAL ELEMENTS this card carries, arranged among its sections.
+   *
+   * Only a Feature card supplies this; every other type leaves it absent and never sees an element
+   * row or a "+ Add function" button. See `lib/card-blocks`.
+   */
+  sectionFunctions?: {
+    list: CardFunction[];
+    editingId: string | null;
+    onEdit: (id: string | null) => void;
+    onChange: (f: CardFunction[]) => void;
+    renderEditor: (fn: CardFunction) => ReactNode;
+  };
   /** v0.30.0: markdown written from the card's DETAIL FORM (weapon stats, domain + level, and so on),
    *  kept as the leading section so the author can read back what they filled in. Recomputed by the
    *  caller as the form changes; this editor keeps it in step with the draft and asks first when
@@ -503,6 +675,37 @@ export function CardEditor({
    *  (built-in + the player's custom types). `kindLabel` is the default. Absent → the plaque shows the
    *  static `kindLabel` (not tappable). */
   typeGroups?: { label: string; types: string[] }[];
+  /**
+   * v0.42.3: the character's numeric card elements, offered as formula variables.
+   *
+   * A prop rather than something this component derives, because the editor is opened from creation
+   * (where there is no character yet) as well as from the sheet. Absent means the picker offers none,
+   * which is the right answer in creation.
+   */
+  functionVars?: FunctionVar[];
+  /**
+   * THE PREVIEW ITSELF (v0.42.3, owner).
+   *
+   * "The functional elements of a feature card must be able to be PREVIEWED ON THE ORIGINAL CARD
+   * PREVIEW, NOT ON THE FUNCTIONAL ELEMENT CONFIGURATION PANEL. I want it at the top, where the card
+   * is being rendered. It must look exactly as it will when added to a player's inventory."
+   *
+   * So the caller may draw the card, because the caller is the one that knows what kind of card it
+   * is: the library screen renders the real `LibraryForgedCard`, which is the component the sheet
+   * uses, with the draft's own elements and live state. Absent keeps the plain forged card, which is
+   * every other editor.
+   */
+  renderPreview?: (draft: CardDraft) => ReactNode;
+  /** v0.42.3: a card whose elements ARE the card cannot be replaced by a picture of one. */
+  noFullImage?: boolean;
+  /**
+   * v0.42.3: a full-screen panel drawn OVER the editor, at its root.
+   *
+   * The class form's card browser is the case: written inside the scrolling fields column it would be
+   * positioned against the scroll content rather than the screen, which is the v0.39.0 trap. Anything
+   * that covers the editor comes through here.
+   */
+  overlay?: ReactNode;
 }) {
   // New cards open with a random color already set, as if Random Color was pressed (#153). The type
   // chip defaults to `kindLabel` when a type picker is available (#246).
@@ -741,6 +944,9 @@ export function CardEditor({
               // The whole card is the picture. Tapping it swaps the picture, because there is nothing
               // else on it to change.
               <ForgedFaceCard face={draft.imageUri!} />
+            ) : renderPreview ? (
+              // v0.42.3: the caller draws the real card. This is the ONLY preview in the editor.
+              renderPreview(draft)
             ) : expMode ? (
               <ForgedCard title={draft.title.trim() || 'Experience'} kindLabel="Experience" body="" accentDeep={Rune.panel} imageUri={draft.imageUri} colorArt={draft.color} experience modifier={modifier ?? 2} />
             ) : (
@@ -780,7 +986,7 @@ export function CardEditor({
           {/* v0.34.8 (owner): a card that is nothing but a finished picture, for faces exported from
               the Daggerheart card creator. The name and type below still apply; they stop being
               printed, because the picture already says them. */}
-          {experienceMode ? null : (
+          {experienceMode || noFullImage ? null : (
             <RuneButton
               label={faceMode ? 'Back to a RuneKeep card' : 'Use a whole card image'}
               kind="ghost"
@@ -805,7 +1011,14 @@ export function CardEditor({
             <CharCount value={draft.title} max={expMode ? 160 : TITLE_MAX} />
           </ChamferBox>
           {expMode ? null : sectioned ? (
-            <SectionsField sections={draft.sections ?? []} onChange={(sections) => setDraft((d) => ({ ...d, sections }))} minRows={sectionsConfig?.minRows} fixedLabels={sectionsConfig?.fixedLabels} ancestryFeatures={sectionsConfig?.ancestryFeatures} />
+            <SectionsField
+              sections={draft.sections ?? []}
+              onChange={(sections) => setDraft((d) => ({ ...d, sections }))}
+              minRows={sectionsConfig?.minRows}
+              fixedLabels={sectionsConfig?.fixedLabels}
+              ancestryFeatures={sectionsConfig?.ancestryFeatures}
+              functions={sectionFunctions}
+            />
           ) : (
             // v0.34.6 (owner): the box GROWS with what is in it, instead of being a fixed 92dp
             // window you scroll a wall of text inside. The editor is already a scroller, so the right
@@ -858,13 +1071,16 @@ export function CardEditor({
       {pickVar != null && draft.effects[pickVar] ? (
         <FormulaVarPicker
           current={draft.effects[pickVar].formula?.variable}
-          onPick={(variable) => {
-            setDraft((d) => ({ ...d, effects: d.effects.map((e, j) => (j === pickVar ? { ...e, formula: { ...(e.formula ?? { variable }), variable } } : e)) }));
+          currentKey={draft.effects[pickVar].formula?.functionKey}
+          functionVars={functionVars}
+          onPick={(variable, functionKey) => {
+            setDraft((d) => ({ ...d, effects: d.effects.map((e, j) => (j === pickVar ? { ...e, formula: { ...(e.formula ?? { variable }), variable, functionKey } } : e)) }));
             setPickVar(null);
           }}
           onClose={() => setPickVar(null)}
         />
       ) : null}
+      {overlay}
       {askRewrite != null ? (
         <PopupDialog
           title="Rewrite the details block?"

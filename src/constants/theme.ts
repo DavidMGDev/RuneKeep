@@ -89,6 +89,31 @@ export const DmGap = {
   section: 24,
 } as const;
 
+/**
+ * The app's spacing scale (v0.42.3).
+ *
+ * `DmGap` is the same scale under another name: the DM screens found it first, in v0.22.0, when 25
+ * hand-picked gaps were collapsed into three. The authoring screens had the same disease and get the
+ * same cure, so the values are deliberately identical rather than a second opinion.
+ *
+ * The rule the whole thing rests on: a section gap is at least TWICE an intra gap. That single ratio
+ * is what makes a screen read as groups rather than as a list of everything.
+ */
+export const Gap = {
+  /** Hairline separation: a label and the control it names. */
+  hair: 4,
+  /** Between the parts of one control: a field and its buttons. */
+  tightRow: 7,
+  /** Between elements inside one block. */
+  intra: 10,
+  /** Between sibling rows in a list. */
+  row: 12,
+  /** Between blocks inside a section. */
+  group: 18,
+  /** Between sections. Twice the intra gap, which is the whole point. */
+  section: 24,
+} as const;
+
 export const Display = {
   regular: 'Archivo_700Bold',
   semibold: 'Archivo_800ExtraBold',

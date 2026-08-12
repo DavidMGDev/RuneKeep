@@ -49,6 +49,8 @@ export const linksToSubclass = (c: LibraryCard, classTitle: string, subclassName
 export interface ClassAttachments {
   subclasses: LibraryCard[];
   features: LibraryCard[];
+  /** v0.42.3: further class cards that name this class as pages of it. */
+  pages: LibraryCard[];
   functional: LibraryCard[];
   items: LibraryCard[];
   domainCards: LibraryCard[];
@@ -58,9 +60,14 @@ export function attachmentsFor(cards: LibraryCard[], classTitle: string): ClassA
   const mine = cards.filter((c) => linksToClass(c, classTitle));
   return {
     subclasses: mine.filter((c) => c.contentType === 'subclass'),
-    // A FEATURE card is a generic card the author marked as one of the class's abilities.
-    features: mine.filter((c) => c.contentType === 'generic' && c.classRole === 'feature'),
-    functional: mine.filter((c) => (c.functions ?? []).length > 0 && c.classRole !== 'feature'),
+    /**
+     * v0.42.3: a FEATURE CARD is its own content type now. A generic card marked as a feature still
+     * counts, because that is what an author had to do in v0.42.1 and their pack must keep working.
+     */
+    features: mine.filter((c) => c.contentType === 'feature' || (c.contentType === 'generic' && c.classRole === 'feature')),
+    /** Extra pages of the class, which is the other thing a class card can be (v0.42.3). */
+    pages: mine.filter((c) => c.contentType === 'class' && c.classSpec?.role === 'page'),
+    functional: mine.filter((c) => (c.functions ?? []).length > 0 && c.contentType !== 'feature' && c.classRole !== 'feature'),
     items: mine.filter((c) => c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor'),
     domainCards: cards.filter((c) => c.contentType === 'domain'),
   };

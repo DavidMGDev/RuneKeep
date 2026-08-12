@@ -39,6 +39,15 @@ export interface PresetModifier {
    * could only hold one. Order is the order they were added, which is the order they read back.
    */
   variables?: EffectFormula['variable'][];
+  /**
+   * CARD ELEMENTS added on top (v0.42.3, owner), by `cardId|functionId`.
+   *
+   * A separate list rather than more entries in `variables`, because a card element is not one of the
+   * sheet's named variables: it is one of many, identified by which card it is on. Keeping them apart
+   * means a preset saved before this release reads back unchanged and a preset saved after it opens
+   * on an older install with its sheet variables intact.
+   */
+  functionKeys?: string[];
 }
 
 export interface DicePreset {
@@ -110,6 +119,8 @@ export interface PresetContext {
   damageRoll: number;
   spellcast: number;
   traits: Partial<Record<string, number>>;
+  /** v0.42.3: the live value of every numeric card element, keyed `cardId|functionId`. */
+  functions?: Record<string, number>;
 }
 
 /**
@@ -129,12 +140,26 @@ export function modifierVariables(mod: PresetModifier | undefined): EffectFormul
 /** Add one. Already there means nothing happens, which is what the picker's second tap should do. */
 export function addVariable(mod: PresetModifier | undefined, v: EffectFormula['variable']): PresetModifier {
   const vars = modifierVariables(mod);
-  return { value: mod?.value ?? 0, variables: vars.includes(v) ? vars : [...vars, v] };
+  return { value: mod?.value ?? 0, variables: vars.includes(v) ? vars : [...vars, v], functionKeys: mod?.functionKeys };
 }
 
 /** Take one out, keeping the rest in the order they were added. */
 export function removeVariable(mod: PresetModifier | undefined, v: EffectFormula['variable']): PresetModifier {
-  return { value: mod?.value ?? 0, variables: modifierVariables(mod).filter((x) => x !== v) };
+  return { value: mod?.value ?? 0, variables: modifierVariables(mod).filter((x) => x !== v), functionKeys: mod?.functionKeys };
+}
+
+/** The card elements a modifier carries, deduplicated for the same reason the variables are. */
+export const modifierFunctionKeys = (mod: PresetModifier | undefined): string[] => [...new Set(mod?.functionKeys ?? [])];
+
+/** Add a card element. */
+export function addFunctionKey(mod: PresetModifier | undefined, key: string): PresetModifier {
+  const keys = modifierFunctionKeys(mod);
+  return { value: mod?.value ?? 0, variables: modifierVariables(mod), functionKeys: keys.includes(key) ? keys : [...keys, key] };
+}
+
+/** Take a card element out. */
+export function removeFunctionKey(mod: PresetModifier | undefined, key: string): PresetModifier {
+  return { value: mod?.value ?? 0, variables: modifierVariables(mod), functionKeys: modifierFunctionKeys(mod).filter((k) => k !== key) };
 }
 
 /** What one variable resolves to against the sheet as it stands. */
@@ -161,12 +186,15 @@ function variableValue(v: EffectFormula['variable'], ctx: PresetContext): number
  */
 export function modifierValue(mod: PresetModifier | undefined, ctx: PresetContext): number {
   if (!mod) return 0;
-  return modifierVariables(mod).reduce((sum, v) => sum + variableValue(v, ctx), mod.value || 0);
+  const sheet = modifierVariables(mod).reduce((sum, v) => sum + variableValue(v, ctx), mod.value || 0);
+  // v0.42.3: a card element the player is keeping. An element on a card they no longer have reads as
+  // zero rather than breaking the roll, which is what every other missing source here does.
+  return modifierFunctionKeys(mod).reduce((sum, k) => sum + (ctx.functions?.[k] ?? 0), sheet);
 }
 
 /** True when a modifier is worth showing at all. */
 export const hasModifier = (mod: PresetModifier | undefined): boolean =>
-  !!mod && (mod.value !== 0 || modifierVariables(mod).length > 0);
+  !!mod && (mod.value !== 0 || modifierVariables(mod).length > 0 || modifierFunctionKeys(mod).length > 0);
 
 /** A short human summary of a preset's dice, for the edit dialog: "2d6, d20, Hope and Fear". */
 export function diceSummary(dice: DieType[]): string {

@@ -56,6 +56,19 @@ const KIND_THEMES: Record<string, PlaqueTheme> = {
   community: { gradientStops: [{ offset: '0%', color: '#243247' }, { offset: '100%', color: '#37496A' }], textColor: '#B9CDF2' },
   subclass: { gradientStops: [{ offset: '0%', color: '#2E2340' }, { offset: '100%', color: '#453257' }], textColor: '#D9C2F5' },
   domain: { gradientStops: [{ offset: '0%', color: '#2A2140' }, { offset: '100%', color: '#3E2F5E' }], textColor: '#CDB8F0' },
+  /**
+   * v0.42.3 (owner): "Domain" and "Domain Card" had no plaque of their own and fell through to the
+   * generic parchment, which is the one thing every other card type here avoids. A domain CARD is a
+   * shade lighter than the domain itself, so a domain and its cards read as a family without reading
+   * as the same card.
+   */
+  'domain card': { gradientStops: [{ offset: '0%', color: '#352A52' }, { offset: '100%', color: '#4C3A72' }], textColor: '#DCC9F7' },
+  /**
+   * v0.42.3: GRIMOIRE, the third type the printed domain cards carry, after Ability and Spell. The
+   * book prints it as a book, so it takes the ink-and-vellum end of the arcane family rather than
+   * another violet.
+   */
+  grimoire: { gradientStops: [{ offset: '0%', color: '#1B2438' }, { offset: '100%', color: '#2D3A5C' }], textColor: '#C3D2F5' },
   transformation: { gradientStops: [{ offset: '0%', color: '#301C2E' }, { offset: '100%', color: '#4A2A44' }], textColor: '#F0B8E4' },
   beastform: { gradientStops: [{ offset: '0%', color: '#2A3A1E' }, { offset: '100%', color: '#3F5730' }], textColor: '#C8E8A0' },
   'wild shape': { gradientStops: [{ offset: '0%', color: '#2A3A1E' }, { offset: '100%', color: '#3F5730' }], textColor: '#C8E8A0' },

@@ -54,6 +54,7 @@ import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, type LibraryCard } from '@/lib/library';
 import { advancedFunctions, advancedStates } from '@/lib/card-advances';
+import { functionVars, functionVarValues } from '@/lib/function-vars';
 import type { CardAdvance, CardFunction } from '@/lib/card-functions';
 import { libraryCardById } from '@/lib/library-embed';
 import { type MoodboardItem, readMoodboard } from '@/lib/moodboard';
@@ -2598,6 +2599,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * preset naming a variable: "+ Attack Rolls" should mean whatever the cards you have equipped today
    * add, not whatever they added the day it was saved.
    */
+  /** The character's numeric card elements, for the preset editor's variable list (v0.42.3). */
+  const presetCardVars = useMemo(
+    () => functionVars([...(file?.libraryCards ?? []), ...(file?.customCards ?? [])], file?.cardFunctions, file?.cardAdvances),
+    [file?.libraryCards, file?.customCards, file?.cardFunctions, file?.cardAdvances],
+  );
   const playPreset = useCallback((preset: DicePreset) => {
     const ctx = {
       level: character.level,
@@ -2609,6 +2615,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       damageRoll: character.damageRoll ?? 0,
       spellcast: character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0,
       traits: character.traits as Partial<Record<string, number>>,
+      // v0.42.3: the character's own card elements, so a preset can carry "+ Combo Die".
+      functions: functionVarValues(functionVars([...(fileRef.current?.libraryCards ?? []), ...(fileRef.current?.customCards ?? [])], fileRef.current?.cardFunctions, fileRef.current?.cardAdvances)),
     };
     trayRef.current?.playPreset(preset.dice, preset.name, modifierValue(preset.modifier, ctx));
   }, [character]);
@@ -2816,7 +2824,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   vitals fading out behind them and the cards still ride over everything. */}
               <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
               {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
-              {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} onWrite={writePreset} onPlay={playPreset} /> : null}
+              {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} /> : null}
               <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={diceUp ? rollTrait : undefined} />
               <ExpandVeil />
               <EditHud file={file ?? undefined} />
