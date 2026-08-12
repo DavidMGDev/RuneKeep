@@ -25,8 +25,20 @@ export const PRESET_MAX_DICE = 20;
 export interface PresetModifier {
   /** A flat amount the player typed. May be negative. */
   value: number;
-  /** A sheet variable added on top, resolved when the preset is rolled. */
+  /**
+   * ONE sheet variable, as v0.41.0 stored it.
+   *
+   * Kept for reading only. A preset saved by an older build has this and no list, and
+   * {@link modifierVariables} folds it into one, so nothing has to be migrated on disk.
+   */
   variable?: EffectFormula['variable'];
+  /**
+   * The sheet variables added on top, resolved when the preset is rolled (v0.42.0, owner).
+   *
+   * A list, because "proficiency plus damage rolls" is a thing a player wants to say and v0.41.0
+   * could only hold one. Order is the order they were added, which is the order they read back.
+   */
+  variables?: EffectFormula['variable'][];
 }
 
 export interface DicePreset {
@@ -94,8 +106,51 @@ export interface PresetContext {
   stress: number;
   attackRoll: number;
   spellcastRoll: number;
+  /** v0.42.0: everything the character's cards add to a damage roll. */
+  damageRoll: number;
   spellcast: number;
   traits: Partial<Record<string, number>>;
+}
+
+/**
+ * The variables a modifier carries, however it was saved (v0.42.0).
+ *
+ * The single field and the list are read as one thing, and duplicates are dropped: adding the same
+ * variable twice would double a bonus the player only has once.
+ */
+export function modifierVariables(mod: PresetModifier | undefined): EffectFormula['variable'][] {
+  const out: EffectFormula['variable'][] = [];
+  for (const v of [...(mod?.variables ?? []), ...(mod?.variable ? [mod.variable] : [])]) {
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
+/** Add one. Already there means nothing happens, which is what the picker's second tap should do. */
+export function addVariable(mod: PresetModifier | undefined, v: EffectFormula['variable']): PresetModifier {
+  const vars = modifierVariables(mod);
+  return { value: mod?.value ?? 0, variables: vars.includes(v) ? vars : [...vars, v] };
+}
+
+/** Take one out, keeping the rest in the order they were added. */
+export function removeVariable(mod: PresetModifier | undefined, v: EffectFormula['variable']): PresetModifier {
+  return { value: mod?.value ?? 0, variables: modifierVariables(mod).filter((x) => x !== v) };
+}
+
+/** What one variable resolves to against the sheet as it stands. */
+function variableValue(v: EffectFormula['variable'], ctx: PresetContext): number {
+  return (
+    !v || v === 'input' ? 0
+    : v === 'level' ? ctx.level
+    : v === 'tier' ? ctx.tier
+    : v === 'proficiency' ? ctx.proficiency
+    : v === 'stress' ? ctx.stress
+    : v === 'attackRoll' ? ctx.attackRoll
+    : v === 'spellcastRoll' ? ctx.spellcastRoll
+    : v === 'damageRoll' ? ctx.damageRoll
+    : v === 'spellcast' ? ctx.spellcast
+    : ctx.traits[v] ?? 0
+  );
 }
 
 /**
@@ -106,22 +161,12 @@ export interface PresetContext {
  */
 export function modifierValue(mod: PresetModifier | undefined, ctx: PresetContext): number {
   if (!mod) return 0;
-  const v = mod.variable;
-  const from =
-    !v || v === 'input' ? 0
-    : v === 'level' ? ctx.level
-    : v === 'tier' ? ctx.tier
-    : v === 'proficiency' ? ctx.proficiency
-    : v === 'stress' ? ctx.stress
-    : v === 'attackRoll' ? ctx.attackRoll
-    : v === 'spellcastRoll' ? ctx.spellcastRoll
-    : v === 'spellcast' ? ctx.spellcast
-    : ctx.traits[v] ?? 0;
-  return (mod.value || 0) + from;
+  return modifierVariables(mod).reduce((sum, v) => sum + variableValue(v, ctx), mod.value || 0);
 }
 
 /** True when a modifier is worth showing at all. */
-export const hasModifier = (mod: PresetModifier | undefined): boolean => !!mod && (mod.value !== 0 || !!mod.variable);
+export const hasModifier = (mod: PresetModifier | undefined): boolean =>
+  !!mod && (mod.value !== 0 || modifierVariables(mod).length > 0);
 
 /** A short human summary of a preset's dice, for the edit dialog: "2d6, d20, Hope and Fear". */
 export function diceSummary(dice: DieType[]): string {

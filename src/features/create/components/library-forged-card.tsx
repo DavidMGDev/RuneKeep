@@ -18,6 +18,10 @@ import { authoredSections } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
+import { View } from 'react-native';
+
+import { CardFunctionControl } from '@/components/card-function-control';
+import { type FunctionState, functionsAt } from '@/lib/card-functions';
 import { Rune } from '@/constants/theme';
 
 import { ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
@@ -50,7 +54,14 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
   return lc.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[lc.tier ?? 1] : undefined;
 }
 
-export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; struckIndex?: number }) {
+export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction }: {
+  card: LibraryCard;
+  struckIndex?: number;
+  /** v0.42.0: the player's live state for this card's functional elements, by function id. */
+  functionStates?: Record<string, FunctionState>;
+  /** Absent draws them inert, which is how the card looks anywhere it cannot be played. */
+  onFunction?: (functionId: string, next: FunctionState) => void;
+}) {
   // v0.34.8: the author already laid this card out somewhere else (the Daggerheart card creator), so
   // it prints as its own face, exactly like the publisher's scans. Everything else about it — its
   // content type, domain, effects — still works; only the drawing is the picture.
@@ -95,6 +106,31 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
   // which is why `struckIndex` must not also apply here.
   const face = VOID_ANCESTRY_FACE[card.id];
   if (face != null) return <ForgedFaceCard face={face} />;
+  /**
+   * FUNCTIONAL ELEMENTS ride the card's body (v0.42.0, owner).
+   *
+   * Above or below the text, as the author placed them, and with real state in both the preview and
+   * the sheet. `onFunction` absent draws them inert, which is what the gallery and any read-only
+   * view want: the card should still LOOK like what it is.
+   */
+  const fns = card.functions ?? [];
+  const strip = (where: 'above' | 'below') => {
+    const list = functionsAt(fns, where);
+    if (!list.length) return undefined;
+    return (
+      <View style={{ gap: 8, paddingVertical: 4 }}>
+        {list.map((f) => (
+          <CardFunctionControl
+            key={f.id}
+            fn={f}
+            state={functionStates?.[f.id]}
+            compact
+            onChange={onFunction ? (next) => onFunction(f.id, next) : undefined}
+          />
+        ))}
+      </View>
+    );
+  };
   return (
     <ForgedCard
       title={card.title}
@@ -105,6 +141,8 @@ export function LibraryForgedCard({ card, struckIndex }: { card: LibraryCard; st
       imageUri={card.imageUri}
       colorArt={card.color}
       multilineTitle
+      bodyAbove={strip('above')}
+      bodyBelow={strip('below')}
     />
   );
 }

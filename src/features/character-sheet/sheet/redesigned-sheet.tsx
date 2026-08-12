@@ -23,6 +23,8 @@ import { CLASSES, classInfo } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/data/class-data';
+import { classCardCount, missingClassCards } from '@/lib/class-cards';
+import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
@@ -96,7 +98,7 @@ import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
-import { useScreenDim, useScreenEdge } from '@/lib/screen-dim';
+import { DimScreen, useScreenDim, useScreenEdge } from '@/lib/screen-dim';
 import { type CardTarget, NewCardFlow } from './new-card-flow';
 import { EditCardFlow } from './edit-card-flow';
 import { LevelUpPanel } from './level-up-panel';
@@ -1065,6 +1067,29 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // badges + ordering keep working). `libItem` returns the forged image once ready, else a live node so
     // the card is never momentarily missing. A file with no libraryCards never calls it — identical to before.
     const libItem = (id: string): CardItem | undefined => {
+      /**
+       * A card carrying FUNCTIONAL ELEMENTS is LIVE, never a bitmap (v0.42.0, owner).
+       *
+       * A forged card is a picture, and a picture cannot be pressed. The same reasoning the Summoner
+       * and Warlock trackers have followed since v0.19.1: anything with a control on it renders its
+       * real component. It costs a forge slot and buys a card that actually does what it says.
+       */
+      const lc = file.libraryCards?.find((c) => c.id === id);
+      if (lc?.functions?.length) {
+        return {
+          id,
+          source: GENERIC_CARD_ART,
+          thumb: GENERIC_CARD_ART,
+          interactive: true,
+          live: (
+            <LibraryForgedCard
+              card={lc}
+              functionStates={file.cardFunctions?.[id]}
+              onFunction={(fid, next) => mutateFile({ cardFunctions: { ...(fileRef.current?.cardFunctions ?? {}), [id]: { ...(fileRef.current?.cardFunctions?.[id] ?? {}), [fid]: next } } })}
+            />
+          ),
+        };
+      }
       const j = libJobs.find((x) => x.id === id);
       if (!j) return undefined;
       const src = featureSources[j.key];
@@ -1143,7 +1168,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         ? [{ id, source: forged.source, thumb: forged.thumb, faces: pages }]
         : [{ id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: pages[0].custom, faces: pages }];
     };
-    const featItem = coverOf(`features-${file.className}`, faces);
+    /**
+     * The paged class card, unless the class has been EXPANDED (v0.42.0, owner).
+     *
+     * There is nothing to delete when a class is converted, because this card is derived rather than
+     * stored. `classExpanded` is what stops it being derived; the cards it became are ordinary
+     * entries in `customCards` from that moment on.
+     */
+    const featItem = file.classExpanded ? [] : coverOf(`features-${file.className}`, faces);
     // Multiclass (#311): the additional class's feature card (multi-page), assembled exactly like the
     // primary's, plus the chosen subclass FOUNDATION card. Both ride the arsenal next to the originals.
     const mcFaceJobs = mcClassJob ? [mcClassJob, ...mcFeatJobs] : mcFeatJobs;
@@ -2153,7 +2185,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         if (cardHasEffects(ref, file)) toggleable.add(ref);
       }
     }
-    return { permanent, numberInput, domain, toggleable, modsOff: new Set(file?.modifiersOffCardIds ?? []) };
+    /**
+     * The class card, and only while it is still a paged one (v0.42.0, owner).
+     *
+     * A character created in v0.42.0 arrives expanded and never sees this; one made earlier sees it
+     * once. `features-<class>` is the id the sheet gives the multi-page class card (see `coverOf`).
+     */
+    const expandable = new Set<string>();
+    if (file && !file.classExpanded && !file.classless) expandable.add(`features-${file.className}`);
+    return { permanent, numberInput, domain, toggleable, expandable, modsOff: new Set(file?.modifiersOffCardIds ?? []) };
   }, [deckFile, carouselDecks]);
   // v0.19.1 item 8: ONE ref-based toggle implementation, shared by manual taps AND bulk equip. Reading +
   // writing fileRef/characterRef synchronously lets a staggered bulk sequence compose correctly (a
@@ -2325,6 +2365,30 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * re-derives from it exactly like an equip. Newly equipped cards start LIVE, which is why this
    * stores the OFF ones: the default needs no entry at all.
    */
+  /**
+   * EXPAND a class card into one card per ability (v0.42.0, owner).
+   *
+   * Asked for once, and irreversible on purpose: the conversion writes real cards onto the character
+   * file, and the app has no paged class card to go back to afterwards, only the cards it made. The
+   * dialog says exactly that, and says how to get class cards back (delete them, then Add Gear),
+   * because a warning that does not tell you the way out is not a warning.
+   *
+   * They land in the category the player is looking at, which is the owner's rule and also the least
+   * surprising place for anything the sheet creates while you are watching.
+   */
+  const [expandingClass, setExpandingClass] = useState<CardCategory | null>(null);
+  const doExpandClass = useCallback((cat: CardCategory) => {
+    setExpandingClass(null);
+    const f = fileRef.current;
+    if (!f || f.classExpanded) return;
+    const made = missingClassCards(f.className, f.customCards);
+    const cardCategory = { ...(f.cardCategory ?? {}) };
+    for (const c of made) cardCategory[c.id] = cat;
+    commitFileRef.current({ ...f, classExpanded: true, customCards: [...(f.customCards ?? []), ...made], cardCategory });
+    playSfx('cardSelect');
+    pushNotice(`${made.length} class ${made.length === 1 ? 'card' : 'cards'} added`);
+  }, []);
+
   const onToggleCardModifiers = useCallback((id: string) => {
     const cur = fileRef.current;
     if (!cur) return;
@@ -2521,6 +2585,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       stress: character.stress.active,
       attackRoll: character.attackRoll ?? 0,
       spellcastRoll: character.spellcastRoll ?? 0,
+      damageRoll: character.damageRoll ?? 0,
       spellcast: character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0,
       traits: character.traits as Partial<Record<string, number>>,
     };
@@ -2654,7 +2719,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     );
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onExpandClassCard={(_id, cat) => setExpandingClass(cat)} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
        {/* v0.29.1: the south wedge is CHARACTERS, the way out. It is not an interface, it raises the
            SAME leave confirm the back button already uses rather than adding a second prompt that
            could drift from it. */}
@@ -2949,6 +3014,33 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               From fullscreen the carousel stays mounted+fullscreen behind this editor (#276 item 4). */}
           {editCardId && file ? (
             <EditCardFlow key={editCardId} file={file} cardId={editCardId} customTypes={customCardTypes} onSave={onSaveEditedCard} onDelete={onDeleteEditedCard} onCancel={() => setEditCardId(null)} />
+          ) : null}
+          {/**
+            * The Expand confirmation (v0.42.0, owner).
+            *
+            * `CenterDialog` rather than the app's `PopupDialog`, and at 10008: this is opened from the
+            * FOCUSED CARD, which is drawn in the carousel's own fullscreen layer far above the sheet.
+            * A dialog at the sheet's level renders behind it, which is the trap v0.37 hit when Share
+            * drew under the Cards panel. The card destination picker sits at 10006 for exactly this
+            * reason; this has to beat the card as well.
+            */}
+          {expandingClass && file ? (
+            <CenterDialog onClose={() => setExpandingClass(null)} zIndex={10008} scrimOpacity={0.88} dismissOnScrim={false}>
+              <DimScreen opacity={0.88} />
+              <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, padding: 18 }}>
+                <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>Expand this class card?</Text>
+                <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17, marginTop: 8 }}>
+                  {`Its ${classCardCount(file.className)} abilities become ${classCardCount(file.className)} separate cards, here in this category, and the paged class card goes away.`}
+                </Text>
+                <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17, marginTop: 8 }}>
+                  This cannot be undone. To get a class card back afterwards, delete these cards and add one from Add Gear. It grants no stats.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                  <RuneButton label="Keep it as it is" kind="ghost" height={42} style={{ flex: 1 }} onPress={() => setExpandingClass(null)} />
+                  <RuneButton label="Expand it" kind="primary" height={42} style={{ flex: 1 }} onPress={() => doExpandClass(expandingClass)} />
+                </View>
+              </ChamferBox>
+            </CenterDialog>
           ) : null}
           {/* per-card modifier view (#175): opened by the focused card's "Modifiers" button */}
           {cardInfoId && file ? (

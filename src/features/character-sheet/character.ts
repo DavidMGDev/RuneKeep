@@ -27,6 +27,8 @@ export interface Character {
    * so the Modifiers panel can preview a formula built on one.
    */
   attackRoll?: number;
+  /** v0.42.0: what your cards add to a DAMAGE roll. The app never rolls it; a preset reads it. */
+  damageRoll?: number;
   spellcastRoll?: number;
   ancestry: string;
   community: string;

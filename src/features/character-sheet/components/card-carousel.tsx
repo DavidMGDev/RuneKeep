@@ -759,7 +759,7 @@ const ACTION_H = 44;
  *    nothing on every other card would be worse than no button.
  */
 function FocusedCardActions({ cardId, instanceId }: { cardId: string; instanceId: string }) {
-  const { showCardInfo, toggleCardModifiers, editNumberInput, enabledIds, cardStates } = useCarousel();
+  const { showCardInfo, toggleCardModifiers, expandClassCard, editNumberInput, enabledIds, cardStates } = useCarousel();
   const canToggle = cardStates.toggleable.has(cardId);
   const equipped = enabledIds.has(cardId);
   // A permanent card applies from the vault, so it can be switched off there too.
@@ -773,6 +773,11 @@ function FocusedCardActions({ cardId, instanceId }: { cardId: string; instanceId
       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}
       onStartShouldSetResponder={() => true}
       onResponderRelease={() => {}}>
+      {/* v0.42.0 (owner): Expand leads, so the class card's one-way action is the first thing
+          under it and the row never runs to the card's edge. */}
+      {cardStates.expandable.has(cardId) ? (
+        <ActionBtn label="Expand" wide a11y="Turn this class card into one card per ability" onPress={() => expandClassCard(instanceId)} />
+      ) : null}
       <ActionBtn label="Modifiers" wide a11y="View this card's modifiers" onPress={() => showCardInfo(instanceId)} />
       {canToggle && applying ? (
         <ActionBtn
@@ -783,6 +788,8 @@ function FocusedCardActions({ cardId, instanceId }: { cardId: string; instanceId
         />
       ) : null}
       {takesNumber ? <ActionBtn label="#" a11y="Set this card's number" onPress={() => editNumberInput(instanceId)} /> : null}
+      {/* v0.42.0 (owner): only on the class card, and only while it is still a paged one. */}
+
     </View>
   );
 }

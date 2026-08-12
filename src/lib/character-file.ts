@@ -244,6 +244,24 @@ export interface CharacterFile {
   /** Per-card category OVERRIDE (#246): deck-card id → category key. Moves a card to a different
    *  (built-in or custom) category than its default. Cards without an entry stay in their default. */
   cardCategory?: Record<string, string>;
+  /**
+   * v0.42.0 (owner): this character's class has been EXPANDED into individual ability cards.
+   *
+   * The paged class card is derived from `className`, not stored, so there is nothing to delete when
+   * it is converted: this flag is what stops it being derived. The cards it became are ordinary
+   * entries in `customCards` from that moment on, which is exactly why the conversion is one-way.
+   * A character created in v0.42.0 or later starts expanded.
+   */
+  classExpanded?: boolean;
+  /**
+   * v0.42.0 (owner): the live state of every FUNCTIONAL element the character's cards carry.
+   *
+   * Keyed by card id, then by function id. The configuration lives on the library card because it is
+   * authored; this is what the player has done with it, which is why updating an expansion can rename
+   * a counter without putting somebody's three back to five. An absent entry is the author's default,
+   * derived rather than stored (see `lib/card-functions`), so a card nobody has touched costs nothing.
+   */
+  cardFunctions?: Record<string, Record<string, { n?: number; s?: string; i?: number }>>;
   /** Explicit category order for the over-scroll ring (#246): keys lead in this order, rest follow. */
   categoryOrder?: string[];
   /** Player-created card "type" labels (#246) for the middle ribbon, on top of the built-in types. */
@@ -535,6 +553,24 @@ function allEffectSources(file: CharacterFile): { sources: EffectSource[]; level
  */
 export const classLabel = (file: CharacterFile): string => (file.classless ? '' : classInfo(file.className).label);
 
+/**
+ * The trait a subclass CASTS with, authored or official (v0.42.0, owner).
+ *
+ * An embedded homebrew subclass answers first, because it is the only one that can: the built-in map
+ * is keyed on the official subclass slugs and knows nothing about a family somebody wrote last night.
+ * Everything else falls through to that map exactly as before, so no official character takes a
+ * different path than it did.
+ *
+ * A trait the author typed that is not one of the six resolves to NOTHING rather than to a broken
+ * lookup. An expansion is a file from someone else, and this is the boundary.
+ */
+function subclassSpellcast(file: CharacterFile, subclassCardId: string | null | undefined, officialSlug: string | undefined): TraitKey | null {
+  const authored = (subclassCardId ? file.libraryCards?.find((c) => c.id === subclassCardId)?.spellcastTrait : undefined)?.trim().toLowerCase();
+  const valid: TraitKey[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+  if (authored && (valid as string[]).includes(authored)) return authored as TraitKey;
+  return spellcastTraitForSubclass(officialSlug);
+}
+
 export function toSheetCharacter(file: CharacterFile): Character {
   const cls = classInfo(file.className);
   const data = CLASS_DATA[file.className];
@@ -572,6 +608,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     // v0.41.0: what cards add to a ROLL. No base, because the sheet has no such number.
     attackRoll: 0,
     spellcastRoll: 0,
+    damageRoll: 0,
     proficiency: proficiencyForLevel(level) + (file.proficiencyBonus ?? 0), // level 1 → 1 (#128)
     // #320: base thresholds are 0/0 — ALL value is per-level bonuses (levelThresholdSources), so the
     // character's level is always added to an armor/Bare-Bones `set`, and an unarmored character scales
@@ -584,7 +621,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
   };
   // v0.21.0 item 5: the Spellcast trait (from the chosen subclass) powers the `spellcast` formula variable
   // — e.g. Mage Robes' Enchanted feature adds it to the damage thresholds.
-  const spellcastTrait = spellcastTraitForSubclass(subclass?.subclass);
+  const spellcastTrait = subclassSpellcast(file, file.subclassCardId, subclass?.subclass);
   const sheet = computeSheet(base, level, sources, spellcastTrait, sheetContext(file));
   // v0.13.0 SCARS: each enabled scar card disables one Hope slot from the RIGHT. Flat count — freeing
   // any scar card always releases the leftmost scarred slot. Hope in play can never sit on a scarred slot.
@@ -673,6 +710,7 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     // v0.41.0: what cards add to a ROLL. No base, because the sheet has no such number.
     attackRoll: 0,
     spellcastRoll: 0,
+    damageRoll: 0,
     proficiency: proficiencyForLevel(level) + (file.proficiencyBonus ?? 0),
     majorThreshold: 0, // #320: thresholds come entirely from per-level bonuses (see toSheetCharacter)
     severeThreshold: 0,
@@ -680,7 +718,7 @@ export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').S
     restMoves: 0, // v0.25.0
     level: file.level, // v0.35
   };
-  const spellcastTrait = spellcastTraitForSubclass(cardById(file.subclassCardId)?.subclass);
+  const spellcastTrait = subclassSpellcast(file, file.subclassCardId, cardById(file.subclassCardId)?.subclass);
   return computeSheet(base, level, sources, spellcastTrait, sheetContext(file));
 }
 

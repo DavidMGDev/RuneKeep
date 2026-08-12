@@ -123,6 +123,14 @@ export interface Encounter {
   /** v0.36: vitals for the CHARACTERIZED entries in this encounter, keyed by character id. They are
    *  not party members, so `party.global` has nowhere to hold them and an absent entry means full. */
   charVitals?: PartyGlobalState;
+  /**
+   * v0.42.0 (owner): the ORDER the DM put the fight in, as ids, per side.
+   *
+   * Additive and absent by default. An entry the list has never heard of sorts last, so an encounter
+   * that has never been reordered lists exactly as it always did and a newly added adversary arrives
+   * at the bottom rather than shuffling the ones already placed. See `lib/encounter-order`.
+   */
+  order?: { adversaries?: string[]; allies?: string[] };
   /** v0.23.0: TEMPORARY max bonuses the DM granted for this fight only — bonus HP, a bigger stress
    *  track, extra armor slots. Encounter-scoped by definition, so it evaporates with the encounter
    *  and never touches the player's character file. A PERMANENT raise lives on the party instead. */

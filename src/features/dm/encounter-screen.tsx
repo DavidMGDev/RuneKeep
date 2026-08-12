@@ -34,6 +34,7 @@ import {
   canEditMembers,
   cloneCombatant,
   type Combatant,
+  type Ally,
   type CombatantStat,
   counterDelta,
   combatantDelta,
@@ -63,7 +64,9 @@ import { isUiMuted, setUiMuted } from '@/lib/sfx-prefs';
 import { AdversaryEditor } from './adversary-editor';
 import { AdversaryImageViewer } from './adversary-detail';
 import { AdversaryLibrary } from './adversary-library-screen';
+import { applyOrder, nudge } from '@/lib/encounter-order';
 import { CharacterCombatant, CombatantPanel } from './combatant-panel';
+import { ReorderList } from './reorder-list';
 import { DmModal, NameDialog, DmPress } from './dm-ui';
 import { EncounterLog } from './encounter-log';
 import { MemberPanel } from './member-panel';
@@ -134,6 +137,8 @@ export function EncounterScreen() {
   const tools = useDmCharacterTools(files, useCallback((next: CharacterFile) => setFiles((f) => ({ ...f, [next.id]: next })), []));
   const [library, setLibrary] = useState<SavedAdversary[]>([]);
   const [keypad, setKeypad] = useState<KeypadTarget | null>(null);
+  /** Which side the DM is putting in order, if any (v0.42.0). */
+  const [reordering, setReordering] = useState<'adversaries' | 'allies' | null>(null);
   // v0.23.0: setting a member above their maximum asks whether it is a bonus for this fight or a
   // real raise. Adversaries are encounter-local by definition, so there is nothing to ask them.
   const [overMax, setOverMax] = useState<{ charId: string; name: string; key: VitalKey; value: number; cap: number } | null>(null);
@@ -524,11 +529,32 @@ export function EncounterScreen() {
   if (!encounter) return <LoadingScreen dm label="Setting the scene" />;
   const enc = encounter;
   const editableMembers = canEditMembers(enc);
+  /**
+   * REORDERING (v0.42.0, owner).
+   *
+   * A MODE, not a drag. This screen's rows already own a tap (expand), a hold (multi-select) and, on
+   * a counter, a press, and this project has lost four gestures to a fifth one being added to a
+   * control that was already busy. Reorder turns the list into a plain list of handles for as long as
+   * the DM is reordering, so nothing has to negotiate with anything and it behaves identically on a
+   * phone and in a browser.
+   *
+   * Allies are ordered as ONE list even though they are drawn as two kinds, because the DM is putting
+   * a fight in order and does not think of "the party members" and "the NPCs" as separate queues.
+   */
+  const allyKey = (a: Ally) => (a.kind === 'member' ? a.charId : a.combatant.id);
+  const orderedAllies = applyOrder(enc.allies.map((x) => ({ id: allyKey(x), a: x })), enc.order?.allies);
+  const orderedAdversaries = applyOrder(enc.adversaries, enc.order?.adversaries);
+  const setOrder = (side: 'adversaries' | 'allies', next: string[]) => {
+    const cur = encRef.current;
+    if (cur) commitEncounter({ ...cur, order: { ...cur.order, [side]: next } });
+  };
+
   const memberAllies = enc.allies.filter((a): a is { kind: 'member'; charId: string } => a.kind === 'member' && !!files[a.charId]);
   // v0.36 (owner): presence is a PLAYER CHARACTER's property, so the control only appears when
   // every selected entry is one. An NPC or an adversary has no presence to toggle.
   const allyMembersOnly = allySel.ids.size > 0 && [...allySel.ids].every((cid) => enc.allies.some((a) => a.kind === 'member' && a.charId === cid));
   const npcAllies = enc.allies.filter((a): a is { kind: 'npc'; combatant: Combatant } => a.kind === 'npc');
+  void memberAllies; void npcAllies;
 
   /**
    * The value the keypad OPENS on (v0.36.2, owner).
@@ -617,8 +643,9 @@ export function EncounterScreen() {
           <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Allies</SectionLabel></View>
             <View style={{ flexDirection: 'row', gap: 14 }}>
-              <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} />
-              <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} />
+              {enc.allies.length > 1 ? <RuneButton label={reordering === 'allies' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); allySel.clear(); setReordering((r) => (r === 'allies' ? null : 'allies')); }} /> : null}
+              {reordering !== 'allies' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} /> : null}
+              {reordering !== 'allies' ? <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} /> : null}
             </View>
           </Animated.View>
           {memberAllies.length === 0 && npcAllies.length === 0 ? (
@@ -626,7 +653,13 @@ export function EncounterScreen() {
               No allies yet. Present party members appear here automatically; add an NPC to fight alongside them.
             </Text>
           ) : null}
-          {memberAllies.map((a) => (
+          {reordering === 'allies' ? (
+            <ReorderList
+              rows={orderedAllies.map((x) => ({ id: x.id, name: x.a.kind === 'member' ? files[x.a.charId]?.name ?? 'Ally' : x.a.combatant.name }))}
+              onMove={(id, delta) => setOrder('allies', nudge(orderedAllies.map((x) => x.id), id, delta))}
+            />
+          ) : null}
+          {reordering === 'allies' ? null : memberAllies.map((a) => (
             <MemberPanel
               key={a.charId}
               file={files[a.charId]}
@@ -644,7 +677,7 @@ export function EncounterScreen() {
               onCards={() => tools.openCards(a.charId)}
             />
           ))}
-          {npcAllies.map((a) =>
+          {reordering === 'allies' ? null : npcAllies.map((a) =>
             // v0.36: a characterized ally is a CHARACTER, drawn the way a party member is, with the
             // DM's modifier and card tools on it. Its vitals live on the encounter, not the party.
             a.combatant.charId && files[a.combatant.charId] ? (
@@ -674,12 +707,19 @@ export function EncounterScreen() {
           <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Adversaries</SectionLabel></View>
             <View style={{ flexDirection: 'row', gap: 14 }}>
-              <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} />
-              <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} />
+              {enc.adversaries.length > 1 ? <RuneButton label={reordering === 'adversaries' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); advSel.clear(); setReordering((r) => (r === 'adversaries' ? null : 'adversaries')); }} /> : null}
+              {reordering !== 'adversaries' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} /> : null}
+              {reordering !== 'adversaries' ? <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} /> : null}
             </View>
           </Animated.View>
           {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>None yet, add one, or spawn a whole group from the library.</Text> : null}
-          {enc.adversaries.map((c) =>
+          {reordering === 'adversaries' ? (
+            <ReorderList
+              rows={orderedAdversaries.map((c) => ({ id: c.id, name: c.name }))}
+              onMove={(id, delta) => setOrder('adversaries', nudge(orderedAdversaries.map((c) => c.id), id, delta))}
+            />
+          ) : null}
+          {reordering === 'adversaries' ? null : orderedAdversaries.map((c) =>
             // A characterized ADVERSARY stays an adversary. It is a character now, and it is still
             // fighting the party, which is why it does not move to the ally list.
             c.charId && files[c.charId] ? (

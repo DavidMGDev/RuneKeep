@@ -7,6 +7,7 @@ const ZERO: BaseStats = {
   // v0.41.0: what cards add to a roll. No base: nothing on the sheet has one.
   attackRoll: 0,
   spellcastRoll: 0,
+  damageRoll: 0,
 };
 const src = (source: string, effects: CardEffect[]): EffectSource => ({ source, effects });
 

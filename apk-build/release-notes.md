@@ -1,36 +1,38 @@
-RuneKeep v0.41.4 - Campaigns, and everything a DM runs given a face.
-
-CAMPAIGNS
-
-- PARTIES ARE CAMPAIGNS NOW, and a campaign owns its own sessions. Tapping one goes straight to its nights; Edit on the entry opens its cast.
-- NOTHING IS ACTIVE ANY MORE. Every campaign is open at any time, so running two games no longer means flipping a switch to prep the other one. A campaign's party stats stay inside that campaign.
-- A PICTURE, A COLOUR OR A LETTER. Give a campaign an image from your device, or a colour from the app's own picker, or neither, in which case it shows the first letter of its title. Plus a title and an optional description.
-- THE SAME EDITOR AT CREATION AND AFTER. Making a campaign asks how it should look before it takes you to the cast; the top right corner of the cast screen opens the same dialog again.
-- DELETING ASKS TWICE. Hold a campaign entry to reach Delete, confirm, then confirm again in capitals. It is not reachable from inside the editor at all.
-
-SESSIONS AND ENCOUNTERS
-
-- SESSIONS AND ENCOUNTERS GET THE SAME IDENTITY: a picture, a colour or a letter, a title and a description.
-- THE CAMPAIGN SWITCHER SHOWS ALL OF IT now, on the closed control and on every option, so two campaigns are told apart at a glance. Choosing one changes what is on screen and writes nothing.
-- THE ENCOUNTER LIST HAS THE MATCHING SWITCHER for the sessions of its campaign.
-- SEND AN ENCOUNTER ANYWHERE. Hold it, press Move, and pick a session: this campaign's other sessions lead the list, every other campaign is a folder you can open. Then Move it, or Copy it and leave the original where it was.
-
-NOTHING IS LOST
-
-- EVERY PARTY YOU HAVE EVER MADE is a campaign, including the ones that were never the active one. Their sessions were on your device all along and simply out of reach; they are reachable now.
-- OLD RECORDS ARE REPAIRED AS THEY ARE READ, not rewritten in one pass, so there is no moment where your data is half converted. Updating from several versions back is the same as updating from the last one.
-- ONE DAMAGED RECORD costs itself and nothing around it.
-- EVERYTHING SHOWS ITS INITIAL immediately, so your existing campaigns, sessions and encounters look finished without you editing a single one.
-
-COUNTERS
-
-- A COUNTDOWN ONLY COUNTS DOWN. Its plus button is gone, because a timer that can be wound backwards is not a timer.
-- AT ZERO, A COUNTDOWN THAT DOES NOT RESTART turns its minus into an X. Pressing it downs the adversary, exactly as the X on any other entry does, and Recover winds the countdown back to its start so the same threat can come round again.
-- EDITING "STARTS AT" AND PRESSING SAVE moves the counter to that number.
-- COUNTERS MAKE A SOUND when they move, and a different one when a countdown comes back round.
+RuneKeep v0.42.0 - Class cards become cards, homebrew classes, and a colour picker that works.
 
 FIXED
 
-- EXPANDING AN ADVERSARY NO LONGER STRETCHES IT. The entry used to animate its own height while its contents were being laid out at each height along the way, which distorted every line of text in it. The panel's frame is left alone now and the detail fades instead.
+- THE DM COLOUR PICKER OPENS PROPERLY. It was drawn inside a second modal that gave it no width, so it collapsed into a column of single letters over nothing.
+
+CLASS CARDS
+
+- ONE ABILITY PER CARD, WHOLE. No card says "(cont.)" any more. Every class in the app is now two to four cards instead of up to eight, with the rulebook's wording untouched: a long ability is set smaller rather than cut in half.
+- A NEW CHARACTER ARRIVES EXPANDED. Its class abilities are individual cards in the arsenal beside the subclass, ready to sort, move, favourite and annotate like anything else.
+- AN EXISTING CHARACTER GETS AN EXPAND BUTTON beside Modifiers on its class card. It asks first, says plainly that it cannot be undone, and drops the cards into the category you are looking at.
+- CHARACTER CREATION IS UNCHANGED. Choosing a class is still the deck you page through, because deciding is a different job from playing.
+- CLASS CARDS CAN STILL BE ADDED from Add Gear afterwards, and grant no stats.
+
+HOMEBREW CLASSES
+
+- AUTHOR A WHOLE CLASS in an expansion: starting Evasion and Hit Points, class items, a Hope feature, as many features as it needs, a summary and its two domains.
+- IT WILL NOT SHARE UNTIL IT IS PLAYABLE. The Share button says exactly what is missing, including the rule that a class needs at least one subclass and at least two cards.
+- A CUSTOM SUBCLASS CAN CAST. Give it a spellcast trait and the sheet uses it exactly as it uses an official one.
+
+FUNCTIONAL CARDS
+
+- A CARD CAN NOW DO SOMETHING. Put a COUNTER on it (a start, a maximum, or a countdown that restarts below zero), a TEXT FIELD (a word, a sentence or a paragraph, with your own placeholder), or a CYCLING BUTTON that walks a list of options you write.
+- ABOVE OR BELOW THE TEXT, with a subtitle of your own.
+- TRY IT WHILE YOU WRITE IT. Every element in the editor is the real control with real state, so you can see it work before anybody else does.
+- WHERE IT LANDS IS YOURS: the arsenal, or a category you name and give an icon.
+- THE PLAYER'S STATE IS THEIRS. It lives on the character, so updating an expansion can rename a counter without resetting the number somebody is mid-session with.
+
+DM MODE
+
+- REORDER A FIGHT. Press Reorder on the Allies or Adversaries heading and move entries up and down. It is a mode rather than a drag, so tap-to-expand and hold-to-select are untouched, and the order sticks.
+
+DICE
+
+- A DAMAGE ROLLS MODIFIER, grantable by any card, for use as a preset variable.
+- A PRESET CAN CARRY AS MANY VARIABLES AS YOU LIKE. Add a variable never disappears, and each one you add can be removed.
 
 Sideload: enable Install unknown apps, then open the APK.
