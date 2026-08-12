@@ -6,7 +6,7 @@
  * expansion you already have updates it in place.
  */
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -56,7 +56,6 @@ import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
 import { CounterField, SelectRow, TextField } from '@/components/form-controls';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
-import { CampaignSettingsForm } from './campaign-settings-form';
 import { ExpansionGallery } from './expansion-gallery-view';
 import { FunctionEditor } from './function-editor';
 import { CardFunctionsForm, ClassSpecForm } from './class-spec-form';
@@ -604,9 +603,6 @@ export function LibraryScreen() {
   /** v0.42.3: which element row is open in the editor, and the live state of the preview's controls. */
   const [editingFn, setEditingFn] = useState<string | null>(null);
   const [fnStates, setFnStates] = useState<Record<string, FunctionState>>({});
-  /** v0.42.1: the campaign settings editor, and the warning that leads to it. */
-  const [campaignForm, setCampaignForm] = useState(false);
-  const [campaignWarn, setCampaignWarn] = useState(false);
 /**
    * THE DM PALETTE, AND NOT THE DM MODE (v0.42.3, owner).
    *
@@ -958,7 +954,10 @@ export function LibraryScreen() {
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <RuneButton dm={dm} label="Edit details" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
               {/* v0.42.3 (owner): the real name, and one tap. */}
-              <RuneButton dm={dm} label="Campaign settings" kind="ghost" dense height={36} style={{ flex: 1.4 }} onPress={() => { playSfx('buttonTap'); setCampaignForm(true); }} />
+              {/* v0.42.3 (owner): campaign settings ARE the character creator. The DM walks the same
+                  carousels a player walks and turns cards off from inside them. One tap to get there,
+                  and no pop-up on the way. See `create-screen`'s campaign mode. */}
+              <RuneButton dm={dm} label="Campaign settings" kind="ghost" dense height={36} style={{ flex: 1.4 }} onPress={() => { playSfx('buttonTap'); router.push(`/create?campaign=${selected.id}` as Href); }} />
               {/* v0.34.8 (owner): saving a half-finished pack is fine, sending one is not. */}
               <RuneButton dm={dm} label="Share pack" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => share(selected.cards)} />
             </View>
@@ -1029,25 +1028,6 @@ export function LibraryScreen() {
                 .then(() => showToast(`${r.moved.length === 1 ? '1 card' : `${r.moved.length} cards`} ${mode === 'move' ? 'moved' : 'copied'} to ${dest.name}.`, 'success'))
                 .catch(() => showToast('Could not send that card.', 'error'));
             }}
-          />
-        ) : null}
-        {/* v0.42.1 (owner): the warning. Campaign settings do not add anything, they TAKE things away
-            from everyone who enables the pack, which is not what an expansion has ever done before. */}
-        {campaignWarn ? (
-          <PopupDialog
-            title="This limits other people"
-            body={'Campaign settings travel with the expansion. Anyone who enables it will only see the classes, ancestries, communities and steps you leave available, and they will be told which pack is limiting them. Nothing is taken away until you turn limits on inside.'}
-            confirmLabel="Set them up"
-            cancelLabel="Not now"
-            onConfirm={() => { setCampaignWarn(false); setCampaignForm(true); }}
-            onCancel={() => setCampaignWarn(false)}
-          />
-        ) : null}
-        {campaignForm ? (
-          <CampaignSettingsForm
-            exp={selected}
-            onChange={(campaign) => void persist({ ...selected, campaign })}
-            onClose={() => setCampaignForm(false)}
           />
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}

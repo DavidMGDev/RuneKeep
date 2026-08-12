@@ -1,5 +1,5 @@
 import { forwardRef, memo, type ReactNode, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -17,7 +17,7 @@ import Svg, { Polygon, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
 import { useScreenInsets } from '@/components/app-screen';
-import { Rune } from '@/constants/theme';
+import { Body, Rune } from '@/constants/theme';
 import { TraitCrossOut } from '@/features/character-sheet/components/trait-cross-out';
 import { playSfx } from '@/lib/sfx';
 import { GEAR_FAST_FLIP_PX, GEAR_SCROLL_PIP_VOLUME, PAGE_FLIP_VOLUME } from '@/lib/sfx-config';
@@ -69,6 +69,16 @@ export interface StraightItem {
    *  won't close it on tap) — close it by swipe-down or the veil. */
   interactive?: boolean;
   label?: string;
+  /**
+   * TURNED OFF (v0.42.3): drawn solid and greyed, with a band saying so.
+   *
+   * Generic on purpose. Campaign settings need every deck to be able to show a card as unavailable,
+   * and the alternative was teaching each deck's own item builder to render a second version of its
+   * card. This is the same treatment the Inherit step's left-behind cards already use, lifted to
+   * where any card can wear it: a slate wash rather than transparency, because two translucent cards
+   * overlapping in the carousel read as a bright seam instead of one dim card.
+   */
+  disabledLabel?: string;
 }
 
 const SPACING = 148; // px between detents
@@ -287,6 +297,14 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
               ) : null}
             </>
           )}
+          {item.disabledLabel ? (
+            <>
+              <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(20,24,31,0.62)' }]} />
+              <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: '44%', backgroundColor: 'rgba(20,24,31,0.95)', borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(147,142,136,0.5)', paddingVertical: 5 }}>
+                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{item.disabledLabel}</Text>
+              </View>
+            </>
+          ) : null}
           {selected ? (
             <>
               <View style={[StyleSheet.absoluteFill, { borderWidth: 3, borderColor: Rune.red }]} pointerEvents="none" />
