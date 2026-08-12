@@ -24,7 +24,8 @@ import { showToast } from '@/components/toast';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import { fitText } from '@/lib/fit-text';
-import { addVariable, type DicePreset, diceSummary, hasModifier, modifierVariables, type PresetModifier, PRESET_SLOTS, presetInitial, removeVariable } from '@/lib/dice-presets';
+import { addFunctionKey, addVariable, type DicePreset, diceSummary, hasModifier, modifierFunctionKeys, modifierVariables, type PresetModifier, PRESET_SLOTS, presetInitial, removeFunctionKey, removeVariable } from '@/lib/dice-presets';
+import type { FunctionVar } from '@/lib/function-vars';
 import type { EffectFormula } from '@/lib/modifiers';
 import { DimScreen } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
@@ -75,10 +76,12 @@ const varLabel = (v: EffectFormula['variable'] | undefined) => PRESET_VARS.find(
  * no flat part alongside it is now a normal thing to want. v0.42.0 reads out EVERY variable, because a
  * preset may carry as many as the player wants and a button that showed only the first would lie.
  */
-const modLabel = (mod: PresetModifier | undefined): string => {
+const modLabel = (mod: PresetModifier | undefined, cardVars?: FunctionVar[]): string => {
   if (!hasModifier(mod)) return '+ Modifier';
   const flat = mod!.value !== 0 ? `${mod!.value > 0 ? '+' : ''}${mod!.value}` : null;
-  return [flat, ...modifierVariables(mod).map((v) => varLabel(v))].filter(Boolean).join(' + ');
+  // v0.42.3: a card element reads out by its own name, which is why every element has to have one.
+  const cards = modifierFunctionKeys(mod).map((k) => cardVars?.find((v) => v.key === k)?.title ?? 'Card element');
+  return [flat, ...modifierVariables(mod).map((v) => varLabel(v)), ...cards].filter(Boolean).join(' + ');
 };
 
 // ------------------------------------------------------------------------------------- the slots
@@ -163,7 +166,16 @@ function IconPicker({ current, onPick, onClose }: { current?: string; onPick: (k
   );
 }
 
-function VariablePicker({ chosen, onPick, onClose }: { chosen: EffectFormula['variable'][]; onPick: (v: EffectFormula['variable']) => void; onClose: () => void }) {
+function VariablePicker({ chosen, chosenKeys, cardVars, onPick, onPickCard, onClose }: {
+  chosen: EffectFormula['variable'][];
+  /** v0.42.3: the card elements already added, by `cardId|functionId`. */
+  chosenKeys: string[];
+  /** v0.42.3: the character's numeric card elements. See `lib/function-vars`. */
+  cardVars: FunctionVar[];
+  onPick: (v: EffectFormula['variable']) => void;
+  onPickCard: (key: string) => void;
+  onClose: () => void;
+}) {
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 10004, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
@@ -185,6 +197,33 @@ function VariablePicker({ chosen, onPick, onClose }: { chosen: EffectFormula['va
               </Pressable>
             );
           })}
+          {/**
+            * THE CHARACTER'S OWN CARD ELEMENTS (v0.42.3, owner).
+            *
+            * A Combo Die is a number the player is already keeping, and until now the tray could not
+            * roll with it. Only the NUMERIC ones are here: a text field is not a number, and neither
+            * is a cycle of words. `lib/function-vars` decides which, once, for this list and the
+            * modifier formulas both.
+            */}
+          {cardVars.length ? (
+            <>
+              <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 8, marginBottom: 2 }}>From your cards</Text>
+              {cardVars.map((v) => {
+                const on = chosenKeys.includes(v.key);
+                return (
+                  <Pressable key={v.key} onPress={() => onPickCard(v.key)} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={`${v.title} on ${v.cardTitle}`}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{v.title}</Text>
+                        <Text style={{ color: on ? Rune.sheet : Rune.muted, fontSize: 10, fontFamily: Body.regular, marginTop: 1 }}>On {v.cardTitle}. Currently {v.value}.</Text>
+                      </View>
+                      {on ? <Text style={{ color: Rune.sheet, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>ADDED</Text> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </>
+          ) : null}
         </ScrollView>
       </ChamferBox>
     </View>
@@ -200,9 +239,11 @@ export interface PresetDraft { name: string; icon?: string; modifier?: PresetMod
  * handful of dice and nothing else, and a keypad sitting in the dialog would make the common case
  * look like it had a decision in it. Same for the variable.
  */
-function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, onCancel }: {
+function PresetEditor({ title, initial, dice, cardVars, onSave, onDelete, onUpdateDice, onCancel }: {
   title: string;
   initial: PresetDraft;
+  /** v0.42.3: the character's numeric card elements, offered alongside the sheet variables. */
+  cardVars?: FunctionVar[];
   /** What the preset holds, or what it would hold if saved now. */
   dice: DieType[];
   onSave: (d: PresetDraft) => void;
@@ -269,7 +310,7 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
             <Pressable onPress={() => setKeypad(true)} style={{ flex: 1.2 }} accessibilityRole="button" accessibilityLabel="Set a modifier">
               <ChamferBox chamfer={7} fill="rgba(20,24,31,0.8)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.1} style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
                 <Text numberOfLines={1} style={{ color: hasModifier(mod) ? Rune.goldText : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-                  {modLabel(mod)}
+                  {modLabel(mod, cardVars)}
                 </Text>
               </ChamferBox>
             </Pressable>
@@ -311,7 +352,10 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
       {pickVar ? (
         <VariablePicker
           chosen={chosenVars}
+          chosenKeys={modifierFunctionKeys(mod)}
+          cardVars={cardVars ?? []}
           onPick={(variable) => setDraft((d) => ({ ...d, modifier: modifierVariables(d.modifier).includes(variable) ? removeVariable(d.modifier, variable) : addVariable(d.modifier, variable) }))}
+          onPickCard={(key) => setDraft((d) => ({ ...d, modifier: modifierFunctionKeys(d.modifier).includes(key) ? removeFunctionKey(d.modifier, key) : addFunctionKey(d.modifier, key) }))}
           onClose={() => setPickVar(false)}
         />
       ) : null}
@@ -332,7 +376,9 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
 
 // ------------------------------------------------------------------------------------- the panel
 
-export function DicePresetSlots({ presets, trayDice, onWrite, onPlay }: {
+export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay }: {
+  /** v0.42.3: the character's numeric card elements, so a preset can carry "+ Combo Die". */
+  cardVars?: FunctionVar[];
   presets: (DicePreset | null)[];
   /**
    * What is in the tray right now, ASKED FOR when it is needed (v0.41.0).
@@ -387,6 +433,7 @@ export function DicePresetSlots({ presets, trayDice, onWrite, onPlay }: {
           title={editing.existing ? 'Edit preset' : `Save to slot ${editing.slot + 1}`}
           initial={{ name: editing.existing?.name ?? '', icon: editing.existing?.icon, modifier: editing.existing?.modifier }}
           dice={editing.dice}
+          cardVars={cardVars}
           onSave={(d) => {
             onWrite(editing.slot, {
               id: editing.existing?.id ?? `rp-${Date.now().toString(36)}`,

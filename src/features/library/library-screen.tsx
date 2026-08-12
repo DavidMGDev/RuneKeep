@@ -47,11 +47,13 @@ import { embedCardImageForNfc, embedExpansionImages } from '@/lib/image-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
 import { type CardAdvance, type CardFunction, type FunctionState, meaningfulFunctions } from '@/lib/card-functions';
+import { prunedFunctions } from '@/lib/card-blocks';
 import { attachmentsFor, classTitlesIn, subclassNamesFor } from '@/lib/class-links';
 import { paginate, sectionOf } from '@/lib/expansion-sort';
 import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/lib/card-move';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
+import { domainLabel } from '@/lib/domain-label';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
 import { CounterField, SelectRow, TextField } from '@/components/form-controls';
@@ -281,7 +283,7 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
           {/* v0.42.1 (owner): CHOSEN, never typed, and the domains this expansion defines lead the
               list. A typed domain matched nothing, so the card belonged to no domain at all. */}
           <Text style={smallLabel}>Which domain</Text>
-          <View style={chipRow}>{domainChoices.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
+          <View style={chipRow}>{domainChoices.map((d) => <Chip key={d} label={domainLabel(d)} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
           {customDomains.length === 0 ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Make a Domain card in this expansion to offer one of your own.</Text>
           ) : null}
@@ -565,7 +567,7 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
 
 const cardSummary = (c: LibraryCard) => {
   const parts = [CONTENT_TYPE_LABEL[c.contentType]];
-  if (c.contentType === 'domain' && c.domain) parts.push(`${c.domain} L${c.level ?? 1}`);
+  if (c.contentType === 'domain' && c.domain) parts.push(`${domainLabel(c.domain)} L${c.level ?? 1}`);
   if ((c.contentType === 'subclass' || c.contentType === 'class') && c.className) parts.push(c.className);
   // v0.14.0: show the tier AND the family a subclass card is linked into, so an author can see the
   // grouping in the list instead of finding out at level-up whether it worked.
@@ -735,7 +737,7 @@ export function LibraryScreen() {
      * editor offers "+ Add function", and the only one that may not be replaced by a whole picture:
      * a picture cannot be pressed, and the elements are the entire reason the card exists.
      */
-    const isFeature = cfg.contentType === 'feature';
+    const isFeature = cfg.contentType === 'feature' || (cfg.functions ?? []).length > 0;
     /** Which ids one of the three starting-item lists is holding. */
     const itemIdsFor = (spec: CustomClassSpec | undefined, which: 'fixed' | 'choiceA' | 'choiceB'): string[] =>
       (which === 'fixed' ? spec?.fixedItemIds : which === 'choiceA' ? spec?.choiceAItemIds : spec?.choiceBItemIds) ?? [];
@@ -862,7 +864,10 @@ export function LibraryScreen() {
             linkSubclass: cfg.contentType === 'class' ? undefined : cfg.linkSubclass,
             classRole: cfg.classRole,
             classSpec: cfg.contentType === 'class' ? cfg.classSpec : undefined,
-            functions: meaningfulFunctions(cfg.functions).length ? meaningfulFunctions(cfg.functions) : undefined,
+            // v0.42.3: elements ride a FEATURE card. A card that has them from before this release
+            // keeps them (it is still `isFeature` above, and its type can be changed); nothing else
+            // can gain them, which is what makes the other forms stay short.
+            functions: meaningfulFunctions(cfg.functions).length ? prunedFunctions(d.sections, meaningfulFunctions(cfg.functions)) : undefined,
             functionCategory: cfg.functionCategory?.label.trim() ? cfg.functionCategory : undefined,
             // v0.42.1: an advancement whose element has gone is dropped with it, never left dangling.
             advances: (cfg.advances ?? []).filter((a) => meaningfulFunctions(cfg.functions).some((f) => f.id === a.functionId)).length
