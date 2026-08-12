@@ -18,6 +18,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Rune } from '@/constants/theme';
 import { type CardFunction, type FunctionKind, type FunctionState, functionSummary, newFunction, stateOf } from '@/lib/card-functions';
+import { ALL_DOMAINS } from '@/constants/identity';
 import { type CustomClassSpec, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 
 const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
@@ -69,7 +70,8 @@ export function ClassSpecForm({ spec, onChange }: { spec: CustomClassSpec | unde
   const set = (patch: Partial<CustomClassSpec>) => onChange({ ...s, ...patch });
   return (
     <View style={{ gap: 10 }}>
-      <Text style={smallLabel}>Class details</Text>
+      {/* v0.42.1 (owner): the heading is printed by the panel that hosts this form, so printing it
+          again here said "Class details" twice for no reason. */}
       <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
         A class needs all of this to be played, and at least one subclass in the same expansion. The Share button says what is missing.
       </Text>
@@ -82,9 +84,34 @@ export function ClassSpecForm({ spec, onChange }: { spec: CustomClassSpec | unde
       <Field label="Class items" value={s.classItems} onChangeText={(classItems) => set({ classItems })} placeholder="A worn compass or a bundle of dried sage" maxLength={120} />
       <Field label="Summary" value={s.summary} onChangeText={(summary) => set({ summary })} placeholder="What this class is, in the voice of the printed cards." multiline maxLength={400} />
 
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Field label="Domain 1" value={s.domains[0] ?? ''} onChangeText={(d) => set({ domains: [d, s.domains[1] ?? ''] })} placeholder="e.g. valor" maxLength={40} />
-        <Field label="Domain 2" value={s.domains[1] ?? ''} onChangeText={(d) => set({ domains: [s.domains[0] ?? '', d] })} placeholder="e.g. sage" maxLength={40} />
+      {/**
+        * The two domains are CHOSEN, not typed (v0.42.1, owner: "how does the card ever know what its
+        * domains are for picking domain cards???").
+        *
+        * A typed domain is a string that matches nothing, so the class granted no cards at all. These
+        * are the real domain keys, which is what creation looks a domain card up by.
+        */}
+      <View style={{ gap: 6 }}>
+        <Text style={smallLabel}>Domains it grants (pick two)</Text>
+        <View style={chipRow}>
+          {ALL_DOMAINS.map((d) => {
+            const chosen = s.domains.includes(d);
+            return (
+              <Chip
+                key={d}
+                label={d}
+                on={chosen}
+                onPress={() => {
+                  const next = chosen ? s.domains.filter((x) => x !== d) : [...s.domains.filter((x) => x.trim()), d];
+                  set({ domains: next.slice(-2) });
+                }}
+              />
+            );
+          })}
+        </View>
+        <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>
+          {s.domains.filter((d) => d.trim()).length === 2 ? `Grants ${s.domains.filter((d) => d.trim()).join(' and ')}.` : 'A class grants two domains. Picking a third replaces the first.'}
+        </Text>
       </View>
 
       <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
@@ -155,7 +182,10 @@ function FunctionEditor({ fn, state, onChange, onState, onRemove }: {
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Field label="Starts at" value={String(fn.start ?? 0)} onChangeText={(t) => onChange({ ...fn, start: num(t) })} numeric maxLength={3} />
-            <Field label="Maximum (0 = none)" value={String(fn.max ?? 0)} onChangeText={(t) => onChange({ ...fn, max: num(t) || undefined })} numeric maxLength={3} />
+            {/* v0.42.1 (owner): a RANGE, so a counter can be held between two numbers rather than
+                only under a ceiling. Zero on either end means "no limit that way". */}
+            <Field label="Lowest" value={String(fn.min ?? 0)} onChangeText={(t) => onChange({ ...fn, min: num(t) || undefined })} numeric maxLength={3} />
+            <Field label="Highest (0 = none)" value={String(fn.max ?? 0)} onChangeText={(t) => onChange({ ...fn, max: num(t) || undefined })} numeric maxLength={3} />
           </View>
           <View style={chipRow}>
             <Chip label="Counts down only" on={!!fn.countdown} onPress={() => onChange({ ...fn, countdown: !fn.countdown, loop: fn.countdown ? undefined : fn.loop })} />
@@ -193,6 +223,22 @@ function FunctionEditor({ fn, state, onChange, onState, onRemove }: {
           <Field label="Starts on option number" value={String((fn.startIndex ?? 0) + 1)} onChangeText={(t) => onChange({ ...fn, startIndex: Math.max(0, num(t) - 1) })} numeric maxLength={2} />
         </View>
       ) : null}
+
+      {/* v0.42.1 (owner): a line before and a line after the control, so a locked element can explain
+          itself where it is rather than somewhere else on the card. */}
+      <Field label="Line above the control" value={fn.before ?? ''} onChangeText={(before) => onChange({ ...fn, before })} placeholder="Optional" maxLength={160} />
+      <Field label="Line below the control" value={fn.after ?? ''} onChangeText={(after) => onChange({ ...fn, after })} placeholder="e.g. Raise this once per tier as a level advancement." maxLength={160} />
+
+      {/* v0.42.1 (owner): locked and hidden. Locked shows the value and refuses to move; hidden is
+          not drawn at all. Only a level advancement opens either. */}
+      <View style={{ gap: 4 }}>
+        <Text style={smallLabel}>Can the player change it?</Text>
+        <View style={chipRow}>
+          <Chip label="Yes, freely" on={!fn.locked && !fn.hidden} onPress={() => onChange({ ...fn, locked: undefined, hidden: undefined })} />
+          <Chip label="Locked" on={!!fn.locked && !fn.hidden} onPress={() => onChange({ ...fn, locked: true, hidden: undefined })} />
+          <Chip label="Hidden until unlocked" on={!!fn.hidden} onPress={() => onChange({ ...fn, locked: true, hidden: true })} />
+        </View>
+      </View>
 
       {/* The REAL control, with real state (owner): "the card should be able to be tested with its
           functionality during the preview". A picture of a control is not a test of one. */}

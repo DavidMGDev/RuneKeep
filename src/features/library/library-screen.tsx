@@ -60,7 +60,18 @@ const SPELLCAST_TRAITS: { key: string; label: string }[] = [
   { key: 'instinct', label: 'Instinct' }, { key: 'presence', label: 'Presence' }, { key: 'knowledge', label: 'Knowledge' },
 ];
 
-const CHOOSABLE_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'weapon', 'armor', 'inventory', 'generic'];
+/**
+ * The chooser's sections (v0.42.1, owner).
+ *
+ * Ordered by what an author is usually doing: building a class needs several of the first group in
+ * one sitting, so those lead. Every type in `CHOOSABLE_TYPES` appears in exactly one group.
+ */
+const TYPE_GROUPS: { label: string; hint: string; types: LibraryContentType[] }[] = [
+  { label: 'A class, and what belongs to it', hint: 'Make the class card first, then link its subclasses, features and trackers to it.', types: ['class', 'subclass', 'domain'] },
+  { label: 'Who a character is', hint: 'Options offered at character creation.', types: ['ancestry', 'community'] },
+  { label: 'What they carry', hint: 'Gear, and anything that lands in the inventory.', types: ['weapon', 'armor', 'inventory'] },
+  { label: 'Anything else', hint: 'A plain card. Give it functional elements to make it a tracker.', types: ['generic'] },
+];
 const WEAPON_TRAITS = ['Agility', 'Strength', 'Finesse', 'Instinct', 'Presence', 'Knowledge'];
 const WEAPON_RANGES = ['Melee', 'Very Close', 'Close', 'Far', 'Very Far'];
 const DEFAULT_WEAPON: WeaponSpec = { trait: 'Agility', range: 'Melee', damage: 'd6', damageType: 'phy', burden: 'One-Handed', kind: 'physical', slot: 'primary', tier: 1 };
@@ -302,15 +313,28 @@ function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => v
       <DimScreen opacity={0.9} />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 12 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What are you making?</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {CHOOSABLE_TYPES.map((t) => (
-            <Pressable key={t} onPress={() => { playSfx('buttonTap'); onPick(t); }} accessibilityRole="button" accessibilityLabel={CONTENT_TYPE_LABEL[t]}>
-              <View style={{ paddingHorizontal: 13, paddingVertical: 9, borderRadius: 6, backgroundColor: 'rgba(20,24,31,0.8)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.45)' }}>
-                <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{CONTENT_TYPE_LABEL[t]}</Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
+        {/**
+          * Grouped, not a heap (v0.42.1, owner).
+          *
+          * A class is authored as several cards that arrive together, so the things you make in one
+          * sitting should sit together: the class and the cards that belong to it, then the content
+          * anyone can drop into a game, then the gear. Nine flat chips gave no hint of that.
+          */}
+        {TYPE_GROUPS.map((g) => (
+          <View key={g.label} style={{ gap: 6 }}>
+            <Text style={smallLabel}>{g.label}</Text>
+            <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>{g.hint}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {g.types.map((t) => (
+                <Pressable key={t} onPress={() => { playSfx('buttonTap'); onPick(t); }} accessibilityRole="button" accessibilityLabel={CONTENT_TYPE_LABEL[t]}>
+                  <View style={{ paddingHorizontal: 13, paddingVertical: 9, borderRadius: 6, backgroundColor: 'rgba(20,24,31,0.8)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.45)' }}>
+                    <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{CONTENT_TYPE_LABEL[t]}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))}
         <RuneButton label="Cancel" kind="ghost" height={40} onPress={onClose} />
       </ChamferBox>
     </View>
@@ -322,7 +346,14 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
   const [name, setName] = useState(initial?.name ?? '');
   const [author, setAuthor] = useState(initial?.author ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
-  const [version, setVersion] = useState(initial?.version ?? 1);
+  /**
+    * The version is NOT edited (v0.42.1, owner: "manual versioning of expansions is dropped").
+    *
+    * It is bumped on every save instead, because that is what it is for: an installed copy updates in
+    * place when a higher number arrives, and an author who forgets to raise it by hand ships an update
+    * nobody receives. It is still shown, so a DM can tell a player which one they are on.
+    */
+  const version = (initial?.version ?? 0) + 1;
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
       {/* v0.13.0: non-dismissing backdrop — a stray tap between fields must never destroy typed input.
@@ -334,15 +365,11 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
         <LibInput label="Name" value={name} onChangeText={setName} placeholder="My homebrew" maxLength={32} />
         <LibInput label="Author" value={author} onChangeText={setAuthor} placeholder="You" />
         <LibInput label="Description" value={description} onChangeText={setDescription} placeholder="What's inside" />
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 4 }}>Version</Text>
-            <Text style={{ color: Rune.sheet, fontSize: 16, fontFamily: Body.bold }}>{version}</Text>
-          </View>
-          <RuneButton label="–" kind="ghost" dense height={34} onPress={() => setVersion((v) => Math.max(1, v - 1))} />
-          <RuneButton label="+" kind="ghost" dense height={34} onPress={() => setVersion((v) => v + 1)} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Version</Text>
+          <Text style={{ color: Rune.sheet, fontSize: 16, fontFamily: Body.bold }}>{version}</Text>
         </View>
-        <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Raise the version before sharing again, so anyone who already has it updates in place.</Text>
+        <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Raised for you every time you save, so anyone who already has this pack updates in place. Read it out when a player asks which version they are on.</Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <RuneButton label="Cancel" kind="ghost" height={40} style={{ flex: 1 }} onPress={onCancel} />
           <RuneButton label="Save" kind="primary" height={40} style={{ flex: 1 }} disabled={!name.trim()} onPress={() => onSave({ name: name.trim(), author: author.trim(), description: description.trim(), version })} />

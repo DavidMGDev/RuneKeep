@@ -1150,7 +1150,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const expItems = forgedItems(expJobs);
     // Faces in STABLE order [class, ...features] — an un-forged face keeps its slot and renders its
     // live node (no .filter that dropped pages and shifted indices, the #110 missing-page bug).
-    const faceJobs = classJob ? [classJob, ...featJobs] : featJobs;
+    // v0.42.1 (owner): the sheet's class card is its ABILITIES, with no flavour cover in front of
+    // them. `classJob` is still built, because the acquired-class path and DM Mode both print it.
+    const faceJobs = featJobs;
     const faces = faceJobs.map((j) => {
       const src = featureSources[j.key];
       return src ? { source: src.full, thumb: src.thumb } : { custom: j.node };
@@ -1178,7 +1180,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const featItem = file.classExpanded ? [] : coverOf(`features-${file.className}`, faces);
     // Multiclass (#311): the additional class's feature card (multi-page), assembled exactly like the
     // primary's, plus the chosen subclass FOUNDATION card. Both ride the arsenal next to the originals.
-    const mcFaceJobs = mcClassJob ? [mcClassJob, ...mcFeatJobs] : mcFeatJobs;
+    const mcFaceJobs = mcFeatJobs;
     const mcFaces = mcFaceJobs.map((j) => { const src = featureSources[j.key]; return src ? { source: src.full, thumb: src.thumb } : { custom: j.node }; });
     const mcFeatItem = file.multiclassName ? coverOf(`mc-features-${file.multiclassName}`, mcFaces) : [];
     const mcSubclass = file.multiclassSubclassCardId ? cardById(file.multiclassSubclassCardId) : null;
@@ -1407,7 +1409,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // -1 for a skipped origin, which is what findIndex already returns for a card that is not there.
     const originIndices: [number, number, number] = [fa.findIndex((x) => x.id === subclassC?.id), fa.findIndex((x) => x.id === ancestryC?.id), fa.findIndex((x) => x.id === communityC?.id)];
     return { decks, categoryMeta, originIndices };
-  }, [deckFile, character.gold, mutateFile, expJobs, classJob, mcClassJob, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
+  }, [deckFile, character.gold, mutateFile, expJobs, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; ids: string[] } | null>(null); // v0.10.1 NFC tap-to-share

@@ -1,43 +1,67 @@
-import { CLASS_DATA, featurePages } from '@/data/class-data';
+import { CLASS_DATA, featurePages, MAX_FEATURE_PAGES } from '@/data/class-data';
 import { classCardCount, classCardId, classCards, isClassCard, missingClassCards } from './class-cards';
 
 const ALL = Object.keys(CLASS_DATA) as (keyof typeof CLASS_DATA)[];
 
-describe('featurePages, one ability per page (v0.42.0)', () => {
-  it('never puts more than one ability on a page', () => {
-    for (const c of ALL) for (const p of featurePages(c)) expect(p.sections).toHaveLength(1);
+describe('featurePages, the balanced pager (v0.42.1)', () => {
+  it('never continues an ability without saying which part it is', () => {
+    // v0.42.0 removed "(cont.)"; v0.42.1 keeps it gone and names the parts instead.
+    for (const c of ALL) {
+      for (const p of featurePages(c)) {
+        for (const s of p.sections) {
+          expect(s.name).not.toContain('cont.');
+          if (s.name !== s.name.replace(/ \(\d+\/\d+\)$/, '')) expect(s.name).toMatch(/ \(\d+\/\d+\)$/);
+        }
+      }
+    }
   });
 
-  it('never continues an ability onto a second page', () => {
-    // The owner's rule: "entire abilities per page". No more "Beastform (cont.)".
-    for (const c of ALL) for (const p of featurePages(c)) expect(p.sections[0].name).not.toContain('cont.');
+  it('gives no class more than the page cap', () => {
+    for (const c of ALL) expect(featurePages(c).length).toBeLessThanOrEqual(MAX_FEATURE_PAGES);
   });
 
-  it('gives no class more than four cards', () => {
-    for (const c of ALL) expect(featurePages(c).length).toBeLessThanOrEqual(4);
-  });
-
-  it('gives every class at least two', () => {
+  it('gives every class at least two cards', () => {
     for (const c of ALL) expect(featurePages(c).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('is exactly the features plus the hope feature', () => {
-    for (const c of ALL) expect(featurePages(c)).toHaveLength(CLASS_DATA[c].features.length + 1);
+  it('keeps every ability, whole, in order', () => {
+    for (const c of ALL) {
+      const printed = featurePages(c).flatMap((p) => p.sections).map((s) => s.text).join('\n');
+      for (const f of CLASS_DATA[c].features) {
+        // Every line of every feature survives the split, in the book's own words.
+        for (const line of f.text.split('\n')) expect(printed).toContain(line);
+      }
+      expect(printed).toContain(CLASS_DATA[c].hopeFeature.text);
+    }
   });
 
   it('puts the hope feature last, where the printed cards do', () => {
     for (const c of ALL) {
-      const pages = featurePages(c);
-      expect(pages[pages.length - 1].sections[0].name).toContain('Hope Feature');
+      const sections = featurePages(c).flatMap((p) => p.sections);
+      expect(sections[sections.length - 1].name).toContain('Hope Feature');
     }
+  });
+
+  it('splits the abilities the owner called out, and only where it must', () => {
+    // Beastform is the longest rule in the game and cannot be read on one card.
+    expect(featurePages('druid').flatMap((p) => p.sections).some((s) => s.name === 'Beastform (1/2)')).toBe(true);
+    // Rally fits, so it is not cut up.
+    expect(featurePages('bard').flatMap((p) => p.sections).some((s) => s.name === 'Rally')).toBe(true);
+  });
+
+  it('lets a short feature share a card rather than take one to itself', () => {
+    // The guardian's Hope feature is 64 characters; a card of its own was mostly empty.
+    const last = featurePages('guardian').at(-1)!;
+    expect(last.sections.length).toBeGreaterThan(1);
   });
 });
 
 describe('classCards', () => {
   it('makes one card per ability, in order', () => {
+    const sections = featurePages('druid').flatMap((p) => p.sections);
     const cards = classCards('druid');
-    expect(cards).toHaveLength(featurePages('druid').length);
-    expect(cards.map((c) => c.title)).toEqual(featurePages('druid').map((p) => p.sections[0].name));
+    expect(cards).toHaveLength(sections.length);
+    expect(cards.map((c) => c.title)).toEqual(sections.map((s) => s.name));
   });
 
   it('gives every card a deterministic id, so expanding twice cannot duplicate', () => {
@@ -53,9 +77,11 @@ describe('classCards', () => {
     for (const card of classCards('bard')) expect(card.target).toBe('arsenal');
   });
 
-  it('carries the whole rule, not a fragment', () => {
-    const beastform = classCards('druid').find((c) => c.title === 'Beastform');
-    expect(beastform?.text).toBe(CLASS_DATA.druid.features[0].text);
+  it('carries the ability itself, in the book\'s words', () => {
+    // Beastform is split, so its parts together are the rule; nothing is dropped or reworded.
+    const parts = classCards('druid').filter((c) => c.title.startsWith('Beastform'));
+    expect(parts.length).toBeGreaterThan(0);
+    expect(parts.map((c) => c.text).join('\n')).toBe(CLASS_DATA.druid.features[0].text);
   });
 
   it('marks its own cards recognisably', () => {

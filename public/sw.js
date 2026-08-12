@@ -22,7 +22,7 @@
  *
  * `CACHE` carries the app version, so a release drops every old cache on activate.
  */
-const VERSION = '0.42.0';
+const VERSION = '0.42.1';
 const CACHE = `runekeep-${VERSION}`;
 
 // The shell: enough to boot offline. Everything else is cached as it is requested.
