@@ -6,6 +6,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { Overlay } from '@/components/overlay-host';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
+import type { FunctionVar } from '@/lib/function-vars';
 import { deleteGroup, groupEffects, groupNames, isGroupOn, moveToGroup, renameGroup, setGroupOn } from '@/lib/modifier-groups';
 import { type CardEffect, type EffectFormula, type EffectTarget, TARGET_LABEL } from '@/lib/modifiers';
 import { DimScreen } from '@/lib/screen-dim';
@@ -116,6 +117,9 @@ const VAR_LABEL: Record<EffectFormula['variable'], string> = {
   level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', stress: 'Current Stress', input: 'Number Input',
   attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls', damageRoll: 'Damage Rolls',
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
+  // v0.42.3: not in FORMULA_VARS, because it is not one entry. A character's numeric card elements
+  // are listed individually below, each already carrying its own functionKey.
+  function: 'Card element',
 };
 /** What a variable means, for the ones a player cannot guess from the name alone. */
 const VAR_HINT: Partial<Record<EffectFormula['variable'], string>> = {
@@ -142,7 +146,15 @@ export function toEditableEffects(effects: CardEffect[]): CardEffect[] {
 
 /** #325: a full-screen chooser for a formula's VARIABLE (Level / Tier / Proficiency / a trait) — same
  *  shape as EffectPicker, so picking a starter is a tap in a list instead of cycling. Rendered at root. */
-export function FormulaVarPicker({ current, onPick, onClose }: { current?: EffectFormula['variable']; onPick: (v: EffectFormula['variable']) => void; onClose: () => void }) {
+export function FormulaVarPicker({ current, currentKey, functionVars, onPick, onClose }: {
+  current?: EffectFormula['variable'];
+  /** v0.42.3: which card element is picked, when `current` is 'function'. */
+  currentKey?: string;
+  /** v0.42.3: the character's numeric card elements. See `lib/function-vars`. */
+  functionVars?: FunctionVar[];
+  onPick: (v: EffectFormula['variable'], functionKey?: string) => void;
+  onClose: () => void;
+}) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
@@ -161,6 +173,25 @@ export function FormulaVarPicker({ current, onPick, onClose }: { current?: Effec
               </Pressable>
             );
           })}
+          {/* v0.42.3 (owner): the character's own card elements, by name. A counter or a numeric
+              cycling button is a number the player is already keeping, so a formula can scale by it.
+              Nothing here can be written to: there is no matching effect target. */}
+          {functionVars?.length ? (
+            <>
+              <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 6 }}>Your card elements</Text>
+              {functionVars.map((fv) => {
+                const on = current === 'function' && currentKey === fv.key;
+                return (
+                  <Pressable key={fv.key} onPress={() => onPick('function', fv.key)} accessibilityRole="button" accessibilityState={{ selected: on }}>
+                    <View style={{ minHeight: 40, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
+                      <Text style={{ color: on ? Rune.ivory : Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{fv.title}</Text>
+                      <Text style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 10, lineHeight: 13, fontFamily: Body.regular, marginTop: 2 }}>On {fv.cardTitle}. Currently {fv.value}.</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </>
+          ) : null}
         </ScrollView>
       </ChamferBox>
     </View>

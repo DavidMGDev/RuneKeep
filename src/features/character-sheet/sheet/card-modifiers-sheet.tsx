@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { Path, Polyline } from 'react-native-svg';
 
@@ -8,6 +8,7 @@ import { applyPickedOption, EffectPicker, EffectsField, FormulaVarPicker, matchO
 import { Body, Display, Rune } from '@/constants/theme';
 import { effectsForCardId, sourceLabelForCardId , contentIdOf } from '@/features/cards/card-effects';
 import { copyRoleOf } from '@/lib/card-copies';
+import { functionVars as fnVars, functionVarValues as fnVarValues } from '@/lib/function-vars';
 
 import { groupEffects, groupKey, isGroupOpen, setGroupOpen } from '@/lib/modifier-groups';
 import { type CardEffect, TARGET_LABEL, tierForLevel } from '@/lib/modifiers';
@@ -19,7 +20,7 @@ import { FullScreenPanel } from './full-screen-panel';
 /** Resolve an effect's signed amount as it applies to this character right now (tier/dynamic/formula).
  *  v0.32.0: `stress` reads the marked Stress and `input` the number typed on THIS card, so the panel
  *  previews the same figure the engine applies. */
-function resolvedDelta(e: CardEffect, character: Character, level: number, numberInput = 0): number {
+function resolvedDelta(e: CardEffect, character: Character, level: number, numberInput = 0, functionValues?: Record<string, number>): number {
   if (e.dynamic === 'proficiency') return character.proficiency;
   if (e.dynamic === 'halfAgility') return Math.ceil((character.traits.agility ?? 0) / 2); // rounds up, like the engine (v0.34.5)
   if (e.dynamic === 'strengthPlus3') return (character.traits.strength ?? 0) + 3;
@@ -32,6 +33,8 @@ function resolvedDelta(e: CardEffect, character: Character, level: number, numbe
       : f.variable === 'spellcast' ? (character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0)
       : f.variable === 'stress' ? character.stress.active
       : f.variable === 'input' ? numberInput
+      // v0.42.3: a card element the player is keeping. Zero when it is not on this character.
+      : f.variable === 'function' ? (f.functionKey ? functionValues?.[f.functionKey] ?? 0 : 0)
       // v0.41.0: the two roll bonuses are not on the sheet, so this preview shows what the character
       // currently has for them, which `Character` carries alongside the sheet's own numbers.
       : f.variable === 'attackRoll' ? character.attackRoll ?? 0
@@ -114,10 +117,21 @@ export function CardModifiersSheet({
   }, [file.collapsedModifierGroups, cardRef, onCollapseGroups]);
   const toggleGroup = (name: string) => onCollapseGroups?.(setGroupOpen(file.collapsedModifierGroups, cardRef, name, !isGroupOpen(file.collapsedModifierGroups, cardRef, name)));
 
+  /**
+   * The character's numeric card elements (v0.42.3).
+   *
+   * Offered as formula variables here and resolved in the "= N" preview below, so the panel shows the
+   * same number the engine will apply. See `lib/function-vars`.
+   */
+  const functionVars = useMemo(
+    () => fnVars([...(file.libraryCards ?? []), ...(file.customCards ?? [])], file.cardFunctions, file.cardAdvances),
+    [file.libraryCards, file.customCards, file.cardFunctions, file.cardAdvances],
+  );
+  const functionValues = useMemo(() => fnVarValues(functionVars), [functionVars]);
   const startEdit = () => { setDraft(toEditableEffects(effectsForCardId(cardId, file))); setEditing(true); };
   const save = () => { onSaveEffects?.(cardId, draft); setEditing(false); };
   // live "= N" preview for the dynamic shapes (formula / per-tier) at the current character.
-  const previewFn = (e: CardEffect) => (e.dynamic === 'formula' || e.byTier ? resolvedDelta(e, character, character.level, numberInput) : null);
+  const previewFn = (e: CardEffect) => (e.dynamic === 'formula' || e.byTier ? resolvedDelta(e, character, character.level, numberInput, functionValues) : null);
 
   return (
     <FullScreenPanel
@@ -168,7 +182,7 @@ export function CardModifiersSheet({
               groupEffects(effects).map((band) => {
                 const rows = band.rows.map((r) => {
                   const e = r.effect;
-                  const v = resolvedDelta(e, character, character.level, numberInput);
+                  const v = resolvedDelta(e, character, character.level, numberInput, functionValues);
                   return (
                     <ChamferBox key={r.index} chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 13, gap: 10, opacity: e.off ? 0.45 : 1 }}>
                       <View style={{ flex: 1 }}>
@@ -215,8 +229,10 @@ export function CardModifiersSheet({
       {pickVar != null && draft[pickVar] ? (
         <FormulaVarPicker
           current={draft[pickVar].formula?.variable}
-          onPick={(variable) => {
-            setDraft((d) => d.map((e, j) => (j === pickVar ? { ...e, formula: { ...(e.formula ?? { variable }), variable } } : e)));
+          currentKey={draft[pickVar].formula?.functionKey}
+          functionVars={functionVars}
+          onPick={(variable, functionKey) => {
+            setDraft((d) => d.map((e, j) => (j === pickVar ? { ...e, formula: { ...(e.formula ?? { variable }), variable, functionKey } } : e)));
             setPickVar(null);
           }}
           onClose={() => setPickVar(null)}

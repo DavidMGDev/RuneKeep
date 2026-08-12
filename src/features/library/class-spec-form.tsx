@@ -24,10 +24,12 @@ import { CardFunctionControl } from '@/components/card-function-control';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
 import { ALL_DOMAINS } from '@/constants/identity';
-import { Body, Rune } from '@/constants/theme';
+import { CounterField, FormSection, SelectRow, TextField } from '@/components/form-controls';
+import { Body, Gap, Rune } from '@/constants/theme';
 import { type CardAdvance, type CardFunction, type FunctionKind, type FunctionState, functionSummary, newFunction, stateOf } from '@/lib/card-functions';
 import { type ClassAttachments } from '@/lib/class-links';
-import { classProblems, type CustomClassSpec, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
+import { classKeyOf, classProblems, type CustomClassSpec, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
+import { domainLabel } from '@/lib/domain-label';
 import type { LibraryCard } from '@/lib/library';
 
 const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
@@ -102,7 +104,36 @@ function Attached({ label, cards, empty }: { label: string; cards: LibraryCard[]
   );
 }
 
-/** A picker over card ids, for the starting item lists. */
+/**
+ * A starting-item LIST (v0.42.3, owner).
+ *
+ * The chips are gone. What is left is what has been picked, each removable, and one button that opens
+ * the ADD GEAR browser: the same interface the sheet uses to add a card, which draws real cards and
+ * already knows about this expansion's own items and the base game's loot.
+ */
+function ItemList({ label, hint, ids, itemTitle, onPick, onChange }: { label: string; hint: string; ids: string[]; itemTitle: (id: string) => string; onPick: () => void; onChange: (ids: string[]) => void }) {
+  return (
+    <View style={{ gap: Gap.hair }}>
+      <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
+      <Text style={hintStyle}>{hint}</Text>
+      {ids.length ? (
+        <View style={{ gap: 4 }}>
+          {ids.map((id) => (
+            <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text numberOfLines={1} style={{ flex: 1, color: Rune.sheet, fontSize: 12, fontFamily: Body.semibold }}>{itemTitle(id)}</Text>
+              <RemoveX label={`Remove ${itemTitle(id)}`} onPress={() => onChange(ids.filter((x) => x !== id))} />
+            </View>
+          ))}
+        </View>
+      ) : (
+        <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic }}>Nothing picked yet.</Text>
+      )}
+      <RuneButton label={ids.length ? '+ Pick another' : '+ Pick from the card browser'} kind="ghost" dense height={34} onPress={onPick} />
+    </View>
+  );
+}
+
+/** A picker over card ids, kept for anything that still wants chips. */
 /**
  * v0.42.1: the base game's loot and consumables joined this list, which took it past sixty entries.
  * Everything CHOSEN is always drawn; the rest is filtered by what the author types and capped, so
@@ -141,73 +172,118 @@ function ItemPicker({ label, hint, chosen, options, onChange }: { label: string;
   );
 }
 
-export function ClassSpecForm({ spec, card, attachments, itemOptions, onChange }: {
+export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle, onPickItems, onChange, onClassName }: {
   spec: CustomClassSpec | undefined;
   /** The class card being edited, so the report can be about it by name. */
   card: LibraryCard;
   /** What currently points at this class. Built by `lib/class-links`. */
   attachments: ClassAttachments;
-  /** Cards in this expansion that can be a starting item. */
-  itemOptions: { id: string; title: string }[];
+  /** Every class this page could belong to: this expansion's own, then the built-in ones. */
+  classChoices: string[];
+  /**
+   * Open the ADD GEAR browser to pick items for one of the three lists (v0.42.3, owner).
+   *
+   * "It is obvious that you should re-use the add gear interface and have it be a special way of
+   * using it that allows the user to select a card in the add gear interface and have it show up
+   * here." That interface already draws real cards, already has category tabs and already surfaces
+   * this expansion's own records, so the picker here is a button, not another chip cloud.
+   */
+  onPickItems: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
+  /** What a picked item id is CALLED, so the list reads as cards rather than as ids. */
+  itemTitle: (id: string) => string;
   onChange: (s: CustomClassSpec) => void;
+  /** A page card names the class it belongs to, which lives on the CARD rather than in the spec. */
+  onClassName: (name: string | undefined) => void;
 }) {
   const s = spec ?? EMPTY_CLASS_SPEC;
   const set = (patch: Partial<CustomClassSpec>) => onChange({ ...s, ...patch });
   const problems = classProblems({ ...card, classSpec: s }, { features: attachments.features.length, subclasses: attachments.subclasses.length });
+  const page = s.role === 'page';
   return (
-    <View style={{ gap: 10 }}>
-      <Text style={hintStyle}>
-        A class is the CENTRE of a set of cards. Fill in what belongs to the class itself here, then write its
-        subclasses, features and trackers as their own cards and point each one back at this class. They appear
-        below as they arrive.
-      </Text>
+    <View style={{ gap: Gap.group }}>
+      {/**
+        * THE FIRST QUESTION (v0.42.3, owner).
+        *
+        * "A class card is either a new first page (summary base) of a newly created class or it is an
+        * additional page for details of an existing class. This way the user can expand upon existing
+        * classes or create their own class and start expanding it from there."
+        *
+        * It comes before the title because it decides what everything below even is, and because an
+        * author who picks the wrong one finds out four fields later.
+        */}
+      <SelectRow
+        label="What is this card?"
+        hint={page
+          ? 'Another page of a class that already exists. It carries its own text and nothing else: the numbers, domains and items belong to the class it names.'
+          : 'The first page of a new class. It carries the numbers, the domains and the starting items, and every other card points at it.'}
+        value={page ? 'page' : 'base'}
+        options={[{ value: 'base', label: 'A new class' }, { value: 'page', label: 'Another page of a class' }]}
+        onChange={(v) => set({ role: v as 'base' | 'page' })}
+      />
 
-      <Section title="The numbers" hint="What a character of this class starts with, before anything else is chosen.">
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Field label="Starting Evasion" value={String(s.startingEvasion)} onChangeText={(t) => set({ startingEvasion: num(t) })} numeric maxLength={2} />
-          <Field label="Starting Hit Points" value={String(s.startingHp)} onChangeText={(t) => set({ startingHp: num(t) })} numeric maxLength={2} />
-        </View>
-      </Section>
+      {page ? (
+        <>
+          <SelectRow
+            label="Which class it belongs to"
+            hint="Your own, or one from the base game. This is how a published class gets a page of your own."
+            value={classChoices.find((c) => classKeyOf(c) === classKeyOf(card.className))}
+            options={classChoices.map((c) => ({ value: c, label: c }))}
+            onChange={onClassName}
+          />
+          <Text style={hintStyle}>
+            Write the page itself in the sections above. It appears among that class&apos;s cards, in the order you
+            make them.
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={hintStyle}>
+            A class is the CENTRE of a set of cards. Fill in what belongs to the class itself here, then write its
+            subclasses, features and trackers as their own cards and point each one back at this class. They appear
+            below as they arrive.
+          </Text>
 
-      <Section title="Its voice" hint="The introduction printed on the class card, in the tone of the ones in the book.">
-        <Field label="Summary" value={s.summary} onChangeText={(summary) => set({ summary })} placeholder="What this class is, in two or three sentences." multiline maxLength={400} />
-      </Section>
+          <FormSection title="The numbers" hint="What a character of this class starts with, before anything else is chosen.">
+            <CounterField label="Starting Evasion" value={s.startingEvasion} min={0} max={20} onChange={(startingEvasion) => set({ startingEvasion })} />
+            <CounterField label="Starting Hit Points" value={s.startingHp} min={0} max={20} onChange={(startingHp) => set({ startingHp })} />
+          </FormSection>
 
-      <Section title="Hope feature" hint="The 3-Hope move every character of this class has. It becomes the last of the class's cards.">
-        <Field label="Name" value={s.hopeFeature.name} onChangeText={(name) => set({ hopeFeature: { ...s.hopeFeature, name } })} placeholder="e.g. Root" maxLength={60} />
-        <Field label="What it does" value={s.hopeFeature.text} onChangeText={(text) => set({ hopeFeature: { ...s.hopeFeature, text } })} placeholder="Spend 3 Hope to…" multiline maxLength={600} />
-      </Section>
+          <FormSection title="Its voice" hint="The introduction printed on the class card, in the tone of the ones in the book.">
+            <TextField label="Summary" value={s.summary} placeholder="What this class is, in two or three sentences." multiline maxLength={400} onChangeText={(summary) => set({ summary })} />
+          </FormSection>
 
-      <Section title="Domains it grants" hint="Pick two. This is how the app knows which domain cards a character of this class may take, so it cannot be typed.">
-        <View style={chipRow}>
-          {ALL_DOMAINS.map((d) => {
-            const chosen = s.domains.includes(d);
-            return (
-              <Chip
-                key={d}
-                label={d}
-                on={chosen}
-                onPress={() => set({ domains: (chosen ? s.domains.filter((x) => x !== d) : [...s.domains.filter((x) => x.trim()), d]).slice(-2) })}
-              />
-            );
-          })}
-        </View>
-        <Text style={hintStyle}>
-          {s.domains.filter((d) => d.trim()).length === 2 ? `Grants ${s.domains.join(' and ')}.` : 'A class grants two. Picking a third replaces the first.'}
-        </Text>
-      </Section>
+          <FormSection title="Domains it grants" hint="Pick two. This is how the app knows which domain cards a character of this class may take, so it cannot be typed.">
+            <View style={chipRow}>
+              {ALL_DOMAINS.map((d) => {
+                const chosen = s.domains.includes(d);
+                return (
+                  <Chip
+                    key={d}
+                    label={domainLabel(d)}
+                    on={chosen}
+                    onPress={() => set({ domains: (chosen ? s.domains.filter((x) => x !== d) : [...s.domains.filter((x) => x.trim()), d]).slice(-2) })}
+                  />
+                );
+              })}
+            </View>
+            <Text style={hintStyle}>
+              {s.domains.filter((d) => d.trim()).length === 2 ? `Grants ${s.domains.map(domainLabel).join(' and ')}.` : 'A class grants two. Picking a third replaces the first.'}
+            </Text>
+          </FormSection>
 
-      <Section title="Starting items" hint="One thing everyone gets, and two choices they make. Pick from this expansion's own items, or from the base game's loot and consumables.">
-        <ItemPicker label="Everyone receives" hint="At least one." chosen={s.fixedItemIds ?? []} options={itemOptions} onChange={(fixedItemIds) => set({ fixedItemIds })} />
-        <ItemPicker label="First choice" hint="At least two to choose between." chosen={s.choiceAItemIds ?? []} options={itemOptions} onChange={(choiceAItemIds) => set({ choiceAItemIds })} />
-        <ItemPicker label="Second choice" hint="At least two to choose between." chosen={s.choiceBItemIds ?? []} options={itemOptions} onChange={(choiceBItemIds) => set({ choiceBItemIds })} />
-      </Section>
+          <FormSection title="Starting items" hint="One thing everyone gets, and two choices they make. Picked from the same card browser the sheet uses, so you are choosing real cards.">
+            <ItemList label="Everyone receives" hint="At least one." ids={s.fixedItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('fixed')} onChange={(fixedItemIds) => set({ fixedItemIds })} />
+            <ItemList label="First choice" hint="At least two to choose between." ids={s.choiceAItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('choiceA')} onChange={(choiceAItemIds) => set({ choiceAItemIds })} />
+            <ItemList label="Second choice" hint="At least two to choose between." ids={s.choiceBItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('choiceB')} onChange={(choiceBItemIds) => set({ choiceBItemIds })} />
+          </FormSection>
 
-      <Section title="What points at this class" hint="Written elsewhere, as cards of their own, each naming this class. This is only the report.">
-        <Attached label="Subclasses" cards={attachments.subclasses} empty="None yet. Make a Subclass card and set its class to this one." />
-        <Attached label="Feature cards" cards={attachments.features} empty="None yet. Make a Card, mark it as a class feature, and set its class to this one." />
-        <Attached label="Trackers" cards={attachments.functional} empty="None yet. Any card with a counter, a text field or a cycling button that names this class." />
-      </Section>
+          <FormSection title="What points at this class" hint="Written elsewhere, as cards of their own, each naming this class. This is only the report.">
+            <Attached label="Subclasses" cards={attachments.subclasses} empty="None yet. Make a Subclass card and set its class to this one." />
+            <Attached label="Feature cards" cards={attachments.features} empty="None yet. Make a Feature card and set its class to this one." />
+            <Attached label="Extra pages" cards={attachments.pages} empty="None yet. Make another Class card, choose 'Another page of a class', and name this one." />
+          </FormSection>
+        </>
+      )}
 
       {problems.length ? (
         <ChamferBox chamfer={8} fill="rgba(120,30,28,0.22)" stroke={Rune.red} strokeWidth={1.2} style={{ padding: 10, gap: 4 }}>

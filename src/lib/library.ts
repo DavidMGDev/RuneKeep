@@ -13,7 +13,15 @@ import type { CampaignSettings } from '@/lib/campaign-settings';
 import { expansionClassProblems, type CustomClassSpec } from '@/lib/custom-class';
 import type { CardEffect } from '@/lib/modifiers';
 
-export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'customDomain' | 'subclass' | 'class' | 'weapon' | 'armor' | 'inventory' | 'generic';
+/**
+ * v0.42.3 (owner): `feature` is the FEATURE CARD, and it is the only type that carries functional
+ * elements. Renamed from "functional card", which described the machinery rather than the thing: a
+ * feature card is how a class gives a player something to track, switch or write on.
+ */
+export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'customDomain' | 'subclass' | 'class' | 'feature' | 'weapon' | 'armor' | 'inventory' | 'generic';
+
+/** Only a Feature card offers functional elements, and only a Feature card may have any. */
+export const CARRIES_FUNCTIONS = (t: LibraryContentType): boolean => t === 'feature';
 
 export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
   ancestry: 'Ancestry',
@@ -22,6 +30,7 @@ export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
   customDomain: 'Domain',
   subclass: 'Subclass',
   class: 'Class',
+  feature: 'Feature',
   weapon: 'Weapon',
   armor: 'Armor',
   inventory: 'Item',
@@ -44,6 +53,20 @@ export interface CardSection {
    *  upper flagged section is always "Feature 1". Cards without any flags (legacy + bundled Void
    *  ancestries) resolve features to sections 0/1 via `featureSectionIndexes`. */
   feature?: boolean;
+  /**
+   * v0.42.3 (owner): this section IS a functional element, named here by id.
+   *
+   * The body is unused when this is set. Making an element a section is what lets it sit between two
+   * paragraphs instead of choosing between above-all-the-text and below-all-the-text. Additive on
+   * purpose: anything that does not know about elements reads this as a section with no body. See
+   * `lib/card-blocks`.
+   */
+  functionId?: string;
+  /**
+   * v0.42.3 (owner): how this section's text is set. Absent means left, which is every card written
+   * before this existed.
+   */
+  align?: 'left' | 'center' | 'right' | 'justify';
 }
 
 /** The section indexes of an ancestry's Feature 1 and Feature 2, in vertical order. Falls back to the

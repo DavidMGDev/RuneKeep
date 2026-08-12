@@ -20,10 +20,10 @@ import { playSfx } from '@/lib/sfx';
 
 const GOLD_EDGE = 'rgba(218,162,73,0.5)';
 
-function StepButton({ plus, label, disabled, onPress }: { plus: boolean; label: string; disabled: boolean; onPress: () => void }) {
+function StepButton({ plus, label, disabled, size = 28, onPress }: { plus: boolean; label: string; disabled: boolean; size?: number; onPress: () => void }) {
   return (
     <Pressable onPress={() => { if (disabled) return; playSfx('placeToken', { cents: plus ? 160 : -180 }); onPress(); }} disabled={disabled} hitSlop={6} accessibilityRole="button" accessibilityState={{ disabled }} accessibilityLabel={label}>
-      <ChamferBox chamfer={5} fill="rgba(20,24,31,0.85)" stroke={GOLD_EDGE} strokeWidth={1.1} style={{ width: 28, height: 26, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.35 : 1 }}>
+      <ChamferBox chamfer={5} fill="rgba(20,24,31,0.85)" stroke={GOLD_EDGE} strokeWidth={1.1} style={{ width: size, height: size - 2, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.35 : 1 }}>
         <Svg width={13} height={13} viewBox="0 0 16 16">
           <Line x1={4} y1={8} x2={12} y2={8} stroke={Rune.goldText} strokeWidth={2} strokeLinecap="round" />
           {plus ? <Line x1={8} y1={4} x2={8} y2={12} stroke={Rune.goldText} strokeWidth={2} strokeLinecap="round" /> : null}
@@ -31,6 +31,27 @@ function StepButton({ plus, label, disabled, onPress }: { plus: boolean; label: 
       </ChamferBox>
     </Pressable>
   );
+}
+
+/**
+ * The three sizes an author may choose (v0.42.3, owner), as the numbers each control uses.
+ *
+ * One table rather than three scattered ternaries, so "large" means the same amount of larger to a
+ * counter, a cycle and a text field, and so adding a fourth size later is one row.
+ */
+const SIZES = {
+  small: { number: 14, step: 24, cycleH: 24, cycleText: 9.5, line: 13, text: 9.5, title: 7.5, gap: 3 },
+  medium: { number: 17, step: 28, cycleH: 28, cycleText: 11, line: 15, text: 11, title: 8.5, gap: 4 },
+  large: { number: 22, step: 34, cycleH: 34, cycleText: 13, line: 18, text: 13, title: 10, gap: 6 },
+} as const;
+
+/** What one element occupies vertically, so the card's prose can be sized around it. */
+export function functionHeight(fn: CardFunction): number {
+  if (fn.hidden) return 0;
+  const s = SIZES[fn.size ?? 'medium'];
+  const titleH = fn.titleHidden ? 0 : s.title + 4;
+  const controlH = fn.kind === 'text' ? 8 + Math.max(1, fn.lines ?? 1) * s.line : fn.kind === 'cycle' ? s.cycleH : s.step;
+  return titleH + controlH + s.gap + 4;
 }
 
 export function CardFunctionControl({ fn, state, onChange, compact }: {
@@ -42,8 +63,17 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
   compact?: boolean;
 }) {
   const st = stateOf(fn, state);
-  const gap = compact ? 4 : 6;
-  const label = fn.label?.trim();
+  const S = SIZES[fn.size ?? 'medium'];
+  const gap = S.gap;
+  const label = fn.title?.trim();
+  /**
+   * HUG or FULL (v0.42.3, owner: "if the element should be full card width or just hug the text /
+   * number it has for its size").
+   *
+   * Hug is the default because a counter that stretches across a card looks like a bug. Full is for
+   * the one element a card is really about, and for a text field somebody is meant to write in.
+   */
+  const full = fn.width === 'full';
   /**
    * A LOCKED element is read-only, and a HIDDEN one is not there at all (v0.42.1, owner).
    *
@@ -57,15 +87,15 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
     if (fn.kind === 'counter') {
       const n = st.n ?? 0;
       return (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <StepButton plus={false} label={`Lower ${label || 'the counter'}`} disabled={!move || !canStepFunction(fn, st, -1)} onPress={() => move?.(stepFunction(fn, st, -1))} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: full ? 'space-between' : 'center', gap: 8, alignSelf: full ? 'stretch' : 'center' }}>
+          <StepButton size={S.step} plus={false} label={`Lower ${label || 'the counter'}`} disabled={!move || !canStepFunction(fn, st, -1)} onPress={() => move?.(stepFunction(fn, st, -1))} />
           <Text
             accessibilityLabel={`${label || 'Counter'} at ${n}${fn.max ? ` of ${fn.max}` : ''}`}
-            style={{ minWidth: 34, textAlign: 'center', color: Rune.inkText, fontSize: compact ? 16 : 19, lineHeight: compact ? 20 : 23, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>
-            {n}{fn.max != null && fn.max > 0 ? <Text style={{ fontSize: compact ? 10 : 12, color: Rune.inkMuted }}>{` /${fn.max}`}</Text> : null}
+            style={{ minWidth: 34, textAlign: 'center', color: Rune.inkText, fontSize: S.number, lineHeight: S.number + 4, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>
+            {n}{fn.max != null && fn.max > 0 ? <Text style={{ fontSize: S.number * 0.6, color: Rune.inkMuted }}>{` /${fn.max}`}</Text> : null}
           </Text>
           {/* A countdown has no plus at all: its direction is part of what it is. */}
-          {fn.countdown ? null : <StepButton plus label={`Raise ${label || 'the counter'}`} disabled={!move || !canStepFunction(fn, st, 1)} onPress={() => move?.(stepFunction(fn, st, 1))} />}
+          {fn.countdown ? <View style={{ width: S.step }} /> : <StepButton size={S.step} plus label={`Raise ${label || 'the counter'}`} disabled={!move || !canStepFunction(fn, st, 1)} onPress={() => move?.(stepFunction(fn, st, 1))} />}
         </View>
       );
     }
@@ -74,17 +104,20 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
         <Pressable
           onPress={() => { if (!move) return; playSfx('buttonTap'); move(cycleFunction(fn, st)); }}
           disabled={!move}
+          style={{ alignSelf: full ? 'stretch' : 'center' }}
           accessibilityRole="button"
           accessibilityLabel={`${label || 'Option'}: ${cycleLabel(fn, st)}. Tap to change.`}>
-          <ChamferBox chamfer={6} fill="rgba(218,162,73,0.14)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ minWidth: 96, height: compact ? 26 : 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
-            <Text numberOfLines={1} style={{ color: Rune.goldText, fontSize: compact ? 10.5 : 12, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{cycleLabel(fn, st)}</Text>
+          <ChamferBox chamfer={6} fill="rgba(218,162,73,0.14)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ minWidth: full ? undefined : 84, height: S.cycleH, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }}>
+            <Text numberOfLines={1} style={{ color: Rune.goldText, fontSize: S.cycleText, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{cycleLabel(fn, st)}</Text>
           </ChamferBox>
         </Pressable>
       );
     }
     const lines = Math.max(1, fn.lines ?? 1);
     return (
-      <ChamferBox chamfer={5} fill="rgba(20,24,31,0.06)" stroke={GOLD_EDGE} strokeWidth={1.1} style={{ minHeight: 8 + lines * 15, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 4 }}>
+      // A text field ignores hug: a box you write in that is as wide as its placeholder is a box you
+      // cannot write in. It stretches, and `width` governs the counters and cycles it sits among.
+      <ChamferBox chamfer={5} fill="rgba(20,24,31,0.06)" stroke={GOLD_EDGE} strokeWidth={1.1} style={{ alignSelf: 'stretch', minHeight: 8 + lines * S.line, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 4 }}>
         <TextInput
           value={st.s ?? ''}
           onChangeText={(s) => move?.(setTextValue(s))}
@@ -93,27 +126,29 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
           placeholder={fn.placeholder || ''}
           placeholderTextColor={Rune.inkMuted}
           accessibilityLabel={label || 'Write here'}
-          style={{ color: Rune.inkText, fontSize: compact ? 10.5 : 12.5, fontFamily: Body.regular, padding: 0, minHeight: lines * 15, textAlignVertical: lines > 1 ? 'top' : 'center' }}
+          style={{ color: Rune.inkText, fontSize: S.text, fontFamily: Body.regular, padding: 0, minHeight: lines * S.line, textAlignVertical: lines > 1 ? 'top' : 'center' }}
         />
       </ChamferBox>
     );
   };
 
   if (fn.hidden) return null;
-  const note = (t: string | undefined) =>
-    t?.trim() ? <Text style={{ color: Rune.inkText, fontSize: compact ? 9 : 11, fontFamily: Body.regular, lineHeight: compact ? 12.5 : 15 }}>{t}</Text> : null;
+  void compact;
   return (
-    <View style={{ gap }}>
-      {/* v0.42.1 (owner): a line before and a line after, so a locked element can say how it is
-          raised without the card having to explain it somewhere else. */}
-      {note(fn.before)}
-      {label ? (
-        <Text style={{ color: Rune.inkMuted, fontSize: compact ? 8 : 9.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+    /**
+     * The TITLE, centred, above (v0.42.3, owner).
+     *
+     * Standard on every element rather than optional, because the title is also the element's name in
+     * the dice and modifier variable lists, and an element nobody named is one nobody can pick out of
+     * a list. `titleHidden` takes it off the CARD; it never takes it off those lists.
+     */
+    <View style={{ gap, alignSelf: full ? 'stretch' : 'center', alignItems: 'center' }}>
+      {fn.titleHidden || !label ? null : (
+        <Text numberOfLines={1} style={{ color: Rune.inkMuted, fontSize: SIZES[fn.size ?? 'medium'].title, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', textAlign: 'center' }}>
           {label}{fn.locked ? ' · LOCKED' : ''}
         </Text>
-      ) : null}
+      )}
       {body()}
-      {note(fn.after)}
     </View>
   );
 }

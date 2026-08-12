@@ -20,11 +20,12 @@ import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
 import { View } from 'react-native';
 
-import { CardFunctionControl } from '@/components/card-function-control';
-import { type FunctionState, functionsAt } from '@/lib/card-functions';
+import { CardFunctionControl, functionHeight } from '@/components/card-function-control';
+import { blocksOf, migrateBlocks } from '@/lib/card-blocks';
+import type { FunctionState } from '@/lib/card-functions';
 import { Rune } from '@/constants/theme';
 
-import { ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
+import { type BodyBlock, ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
 
 /**
  * The equipment cards print ONE feature line. Homebrew keeps it in the body as `**Name:** text`
@@ -113,36 +114,65 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
    * the sheet. `onFunction` absent draws them inert, which is what the gallery and any read-only
    * view want: the card should still LOOK like what it is.
    */
-  const fns = card.functions ?? [];
-  const strip = (where: 'above' | 'below') => {
-    const list = functionsAt(fns, where);
-    if (!list.length) return undefined;
+  /**
+   * The body, IN THE ORDER THE AUTHOR ARRANGED IT (v0.42.3, owner).
+   *
+   * Text, a control, more text. `migrateBlocks` reads a card authored before elements were sections
+   * into the same shape, so an old card with an above-placed counter still draws above the text and
+   * nothing anybody wrote is lost. See `lib/card-blocks`.
+   */
+  const { sections, functions } = migrateBlocks(card.sections, card.functions);
+  const blocks = blocksOf(sections, functions);
+  const hasFunctions = blocks.some((x) => x.fn);
+  if (!hasFunctions) {
     return (
-      <View style={{ gap: 8, paddingVertical: 4 }}>
-        {list.map((f) => (
-          <CardFunctionControl
-            key={f.id}
-            fn={f}
-            state={functionStates?.[f.id]}
-            compact
-            onChange={onFunction ? (next) => onFunction(f.id, next) : undefined}
-          />
-        ))}
-      </View>
+      <ForgedCard
+        title={card.title}
+        kindLabel={libraryCardKindLabel(card)}
+        subtitle={libraryCardSubtitle(card)}
+        body={libraryCardBody(card, struckIndex)}
+        accentDeep={Rune.panel}
+        imageUri={card.imageUri}
+        colorArt={card.color}
+        multilineTitle
+      />
     );
-  };
+  }
+  const bodyBlocks: BodyBlock[] = blocks.map((x, i) =>
+    x.fn
+      ? {
+          key: x.fn.id,
+          node: (
+            <CardFunctionControl
+              fn={x.fn}
+              state={functionStates?.[x.fn.id]}
+              compact
+              onChange={onFunction ? (next) => onFunction(x.fn!.id, next) : undefined}
+            />
+          ),
+        }
+      : { key: `s${i}`, text: sectionMarkdown(x.section, i === struckIndex), align: x.section.align },
+  );
   return (
     <ForgedCard
       title={card.title}
       kindLabel={libraryCardKindLabel(card)}
       subtitle={libraryCardSubtitle(card)}
-      body={libraryCardBody(card, struckIndex)}
+      body=""
+      bodyBlocks={bodyBlocks}
+      blocksHeight={blocks.reduce((n, x) => n + (x.fn ? functionHeight(x.fn) : 0), 0)}
       accentDeep={Rune.panel}
       imageUri={card.imageUri}
       colorArt={card.color}
       multilineTitle
-      bodyAbove={strip('above')}
-      bodyBelow={strip('below')}
     />
   );
+}
+
+/** One text section as the markdown it prints: the colon lead-in the typeset uses, struck if it is. */
+function sectionMarkdown(s: { name?: string; body: string }, struck: boolean): string {
+  const body = s.body.trim();
+  const name = (s.name ?? '').trim();
+  const line = name && body ? `**${name}:** ${body}` : name ? `**${name}:**` : body;
+  return struck && line ? `~~${line}~~` : line;
 }

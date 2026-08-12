@@ -33,7 +33,7 @@ import type { CustomCardDef } from './character-file';
  */
 const CLASS_TRACKERS: Record<string, { functions: CardFunction[]; advances: CardAdvance[] }> = {
   'brawler|Combo Strike': {
-    functions: [{ id: 'combo', kind: 'cycle', placement: 'below', label: 'Combo Die', options: ['d4', 'd6', 'd8', 'd10', 'd12'], startIndex: 0, locked: true }],
+    functions: [{ id: 'combo', kind: 'cycle', title: 'Combo Die', options: ['d4', 'd6', 'd8', 'd10', 'd12'], startIndex: 0, locked: true }],
     advances: [{ id: 'combo-up', label: 'Increase your Combo Die by one step', functionId: 'combo', tiers: [], perTier: 1, effect: { kind: 'step', by: 1 } }],
   },
 };

@@ -24,15 +24,45 @@
 
 export type FunctionKind = 'counter' | 'text' | 'cycle';
 
-/** Where the element sits relative to the card's body. The owner asked for both. */
+/**
+ * Where the element sits relative to the card's body.
+ *
+ * @deprecated v0.42.3. An element is a SECTION now, so its position is its position in the section
+ * list and there is nothing left to choose. Kept only so a card authored before this release can be
+ * read and migrated (see `lib/card-blocks`).
+ */
 export type FunctionPlacement = 'above' | 'below';
+
+/** How wide the control draws. Hug is its natural size; full stretches it across the card. */
+export type FunctionWidth = 'hug' | 'full';
+/** How big it draws. Three steps, because a card has room for one big thing and several small ones. */
+export type FunctionSize = 'small' | 'medium' | 'large';
 
 export interface CardFunction {
   id: string;
   kind: FunctionKind;
-  /** A line above the control saying what it is. Optional; a well-named card often needs none. */
+  /**
+   * What this element IS CALLED (v0.42.3, owner).
+   *
+   * Drawn centred above the control in smaller type, and doing double duty as the element's name in
+   * the dice and modifier variable lists (see `lib/function-vars`). That is why it is required rather
+   * than optional: an element nobody named is an element nobody can pick out of a list. It can be
+   * hidden from the CARD with `titleHidden`; it is never hidden from the lists.
+   *
+   * This replaces the old optional `label`, which asked for decoration before the author had decided
+   * what they were making.
+   */
+  title: string;
+  /** The title is not printed on the card. It still names the element everywhere else. */
+  titleHidden?: boolean;
+  /** v0.42.3: hug the content, or take the whole card width. Default hug. */
+  width?: FunctionWidth;
+  /** v0.42.3: how big the control draws. Default medium. */
+  size?: FunctionSize;
+  /** @deprecated v0.42.3 — an element is a section now. Read for migration only. */
+  placement?: FunctionPlacement;
+  /** @deprecated v0.42.3 — replaced by {@link title}. Read for migration only. */
   label?: string;
-  placement: FunctionPlacement;
 
   // --- counter ---
   /** Where it starts, and what a restarting countdown returns to. */
@@ -76,9 +106,15 @@ export interface CardFunction {
    * turns it on. A feature you do not have yet is not a greyed-out feature, it is not there.
    */
   hidden?: boolean;
-  /** A line ABOVE the control, in the card's body voice. Explains what it is. */
+  /**
+   * @deprecated v0.42.3. A line above the control, in the card's body voice.
+   *
+   * The owner's verdict: the author can already write text, so offering a second and worse way to do
+   * it was solving a problem nobody had. Migration turns these into ordinary text sections around the
+   * element, which is what they were pretending to be, so no authored words are lost.
+   */
   before?: string;
-  /** A line BELOW it. "Increase this by one step as a level advancement, once per tier." */
+  /** @deprecated v0.42.3 — see {@link before}. */
   after?: string;
 }
 
@@ -102,8 +138,24 @@ export interface CardAdvance {
   tiers: number[];
   /** How many times it may be taken PER TIER. The owner asked for once or twice. */
   perTier: 1 | 2;
-  /** What it does. */
+  /** What it does, at any tier that does not say otherwise. */
   effect: AdvanceEffect;
+  /**
+   * PER-TIER OVERRIDES (v0.42.3, owner).
+   *
+   * "It must have a way to customize text edit to something different on every tier."
+   *
+   * A class whose Tier 2 option is not its Tier 4 option could not be written at all: one effect
+   * applied everywhere. Absent, or a tier that is absent from it, falls back to `effect` and `label`,
+   * so the common case stays exactly one line in the form and no existing advancement changes.
+   */
+  byTier?: Partial<Record<2 | 3 | 4, { label?: string; effect?: AdvanceEffect }>>;
+}
+
+/** What this advancement is and does AT ONE TIER, with the overrides applied. */
+export function advanceAt(a: CardAdvance, tier: number): { label: string; effect: AdvanceEffect } {
+  const over = a.byTier?.[tier as 2 | 3 | 4];
+  return { label: over?.label?.trim() || a.label, effect: over?.effect ?? a.effect };
 }
 
 export type AdvanceEffect =
@@ -128,11 +180,17 @@ const clampIndex = (i: number, len: number): number => (len <= 0 ? 0 : ((i % len
 
 /** A brand new function of this kind, with the defaults an author would expect to see. */
 export function newFunction(id: string, kind: FunctionKind): CardFunction {
-  const base = { id, kind, placement: 'below' as const };
+  // v0.42.3: a title, because every element has one, and no placement, because an element is a
+  // section now. `width`/`size` are left at their defaults rather than written out, so a card only
+  // carries the customisation somebody actually chose.
+  const base = { id, kind, title: DEFAULT_TITLE[kind] };
   if (kind === 'counter') return { ...base, start: 0, max: undefined, countdown: false };
   if (kind === 'text') return { ...base, lines: 1, placeholder: '' };
   return { ...base, options: ['Off', 'On'], startIndex: 0 };
 }
+
+/** What a brand new element is called before the author names it. */
+const DEFAULT_TITLE: Record<FunctionKind, string> = { counter: 'Counter', text: 'Notes', cycle: 'State' };
 
 /**
  * The state a function has before anyone has touched it.
@@ -255,6 +313,11 @@ export function functionSummary(f: CardFunction): string {
 export const meaningfulFunctions = (list: CardFunction[] | undefined): CardFunction[] =>
   (list ?? []).filter((f) => f.kind !== 'cycle' || (f.options ?? []).some((o) => o.trim()));
 
-/** The functions that sit above the card's body, and the ones that sit below. */
+/**
+ * The functions that sit above the card's body, and the ones that sit below.
+ *
+ * @deprecated v0.42.3 — position comes from the section list. `lib/card-blocks` is the replacement.
+ * Kept because the legacy migration needs to read the old arrangement back.
+ */
 export const functionsAt = (list: CardFunction[] | undefined, where: FunctionPlacement): CardFunction[] =>
-  (list ?? []).filter((f) => f.placement === where);
+  (list ?? []).filter((f) => (f.placement ?? 'below') === where);

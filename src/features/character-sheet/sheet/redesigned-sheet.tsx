@@ -54,6 +54,7 @@ import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, type LibraryCard } from '@/lib/library';
 import { advancedFunctions, advancedStates } from '@/lib/card-advances';
+import { functionVars, functionVarValues } from '@/lib/function-vars';
 import type { CardAdvance, CardFunction } from '@/lib/card-functions';
 import { libraryCardById } from '@/lib/library-embed';
 import { type MoodboardItem, readMoodboard } from '@/lib/moodboard';
@@ -2609,6 +2610,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       damageRoll: character.damageRoll ?? 0,
       spellcast: character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0,
       traits: character.traits as Partial<Record<string, number>>,
+      // v0.42.3: the character's own card elements, so a preset can carry "+ Combo Die".
+      functions: functionVarValues(functionVars([...(fileRef.current?.libraryCards ?? []), ...(fileRef.current?.customCards ?? [])], fileRef.current?.cardFunctions, fileRef.current?.cardAdvances)),
     };
     trayRef.current?.playPreset(preset.dice, preset.name, modifierValue(preset.modifier, ctx));
   }, [character]);

@@ -51,9 +51,13 @@ import { attachmentsFor, classTitlesIn, subclassNamesFor } from '@/lib/class-lin
 import { paginate, sectionOf } from '@/lib/expansion-sort';
 import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/lib/card-move';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
-import { type CustomClassSpec, domainProblems } from '@/lib/custom-class';
+import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
+import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
+import { CounterField, SelectRow, TextField } from '@/components/form-controls';
+import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { CampaignSettingsForm } from './campaign-settings-form';
+import { FunctionEditor } from './function-editor';
 import { CardFunctionsForm, ClassSpecForm } from './class-spec-form';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { DimScreen } from '@/lib/screen-dim';
@@ -195,15 +199,27 @@ const BUILTIN_CLASSES = CLASSES.map((c) => c.key);
 const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6 };
 
+/**
+ * The three types the published DOMAIN CARDS carry (v0.42.3, owner).
+ *
+ * "It is important for Domain Card creation to customize what the card type is... since they are
+ * based on images that already have those card types painted on them."
+ *
+ * Each has a plaque of its own keyed to exactly these words, so a homebrew Spell reads as a Spell.
+ */
+const DOMAIN_CARD_TYPES = ['Ability', 'Spell', 'Grimoire'] as const;
+
 /** The per-type mechanical/config fields shown inside the card editor (its `extraField`). The content
  *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
-function ContentConfig({ config, onChange, card, siblings }: {
+function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
   config: CardConfig;
   onChange: (c: CardConfig) => void;
   /** The card being edited, for the class report. */
   card: LibraryCard;
   /** Every OTHER card in this expansion, so links point at real things (v0.42.1). */
   siblings: LibraryCard[];
+  /** v0.42.3: open the card browser to pick starting items for one of a class's three lists. */
+  onPickItems: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
 }) {
   const set = (patch: Partial<CardConfig>) => onChange({ ...config, ...patch });
   /**
@@ -251,15 +267,30 @@ function ContentConfig({ config, onChange, card, siblings }: {
           {customDomains.length === 0 ? (
             <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Make a Domain card in this expansion to offer one of your own.</Text>
           ) : null}
-          <LibInput label="Level (1–10)" value={config.level ? String(config.level) : ''} onChangeText={(s) => set({ level: Math.max(1, Math.min(10, parseInt(s || '1', 10) || 1)) })} placeholder="1" keyboardType="number-pad" />
+          {/* v0.42.3 (owner): a counter. A level is 1 to 10 and a keyboard can produce 47. */}
+          <CounterField label="Level" value={config.level ?? 1} min={1} max={10} onChange={(level) => set({ level })} />
+          {/* v0.42.3 (owner): the printed TYPE. The real domain cards carry one of three, painted
+              into their art, so a homebrew card that cannot pick one never looks like the real thing.
+              Each has a plaque of its own in `KIND_THEMES`, keyed to these labels. */}
+          <SelectRow
+            label="What kind of card it is"
+            hint="The word printed on the plaque, the same three the published domain cards use."
+            value={(config.typeLabel as (typeof DOMAIN_CARD_TYPES)[number]) ?? 'Ability'}
+            options={DOMAIN_CARD_TYPES.map((x) => ({ value: x, label: x }))}
+            onChange={(typeLabel) => set({ typeLabel })}
+          />
         </>
       ) : null}
       {/* v0.42.1 (owner): a CUSTOM DOMAIN. It owes eleven cards, and says so until it has them. */}
       {t === 'customDomain' ? (
         <View style={{ gap: 6 }}>
+          {/* v0.42.3 (owner): "clear up the domain section description because it sounds like the
+              user cannot make more than 11 domain cards". Eleven is the FLOOR: what a domain needs to
+              be playable at every level. Above that, as many as you like. */}
           <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
             A domain of your own. Write its cards as Domain cards in this expansion and set each one&apos;s domain to this.
-            It needs one at every level from 1 to 10, and two at level 1, so eleven in all.
+            A playable domain needs at least one card at every level from 1 to 10, and two at level 1, so eleven at a minimum.
+            Write as many more as you like: several cards can share a level, and the published domains do exactly that.
           </Text>
           {card.title.trim() ? (
             <Text style={{ color: domainProblems(card.title, siblings).length ? Rune.red : Rune.goldText, fontSize: 11, fontFamily: Body.bold, lineHeight: 15 }}>
@@ -298,21 +329,24 @@ function ContentConfig({ config, onChange, card, siblings }: {
       {t === 'class' ? (
         <ClassSpecForm
           spec={config.classSpec}
-          card={card}
+          card={{ ...card, className: config.className }}
           attachments={attachmentsFor(siblings, card.title)}
-          itemOptions={itemOptions}
+          classChoices={classChoices}
+          itemTitle={(id) => itemOptions.find((o) => o.id === id)?.title ?? 'A card that is no longer here'}
+          onPickItems={onPickItems}
+          onClassName={(className) => set({ className })}
           onChange={(classSpec) => set({ classSpec })}
         />
       ) : null}
       {t === 'subclass' ? (
         <View style={{ gap: 4 }}>
-          <LibInput label="Subclass name (its family)" value={config.subclass ?? ''} onChangeText={(subclass) => set({ subclass })} placeholder="e.g. Stalwart" />
-          <Text style={smallLabel}>Progression tier</Text>
-          <View style={chipRow}>
-            <Chip label="Foundation" on={(config.tier ?? 1) === 1} onPress={() => set({ tier: 1 })} />
-            <Chip label="Specialization" on={config.tier === 2} onPress={() => set({ tier: 2 })} />
-            <Chip label="Mastery" on={config.tier === 3} onPress={() => set({ tier: 3 })} />
-          </View>
+          <TextField label="Subclass name (its family)" value={config.subclass ?? ''} placeholder="e.g. Stalwart" onChangeText={(subclass) => set({ subclass })} />
+          <SelectRow
+            label="Progression tier"
+            value={config.tier === 3 ? 'mastery' : config.tier === 2 ? 'spec' : 'foundation'}
+            options={[{ value: 'foundation', label: 'Foundation' }, { value: 'spec', label: 'Specialization' }, { value: 'mastery', label: 'Mastery' }]}
+            onChange={(v) => set({ tier: v === 'mastery' ? 3 : v === 'spec' ? 2 : 1 })}
+          />
           {/* v0.42.0 (owner): the spellcast trait, exactly as an official subclass carries one. */}
           <Text style={smallLabel}>Spellcast trait (optional)</Text>
           <View style={chipRow}>
@@ -325,18 +359,15 @@ function ContentConfig({ config, onChange, card, siblings }: {
       {/* v0.13.2 (#359): the old "Passive on feature line" chip is gone. Which feature is crossed out in a
           mix is decided by SELECTION ORDER (like Void ancestries), and the passive rides Feature 1 by
           convention — no author choice needed. The section editor still organizes Feature 1 / 2 by position. */}
-      {/* v0.42.0 (owner): functional elements, on any card. A class's trackers are the reason they
-          exist, but nothing about them is class-specific, so nothing here restricts them to one. */}
+      {/**
+        * WHERE A FEATURE CARD LANDS (v0.42.3).
+        *
+        * The elements themselves are configured in the SECTION LIST now, not here: an element is a
+        * block of the card, so it is authored where the card's blocks are. What is left in this panel
+        * is the one thing that is about the card rather than about an element.
+        */}
       <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
-        <CardFunctionsForm
-          functions={config.functions}
-          states={fnStates}
-          advances={config.advances}
-          onChange={(functions) => set({ functions })}
-          onStates={setFnStates}
-          onAdvances={(advances) => set({ advances: advances.length ? advances : undefined })}
-        />
-        {(config.functions ?? []).length ? (
+        {t === 'feature' ? (
           <View style={{ gap: 5 }}>
             <Text style={smallLabel}>Where this card lands</Text>
             <View style={chipRow}>
@@ -345,7 +376,7 @@ function ContentConfig({ config, onChange, card, siblings }: {
             </View>
             {config.functionCategory ? (
               <View style={{ gap: 5 }}>
-                <LibInput label="Category name" value={config.functionCategory.label} onChangeText={(label) => set({ functionCategory: { ...config.functionCategory!, label } })} placeholder="e.g. Rites" />
+                <TextField label="Category name" value={config.functionCategory.label} placeholder="e.g. Rites" onChangeText={(label) => set({ functionCategory: { ...config.functionCategory!, label } })} />
                 <Text style={smallLabel}>Icon</Text>
                 <View style={chipRow}>
                   {CATEGORY_ICON_KEYS.slice(0, 14).map((k) => (
@@ -366,7 +397,7 @@ function ContentConfig({ config, onChange, card, siblings }: {
         <View style={{ gap: 6 }}>
           <Text style={smallLabel}>Trait</Text><View style={chipRow}>{WEAPON_TRAITS.map((x) => <Chip key={x} label={x} on={w.trait === x} onPress={() => setW({ trait: x })} />)}</View>
           <Text style={smallLabel}>Range</Text><View style={chipRow}>{WEAPON_RANGES.map((x) => <Chip key={x} label={x} on={w.range === x} onPress={() => setW({ range: x })} />)}</View>
-          <LibInput label="Damage (e.g. d8+2)" value={w.damage} onChangeText={(damage) => setW({ damage })} placeholder="d6" />
+          <TextField label="Damage" hint="A die and an optional bonus, the way the printed weapons write it." value={w.damage} placeholder="d8+2" onChangeText={(damage) => setW({ damage })} />
           <View style={chipRow}>
             <Chip label="Physical" on={w.damageType === 'phy'} onPress={() => setW({ damageType: 'phy', kind: 'physical' })} />
             <Chip label="Magic" on={w.damageType === 'mag'} onPress={() => setW({ damageType: 'mag', kind: 'magic' })} />
@@ -384,13 +415,13 @@ function ContentConfig({ config, onChange, card, siblings }: {
       ) : null}
       {t === 'armor' ? (
         <View style={{ gap: 6 }}>
-          <LibInput label="Base armor score" value={String(a.baseScore)} onChangeText={(s) => setA({ baseScore: Math.max(0, parseInt(s || '0', 10) || 0) })} placeholder="3" keyboardType="number-pad" />
-          <LibInput label="Thresholds (major/severe)" value={a.thresholds} onChangeText={(thresholds) => setA({ thresholds })} placeholder="7/15" />
+          <CounterField label="Base armor score" value={a.baseScore} min={0} max={20} onChange={(baseScore) => setA({ baseScore })} />
+          <TextField label="Thresholds" hint="Major and severe, separated by a slash." value={a.thresholds} placeholder="7/15" onChangeText={(thresholds) => setA({ thresholds })} />
           <Text style={smallLabel}>Tier</Text><View style={chipRow}>{[1, 2, 3, 4].map((n) => <Chip key={n} label={`T${n}`} on={a.tier === n} onPress={() => setA({ tier: n as 1 | 2 | 3 | 4 })} />)}</View>
         </View>
       ) : null}
-      {t === 'generic' ? (
-        <LibInput label="Type label (optional)" value={config.typeLabel ?? ''} onChangeText={(typeLabel) => set({ typeLabel })} placeholder="e.g. Consumable, Relic, shows on the plaque" />
+      {t === 'generic' || t === 'feature' ? (
+        <TextField label="Type label (optional)" hint="The word printed on the plaque. Left blank it says what kind of card this is." value={config.typeLabel ?? ''} placeholder="e.g. Consumable, Relic" onChangeText={(typeLabel) => set({ typeLabel })} />
       ) : null}
     </View>
   );
@@ -543,6 +574,11 @@ export function LibraryScreen() {
   const [cardPage, setCardPage] = useState(0);
   /** v0.42.1: the card being sent to another expansion. */
   const [movingCard, setMovingCard] = useState<LibraryCard | null>(null);
+  /** v0.42.3: which of a class's three starting-item lists the card browser is filling. */
+  const [pickingItems, setPickingItems] = useState<'fixed' | 'choiceA' | 'choiceB' | null>(null);
+  /** v0.42.3: which element row is open in the editor, and the live state of the preview's controls. */
+  const [editingFn, setEditingFn] = useState<string | null>(null);
+  const [fnStates, setFnStates] = useState<Record<string, FunctionState>>({});
   /** v0.42.1: the campaign settings editor, and the warning that leads to it. */
   const [campaignForm, setCampaignForm] = useState(false);
   const [campaignWarn, setCampaignWarn] = useState(false);
@@ -665,6 +701,45 @@ export function LibraryScreen() {
         }
       : undefined;
     const isAncestry = cfg.contentType === 'ancestry';
+    /**
+     * A FEATURE CARD is the only card with elements (v0.42.3, owner), so it is the only card whose
+     * editor offers "+ Add function", and the only one that may not be replaced by a whole picture:
+     * a picture cannot be pressed, and the elements are the entire reason the card exists.
+     */
+    const isFeature = cfg.contentType === 'feature';
+    /** Which ids one of the three starting-item lists is holding. */
+    const itemIdsFor = (spec: CustomClassSpec | undefined, which: 'fixed' | 'choiceA' | 'choiceB'): string[] =>
+      (which === 'fixed' ? spec?.fixedItemIds : which === 'choiceA' ? spec?.choiceAItemIds : spec?.choiceBItemIds) ?? [];
+    /** Put a picked card into one of them, without letting the same card in twice. */
+    const addStartingItem = (which: 'fixed' | 'choiceA' | 'choiceB', id: string) =>
+      setEditingCard((st) => {
+        if (!st) return st;
+        const spec = st.config.classSpec ?? EMPTY_CLASS_SPEC;
+        const key = which === 'fixed' ? 'fixedItemIds' : which === 'choiceA' ? 'choiceAItemIds' : 'choiceBItemIds';
+        const cur = itemIdsFor(spec, which);
+        if (cur.includes(id)) return st;
+        return { ...st, config: { ...st.config, classSpec: { ...spec, [key]: [...cur, id] } } };
+      });
+    /** The card as it will be saved, so the preview above is the card and not an impression of it. */
+    const previewCard = (d: CardDraft): LibraryCard => ({
+      id: existing?.id ?? 'preview',
+      contentType: cfg.contentType,
+      title: d.title,
+      text: d.text,
+      imageUri: d.imageUri,
+      color: d.color,
+      typeLabel: cfg.typeLabel ?? d.typeLabel,
+      sections: d.sections,
+      functions: cfg.functions,
+      domain: cfg.domain,
+      level: cfg.level,
+      className: cfg.className,
+      subclass: cfg.subclass,
+      tier: cfg.tier,
+      weapon: cfg.weapon,
+      armor: cfg.armor,
+      fullImage: d.fullImage,
+    });
     return (
       <CardEditor
         kindLabel={cfg.typeLabel || CONTENT_TYPE_LABEL[cfg.contentType]}
@@ -672,6 +747,43 @@ export function LibraryScreen() {
         initial={initial}
         sectioned
         sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
+        noFullImage={isFeature}
+        /**
+         * THE PREVIEW (v0.42.3, owner): the real `LibraryForgedCard`, which is the component the
+         * character sheet draws, with this card's own elements and live state. Not a mock-up of the
+         * card and not a swatch in a panel: what is approved here is what ships.
+         */
+        renderPreview={(d) => (
+          <LibraryForgedCard
+            card={previewCard(d)}
+            functionStates={fnStates}
+            onFunction={(fid, next) => setFnStates((st) => ({ ...st, [fid]: next }))}
+          />
+        )}
+        sectionFunctions={
+          isFeature
+            ? {
+                list: cfg.functions ?? [],
+                editingId: editingFn,
+                onEdit: setEditingFn,
+                onChange: (functions) => setEditingCard((st) => (st ? { ...st, config: { ...st.config, functions } } : st)),
+                renderEditor: (fn) => (
+                  <FunctionEditor
+                    fn={fn}
+                    advance={(cfg.advances ?? []).find((a) => a.functionId === fn.id)}
+                    onChange={(next) => setEditingCard((st) => (st ? { ...st, config: { ...st.config, functions: (st.config.functions ?? []).map((x) => (x.id === fn.id ? next : x)) } } : st))}
+                    onAdvance={(a) =>
+                      setEditingCard((st) =>
+                        st
+                          ? { ...st, config: { ...st.config, advances: [...(st.config.advances ?? []).filter((x) => x.functionId !== fn.id), ...(a ? [a] : [])] } }
+                          : st,
+                      )
+                    }
+                  />
+                ),
+              }
+            : undefined
+        }
         // v0.30.0: the details block, rewritten as the form below is filled in.
         generatedBody={formMarkdown(cfg)}
         extraField={
@@ -679,8 +791,28 @@ export function LibraryScreen() {
             config={cfg}
             card={existing ?? { id: 'new', contentType: cfg.contentType, title: '', text: '', imageUri: null }}
             siblings={selected.cards.filter((c) => c.id !== existing?.id)}
+            onPickItems={setPickingItems}
             onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))}
           />
+        }
+        overlay={
+          /**
+           * THE CARD BROWSER, picking a class's starting items (v0.42.3, owner).
+           *
+           * The same component the sheet's Add Gear opens, in a select mode: adding a card here puts
+           * its id in one of the class's three lists instead of on a character. It already draws real
+           * cards, already has the category tabs, and already surfaces this expansion's own records,
+           * which is exactly why it is reused rather than rebuilt as another chip cloud.
+           */
+          pickingItems ? (
+            <GearBrowser
+              acquiredIds={new Set(itemIdsFor(cfg.classSpec, pickingItems))}
+              enabledExpansionIds={[selected.id]}
+              onAdd={(id) => { addStartingItem(pickingItems, id); setPickingItems(null); }}
+              onAddCustom={(lc) => { addStartingItem(pickingItems, lc.id); setPickingItems(null); }}
+              onClose={() => setPickingItems(null)}
+            />
+          ) : undefined
         }
         onCancel={() => setEditingCard(null)}
         onSave={(d) => {
