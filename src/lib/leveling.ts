@@ -14,6 +14,7 @@
 import type { TraitKey } from '@/features/character-sheet/character';
 import { CATALOG, cardById } from '@/data/catalog';
 import type { CharacterFile } from './character-file';
+import { type AdvanceCard, hasCardAdvances } from './card-advances';
 import { addCompanionExperience, applyCompanionOption, companionOf, hasCompanion } from './companion';
 import { subclassFamilyKey } from './library';
 import { tierForLevel } from './rest';
@@ -23,7 +24,7 @@ export { tierForLevel };
 /** Daggerheart tops out at level 10 (tier 4 = 8-10). No character advances past it. */
 export const MAX_LEVEL = 10;
 
-export type AdvKey = 'trait' | 'hp' | 'stress' | 'exp' | 'domain' | 'evasion' | 'prof' | 'subclass' | 'multiclass';
+export type AdvKey = 'trait' | 'hp' | 'stress' | 'exp' | 'domain' | 'evasion' | 'prof' | 'subclass' | 'multiclass' | 'card';
 
 export interface AdvancementOption {
   key: AdvKey;
@@ -37,7 +38,7 @@ export interface AdvancementOption {
   /** Lowest tier this option is available at (prof/subclass/multiclass = tier 3). */
   minTier: number;
   /** Sub-selection the UI must collect. */
-  needs?: 'traits' | 'exps' | 'domain' | 'multiclass';
+  needs?: 'traits' | 'exps' | 'domain' | 'multiclass' | 'card';
 }
 
 export const ADVANCEMENTS: AdvancementOption[] = [
@@ -50,6 +51,15 @@ export const ADVANCEMENTS: AdvancementOption[] = [
   { key: 'prof', label: '+1 Proficiency', desc: 'Increase your Proficiency by +1. Uses both choices.', slots: 2, picks: 2, minTier: 3 },
   { key: 'subclass', label: 'Upgrade subclass', desc: 'Take the next subclass card (specialization, then mastery).', slots: 1, picks: 1, minTier: 3 },
   { key: 'multiclass', label: 'Multiclass', desc: 'Take an additional class. Uses both choices.', slots: 2, picks: 2, minTier: 3, needs: 'multiclass' },
+  /**
+   * v0.42.1 (owner): an advancement a CARD offers, such as the Brawler's Combo Die going up a size.
+   *
+   * The rulebook writes these on the class rather than in the advancement table, so the option only
+   * appears for a character that actually has one (see `availableAdvancements`). The real limit is
+   * per-advancement and per-tier and lives on the card itself; the slot count here is only a ceiling
+   * on how many card options one tier may spend, which no printed class comes near.
+   */
+  { key: 'card', label: 'A class option', desc: 'Take an advancement one of your cards offers.', slots: 4, picks: 1, minTier: 2, needs: 'card' },
 ];
 
 export function advOption(key: AdvKey): AdvancementOption {
@@ -78,8 +88,20 @@ export function availableAdvancements(file: CharacterFile, newLevel: number): Ad
     // v0.10.2: the per-tier reset would otherwise re-offer multiclass every tier, but the file holds a
     // single `multiclassName` — a second take would silently overwrite the first. Cap it at once ever.
     if (multiclassed && o.key === 'multiclass') return false;
+    // v0.42.1: only offered to a character whose cards actually offer something at this tier.
+    if (o.key === 'card' && !hasCardAdvances(advanceCardsOf(file), tier, file.cardAdvances)) return false;
     return true;
   });
+}
+
+/**
+ * Every card of this character that could carry an advancement (v0.42.1).
+ *
+ * Both kinds: the homebrew cards embedded on the file, and the authored ones, which is where a
+ * bundled class's own trackers live once the class has been expanded into cards.
+ */
+export function advanceCardsOf(file: CharacterFile): AdvanceCard[] {
+  return [...(file.libraryCards ?? []), ...(file.customCards ?? [])].filter((c) => c.advances?.length);
 }
 export function isTierStart(newLevel: number): boolean {
   return newLevel === 2 || newLevel === 5 || newLevel === 8;
@@ -118,6 +140,8 @@ export interface ChosenAdv {
   multiclass?: string; // for 'multiclass' — the new class key
   multiclassSubclassCardId?: string; // for 'multiclass' — a foundation card from the new class (#311)
   multiclassDomain?: string; // for 'multiclass' — one domain from the new class (#311)
+  /** for 'card' (v0.42.1) — the `cardId|advanceId` key of the advancement chosen. */
+  cardAdvanceKey?: string;
 }
 export interface LevelUpPlan {
   /** The automatic per-level domain card (≤ new level). */
@@ -185,6 +209,7 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   let multiclassName = file.multiclassName;
   let multiclassSubclassCardId = file.multiclassSubclassCardId;
   let multiclassDomain = file.multiclassDomain;
+  let cardAdvances = [...(file.cardAdvances ?? [])];
 
   const traitsUpgradedThisLevel = new Set<TraitKey>(); // a trait can't be raised twice in one level-up
   for (const a of plan.advancements) {
@@ -243,6 +268,11 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
         if (a.multiclassSubclassCardId) multiclassSubclassCardId = a.multiclassSubclassCardId;
         if (a.multiclassDomain) multiclassDomain = a.multiclassDomain;
         break;
+      // v0.42.1: the TAKE is recorded, never its result. The card's element is derived from the takes
+      // wherever it is drawn, so a Combo Die that becomes a d6 does so in one place.
+      case 'card':
+        if (a.cardAdvanceKey) cardAdvances = [...cardAdvances, { key: a.cardAdvanceKey, tier: curTier }];
+        break;
     }
   }
 
@@ -265,6 +295,7 @@ export function applyLevelUp(file: CharacterFile, plan: LevelUpPlan, def: LevelD
   next.multiclassName = multiclassName;
   next.multiclassSubclassCardId = multiclassSubclassCardId;
   next.multiclassDomain = multiclassDomain;
+  if (cardAdvances.length) next.cardAdvances = cardAdvances;
 
   // Beastbound companion (#311): it gains an Experience whenever the character does (tier start), then
   // folds in any training options chosen this level-up. `next` is used so a companion gained THIS

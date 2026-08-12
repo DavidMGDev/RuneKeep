@@ -17,7 +17,26 @@
 
 import { classColor, classInfo, type ClassName } from '@/constants/identity';
 import { featurePages } from '@/data/class-data';
+import type { CardAdvance, CardFunction } from './card-functions';
 import type { CustomCardDef } from './character-file';
+
+/**
+ * The class abilities that are TRACKERS, not just text (v0.42.1, owner).
+ *
+ * "Some features are described as 'as a level advancement option', for example the Brawler's Combo
+ * Die, and these should be added to the level advancement options."
+ *
+ * The Brawler is the only printed class that says it in those words, so this is a table of one and
+ * will stay small. It is keyed by the ability's NAME rather than its index because the pages repack
+ * whenever the text is reflowed, and a Combo Die that moved to another card would be a bug nobody
+ * would find. The element is locked: an advancement moves it, a press does not.
+ */
+const CLASS_TRACKERS: Record<string, { functions: CardFunction[]; advances: CardAdvance[] }> = {
+  'brawler|Combo Strike': {
+    functions: [{ id: 'combo', kind: 'cycle', placement: 'below', label: 'Combo Die', options: ['d4', 'd6', 'd8', 'd10', 'd12'], startIndex: 0, locked: true }],
+    advances: [{ id: 'combo-up', label: 'Increase your Combo Die by one step', functionId: 'combo', tiers: [], perTier: 1, effect: { kind: 'step', by: 1 } }],
+  },
+};
 
 /**
  * The id of the card for one ability of one class.
@@ -62,6 +81,8 @@ export function classCards(cls: ClassName): CustomCardDef[] {
       color,
       typeLabel: `${info.label} Feature`,
       target: 'arsenal' as const,
+      // v0.42.1: an ability the rulebook writes as a tracker gets one. See CLASS_TRACKERS.
+      ...(CLASS_TRACKERS[`${cls}|${section.name.replace(/ \(\d+\/\d+\)$/, '')}`] ?? {}),
     }));
 }
 

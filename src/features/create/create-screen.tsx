@@ -44,6 +44,7 @@ import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } fro
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
 import { shouldShow } from '@/lib/onboarding-store';
 
+import { campaignNote, isOptionOn, isStepOn, mergeSettings } from '@/lib/campaign-settings';
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
 import { canSkipClass, cardedItems, carriesThresholds, carryItems, type CarryItem, heldEffectsFor, isGenericName, keptLevel, levelForStatBlock } from '@/lib/characterize';
@@ -62,6 +63,14 @@ import { ExperiencesTab } from './experiences-tab';
 import { QuickCardFlow } from '@/features/character-sheet/sheet/quick-card-flow';
 import type { CardEffect } from '@/lib/modifiers';
 import { TraitsTab } from './traits-tab';
+
+/**
+ * The decks a campaign may cut options from (v0.42.1).
+ *
+ * The picked-content decks and nothing else: gear and traits are the character's own business, and a
+ * DM who wants to limit the weapons on offer turns the whole step off. Keys match `optionKey`.
+ */
+const CAMPAIGN_DECKS: string[] = ['class', 'subclass', 'ancestry', 'community', 'domains'];
 
 // ---------- screen ----------
 
@@ -264,6 +273,35 @@ export function CreateScreen() {
     () => (expansions ? contentForCreation(expansions.filter((e) => picked.has(e.id))) : null),
     [expansions, picked],
   );
+  /**
+   * CAMPAIGN SETTINGS in force (v0.42.1, owner).
+   *
+   * The union of every picked expansion's rules, so a second campaign pack can only narrow what the
+   * first one allows. Absent from every pack, which is every character made before this existed,
+   * merges to inert and every filter below is a pass-through. See `lib/campaign-settings`.
+   */
+  const campaign = useMemo(
+    () => mergeSettings((expansions ?? []).filter((e) => picked.has(e.id)).map((e) => e.campaign)),
+    [expansions, picked],
+  );
+  /** Which packs are doing the limiting, so the player is told rather than left guessing. */
+  const campaignNames = useMemo(
+    () => (expansions ?? []).filter((e) => picked.has(e.id) && e.campaign?.on).map((e) => e.name),
+    [expansions, picked],
+  );
+  /**
+   * The player is TOLD, not left guessing (v0.42.1).
+   *
+   * A creator missing four classes and a whole step with no explanation reads as a broken app, so the
+   * pack doing the limiting is named the moment its rules come into force.
+   */
+  const noted = useRef('');
+  useEffect(() => {
+    const note = campaign.on ? campaignNote(campaignNames) : '';
+    if (!note || note === noted.current) return;
+    noted.current = note;
+    showToast(note);
+  }, [campaign.on, campaignNames]);
   const [pendingDeck, setPendingDeck] = useState<DeckKey | null>(null);
   /** The ally prompt, raised after a characterized ALLY is forged (never for an adversary). */
   const [joinParty, setJoinParty] = useState<{ charId: string; name: string; party: Party } | null>(null);
@@ -332,7 +370,10 @@ export function CreateScreen() {
   const inheritedTraits = useMemo(() => ({ ...(statBlock as unknown as { traits?: Partial<Record<TraitKey, number>> } | null)?.traits }), [statBlock]);
   /** Transformations follow the APP's expansion switch, not this character's picks (owner). */
   const transformationsOn = !!expansions?.some((e) => e.id === 'void' && isEnabledForCreation(e));
-  const deckList = useMemo(() => decksFor(characterizing, transformationsOn), [characterizing, transformationsOn]);
+  const deckList = useMemo(
+    () => decksFor(characterizing, transformationsOn).filter((d) => isStepOn(campaign, d.key)),
+    [characterizing, transformationsOn, campaign],
+  );
   const classOptional = characterizing && canSkipClass(carry, carryOff);
 
   /**
@@ -618,7 +659,14 @@ export function CreateScreen() {
     [sources],
   );
 
-  const items: StraightItem[] = useMemo(() => {
+  /**
+   * The deck's options, then the campaign's cut (v0.42.1).
+   *
+   * One filter over the finished list rather than a condition inside each branch: every deck is
+   * covered the moment it is added, and the ids the DM ticked are the same ids the carousel carries.
+   * The mode toggles (Mixed Ancestry, the Skip cards) are never options and are never cut.
+   */
+  const rawItems: StraightItem[] = useMemo(() => {
     if (deck === 'carry') {
       // A greyed card is DIMMED rather than outlined: an outline is what selection looks like
       // everywhere else in the creator, and here selecting a card is how you throw it away.
@@ -757,6 +805,10 @@ export function CreateScreen() {
       }
     }
   }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, picked, creationClassCards, carry, carryOff, carryColor]);
+  const items: StraightItem[] = useMemo(
+    () => (campaign.on ? rawItems.filter((it) => !CAMPAIGN_DECKS.includes(deck) || isOptionOn(campaign, deck, it.id)) : rawItems),
+    [rawItems, campaign, deck],
+  );
 
   const selectedIds = useMemo(() => {
     // The carry step never outlines anything: greying is its whole vocabulary (see `items`).

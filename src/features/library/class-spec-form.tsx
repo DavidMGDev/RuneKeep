@@ -1,28 +1,38 @@
 /**
- * Authoring a CLASS and its FUNCTIONAL ELEMENTS (v0.42.0, owner).
+ * Authoring a CLASS, and the FUNCTIONAL ELEMENTS any card may carry (v0.42.0; rebuilt v0.42.1, owner).
  *
- * Two forms that only ever appear in the expansion editor, kept out of `library-screen` because that
- * file is already the longest in the feature and these are self-contained: a class spec is a form over
- * `CustomClassSpec`, and a function list is a form over `CardFunction[]`. Neither knows anything about
- * the library beyond the shape it edits.
+ * v0.42.0 made the class card a form that contained its own features, and the owner's correction is a
+ * change of direction rather than of feature: "the class card is created first to have a center to
+ * assign cards to... The whole idea is to not create cards from inside the class card UI, i wish to
+ * create the other cards in their own merit, from subclass to items."
  *
- * The class form asks for exactly what an official class carries, because that is what makes a
- * homebrew one playable rather than decorative. What is missing is reported by `lib/custom-class`,
- * which is also the share gate, so the form never has to decide what "complete" means.
+ * So the class form asks for what genuinely belongs to the class and nothing else, its numbers, its
+ * Hope feature, its voice, its two domains and its starting items, and then REPORTS what currently
+ * points at it: its subclasses, its feature cards, its trackers. Every one of those is written
+ * elsewhere, on its own merits, and says which class it belongs to. What is missing is listed under
+ * the report in the same words the Share button uses, so an author is never guessing.
+ *
+ * Each section carries a line explaining what it is for, which is the owner's other note: "the
+ * philosophy of class creation must be explained inside a description for each thing inside class
+ * creation."
  */
+import { type ReactNode, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 
 import { CardFunctionControl } from '@/components/card-function-control';
 import { ChamferBox } from '@/components/chamfer-box';
 import { RuneButton } from '@/components/rune-button';
-import { Body, Rune } from '@/constants/theme';
-import { type CardFunction, type FunctionKind, type FunctionState, functionSummary, newFunction, stateOf } from '@/lib/card-functions';
 import { ALL_DOMAINS } from '@/constants/identity';
-import { type CustomClassSpec, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
+import { Body, Rune } from '@/constants/theme';
+import { type CardAdvance, type CardFunction, type FunctionKind, type FunctionState, functionSummary, newFunction, stateOf } from '@/lib/card-functions';
+import { type ClassAttachments } from '@/lib/class-links';
+import { classProblems, type CustomClassSpec, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
+import type { LibraryCard } from '@/lib/library';
 
 const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6 };
+const hintStyle = { color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 };
 
 function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
   return (
@@ -65,34 +75,110 @@ function RemoveX({ label, onPress }: { label: string; onPress: () => void }) {
 
 const num = (t: string) => Math.max(0, parseInt(t.replace(/[^0-9]/g, '') || '0', 10));
 
-export function ClassSpecForm({ spec, onChange }: { spec: CustomClassSpec | undefined; onChange: (s: CustomClassSpec) => void }) {
+/** A section of the class form: a heading, the sentence that says what it is for, and its controls. */
+function Section({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <View style={{ gap: 7, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 11 }}>
+      <Text style={smallLabel}>{title}</Text>
+      <Text style={hintStyle}>{hint}</Text>
+      {children}
+    </View>
+  );
+}
+
+/** What currently points at this class, or what is missing, in one line each. */
+function Attached({ label, cards, empty }: { label: string; cards: LibraryCard[]; empty: string }) {
+  return (
+    <View style={{ gap: 3 }}>
+      <Text style={{ color: cards.length ? Rune.goldText : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+        {label} · {cards.length}
+      </Text>
+      {cards.length ? (
+        cards.map((c) => <Text key={c.id} numberOfLines={1} style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular }}>{'• '}{c.title || 'Untitled'}</Text>)
+      ) : (
+        <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic, lineHeight: 14 }}>{empty}</Text>
+      )}
+    </View>
+  );
+}
+
+/** A picker over card ids, for the starting item lists. */
+/**
+ * v0.42.1: the base game's loot and consumables joined this list, which took it past sixty entries.
+ * Everything CHOSEN is always drawn; the rest is filtered by what the author types and capped, so
+ * the picker stays a picker rather than becoming a wall.
+ */
+const ITEM_SHOWN = 10;
+
+function ItemPicker({ label, hint, chosen, options, onChange }: { label: string; hint: string; chosen: string[]; options: { id: string; title: string }[]; onChange: (ids: string[]) => void }) {
+  const [q, setQ] = useState('');
+  const toggle = (id: string) => onChange(chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
+  const picked = options.filter((o) => chosen.includes(o.id));
+  const rest = options.filter((o) => !chosen.includes(o.id) && (!q.trim() || o.title.toLowerCase().includes(q.trim().toLowerCase())));
+  return (
+    <View style={{ gap: 5 }}>
+      <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
+      <Text style={hintStyle}>{hint}</Text>
+      {options.length === 0 ? (
+        <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic }}>Write an item card in this expansion first, then it appears here.</Text>
+      ) : (
+        <>
+          {picked.length ? (
+            <View style={chipRow}>
+              {picked.map((o) => <Chip key={o.id} label={o.title || 'Untitled'} on onPress={() => toggle(o.id)} />)}
+            </View>
+          ) : null}
+          <Field label="" value={q} onChangeText={setQ} placeholder="Search items" maxLength={40} />
+          <View style={chipRow}>
+            {rest.slice(0, ITEM_SHOWN).map((o) => <Chip key={o.id} label={o.title || 'Untitled'} on={false} onPress={() => toggle(o.id)} />)}
+          </View>
+          {rest.length > ITEM_SHOWN ? (
+            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic }}>{rest.length - ITEM_SHOWN} more. Type to narrow it down.</Text>
+          ) : null}
+        </>
+      )}
+    </View>
+  );
+}
+
+export function ClassSpecForm({ spec, card, attachments, itemOptions, onChange }: {
+  spec: CustomClassSpec | undefined;
+  /** The class card being edited, so the report can be about it by name. */
+  card: LibraryCard;
+  /** What currently points at this class. Built by `lib/class-links`. */
+  attachments: ClassAttachments;
+  /** Cards in this expansion that can be a starting item. */
+  itemOptions: { id: string; title: string }[];
+  onChange: (s: CustomClassSpec) => void;
+}) {
   const s = spec ?? EMPTY_CLASS_SPEC;
   const set = (patch: Partial<CustomClassSpec>) => onChange({ ...s, ...patch });
+  const problems = classProblems({ ...card, classSpec: s }, { features: attachments.features.length, subclasses: attachments.subclasses.length });
   return (
     <View style={{ gap: 10 }}>
-      {/* v0.42.1 (owner): the heading is printed by the panel that hosts this form, so printing it
-          again here said "Class details" twice for no reason. */}
-      <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
-        A class needs all of this to be played, and at least one subclass in the same expansion. The Share button says what is missing.
+      <Text style={hintStyle}>
+        A class is the CENTRE of a set of cards. Fill in what belongs to the class itself here, then write its
+        subclasses, features and trackers as their own cards and point each one back at this class. They appear
+        below as they arrive.
       </Text>
 
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Field label="Starting Evasion" value={String(s.startingEvasion)} onChangeText={(t) => set({ startingEvasion: num(t) })} numeric maxLength={2} />
-        <Field label="Starting Hit Points" value={String(s.startingHp)} onChangeText={(t) => set({ startingHp: num(t) })} numeric maxLength={2} />
-      </View>
+      <Section title="The numbers" hint="What a character of this class starts with, before anything else is chosen.">
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Field label="Starting Evasion" value={String(s.startingEvasion)} onChangeText={(t) => set({ startingEvasion: num(t) })} numeric maxLength={2} />
+          <Field label="Starting Hit Points" value={String(s.startingHp)} onChangeText={(t) => set({ startingHp: num(t) })} numeric maxLength={2} />
+        </View>
+      </Section>
 
-      <Field label="Class items" value={s.classItems} onChangeText={(classItems) => set({ classItems })} placeholder="A worn compass or a bundle of dried sage" maxLength={120} />
-      <Field label="Summary" value={s.summary} onChangeText={(summary) => set({ summary })} placeholder="What this class is, in the voice of the printed cards." multiline maxLength={400} />
+      <Section title="Its voice" hint="The introduction printed on the class card, in the tone of the ones in the book.">
+        <Field label="Summary" value={s.summary} onChangeText={(summary) => set({ summary })} placeholder="What this class is, in two or three sentences." multiline maxLength={400} />
+      </Section>
 
-      {/**
-        * The two domains are CHOSEN, not typed (v0.42.1, owner: "how does the card ever know what its
-        * domains are for picking domain cards???").
-        *
-        * A typed domain is a string that matches nothing, so the class granted no cards at all. These
-        * are the real domain keys, which is what creation looks a domain card up by.
-        */}
-      <View style={{ gap: 6 }}>
-        <Text style={smallLabel}>Domains it grants (pick two)</Text>
+      <Section title="Hope feature" hint="The 3-Hope move every character of this class has. It becomes the last of the class's cards.">
+        <Field label="Name" value={s.hopeFeature.name} onChangeText={(name) => set({ hopeFeature: { ...s.hopeFeature, name } })} placeholder="e.g. Root" maxLength={60} />
+        <Field label="What it does" value={s.hopeFeature.text} onChangeText={(text) => set({ hopeFeature: { ...s.hopeFeature, text } })} placeholder="Spend 3 Hope to…" multiline maxLength={600} />
+      </Section>
+
+      <Section title="Domains it grants" hint="Pick two. This is how the app knows which domain cards a character of this class may take, so it cannot be typed.">
         <View style={chipRow}>
           {ALL_DOMAINS.map((d) => {
             const chosen = s.domains.includes(d);
@@ -101,45 +187,38 @@ export function ClassSpecForm({ spec, onChange }: { spec: CustomClassSpec | unde
                 key={d}
                 label={d}
                 on={chosen}
-                onPress={() => {
-                  const next = chosen ? s.domains.filter((x) => x !== d) : [...s.domains.filter((x) => x.trim()), d];
-                  set({ domains: next.slice(-2) });
-                }}
+                onPress={() => set({ domains: (chosen ? s.domains.filter((x) => x !== d) : [...s.domains.filter((x) => x.trim()), d]).slice(-2) })}
               />
             );
           })}
         </View>
-        <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>
-          {s.domains.filter((d) => d.trim()).length === 2 ? `Grants ${s.domains.filter((d) => d.trim()).join(' and ')}.` : 'A class grants two domains. Picking a third replaces the first.'}
+        <Text style={hintStyle}>
+          {s.domains.filter((d) => d.trim()).length === 2 ? `Grants ${s.domains.join(' and ')}.` : 'A class grants two. Picking a third replaces the first.'}
         </Text>
-      </View>
+      </Section>
 
-      <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
-        <Text style={smallLabel}>Hope feature</Text>
-        <Field label="Name" value={s.hopeFeature.name} onChangeText={(name) => set({ hopeFeature: { ...s.hopeFeature, name } })} placeholder="e.g. Root" maxLength={60} />
-        <Field label="What it does" value={s.hopeFeature.text} onChangeText={(text) => set({ hopeFeature: { ...s.hopeFeature, text } })} placeholder="Spend 3 Hope to…" multiline maxLength={600} />
-      </View>
+      <Section title="Starting items" hint="One thing everyone gets, and two choices they make. Pick from this expansion's own items, or from the base game's loot and consumables.">
+        <ItemPicker label="Everyone receives" hint="At least one." chosen={s.fixedItemIds ?? []} options={itemOptions} onChange={(fixedItemIds) => set({ fixedItemIds })} />
+        <ItemPicker label="First choice" hint="At least two to choose between." chosen={s.choiceAItemIds ?? []} options={itemOptions} onChange={(choiceAItemIds) => set({ choiceAItemIds })} />
+        <ItemPicker label="Second choice" hint="At least two to choose between." chosen={s.choiceBItemIds ?? []} options={itemOptions} onChange={(choiceBItemIds) => set({ choiceBItemIds })} />
+      </Section>
 
-      <View style={{ gap: 8, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={smallLabel}>Class features ({s.features.length})</Text>
-          <Pressable onPress={() => set({ features: [...s.features, { name: '', text: '' }] })} hitSlop={8} accessibilityRole="button" accessibilityLabel="Add a class feature">
-            <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>+ Add</Text>
-          </Pressable>
-        </View>
-        <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
-          One card each, plus one for the Hope feature. At least one, so the class is at least two cards.
-        </Text>
-        {s.features.map((f, i) => (
-          <ChamferBox key={i} chamfer={7} fill="rgba(20,24,31,0.55)" stroke="rgba(218,162,73,0.3)" strokeWidth={1.1} style={{ padding: 9, gap: 7 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Field label={`Feature ${i + 1}`} value={f.name} onChangeText={(name) => set({ features: s.features.map((x, j) => (j === i ? { ...x, name } : x)) })} placeholder="Name" maxLength={60} />
-              <View style={{ paddingTop: 16 }}><RemoveX label={`Remove feature ${i + 1}`} onPress={() => set({ features: s.features.filter((_, j) => j !== i) })} /></View>
-            </View>
-            <Field label="What it does" value={f.text} onChangeText={(text) => set({ features: s.features.map((x, j) => (j === i ? { ...x, text } : x)) })} placeholder="The rule, in full." multiline maxLength={900} />
-          </ChamferBox>
-        ))}
-      </View>
+      <Section title="What points at this class" hint="Written elsewhere, as cards of their own, each naming this class. This is only the report.">
+        <Attached label="Subclasses" cards={attachments.subclasses} empty="None yet. Make a Subclass card and set its class to this one." />
+        <Attached label="Feature cards" cards={attachments.features} empty="None yet. Make a Card, mark it as a class feature, and set its class to this one." />
+        <Attached label="Trackers" cards={attachments.functional} empty="None yet. Any card with a counter, a text field or a cycling button that names this class." />
+      </Section>
+
+      {problems.length ? (
+        <ChamferBox chamfer={8} fill="rgba(120,30,28,0.22)" stroke={Rune.red} strokeWidth={1.2} style={{ padding: 10, gap: 4 }}>
+          <Text style={{ color: Rune.ivory, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Before this can be shared</Text>
+          {problems.map((p) => <Text key={p} style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>{'• '}{p}</Text>)}
+        </ChamferBox>
+      ) : (
+        <ChamferBox chamfer={8} fill="rgba(30,80,45,0.2)" stroke="rgba(120,190,140,0.6)" strokeWidth={1.2} style={{ padding: 10 }}>
+          <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.bold }}>This class is complete and can be shared.</Text>
+        </ChamferBox>
+      )}
     </View>
   );
 }
@@ -152,11 +231,14 @@ const KINDS: { key: FunctionKind; label: string }[] = [
   { key: 'cycle', label: 'Cycling button' },
 ];
 
-function FunctionEditor({ fn, state, onChange, onState, onRemove }: {
+function FunctionEditor({ fn, state, advance, onChange, onState, onAdvance, onRemove }: {
   fn: CardFunction;
   state: FunctionState;
+  /** v0.42.1: the level advancement this element offers, if it offers one. */
+  advance: CardAdvance | undefined;
   onChange: (f: CardFunction) => void;
   onState: (s: FunctionState) => void;
+  onAdvance: (a: CardAdvance | undefined) => void;
   onRemove: () => void;
 }) {
   return (
@@ -166,7 +248,7 @@ function FunctionEditor({ fn, state, onChange, onState, onRemove }: {
         <RemoveX label="Remove this element" onPress={onRemove} />
       </View>
 
-      <View style={chipRow}>{KINDS.map((k) => <Chip key={k.key} label={k.label} on={fn.kind === k.key} onPress={() => onChange({ ...newFunction(fn.id, k.key), label: fn.label, placement: fn.placement })} />)}</View>
+      <View style={chipRow}>{KINDS.map((k) => <Chip key={k.key} label={k.label} on={fn.kind === k.key} onPress={() => onChange({ ...newFunction(fn.id, k.key), label: fn.label, placement: fn.placement, before: fn.before, after: fn.after })} />)}</View>
 
       <Field label="Subtitle (optional)" value={fn.label ?? ''} onChangeText={(label) => onChange({ ...fn, label })} placeholder="What this is" maxLength={40} />
 
@@ -240,6 +322,69 @@ function FunctionEditor({ fn, state, onChange, onState, onRemove }: {
         </View>
       </View>
 
+      {/**
+        * A LEVEL ADVANCEMENT this element offers (v0.42.1, owner).
+        *
+        * "This is just a checkbox for custom functional cards, which can have a Level Advancement
+        * Option tick and the user can select at which tiers it becomes available, and the user can
+        * configure what it does to the functional card."
+        *
+        * It sits under the element rather than in a list of its own because that is what it is about:
+        * an advancement that raises a Combo Die is a fact about the Combo Die.
+        */}
+      <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 9 }}>
+        <View style={chipRow}>
+          <Chip
+            label="Offer it as a level advancement"
+            on={!!advance}
+            onPress={() => onAdvance(advance ? undefined : { id: `adv-${fn.id}`, label: '', functionId: fn.id, tiers: [], perTier: 1, effect: fn.kind === 'text' ? { kind: 'unlock' } : { kind: 'step', by: 1 } })}
+          />
+        </View>
+        {advance ? (
+          <View style={{ gap: 7 }}>
+            <Field label="What the player sees in the level-up list" value={advance.label} onChangeText={(label) => onAdvance({ ...advance, label })} placeholder="e.g. Increase your Combo Die by one step" maxLength={70} />
+            <View style={{ gap: 4 }}>
+              <Text style={smallLabel}>Which tiers it is offered at</Text>
+              <View style={chipRow}>
+                <Chip label="Every tier" on={advance.tiers.length === 0} onPress={() => onAdvance({ ...advance, tiers: [] })} />
+                {[2, 3, 4].map((t) => (
+                  <Chip
+                    key={t}
+                    label={`Tier ${t}`}
+                    on={advance.tiers.includes(t)}
+                    onPress={() => onAdvance({ ...advance, tiers: advance.tiers.includes(t) ? advance.tiers.filter((x) => x !== t) : [...advance.tiers, t].sort((a, z) => a - z) })}
+                  />
+                ))}
+              </View>
+            </View>
+            <View style={{ gap: 4 }}>
+              <Text style={smallLabel}>How often, per tier</Text>
+              <View style={chipRow}>
+                <Chip label="Once" on={advance.perTier === 1} onPress={() => onAdvance({ ...advance, perTier: 1 })} />
+                <Chip label="Twice" on={advance.perTier === 2} onPress={() => onAdvance({ ...advance, perTier: 2 })} />
+              </View>
+            </View>
+            <View style={{ gap: 4 }}>
+              <Text style={smallLabel}>What taking it does</Text>
+              <View style={chipRow}>
+                {fn.kind !== 'text' ? <Chip label={fn.kind === 'cycle' ? 'Moves it along' : 'Moves the number'} on={advance.effect.kind === 'step'} onPress={() => onAdvance({ ...advance, effect: { kind: 'step', by: 1 } })} /> : null}
+                <Chip label="Sets it" on={advance.effect.kind === 'set'} onPress={() => onAdvance({ ...advance, effect: { kind: 'set', value: 0 } })} />
+                <Chip label="Unlocks it" on={advance.effect.kind === 'unlock'} onPress={() => onAdvance({ ...advance, effect: { kind: 'unlock' } })} />
+              </View>
+            </View>
+            {advance.effect.kind === 'step' ? (
+              <Field label={fn.kind === 'cycle' ? 'How many options along' : 'By how much'} value={String(advance.effect.by)} onChangeText={(t) => onAdvance({ ...advance, effect: { kind: 'step', by: num(t) || 1 } })} numeric maxLength={3} />
+            ) : null}
+            {advance.effect.kind === 'set' && fn.kind !== 'text' ? (
+              <Field label={fn.kind === 'cycle' ? 'To option number' : 'To what'} value={String(fn.kind === 'cycle' ? advance.effect.value + 1 : advance.effect.value)} onChangeText={(t) => onAdvance({ ...advance, effect: { kind: 'set', value: fn.kind === 'cycle' ? Math.max(0, num(t) - 1) : num(t) } })} numeric maxLength={3} />
+            ) : null}
+            {advance.effect.kind === 'set' && fn.kind === 'text' ? (
+              <Field label="To what" value={advance.effect.text ?? ''} onChangeText={(text) => onAdvance({ ...advance, effect: { kind: 'set', value: 0, text } })} placeholder="What it should say" maxLength={80} />
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
       {/* The REAL control, with real state (owner): "the card should be able to be tested with its
           functionality during the preview". A picture of a control is not a test of one. */}
       <View style={{ gap: 5, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 9 }}>
@@ -252,34 +397,38 @@ function FunctionEditor({ fn, state, onChange, onState, onRemove }: {
   );
 }
 
-export function CardFunctionsForm({ functions, states, onChange, onStates }: {
+export function CardFunctionsForm({ functions, states, advances, onChange, onStates, onAdvances }: {
   functions: CardFunction[] | undefined;
   states: Record<string, FunctionState>;
+  /** v0.42.1: the level advancements this card offers, one per element at most. */
+  advances: CardAdvance[] | undefined;
   onChange: (f: CardFunction[]) => void;
   onStates: (s: Record<string, FunctionState>) => void;
+  onAdvances: (a: CardAdvance[]) => void;
 }) {
   const list = functions ?? [];
   const add = (kind: FunctionKind) => onChange([...list, newFunction(`fn-${Date.now().toString(36)}-${list.length}`, kind)]);
   return (
     <View style={{ gap: 9 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={smallLabel}>Functional elements</Text>
-      </View>
-      <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
-        Something the player uses on the card itself: a number they move, a line they write on, a state they switch. Try each one below before you share it.
+      <Text style={smallLabel}>Functional element</Text>
+      <Text style={hintStyle}>
+        Something the player uses on the card itself: a number they move, a line they write on, a state they switch.
+        One per card, which is the owner&apos;s rule. Try it below before you share it.
       </Text>
-      <View style={chipRow}>{KINDS.map((k) => <Chip key={k.key} label={`+ ${k.label}`} on={false} onPress={() => add(k.key)} />)}</View>
+      {list.length === 0 ? <View style={chipRow}>{KINDS.map((k) => <Chip key={k.key} label={`+ ${k.label}`} on={false} onPress={() => add(k.key)} />)}</View> : null}
       {list.map((fn, i) => (
         <FunctionEditor
           key={fn.id}
           fn={fn}
           state={stateOf(fn, states[fn.id])}
+          advance={(advances ?? []).find((a) => a.functionId === fn.id)}
           onChange={(next) => onChange(list.map((x, j) => (j === i ? next : x)))}
           onState={(st) => onStates({ ...states, [fn.id]: st })}
-          onRemove={() => onChange(list.filter((_, j) => j !== i))}
+          onAdvance={(a) => onAdvances([...(advances ?? []).filter((x) => x.functionId !== fn.id), ...(a ? [a] : [])])}
+          onRemove={() => { onChange(list.filter((_, j) => j !== i)); onAdvances((advances ?? []).filter((a) => a.functionId !== fn.id)); }}
         />
       ))}
-      {list.length ? <RuneButton label="Clear all elements" kind="ghost" dense height={34} onPress={() => onChange([])} /> : null}
+      {list.length ? <RuneButton label="Remove the element" kind="ghost" dense height={34} onPress={() => { onChange([]); onAdvances([]); }} /> : null}
     </View>
   );
 }

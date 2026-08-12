@@ -8,16 +8,18 @@
  * subclass / class / generic). Everything is plain JSON: this is a wire/disk shape with no requires and
  * no derived state, exactly like `CharacterFile`.
  */
-import type { CardFunction } from '@/lib/card-functions';
+import type { CardAdvance, CardFunction } from '@/lib/card-functions';
+import type { CampaignSettings } from '@/lib/campaign-settings';
 import { expansionClassProblems, type CustomClassSpec } from '@/lib/custom-class';
 import type { CardEffect } from '@/lib/modifiers';
 
-export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'subclass' | 'class' | 'weapon' | 'armor' | 'inventory' | 'generic';
+export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'customDomain' | 'subclass' | 'class' | 'weapon' | 'armor' | 'inventory' | 'generic';
 
 export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
   ancestry: 'Ancestry',
   community: 'Community',
   domain: 'Domain card',
+  customDomain: 'Domain',
   subclass: 'Subclass',
   class: 'Class',
   weapon: 'Weapon',
@@ -117,6 +119,13 @@ export interface LibraryCard {
    */
   functions?: CardFunction[];
   /**
+   * LEVEL ADVANCEMENTS this card offers (v0.42.1, owner).
+   *
+   * Each names one of the elements above and says what taking it does. Stored beside the element
+   * because that is the only place it means anything. See `lib/card-advances`.
+   */
+  advances?: CardAdvance[];
+  /**
    * Where this card lands on the sheet (v0.42.0, owner).
    *
    * "They can choose if they appear inside a custom card category that they create for the functional
@@ -124,6 +133,22 @@ export interface LibraryCard {
    * if they appear in the arsenal." Absent means the arsenal.
    */
   functionCategory?: { key: string; label: string; icon?: string };
+  /**
+   * v0.42.1 (owner): the SUBCLASS this card belongs to, within the class named by `className`.
+   *
+   * "I can create a subclass for an existing class and I can link a functional card to a subclass
+   * (i can also link them to classes, not just subclasses)." Absent means the whole class. Together
+   * with `className` this is the whole of `lib/class-links`.
+   */
+  linkSubclass?: string;
+  /**
+   * v0.42.1 (owner): what this card IS to the class it names.
+   *
+   * A generic card attached to a class is ambiguous on its own: it might be one of the class's
+   * abilities or a tracker the player uses. `feature` says it is an ability, which is what the class
+   * validator counts and what the class card lists.
+   */
+  classRole?: 'feature';
   /** ancestry content: which feature line (1 or 2) carries the passive effect — for mixed-ancestry
    *  cross-out (mirrors data/ancestry-traits ANCESTRY_EFFECT_TRAIT). */
   ancestryEffectTrait?: 1 | 2;
@@ -198,6 +223,13 @@ export interface Expansion {
   /** v0.12.2: a bundled OFFICIAL expansion (e.g. The Void) — hard-coded in the app, its cards live in
    *  the catalog (tagged), read-only in the library (can't edit/delete/add cards), and OFF by default. */
   official?: boolean;
+  /**
+   * v0.42.1 (owner): CAMPAIGN SETTINGS shipped with the pack.
+   *
+   * What character creation offers at this DM's table. Absent, or present and off, means the pack
+   * limits nothing, which is every expansion written before this existed. See `lib/campaign-settings`.
+   */
+  campaign?: CampaignSettings;
 }
 
 /** v0.12.2: official expansions default to DISABLED (must be opted into); user expansions default enabled. */

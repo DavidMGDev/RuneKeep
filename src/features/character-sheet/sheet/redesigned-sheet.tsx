@@ -53,6 +53,8 @@ import { SortPanel } from './sort-panel';
 import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, type LibraryCard } from '@/lib/library';
+import { advancedFunctions, advancedStates } from '@/lib/card-advances';
+import type { CardAdvance, CardFunction } from '@/lib/card-functions';
 import { libraryCardById } from '@/lib/library-embed';
 import { type MoodboardItem, readMoodboard } from '@/lib/moodboard';
 import { MOODBOARD_BG, MoodboardScreen } from '../moodboard/moodboard-screen';
@@ -1075,25 +1077,36 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
        * real component. It costs a forge slot and buys a card that actually does what it says.
        */
       const lc = file.libraryCards?.find((c) => c.id === id);
-      if (lc?.functions?.length) {
-        return {
-          id,
-          source: GENERIC_CARD_ART,
-          thumb: GENERIC_CARD_ART,
-          interactive: true,
-          live: (
-            <LibraryForgedCard
-              card={lc}
-              functionStates={file.cardFunctions?.[id]}
-              onFunction={(fid, next) => mutateFile({ cardFunctions: { ...(fileRef.current?.cardFunctions ?? {}), [id]: { ...(fileRef.current?.cardFunctions?.[id] ?? {}), [fid]: next } } })}
-            />
-          ),
-        };
-      }
+      if (lc?.functions?.length) return liveFunctionCard(lc, lc);
       const j = libJobs.find((x) => x.id === id);
       if (!j) return undefined;
       const src = featureSources[j.key];
       return src ? { id, source: src.full, thumb: src.thumb } : { id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: j.node };
+    };
+    /**
+     * A card with FUNCTIONAL ELEMENTS, drawn live, with its level advancements folded in (v0.42.1).
+     *
+     * `advancedFunctions` is applied HERE rather than stored, so an advancement a class no longer
+     * offers simply stops applying and an expansion may fix a counter's ceiling without stranding a
+     * character mid-campaign. The same helper serves the embedded homebrew cards and the authored
+     * ones, which is what lets an expanded class card carry a Combo Die.
+     */
+    const liveFunctionCard = (card: { id: string; title: string; text: string; imageUri: string | null; color?: string | null; typeLabel?: string; functions?: CardFunction[]; advances?: CardAdvance[] }, lc?: LibraryCard): CardItem => {
+      const id = card.id;
+      const shim: LibraryCard = lc ?? { id, contentType: 'generic', title: card.title, text: card.text, imageUri: card.imageUri, color: card.color, typeLabel: card.typeLabel };
+      return {
+        id,
+        source: GENERIC_CARD_ART,
+        thumb: GENERIC_CARD_ART,
+        interactive: true,
+        live: (
+          <LibraryForgedCard
+            card={{ ...shim, functions: advancedFunctions(card, file.cardAdvances) }}
+            functionStates={advancedStates(card, file.cardFunctions?.[id], file.cardAdvances)}
+            onFunction={(fid, next) => mutateFile({ cardFunctions: { ...(fileRef.current?.cardFunctions ?? {}), [id]: { ...(fileRef.current?.cardFunctions?.[id] ?? {}), [fid]: next } } })}
+          />
+        ),
+      };
     };
     const catItem = (id: string): CardItem | undefined => {
       const c = cardById(id);
@@ -1193,8 +1206,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // feature card → weapons → experiences. The origin badges target subclass/ancestry/community by
     // their actual index (no longer the contiguous last three).
     // Player-authored cards (#164) ride whichever deck(s) their target names.
-    const arsenalCustom = forgedItems(customCardJobs.filter((j) => j.target !== 'inventory'));
-    const invCustom = forgedItems(customCardJobs.filter((j) => j.target !== 'arsenal'));
+    // v0.42.1: an authored card carrying elements is LIVE, for the same reason a homebrew one is:
+    // a picture cannot be pressed. This is what makes an expanded Brawler's Combo Die a real tracker.
+    const customItem = (j: { id?: string; key: string; node: ReactNode }): CardItem => {
+      const cc = (file.customCards ?? []).find((c) => c.id === j.id);
+      return cc?.functions?.length ? liveFunctionCard(cc) : forgedItem(j);
+    };
+    const arsenalCustom = customCardJobs.filter((j) => j.target !== 'inventory').map(customItem);
+    const invCustom = customCardJobs.filter((j) => j.target !== 'arsenal').map(customItem);
     // Acquired gear/loot (#180): weapons ride arsenal + inventory; armor + loot are inventory.
     const acqWeaponItems = forgedItems(acqWeaponJobs);
     const acqArmorItems = forgedItems(acqArmorJobs);

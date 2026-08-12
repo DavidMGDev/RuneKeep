@@ -7,7 +7,7 @@
  */
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -19,7 +19,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
-import { Body, Display, Rune } from '@/constants/theme';
+import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { ALL_DOMAINS, CLASSES } from '@/constants/identity';
 import { playSfx } from '@/lib/sfx';
 import {
@@ -40,14 +40,20 @@ import {
 import { formMarkdown } from '@/lib/card-form';
 import { ownImage } from '@/lib/owned-image';
 import { cardById } from '@/data/catalog';
+import { ALL_LOOT } from '@/data/loot-data';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
 import { embedCardImageForNfc, embedExpansionImages } from '@/lib/image-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
-import { type CardFunction, type FunctionState, meaningfulFunctions } from '@/lib/card-functions';
-import { type CustomClassSpec } from '@/lib/custom-class';
+import { type CardAdvance, type CardFunction, type FunctionState, meaningfulFunctions } from '@/lib/card-functions';
+import { attachmentsFor, classTitlesIn, subclassNamesFor } from '@/lib/class-links';
+import { paginate, sectionOf } from '@/lib/expansion-sort';
+import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/lib/card-move';
+import { getDmMode, setDmMode } from '@/lib/dm-mode';
+import { type CustomClassSpec, domainProblems } from '@/lib/custom-class';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
+import { CampaignSettingsForm } from './campaign-settings-form';
 import { CardFunctionsForm, ClassSpecForm } from './class-spec-form';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { DimScreen } from '@/lib/screen-dim';
@@ -67,10 +73,11 @@ const SPELLCAST_TRAITS: { key: string; label: string }[] = [
  * one sitting, so those lead. Every type in `CHOOSABLE_TYPES` appears in exactly one group.
  */
 const TYPE_GROUPS: { label: string; hint: string; types: LibraryContentType[] }[] = [
-  { label: 'A class, and what belongs to it', hint: 'Make the class card first, then link its subclasses, features and trackers to it.', types: ['class', 'subclass', 'domain'] },
+  { label: 'A class, and what belongs to it', hint: 'Make the class card first, then link its subclasses, features and trackers to it. A feature is a Card marked as one.', types: ['class', 'subclass', 'generic'] },
+  { label: 'Domains', hint: 'A domain of your own, and the cards that fill it. Eleven per domain: one at each level, two at level 1.', types: ['customDomain', 'domain'] },
   { label: 'Who a character is', hint: 'Options offered at character creation.', types: ['ancestry', 'community'] },
   { label: 'What they carry', hint: 'Gear, and anything that lands in the inventory.', types: ['weapon', 'armor', 'inventory'] },
-  { label: 'Anything else', hint: 'A plain card. Give it functional elements to make it a tracker.', types: ['generic'] },
+  { label: 'Anything else', hint: 'A plain card. Give it a functional element to make it a tracker.', types: ['generic'] },
 ];
 const WEAPON_TRAITS = ['Agility', 'Strength', 'Finesse', 'Instinct', 'Presence', 'Knowledge'];
 const WEAPON_RANGES = ['Melee', 'Very Close', 'Close', 'Far', 'Very Far'];
@@ -90,6 +97,12 @@ interface CardConfig {
   spellcastTrait?: string;
   /** class content (v0.42.0): everything a homebrew class needs to be played. */
   classSpec?: CustomClassSpec;
+  /** v0.42.1: the subclass family within `className` this card belongs to. */
+  linkSubclass?: string;
+  /** v0.42.1: a generic card marked as one of its class's abilities. */
+  classRole?: 'feature';
+  /** v0.42.1: the level advancements this card's elements offer. */
+  advances?: CardAdvance[];
   /** any card (v0.42.0): the counters, text fields and cycling buttons it carries. */
   functions?: CardFunction[];
   /** any card (v0.42.0): a category of its own for this card, instead of the arsenal. */
@@ -184,8 +197,40 @@ const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap:
 
 /** The per-type mechanical/config fields shown inside the card editor (its `extraField`). The content
  *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
-function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c: CardConfig) => void }) {
+function ContentConfig({ config, onChange, card, siblings }: {
+  config: CardConfig;
+  onChange: (c: CardConfig) => void;
+  /** The card being edited, for the class report. */
+  card: LibraryCard;
+  /** Every OTHER card in this expansion, so links point at real things (v0.42.1). */
+  siblings: LibraryCard[];
+}) {
   const set = (patch: Partial<CardConfig>) => onChange({ ...config, ...patch });
+  /**
+   * What this card may attach to (v0.42.1, owner).
+   *
+   * Custom classes in this expansion, plus every built-in class, because "I can create a subclass for
+   * an existing class" is the owner's own case. A subclass or a tracker names one of these, and the
+   * class card simply reports what points at it. See `lib/class-links`.
+   */
+  const classChoices = [...classTitlesIn(siblings), ...BUILTIN_CLASSES];
+  const subclassChoices = config.className ? subclassNamesFor(siblings, config.className) : [];
+  const customDomains = siblings.filter((c) => c.contentType === 'customDomain' && c.title.trim()).map((c) => c.title.trim());
+  const domainChoices = [...customDomains, ...ALL_DOMAINS];
+  /**
+   * What a class may hand out at level one (v0.42.1, owner).
+   *
+   * The expansion's own gear FIRST, because that is what the author just made, then the base game's
+   * loot and consumables: "the base game loot and consumables should be selectable". A printed class
+   * starts you with a torch and a rope as often as with something of its own, and an author who had
+   * to re-make a Minor Health Potion to hand one out would make a slightly different one.
+   */
+  const itemOptions = [
+    ...siblings
+      .filter((c) => c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor')
+      .map((c) => ({ id: c.id, title: c.title })),
+    ...ALL_LOOT.map((l) => ({ id: l.id, title: l.name })),
+  ];
   /** Live state for the author's "Try it" controls. Thrown away when the editor closes, by design:
    *  it is a test, not the player's data. */
   const [fnStates, setFnStates] = useState<Record<string, FunctionState>>({});
@@ -199,21 +244,66 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
       <Text style={smallLabel}>{CONTENT_TYPE_LABEL[t]} details</Text>
       {t === 'domain' ? (
         <>
-          <LibInput label="Domain" value={config.domain ?? ''} onChangeText={(domain) => set({ domain })} placeholder="e.g. Pyre (custom) or arcana" />
-          <View style={chipRow}>{ALL_DOMAINS.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
+          {/* v0.42.1 (owner): CHOSEN, never typed, and the domains this expansion defines lead the
+              list. A typed domain matched nothing, so the card belonged to no domain at all. */}
+          <Text style={smallLabel}>Which domain</Text>
+          <View style={chipRow}>{domainChoices.map((d) => <Chip key={d} label={d} on={config.domain === d} onPress={() => set({ domain: d })} />)}</View>
+          {customDomains.length === 0 ? (
+            <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>Make a Domain card in this expansion to offer one of your own.</Text>
+          ) : null}
           <LibInput label="Level (1–10)" value={config.level ? String(config.level) : ''} onChangeText={(s) => set({ level: Math.max(1, Math.min(10, parseInt(s || '1', 10) || 1)) })} placeholder="1" keyboardType="number-pad" />
         </>
       ) : null}
-      {t === 'subclass' ? (
-        <View style={{ gap: 4 }}>
-          <Text style={smallLabel}>Class it belongs to</Text>
-          <View style={chipRow}>{BUILTIN_CLASSES.map((c) => <Chip key={c} label={c} on={config.className === c} onPress={() => set({ className: c })} />)}</View>
-          <LibInput label="…or a custom class name" value={config.className ?? ''} onChangeText={(className) => set({ className })} placeholder="e.g. Warden" />
+      {/* v0.42.1 (owner): a CUSTOM DOMAIN. It owes eleven cards, and says so until it has them. */}
+      {t === 'customDomain' ? (
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
+            A domain of your own. Write its cards as Domain cards in this expansion and set each one&apos;s domain to this.
+            It needs one at every level from 1 to 10, and two at level 1, so eleven in all.
+          </Text>
+          {card.title.trim() ? (
+            <Text style={{ color: domainProblems(card.title, siblings).length ? Rune.red : Rune.goldText, fontSize: 11, fontFamily: Body.bold, lineHeight: 15 }}>
+              {domainProblems(card.title, siblings)[0] ?? 'Every level is covered. This domain is ready.'}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      {/* v0.42.1 (owner): ANY card may name the class it belongs to, so a feature card, a tracker or
+          a subclass all attach the same way and the class card reports them. */}
+      {t !== 'class' && t !== 'customDomain' ? (
+        <View style={{ gap: 5 }}>
+          <Text style={smallLabel}>Belongs to a class (optional)</Text>
+          <View style={chipRow}>
+            <Chip label="Nothing" on={!config.className} onPress={() => set({ className: undefined, linkSubclass: undefined })} />
+            {classChoices.map((c) => <Chip key={c} label={c} on={config.className === c} onPress={() => set({ className: c, linkSubclass: undefined })} />)}
+          </View>
+          {config.className && subclassChoices.length ? (
+            <>
+              <Text style={smallLabel}>…and to one of its subclasses (optional)</Text>
+              <View style={chipRow}>
+                <Chip label="The whole class" on={!config.linkSubclass} onPress={() => set({ linkSubclass: undefined })} />
+                {subclassChoices.map((sc) => <Chip key={sc} label={sc} on={config.linkSubclass === sc} onPress={() => set({ linkSubclass: sc })} />)}
+              </View>
+            </>
+          ) : null}
+          {t === 'generic' && config.className ? (
+            <View style={chipRow}>
+              <Chip label="This is one of the class's features" on={config.classRole === 'feature'} onPress={() => set({ classRole: config.classRole === 'feature' ? undefined : 'feature' })} />
+            </View>
+          ) : null}
         </View>
       ) : null}
       {/* v0.42.0 (owner): a CLASS is authored in full now. The card's own title names it, so there is
           no parent to point at; the subclasses point back at this. */}
-      {t === 'class' ? <ClassSpecForm spec={config.classSpec} onChange={(classSpec) => set({ classSpec })} /> : null}
+      {t === 'class' ? (
+        <ClassSpecForm
+          spec={config.classSpec}
+          card={card}
+          attachments={attachmentsFor(siblings, card.title)}
+          itemOptions={itemOptions}
+          onChange={(classSpec) => set({ classSpec })}
+        />
+      ) : null}
       {t === 'subclass' ? (
         <View style={{ gap: 4 }}>
           <LibInput label="Subclass name (its family)" value={config.subclass ?? ''} onChangeText={(subclass) => set({ subclass })} placeholder="e.g. Stalwart" />
@@ -241,8 +331,10 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
         <CardFunctionsForm
           functions={config.functions}
           states={fnStates}
+          advances={config.advances}
           onChange={(functions) => set({ functions })}
           onStates={setFnStates}
+          onAdvances={(advances) => set({ advances: advances.length ? advances : undefined })}
         />
         {(config.functions ?? []).length ? (
           <View style={{ gap: 5 }}>
@@ -341,6 +433,48 @@ function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => v
   );
 }
 
+/**
+ * Sending a card to another expansion (v0.42.1, owner).
+ *
+ * The dependency line is the point: a subclass that leaves its class behind is a broken card in one
+ * expansion and a hole in the other, so the cluster travels together and the author is told what is
+ * coming with it before they commit. See `lib/card-move`.
+ */
+function MoveCardModal({ card, source, targets, onPick, onClose }: {
+  card: LibraryCard;
+  source: LibraryCard[];
+  targets: Expansion[];
+  onPick: (dest: Expansion, mode: MoveMode) => void;
+  onClose: () => void;
+}) {
+  const [dest, setDest] = useState<Expansion | null>(targets[0] ?? null);
+  const extra = extraDependencies([card.id], source);
+  return (
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
+      <DimScreen opacity={0.9} />
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 10 }}>
+        <Text style={{ color: Rune.goldText, fontSize: 17, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Send &quot;{card.title || 'Untitled'}&quot; where?</Text>
+        {targets.length === 0 ? (
+          <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>There is nowhere to send it. Make another expansion first.</Text>
+        ) : (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {targets.map((e) => <Chip key={e.id} label={e.name} on={dest?.id === e.id} onPress={() => setDest(e)} />)}
+          </View>
+        )}
+        {extra.length ? (
+          <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.medium, lineHeight: 15 }}>{dependencyNote(extra)}</Text>
+        ) : null}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <RuneButton label="Copy" kind="ghost" dense height={38} style={{ flex: 1 }} onPress={() => dest && onPick(dest, 'copy')} />
+          <RuneButton label="Move" kind="primary" dense height={38} style={{ flex: 1 }} onPress={() => dest && onPick(dest, 'move')} />
+        </View>
+        <RuneButton label="Cancel" kind="ghost" height={38} onPress={onClose} />
+      </ChamferBox>
+    </View>
+  );
+}
+
 /** Create / edit expansion metadata (name, author, description, version). */
 function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: (m: { name: string; author: string; description: string; version: number }) => void; onCancel: () => void }) {
   const [name, setName] = useState(initial?.name ?? '');
@@ -405,6 +539,24 @@ export function LibraryScreen() {
   /** v0.35.2: an ancestry just saved as one whole picture, waiting to be told what that costs. */
   const [fullImageAncestry, setFullImageAncestry] = useState<string | null>(null);
   const [choosingType, setChoosingType] = useState(false);
+  /** v0.42.1: which page of the (sorted) card list is showing. */
+  const [cardPage, setCardPage] = useState(0);
+  /** v0.42.1: the card being sent to another expansion. */
+  const [movingCard, setMovingCard] = useState<LibraryCard | null>(null);
+  /** v0.42.1: the campaign settings editor, and the warning that leads to it. */
+  const [campaignForm, setCampaignForm] = useState(false);
+  const [campaignWarn, setCampaignWarn] = useState(false);
+  /**
+   * The DM palette in the creator (v0.42.1, owner).
+   *
+   * Authoring content is DM work, so the creator wears the DM colours. The flag is the same persisted
+   * one the DM screens read, which is why the hub only changes colour for someone already in DM mode:
+   * nothing here paints DM on its own, it reflects a mode the user is in. Opening an expansion to edit
+   * it offers to turn that mode on, once, with the warning below.
+   */
+  const [dm, setDm] = useState(false);
+  const [dmOffer, setDmOffer] = useState(false);
+  useEffect(() => { void getDmMode().then(setDm); }, []);
   const [metaForm, setMetaForm] = useState<'new' | 'edit' | null>(null);
   const [confirmDeleteExp, setConfirmDeleteExp] = useState<Expansion | null>(null);
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<number | null>(null);
@@ -416,7 +568,12 @@ export function LibraryScreen() {
     const body = incompleteSubclassWarning(e.cards);
     if (body) setMessage({ title: 'Incomplete subclass', body });
   };
-  const openExpansion = (e: Expansion) => { setSelectedId(e.id); warnIncomplete(e); };
+  const openExpansion = (e: Expansion) => {
+    setSelectedId(e.id);
+    warnIncomplete(e);
+    // v0.42.1 (owner): the offer, once per visit, and only for someone not already in DM mode.
+    if (!dm && !isOfficialExpansion(e.id)) setDmOffer(true);
+  };
   const toggleExpansion = (e: Expansion, turningOn: boolean) => {
     playSfx('buttonTap');
     void persist({ ...e, enabled: turningOn });
@@ -439,6 +596,15 @@ export function LibraryScreen() {
   useFocusEffect(reload);
 
   const selected = expansions?.find((e) => e.id === selectedId) ?? null;
+  /**
+   * The palette this screen paints in: grey while in DM mode, gold otherwise.
+   *
+   * Mapped by ROLE rather than aliased, because the two palettes do not share key names: the DM one
+   * has no gold in it at all, which is the point of it.
+   */
+  const P = dm
+    ? { goldText: DmRune.accent, goldEdge: DmRune.line, bronze: DmRune.accentDim, ivory: DmRune.ivory, muted: DmRune.muted }
+    : { goldText: Rune.goldText, goldEdge: Rune.goldEdge, bronze: Rune.bronze, ivory: Rune.ivory, muted: Rune.muted };
 
   const persist = useCallback(async (exp: Expansion) => {
     await saveExpansion(exp);
@@ -508,7 +674,14 @@ export function LibraryScreen() {
         sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
         // v0.30.0: the details block, rewritten as the form below is filled in.
         generatedBody={formMarkdown(cfg)}
-        extraField={<ContentConfig config={cfg} onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))} />}
+        extraField={
+          <ContentConfig
+            config={cfg}
+            card={existing ?? { id: 'new', contentType: cfg.contentType, title: '', text: '', imageUri: null }}
+            siblings={selected.cards.filter((c) => c.id !== existing?.id)}
+            onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))}
+          />
+        }
         onCancel={() => setEditingCard(null)}
         onSave={(d) => {
           const cards = [...selected.cards];
@@ -524,10 +697,16 @@ export function LibraryScreen() {
             sections: d.sections,
             domain: cfg.contentType === 'domain' ? cfg.domain : undefined,
             level: cfg.contentType === 'domain' ? cfg.level ?? 1 : undefined,
-            className: cfg.contentType === 'subclass' ? cfg.className : undefined,
+            className: cfg.contentType === 'class' ? undefined : cfg.className,
+            linkSubclass: cfg.contentType === 'class' ? undefined : cfg.linkSubclass,
+            classRole: cfg.classRole,
             classSpec: cfg.contentType === 'class' ? cfg.classSpec : undefined,
             functions: meaningfulFunctions(cfg.functions).length ? meaningfulFunctions(cfg.functions) : undefined,
             functionCategory: cfg.functionCategory?.label.trim() ? cfg.functionCategory : undefined,
+            // v0.42.1: an advancement whose element has gone is dropped with it, never left dangling.
+            advances: (cfg.advances ?? []).filter((a) => meaningfulFunctions(cfg.functions).some((f) => f.id === a.functionId)).length
+              ? (cfg.advances ?? []).filter((a) => meaningfulFunctions(cfg.functions).some((f) => f.id === a.functionId))
+              : undefined,
             subclass: cfg.contentType === 'subclass' ? cfg.subclass : undefined,
             spellcastTrait: cfg.contentType === 'subclass' ? cfg.spellcastTrait : undefined,
             tier: cfg.contentType === 'subclass' ? cfg.tier ?? 1 : undefined,
@@ -553,15 +732,15 @@ export function LibraryScreen() {
     const cardCount = expansionCardCount(selected);
     const on = isEnabledForCreation(selected);
     return (
-      <AppScreen title={selected.name} onBack={() => setSelectedId(null)}>
+      <AppScreen dm={dm} title={selected.name} onBack={() => setSelectedId(null)}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
           <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ padding: 12, gap: 8 }}>
-            <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · {cardCount} card{cardCount === 1 ? '' : 's'}</Text>
-            {selected.description ? <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
+            <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · {cardCount} card{cardCount === 1 ? '' : 's'}</Text>
+            {selected.description ? <Text style={{ color: P.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>{on ? 'Enabled for creation' : 'Disabled'}</Text>
-                <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 2 }}>Official expansion, read only</Text>
+                <Text style={{ color: P.ivory, fontSize: 13, fontFamily: Body.bold }}>{on ? 'Enabled for creation' : 'Disabled'}</Text>
+                <Text style={{ color: P.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 2 }}>Official expansion, read only</Text>
               </View>
               <ExpansionToggle on={on} onToggle={() => toggleExpansion(selected, !on)} />
             </View>
@@ -574,19 +753,25 @@ export function LibraryScreen() {
   // ---- expansion detail ----
   if (selected) {
     const s = expansionSummary(selected);
+    // v0.42.1 (owner): sorted, then cut into pages, so a finished class is a table of contents
+    // instead of a seventy-card scroll. See `lib/expansion-sort`.
+    const pages = paginate(selected.cards);
+    const page = pages[Math.min(cardPage, pages.length - 1)];
     return (
-      <AppScreen title={selected.name} onBack={() => setSelectedId(null)}>
+      <AppScreen dm={dm} title={selected.name} onBack={() => setSelectedId(null)}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
           <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ padding: 12, gap: 4 }}>
-            <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}</Text>
-            {selected.description ? <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
+            <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}</Text>
+            {selected.description ? <Text style={{ color: P.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>{selected.description}</Text> : null}
             {/* v0.12.0: the enable/disable button moved OUT to the hub row toggle — no in-detail button. */}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              <RuneButton label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
+              <RuneButton dm={dm} label="Edit info" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => setMetaForm('edit')} />
+              {/* v0.42.1 (owner): the campaign's own rules, shipped with the pack. */}
+              <RuneButton dm={dm} label="Campaign" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => { playSfx('buttonTap'); if (selected.campaign?.on) setCampaignForm(true); else setCampaignWarn(true); }} />
               {/* v0.34.8 (owner): saving a half-finished pack is fine, sending one is not. A card
                   bulk-made from an image starts with no name and no type, and on the other person's
                   phone that is a card nobody can use or file. */}
-              <RuneButton label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => {
+              <RuneButton dm={dm} label="Share" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={() => {
                 playSfx('buttonTap');
                 const issues = expansionShareIssues(selected);
                 if (issues.length) { setMessage({ title: 'Finish these cards first', body: `${issues.slice(0, 6).join('\n')}${issues.length > 6 ? `\nand ${issues.length - 6} more.` : ''}` }); return; }
@@ -600,10 +785,16 @@ export function LibraryScreen() {
           </ChamferBox>
 
           {selected.cards.length === 0 ? (
-            <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 18 }}>No cards yet. Add your first homebrew card.</Text>
+            <Text style={{ color: P.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 18 }}>No cards yet. Add your first homebrew card.</Text>
           ) : (
-            selected.cards.map((c, i) => (
-              <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
+            page.map((c, pi) => (
+              <View key={c.id} style={{ gap: 8 }}>
+              {/* the section heading, drawn once at the top of each run */}
+              {pi === 0 || sectionOf(page[pi - 1]) !== sectionOf(c) ? (
+                <Text style={{ color: P.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.9, textTransform: 'uppercase', marginTop: pi === 0 ? 0 : 6 }}>{sectionOf(c)}</Text>
+              ) : null}
+              {/* the index is into the REAL array: the row on screen is a sorted view of it. */}
+              <Pressable onPress={() => setEditingCard({ index: selected.cards.findIndex((x) => x.id === c.id), config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
                 {({ pressed }) => (
                   <ChamferBox chamfer={8} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 11 }}>
                     {/* v0.13.1 (#357): a catalog-reference card (NFC-granted system card) shows the REAL
@@ -613,11 +804,11 @@ export function LibraryScreen() {
                         <ArtImage source={cardById(c.catalogId)!.thumb} fit="contain" />
                       </View>
                     ) : (
-                      <View style={{ width: 10, height: 10, backgroundColor: c.color ?? Rune.bronze, transform: [{ rotate: '45deg' }] }} />
+                      <View style={{ width: 10, height: 10, backgroundColor: c.color ?? P.bronze, transform: [{ rotate: '45deg' }] }} />
                     )}
                     <View style={{ flex: 1 }}>
-                      <Text numberOfLines={1} style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>{c.title || 'Untitled'}</Text>
-                      <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2 }}>{cardSummary(c)}</Text>
+                      <Text numberOfLines={1} style={{ color: P.ivory, fontSize: 15, fontFamily: Body.bold }}>{c.title || 'Untitled'}</Text>
+                      <Text style={{ color: P.goldText, fontSize: 10.5, fontFamily: Body.medium, letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 2 }}>{cardSummary(c)}</Text>
                     </View>
                     {/* v0.14.0: INLINE the art. `imageUri` is a device-local file path — it serialized
                         fine but resolved to nothing on the receiving phone, so every shared card with an
@@ -626,24 +817,39 @@ export function LibraryScreen() {
                         the panel it opens exports a .rune file everywhere else, so a browser can share
                         a card too. */}
                     <Pressable onPress={() => { playSfx('buttonTap'); void embedCardImageForNfc(c).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Share ${c.title || 'card'}`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
-                      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>{nfcOn ? 'SHARE' : 'EXPORT'}</Text>
+                      <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>{nfcOn ? 'SHARE' : 'EXPORT'}</Text>
                     </Pressable>
-                    <Pressable onPress={() => setConfirmDeleteCard(i)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${c.title || 'card'}`} style={{ padding: 4 }}>
+                    {/* v0.42.1 (owner): move or copy into another expansion, dependencies and all. */}
+                    <Pressable onPress={() => { playSfx('buttonTap'); setMovingCard(c); }} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Move ${c.title || 'card'}`} style={{ paddingHorizontal: 6, paddingVertical: 4 }}>
+                      <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>MOVE</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setConfirmDeleteCard(selected.cards.findIndex((x) => x.id === c.id))} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${c.title || 'card'}`} style={{ padding: 4 }}>
                       <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
                     </Pressable>
                   </ChamferBox>
                 )}
               </Pressable>
+              </View>
             ))
           )}
+
+          {/* v0.42.1 (owner): the pager. Horizontal, so the author steps through sections rather
+              than scrolling past them. Only drawn when there is more than one page. */}
+          {pages.length > 1 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, paddingTop: 4 }}>
+              <RuneButton dm={dm} label="Back" kind="ghost" dense height={32} style={{ width: 84 }} onPress={() => setCardPage((p) => Math.max(0, Math.min(pages.length - 1, p) - 1))} />
+              <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8 }}>{Math.min(cardPage, pages.length - 1) + 1} / {pages.length}</Text>
+              <RuneButton dm={dm} label="Next" kind="ghost" dense height={32} style={{ width: 84 }} onPress={() => setCardPage((p) => Math.min(pages.length - 1, p + 1))} />
+            </View>
+          ) : null}
         </ScrollView>
         {/* v0.34.8 (owner): a whole folder of finished card faces becomes a whole pack in one go, one
             card per image. They land untitled and generic on purpose — naming and configuring them is
             the editing pass, and the Share button will not let a pack out until that pass is done. */}
-        <RuneButton label="Add cards from images" kind="ghost" dense height={38} onPress={() => void addCardsFromImages(selected)} />
+        <RuneButton dm={dm} label="Add cards from images" kind="ghost" dense height={38} onPress={() => void addCardsFromImages(selected)} />
         <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
-          <RuneButton label="Delete expansion" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => setConfirmDeleteExp(selected)} />
-          <RuneButton label="Add card" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setChoosingType(true)} />
+          <RuneButton dm={dm} label="Delete expansion" kind="ghost" height={46} style={{ flex: 1 }} onPress={() => setConfirmDeleteExp(selected)} />
+          <RuneButton dm={dm} label="Add card" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setChoosingType(true)} />
         </View>
 
         {metaForm === 'edit' ? (
@@ -661,6 +867,56 @@ export function LibraryScreen() {
           <PopupDialog title="Delete expansion?" body={`${confirmDeleteExp.name} and its ${confirmDeleteExp.cards.length} removed from this device. Files you have already exported are unaffected.`} confirmLabel="Delete" destructive
             onConfirm={() => { const id = confirmDeleteExp.id; setConfirmDeleteExp(null); setSelectedId(null); if (isOfficialExpansion(id)) return; void deleteExpansion(id).then(reload); }}
             onCancel={() => setConfirmDeleteExp(null)} />
+        ) : null}
+        {movingCard ? (
+          <MoveCardModal
+            card={movingCard}
+            source={selected.cards}
+            targets={(expansions ?? []).filter((e) => e.id !== selected.id && !isOfficialExpansion(e.id))}
+            onClose={() => setMovingCard(null)}
+            onPick={(dest, mode) => {
+              const r = moveCards(selected.cards, dest.cards, [movingCard.id], mode);
+              setMovingCard(null);
+              // Two saves, source first, so a crash between them leaves the cards duplicated rather
+              // than lost. Duplicates the author can delete; a hole they cannot get back.
+              void persist({ ...dest, cards: r.to })
+                .then(() => (mode === 'move' ? persist({ ...selected, cards: r.from }) : undefined))
+                .then(() => showToast(`${r.moved.length === 1 ? '1 card' : `${r.moved.length} cards`} ${mode === 'move' ? 'moved' : 'copied'} to ${dest.name}.`, 'success'))
+                .catch(() => showToast('Could not send that card.', 'error'));
+            }}
+          />
+        ) : null}
+        {/* v0.42.1 (owner): the warning. Authoring is DM work, so the creator asks before it
+            recolours the app: the flag it sets is the same one the DM screens read, and the menu
+            will be the DM menu when they go back. Declining leaves everything as it was. */}
+        {dmOffer ? (
+          <PopupDialog
+            title="Switch to DM mode?"
+            body={'Making an expansion is DM work, so the creator wears the DM colours. Turning DM mode on also re-labels the main menu and opens the DM screens. You can turn it off again from the menu at any time, and nothing you have made is changed either way.'}
+            confirmLabel="Turn it on"
+            cancelLabel="Not now"
+            onConfirm={() => { setDmOffer(false); setDm(true); void setDmMode(true); }}
+            onCancel={() => setDmOffer(false)}
+          />
+        ) : null}
+        {/* v0.42.1 (owner): the warning. Campaign settings do not add anything, they TAKE things away
+            from everyone who enables the pack, which is not what an expansion has ever done before. */}
+        {campaignWarn ? (
+          <PopupDialog
+            title="This limits other people"
+            body={'Campaign settings travel with the expansion. Anyone who enables it will only see the classes, ancestries, communities and steps you leave available, and they will be told which pack is limiting them. Nothing is taken away until you turn limits on inside.'}
+            confirmLabel="Set them up"
+            cancelLabel="Not now"
+            onConfirm={() => { setCampaignWarn(false); setCampaignForm(true); }}
+            onCancel={() => setCampaignWarn(false)}
+          />
+        ) : null}
+        {campaignForm ? (
+          <CampaignSettingsForm
+            exp={selected}
+            onChange={(campaign) => void persist({ ...selected, campaign })}
+            onClose={() => setCampaignForm(false)}
+          />
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
         {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
@@ -686,17 +942,17 @@ export function LibraryScreen() {
   const officialExps = expansions.filter((e) => e.official === true);
   const customExps = expansions.filter((e) => !e.official);
   return (
-    <AppScreen title="Card library" onBack={() => router.back()}>
+    <AppScreen dm={dm} title="Card library" onBack={() => router.back()}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
         <Pressable onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} accessibilityRole="button" accessibilityLabel="Browse the card archive">
           {({ pressed }) => (
             <ChamferBox chamfer={12} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.9)'} stroke="rgba(218,162,73,0.5)" strokeWidth={1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 14 }}>
               <Svg width={24} height={24} viewBox="0 0 24 24">
-                <Path d="M4 5 h12 v14 h-12 z M8 5 v14 M20 8 v11 h-12" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} strokeLinejoin="round" />
+                <Path d="M4 5 h12 v14 h-12 z M8 5 v14 M20 8 v11 h-12" fill="none" stroke={P.goldEdge} strokeWidth={1.6} strokeLinejoin="round" />
               </Svg>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>Card archive</Text>
-                <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>Every system card, weapon & armor</Text>
+                <Text style={{ color: P.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>Card archive</Text>
+                <Text style={{ color: P.muted, fontSize: 12, fontFamily: Body.medium }}>Every system card, weapon & armor</Text>
               </View>
             </ChamferBox>
           )}
@@ -705,7 +961,7 @@ export function LibraryScreen() {
         {officialExps.length > 0 ? (
           <>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
-              <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Official expansions</Text>
+              <Text style={{ color: P.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Official expansions</Text>
               <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.25)' }} />
             </View>
             {officialExps.map((e) => (
@@ -722,12 +978,12 @@ export function LibraryScreen() {
         ) : null}
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
-          <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>My expansions</Text>
+          <Text style={{ color: P.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>My expansions</Text>
           <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.25)' }} />
         </View>
 
         {customExps.length === 0 ? (
-          <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 14, lineHeight: 18 }}>
+          <Text style={{ color: P.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 14, lineHeight: 18 }}>
             No expansions yet. Create one to author homebrew cards,{'\n'}or import one a friend shared with you.
           </Text>
         ) : (
@@ -744,8 +1000,8 @@ export function LibraryScreen() {
         )}
       </ScrollView>
       <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
-        <RuneButton label="Import a file" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
-        <RuneButton label="New expansion" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setMetaForm('new')} />
+        <RuneButton dm={dm} label="Import a file" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
+        <RuneButton dm={dm} label="New expansion" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setMetaForm('new')} />
       </View>
 
       {metaForm === 'new' ? (
