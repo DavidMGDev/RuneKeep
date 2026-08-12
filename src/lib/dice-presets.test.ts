@@ -1,11 +1,11 @@
 import { addDie, type PoolDie } from './dice-pool';
-import { diceOf, diceSummary, hasModifier, modifierValue, poolOf, type PresetContext, presetInitial, slotsOf, writeSlot } from './dice-presets';
+import { addVariable, diceOf, diceSummary, hasModifier, modifierValue, modifierVariables, poolOf, type PresetContext, presetInitial, removeVariable, slotsOf, writeSlot } from './dice-presets';
 
 const ids = (base: string) => (n: number) => `${base}-${n}`;
 
 const CTX: PresetContext = {
   level: 5, tier: 3, proficiency: 3, stress: 2,
-  attackRoll: 4, spellcastRoll: 1, spellcast: 2,
+  attackRoll: 4, spellcastRoll: 1, damageRoll: 6, spellcast: 2,
   traits: { agility: 1, strength: -1 },
 };
 
@@ -94,5 +94,64 @@ describe('the small answers', () => {
     expect(diceSummary(['d6', 'd6', 'd20'])).toBe('2d6, d20');
     expect(diceSummary(['duality', 'd4'])).toBe('d4, Hope and Fear');
     expect(diceSummary([])).toBe('No dice');
+  });
+});
+
+// -------------------------------------------------- v0.42.0: a preset may carry MANY variables ----
+
+describe('modifierVariables', () => {
+  it('reads a preset saved by an older build as one variable', () => {
+    expect(modifierVariables({ value: 2, variable: 'proficiency' })).toEqual(['proficiency']);
+  });
+
+  it('reads a list', () => {
+    expect(modifierVariables({ value: 0, variables: ['proficiency', 'damageRoll'] })).toEqual(['proficiency', 'damageRoll']);
+  });
+
+  it('never counts the same variable twice', () => {
+    expect(modifierVariables({ value: 0, variable: 'proficiency', variables: ['proficiency'] })).toEqual(['proficiency']);
+  });
+
+  it('has nothing to say about no modifier', () => {
+    expect(modifierVariables(undefined)).toEqual([]);
+  });
+});
+
+describe('addVariable and removeVariable', () => {
+  it('adds in the order they were chosen', () => {
+    let m = addVariable({ value: 1 }, 'proficiency');
+    m = addVariable(m, 'damageRoll');
+    expect(modifierVariables(m)).toEqual(['proficiency', 'damageRoll']);
+    expect(m.value).toBe(1);
+  });
+
+  it('adding one twice changes nothing', () => {
+    const m = addVariable(addVariable({ value: 0 }, 'tier'), 'tier');
+    expect(modifierVariables(m)).toEqual(['tier']);
+  });
+
+  it('removing leaves the rest in order', () => {
+    const m = removeVariable({ value: 0, variables: ['proficiency', 'damageRoll', 'tier'] }, 'damageRoll');
+    expect(modifierVariables(m)).toEqual(['proficiency', 'tier']);
+  });
+});
+
+describe('modifierValue, with several variables', () => {
+  it('adds every one of them to the flat number', () => {
+    // proficiency 3 + damageRoll 6 + 2 flat
+    expect(modifierValue({ value: 2, variables: ['proficiency', 'damageRoll'] }, CTX)).toBe(11);
+  });
+
+  it('still resolves the old single field', () => {
+    expect(modifierValue({ value: 1, variable: 'attackRoll' }, CTX)).toBe(5);
+  });
+
+  it('resolves Damage Rolls', () => {
+    expect(modifierValue({ value: 0, variables: ['damageRoll'] }, CTX)).toBe(6);
+  });
+
+  it('is a modifier when it has a variable and no number', () => {
+    expect(hasModifier({ value: 0, variables: ['damageRoll'] })).toBe(true);
+    expect(hasModifier({ value: 0, variables: [] })).toBe(false);
   });
 });

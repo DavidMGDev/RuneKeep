@@ -36,6 +36,7 @@ function resolvedDelta(e: CardEffect, character: Character, level: number, numbe
       // currently has for them, which `Character` carries alongside the sheet's own numbers.
       : f.variable === 'attackRoll' ? character.attackRoll ?? 0
       : f.variable === 'spellcastRoll' ? character.spellcastRoll ?? 0
+      : f.variable === 'damageRoll' ? character.damageRoll ?? 0
       : character.traits[f.variable] ?? 0;
     const div = f.divide && f.divide !== 0 ? f.divide : 1;
     const scaled = (base * (f.multiply ?? 1)) / div;

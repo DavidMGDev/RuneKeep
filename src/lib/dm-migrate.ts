@@ -118,6 +118,8 @@ export function migrateEncounter(raw: unknown): Encounter | null {
     description: str(e.description),
     color: color(e.color),
     imageUri: str(e.imageUri),
+    // v0.42.0: an order written by a newer build survives, and a malformed one is simply absent.
+    order: e.order && typeof e.order === 'object' ? (e.order as Encounter['order']) : undefined,
   };
 }
 

@@ -8,6 +8,8 @@
  * subclass / class / generic). Everything is plain JSON: this is a wire/disk shape with no requires and
  * no derived state, exactly like `CharacterFile`.
  */
+import type { CardFunction } from '@/lib/card-functions';
+import { expansionClassProblems, type CustomClassSpec } from '@/lib/custom-class';
 import type { CardEffect } from '@/lib/modifiers';
 
 export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'subclass' | 'class' | 'weapon' | 'armor' | 'inventory' | 'generic';
@@ -91,6 +93,37 @@ export interface LibraryCard {
    *  creation; the upgrade advancement adds the matching specialization then mastery. */
   subclass?: string;
   tier?: 1 | 2 | 3;
+  /**
+   * subclass content (v0.42.0, owner): the trait this subclass CASTS with, if it casts at all.
+   *
+   * Official subclasses carry one (see `SUBCLASS_SPELLCAST`), and an authored caster had nowhere to
+   * put it, so a homebrew Spellcast number was always wrong. Absent means a martial subclass, which
+   * is the common case and therefore the default.
+   */
+  spellcastTrait?: string;
+  /**
+   * class content (v0.42.0, owner): everything a homebrew class needs to be PLAYED.
+   *
+   * Absent on every other kind of card, and on a class card written before this existed, which is
+   * exactly what `classProblems` reports as "fill in the class details". See `lib/custom-class`.
+   */
+  classSpec?: CustomClassSpec;
+  /**
+   * FUNCTIONAL ELEMENTS on this card (v0.42.0, owner): a counter, a text field, a cycling button.
+   *
+   * The configuration lives here because it is authored; the player's live state lives on the
+   * character file, keyed by card and function, so updating an expansion never resets a number
+   * somebody is mid-session with. See `lib/card-functions`.
+   */
+  functions?: CardFunction[];
+  /**
+   * Where this card lands on the sheet (v0.42.0, owner).
+   *
+   * "They can choose if they appear inside a custom card category that they create for the functional
+   * cards of this class (they can name it and give it an svg icon from the library) or they can choose
+   * if they appear in the arsenal." Absent means the arsenal.
+   */
+  functionCategory?: { key: string; label: string; icon?: string };
   /** ancestry content: which feature line (1 or 2) carries the passive effect — for mixed-ancestry
    *  cross-out (mirrors data/ancestry-traits ANCESTRY_EFFECT_TRAIT). */
   ancestryEffectTrait?: 1 | 2;
@@ -284,9 +317,15 @@ export function expansionShareIssues(exp: Expansion): string[] {
   exp.cards.forEach((c, i) => {
     if (!c.title.trim()) out.push(`Card ${i + 1} has no name.`);
     if (c.contentType === 'domain' && !c.domain?.trim()) out.push(`${name(c, i)} is a domain card with no domain set.`);
-    if ((c.contentType === 'subclass' || c.contentType === 'class') && !c.className?.trim()) out.push(`${name(c, i)} needs the class it belongs to.`);
+    // v0.42.0: a STANDALONE class is its own class, so it needs no parent. One that carries no spec
+    // is the old "group this under an existing class" kind and still does.
+    if (c.contentType === 'subclass' && !c.className?.trim()) out.push(`${name(c, i)} needs the class it belongs to.`);
+    if (c.contentType === 'class' && !c.classSpec && !c.className?.trim()) out.push(`${name(c, i)} needs the class it belongs to.`);
     if (c.fullImage && !c.imageUri) out.push(`${name(c, i)} is an image card with no image.`);
   });
+  // v0.42.0 (owner): a homebrew CLASS must be complete and must have a subclass, or the person who
+  // receives it cannot make a character with it. ONE gate, so the toast and the button cannot disagree.
+  out.push(...expansionClassProblems(exp).map((p) => `${p}.`));
   return out;
 }
 

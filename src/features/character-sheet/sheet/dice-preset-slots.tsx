@@ -13,6 +13,7 @@
  */
 import { useCallback, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import Svg, { Line } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -23,7 +24,7 @@ import { showToast } from '@/components/toast';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import { fitText } from '@/lib/fit-text';
-import { type DicePreset, diceSummary, hasModifier, type PresetModifier, PRESET_SLOTS, presetInitial } from '@/lib/dice-presets';
+import { addVariable, type DicePreset, diceSummary, hasModifier, modifierVariables, type PresetModifier, PRESET_SLOTS, presetInitial, removeVariable } from '@/lib/dice-presets';
 import type { EffectFormula } from '@/lib/modifiers';
 import { DimScreen } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
@@ -51,6 +52,7 @@ const GOLD = Rune.goldEdge;
 /** The variables a preset may carry. `input` is missing on purpose: it belongs to a card, not a roll. */
 const PRESET_VARS: { key: EffectFormula['variable']; label: string }[] = [
   { key: 'attackRoll', label: 'Attack Rolls' },
+  { key: 'damageRoll', label: 'Damage Rolls' },
   { key: 'spellcastRoll', label: 'Spellcast Rolls' },
   { key: 'proficiency', label: 'Proficiency' },
   { key: 'level', label: 'Level' },
@@ -70,12 +72,13 @@ const varLabel = (v: EffectFormula['variable'] | undefined) => PRESET_VARS.find(
  * What the modifier button says.
  *
  * A flat zero is not printed (v0.41.1): "+0 + Attack Rolls" reads like a mistake, and a variable with
- * no flat part alongside it is now a normal thing to want.
+ * no flat part alongside it is now a normal thing to want. v0.42.0 reads out EVERY variable, because a
+ * preset may carry as many as the player wants and a button that showed only the first would lie.
  */
 const modLabel = (mod: PresetModifier | undefined): string => {
   if (!hasModifier(mod)) return '+ Modifier';
   const flat = mod!.value !== 0 ? `${mod!.value > 0 ? '+' : ''}${mod!.value}` : null;
-  return [flat, mod!.variable ? varLabel(mod!.variable) : null].filter(Boolean).join(' + ');
+  return [flat, ...modifierVariables(mod).map((v) => varLabel(v))].filter(Boolean).join(' + ');
 };
 
 // ------------------------------------------------------------------------------------- the slots
@@ -160,7 +163,7 @@ function IconPicker({ current, onPick, onClose }: { current?: string; onPick: (k
   );
 }
 
-function VariablePicker({ current, onPick, onClose }: { current?: EffectFormula['variable']; onPick: (v: EffectFormula['variable'] | undefined) => void; onClose: () => void }) {
+function VariablePicker({ chosen, onPick, onClose }: { chosen: EffectFormula['variable'][]; onPick: (v: EffectFormula['variable']) => void; onClose: () => void }) {
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 10004, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
@@ -168,22 +171,21 @@ function VariablePicker({ current, onPick, onClose }: { current?: EffectFormula[
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 300, maxHeight: '80%', padding: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 17, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>Add a variable</Text>
         <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.medium, lineHeight: 16, marginBottom: 10 }}>
-          Worked out when you roll, so it keeps up with the cards you have equipped.
+          Worked out when you roll, so it keeps up with the cards you have equipped. Add as many as you need.
         </Text>
-        <View style={{ gap: 6 }}>
-          <Pressable onPress={() => onPick(undefined)} accessibilityRole="button" accessibilityLabel="No variable">
-            <View style={{ paddingVertical: 9, paddingHorizontal: 12, borderRadius: 5, backgroundColor: !current ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
-              <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>No variable</Text>
-            </View>
-          </Pressable>
-          {PRESET_VARS.map((v) => (
-            <Pressable key={v.key} onPress={() => onPick(v.key)} accessibilityRole="button" accessibilityLabel={v.label}>
-              <View style={{ paddingVertical: 9, paddingHorizontal: 12, borderRadius: 5, backgroundColor: current === v.key ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
-                <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{v.label}</Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
+        <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator contentContainerStyle={{ gap: 6, paddingBottom: 4 }}>
+          {PRESET_VARS.map((v) => {
+            const on = chosen.includes(v.key);
+            return (
+              <Pressable key={v.key} onPress={() => onPick(v.key)} accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={v.label}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 5, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+                  <Text style={{ flex: 1, color: Rune.sheet, fontSize: 13, fontFamily: Body.bold }}>{v.label}</Text>
+                  {on ? <Text style={{ color: Rune.sheet, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8 }}>ADDED</Text> : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </ChamferBox>
     </View>
   );
@@ -216,6 +218,7 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
   const [keypad, setKeypad] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const mod = draft.modifier;
+  const chosenVars = modifierVariables(mod);
 
   if (confirmDelete && onDelete) {
     return (
@@ -272,12 +275,25 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
             </Pressable>
           </View>
 
-          {/* Always offered (v0.41.1, owner). It used to appear only once the keypad held something
-              other than zero, so "no flat bonus, just my Attack Rolls" was a modifier you could not
-              express: setting 0 took the button that would have let you name the variable away. */}
+          {/* Every variable the preset carries, each removable, and the ADD control never goes away
+              (v0.42.0, owner: "never hiding the + Add Variable text-button which means that the user
+              can keep adding variables"). v0.41.1 had already stopped hiding it behind a non-zero
+              keypad; what was left was that choosing one replaced it. */}
+          {chosenVars.length ? (
+            <View style={{ gap: 6 }}>
+              {chosenVars.map((v) => (
+                <View key={v} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ flex: 1, color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{varLabel(v)}</Text>
+                  <Pressable onPress={() => setDraft((d) => ({ ...d, modifier: removeVariable(d.modifier, v) }))} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${varLabel(v)}`}>
+                    <Svg width={13} height={13} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={Rune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={Rune.red} strokeWidth={2} /></Svg>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
           <Pressable onPress={() => setPickVar(true)} accessibilityRole="button" accessibilityLabel="Add a variable to the modifier">
             <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', textAlign: 'center' }}>
-              {mod?.variable ? `Variable: ${varLabel(mod.variable)}` : '+ Add a variable'}
+              + Add a variable
             </Text>
           </Pressable>
 
@@ -292,7 +308,13 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
         </View>
       </PopupDialog>
       {pickIcon ? <IconPicker current={draft.icon} onPick={(icon) => { setDraft((d) => ({ ...d, icon })); setPickIcon(false); }} onClose={() => setPickIcon(false)} /> : null}
-      {pickVar ? <VariablePicker current={mod?.variable} onPick={(variable) => { setDraft((d) => ({ ...d, modifier: { value: d.modifier?.value ?? 0, variable } })); setPickVar(false); }} onClose={() => setPickVar(false)} /> : null}
+      {pickVar ? (
+        <VariablePicker
+          chosen={chosenVars}
+          onPick={(variable) => setDraft((d) => ({ ...d, modifier: modifierVariables(d.modifier).includes(variable) ? removeVariable(d.modifier, variable) : addVariable(d.modifier, variable) }))}
+          onClose={() => setPickVar(false)}
+        />
+      ) : null}
       {keypad ? (
         <NumberKeypad
           title="Roll modifier"
@@ -300,7 +322,7 @@ function PresetEditor({ title, initial, dice, onSave, onDelete, onUpdateDice, on
           min={-20}
           max={20}
           initial={mod?.value ?? 0}
-          onSubmit={(value) => { setDraft((d) => ({ ...d, modifier: { value, variable: d.modifier?.variable } })); setKeypad(false); }}
+          onSubmit={(value) => { setDraft((d) => ({ ...d, modifier: { ...d.modifier, value, variables: modifierVariables(d.modifier) } })); setKeypad(false); }}
           onClose={() => setKeypad(false)}
         />
       ) : null}

@@ -1,4 +1,4 @@
-import { type FC } from 'react';
+import { type FC, type ReactNode } from 'react';
 import { Image as ExpoImage } from 'expo-image';
 import { Text, type TextProps, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
@@ -190,6 +190,8 @@ export function ForgedCard({
   classKey,
   experience,
   modifier,
+  bodyAbove,
+  bodyBelow,
 }: {
   title: string;
   kindLabel: string;
@@ -197,6 +199,9 @@ export function ForgedCard({
    *  Specialization / Mastery), which the official subclass scans bake into their art. */
   subtitle?: string;
   body: string;
+  /** v0.42.0: functional elements the author placed above or below the description. */
+  bodyAbove?: ReactNode;
+  bodyBelow?: ReactNode;
   accentDeep: string;
   Banner?: FC<SvgProps>;
   /** Player-supplied art (#107 experiences): fills the art zone instead of a banner. */
@@ -295,7 +300,9 @@ export function ForgedCard({
           {/* v0.30.0: sized to the room actually left under this card's own title, so a long
               description shrinks instead of running into the footer. A body that already fits keeps
               the 10.5/14 typeset exactly, which is most of them. */}
+          {bodyAbove}
           <BodyText body={body} title={title} hasSubtitle={!!subtitle} />
+          {bodyBelow}
         </View>
       )}
       <ForgedFooter />
@@ -323,6 +330,10 @@ function ForgedFooter() {
  * class may need 2–3 of these (see featurePages); the header carries the page mark. Same plaque
  * seam, same footer — it lives among the scans as an equal.
  */
+/** The rules card's text column, and what is left under the title for its body. From the layout below. */
+const RULES_TEXT_W = FORGED_W - 28;
+const RULES_BODY_H = FORGED_H - ART_H - 19 - 24 - 22 - 5;
+
 export function ForgedTextCard({
   title,
   kindLabel,
@@ -360,15 +371,26 @@ export function ForgedTextCard({
           </CardText>
           {pageMark ? <CardText style={{ color: Rune.inkMuted, fontSize: 7.5, fontFamily: Body.bold }}>{pageMark}</CardText> : null}
         </View>
-        {/* v0.13.0 typeset: left-aligned like the prints; size bumped only to 9.5 — the feature
-            pagination (featurePages) is fit-tuned and this container CLIPS overflow. */}
+        {/**
+          * The body is TYPESET TO FIT (v0.42.0, owner), not clipped at a fixed size.
+          *
+          * v0.13.0 drew this at a flat 9.5 and relied on the pagination to keep the text short enough,
+          * which is what forced a long ability to be cut across cards ("Beastform (cont.)"). `fitText`
+          * chooses the size from the text itself, exactly as the card titles and the weapon bodies do,
+          * so a whole ability fits on its own card however long the book made it. See `lib/fit-text`
+          * for why this is arithmetic rather than `adjustsFontSizeToFit` (a web no-op, and a
+          * layout-time value races the bitmap cache).
+          */}
         <View style={{ marginTop: 5, gap: 5, overflow: 'hidden', flex: 1 }}>
-          {sections.map((s) => (
-            <CardText key={s.name} style={{ color: Rune.inkText, fontSize: 9.5, lineHeight: 13.2, fontFamily: Body.regular, textAlign: 'left', ...NO_FONT_PAD }}>
-              <CardText style={{ fontFamily: Body.bold }}>{s.name}: </CardText>
-              {s.text}
-            </CardText>
-          ))}
+          {sections.map((s) => {
+            const fit = fitText(`${s.name}: ${s.text}`, { width: RULES_TEXT_W, height: RULES_BODY_H / sections.length, base: 9.5, lineRatio: 13.2 / 9.5, min: 5.5, minRatio: MIN_LINE_RATIO });
+            return (
+              <CardText key={s.name} style={{ color: Rune.inkText, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.regular, textAlign: 'left', ...NO_FONT_PAD }}>
+                <CardText style={{ fontFamily: Body.bold }}>{s.name}: </CardText>
+                {s.text}
+              </CardText>
+            );
+          })}
         </View>
       </View>
       <ForgedFooter />

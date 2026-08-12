@@ -62,6 +62,7 @@ export const EFFECT_GROUPS: { label: string; options: EffectOption[] }[] = [
    */
   { label: 'Rolls', options: [
     { key: 'attackRoll', label: 'Attack Rolls', target: 'attackRoll' },
+    { key: 'damageRoll', label: 'Damage Rolls', target: 'damageRoll' },
     { key: 'spellcastRoll', label: 'Spellcast Rolls', target: 'spellcastRoll' },
   ] },
   // v0.13.0 SCARS: no amount, no formula — equipping the card scars one Hope slot, full stop.
@@ -110,10 +111,10 @@ export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
 /** Formula variables a player can scale (#278). v0.21.0: `spellcast` = your subclass's Spellcast trait.
  *  v0.32.0 adds two that are not sheet stats: the Stress currently marked, and a NUMBER INPUT the
  *  card asks its owner for (per card, never shared). */
-const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'attackRoll', 'spellcastRoll', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'attackRoll', 'spellcastRoll', 'damageRoll', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
 const VAR_LABEL: Record<EffectFormula['variable'], string> = {
   level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', stress: 'Current Stress', input: 'Number Input',
-  attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls',
+  attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls', damageRoll: 'Damage Rolls',
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
 };
 /** What a variable means, for the ones a player cannot guess from the name alone. */
@@ -121,6 +122,7 @@ const VAR_HINT: Partial<Record<EffectFormula['variable'], string>> = {
   stress: 'How much Stress is marked right now. Changes as you play.',
   input: 'A number you type on this card. Tap # under the card to set it.',
   attackRoll: 'Everything your cards add to an attack roll. Used by dice tray presets.',
+  damageRoll: 'Everything your cards add to a damage roll. Used by dice tray presets.',
   spellcastRoll: 'Everything your cards add to a spellcast roll. Used by dice tray presets.',
 };
 

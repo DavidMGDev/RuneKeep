@@ -45,11 +45,21 @@ import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExp
 import { embedCardImageForNfc, embedExpansionImages } from '@/lib/image-embed';
 import { nfcModulesPresent } from '@/lib/nfc';
 import type { RkpContent } from '@/lib/rkp';
+import { type CardFunction, type FunctionState, meaningfulFunctions } from '@/lib/card-functions';
+import { type CustomClassSpec } from '@/lib/custom-class';
+import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
+import { CardFunctionsForm, ClassSpecForm } from './class-spec-form';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { DimScreen } from '@/lib/screen-dim';
 
 const newId = (p: string) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 /** Content types the New-card chooser offers (Feature 5/6), in display order. */
+/** The six traits a subclass may cast with, in the sheet's own order (v0.42.0). */
+const SPELLCAST_TRAITS: { key: string; label: string }[] = [
+  { key: 'agility', label: 'Agility' }, { key: 'strength', label: 'Strength' }, { key: 'finesse', label: 'Finesse' },
+  { key: 'instinct', label: 'Instinct' }, { key: 'presence', label: 'Presence' }, { key: 'knowledge', label: 'Knowledge' },
+];
+
 const CHOOSABLE_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'weapon', 'armor', 'inventory', 'generic'];
 const WEAPON_TRAITS = ['Agility', 'Strength', 'Finesse', 'Instinct', 'Presence', 'Knowledge'];
 const WEAPON_RANGES = ['Melee', 'Very Close', 'Close', 'Far', 'Very Far'];
@@ -65,6 +75,14 @@ interface CardConfig {
   /** subclass content (v0.10.5): the family name shared by its 3 tier cards + which tier this one is. */
   subclass?: string;
   tier?: 1 | 2 | 3;
+  /** subclass content (v0.42.0): the trait it casts with, or nothing for a martial subclass. */
+  spellcastTrait?: string;
+  /** class content (v0.42.0): everything a homebrew class needs to be played. */
+  classSpec?: CustomClassSpec;
+  /** any card (v0.42.0): the counters, text fields and cycling buttons it carries. */
+  functions?: CardFunction[];
+  /** any card (v0.42.0): a category of its own for this card, instead of the arsenal. */
+  functionCategory?: { key: string; label: string; icon?: string };
   ancestryEffectTrait?: 1 | 2;
   weapon?: WeaponSpec;
   armor?: ArmorSpec;
@@ -157,6 +175,9 @@ const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap:
  *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
 function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c: CardConfig) => void }) {
   const set = (patch: Partial<CardConfig>) => onChange({ ...config, ...patch });
+  /** Live state for the author's "Try it" controls. Thrown away when the editor closes, by design:
+   *  it is a test, not the player's data. */
+  const [fnStates, setFnStates] = useState<Record<string, FunctionState>>({});
   const setW = (patch: Partial<WeaponSpec>) => onChange({ ...config, weapon: { ...(config.weapon ?? DEFAULT_WEAPON), ...patch } });
   const setA = (patch: Partial<ArmorSpec>) => onChange({ ...config, armor: { ...(config.armor ?? DEFAULT_ARMOR), ...patch } });
   const t = config.contentType;
@@ -172,14 +193,16 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
           <LibInput label="Level (1–10)" value={config.level ? String(config.level) : ''} onChangeText={(s) => set({ level: Math.max(1, Math.min(10, parseInt(s || '1', 10) || 1)) })} placeholder="1" keyboardType="number-pad" />
         </>
       ) : null}
-      {t === 'subclass' || t === 'class' ? (
+      {t === 'subclass' ? (
         <View style={{ gap: 4 }}>
           <Text style={smallLabel}>Class it belongs to</Text>
           <View style={chipRow}>{BUILTIN_CLASSES.map((c) => <Chip key={c} label={c} on={config.className === c} onPress={() => set({ className: c })} />)}</View>
           <LibInput label="…or a custom class name" value={config.className ?? ''} onChangeText={(className) => set({ className })} placeholder="e.g. Warden" />
-          {t === 'class' ? <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular }}>The character creator groups this under that class. (Custom standalone classes come later.)</Text> : null}
         </View>
       ) : null}
+      {/* v0.42.0 (owner): a CLASS is authored in full now. The card's own title names it, so there is
+          no parent to point at; the subclasses point back at this. */}
+      {t === 'class' ? <ClassSpecForm spec={config.classSpec} onChange={(classSpec) => set({ classSpec })} /> : null}
       {t === 'subclass' ? (
         <View style={{ gap: 4 }}>
           <LibInput label="Subclass name (its family)" value={config.subclass ?? ''} onChangeText={(subclass) => set({ subclass })} placeholder="e.g. Stalwart" />
@@ -189,12 +212,53 @@ function ContentConfig({ config, onChange }: { config: CardConfig; onChange: (c:
             <Chip label="Specialization" on={config.tier === 2} onPress={() => set({ tier: 2 })} />
             <Chip label="Mastery" on={config.tier === 3} onPress={() => set({ tier: 3 })} />
           </View>
+          {/* v0.42.0 (owner): the spellcast trait, exactly as an official subclass carries one. */}
+          <Text style={smallLabel}>Spellcast trait (optional)</Text>
+          <View style={chipRow}>
+            {SPELLCAST_TRAITS.map((x) => <Chip key={x.key} label={x.label} on={config.spellcastTrait === x.key} onPress={() => set({ spellcastTrait: config.spellcastTrait === x.key ? undefined : x.key })} />)}
+          </View>
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Leave it off for a martial subclass. Set it and the sheet uses that trait for Spellcast, exactly as an official caster does.</Text>
           <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Make ALL THREE, a Foundation, a Specialization, and a Mastery. Cards link into one subclass when they share a class and a name: leave the field above blank and just give all three cards the SAME title (capitals don&apos;t matter), or fill it in to link cards with different titles. Foundation is chosen in creation; the other two are added automatically when you upgrade the subclass on level-up.</Text>
         </View>
       ) : null}
       {/* v0.13.2 (#359): the old "Passive on feature line" chip is gone. Which feature is crossed out in a
           mix is decided by SELECTION ORDER (like Void ancestries), and the passive rides Feature 1 by
           convention — no author choice needed. The section editor still organizes Feature 1 / 2 by position. */}
+      {/* v0.42.0 (owner): functional elements, on any card. A class's trackers are the reason they
+          exist, but nothing about them is class-specific, so nothing here restricts them to one. */}
+      <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
+        <CardFunctionsForm
+          functions={config.functions}
+          states={fnStates}
+          onChange={(functions) => set({ functions })}
+          onStates={setFnStates}
+        />
+        {(config.functions ?? []).length ? (
+          <View style={{ gap: 5 }}>
+            <Text style={smallLabel}>Where this card lands</Text>
+            <View style={chipRow}>
+              <Chip label="The arsenal" on={!config.functionCategory} onPress={() => set({ functionCategory: undefined })} />
+              <Chip label="Its own category" on={!!config.functionCategory} onPress={() => set({ functionCategory: config.functionCategory ?? { key: `fc-${Date.now().toString(36)}`, label: '' } })} />
+            </View>
+            {config.functionCategory ? (
+              <View style={{ gap: 5 }}>
+                <LibInput label="Category name" value={config.functionCategory.label} onChangeText={(label) => set({ functionCategory: { ...config.functionCategory!, label } })} placeholder="e.g. Rites" />
+                <Text style={smallLabel}>Icon</Text>
+                <View style={chipRow}>
+                  {CATEGORY_ICON_KEYS.slice(0, 14).map((k) => (
+                    <Pressable key={k} onPress={() => set({ functionCategory: { ...config.functionCategory!, icon: k } })} accessibilityRole="button" accessibilityLabel={k}>
+                      <View style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 5, backgroundColor: config.functionCategory?.icon === k ? Rune.red : 'rgba(20,24,31,0.7)', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+                        <CategoryIconSvg iconKey={k} size={20} />
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
       {t === 'weapon' ? (
         <View style={{ gap: 6 }}>
           <Text style={smallLabel}>Trait</Text><View style={chipRow}>{WEAPON_TRAITS.map((x) => <Chip key={x} label={x} on={w.trait === x} onPress={() => setW({ trait: x })} />)}</View>
@@ -433,8 +497,12 @@ export function LibraryScreen() {
             sections: d.sections,
             domain: cfg.contentType === 'domain' ? cfg.domain : undefined,
             level: cfg.contentType === 'domain' ? cfg.level ?? 1 : undefined,
-            className: cfg.contentType === 'subclass' || cfg.contentType === 'class' ? cfg.className : undefined,
+            className: cfg.contentType === 'subclass' ? cfg.className : undefined,
+            classSpec: cfg.contentType === 'class' ? cfg.classSpec : undefined,
+            functions: meaningfulFunctions(cfg.functions).length ? meaningfulFunctions(cfg.functions) : undefined,
+            functionCategory: cfg.functionCategory?.label.trim() ? cfg.functionCategory : undefined,
             subclass: cfg.contentType === 'subclass' ? cfg.subclass : undefined,
+            spellcastTrait: cfg.contentType === 'subclass' ? cfg.spellcastTrait : undefined,
             tier: cfg.contentType === 'subclass' ? cfg.tier ?? 1 : undefined,
             ancestryEffectTrait: cfg.contentType === 'ancestry' ? cfg.ancestryEffectTrait : undefined,
             weapon: cfg.contentType === 'weapon' ? cfg.weapon : undefined,
@@ -508,7 +576,7 @@ export function LibraryScreen() {
             <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, textAlign: 'center', paddingVertical: 18 }}>No cards yet. Add your first homebrew card.</Text>
           ) : (
             selected.cards.map((c, i) => (
-              <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, subclass: c.subclass, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
+              <Pressable key={c.id} onPress={() => setEditingCard({ index: i, config: { contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } })} accessibilityRole="button" accessibilityLabel={`Edit ${c.title || 'card'}`}>
                 {({ pressed }) => (
                   <ChamferBox chamfer={8} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.86)'} stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 11 }}>
                     {/* v0.13.1 (#357): a catalog-reference card (NFC-granted system card) shows the REAL

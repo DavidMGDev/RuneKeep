@@ -63,6 +63,7 @@ export type EffectTarget =
    * the sheet, because there is no such number: what you add to a roll is added at the table.
    */
   | 'attackRoll'
+  | 'damageRoll'
   | 'spellcastRoll'
   /** v0.14.0: a bonus on ONE of the character's Experiences (the Honing Relic). Unlike every other
    *  target this names an INSTANCE, carried by `experienceId` — so it has no sheet row and no base
@@ -94,7 +95,7 @@ export interface EffectFormula {
    *    ("+Evasion equal to the Hit Points your target marked") cannot be derived from anything the
    *    app knows, so the card asks. See `numberInputs` on the character file.
    */
-  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | 'stress' | 'input' | 'attackRoll' | 'spellcastRoll' | TraitKey;
+  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | 'stress' | 'input' | 'attackRoll' | 'spellcastRoll' | 'damageRoll' | TraitKey;
   multiply?: number;
   divide?: number;
   /** #325: a flat constant ADDED after the ×/÷ round-up (e.g. Bare Bones' Armor = Strength + 3). */
@@ -237,7 +238,7 @@ export const EFFECT_TARGETS: SheetTarget[] = [
   'level',
   'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge',
   'evasion', 'armorScore', 'maxHp', 'stressMax', 'hopeMax', 'proficiency', 'majorThreshold', 'severeThreshold', 'scar', 'restMoves',
-  'attackRoll', 'spellcastRoll',
+  'attackRoll', 'spellcastRoll', 'damageRoll',
 ];
 
 const TRAIT_TARGETS: EffectTarget[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
@@ -249,7 +250,7 @@ export const TARGET_LABEL: Record<EffectTarget, string> = {
   evasion: 'Evasion', armorScore: 'Armor Score', maxHp: 'Max Hit Points', stressMax: 'Max Stress', hopeMax: 'Max Hope',
   proficiency: 'Proficiency', majorThreshold: 'Major Threshold', severeThreshold: 'Severe Threshold', scar: 'Scar',
   restMoves: 'Optional Rest Bonus', experience: 'Experience', level: 'Level',
-  attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls',
+  attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls', damageRoll: 'Damage Rolls',
 };
 
 /** Game caps: HP, Stress, and Armor slots can never exceed 12 (rulebook). */
@@ -325,6 +326,7 @@ function resolveFormula(
     : f.variable === 'spellcast' ? (spellcastTrait ? out[spellcastTrait]?.total ?? 0 : 0)
     // v0.41.0: the two roll bonuses read back as variables, so a preset can carry "+ Attack Rolls".
     : f.variable === 'attackRoll' ? out.attackRoll?.total ?? 0
+    : f.variable === 'damageRoll' ? out.damageRoll?.total ?? 0
     : f.variable === 'spellcastRoll' ? out.spellcastRoll?.total ?? 0
     // v0.32.0: read from the table rather than the sheet. Current Stress moves as you play, and the
     // per-card input is whatever the player last typed on THIS card (0 until they do).

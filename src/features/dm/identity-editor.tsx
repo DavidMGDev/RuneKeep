@@ -54,17 +54,25 @@ export function IdentityEditor({
     setDraft((d) => ({ ...d, imageUri: owned }));
   };
 
+  /**
+   * The picker is NOT wrapped in a modal (v0.42.0, owner: "the color picker UI is so broken that the
+   * text starts displaying vertically and no background is visible").
+   *
+   * `ColorPalette` is already a full-screen modal: it draws its own scrim and centres itself with a
+   * root that is `position: absolute` on all four insets. Putting that inside `DmModal` puts it inside
+   * an unsized positioned ancestor, so it collapsed to zero width and the fixed-width panel inside it
+   * wrapped every line to one character. Every other caller in the app renders it directly, and so
+   * does this one now.
+   */
   if (picking) {
     return (
-      <DmModal onClose={() => setPicking(false)}>
-        <ColorPalette
-          title="Campaign colour"
-          current={draft.color}
-          allowRandom
-          onPick={(color) => { setDraft((d) => ({ ...d, color, imageUri: undefined })); setPicking(false); }}
-          onClose={() => setPicking(false)}
-        />
-      </DmModal>
+      <ColorPalette
+        title="Pick a colour"
+        current={draft.color}
+        allowRandom
+        onPick={(color) => { setDraft((d) => ({ ...d, color, imageUri: undefined })); setPicking(false); }}
+        onClose={() => setPicking(false)}
+      />
     );
   }
 
