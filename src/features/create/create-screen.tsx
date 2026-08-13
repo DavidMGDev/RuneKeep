@@ -44,6 +44,7 @@ import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store
 import { shouldShow } from '@/lib/onboarding-store';
 
 import { campaignWarnings } from '@/lib/campaign-warnings';
+import { assembleClasses, faceMark } from '@/lib/custom-class-pages';
 import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, setKeys, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
@@ -848,7 +849,25 @@ export function CreateScreen() {
             const faces = [classFace, ...featureFaces];
             return { id: `class-${c.key}`, label: c.title, thumb: classFace.thumb, source: classFace.source, custom: classFace.custom, faces };
           });
-        });
+        }).concat(
+          /**
+           * HOMEBREW CLASSES (v0.42.6, owner: "custom classes do not appear in character creation").
+           *
+           * The class step was built from the bundled list and nothing else, so a pack could define a
+           * class that nobody could ever choose. They are assembled the same way a published class is:
+           * ONE card whose faces are its base page and every page card pointing at it, which is also
+           * the owner's second ask, that a class and its pages stop being separate cards. See
+           * `lib/custom-class-pages`.
+           */
+          assembleClasses(libContent?.classes ?? []).map((a) => ({
+            id: a.base.id,
+            label: a.base.title || 'Untitled class',
+            custom: <LibraryForgedCard card={{ ...a.base, typeLabel: 'Class' }} />,
+            faces: a.faces.map((f, i) => ({
+              custom: <LibraryForgedCard card={{ ...f, typeLabel: i === 0 ? 'Class' : 'Features' }} pageMark={faceMark(i, a.faces.length)} />,
+            })),
+          })),
+        );
       case 'subclass':
         /**
          * AUTHORING SEES ALL OF THEM (v0.42.5, owner).

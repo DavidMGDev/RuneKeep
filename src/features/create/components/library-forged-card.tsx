@@ -56,8 +56,15 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
   return lc.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[lc.tier ?? 1] : undefined;
 }
 
-export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction, variableValue }: {
+export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction, variableValue, pageMark }: {
   card: LibraryCard;
+  /**
+   * v0.42.6: the "1/3" a card carries when it is one FACE of a paginated card.
+   *
+   * A homebrew class and its pages are one card you flip through, exactly as a published class is, so
+   * its faces are numbered the way theirs are. See `lib/custom-class-pages`.
+   */
+  pageMark?: string;
   /**
    * v0.42.5: what a variable resolves to for the character holding this card, for a DICE element
    * whose count is multiplied by one. Absent means every variable reads as 1, which is what a
@@ -154,6 +161,7 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
         accentDeep={Rune.panel}
         imageUri={card.imageUri}
         colorArt={card.color}
+        pageMark={pageMark}
         multilineTitle
       />
     );
@@ -187,6 +195,7 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
       accentDeep={Rune.panel}
       imageUri={card.imageUri}
       colorArt={card.color}
+      pageMark={pageMark}
       multilineTitle
     />
   );
