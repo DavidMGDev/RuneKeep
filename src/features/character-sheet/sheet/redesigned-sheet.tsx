@@ -2645,7 +2645,28 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return !v;
     });
   }, []);
-  const rollTrait = useCallback((label: string, value: number) => trayRef.current?.rollDuality(label, value), []);
+  /**
+   * A TRAIT TAP ROLLS IT, tray or no tray (v0.42.4, owner).
+   *
+   * "Pressing any trait inside the character sheet as a player should automatically switch to the
+   * dice-rolling interface and act as if the character had tapped a trait inside that dice-rolling
+   * interface."
+   *
+   * Before this, a trait was live only while the tray was already open, so the natural gesture did
+   * nothing and the roll took two presses in the right order. Opening the tray is a state change the
+   * tray has to mount from, so the roll is deferred one tick rather than fired into a handle that is
+   * not there yet; when the tray is already up it goes immediately, which is exactly what it did
+   * before and is the path anybody already relies on.
+   */
+  const rollTrait = useCallback((label: string, value: number) => {
+    if (trayRef.current && diceUpRef.current) { trayRef.current.rollDuality(label, value); return; }
+    setDiceUp(true);
+    playSfx('panelOpen');
+    setTimeout(() => trayRef.current?.rollDuality(label, value), 0);
+  }, []);
+  /** The tray's live state, so the tap above reads it without being rebuilt every time it changes. */
+  const diceUpRef = useRef(false);
+  diceUpRef.current = diceUp;
 
   /**
    * The three roll presets (v0.41.0, owner).
@@ -2895,7 +2916,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
               {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
               {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} /> : null}
-              <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={diceUp ? rollTrait : undefined} />
+              <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={rollTrait} />
               <ExpandVeil />
               <EditHud file={file ?? undefined} />
               {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the

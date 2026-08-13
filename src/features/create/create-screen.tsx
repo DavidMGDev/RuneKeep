@@ -43,7 +43,7 @@ import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } fro
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
 import { shouldShow } from '@/lib/onboarding-store';
 
-import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
+import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, setKeys, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
 import { canSkipClass, cardedItems, carriesThresholds, carryItems, type CarryItem, heldEffectsFor, isGenericName, keptLevel, levelForStatBlock } from '@/lib/characterize';
@@ -270,7 +270,15 @@ export function CreateScreen() {
    * time. The picks are taken from that list instead, which is exactly where the Transform step
    * already looks.
    */
-  const [pickerOpen, setPickerOpen] = useState(typeof params.exp !== 'string' && !(params.encId && params.cid));
+  /**
+   * v0.42.4 (owner): "remove expansion question pop-ups... character draft saving and character draft
+   * pop-ups from this interface, it is not necessary."
+   *
+   * The rules cover whatever is enabled in the Cards menu, which is the only sensible reading: a DM
+   * writing rules for their table is writing them about the content their table has. So the picker
+   * never opens while authoring, and the two draft ceremonies below are gated the same way.
+   */
+  const [pickerOpen, setPickerOpen] = useState(typeof params.exp !== 'string' && !(params.encId && params.cid) && typeof params.campaign !== 'string');
   useEffect(() => {
     let live = true;
     // seed the bundled official expansions (The Void) so they show in the picker, then list all installed.
@@ -1156,14 +1164,18 @@ export function CreateScreen() {
     // One frame is enough for the creator's entry to exist in its own right. Returning still uses
     // back(), which keeps the creator mounted with everything the player has already chosen; sending
     // them forward to a fresh copy instead would re-ask which expansions they wanted.
-    if (!shouldShow('creation')) return;
+    // The creation tour explains making a hero, which is not what a DM came here to do.
+    if (authoring || !shouldShow('creation')) return;
     const t = setTimeout(() => router.push('/onboarding?tour=creation' as Href), 0);
     return () => clearTimeout(t);
-  }, [router]);
+  }, [router, authoring]);
 
   useEffect(() => {
     if (resumeChecked) return;
     setResumeChecked(true);
+    // v0.42.4 (owner): no draft ceremonies while authoring. Nothing here is a character, so there is
+    // no half-made one to be offered back.
+    if (authoring) return;
     const stored = loadDraft<Draft>();
     /**
      * A characterize draft belongs to ONE combatant (v0.36.1, owner).
@@ -1184,6 +1196,7 @@ export function CreateScreen() {
     if (!resumeChecked || resumeOffer) return; // don't overwrite a draft we're still offering back
     // A characterize draft is saved once it knows WHICH combatant it belongs to, so a phone call
     // mid-characterize loses nothing and the draft can never be handed to the wrong creation.
+    if (authoring) return; // nothing here is a character, so there is no draft to keep
     if (characterizing ? !!draft.characterize : draftHasContent(draft)) saveDraft(draft, { deck, picked: [...picked] });
   }, [draft, deck, picked, resumeChecked, resumeOffer, characterizing]);
 
@@ -1748,6 +1761,35 @@ export function CreateScreen() {
         )
       }>
       <Animated.View style={[{ flex: 1 }, entryStyle]}>
+        {/**
+          * WHAT THIS SCREEN IS (v0.42.4, owner).
+          *
+          * "Replace the Name and Portrait section (Details) and replace it with an explanation that
+          * selecting anything in this UI will remove it from the character creation options."
+          *
+          * A campaign has no name and no portrait; the pack it lives in has both. Standing here with
+          * a Name field was the screen telling the DM it was something it is not.
+          */}
+        {authoring ? (
+          <>
+            <SectionDivider label="What this does" />
+            <ChamferBox chamfer={9} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ marginTop: 8, padding: 12, gap: 6 }}>
+              <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.semibold, lineHeight: 17 }}>
+                This is character creation, used backwards.
+              </Text>
+              <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
+                Walk the steps as a player would. Anything you REMOVE here is taken out of character creation for
+                everyone who enables this expansion, and a step you turn off never appears for them at all. Everything
+                you leave alone stays available.
+              </Text>
+              <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
+                Your changes save as you make them. Content a player does not have installed is simply ignored on their
+                device, so a rule about a pack they lack cannot break their creator.
+              </Text>
+            </ChamferBox>
+          </>
+        ) : (
+        <>
         {/* ---- details ---- */}
         <SectionDivider label="Details" />
         <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
@@ -1794,6 +1836,8 @@ export function CreateScreen() {
           </View>
         </View>
 
+        </>
+        )}
         {/* ---- cards ---- */}
         <View style={{ marginTop: 6 }}>
           <SectionDivider label="Cards" />
@@ -1950,23 +1994,41 @@ export function CreateScreen() {
         // Weapons sits its cluster lower (the filter toggles push its carousel down, so the cards
         // reach further into this band) — the buttons must never overlap the carousel (owner).
         <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 14, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
-          <RuneButton
-            label={
-              deck === 'carry'
+          {(() => {
+            /**
+             * REMOVE, not SELECT (v0.42.4, owner).
+             *
+             * "Change the red button that reads 'Select X' to 'Remove X' to be more intuitive."
+             *
+             * A red primary button saying SELECT SUMMONER, which BANS the Summoner, was the screen
+             * saying the opposite of what it did. It reads Remove while the card is available and
+             * Restore while it is not, so the label is always the thing about to happen.
+             */
+            const short = centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun;
+            const removed = authoring && !!centerItem && !isOptionOn(campaign, deck, centerItem.id);
+            const label = authoring
+              ? removed ? `Restore ${short}` : `Remove ${short}`
+              : deck === 'carry'
                 ? carryOff.has(centerItem?.id ?? '') ? 'Keep this' : 'Leave this behind'
-                : centerSelected ? 'Deselect' : `Select ${centerItem?.label && centerItem.label.length <= 16 ? centerItem.label : noun}`
-            }
-            kind={deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? 'primary' : 'ghost') : centerSelected ? 'ghost' : 'primary'}
-            height={40}
-            muteSfx
-            onPress={() => {
-              if (!centerItem) return;
-              // #258: selecting a card uses the card-select/deselect chime, not the generic tap.
-              playSfx(centerSelected || (deck === 'carry' && !carryOff.has(centerItem.id)) ? 'cardDeselect' : 'cardSelect');
-              onToggle(centerItem.id);
-            }}
-            accessibilityLabel={deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? `Carry ${centerItem?.label ?? 'this'}` : `Leave ${centerItem?.label ?? 'this'} behind`) : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
-          />
+                : centerSelected ? 'Deselect' : `Select ${short}`;
+            return (
+              <RuneButton
+                label={label}
+                kind={authoring ? (removed ? 'ghost' : 'primary') : deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? 'primary' : 'ghost') : centerSelected ? 'ghost' : 'primary'}
+                height={40}
+                muteSfx
+                onPress={() => {
+                  if (!centerItem) return;
+                  // #258: selecting a card uses the card-select/deselect chime, not the generic tap.
+                  playSfx(centerSelected || (deck === 'carry' && !carryOff.has(centerItem.id)) ? 'cardDeselect' : 'cardSelect');
+                  onToggle(centerItem.id);
+                }}
+                accessibilityLabel={authoring
+                  ? label
+                  : deck === 'carry' ? (carryOff.has(centerItem?.id ?? '') ? `Carry ${centerItem?.label ?? 'this'}` : `Leave ${centerItem?.label ?? 'this'} behind`) : centerSelected ? `Deselect ${centerItem?.label ?? noun}` : `Select ${centerItem?.label ?? noun}`}
+              />
+            );
+          })()}
           {/* v0.10.2 (Feature 2): roll a random valid choice for this section. */}
           {/* v0.29.0: on the ancestry step in MIXED mode, the reverse control sits BESIDE Random rather
               than under it. The controls band is a fixed 102dp and the existing stack already uses 95
@@ -1985,6 +2047,37 @@ export function CreateScreen() {
                 onPress={() => { playSfx(allCarryOff ? 'cardSelect' : 'cardDeselect'); set({ carryDisabled: allCarryOff ? [] : carry.map((it) => it.id) }); }}
                 accessibilityLabel={allCarryOff ? 'Carry everything again' : 'Carry nothing'}
               />
+            ) : authoring ? (
+              /**
+               * TOGGLE ALL (v0.42.4, owner: "replace the random button with a Toggle All button to
+               * set all to enabled or all to disabled").
+               *
+               * Rolling a random card to BAN is not a thing anybody wants. What a DM wants on this
+               * step is "none of these, then let me put three back", which is one press and then
+               * three. If anything is still available it clears the step; if nothing is, it restores
+               * the lot.
+               */
+              (() => {
+                const keys = rawItems.map((it) => optionKey(deck, it.id));
+                const anyOn = keys.some((k) => !(campaign.disabled ?? []).includes(k));
+                return (
+                  <RuneButton
+                    label={anyOn ? 'Remove all' : 'Restore all'}
+                    kind="ghost"
+                    dense
+                    height={30}
+                    muteSfx
+                    onPress={() => {
+                      playSfx(anyOn ? 'cardDeselect' : 'cardSelect');
+                      setDraftCampaign((cs) => {
+                        const next = setKeys(cs ?? EMPTY_CAMPAIGN_SETTINGS, keys, !anyOn);
+                        return syncSteps(next, [{ deck, keys }]);
+                      });
+                    }}
+                    accessibilityLabel={anyOn ? `Remove every ${noun}` : `Restore every ${noun}`}
+                  />
+                );
+              })()
             ) : (
               <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel={`Random ${noun}`} />
             )}

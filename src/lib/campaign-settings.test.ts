@@ -120,3 +120,47 @@ describe('campaignNote', () => {
     expect(campaignNote(['Ashfall', 'Deepwater', 'Thorn'])).toBe('Creation is limited by Ashfall, Deepwater and Thorn.');
   });
 });
+
+/**
+ * v0.42.4 (owner): "Make sure that a campaign setting has error handling for when players have
+ * different expansions, so that if I ban a class they dont have or I allow a ancestry they dont have
+ * it doesn't break."
+ *
+ * The model already answers this, and these say so out loud, because the property is easy to lose:
+ * a rule is a KEY, and a key naming content this install has never heard of matches nothing.
+ */
+describe('content the reader does not have', () => {
+  it('a ban on a class that is not installed filters nothing and breaks nothing', () => {
+    const rules = cs(['class:class-from-a-pack-i-lack']);
+    const mine = ['class-bard', 'class-druid'];
+    expect(mine.filter((id) => isOptionOn(rules, 'class', id))).toEqual(mine);
+  });
+
+  it('allowing content that is not installed shows nothing extra, because absent is the default', () => {
+    const rules = cs(['class:class-bard']);
+    expect(isOptionOn(rules, 'ancestry', 'an-ancestry-i-do-not-have')).toBe(true);
+  });
+
+  it('KEEPS a rule about content nobody has, so installing the pack later brings it back', () => {
+    const rules = cs(['class:from-a-future-pack']);
+    const round = JSON.parse(JSON.stringify(rules));
+    expect(round.disabled).toContain('class:from-a-future-pack');
+    expect(isOptionOn(round, 'class', 'from-a-future-pack')).toBe(false);
+  });
+
+  it('a step turned off is still off even when nothing it held is installed', () => {
+    expect(isStepOn(cs([stepKey('community')]), 'community')).toBe(false);
+  });
+});
+
+describe('setKeys as toggle all (v0.42.4)', () => {
+  const keys = ['a', 'b', 'c'];
+
+  it('clears a step that still has something available', () => {
+    expect(setKeys(cs(['a']), keys, false).disabled.sort()).toEqual(keys);
+  });
+
+  it('restores a step that has nothing left', () => {
+    expect(setKeys(cs(keys), keys, true).disabled).toEqual([]);
+  });
+});

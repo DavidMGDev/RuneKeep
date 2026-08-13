@@ -87,6 +87,17 @@ export function removeFunction(
   };
 }
 
+/**
+ * Does removing this block need asking about (v0.42.4, owner)?
+ *
+ * A section with words in it, and every functional element. The element always asks because there is
+ * more to it than what is on screen: its configuration, and any level advancement pointing at it.
+ * An empty section goes without a word, because confirming a dozen blank rows one at a time while
+ * tidying up is its own kind of hostile.
+ */
+export const needsRemoveConfirm = (section: CardSection): boolean =>
+  !!section.functionId || !!section.body.trim() || !!(section.name ?? '').trim();
+
 /** Move a block up or down. Out of range is a no-op rather than an error, because it is a button. */
 export function moveBlock(sections: CardSection[], index: number, dir: -1 | 1): CardSection[] {
   const to = index + dir;

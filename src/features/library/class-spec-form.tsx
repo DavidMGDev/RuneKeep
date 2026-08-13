@@ -211,15 +211,29 @@ export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle
         * It comes before the title because it decides what everything below even is, and because an
         * author who picks the wrong one finds out four fields later.
         */}
-      <SelectRow
-        label="What is this card?"
-        hint={page
-          ? 'Another page of a class that already exists. It carries its own text and nothing else: the numbers, domains and items belong to the class it names.'
-          : 'The first page of a new class. It carries the numbers, the domains and the starting items, and every other card points at it.'}
-        value={page ? 'page' : 'base'}
-        options={[{ value: 'base', label: 'A new class' }, { value: 'page', label: 'Another page of a class' }]}
-        onChange={(v) => set({ role: v as 'base' | 'page' })}
-      />
+      {/**
+        * WHAT THIS CARD IS, reported rather than asked (v0.42.4, owner).
+        *
+        * "The 'What is This Card?' should be something that the card needs an answer to BEFORE
+        * entering the card edit panel... if the user wishes to change this they must cancel the card
+        * and add a new one."
+        *
+        * It was a chooser sitting a third of the way down a form whose every field it decided, so an
+        * author found out they had picked wrong after writing the card. The question is a dialog on
+        * the way in now (see the type chooser), and this is the answer, stated, with the way to change
+        * it: start again. That is not a limitation dressed up as a rule; the two cards genuinely have
+        * nothing in common but a title.
+        */}
+      <View style={{ gap: Gap.hair }}>
+        <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>
+          {page ? 'Another page of a class' : 'A new class'}
+        </Text>
+        <Text style={hintStyle}>
+          {page
+            ? 'It carries its own text and nothing else: the numbers, the domains and the items belong to the class it names. To make a new class instead, cancel this card and add another.'
+            : 'The first page of a new class. It carries the numbers, the domains and the starting items, and every other card points at it. To add a page to a class that already exists, cancel this card and add another.'}
+        </Text>
+      </View>
 
       {page ? (
         <>
@@ -245,11 +259,28 @@ export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle
 
           <FormSection title="The numbers" hint="What a character of this class starts with, before anything else is chosen.">
             <CounterField label="Starting Evasion" value={s.startingEvasion} min={0} max={20} onChange={(startingEvasion) => set({ startingEvasion })} />
-            <CounterField label="Starting Hit Points" value={s.startingHp} min={0} max={20} onChange={(startingHp) => set({ startingHp })} />
+            {/* v0.42.4 (owner): "Starting hitpoints cannot be 0 for class cards." A character with no
+                hit points is dead before the first scene, so the control cannot express it. */}
+            <CounterField label="Starting Hit Points" value={Math.max(1, s.startingHp)} min={1} max={20} onChange={(startingHp) => set({ startingHp })} />
           </FormSection>
 
-          <FormSection title="Its voice" hint="The introduction printed on the class card, in the tone of the ones in the book.">
+          {/**
+            * v0.42.4 (owner): "'Its voice' is very confusing copy for the summary of the card. Fix.
+            * And explain that only this first description is shown on the card and how the user can
+            * add more pages to this class."
+            *
+            * So the heading says what it is, and the sentence under it answers the question an author
+            * asks next: where does everything else go? Two answers, and which to reach for.
+            */}
+          <FormSection
+            title="What the card says"
+            hint="The introduction printed on this card, in the tone of the ones in the book. It is the ONLY text this card prints: the numbers and domains below are how the class works, not what it reads like.">
             <TextField label="Summary" value={s.summary} placeholder="What this class is, in two or three sentences." multiline maxLength={400} onChangeText={(summary) => set({ summary })} />
+            <Text style={hintStyle}>
+              Everything else goes on a card of its own. For more prose, an ability or the class&apos;s 3-Hope move, add another Class
+              card and choose &quot;Another page of a class&quot;: it becomes the next page of this one. If the ability needs a control the
+              player uses, a counter, a switch or a line to write on, make it a Feature card instead and point it at this class.
+            </Text>
           </FormSection>
 
           <FormSection title="Domains it grants" hint="Pick two. This is how the app knows which domain cards a character of this class may take, so it cannot be typed.">
