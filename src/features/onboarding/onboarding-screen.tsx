@@ -168,13 +168,15 @@ const CAMPAIGNS: Page[] = [
   },
 ];
 
-const TOURS: Record<TourId, Page[]> = { welcome: WELCOME, creation: CREATION, sheet: SHEET, campaigns: CAMPAIGNS };
+/** v0.42.6: the class-card explanation is drawn INSIDE the chooser it is about, not as a tour screen. */
+const TOURS: Record<TourId, Page[]> = { welcome: WELCOME, creation: CREATION, sheet: SHEET, campaigns: CAMPAIGNS, classcards: [] };
 
 const TITLE: Record<TourId, string> = {
   welcome: 'Welcome',
   creation: 'Making a hero',
   sheet: 'Using your sheet',
   campaigns: 'Running a game',
+  classcards: 'Class cards',
 };
 
 export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () => void }) {

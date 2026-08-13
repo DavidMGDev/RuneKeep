@@ -15,7 +15,7 @@ import { ChamferedImage } from './components/chamfered-image';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
-import { type ClassName, classColor, classInfo, isVoidClass } from '@/constants/identity';
+import { type ClassName, CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { CATALOG, cardById } from '@/data/catalog';
 import { type TraitKey } from '@/features/character-sheet/character';
@@ -44,6 +44,9 @@ import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store
 import { shouldShow } from '@/lib/onboarding-store';
 
 import { campaignWarnings } from '@/lib/campaign-warnings';
+import { ImageCropper } from '@/components/image-cropper';
+import { assembleClasses, faceMark } from '@/lib/custom-class-pages';
+import { classKeyOf } from '@/lib/custom-class';
 import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, setKeys, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
@@ -71,6 +74,26 @@ import { TraitsTab } from './traits-tab';
  * DM who wants to limit the weapons on offer turns the whole step off. Keys match `optionKey`.
  */
 const CAMPAIGN_DECKS: string[] = ['class', 'subclass', 'ancestry', 'community', 'domains'];
+
+/**
+ * The BUNDLED class a homebrew one borrows its look from (v0.42.6).
+ *
+ * Every derived number, the class colour, the banner and a dozen keyed lookups want a real
+ * `ClassName`, and giving a homebrew class a second code path through all of them would be a second
+ * copy of the app. So it carries one: the class whose two domains overlap its own most, which is the
+ * closest thing to "what is this class like", falling back to the first. Only the LOOK comes from
+ * here; every number comes from the author's spec (see `lib/played-class`).
+ */
+function carrierClassFor(card: LibraryCard): ClassName {
+  const want = (card.classSpec?.domains ?? []).map((d) => d.trim().toLowerCase()).filter(Boolean);
+  let best = CLASSES[0];
+  let bestScore = -1;
+  for (const c of CLASSES) {
+    const score = (c.domains as string[]).filter((d) => want.includes(d)).length;
+    if (score > bestScore) { best = c; bestScore = score; }
+  }
+  return best.key;
+}
 
 // ---------- screen ----------
 
@@ -511,6 +534,12 @@ export function CreateScreen() {
 
   // v0.12.2: the class list the creator offers, gated by the PICKED expansions (base classes always; a
   // Void class only when 'void' is picked). Replaces the old base-only CREATION_CLASS_CARDS module const.
+  /** The homebrew class this draft is playing, and the key its links are matched on (v0.42.6). */
+  const customClass = useMemo(
+    () => (draft.customClassId ? (libContent?.classes ?? []).find((c) => c.id === draft.customClassId) : undefined),
+    [draft.customClassId, libContent],
+  );
+  const chosenClassKey = classKeyOf(customClass ? customClass.title : (draft.className ?? ''));
   const creationClassCards = useMemo(
     () => CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || picked.has(e); }),
     [picked],
@@ -848,7 +877,25 @@ export function CreateScreen() {
             const faces = [classFace, ...featureFaces];
             return { id: `class-${c.key}`, label: c.title, thumb: classFace.thumb, source: classFace.source, custom: classFace.custom, faces };
           });
-        });
+        }).concat(
+          /**
+           * HOMEBREW CLASSES (v0.42.6, owner: "custom classes do not appear in character creation").
+           *
+           * The class step was built from the bundled list and nothing else, so a pack could define a
+           * class that nobody could ever choose. They are assembled the same way a published class is:
+           * ONE card whose faces are its base page and every page card pointing at it, which is also
+           * the owner's second ask, that a class and its pages stop being separate cards. See
+           * `lib/custom-class-pages`.
+           */
+          assembleClasses(libContent?.classes ?? []).map((a) => ({
+            id: a.base.id,
+            label: a.base.title || 'Untitled class',
+            custom: <LibraryForgedCard card={{ ...a.base, typeLabel: 'Class' }} />,
+            faces: a.faces.map((f, i) => ({
+              custom: <LibraryForgedCard card={{ ...f, typeLabel: i === 0 ? 'Class' : 'Features' }} pageMark={faceMark(i, a.faces.length)} />,
+            })),
+          })),
+        );
       case 'subclass':
         /**
          * AUTHORING SEES ALL OF THEM (v0.42.5, owner).
@@ -865,7 +912,7 @@ export function CreateScreen() {
          */
         return [
           ...CATALOG.filter((c) => c.kind === 'subclass' && (authoring || c.className === draft.className) && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
-          ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (authoring || !c.className || c.className === draft.className)).map((lc) => keepLib(lc)),
+          ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (authoring || !c.className || classKeyOf(c.className) === chosenClassKey)).map((lc) => keepLib(lc)),
         ];
       case 'ancestry': {
         const base = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })));
@@ -904,7 +951,10 @@ export function CreateScreen() {
           ];
         }
         if (!draft.className) return [];
-        const pair = classInfo(draft.className).domains;
+        // v0.42.6: a homebrew class grants the two domains its author chose.
+        const pair = (customClass?.classSpec?.domains.filter((d) => d.trim()) ?? []).length
+          ? customClass!.classSpec!.domains.filter((d) => d.trim())
+          : (classInfo(draft.className).domains as string[]);
         return [
           ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
           ...(libContent?.domains ?? []).map((lc) => keepLib(lc)),
@@ -941,6 +991,8 @@ export function CreateScreen() {
     if (!isCardDeck(deck)) return [];
     switch (deck) {
       case 'class':
+        // v0.42.6: a homebrew class is outlined by its own card id.
+        if (draft.customClassId) return [draft.customClassId];
         return draft.className ? [`class-${draft.className}`] : [];
       case 'subclass':
         return draft.subclassCardId ? [draft.subclassCardId] : [];
@@ -1163,9 +1215,22 @@ export function CreateScreen() {
       if (!isCardDeck(deck)) return;
       switch (deck) {
         case 'class': {
+          /**
+           * A HOMEBREW class is picked by its card id (v0.42.6).
+           *
+           * `className` is still set, to a bundled carrier, because the colour, the banner and every
+           * keyed lookup want one; `customClassId` is what makes it that class. Picking either kind
+           * clears the subclass and the domain cards, because both belonged to the last one.
+           */
+          const custom = (libContent?.classes ?? []).find((c) => c.id === id);
+          if (custom) {
+            if (draft.customClassId === id) set({ className: null, customClassId: null, subclassCardId: null, domainCardIds: [] });
+            else set({ className: carrierClassFor(custom), customClassId: id, subclassCardId: null, domainCardIds: [] });
+            return;
+          }
           const key = id.replace('class-', '') as ClassName;
-          if (draft.className === key) set({ className: null, subclassCardId: null, domainCardIds: [] });
-          else set({ className: key, subclassCardId: null, domainCardIds: [] });
+          if (draft.className === key && !draft.customClassId) set({ className: null, customClassId: null, subclassCardId: null, domainCardIds: [] });
+          else set({ className: key, customClassId: null, subclassCardId: null, domainCardIds: [] });
           return;
         }
         case 'subclass':
@@ -1282,8 +1347,13 @@ export function CreateScreen() {
     // resolves effects with no expansion installed and survives it being disabled/deleted. Derived from
     // the slot ids + loose inventory picks. A creation with no homebrew picks leaves this undefined.
     const libById = new Map<string, LibraryCard>();
-    if (libContent) for (const arr of [libContent.ancestries, libContent.communities, libContent.subclasses, libContent.domains, libContent.armor, libContent.inventory]) for (const c of arr) libById.set(c.id, c);
-    const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, ...draft.domainCardIds, ...draft.inventoryLibIds].filter((x): x is string => !!x);
+    // v0.42.6: `classes` joins the list, so a homebrew class and its pages travel with the character
+    // the same way its ancestry and its domain cards do.
+    if (libContent) for (const arr of [libContent.ancestries, libContent.communities, libContent.subclasses, libContent.domains, libContent.armor, libContent.inventory, libContent.classes]) for (const c of arr) libById.set(c.id, c);
+    const classPageIds = draft.customClassId
+      ? (libContent?.classes ?? []).filter((c) => c.classSpec?.role === 'page' && classKeyOf(c.className) === chosenClassKey).map((c) => c.id)
+      : [];
+    const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, draft.customClassId, ...classPageIds, ...draft.domainCardIds, ...draft.inventoryLibIds].filter((x): x is string => !!x);
     const libraryCards = [...new Set(pickedIds)].map((pid) => libById.get(pid)).filter((c): c is LibraryCard => !!c);
     // v0.10.5: a custom subclass FOUNDATION drags its specialization + mastery siblings along (same family
     // + class) so the subclass-upgrade advancement can add them on level-up. They stay hidden on the sheet
@@ -1316,6 +1386,9 @@ export function CreateScreen() {
       name: draft.name.trim(),
       portraitUri: draft.portraitUri,
       className: draft.className,
+      // v0.42.6: the homebrew class this character is playing. Its card is embedded with every other
+      // library card below, so the character keeps its class even if the pack is later deleted.
+      ...(draft.customClassId ? { customClassId: draft.customClassId } : {}),
       subclassCardId: draft.subclassCardId!,
       // #265: mixed ancestry — `first` is the primary ancestry (drives the name), `second` rides along as
       // an acquired card; both carry their cross-out + half-applied modifiers via `mixedAncestry`.
@@ -1553,13 +1626,21 @@ export function CreateScreen() {
     setEditingExperience(null);
   }, [draft.experiences, set]);
 
+  /**
+   * v0.42.6 (owner): the picture is POSITIONED before it is kept.
+   *
+   * "On both web and native i want when I upload a portrait I wish to be able to reposition / zoom /
+   * crop the image that I upload."
+   *
+   * The picker's own `allowsEditing` was turned off in #155 because its native crop box is square on
+   * Android and cannot be told otherwise. `components/image-cropper` is the app's own, the same on
+   * both platforms, and cropped to the portrait's real 3:4.
+   */
+  const [croppingPortrait, setCroppingPortrait] = useState<string | null>(null);
   const pickPortrait = useCallback(async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead
-    // v0.26.0: copy it somewhere the app owns first. The picker returns a path into the CACHE
-    // directory, which an app update is free to clear, and that is exactly why portraits kept
-    // disappearing from the roster after an update while the character file itself was fine.
-    if (!res.canceled && res.assets[0]) set({ portraitUri: await ownImage(res.assets[0].uri) });
-  }, [set]);
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
+    if (!res.canceled && res.assets[0]) setCroppingPortrait(res.assets[0].uri);
+  }, []);
 
   /** Read by the two skip paths, which must never land the DM on a step they cannot open. */
   const lockedRef = useRef<(k: DeckKey) => boolean>(() => false);
@@ -2178,6 +2259,17 @@ export function CreateScreen() {
       {/* v0.12.2: the per-character expansion picker — shown once the entry loader clears and the installed
           expansions are known. Base defaults checked (plus any expansion enabled-for-creation); confirming
           finalizes `picked`, which gates every content list above. */}
+      {/* v0.42.6: position it, then own it. `ownImage` copies out of the picker's cache directory,
+          which an app update is free to clear (v0.26.0), so it runs on the CROPPED file. */}
+      {croppingPortrait ? (
+        <ImageCropper
+          uri={croppingPortrait}
+          aspect={3 / 4}
+          title="Position your portrait"
+          onCancel={() => setCroppingPortrait(null)}
+          onDone={(r) => { setCroppingPortrait(null); void ownImage(r.uri).then((uri) => set({ portraitUri: uri })); }}
+        />
+      ) : null}
       {pickerOpen && expansions && !loaderUp ? (
         <ExpansionPicker
           expansions={expansions}

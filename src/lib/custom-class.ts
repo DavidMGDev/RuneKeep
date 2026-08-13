@@ -98,7 +98,7 @@ export const classPageCount = (spec: CustomClassSpec | undefined, featureCards =
  * Phrased as things to do rather than as errors, because the author is mid-authoring and a list of
  * failures reads as a telling-off. Empty means it is complete.
  */
-export function classProblems(card: LibraryCard, attached?: { features: number; subclasses: number }): string[] {
+export function classProblems(card: LibraryCard, attached?: { features: number; subclasses: number; pages?: number }): string[] {
   const out: string[] = [];
   const spec = card.classSpec;
   if (!card.title.trim()) out.push('give the class a name');
@@ -122,8 +122,21 @@ export function classProblems(card: LibraryCard, attached?: { features: number; 
    * what is embedded in it. A class authored in v0.42.0 still carries its own list, and that counts
    * too, so nobody's half-finished class breaks on update.
    */
-  const features = (attached?.features ?? 0) + (spec.features?.length ?? 0);
-  if (features < 1) out.push('write at least one feature card and link it to this class');
+  /**
+   * A PAGE, not a feature card (v0.42.6, owner).
+   *
+   * "Custom class card creation should not mandate the user to create a feature card for new classes,
+   * only at least one additional page to the new class. A feature card is for advanced features,
+   * different than the details of the class card's pages."
+   *
+   * Exactly right, and the old rule was a category error: a class's abilities are its PAGES, the way
+   * a published class's are, and a Feature card is the optional extra for something with a control on
+   * it. So a class owes a page. A class authored before this that carries its own feature list, or
+   * that has a feature card pointing at it, still counts, because it is finished by the old rule and
+   * nobody's pack should stop being shareable.
+   */
+  const pages = (attached?.pages ?? 0) + (attached?.features ?? 0) + (spec.features?.length ?? 0);
+  if (pages < 1) out.push('add at least one more page to this class, with its abilities on it');
   if (spec.features?.some((f) => !f.name.trim() || !f.text.trim())) out.push('finish every class feature');
   if (spec.domains.filter((d) => d.trim()).length < 2) out.push('choose the two domains it grants');
   // Starting items: one that everyone gets, and two choices to make (owner).
@@ -162,6 +175,8 @@ export function expansionClassProblems(exp: Pick<Expansion, 'cards'>): string[] 
       // still counts, because that is what an author had to do before the type existed.
       features: linked.filter((x) => x.contentType === 'feature' || (x.contentType === 'generic' && x.classRole === 'feature')).length,
       subclasses: linked.filter((x) => x.contentType === 'subclass').length,
+      // v0.42.6: the class's own further PAGES, which is what a class actually owes.
+      pages: linked.filter((x) => x.contentType === 'class' && x.classSpec?.role === 'page').length,
     };
     for (const p of classProblems(c, attached)) out.push(`${name}: ${p}`);
   }

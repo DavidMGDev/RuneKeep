@@ -53,6 +53,7 @@ import { SortPanel } from './sort-panel';
 import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 import { CategoryIconSvg } from './category-icons';
 import { type Expansion, type LibraryCard } from '@/lib/library';
+import { ImageCropper } from '@/components/image-cropper';
 import { advancedFunctions, advancedStates } from '@/lib/card-advances';
 import { functionVars, functionVarValues } from '@/lib/function-vars';
 import type { CardAdvance, CardFunction } from '@/lib/card-functions';
@@ -1600,11 +1601,22 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     setCharacter((c) => ({ ...c, portraitTransform: t }));
     mutateFile({ portraitTransform: t });
   }, [mutateFile]);
+  /**
+   * v0.42.6 (owner): positioned on the way in, like every other portrait.
+   *
+   * The sheet's portrait ALSO has its own drag-and-pinch inside its mask, which stays: that is for
+   * nudging a picture you already chose. This is for the moment of choosing, and it crops, so the
+   * file itself is the right shape everywhere the roster and the DM's cast draw it.
+   */
+  const [croppingPortrait, setCroppingPortrait] = useState<string | null>(null);
   const onPortraitReplace = useCallback(async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
     if (res.canceled || !res.assets[0]) return;
+    setCroppingPortrait(res.assets[0].uri);
+  }, []);
+  const applyPortrait = useCallback(async (uri: string) => {
     // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
-    const portraitUri = await ownImage(res.assets[0].uri);
+    const portraitUri = await ownImage(uri);
     const reset = { scale: 1, x: 0, y: 0 };
     setCharacter((c) => ({ ...c, portraitUri, portraitTransform: reset }));
     mutateFile({ portraitUri, portraitTransform: reset });
@@ -2919,6 +2931,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             * panel has been doing this since v0.39 for the same reason.
             */}
           <OverlayHost>
+            {/* v0.42.6: position an uploaded portrait before it is kept. At the editor's root, so it
+                covers the sheet rather than being laid out inside it. */}
+            {croppingPortrait ? (
+              <ImageCropper
+                uri={croppingPortrait}
+                aspect={148 / 222}
+                title="Position your portrait"
+                onCancel={() => setCroppingPortrait(null)}
+                onDone={(r) => { setCroppingPortrait(null); void applyPortrait(r.uri); }}
+              />
+            ) : null}
           <View
             style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}
             onLayout={(e) => setStageBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>

@@ -53,6 +53,8 @@ import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
 import { advancedFunctions } from '@/lib/card-advances';
+import { classTitles, withoutClassPages } from '@/lib/custom-class-pages';
+import { finishTour, shouldShow } from '@/lib/onboarding-store';
 import { functionVars } from '@/lib/function-vars';
 import { afterShare, nextShareVersion } from '@/lib/pack-version';
 import { canSharePack, shareReport } from '@/lib/share-report';
@@ -235,7 +237,7 @@ const DOMAIN_CARD_TYPES = ['Ability', 'Spell', 'Grimoire'] as const;
 
 /** The per-type mechanical/config fields shown inside the card editor (its `extraField`). The content
  *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
-function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
+function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCard }: {
   config: CardConfig;
   onChange: (c: CardConfig) => void;
   /** The card being edited, for the class report. */
@@ -244,6 +246,8 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
   siblings: LibraryCard[];
   /** v0.42.3: open the card browser to pick starting items for one of a class's three lists. */
   onPickItems: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
+  /** v0.42.6: open another card of this pack, for the class's report of its own pages. */
+  onOpenCard: (id: string) => void;
 }) {
   const set = (patch: Partial<CardConfig>) => onChange({ ...config, ...patch });
   /**
@@ -391,6 +395,7 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
           // expansion's own gear. See `lib/item-title`.
           itemTitle={(id) => itemTitleFor(id, siblings)}
           onPickItems={onPickItems}
+          onOpenCard={onOpenCard}
           onClassName={(className) => set({ className })}
           onChange={(classSpec) => set({ classSpec })}
         />
@@ -650,6 +655,10 @@ export function LibraryScreen() {
   const [reportFor, setReportFor] = useState<LibraryCard[] | null>(null);
   /** v0.42.4: the class-card question, asked before the editor opens. */
   const [askingClassRole, setAskingClassRole] = useState(false);
+  /** v0.42.6: and then, for a page, which class it belongs to. Asked before the editor, not inside it. */
+  const [askingParentClass, setAskingParentClass] = useState(false);
+  /** Bumped when the class-card explanation is dismissed, so this screen re-reads that it is done. */
+  const [, setTourNonce] = useState(0);
   /** v0.42.3: which of a class's three starting-item lists the card browser is filling. */
   const [pickingItems, setPickingItems] = useState<'fixed' | 'choiceA' | 'choiceB' | null>(null);
   /** v0.42.3: which element row is open in the editor, and the live state of the preview's controls. */
@@ -788,6 +797,13 @@ export function LibraryScreen() {
      * a picture cannot be pressed, and the elements are the entire reason the card exists.
      */
     const isFeature = cfg.contentType === 'feature' || (cfg.functions ?? []).length > 0;
+    /** v0.42.6: open another card of this pack by id, from a report that names it. */
+    const openCardById = (cardId: string) => {
+      const i = selected.cards.findIndex((x) => x.id === cardId);
+      const c = selected.cards[i];
+      if (!c) return;
+      setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } });
+    };
     /** Which ids one of the three starting-item lists is holding. */
     const itemIdsFor = (spec: CustomClassSpec | undefined, which: 'fixed' | 'choiceA' | 'choiceB'): string[] =>
       (which === 'fixed' ? spec?.fixedItemIds : which === 'choiceA' ? spec?.choiceAItemIds : spec?.choiceBItemIds) ?? [];
@@ -909,6 +925,7 @@ export function LibraryScreen() {
             card={existing ?? { id: 'new', contentType: cfg.contentType, title: '', text: '', imageUri: null }}
             siblings={selected.cards.filter((c) => c.id !== existing?.id)}
             onPickItems={setPickingItems}
+            onOpenCard={openCardById}
             onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))}
           />
         }
@@ -1096,8 +1113,10 @@ export function LibraryScreen() {
           </View>
 
           {/* v0.42.3 (owner): the cards, drawn as cards. See `expansion-gallery-view`. */}
+          {/* v0.42.6 (owner): a class and its pages are ONE card, so the pages are not listed beside
+              it. Editing one is tapping the class and turning to its page. */}
           <ExpansionGallery
-            cards={selected.cards}
+            cards={withoutClassPages(selected.cards)}
             dm={dm}
             actions={{
               onEdit: (c) =>
@@ -1194,6 +1213,39 @@ export function LibraryScreen() {
                 </Text>
               </View>
 
+              {/**
+                * THE THREE KINDS OF CARD A CLASS IS MADE OF (v0.42.6, owner).
+                *
+                * "Try to have good (non-animated) onboarding for the first time a DM opens the class
+                * card creation pop-up... it must clear up the dynamic of class cards, class card pages
+                * and feature cards."
+                *
+                * Shown the FIRST time only, and brought back by the `?` on the main menu like every
+                * other tour. It is here rather than in a tour of its own because this is the moment the
+                * question is actually being asked, and an explanation somewhere else is an explanation
+                * nobody reads.
+                */}
+              {shouldShow('classcards') ? (
+                <ChamferBox chamfer={9} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ padding: 11, gap: 7 }}>
+                  <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.9, textTransform: 'uppercase' }}>How a class is put together</Text>
+                  <Text style={{ color: Rune.sheet, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
+                    <Text style={{ fontFamily: Body.bold }}>A class card</Text> starts a class. It carries the numbers, the two domains and the
+                    starting items, and it is what a player picks at character creation. It has to be finished before the pack can be shared.
+                  </Text>
+                  <Text style={{ color: Rune.sheet, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
+                    <Text style={{ fontFamily: Body.bold }}>Class pages</Text> are the rest of that same card: its abilities, its Hope feature, anything
+                    else it needs to say. They take the class&apos;s name, colour and art automatically, and they join it as pages you flip through. A
+                    class needs at least one.
+                  </Text>
+                  <Text style={{ color: Rune.sheet, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
+                    <Text style={{ fontFamily: Body.bold }}>Feature cards</Text> are optional and separate. They never appear among the class&apos;s pages;
+                    they land in the player&apos;s arsenal as cards of their own, and they are the only kind that carries counters, dice, switches and
+                    level advancements. Reach for one when an ability needs something the player presses.
+                  </Text>
+                  <RuneButton dm={dm} label="Got it" kind="ghost" dense height={32} onPress={() => { playSfx('buttonTap'); finishTour('classcards'); setTourNonce((n) => n + 1); }} />
+                </ChamferBox>
+              ) : null}
+
               <Pressable
                 onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setEditingCard({ index: 'new', config: { contentType: 'class', classSpec: { ...EMPTY_CLASS_SPEC, role: 'base' } } }); }}
                 accessibilityRole="button"
@@ -1208,7 +1260,7 @@ export function LibraryScreen() {
               </Pressable>
 
               <Pressable
-                onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setEditingCard({ index: 'new', config: { contentType: 'class', classSpec: { ...EMPTY_CLASS_SPEC, role: 'page' } } }); }}
+                onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setAskingParentClass(true); }}
                 accessibilityRole="button"
                 accessibilityLabel="Another page of a class">
                 <ChamferBox chamfer={9} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 12, gap: 5 }}>
@@ -1238,6 +1290,64 @@ export function LibraryScreen() {
             onShare={() => { const cards = reportFor; setReportFor(null); doShare(cards); }}
             onClose={() => setReportFor(null)}
           />
+        ) : null}
+        {/**
+          * WHICH CLASS IS THIS A PAGE OF (v0.42.6, owner)?
+          *
+          * "Instead of asking what class it corresponds to INSIDE the card dialogue, I want a pop-up
+          * BEFORE the card creation dialogue after the user selected that it is a class card page, so
+          * a pop-up after the class card pop-up, which asks what class it belongs to, to inherit its
+          * title, styling and everything."
+          *
+          * It has to be first because everything about the card follows from it: a page takes its
+          * class's name, its colour and its art, and an author who answered it four fields in had
+          * already been asked for things the class was going to supply.
+          */}
+        {askingParentClass ? (
+          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
+            <DimScreen opacity={0.9} />
+            <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 336, maxHeight: 560, paddingHorizontal: 16, paddingVertical: 16, gap: Gap.group }}>
+              <View style={{ gap: Gap.hair }}>
+                <Text style={{ color: Rune.goldText, fontSize: 17, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>A page of which class?</Text>
+                <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
+                  The page takes that class&apos;s name, colour and art, and joins its card as the next page. Only its text is its own.
+                </Text>
+              </View>
+              <ScrollView showsVerticalScrollIndicator contentContainerStyle={{ gap: Gap.tightRow, paddingBottom: 2 }}>
+                {classTitles(selected.cards).length === 0 ? (
+                  <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.italic, lineHeight: 16 }}>
+                    There is no class in this pack yet. Make one first, then come back and add pages to it.
+                  </Text>
+                ) : null}
+                {classTitles(selected.cards).map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => { playSfx('buttonTap'); setAskingParentClass(false); setEditingCard({ index: 'new', config: { contentType: 'class', className: t, classSpec: { ...EMPTY_CLASS_SPEC, role: 'page' } } }); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`A page of ${t}`}>
+                    <ChamferBox chamfer={8} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.1} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 12 }}>
+                      <Text style={{ color: Rune.ivory, fontSize: 14, fontFamily: Body.bold }}>{t}</Text>
+                    </ChamferBox>
+                  </Pressable>
+                ))}
+                {/* A page for a PUBLISHED class, which is how somebody adds their own to a Bard. */}
+                <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 6 }}>Base game classes</Text>
+                {BUILTIN_CLASSES.map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => { playSfx('buttonTap'); setAskingParentClass(false); setEditingCard({ index: 'new', config: { contentType: 'class', className: t, classSpec: { ...EMPTY_CLASS_SPEC, role: 'page' } } }); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`A page of ${t}`}>
+                    <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12 }}>
+                      <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.semibold }}>{t}</Text>
+                    </ChamferBox>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <RuneButton dm={dm} label="Cancel" kind="ghost" height={40} onPress={() => setAskingParentClass(false)} />
+            </ChamferBox>
+          </View>
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
         {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
