@@ -22,7 +22,14 @@
  * and otherwise defers.
  */
 
-export type FunctionKind = 'counter' | 'text' | 'cycle';
+/**
+ * v0.42.5 (owner): `dice` is the fourth kind. A card that carries dice and rolls them, the way the
+ * character sheet's tray does. See `lib/card-dice` for what it holds and `card-dice-control` for how
+ * it behaves.
+ */
+import { type DiceRollMode, type DieSpec, withGrantedDice } from './card-dice';
+
+export type FunctionKind = 'counter' | 'text' | 'cycle' | 'dice';
 
 /**
  * Where the element sits relative to the card's body.
@@ -119,6 +126,19 @@ export interface CardFunction {
    */
   startText?: string;
 
+  // --- dice (v0.42.5) ---
+  /**
+   * The dice this element holds, each with a count and optionally a variable multiplying it.
+   *
+   * "If I set the default dice to just a d6 but I make it so that it is multiplied by a variable, say
+   * proficiency, then by tier two this section will have two d6 instead of just one." See `DieSpec`.
+   */
+  dice?: DieSpec[];
+  /** Add every result together and show the total, the way the tray does. */
+  diceTally?: boolean;
+  /** Tap the dice to roll them, or press a button under them. */
+  diceRollMode?: DiceRollMode;
+
   // --- cycle ---
   /** The states the button walks through, in order. */
   options?: string[];
@@ -191,6 +211,16 @@ export function advanceAt(a: CardAdvance, tier: number): { label: string; effect
 }
 
 export type AdvanceEffect =
+  /**
+   * v0.42.5 (owner): GRANT DICE to a dice element.
+   *
+   * "The level-advancements must allow me to add a list of dice gained upon level-advancement, so if
+   * I want then a level advancement can grant me a d4 a d6 and a d8 for this function section, they
+   * all get rolled together."
+   *
+   * Additive, and additive per TAKE: taking it twice grants twice, which is what twice-per-tier means.
+   */
+  | { kind: 'dice'; add: DieSpec[] }
   /** A counter's value, floor and ceiling all move by this much. "Your die goes up one step." */
   | { kind: 'step'; by: number }
   /** A counter is set to this, or a text field / cycle is set to this option. */
@@ -218,11 +248,13 @@ export function newFunction(id: string, kind: FunctionKind): CardFunction {
   const base = { id, kind, title: DEFAULT_TITLE[kind] };
   if (kind === 'counter') return { ...base, start: 0, max: undefined, countdown: false };
   if (kind === 'text') return { ...base, lines: 1, placeholder: '' };
+  // v0.42.5: one die, tapped to roll, no tally. The Brawler's Combo Die is exactly this.
+  if (kind === 'dice') return { ...base, dice: [{ id: 'die-1', type: 'd6' }], diceRollMode: 'tap', diceTally: false };
   return { ...base, options: ['Off', 'On'], startIndex: 0 };
 }
 
 /** What a brand new element is called before the author names it. */
-const DEFAULT_TITLE: Record<FunctionKind, string> = { counter: 'Counter', text: 'Notes', cycle: 'State' };
+const DEFAULT_TITLE: Record<FunctionKind, string> = { counter: 'Counter', text: 'Notes', cycle: 'State', dice: 'Dice' };
 
 /**
  * The state a function has before anyone has touched it.
@@ -296,7 +328,9 @@ export const setTextValue = (s: string): FunctionState => ({ s });
  * a new ceiling and a new current value, and leaving the value behind would show a d4's number under
  * a d6's label. An advancement that unlocks simply opens the element and leaves the number alone.
  */
-export function applyAdvance(f: CardFunction, state: FunctionState, effect: AdvanceEffect): { fn: CardFunction; state: FunctionState } {
+export function applyAdvance(f: CardFunction, state: FunctionState, effect: AdvanceEffect, takeId = 't'): { fn: CardFunction; state: FunctionState } {
+  // v0.42.5: dice are GRANTED, never replaced. `takeId` keeps two takes of one advancement apart.
+  if (effect.kind === 'dice') return { fn: { ...f, dice: withGrantedDice(f.dice, effect.add, takeId) }, state: stateOf(f, state) };
   if (effect.kind === 'unlock') return { fn: { ...f, locked: false, hidden: false }, state: stateOf(f, state) };
   if (effect.kind === 'set') {
     if (f.kind === 'counter') { const fn = { ...f, start: effect.value }; return { fn, state: { n: clampCounter(fn, effect.value) } }; }
@@ -341,6 +375,7 @@ export function functionSummary(f: CardFunction): string {
     return (f.countdown ? `Countdown, ${range}${f.loop ? ', restarts' : ''}` : `Counter, ${range}`) + lock;
   }
   if (f.kind === 'text') return `Text, ${f.lines && f.lines > 1 ? `${f.lines} lines` : 'one line'}` + lock;
+  if (f.kind === 'dice') return `Dice, ${(f.dice ?? []).map((d) => `${d.count && d.count > 1 ? d.count : ''}${d.type}${d.variable ? ' ×var' : ''}`).join(' + ') || 'none yet'}` + lock;
   return `Cycle, ${(f.options ?? []).length} options` + lock;
 }
 

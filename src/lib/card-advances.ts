@@ -123,6 +123,11 @@ export function advancedStates(
 /** A one-line description of what an advancement does, for the level-up list. */
 export function advanceSummary(o: OfferedAdvance): string {
   const e = o.advance.effect;
-  const what = e.kind === 'unlock' ? 'unlocks it' : e.kind === 'set' ? `sets it to ${e.text ?? e.value}` : `${e.by > 0 ? '+' : ''}${e.by}`;
+  const what =
+    e.kind === 'unlock' ? 'unlocks it'
+    : e.kind === 'set' ? `sets it to ${e.text ?? e.value}`
+    // v0.42.5: a dice advancement GRANTS dice, so it reads as what you gain.
+    : e.kind === 'dice' ? `adds ${e.add.map((d) => `${d.count && d.count > 1 ? d.count : ''}${d.type}`).join(' + ') || 'dice'}`
+    : `${e.by > 0 ? '+' : ''}${e.by}`;
   return `${o.cardTitle}: ${what}`;
 }

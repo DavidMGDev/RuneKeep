@@ -19,18 +19,24 @@ import { type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
-import { CounterField, EntryList, FormSection, SelectRow, SwitchRow, TextField } from '@/components/form-controls';
+import { CounterField, EntryList, Field, FormSection, SelectRow, SwitchRow, TextField } from '@/components/form-controls';
 import { Body, Gap, Rune } from '@/constants/theme';
 import { type AdvanceEffect, type CardAdvance, type CardFunction, type FunctionKind, newFunction } from '@/lib/card-functions';
+import { RuneButton } from '@/components/rune-button';
+import { type DieSpec, specCount, specSummary } from '@/lib/card-dice';
+import type { DieType } from '@/features/character-sheet/components/card-tokens-data';
+import type { EffectFormula } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
 
 const KINDS: { value: FunctionKind; label: string }[] = [
   { value: 'counter', label: 'A number' },
+  { value: 'dice', label: 'Dice' },
   { value: 'cycle', label: 'A switch' },
   { value: 'text', label: 'Something to write' },
 ];
 
 const KIND_HINT: Record<FunctionKind, string> = {
+  dice: 'Dice the player rolls on the card, the way the dice tray rolls them. One die, or a handful that a level advancement grows.',
   counter: 'A count the player raises and lowers. Charges, uses, a die size, a tally.',
   cycle: 'A button that walks through a list of states. A stance, a mode, a die that steps up.',
   text: 'A line or a paragraph the player writes on and can change whenever they like.',
@@ -40,10 +46,109 @@ const KIND_HINT: Record<FunctionKind, string> = {
 const COUNT_MIN = -50;
 const COUNT_MAX = 99;
 
-export function FunctionEditor({ fn, advance, onChange, onAdvance }: {
+
+/** The dice an author may reach for. `duality` is the sheet's own pair and is not one of these. */
+const DICE: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
+
+/**
+ * The variables a die's count may be multiplied by (v0.42.5, owner).
+ *
+ * A short list on purpose. "One die per Proficiency" and "one per Agility" are the cases the owner
+ * gave, and a picker offering thirty variables to multiply a die count by would be a picker nobody
+ * reads. Everything here is a small number that grows with the character, which is what a count wants.
+ */
+const COUNT_VARS: { value: EffectFormula['variable']; label: string }[] = [
+  { value: 'proficiency', label: 'Proficiency' },
+  { value: 'tier', label: 'Tier' },
+  { value: 'level', label: 'Level' },
+  { value: 'agility', label: 'Agility' },
+  { value: 'strength', label: 'Strength' },
+  { value: 'finesse', label: 'Finesse' },
+  { value: 'instinct', label: 'Instinct' },
+  { value: 'presence', label: 'Presence' },
+  { value: 'knowledge', label: 'Knowledge' },
+];
+
+const varLabel = (v: EffectFormula['variable'] | undefined) => COUNT_VARS.find((x) => x.value === v)?.label;
+
+/**
+ * The character an author's PREVIEW stands in for (v0.42.5).
+ *
+ * An author has no character, so "one d6 per Proficiency" has nothing to resolve against and would
+ * draw either nothing or one die, neither of which is what the card will look like. This is an
+ * ordinary tier 2 hero: Proficiency 2, a couple of points in a trait. It is stated on screen so the
+ * number under each die is read as "for this character" rather than as the truth.
+ */
+const PREVIEW_VARS: Partial<Record<string, number>> = {
+  proficiency: 2, tier: 2, level: 4,
+  agility: 2, strength: 1, finesse: 1, instinct: 1, presence: 1, knowledge: 1,
+};
+const previewVariable = (v: EffectFormula['variable']): number => PREVIEW_VARS[String(v)] ?? 1;
+
+/**
+ * ONE die entry, edited (v0.42.5).
+ *
+ * Read as a sentence: how many, of what, times what. The multiplier is behind a switch because most
+ * dice do not have one, and a row that always showed a variable picker would make the simple case
+ * look complicated.
+ */
+function DieRow({ die, index, count, onChange, onRemove, onMove }: {
+  die: DieSpec;
+  index: number;
+  /** How many this comes to for a character with the preview's numbers, so the author can see it. */
+  count: number;
+  onChange: (d: DieSpec) => void;
+  onRemove: () => void;
+  onMove: (dir: -1 | 1) => void;
+}) {
+  return (
+    <ChamferBox chamfer={7} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.32)" strokeWidth={1.1} style={{ padding: 10, gap: Gap.intra }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ flex: 1, color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>
+          {specSummary(die, varLabel(die.variable))}
+          <Text style={{ color: Rune.muted }}>{`  ·  ${count} right now`}</Text>
+        </Text>
+        <Pressable onPress={() => onMove(-1)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Move die ${index + 1} up`}>
+          <Text style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold }}>↑</Text>
+        </Pressable>
+        <Pressable onPress={() => onMove(1)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Move die ${index + 1} down`}>
+          <Text style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold }}>↓</Text>
+        </Pressable>
+        <Pressable onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove die ${index + 1}`}>
+          <Text style={{ color: '#E2705A', fontSize: 14, fontFamily: Body.bold }}>✕</Text>
+        </Pressable>
+      </View>
+      <SelectRow label="Which die" value={die.type} options={DICE.map((t) => ({ value: t, label: t }))} onChange={(type) => onChange({ ...die, type })} />
+      <CounterField label="How many" value={die.count ?? 1} min={1} max={12} onChange={(n) => onChange({ ...die, count: n })} />
+      <SwitchRow
+        label="Multiply that by a variable"
+        hint="One die per Proficiency, one per Agility. The count grows with the character instead of being written for one tier."
+        on={!!die.variable}
+        onToggle={() => onChange({ ...die, variable: die.variable ? undefined : 'proficiency' })}>
+        <SelectRow value={die.variable} options={COUNT_VARS} onChange={(variable) => onChange({ ...die, variable })} />
+      </SwitchRow>
+    </ChamferBox>
+  );
+}
+
+export function FunctionEditor({ fn, advance, previewTier, onPreviewTier, onChange, onAdvance }: {
   fn: CardFunction;
   /** The level advancement this element offers, if it offers one. */
   advance: CardAdvance | undefined;
+  /**
+   * v0.42.5 (owner): which tier the CARD PREVIEW at the top is showing.
+   *
+   * "Add a preview button for the level-advancement menu which allows toggling the preview of the
+   * default version of this feature card, and any further advancement to see what the further
+   * level-advancement changes will look like, this way if I only have one dice when I am tier 1, when
+   * I am tier 2 I can advance to having 3 different dice."
+   *
+   * `null` is the card as written. A tier means "as it would be having taken this advancement at that
+   * tier", applied to the real card at the top rather than drawn as a second little copy down here,
+   * for the same reason the element itself is not previewed in this panel.
+   */
+  previewTier: number | null;
+  onPreviewTier: (t: number | null) => void;
   onChange: (f: CardFunction) => void;
   onAdvance: (a: CardAdvance | undefined) => void;
 }) {
@@ -98,6 +203,48 @@ export function FunctionEditor({ fn, advance, onChange, onAdvance }: {
             onChange={(options) => set({ options })}
           />
           <CounterField label="Starts on" suffix={(fn.options ?? [])[fn.startIndex ?? 0] ?? ''} value={(fn.startIndex ?? 0) + 1} min={1} max={Math.max(1, (fn.options ?? []).length)} onChange={(n) => set({ startIndex: n - 1 })} />
+        </View>
+      ) : null}
+
+      {fn.kind === 'dice' ? (
+        <View style={{ gap: Gap.intra }}>
+          {(fn.dice ?? []).map((d, i) => (
+            <DieRow
+              key={d.id}
+              die={d}
+              index={i}
+              count={specCount(d, previewVariable)}
+              onChange={(next) => set({ dice: (fn.dice ?? []).map((x) => (x.id === d.id ? next : x)) })}
+              onRemove={() => set({ dice: (fn.dice ?? []).filter((x) => x.id !== d.id) })}
+              onMove={(dir) => {
+                const list = [...(fn.dice ?? [])];
+                const to = i + dir;
+                if (to < 0 || to >= list.length) return;
+                [list[i], list[to]] = [list[to], list[i]];
+                set({ dice: list });
+              }}
+            />
+          ))}
+          <RuneButton
+            label="+ Add a die"
+            kind="ghost"
+            dense
+            height={34}
+            onPress={() => set({ dice: [...(fn.dice ?? []), { id: `die-${Date.now().toString(36)}`, type: 'd6' }] })}
+          />
+          <SwitchRow
+            label="Add the results up"
+            hint="The same tally the dice tray shows: every die's result added together, once they have all landed."
+            on={!!fn.diceTally}
+            onToggle={() => set({ diceTally: !fn.diceTally })}
+          />
+          <SelectRow
+            label="How it is rolled"
+            hint="Tapping the dice is quickest. A button is clearer on a card where something else is already tappable."
+            value={fn.diceRollMode ?? 'tap'}
+            options={[{ value: 'tap', label: 'Tap the dice' }, { value: 'button', label: 'A Roll button' }]}
+            onChange={(diceRollMode) => set({ diceRollMode })}
+          />
         </View>
       ) : null}
 
@@ -160,7 +307,7 @@ export function FunctionEditor({ fn, advance, onChange, onAdvance }: {
         />
       </FormSection>
 
-      <AdvanceEditor fn={fn} advance={advance} onAdvance={onAdvance} />
+      <AdvanceEditor fn={fn} advance={advance} previewTier={previewTier} onPreviewTier={onPreviewTier} onAdvance={onAdvance} />
     </View>
   );
 }
@@ -178,7 +325,13 @@ const TIERS: (2 | 3 | 4)[] = [2, 3, 4];
  * when the author says so, and breaking one out starts from the shared setting rather than from blank,
  * so "the same but two steps" is one number rather than a re-authoring.
  */
-function AdvanceEditor({ fn, advance, onAdvance }: { fn: CardFunction; advance: CardAdvance | undefined; onAdvance: (a: CardAdvance | undefined) => void }) {
+function AdvanceEditor({ fn, advance, previewTier, onPreviewTier, onAdvance }: {
+  fn: CardFunction;
+  advance: CardAdvance | undefined;
+  previewTier: number | null;
+  onPreviewTier: (t: number | null) => void;
+  onAdvance: (a: CardAdvance | undefined) => void;
+}) {
   const offeredTiers = advance ? (advance.tiers.length ? advance.tiers : TIERS) : [];
   return (
     <FormSection
@@ -240,6 +393,20 @@ function AdvanceEditor({ fn, advance, onAdvance }: { fn: CardFunction; advance: 
               onChange={(effect) => onAdvance({ ...advance, effect })}
             />
 
+            {/**
+              * SEE IT (v0.42.5, owner). The card at the top of the editor redraws as it would be
+              * having taken this at each tier, so "one die now, three at tier 3" is something you
+              * look at rather than something you imagine.
+              */}
+            <Field label="Show it on the card above" hint="The preview at the top, as it would be after taking this. It changes nothing about the card.">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: Gap.tightRow }}>
+                <TierChip label="As written" on={previewTier == null} onPress={() => onPreviewTier(null)} />
+                {offeredTiers.map((t) => (
+                  <TierChip key={t} label={`After tier ${t}`} on={previewTier === t} onPress={() => onPreviewTier(previewTier === t ? null : t)} />
+                ))}
+              </View>
+            </Field>
+
             {/* The per-tier overrides. Each tier this is offered at gets one line, and that line stays
                 a single switch until the author actually wants that tier to differ. */}
             <View style={{ gap: Gap.intra }}>
@@ -297,12 +464,45 @@ function EffectFields({ label, hint, fn, effect, onChange }: { label: string; hi
         hint={hint}
         value={effect.kind}
         options={[
-          ...(fn.kind !== 'text' ? [{ value: 'step' as const, label: fn.kind === 'cycle' ? 'Moves it along' : 'Moves the number' }] : []),
-          { value: 'set' as const, label: 'Sets it' },
+          // v0.42.5: a DICE element grows by being given dice, which is the only thing that makes
+          // sense for it, so it is the only effect it offers besides unlocking.
+          ...(fn.kind === 'dice' ? [{ value: 'dice' as const, label: 'Grants dice' }] : []),
+          ...(fn.kind !== 'text' && fn.kind !== 'dice' ? [{ value: 'step' as const, label: fn.kind === 'cycle' ? 'Moves it along' : 'Moves the number' }] : []),
+          ...(fn.kind !== 'dice' ? [{ value: 'set' as const, label: 'Sets it' }] : []),
           { value: 'unlock' as const, label: 'Unlocks it' },
         ]}
-        onChange={(kind) => onChange(kind === 'step' ? { kind: 'step', by: 1 } : kind === 'set' ? { kind: 'set', value: 0 } : { kind: 'unlock' })}
+        onChange={(kind) =>
+          onChange(
+            kind === 'dice' ? { kind: 'dice', add: [{ id: `g-${Date.now().toString(36)}`, type: 'd6' }] }
+            : kind === 'step' ? { kind: 'step', by: 1 }
+            : kind === 'set' ? { kind: 'set', value: 0 }
+            : { kind: 'unlock' },
+          )
+        }
       />
+      {/* The dice this advancement HANDS OVER. A list, because "a d4 and a d6 and a d8" is the
+          owner's own example and one die would have been a poorer feature. */}
+      {effect.kind === 'dice' ? (
+        <View style={{ gap: Gap.tightRow }}>
+          {effect.add.map((d, i) => (
+            <View key={d.id} style={{ flexDirection: 'row', alignItems: 'center', gap: Gap.tightRow }}>
+              <View style={{ flex: 1 }}>
+                <SelectRow value={d.type} options={DICE.map((t) => ({ value: t, label: t }))} onChange={(type) => onChange({ kind: 'dice', add: effect.add.map((x) => (x.id === d.id ? { ...x, type } : x)) })} />
+              </View>
+              <Pressable onPress={() => onChange({ kind: 'dice', add: effect.add.filter((x) => x.id !== d.id) })} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove granted die ${i + 1}`}>
+                <Text style={{ color: '#E2705A', fontSize: 14, fontFamily: Body.bold }}>✕</Text>
+              </Pressable>
+            </View>
+          ))}
+          <RuneButton
+            label="+ Grant another die"
+            kind="ghost"
+            dense
+            height={32}
+            onPress={() => onChange({ kind: 'dice', add: [...effect.add, { id: `g-${Date.now().toString(36)}`, type: 'd6' }] })}
+          />
+        </View>
+      ) : null}
       {effect.kind === 'step' ? (
         <CounterField
           label={fn.kind === 'cycle' ? 'How many states along' : 'By how much'}

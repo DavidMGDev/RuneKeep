@@ -15,7 +15,10 @@ import Svg, { Line } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, Rune } from '@/constants/theme';
+import { CardDiceControl } from '@/components/card-dice-control';
+import { resolveDice } from '@/lib/card-dice';
 import { type CardFunction, type FunctionState, canStepFunction, cycleFunction, cycleLabel, setTextValue, stateOf, stepFunction } from '@/lib/card-functions';
+import type { EffectFormula } from '@/lib/modifiers';
 import { playSfx } from '@/lib/sfx';
 
 const GOLD_EDGE = 'rgba(218,162,73,0.5)';
@@ -50,13 +53,24 @@ export function functionHeight(fn: CardFunction): number {
   if (fn.hidden) return 0;
   const s = SIZES[fn.size ?? 'medium'];
   const titleH = fn.titleHidden ? 0 : s.title + 4;
-  const controlH = fn.kind === 'text' ? 8 + Math.max(1, fn.lines ?? 1) * s.line : fn.kind === 'cycle' ? s.cycleH : s.step;
+  const controlH =
+    fn.kind === 'text' ? 8 + Math.max(1, fn.lines ?? 1) * s.line
+    // v0.42.5: dice take a grid, plus the tally line and the roll button when they are asked for.
+    : fn.kind === 'dice' ? 46 + (fn.diceTally ? 18 : 0) + (fn.diceRollMode === 'button' ? 32 : 0)
+    : fn.kind === 'cycle' ? s.cycleH
+    : s.step;
   return titleH + controlH + s.gap + 4;
 }
 
-export function CardFunctionControl({ fn, state, onChange, compact }: {
+export function CardFunctionControl({ fn, state, onChange, compact, variableValue }: {
   fn: CardFunction;
   state: FunctionState | undefined;
+  /**
+   * v0.42.5: what a variable resolves to for this character, for a dice element whose count is
+   * multiplied by one. Absent means every variable reads as 1, which is what an author's preview
+   * wants: the card as it is written, before anybody's Proficiency is involved.
+   */
+  variableValue?: (v: EffectFormula['variable'], key?: string) => number;
   /** Absent draws it inert, which is how a card is shown somewhere it cannot be played. */
   onChange?: (next: FunctionState) => void;
   /** Tighter, for a card face rather than a panel. */
@@ -126,6 +140,22 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
             <Text numberOfLines={1} style={{ color: Rune.goldText, fontSize: S.cycleText, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>{cycleLabel(fn, st)}</Text>
           </ChamferBox>
         </Pressable>
+      );
+    }
+    /**
+     * DICE (v0.42.5, owner). What the element holds is resolved by `lib/card-dice` against the
+     * character, which is what makes "a d6 per Proficiency" mean two dice at tier two. The caller
+     * supplies the variable reader, because this component knows nothing about a character.
+     */
+    if (fn.kind === 'dice') {
+      return (
+        <CardDiceControl
+          dice={resolveDice(fn.dice, variableValue ?? (() => 1))}
+          tally={fn.diceTally}
+          rollMode={fn.diceRollMode}
+          size={fn.size}
+          locked={fn.locked}
+        />
       );
     }
     const lines = Math.max(1, fn.lines ?? 1);

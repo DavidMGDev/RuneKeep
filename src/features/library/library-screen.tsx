@@ -52,6 +52,7 @@ import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/l
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
+import { advancedFunctions } from '@/lib/card-advances';
 import { functionVars } from '@/lib/function-vars';
 import { afterShare, nextShareVersion } from '@/lib/pack-version';
 import { canSharePack, shareReport } from '@/lib/share-report';
@@ -643,6 +644,8 @@ export function LibraryScreen() {
   const [movingCards, setMovingCards] = useState<LibraryCard[]>([]);
   /** v0.42.3: the cards a delete is being confirmed for. */
   const [confirmDeleteCards, setConfirmDeleteCards] = useState<LibraryCard[]>([]);
+  /** v0.42.5: which tier the card preview is showing, for the advancement preview (item 7). */
+  const [previewTier, setPreviewTier] = useState<number | null>(null);
   /** v0.42.5: the cards whose share report is on screen. */
   const [reportFor, setReportFor] = useState<LibraryCard[] | null>(null);
   /** v0.42.4: the class-card question, asked before the editor opens. */
@@ -798,7 +801,22 @@ export function LibraryScreen() {
         if (cur.includes(id)) return st;
         return { ...st, config: { ...st.config, classSpec: { ...spec, [key]: [...cur, id] } } };
       });
-    /** The card as it will be saved, so the preview above is the card and not an impression of it. */
+    /**
+     * The card as it will be saved, so the preview above is the card and not an impression of it.
+     *
+     * v0.42.5: and optionally as it would be AFTER an advancement, which is item 7. The takes are
+     * synthetic, one per advancement offered at the chosen tier, folded through the same
+     * `advancedFunctions` the sheet uses, so what the author is shown is what a player at that tier
+     * would actually hold.
+     */
+    const previewFns = (): CardFunction[] | undefined => {
+      if (previewTier == null || !cfg.functions?.length) return cfg.functions;
+      const id = existing?.id ?? 'preview';
+      const takes = (cfg.advances ?? [])
+        .filter((a) => !a.tiers.length || a.tiers.includes(previewTier))
+        .map((a) => ({ key: `${id}|${a.id}`, tier: previewTier }));
+      return advancedFunctions({ id, title: '', functions: cfg.functions, advances: cfg.advances }, takes);
+    };
     const previewCard = (d: CardDraft): LibraryCard => ({
       id: existing?.id ?? 'preview',
       contentType: cfg.contentType,
@@ -808,7 +826,7 @@ export function LibraryScreen() {
       color: d.color,
       typeLabel: cfg.typeLabel ?? d.typeLabel,
       sections: d.sections,
-      functions: cfg.functions,
+      functions: previewFns(),
       domain: cfg.domain,
       level: cfg.level,
       className: cfg.className,
@@ -868,6 +886,8 @@ export function LibraryScreen() {
                   <FunctionEditor
                     fn={fn}
                     advance={(cfg.advances ?? []).find((a) => a.functionId === fn.id)}
+                    previewTier={previewTier}
+                    onPreviewTier={setPreviewTier}
                     onChange={(next) => setEditingCard((st) => (st ? { ...st, config: { ...st.config, functions: (st.config.functions ?? []).map((x) => (x.id === fn.id ? next : x)) } } : st))}
                     onAdvance={(a) =>
                       setEditingCard((st) =>
