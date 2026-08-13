@@ -34,6 +34,15 @@ export interface Draft {
   name: string;
   portraitUri: string | null;
   className: ClassName | null;
+  /**
+   * v0.42.6 (owner): the HOMEBREW class card being played, by library card id.
+   *
+   * `className` stays set alongside it, to a bundled carrier, because every derived number, colour
+   * and banner is keyed on one and a second code path for "no bundled class" would reach into every
+   * screen. This is the authority on the name, the numbers, the domains and the starting items. See
+   * `lib/played-class`.
+   */
+  customClassId?: string | null;
   subclassCardId: string | null;
   ancestryCardId: string | null;
   /** Mixed ancestry (#265): two ancestries — `first` keeps its 1st trait, `second` keeps its 2nd.

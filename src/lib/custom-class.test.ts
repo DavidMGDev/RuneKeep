@@ -74,8 +74,20 @@ describe('classProblems', () => {
     });
   });
 
-  it('reports a class no feature card points at', () => {
-    expect(classProblems(complete(), { features: 0, subclasses: 1 }).some((p) => p.includes('feature card'))).toBe(true);
+  /**
+   * v0.42.6 (owner): a class owes a PAGE, not a feature card. "A feature card is for advanced
+   * features, different than the details of the class card's pages."
+   */
+  it('reports a class with no further page', () => {
+    expect(classProblems(complete(), { features: 0, subclasses: 1, pages: 0 }).some((p) => p.includes('page'))).toBe(true);
+  });
+
+  it('is satisfied by a page, with no feature card anywhere', () => {
+    expect(classProblems(complete(), { features: 0, subclasses: 1, pages: 1 })).toEqual([]);
+  });
+
+  it('still accepts a class finished under the OLD rule, so nobody pack stops being shareable', () => {
+    expect(classProblems(complete(), { features: 1, subclasses: 1, pages: 0 })).toEqual([]);
   });
 
   it('reports a class no subclass points at', () => {
@@ -108,10 +120,10 @@ describe('expansionClassProblems', () => {
     expect(expansionClassProblems({ cards: [card({ contentType: 'domain' })] })).toEqual([]);
   });
 
-  it('demands a subclass and a feature card', () => {
+  it('demands a subclass and a further page', () => {
     const out = expansionClassProblems({ cards: [complete()] });
     expect(out.some((p) => p.includes('subclass'))).toBe(true);
-    expect(out.some((p) => p.includes('feature card'))).toBe(true);
+    expect(out.some((p) => p.includes('page'))).toBe(true);
   });
 
   it('is satisfied by cards pointing at the class by name', () => {

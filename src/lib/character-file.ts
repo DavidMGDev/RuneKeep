@@ -13,6 +13,7 @@ import type { CharacterHistory } from '@/lib/character-history';
 import type { DicePreset } from '@/lib/dice-presets';
 import type { CardAdvance, CardFunction } from '@/lib/card-functions';
 import { functionVars, functionVarValues } from '@/lib/function-vars';
+import { playedClass } from '@/lib/played-class';
 import { normalizeLibraryCard, type LibraryCard } from '@/lib/library';
 import { effectsForCardId, refOf, sourceLabelForCardId, unequippedPermanentSources } from '@/features/cards/card-effects';
 import { type Character, SAMPLE_CHARACTER, type TraitKey } from '@/features/character-sheet/character';
@@ -273,6 +274,15 @@ export interface CharacterFile {
    * `classExpanded` it stores a rendering decision and never any cards: the pages are derived.
    */
   expandedClassCards?: string[];
+  /**
+   * v0.42.6 (owner): the HOMEBREW CLASS this character is playing, by embedded card id.
+   *
+   * Absent on every character playing a bundled class, which is nearly all of them. Present, it is
+   * the authority on the class's name, its numbers and its domains (see `lib/played-class`), while
+   * `className` stays a real bundled key so the colour, the banner and every keyed lookup go on
+   * working with no second code path.
+   */
+  customClassId?: string;
   /**
    * v0.42.0 (owner): the live state of every FUNCTIONAL element the character's cards carry.
    *
@@ -603,7 +613,7 @@ function allEffectSources(file: CharacterFile): { sources: EffectSource[]; level
  * its file, because every derived number starts from a class. Printing that name anywhere the player
  * can see it would be the file's bookkeeping leaking out as a lie, so it prints nothing.
  */
-export const classLabel = (file: CharacterFile): string => (file.classless ? '' : classInfo(file.className).label);
+export const classLabel = (file: CharacterFile): string => (file.classless ? '' : playedClass(file).label);
 
 /**
  * The trait a subclass CASTS with, authored or official (v0.42.0, owner).
@@ -625,7 +635,9 @@ function subclassSpellcast(file: CharacterFile, subclassCardId: string | null | 
 
 export function toSheetCharacter(file: CharacterFile): Character {
   const cls = classInfo(file.className);
-  const data = CLASS_DATA[file.className];
+  // v0.42.6: the class a character is ACTUALLY playing, which for a homebrew one is the card embedded
+  // on their file rather than the bundled table. See `lib/played-class`.
+  const data = playedClass(file);
   // v0.35: the cards, and the level they put the character at, resolved together.
   const { sources, level } = allEffectSources(file);
   const subclass = cardById(file.subclassCardId);
@@ -715,7 +727,8 @@ export function toSheetCharacter(file: CharacterFile): Character {
     spellcastRoll: sheet.spellcastRoll?.total ?? 0,
     ancestry: ancestry?.label ?? libTitle(file.ancestryCardId) ?? '',
     community: community?.label ?? libTitle(file.communityCardId) ?? '',
-    domains: [cap(cls.domains[0]), cap(cls.domains[1])],
+    // v0.42.6: the domains the class ACTUALLY grants, which for a homebrew class are its own.
+    domains: [cap(data.domains[0] ?? cls.domains[0]), cap(data.domains[1] ?? cls.domains[1])],
     portraitUri: file.portraitUri,
     portraitTransform: file.portraitTransform ?? { scale: 1, x: 0, y: 0 },
     evasion: sheet.evasion.total,
@@ -744,7 +757,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
  * but exposing the provenance the panel renders.
  */
 export function sheetBreakdown(file: CharacterFile): import('@/lib/modifiers').SheetBreakdown {
-  const data = CLASS_DATA[file.className];
+  const data = playedClass(file);
   const { sources, level } = allEffectSources(file);
   const baseTraits = file.traits ?? SAMPLE_CHARACTER.traits;
   const base: BaseStats = {

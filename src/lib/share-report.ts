@@ -81,6 +81,7 @@ export function shareReport(exp: Pick<Expansion, 'cards'>): ShareReport {
       const attached = {
         features: linked.filter((x) => x.contentType === 'feature' || (x.contentType === 'generic' && x.classRole === 'feature')).length,
         subclasses: linked.filter((x) => x.contentType === 'subclass').length,
+        pages: linked.filter((x) => x.contentType === 'class' && x.classSpec?.role === 'page').length,
       };
       for (const p of classProblems(c, attached)) problems.push(`${capitalise(p)}.`);
     }
