@@ -55,6 +55,14 @@ export interface CardFunction {
   title: string;
   /** The title is not printed on the card. It still names the element everywhere else. */
   titleHidden?: boolean;
+  /**
+   * v0.42.5 (owner): keep the LOCKED word off the card.
+   *
+   * A locked element prints "· LOCKED" after its name so a player is not left tapping something that
+   * will not move. On a card where every element is locked by design that is three copies of a word
+   * nobody needs, so it can be turned off. The element is still locked; it just stops announcing it.
+   */
+  lockedTextHidden?: boolean;
   /** v0.42.3: hug the content, or take the whole card width. Default hug. */
   width?: FunctionWidth;
   /** v0.42.3: how big the control draws. Default medium. */
@@ -81,11 +89,35 @@ export interface CardFunction {
   countdown?: boolean;
   /** Countdown only: pushed below zero it goes back to `start`. */
   loop?: boolean;
+  /**
+   * v0.42.5 (owner): a COUNTDOWN may still show its raise button.
+   *
+   * "It always hides the count up instead of giving the option to fade it out and/or unlock it in the
+   * future as a level advancement."
+   *
+   * Three states rather than two, because they are three different statements: `hidden` is the old
+   * behaviour and says the element only ever goes down; `faded` says it goes up too, one day, and
+   * shows the button greyed so the player knows to expect it; `shown` is an ordinary raise button on
+   * a counter that happens to start full. An advancement moves it from `faded` to `shown` with an
+   * `unlock`, which is the same word that opens a locked element.
+   */
+  raiseButton?: 'hidden' | 'faded' | 'shown';
 
   // --- text ---
   /** How many lines the field is. One is a word; several is a paragraph. */
   lines?: number;
+  /** The grey suggestion shown while the field is empty. */
   placeholder?: string;
+  /**
+   * v0.42.5 (owner): what the field ALREADY SAYS when the card arrives.
+   *
+   * "The text mode should have a placeholder option or a checkbox to set a starting text instead."
+   *
+   * The difference is real: a placeholder disappears the moment anybody types and is never part of
+   * the card's content, while starting text IS content the player was given and may edit. A card that
+   * hands somebody a filled-in line wants this one.
+   */
+  startText?: string;
 
   // --- cycle ---
   /** The states the button walks through, in order. */
@@ -201,7 +233,8 @@ const DEFAULT_TITLE: Record<FunctionKind, string> = { counter: 'Counter', text: 
  */
 export function defaultState(f: CardFunction): FunctionState {
   if (f.kind === 'counter') return { n: clampCounter(f, f.start ?? 0) };
-  if (f.kind === 'text') return { s: '' };
+  // v0.42.5: a text element may arrive already saying something (see `startText`).
+  if (f.kind === 'text') return { s: f.startText ?? '' };
   return { i: clampIndex(f.startIndex ?? 0, f.options?.length ?? 0) };
 }
 
@@ -218,7 +251,9 @@ export function clampCounter(f: CardFunction, n: number): number {
 export function canStepFunction(f: CardFunction, state: FunctionState, delta: number): boolean {
   if (f.kind !== 'counter' || f.locked) return false;
   const n = stateOf(f, state).n ?? 0;
-  if (delta > 0) return !f.countdown && (f.max == null || n < f.max);
+  // v0.42.5: a countdown whose author gave it a raise button may be raised. `hidden` (and absent, on
+  // a countdown) still means down only, which is what every countdown authored before this is.
+  if (delta > 0) return (!f.countdown || f.raiseButton === 'shown') && (f.max == null || n < f.max);
   // Down: a looping countdown may always be pushed off the bottom, because that is its wrap.
   if (f.countdown && f.loop) return true;
   return n > (f.min ?? 0);

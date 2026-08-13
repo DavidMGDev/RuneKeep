@@ -72,8 +72,16 @@ export function FunctionEditor({ fn, advance, onChange, onAdvance }: {
           <SwitchRow label="It has a highest value" hint="A resource with a maximum. Without one it is an open tally." on={fn.max != null} onToggle={() => set({ max: fn.max == null ? Math.max(1, (fn.start ?? 0) || 1) : undefined })}>
             <CounterField label="Highest" value={fn.max ?? 1} min={COUNT_MIN} max={COUNT_MAX} onChange={(max) => set({ max })} />
           </SwitchRow>
-          <SwitchRow label="Counts down only" hint="No plus button. Its direction is part of what it is." on={!!fn.countdown} onToggle={() => set({ countdown: !fn.countdown, loop: fn.countdown ? undefined : fn.loop })}>
+          <SwitchRow label="Counts down only" hint="It starts full and is spent. Its direction is part of what it is." on={!!fn.countdown} onToggle={() => set({ countdown: !fn.countdown, loop: fn.countdown ? undefined : fn.loop })}>
             <SwitchRow label="Restarts below zero" hint="Pushed past zero it goes back to where it started." on={!!fn.loop} onToggle={() => set({ loop: !fn.loop })} />
+            {/* v0.42.5 (owner): a countdown always hid its raise button; now that is a choice. */}
+            <SelectRow
+              label="The raise button"
+              hint="Faded is how a card promises the button is coming: a level advancement can unlock it later."
+              value={fn.raiseButton ?? 'hidden'}
+              options={[{ value: 'hidden', label: 'Not there' }, { value: 'faded', label: 'Faded, not usable yet' }, { value: 'shown', label: 'It can be raised' }]}
+              onChange={(raiseButton) => set({ raiseButton })}
+            />
           </SwitchRow>
         </View>
       ) : null}
@@ -95,7 +103,17 @@ export function FunctionEditor({ fn, advance, onChange, onAdvance }: {
 
       {fn.kind === 'text' ? (
         <View style={{ gap: Gap.intra }}>
-          <TextField label="Placeholder" hint="What the empty field suggests. Left blank it simply looks empty." value={fn.placeholder ?? ''} placeholder="What to write here" maxLength={60} onChangeText={(placeholder) => set({ placeholder })} />
+          <TextField label="Placeholder" hint="The grey suggestion, shown only while the field is empty. It is never part of what the card says." value={fn.placeholder ?? ''} placeholder="What to write here" maxLength={60} onChangeText={(placeholder) => set({ placeholder })} />
+          {/* v0.42.5 (owner): "the text mode should have a placeholder option or a checkbox to set a
+              starting text instead". They are genuinely different: a placeholder vanishes the moment
+              anybody types, starting text is content the player was handed and may edit. */}
+          <SwitchRow
+            label="It arrives already saying something"
+            hint="Starting text, which the player can then change. Unlike a placeholder, this IS on the card."
+            on={fn.startText != null}
+            onToggle={() => set({ startText: fn.startText == null ? '' : undefined })}>
+            <TextField label="Starting text" value={fn.startText ?? ''} placeholder="What it says to begin with" multiline maxLength={200} onChangeText={(startText) => set({ startText })} />
+          </SwitchRow>
           <SelectRow
             label="How big"
             value={(fn.lines ?? 1) >= 4 ? 'para' : (fn.lines ?? 1) >= 2 ? 'sentence' : 'word'}
@@ -111,6 +129,11 @@ export function FunctionEditor({ fn, advance, onChange, onAdvance }: {
         hint="Printed above it on the card, and how it is named in the dice tray and the modifier formulas. A number nobody named is a number nobody can pick out of a list.">
         <TextField label="Name" value={fn.title ?? ''} placeholder="e.g. Combo Die" maxLength={40} onChangeText={(title) => set({ title })} />
         <SwitchRow label="Do not print the name on the card" hint="It keeps the name everywhere else." on={!!fn.titleHidden} onToggle={() => set({ titleHidden: !fn.titleHidden })} />
+        {/* v0.42.5 (owner): on a card where everything is locked by design, three copies of the word
+            LOCKED is three words nobody needs. The element stays locked either way. */}
+        {fn.locked ? (
+          <SwitchRow label="Do not print the word LOCKED" hint="It is still locked. It simply stops announcing it." on={!!fn.lockedTextHidden} onToggle={() => set({ lockedTextHidden: !fn.lockedTextHidden })} />
+        ) : null}
       </FormSection>
 
       <FormSection title="Can the player change it?" hint="Locked shows the value and refuses to move. Hidden is not drawn at all. A level advancement opens either.">

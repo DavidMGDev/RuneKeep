@@ -94,8 +94,23 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
             style={{ minWidth: 34, textAlign: 'center', color: Rune.inkText, fontSize: S.number, lineHeight: S.number + 4, fontFamily: Display.black, fontVariant: ['tabular-nums'] }}>
             {n}{fn.max != null && fn.max > 0 ? <Text style={{ fontSize: S.number * 0.6, color: Rune.inkMuted }}>{` /${fn.max}`}</Text> : null}
           </Text>
-          {/* A countdown has no plus at all: its direction is part of what it is. */}
-          {fn.countdown ? <View style={{ width: S.step }} /> : <StepButton size={S.step} plus label={`Raise ${label || 'the counter'}`} disabled={!move || !canStepFunction(fn, st, 1)} onPress={() => move?.(stepFunction(fn, st, 1))} />}
+          {/**
+            * THE RAISE BUTTON, three ways (v0.42.5, owner).
+            *
+            * A countdown used to hide it outright. `faded` draws it greyed and inert, which is how a
+            * card says "this will go up later, once you have taken the advancement"; `shown` gives it
+            * back entirely. Absent keeps the old behaviour, so nothing already authored changes.
+            */}
+          {(() => {
+            const mode = fn.raiseButton ?? (fn.countdown ? 'hidden' : 'shown');
+            if (mode === 'hidden') return <View style={{ width: S.step }} />;
+            const off = mode === 'faded';
+            return (
+              <View style={{ opacity: off ? 0.35 : 1 }}>
+                <StepButton size={S.step} plus label={`Raise ${label || 'the counter'}`} disabled={off || !move || !canStepFunction(fn, st, 1)} onPress={() => move?.(stepFunction(fn, st, 1))} />
+              </View>
+            );
+          })()}
         </View>
       );
     }
@@ -145,7 +160,7 @@ export function CardFunctionControl({ fn, state, onChange, compact }: {
     <View style={{ gap, alignSelf: full ? 'stretch' : 'center', alignItems: 'center' }}>
       {fn.titleHidden || !label ? null : (
         <Text numberOfLines={1} style={{ color: Rune.inkMuted, fontSize: SIZES[fn.size ?? 'medium'].title, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', textAlign: 'center' }}>
-          {label}{fn.locked ? ' · LOCKED' : ''}
+          {label}{fn.locked && !fn.lockedTextHidden ? ' · LOCKED' : ''}
         </Text>
       )}
       {body()}
