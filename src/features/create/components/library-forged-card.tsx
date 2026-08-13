@@ -23,6 +23,7 @@ import { View } from 'react-native';
 import { CardFunctionControl, functionHeight } from '@/components/card-function-control';
 import { blocksOf, isSpacer, migrateBlocks } from '@/lib/card-blocks';
 import type { FunctionState } from '@/lib/card-functions';
+import type { EffectFormula } from '@/lib/modifiers';
 import { Rune } from '@/constants/theme';
 
 import { type BodyBlock, ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
@@ -55,8 +56,14 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
   return lc.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[lc.tier ?? 1] : undefined;
 }
 
-export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction }: {
+export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction, variableValue }: {
   card: LibraryCard;
+  /**
+   * v0.42.5: what a variable resolves to for the character holding this card, for a DICE element
+   * whose count is multiplied by one. Absent means every variable reads as 1, which is what a
+   * catalogue or an author's preview wants.
+   */
+  variableValue?: (v: EffectFormula['variable'], key?: string) => number;
   struckIndex?: number;
   /** v0.42.0: the player's live state for this card's functional elements, by function id. */
   functionStates?: Record<string, FunctionState>;
@@ -160,6 +167,7 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
               fn={x.fn}
               state={functionStates?.[x.fn.id]}
               compact
+              variableValue={variableValue}
               onChange={onFunction ? (next) => onFunction(x.fn!.id, next) : undefined}
             />
           ),
