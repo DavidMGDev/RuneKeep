@@ -272,7 +272,7 @@ function StatRadialHost({ color, shown, hl, pos }: { color: string; shown: boole
                 key={i}
                 d={sector(ROUT, ROUT, w.center - HALF + 2, w.center + HALF - 2, RIN, ROUT)}
                 fill={sel ? color : 'rgba(20,24,31,0.82)'}
-                stroke={sel ? DmRune.ivory : 'rgba(196,200,208,0.5)'}
+                stroke={sel ? DmRune.ivory : 'rgba(218,162,73,0.5)'}
                 strokeWidth={sel ? 2.4 : 1.2}
                 strokeLinejoin="round"
                 opacity={sel ? 0.95 : 0.9}

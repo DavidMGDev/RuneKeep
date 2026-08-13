@@ -7,6 +7,7 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { CATALOG, cardById } from '@/data/catalog';
+import { withoutLegacyClassCards } from '@/lib/class-cards';
 import { withRequiredExpansions } from '@/lib/expansion-membership';
 import type { CharacterHistory } from '@/lib/character-history';
 import type { DicePreset } from '@/lib/dice-presets';
@@ -265,6 +266,14 @@ export interface CharacterFile {
    */
   classExpanded?: boolean;
   /**
+   * v0.42.4 (owner): the ACQUIRED class cards that have been expanded into their own pages.
+   *
+   * By acquired card id (`class-<key>`). A separate list from `classExpanded` because these are other
+   * people's classes a character picked up from Add Gear, and each one is expanded on its own. Like
+   * `classExpanded` it stores a rendering decision and never any cards: the pages are derived.
+   */
+  expandedClassCards?: string[];
+  /**
    * v0.42.0 (owner): the live state of every FUNCTIONAL element the character's cards carry.
    *
    * Keyed by card id, then by function id. The configuration lives on the library card because it is
@@ -438,6 +447,15 @@ export function parseCharacterFile(raw: string): CharacterFile {
   if (typeof f !== 'object' || f === null) throw new Error('Not a character file');
   migrateInPlace(f);
   dropBlobUris(f);
+  /**
+   * v0.42.4 (owner): drop the cards the OLD expand wrote.
+   *
+   * Between v0.42.0 and v0.42.3, expanding a class wrote authored cards onto the file, in the wrong
+   * format with the wrong plaque. The pages are derived now, so those cards are duplicates of what the
+   * sheet draws for itself. A tolerant read, the rule since v0.41.4: the file is not rewritten until
+   * it is next saved for some other reason, and a character that never expanded is untouched.
+   */
+  f.customCards = withoutLegacyClassCards(f.customCards, f.classExpanded);
   if (typeof f.id !== 'string' || typeof f.name !== 'string' || !f.name.trim()) throw new Error('Missing name');
   // v0.10.3: normalize embedded homebrew cards (trust boundary for imported characters), then let the
   // structural/domain ids resolve against them as well as the catalog. No `libraryCards` = old behavior.

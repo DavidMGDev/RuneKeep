@@ -54,6 +54,7 @@ import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/l
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
+import { itemTitleFor } from '@/lib/item-title';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
 import { CounterField, SelectRow, TextField } from '@/components/form-controls';
@@ -352,7 +353,9 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
           card={{ ...card, className: config.className }}
           attachments={attachmentsFor(siblings, card.title)}
           classChoices={classChoices}
-          itemTitle={(id) => itemOptions.find((o) => o.id === id)?.title ?? 'A card that is no longer here'}
+          // v0.42.4 (owner): resolved against EVERY source a picked card can come from, not just the
+          // expansion's own gear. See `lib/item-title`.
+          itemTitle={(id) => itemTitleFor(id, siblings)}
           onPickItems={onPickItems}
           onClassName={(className) => set({ className })}
           onChange={(classSpec) => set({ classSpec })}
@@ -600,6 +603,8 @@ export function LibraryScreen() {
   const [movingCards, setMovingCards] = useState<LibraryCard[]>([]);
   /** v0.42.3: the cards a delete is being confirmed for. */
   const [confirmDeleteCards, setConfirmDeleteCards] = useState<LibraryCard[]>([]);
+  /** v0.42.4: the class-card question, asked before the editor opens. */
+  const [askingClassRole, setAskingClassRole] = useState(false);
   /** v0.42.3: which of a class's three starting-item lists the card browser is filling. */
   const [pickingItems, setPickingItems] = useState<'fixed' | 'choiceA' | 'choiceB' | null>(null);
   /** v0.42.3: which element row is open in the editor, and the live state of the preview's controls. */
@@ -837,6 +842,7 @@ export function LibraryScreen() {
            */
           pickingItems ? (
             <GearBrowser
+              itemsOnly
               acquiredIds={new Set(itemIdsFor(cfg.classSpec, pickingItems))}
               enabledExpansionIds={[selected.id]}
               onAdd={(id) => { addStartingItem(pickingItems, id); setPickingItems(null); }}
@@ -999,7 +1005,16 @@ export function LibraryScreen() {
           <MetaForm initial={selected} onCancel={() => setMetaForm(null)} onSave={(m) => { void persist({ ...selected, ...m }); setMetaForm(null); }} />
         ) : null}
         {choosingType ? (
-          <TypeChooser onPick={(t) => { setChoosingType(false); setEditingCard({ index: 'new', config: defaultConfigFor(t) }); }} onClose={() => setChoosingType(false)} />
+          <TypeChooser
+            onPick={(t) => {
+              setChoosingType(false);
+              // v0.42.4 (owner): a CLASS card is asked what kind it is before the editor opens, because
+              // the answer decides every field in it. Everything else goes straight in.
+              if (t === 'class') { setAskingClassRole(true); return; }
+              setEditingCard({ index: 'new', config: defaultConfigFor(t) });
+            }}
+            onClose={() => setChoosingType(false)}
+          />
         ) : null}
         {confirmDeleteCards.length ? (
           <PopupDialog
@@ -1034,6 +1049,59 @@ export function LibraryScreen() {
                 .catch(() => showToast('Could not send that card.', 'error'));
             }}
           />
+        ) : null}
+        {/**
+          * WHAT KIND OF CLASS CARD (v0.42.4, owner).
+          *
+          * "Make it into a decently sized pop-up that makes sure that the user knows if they wish to
+          * add a page to a class or if they wish to make a new class. From here, make the UI flow
+          * work and if the user wishes to change this they must cancel the card and add a new one."
+          *
+          * Asked here, before the editor, because the answer decides which form the author gets and
+          * finding out after writing the card is the thing this replaces. It is not offered again
+          * inside: the two cards have nothing in common but a title.
+          */}
+        {askingClassRole ? (
+          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
+            <DimScreen opacity={0.9} />
+            <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 336, paddingHorizontal: 16, paddingVertical: 16, gap: Gap.group }}>
+              <View style={{ gap: Gap.hair }}>
+                <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What kind of class card?</Text>
+                <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
+                  Pick now: the two are different cards, and this cannot be changed afterwards without starting again.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setEditingCard({ index: 'new', config: { contentType: 'class', classSpec: { ...EMPTY_CLASS_SPEC, role: 'base' } } }); }}
+                accessibilityRole="button"
+                accessibilityLabel="A new class">
+                <ChamferBox chamfer={9} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 12, gap: 5 }}>
+                  <Text style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>A new class</Text>
+                  <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
+                    Its first page. It carries the starting Evasion and Hit Points, the two domains it grants and the
+                    starting items, and every subclass, feature and page you write afterwards points back at it.
+                  </Text>
+                </ChamferBox>
+              </Pressable>
+
+              <Pressable
+                onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setEditingCard({ index: 'new', config: { contentType: 'class', classSpec: { ...EMPTY_CLASS_SPEC, role: 'page' } } }); }}
+                accessibilityRole="button"
+                accessibilityLabel="Another page of a class">
+                <ChamferBox chamfer={9} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 12, gap: 5 }}>
+                  <Text style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>Another page of a class</Text>
+                  <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
+                    More of a class that already exists, yours or one from the base game. It carries only its own text,
+                    and it becomes the next page of that class wherever the class is read.
+                  </Text>
+                </ChamferBox>
+              </Pressable>
+
+              <RuneButton dm={dm} label="Cancel" kind="ghost" height={40} onPress={() => setAskingClassRole(false)} />
+            </ChamferBox>
+          </View>
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
         {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}

@@ -32,7 +32,11 @@ import { KeysDemo } from './keys-demo';
 interface Page {
   title: string;
   body: string;
-  render: (ctx: { did: boolean; markDid: () => void }) => React.ReactElement;
+  /**
+   * The page's illustration. OPTIONAL since v0.42.4: the campaigns tour explains a screen the reader
+   * is about to be standing in, so a diagram of it would be a picture of the thing behind the dialog.
+   */
+  render?: (ctx: { did: boolean; markDid: () => void }) => React.ReactElement;
   /** Next stays disabled until the page's gesture has been performed. */
   gate?: boolean;
 }
@@ -142,12 +146,35 @@ const SHEET: Page[] = [
   },
 ];
 
-const TOURS: Record<TourId, Page[]> = { welcome: WELCOME, creation: CREATION, sheet: SHEET };
+/**
+ * v0.42.4 (owner): the DM's first-run introduction.
+ *
+ * Campaigns is a top-level destination now, reached in one press with no mode toggle in front of it
+ * announcing what kind of screen is coming. So the screen introduces itself, once. Three pages: what
+ * a campaign is, what it holds, and the two things a DM does with it that a player never sees.
+ */
+const CAMPAIGNS: Page[] = [
+  {
+    title: 'This side of the table',
+    body: 'Campaigns is where you run games rather than play in them.\n\nA campaign holds a cast of characters and the nights you play them. Everything here is yours as the DM: your players never see it, and nothing you do here touches their character files.',
+  },
+  {
+    title: 'Sessions and encounters',
+    body: 'A campaign holds SESSIONS, one for each night at the table.\n\nEach session holds ENCOUNTERS: an adversary roster you build ahead of time or on the spot, with health, stress and counters you drive during the fight. Finishing an encounter freezes it, so you can look back at what happened.',
+  },
+  {
+    title: 'Your table, your rules',
+    body: 'Two things worth knowing.\n\nCharacterize turns an adversary into a real character sheet, which is how an NPC gets cards and traits like anybody else.\n\nAnd in the Cards menu, any expansion you author carries CAMPAIGN SETTINGS: walk the character creator and turn off whatever your world does not have. Everyone who enables the pack builds inside those rules.',
+  },
+];
+
+const TOURS: Record<TourId, Page[]> = { welcome: WELCOME, creation: CREATION, sheet: SHEET, campaigns: CAMPAIGNS };
 
 const TITLE: Record<TourId, string> = {
   welcome: 'Welcome',
   creation: 'Making a hero',
   sheet: 'Using your sheet',
+  campaigns: 'Running a game',
 };
 
 export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () => void }) {
@@ -243,7 +270,7 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
       <View style={{ flex: 1, justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 4 }}>
         <GestureDetector gesture={swipe}>
           <Animated.View style={fadeStyle}>
-            {page.render({ did, markDid })}
+            {page.render?.({ did, markDid })}
             <Text style={{ color: Rune.goldBright, fontSize: 21, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 14 }}>{page.title}</Text>
             <Text style={{ color: Rune.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 21, marginTop: 10 }}>{page.body}</Text>
           </Animated.View>

@@ -10,7 +10,7 @@
  * asks twice, the second time in capitals. A campaign is a year of someone's Thursdays.
  */
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 
@@ -23,6 +23,7 @@ import { showToast } from '@/components/toast';
 import { Body, DmRune, DmType } from '@/constants/theme';
 import { type DmIdentity } from '@/lib/dm-identity';
 import { newParty, type Party } from '@/lib/party';
+import { shouldShow } from '@/lib/onboarding-store';
 import { deleteParty, listParties, saveParty } from '@/lib/party-store';
 import { deleteEncounter, deleteSession, listEncounters, listSessions } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
@@ -72,6 +73,26 @@ export function CampaignsScreen() {
   useFocusEffect(reload);
 
   /**
+   * The DM's first-run introduction (v0.42.4, owner).
+   *
+   * Campaigns used to sit behind a mode toggle, which at least announced that the app was about to
+   * become a different kind of thing. It is one press from the menu now, so the screen says what it
+   * is itself. Once, and re-openable from the menu's `?` like every other tour.
+   *
+   * Deferred by a tick for the reason the sheet's and the creator's tours are: two history entries in
+   * the same tick collapse in Firefox, and going back then overshoots the screen the tour is about.
+   */
+  const tourPushed = useRef(false);
+  useEffect(() => {
+    if (tourPushed.current) return;
+    const t = setTimeout(() => {
+      tourPushed.current = true;
+      if (shouldShow('campaigns')) router.push('/onboarding?tour=campaigns' as Href);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [router]);
+
+  /**
    * Creating one asks for its identity FIRST (owner), then opens the cast.
    *
    * "This is the same interface that must appear when the user first creates a campaign, right before
@@ -112,7 +133,7 @@ export function CampaignsScreen() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
           <DmPress onPress={() => setCreating(true)} accessibilityRole="button" accessibilityLabel="Create your first campaign">
             {({ pressed }) => (
-              <ChamferBox chamfer={18} fill={pressed ? 'rgba(196,200,208,0.12)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.accent} strokeWidth={1.8} style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
+              <ChamferBox chamfer={18} fill={pressed ? 'rgba(218,162,73,0.12)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.accent} strokeWidth={1.8} style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
                 <Svg width={64} height={64} viewBox="0 0 64 64">
                   <Line x1={32} y1={12} x2={32} y2={52} stroke={DmRune.accent} strokeWidth={4} />
                   <Line x1={12} y1={32} x2={52} y2={32} stroke={DmRune.accent} strokeWidth={4} />

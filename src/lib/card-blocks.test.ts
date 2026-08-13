@@ -1,4 +1,4 @@
-import { addFunction, blocksOf, migrateBlocks, moveBlock, needsBlockMigration, orderedFunctions, prunedFunctions, removeFunction, textSections } from './card-blocks';
+import { addFunction, blocksOf, needsRemoveConfirm, migrateBlocks, moveBlock, needsBlockMigration, orderedFunctions, prunedFunctions, removeFunction, textSections } from './card-blocks';
 import type { CardFunction } from './card-functions';
 import type { CardSection } from './library';
 
@@ -126,5 +126,24 @@ describe('migrateBlocks', () => {
     expect(once.functions[0].placement).toBeUndefined();
     expect(once.functions[0].before).toBeUndefined();
     expect(migrateBlocks(once.sections, once.functions).sections).toBe(once.sections);
+  });
+});
+
+describe('needsRemoveConfirm (v0.42.4)', () => {
+  it('asks about a section with words in it', () => {
+    expect(needsRemoveConfirm(txt('Mark a Stress.'))).toBe(true);
+  });
+
+  it('asks about a section that has only a name', () => {
+    expect(needsRemoveConfirm({ body: '', name: 'Quick' })).toBe(true);
+  });
+
+  it('always asks about an element, because there is more to it than what is on screen', () => {
+    expect(needsRemoveConfirm(slot('x'))).toBe(true);
+  });
+
+  it('does not ask about an empty section, so tidying up is not twelve confirmations', () => {
+    expect(needsRemoveConfirm(txt(''))).toBe(false);
+    expect(needsRemoveConfirm(txt('   '))).toBe(false);
   });
 });

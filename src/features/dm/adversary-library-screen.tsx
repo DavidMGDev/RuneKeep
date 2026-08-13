@@ -287,7 +287,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
                 accessibilityLabel={`${item.name}, tier ${item.tier ?? '?'} ${item.role ?? ''}`}>
                 <ChamferBox
                   chamfer={9}
-                  fill={on ? 'rgba(196,200,208,0.16)' : 'rgba(16,18,24,0.92)'}
+                  fill={on ? 'rgba(218,162,73,0.16)' : 'rgba(16,18,24,0.92)'}
                   stroke={on ? DmRune.accent : DmRune.line}
                   strokeWidth={on ? 1.6 : 1}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 9 }}>

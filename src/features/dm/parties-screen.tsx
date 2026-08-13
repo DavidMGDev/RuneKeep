@@ -32,7 +32,7 @@ function PartyRow({ party, onOpen }: { party: Party; onOpen: () => void }) {
             </Text>
           </View>
           {party.enabled ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(196,200,208,0.16)', borderWidth: 1, borderColor: DmRune.accent, paddingHorizontal: 8, paddingVertical: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(218,162,73,0.16)', borderWidth: 1, borderColor: DmRune.accent, paddingHorizontal: 8, paddingVertical: 4 }}>
               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} />
               <Text style={{ color: DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Active</Text>
             </View>
@@ -74,7 +74,7 @@ export function PartiesScreen() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
           <DmPress onPress={() => setNaming(true)} accessibilityRole="button" accessibilityLabel="Create your first party">
             {({ pressed }) => (
-              <ChamferBox chamfer={18} fill={pressed ? 'rgba(196,200,208,0.12)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.accent} strokeWidth={1.8} style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
+              <ChamferBox chamfer={18} fill={pressed ? 'rgba(218,162,73,0.12)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.accent} strokeWidth={1.8} style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
                 <Svg width={64} height={64} viewBox="0 0 64 64">
                   <Line x1={32} y1={12} x2={32} y2={52} stroke={DmRune.accent} strokeWidth={4} />
                   <Line x1={12} y1={32} x2={52} y2={32} stroke={DmRune.accent} strokeWidth={4} />

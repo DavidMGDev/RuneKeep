@@ -18,7 +18,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { ART_H, FORGED_H, FORGED_W, ForgedCard, ForgedFaceCard } from '@/features/create/components/forged-card';
 import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
-import { addFunction, removeFunction } from '@/lib/card-blocks';
+import { addFunction, needsRemoveConfirm, removeFunction } from '@/lib/card-blocks';
 import { type CardFunction, functionSummary, newFunction } from '@/lib/card-functions';
 import { type MarkCycle, pressMark, toggleBullet } from '@/lib/markdown-marks';
 import { type CardSection } from '@/lib/library';
@@ -26,7 +26,7 @@ import { type CardEffect } from '@/lib/modifiers';
 import { applyPickedOption, EffectPicker, EffectsField, type ExperienceRef, FormulaVarPicker, matchOption } from '@/components/effects-editor';
 import type { FunctionVar } from '@/lib/function-vars';
 import { effectsForType, isExperienceType, withTypeEffects } from '@/features/character-sheet/card-types';
-import { OverlayHost } from '@/components/overlay-host';
+import { Overlay, OverlayHost } from '@/components/overlay-host';
 import { playSfx } from '@/lib/sfx';
 import { DimScreen } from '@/lib/screen-dim';
 import { useFrame } from '@/hooks/use-layout';
@@ -95,19 +95,31 @@ export function CharCount({ value, max }: { value: string; max: number }) {
  * both platforms; acting on press-in fires before the blur can be delivered, so the caret and the
  * keyboard survive. `children` is an icon for the ones a letter cannot describe.
  */
-function MarkBtn({ label, on, wide, onPress, children }: { label: string; on?: boolean; wide?: boolean; onPress: () => void; children?: ReactNode }) {
+function MarkBtn({ label, on, small, onPress, children }: { label: string; on?: boolean; small?: boolean; onPress: () => void; children?: ReactNode }) {
+  const w = small ? 26 : 32;
   return (
     <Pressable
       onPressIn={onPress}
-      hitSlop={5}
+      hitSlop={6}
       accessibilityRole="button"
       accessibilityState={{ selected: !!on }}
       accessibilityLabel={label}
-      style={{ width: wide ? 38 : 30, height: 27, alignItems: 'center', justifyContent: 'center', borderRadius: 4, backgroundColor: on ? Rune.red : 'rgba(20,24,31,0.85)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.4)' }}>
-      {children ?? <Text style={{ color: on ? Rune.ivory : Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>{label}</Text>}
+      style={{ width: w, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 4, backgroundColor: on ? Rune.red : 'rgba(24,29,37,0.9)', borderWidth: 1, borderColor: on ? 'transparent' : 'rgba(218,162,73,0.38)' }}>
+      {children}
     </Pressable>
   );
 }
+
+/**
+ * The BOLD glyph (v0.42.4, owner: "bold cannot be text it must be a bold B, which was fine before").
+ *
+ * v0.42.3 passed the word "Bold" as the button's label AND drew the label when no icon was given, so
+ * a four-letter word wrapped onto two lines inside a 30dp square. The label is now for the screen
+ * reader only and every button draws a glyph.
+ */
+const BoldIcon = ({ c }: { c: string }) => (
+  <Text style={{ color: c, fontSize: 14, lineHeight: 17, fontFamily: Display.black }}>B</Text>
+);
 
 /**
  * The BULLET LIST icon (v0.42.3, owner: "right now it does not read like a bullet point button, just
@@ -136,7 +148,13 @@ const ItalicIcon = ({ c }: { c: string }) => (
   </Svg>
 );
 
-/** The four ways a section's text can be set, drawn as the lines they produce. */
+/**
+ * The four ways a section's text can be set, drawn as the lines they produce.
+ *
+ * ONE button since v0.42.4 (owner: "alignment can be a single button"). It shows the alignment the
+ * section is on and advances to the next on press, which is what a four-state setting is: a cycle,
+ * not four controls of which three are always wrong.
+ */
 const ALIGNS: { value: NonNullable<CardSection['align']>; label: string; rows: [number, number][] }[] = [
   { value: 'left', label: 'Left', rows: [[1, 13], [1, 9], [1, 12], [1, 7]] },
   { value: 'center', label: 'Centred', rows: [[1, 13], [3, 11], [2, 12], [4, 10]] },
@@ -197,6 +215,15 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
     : sections.length >= minRows ? sections : [...sections, ...Array.from({ length: minRows - sections.length }, () => ({ body: '' }))];
   let featureRank = 0; // running 1/2 label for flagged rows, assigned in render order
   const commit = (next: CardSection[]) => onChange(next);
+  /**
+   * REMOVING ASKS FIRST (v0.42.4, owner).
+   *
+   * The X sits in a row of six small buttons, and it used to take a paragraph on the first tap. A
+   * block worth confirming is decided by `needsRemoveConfirm`, which is pure and tested: anything
+   * with words in it, and every functional element, because an element carries a configuration and
+   * possibly a level advancement that are not visible in the row being tapped.
+   */
+  const [confirmRemove, setConfirmRemove] = useState<number | null>(null);
   const update = (i: number, patch: Partial<CardSection>) => commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const addRow = () => { playSfx('buttonTap'); commit([...rows, { body: '' }]); };
   const canRemove = (i: number) => (ancestryFeatures ? !rows[i].feature : rows.length > minRows);
@@ -251,13 +278,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
                 </Pressable>
                 <MarkBtn label="Move up" onPress={() => move(i, -1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↑</Text></MarkBtn>
                 <MarkBtn label="Move down" onPress={() => move(i, 1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↓</Text></MarkBtn>
-                <MarkBtn label="Remove this element" onPress={() => {
-                  playSfx('cardDeselect');
-                  const next = removeFunction(rows, functions?.list, r.functionId!);
-                  commit(next.sections);
-                  functions?.onChange(next.functions);
-                  functions?.onEdit(null);
-                }}><Text style={{ color: '#E2705A', fontSize: 12.5, fontFamily: Body.bold }}>✕</Text></MarkBtn>
+                <MarkBtn small label="Remove this element" onPress={() => setConfirmRemove(i)}><Text style={{ color: '#E2705A', fontSize: 12, fontFamily: Body.bold }}>✕</Text></MarkBtn>
               </View>
               {open && fn ? functions?.renderEditor(fn) : null}
             </ChamferBox>
@@ -283,27 +304,46 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
             style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold, padding: 0 }}
             accessibilityLabel={rank ? `Feature ${rank} name` : `Section ${i + 1} name`}
           />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <MarkBtn label="Bold" onPress={() => applyMark(i, '**')} />
+          {/**
+            * THE TOOLBAR, as a BAND (v0.42.4, owner).
+            *
+            * "Make sure the user can identify the areas, easily distinguish the toolbar (give the
+            * toolbar a different background that works like a full band from the left of the section
+            * to the right of the section, not just a square, rather an entire band so that the left
+            * and right sides of that background blend in behind the golden border of the section
+            * container). The goal is for the buttons to not confuse the user on what is a tool for
+            * the section and what is the text edit for the title and what is the text edit for the
+            * description."
+            *
+            * So: negative horizontal margins equal to the row's own padding, which carries the strip
+            * out to the gold border on both sides instead of stopping short of it and reading as
+            * another box floating inside the box. One row, hairlines above and below, and the two
+            * text fields left sitting on the section's own ground where they belong.
+            */}
+          <View style={{ marginHorizontal: -11, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: 'rgba(218,162,73,0.09)', borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(218,162,73,0.22)', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <MarkBtn label="Bold" onPress={() => applyMark(i, '**')}><BoldIcon c={Rune.goldText} /></MarkBtn>
             <MarkBtn label="Italic" onPress={() => applyMark(i, '*')}><ItalicIcon c={Rune.goldText} /></MarkBtn>
             <MarkBtn label="Bullet list" onPress={() => applyMark(i, 'bullet')}><BulletIcon c={Rune.goldText} /></MarkBtn>
+            {(() => {
+              // The alignment the section is ON, and the one a press moves it to.
+              const at = ALIGNS.findIndex((a) => a.value === (r.align ?? 'left'));
+              const cur = ALIGNS[at < 0 ? 0 : at];
+              const next = ALIGNS[((at < 0 ? 0 : at) + 1) % ALIGNS.length];
+              return (
+                <MarkBtn
+                  label={`Text is ${cur.label.toLowerCase()}. Tap for ${next.label.toLowerCase()}`}
+                  on={cur.value !== 'left'}
+                  onPress={() => update(i, { align: next.value === 'left' ? undefined : next.value })}>
+                  <AlignIcon rows={cur.rows} c={cur.value !== 'left' ? Rune.ivory : Rune.goldText} />
+                </MarkBtn>
+              );
+            })()}
             <View style={{ flex: 1 }} />
-            <MarkBtn label="Move up" onPress={() => move(i, -1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↑</Text></MarkBtn>
-            <MarkBtn label="Move down" onPress={() => move(i, 1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↓</Text></MarkBtn>
-            {canRemove(i) ? <MarkBtn label="Remove section" onPress={() => removeRow(i)}><Text style={{ color: '#E2705A', fontSize: 12.5, fontFamily: Body.bold }}>✕</Text></MarkBtn> : null}
-          </View>
-          {/* v0.42.3 (owner): how this section's text is set. Drawn as the lines each one produces,
-              because four words would be four words to read and these are four pictures. */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {ALIGNS.map((a) => (
-              <MarkBtn
-                key={a.value}
-                label={`${a.label} aligned`}
-                on={(r.align ?? 'left') === a.value}
-                onPress={() => update(i, { align: a.value === 'left' ? undefined : a.value })}>
-                <AlignIcon rows={a.rows} c={(r.align ?? 'left') === a.value ? Rune.ivory : Rune.goldText} />
-              </MarkBtn>
-            ))}
+            {/* Smaller than the format buttons (owner), so the row reads as formatting first and
+                housekeeping second. */}
+            <MarkBtn small label="Move up" onPress={() => move(i, -1)}><Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>↑</Text></MarkBtn>
+            <MarkBtn small label="Move down" onPress={() => move(i, 1)}><Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>↓</Text></MarkBtn>
+            {canRemove(i) ? <MarkBtn small label="Remove section" onPress={() => (needsRemoveConfirm(r) ? setConfirmRemove(i) : removeRow(i))}><Text style={{ color: '#E2705A', fontSize: 12, fontFamily: Body.bold }}>✕</Text></MarkBtn> : null}
           </View>
           <TextInput
             value={r.body}
@@ -321,6 +361,34 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
         </ChamferBox>
         );
       })}
+      {confirmRemove != null && rows[confirmRemove] ? (
+        <Overlay>
+          <PopupDialog
+            title={rows[confirmRemove].functionId ? 'Remove this element?' : 'Remove this section?'}
+            body={rows[confirmRemove].functionId
+              ? 'Its settings go with it, and so does any level advancement it offers. The rest of the card is untouched.'
+              : 'What you have written in it goes with it. The rest of the card is untouched.'}
+            confirmLabel="Remove"
+            cancelLabel="Keep it"
+            destructive
+            onConfirm={() => {
+              const i = confirmRemove;
+              setConfirmRemove(null);
+              const fid = rows[i].functionId;
+              if (fid) {
+                playSfx('cardDeselect');
+                const next = removeFunction(rows, functions?.list, fid);
+                commit(next.sections);
+                functions?.onChange(next.functions);
+                functions?.onEdit(null);
+                return;
+              }
+              removeRow(i);
+            }}
+            onCancel={() => setConfirmRemove(null)}
+          />
+        </Overlay>
+      ) : null}
       {/* v0.42.3 (owner): "there should be two buttons now". Both append to the SAME list, which is
           what lets a feature card be arranged however the author wants. */}
       <View style={{ flexDirection: 'row', gap: 8 }}>

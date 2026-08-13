@@ -15,7 +15,7 @@ function Key({ label, onPress, accent, disabled, dm }: { label: string; onPress:
       {({ pressed }) => (
         <ChamferBox
           chamfer={8}
-          fill={pressed ? (dm ? 'rgba(196,200,208,0.16)' : 'rgba(224,181,99,0.18)') : 'rgba(14,17,22,0.96)'}
+          fill={pressed ? (dm ? 'rgba(218,162,73,0.16)' : 'rgba(224,181,99,0.18)') : 'rgba(14,17,22,0.96)'}
           stroke={accent ? (dm ? 'rgba(178,86,78,0.75)' : 'rgba(200,27,24,0.7)') : dm ? DmRune.line : 'rgba(218,162,73,0.5)'}
           strokeWidth={1.2}
           style={{ height: 46, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1 }}>

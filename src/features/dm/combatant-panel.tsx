@@ -118,7 +118,7 @@ export function CombatantPanel({
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
   const sideColor = friendly ? DmRune.ally : DmRune.red;
   const stroke = selected ? DmRune.accent : c.fallen ? 'rgba(139,144,154,0.5)' : `${sideColor}80`;
-  const fill = selected ? 'rgba(196,200,208,0.16)' : c.fallen ? 'rgba(16,16,18,0.9)' : friendly ? 'rgba(15,20,20,0.92)' : 'rgba(20,15,15,0.92)';
+  const fill = selected ? 'rgba(218,162,73,0.16)' : c.fallen ? 'rgba(16,16,18,0.9)' : friendly ? 'rgba(15,20,20,0.92)' : 'rgba(20,15,15,0.92)';
   /**
    * TAKEN OVER (v0.41.3, owner).
    *

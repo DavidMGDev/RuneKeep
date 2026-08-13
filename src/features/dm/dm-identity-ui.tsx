@@ -105,7 +105,7 @@ export function IdentityDropdown<T extends DmIdentity & { id: string }>({
               onPress={() => { setOpen(false); onSelect(it); }}
               accessibilityRole="button"
               accessibilityLabel={it.name}
-              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent' })}>
+              style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: pressed ? 'rgba(218,162,73,0.1)' : 'transparent' })}>
               <IdentityBadge id={it} size={32} />
               <IdentityLines id={it} fallback={fallback?.(it)} tint={it.id === selected.id ? DmRune.accent : DmRune.ivory} />
             </DmPress>

@@ -19,11 +19,11 @@ import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, type CustomCardDef, numberInputFor, toSheetCharacter } from '@/lib/character-file';
 import { CATALOG, cardById } from '@/data/catalog';
-import { CLASSES, classInfo } from '@/constants/identity';
+import { CLASSES, classInfo, type ClassName } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { CLASS_DATA, featurePages } from '@/data/class-data';
-import { classCardCount, missingClassCards } from '@/lib/class-cards';
+import { acquiredPageId, classPageCount, classPageId } from '@/lib/class-cards';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
@@ -1185,13 +1185,30 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         : [{ id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: pages[0].custom, faces: pages }];
     };
     /**
-     * The paged class card, unless the class has been EXPANDED (v0.42.0, owner).
+     * The pages of a paged card, each as its OWN card (v0.42.4, owner).
      *
-     * There is nothing to delete when a class is converted, because this card is derived rather than
-     * stored. `classExpanded` is what stops it being derived; the cards it became are ordinary
-     * entries in `customCards` from that moment on.
+     * "The ONLY GOAL IS TO HAVE THE MULTI-PAGE CARDS RENDER EACH OF THEIR CONTENTS AS INDIVIDUAL
+     * CARDS." So this takes the very faces the paged card was going to flip through and hands each
+     * one back as a card. Nothing is written, nothing is re-rendered, nothing is converted into
+     * another format: an expanded page IS the page, which is why it looks exactly like the one
+     * character creation drew.
      */
-    const featItem = file.classExpanded ? [] : coverOf(`features-${file.className}`, faces);
+    const pagesOf = (idFor: (i: number) => string, pages: { source?: { uri: string }; thumb?: { uri: string }; custom?: ReactNode }[]): CardItem[] =>
+      pages.map((f, i) =>
+        f.source && f.thumb
+          ? { id: idFor(i), source: f.source, thumb: f.thumb }
+          : { id: idFor(i), source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: f.custom },
+      );
+    /**
+     * The class card: one paged card, or its pages, depending on `classExpanded`.
+     *
+     * Both sides are DERIVED. Expanding used to write cards onto the file and this used to be the
+     * thing that stopped deriving; now it only chooses which shape to derive, so expanding costs
+     * nothing, cannot duplicate, and is undoable in principle by the same flag.
+     */
+    const featItem = file.classExpanded
+      ? pagesOf((i) => classPageId(file.className, i), faces)
+      : coverOf(`features-${file.className}`, faces);
     // Multiclass (#311): the additional class's feature card (multi-page), assembled exactly like the
     // primary's, plus the chosen subclass FOUNDATION card. Both ride the arsenal next to the originals.
     const mcFaceJobs = mcFeatJobs;
@@ -1238,7 +1255,27 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         if (!first) return { id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: faces[0]?.custom, faces: faces.length > 1 ? faces : undefined };
         return { id, source: first.source, thumb: first.thumb, faces: faces.length > 1 ? faces : undefined };
       })
-      .filter((c): c is CardItem => c !== null);
+      .filter((c): c is CardItem => c !== null)
+      /**
+       * v0.42.4 (owner): an acquired class card expands too, into exactly the same thing.
+       *
+       * "Class cards imported from the Add Gear tab MUST have the ability to Expand causing the cards
+       * to render individually as a card per page, NOT AS CUSTOM CARDS, just exactly how they look
+       * but without the first page."
+       *
+       * `acqFaces` is the pages without the cover, which is also why the marks now read 1/n rather
+       * than 2/n+1: the job list itself drops the cover for an expanded card.
+       */
+      .flatMap((item): CardItem[] => {
+        if (!(file.expandedClassCards ?? []).includes(item.id)) return [item];
+        const k = item.id.slice(6);
+        const pages = featurePages(k as typeof file.className).map((pg) => {
+          const key = `acqfeat-${k}-${pg.pageIndex}`;
+          const src = featureSources[key];
+          return src ? { source: src.full, thumb: src.thumb } : { custom: acqClassJobs.find((j) => j.key === key)?.node };
+        });
+        return pagesOf((i) => acquiredPageId(k, i), pages);
+      });
     // Mixed ancestry (#306): the SECOND ancestry card sits RIGHT AFTER the first so the pair reads
     // together. It arrives via acquiredCardIds (with a cardCategory→abilities override), which the
     // acquired-catalog pass below appended at the very END — so the two cards landed far apart. Place
@@ -2215,6 +2252,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
      */
     const expandable = new Set<string>();
     if (file && !file.classExpanded && !file.classless) expandable.add(`features-${file.className}`);
+    /**
+     * v0.42.4 (owner): a class card picked up from Add Gear expands the same way its owner's does.
+     *
+     * Only a MULTI-PAGE one: a class with a single ability page is already one card, and offering to
+     * expand it into itself would be a button that does nothing.
+     */
+    for (const id of file?.acquiredCardIds ?? []) {
+      if (!id.startsWith('class-') || (file?.expandedClassCards ?? []).includes(id)) continue;
+      const k = id.slice(6);
+      if (CLASS_CARDS.some((c) => c.key === k) && featurePages(k as ClassName).length > 1) expandable.add(id);
+    }
     return { permanent, numberInput, domain, toggleable, expandable, modsOff: new Set(file?.modifiersOffCardIds ?? []) };
   }, [deckFile, carouselDecks]);
   // v0.19.1 item 8: ONE ref-based toggle implementation, shared by manual taps AND bulk equip. Reading +
@@ -2398,17 +2446,48 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * They land in the category the player is looking at, which is the owner's rule and also the least
    * surprising place for anything the sheet creates while you are watching.
    */
-  const [expandingClass, setExpandingClass] = useState<CardCategory | null>(null);
-  const doExpandClass = useCallback((cat: CardCategory) => {
+  /**
+   * v0.42.4 (owner): the id being expanded, which is either the character's own class card or an
+   * ACQUIRED one. Both expand into their own pages; neither writes a card.
+   */
+  const [expandingClass, setExpandingClass] = useState<{ cat: CardCategory; id: string } | null>(null);
+  const doExpandClass = useCallback((cat: CardCategory, id: string) => {
     setExpandingClass(null);
     const f = fileRef.current;
-    if (!f || f.classExpanded) return;
-    const made = missingClassCards(f.className, f.customCards);
+    if (!f) return;
+    /**
+     * NOTHING IS WRITTEN (v0.42.4, owner).
+     *
+     * This used to build authored cards and commit them, which is why an expanded class arrived in
+     * the wrong format with the wrong plaque. All that is stored now is the decision; the pages
+     * themselves are derived from the same jobs the paged card was using, so they are the cards
+     * character creation shows. `cardCategory` still lands them where the player was looking.
+     */
+    const own = id.startsWith('features-');
+    /**
+     * The CATALOG id, not the instance id.
+     *
+     * A second copy of the same acquired class card arrives as `class-bard#2` (see `catalogIdOf`),
+     * and slicing that blind would look for a class called "bard#2" and find none. The copy and the
+     * original are the same class, so they expand into the same pages.
+     */
+    const baseId = catalogIdOf(id);
+    if (own && f.classExpanded) return;
+    if (!own && (f.expandedClassCards ?? []).includes(baseId)) return;
+    const key = baseId.slice(6);
+    const n = own ? classPageCount(f.className) : featurePages(key as ClassName).length;
+    const ids = own
+      ? Array.from({ length: n }, (_, i) => classPageId(f.className, i))
+      : Array.from({ length: n }, (_, i) => acquiredPageId(key, i));
     const cardCategory = { ...(f.cardCategory ?? {}) };
-    for (const c of made) cardCategory[c.id] = cat;
-    commitFileRef.current({ ...f, classExpanded: true, customCards: [...(f.customCards ?? []), ...made], cardCategory });
+    for (const cid of ids) cardCategory[cid] = cat;
+    commitFileRef.current(
+      own
+        ? { ...f, classExpanded: true, cardCategory }
+        : { ...f, expandedClassCards: [...(f.expandedClassCards ?? []), baseId], cardCategory },
+    );
     playSfx('cardSelect');
-    pushNotice(`${made.length} class ${made.length === 1 ? 'card' : 'cards'} added`);
+    pushNotice(`${n} class ${n === 1 ? 'card' : 'cards'} added`);
   }, []);
 
   const onToggleCardModifiers = useCallback((id: string) => {
@@ -2575,7 +2654,28 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       return !v;
     });
   }, []);
-  const rollTrait = useCallback((label: string, value: number) => trayRef.current?.rollDuality(label, value), []);
+  /**
+   * A TRAIT TAP ROLLS IT, tray or no tray (v0.42.4, owner).
+   *
+   * "Pressing any trait inside the character sheet as a player should automatically switch to the
+   * dice-rolling interface and act as if the character had tapped a trait inside that dice-rolling
+   * interface."
+   *
+   * Before this, a trait was live only while the tray was already open, so the natural gesture did
+   * nothing and the roll took two presses in the right order. Opening the tray is a state change the
+   * tray has to mount from, so the roll is deferred one tick rather than fired into a handle that is
+   * not there yet; when the tray is already up it goes immediately, which is exactly what it did
+   * before and is the path anybody already relies on.
+   */
+  const rollTrait = useCallback((label: string, value: number) => {
+    if (trayRef.current && diceUpRef.current) { trayRef.current.rollDuality(label, value); return; }
+    setDiceUp(true);
+    playSfx('panelOpen');
+    setTimeout(() => trayRef.current?.rollDuality(label, value), 0);
+  }, []);
+  /** The tray's live state, so the tap above reads it without being rebuilt every time it changes. */
+  const diceUpRef = useRef(false);
+  diceUpRef.current = diceUp;
 
   /**
    * The three roll presets (v0.41.0, owner).
@@ -2748,7 +2848,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     );
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onExpandClassCard={(_id, cat) => setExpandingClass(cat)} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onExpandClassCard={(id, cat) => setExpandingClass({ cat, id })} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
        {/* v0.29.1: the south wedge is CHARACTERS, the way out. It is not an interface, it raises the
            SAME leave confirm the back button already uses rather than adding a second prompt that
            could drift from it. */}
@@ -2825,7 +2925,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
               {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
               {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} /> : null}
-              <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={diceUp ? rollTrait : undefined} />
+              <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={rollTrait} />
               <ExpandVeil />
               <EditHud file={file ?? undefined} />
               {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the
@@ -3059,14 +3159,18 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, padding: 18 }}>
                 <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>Expand this class card?</Text>
                 <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17, marginTop: 8 }}>
-                  {`Its ${classCardCount(file.className)} abilities become ${classCardCount(file.className)} separate cards, here in this category, and the paged class card goes away.`}
+                  {(() => {
+                    const own = expandingClass.id.startsWith('features-');
+                    const n = own ? classPageCount(file.className) : featurePages(catalogIdOf(expandingClass.id).slice(6) as ClassName).length;
+                    return `Its ${n} ${n === 1 ? 'page becomes its own card' : 'pages become their own cards'}, here in this category, exactly as they look in character creation. The flavour page is left out: it is what you read while choosing a class.`;
+                  })()}
                 </Text>
                 <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17, marginTop: 8 }}>
-                  This cannot be undone. To get a class card back afterwards, delete these cards and add one from Add Gear. It grants no stats.
+                  Nothing is copied or rewritten. These are the class&apos;s own pages, shown one at a time instead of stacked.
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
                   <RuneButton label="Keep it as it is" kind="ghost" height={42} style={{ flex: 1 }} onPress={() => setExpandingClass(null)} />
-                  <RuneButton label="Expand it" kind="primary" height={42} style={{ flex: 1 }} onPress={() => doExpandClass(expandingClass)} />
+                  <RuneButton label="Expand it" kind="primary" height={42} style={{ flex: 1 }} onPress={() => doExpandClass(expandingClass.cat, expandingClass.id)} />
                 </View>
               </ChamferBox>
             </CenterDialog>
