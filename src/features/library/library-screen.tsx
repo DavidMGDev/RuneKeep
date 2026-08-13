@@ -7,12 +7,11 @@
  */
 import * as ImagePicker from 'expo-image-picker';
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
-import { ArtImage } from '@/components/art-image';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
@@ -29,7 +28,6 @@ import {
   type LibraryCard,
   type LibraryContentType,
   type WeaponSpec,
-  expansionShareIssues,
   expansionSummary,
   incompleteSubclasses,
   isEnabledForCreation,
@@ -55,6 +53,9 @@ import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
 import { functionVars } from '@/lib/function-vars';
+import { afterShare, nextShareVersion } from '@/lib/pack-version';
+import { canSharePack, shareReport } from '@/lib/share-report';
+import { ShareReportDialog, WarningTriangle } from './share-report-dialog';
 import { itemTitleFor } from '@/lib/item-title';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
@@ -543,7 +544,14 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
     * place when a higher number arrives, and an author who forgets to raise it by hand ships an update
     * nobody receives. It is still shown, so a DM can tell a player which one they are on.
     */
-  const version = (initial?.version ?? 0) + 1;
+  /**
+   * v0.42.5 (owner): the version is stamped ON SHARE, not on save.
+   *
+   * With auto-save on every card edit, bumping here meant a version per keystroke and a number that
+   * said nothing. It moves when what would arrive on somebody's device is different, which is what a
+   * version is for. See `lib/pack-version`.
+   */
+  const version = initial?.version ?? 1;
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
       {/* v0.13.0: non-dismissing backdrop — a stray tap between fields must never destroy typed input.
@@ -604,6 +612,8 @@ export function LibraryScreen() {
   const [movingCards, setMovingCards] = useState<LibraryCard[]>([]);
   /** v0.42.3: the cards a delete is being confirmed for. */
   const [confirmDeleteCards, setConfirmDeleteCards] = useState<LibraryCard[]>([]);
+  /** v0.42.5: the cards whose share report is on screen. */
+  const [reportFor, setReportFor] = useState<LibraryCard[] | null>(null);
   /** v0.42.4: the class-card question, asked before the editor opens. */
   const [askingClassRole, setAskingClassRole] = useState(false);
   /** v0.42.3: which of a class's three starting-item lists the card browser is filling. */
@@ -690,7 +700,7 @@ export function LibraryScreen() {
    * Each selected image becomes its own card, rendered edge to edge, which is what the Daggerheart
    * card creator's exports already are. They arrive untitled and generic deliberately: this is the
    * bulk step, and the editing pass afterwards is where each one is given a name and told what it is.
-   * `expansionShareIssues` is the gate that stops a pack leaving before then.
+   * `canSharePack` is the gate that stops a pack leaving before then.
    */
   const addCardsFromImages = useCallback(async (exp: Expansion) => {
     try {
@@ -945,6 +955,8 @@ export function LibraryScreen() {
   // ---- expansion detail ----
   if (selected) {
     const s = expansionSummary(selected);
+    /** What is stopping this pack from being shared. One answer, used by the badge and the dialog. */
+    const report = shareReport(selected);
     /**
      * The header, re-laid out (v0.42.3, owner: "this entire interface is pretty ass").
      *
@@ -959,16 +971,38 @@ export function LibraryScreen() {
      * The gallery gets everything below, because the cards are what the screen is about, and the two
      * creation buttons close it off at the bottom where the primary action belongs.
      */
-    const share = (cards: LibraryCard[]) => {
+    /**
+     * SHARING, gated once (v0.42.5, owner).
+     *
+     * v0.42.4 checked, said "Could not share that expansion" in a toast, and on native wrote the file
+     * anyway: the check and the act were separate pieces of code and only one of them ran. There is
+     * one gate now, `canSharePack`, and the only path to `doShare` is through a dialog that exists
+     * solely when the report is clean.
+     *
+     * The VERSION is stamped here rather than on save (owner): a version is what an installed copy
+     * compares itself against, so it moves when what would arrive is different, and not when somebody
+     * typed a letter. See `lib/pack-version`.
+     */
+    const doShare = (cards: LibraryCard[]) => {
       playSfx('buttonTap');
-      const pack = cards === selected.cards ? selected : { ...selected, cards };
-      const issues = expansionShareIssues(pack);
-      if (issues.length) { setMessage({ title: 'Finish these cards first', body: `${issues.slice(0, 6).join('\n')}${issues.length > 6 ? `\nand ${issues.length - 6} more.` : ''}` }); return; }
+      const whole = cards === selected.cards;
+      const stamped = whole ? afterShare(selected) : { ...selected, cards, version: nextShareVersion({ ...selected, cards }) };
       // v0.34.8: the pictures travel INSIDE the file. A card's imageUri is a path into this phone, so
       // a pack shared without this arrived with every image blank.
-      void embedExpansionImages(pack)
-        .then((packed) => exportRkp({ kind: 'expansion', payload: packed }, pack.name))
-        .catch(() => showToast('Could not share that expansion.', 'error'));
+      void embedExpansionImages(stamped)
+        .then((packed) => exportRkp({ kind: 'expansion', payload: packed }, stamped.name))
+        .then(() => {
+          // Recorded only after the file actually left, so a failed write does not claim a version.
+          if (whole) void persist(stamped);
+          showToast(`${stamped.name} v${stamped.version} shared.`, 'success');
+        })
+        .catch(() => showToast('Could not write that file. Nothing was shared.', 'error'));
+    };
+    /** A selection of cards travels as a pack of its own, and is held to the same standard. */
+    const share = (cards: LibraryCard[]) => {
+      const pack = cards === selected.cards ? selected : { ...selected, cards };
+      if (!canSharePack(pack)) { setReportFor(cards); return; }
+      doShare(cards);
     };
     return (
       <AppScreen dm={dm} title={selected.name} onBack={() => setSelectedId(null)}>
@@ -976,7 +1010,7 @@ export function LibraryScreen() {
           <View style={{ gap: Gap.intra }}>
             <View style={{ gap: Gap.hair }}>
               <Text style={{ color: P.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-                by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}
+                by {selected.author || 'unknown'} · v{nextShareVersion(selected)} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}
               </Text>
               {selected.description ? (
                 <Text style={{ color: P.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>{selected.description}</Text>
@@ -990,7 +1024,23 @@ export function LibraryScreen() {
                   and no pop-up on the way. See `create-screen`'s campaign mode. */}
               <RuneButton dm={dm} label="Campaign settings" kind="ghost" dense height={36} style={{ flex: 1.4 }} onPress={() => { playSfx('buttonTap'); router.push(`/create?campaign=${selected.id}` as Href); }} />
               {/* v0.34.8 (owner): saving a half-finished pack is fine, sending one is not. */}
-              <RuneButton dm={dm} label="Share pack" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => share(selected.cards)} />
+              {/**
+                * v0.42.5 (owner): "Add a yellow warning symbol in the corner of the Share Pack button
+                * for the expansion pack if it has red-warnings active, this way the user knows to tap
+                * it to see what problems have risen."
+                *
+                * The button always opens the report now, whether the pack is ready or not: the two
+                * questions it answers, "why can I not share this" and "is this ready", are the same
+                * question asked at different times.
+                */}
+              <View style={{ flex: 1 }}>
+                <RuneButton dm={dm} label="Share pack" kind="ghost" dense height={36} onPress={() => { playSfx('buttonTap'); setReportFor(selected.cards); }} />
+                {report.ok ? null : (
+                  <View pointerEvents="none" style={{ position: 'absolute', top: -5, right: -5 }}>
+                    <WarningTriangle size={16} />
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
@@ -1122,6 +1172,21 @@ export function LibraryScreen() {
               <RuneButton dm={dm} label="Cancel" kind="ghost" height={40} onPress={() => setAskingClassRole(false)} />
             </ChamferBox>
           </View>
+        ) : null}
+        {reportFor ? (
+          <ShareReportDialog
+            report={shareReport({ cards: reportFor })}
+            packName={selected.name}
+            onGoToCard={(cardId) => {
+              const i = selected.cards.findIndex((x) => x.id === cardId);
+              const c = selected.cards[i];
+              setReportFor(null);
+              if (!c) return;
+              setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } });
+            }}
+            onShare={() => { const cards = reportFor; setReportFor(null); doShare(cards); }}
+            onClose={() => setReportFor(null)}
+          />
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
         {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
