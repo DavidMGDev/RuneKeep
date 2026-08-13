@@ -43,6 +43,7 @@ import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } fro
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
 import { shouldShow } from '@/lib/onboarding-store';
 
+import { campaignWarnings } from '@/lib/campaign-warnings';
 import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, setKeys, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
 import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
@@ -423,7 +424,13 @@ export function CreateScreen() {
   /** Transformations follow the APP's expansion switch, not this character's picks (owner). */
   const transformationsOn = !!expansions?.some((e) => e.id === 'void' && isEnabledForCreation(e));
   const deckList = useMemo(
-    () => decksFor(characterizing, transformationsOn).filter((d) => authoring || isStepOn(campaign, d.key)),
+    () =>
+      decksFor(characterizing, transformationsOn)
+        // v0.42.5 (owner): "Traits and experiences should not be an available step in this campaign
+        // settings UI, since nothing will be disabled here." Both are the player's own, made from
+        // nothing a pack ships, so there is nothing on either to turn off.
+        .filter((d) => !authoring || (d.key !== 'traits' && d.key !== 'experiences'))
+        .filter((d) => authoring || isStepOn(campaign, d.key)),
     [characterizing, transformationsOn, campaign, authoring],
   );
   const classOptional = characterizing && canSkipClass(carry, carryOff);
@@ -718,6 +725,27 @@ export function CreateScreen() {
    * covered the moment it is added, and the ids the DM ticked are the same ids the carousel carries.
    * The mode toggles (Mixed Ancestry, the Skip cards) are never options and are never cut.
    */
+  /**
+   * WHAT THESE RULES WOULD MAKE IMPOSSIBLE (v0.42.5, owner).
+   *
+   * Three things a character cannot be built without: a class, a subclass of that class, and two
+   * level-one domain cards from the two domains it grants. Everything else can be emptied and the
+   * step simply skips. The rule lives in `lib/campaign-warnings`, which is pure and tested; this only
+   * gathers what is on offer to ask it about.
+   */
+  const warnings = useMemo(() => {
+    if (!authoring) return [];
+    const classes = creationClassCards.map((c) => ({ id: `class-${c.key}`, label: c.title, domains: classInfo(c.key).domains as string[] }));
+    const subclasses = [
+      ...CATALOG.filter((c) => c.kind === 'subclass' && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, classId: `class-${c.className}` })),
+      ...(libContent?.subclasses ?? []).filter((c) => !c.tier || c.tier === 1).map((c) => ({ id: c.id, classId: `class-${c.className ?? ''}` })),
+    ];
+    const domainCards = [
+      ...CATALOG.filter((c) => c.kind === 'domain' && c.level === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => ({ id: c.id, domain: String(c.domain ?? '') })),
+      ...(libContent?.domains ?? []).map((c) => ({ id: c.id, domain: String(c.domain ?? '') })),
+    ];
+    return campaignWarnings(campaign, { classes, subclasses, domainCards });
+  }, [authoring, campaign, creationClassCards, libContent, picked]);
   const rawItems: StraightItem[] = useMemo(() => {
     if (deck === 'carry') {
       // A greyed card is DIMMED rather than outlined: an outline is what selection looks like
@@ -822,9 +850,22 @@ export function CreateScreen() {
           });
         });
       case 'subclass':
+        /**
+         * AUTHORING SEES ALL OF THEM (v0.42.5, owner).
+         *
+         * "No step of the character creation process should be blocked off for this UI since it is
+         * about disabling content not creating a character. This means the subclass and domains steps
+         * must display all subclasses from all enabled expansions so that the user can toggle them on
+         * or off."
+         *
+         * Playing, a subclass list is the chosen class's, because that is the only list that means
+         * anything to a player. Authoring, there is no chosen class: the DM is deciding about every
+         * subclass in every pack they have enabled, and a list that waited for a class to be picked
+         * was a step they could not use at all.
+         */
         return [
-          ...CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
-          ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (!c.className || c.className === draft.className)).map((lc) => keepLib(lc)),
+          ...CATALOG.filter((c) => c.kind === 'subclass' && (authoring || c.className === draft.className) && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
+          ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (authoring || !c.className || c.className === draft.className)).map((lc) => keepLib(lc)),
         ];
       case 'ancestry': {
         const base = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source })));
@@ -848,6 +889,20 @@ export function CreateScreen() {
       case 'community':
         return [...CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))), ...(libContent?.communities ?? []).map((lc) => keepLib(lc))];
       case 'domains': {
+        /**
+         * v0.42.5 (owner): "for domain cards just display all level 1 domain cards of every enabled
+         * expansion to see which domain cards of level 1 are available with support for expansions."
+         *
+         * Playing, the list is the two domains the chosen class grants. Authoring, it is every level
+         * one card there is, because the DM is deciding which exist at their table and the class that
+         * will want them has not been picked by anybody yet.
+         */
+        if (authoring) {
+          return [
+            ...CATALOG.filter((c) => c.kind === 'domain' && c.level === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
+            ...(libContent?.domains ?? []).map((lc) => keepLib(lc)),
+          ];
+        }
         if (!draft.className) return [];
         const pair = classInfo(draft.className).domains;
         return [
@@ -1771,23 +1826,28 @@ export function CreateScreen() {
           * a Name field was the screen telling the DM it was something it is not.
           */}
         {authoring ? (
-          <>
-            <SectionDivider label="What this does" />
-            <ChamferBox chamfer={9} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ marginTop: 8, padding: 12, gap: 6 }}>
-              <Text style={{ color: Rune.sheet, fontSize: 12.5, fontFamily: Body.semibold, lineHeight: 17 }}>
-                This is character creation, used backwards.
-              </Text>
-              <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
-                Walk the steps as a player would. Anything you REMOVE here is taken out of character creation for
-                everyone who enables this expansion, and a step you turn off never appears for them at all. Everything
-                you leave alone stays available.
-              </Text>
-              <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
-                Your changes save as you make them. Content a player does not have installed is simply ignored on their
-                device, so a rule about a pack they lack cannot break their creator.
-              </Text>
-            </ChamferBox>
-          </>
+          /**
+           * ONE LINE (v0.42.5, owner: "the description on top is too big, pushing the interface down
+           * on top of the cards and making the cards less legible, make the description that replaced
+           * the details section from character creation be more compact").
+           *
+           * Three paragraphs of explanation on a screen whose entire job is looking at cards is three
+           * paragraphs in the way. The tour says the rest; this says the one thing a DM needs to have
+           * in mind while their thumb is on the button, and the warnings below say the rest when they
+           * actually matter.
+           */
+          <View style={{ paddingTop: 6, paddingBottom: 2, gap: 4 }}>
+            <Text style={{ color: Rune.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase', textAlign: 'center' }}>
+              Removing takes it out of creation
+            </Text>
+            {warnings.length ? (
+              <ChamferBox chamfer={7} fill="rgba(120,30,28,0.22)" stroke={Rune.red} strokeWidth={1.1} style={{ paddingHorizontal: 10, paddingVertical: 7, gap: 3 }}>
+                {warnings.map((w) => (
+                  <Text key={w.text} style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14 }}>{w.text}</Text>
+                ))}
+              </ChamferBox>
+            ) : null}
+          </View>
         ) : (
         <>
         {/* ---- details ---- */}
