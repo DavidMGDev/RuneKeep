@@ -21,8 +21,9 @@ import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
 import { View } from 'react-native';
 
 import { CardFunctionControl, functionHeight } from '@/components/card-function-control';
-import { blocksOf, migrateBlocks } from '@/lib/card-blocks';
+import { blocksOf, isSpacer, migrateBlocks } from '@/lib/card-blocks';
 import type { FunctionState } from '@/lib/card-functions';
+import type { EffectFormula } from '@/lib/modifiers';
 import { Rune } from '@/constants/theme';
 
 import { type BodyBlock, ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
@@ -55,8 +56,14 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
   return lc.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[lc.tier ?? 1] : undefined;
 }
 
-export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction }: {
+export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction, variableValue }: {
   card: LibraryCard;
+  /**
+   * v0.42.5: what a variable resolves to for the character holding this card, for a DICE element
+   * whose count is multiplied by one. Absent means every variable reads as 1, which is what a
+   * catalogue or an author's preview wants.
+   */
+  variableValue?: (v: EffectFormula['variable'], key?: string) => number;
   struckIndex?: number;
   /** v0.42.0: the player's live state for this card's functional elements, by function id. */
   functionStates?: Record<string, FunctionState>;
@@ -123,8 +130,21 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
    */
   const { sections, functions } = migrateBlocks(card.sections, card.functions);
   const blocks = blocksOf(sections, functions);
+  /**
+   * The BLOCK path is taken whenever the author has arranged anything (v0.42.5).
+   *
+   * v0.42.3 took it only for a card carrying functional elements, so per-section ALIGNMENT silently
+   * did nothing on every other card: the alignment lives on the section, and the fallback composes
+   * every section into one markdown string that has no sections left to align. The owner reported it
+   * as "the alignment controls stopped working", and this is why.
+   *
+   * A card with neither elements nor alignment still takes the old path, which keeps one composed
+   * body and one `fitText` pass for the overwhelming majority of cards.
+   */
   const hasFunctions = blocks.some((x) => x.fn);
-  if (!hasFunctions) {
+  const hasAlignment = blocks.some((x) => x.section.align && x.section.align !== 'left');
+  const hasSpacers = blocks.some((x) => isSpacer(x.section));
+  if (!hasFunctions && !hasAlignment && !hasSpacers) {
     return (
       <ForgedCard
         title={card.title}
@@ -147,11 +167,14 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
               fn={x.fn}
               state={functionStates?.[x.fn.id]}
               compact
+              variableValue={variableValue}
               onChange={onFunction ? (next) => onFunction(x.fn!.id, next) : undefined}
             />
           ),
         }
-      : { key: `s${i}`, text: sectionMarkdown(x.section, i === struckIndex), align: x.section.align },
+      : isSpacer(x.section)
+        ? { key: `sp${i}`, node: <View style={{ height: x.section.space }} /> }
+        : { key: `s${i}`, text: sectionMarkdown(x.section, i === struckIndex), align: x.section.align },
   );
   return (
     <ForgedCard

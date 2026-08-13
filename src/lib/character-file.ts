@@ -563,6 +563,14 @@ function sheetContext(file: CharacterFile): import('@/lib/modifiers').SheetConte
     // one. Derived rather than stored, like everything else a card element is, so an advancement that
     // raised a Combo Die is already folded in. See `lib/function-vars`.
     functions: functionVarValues(functionVars([...(file.libraryCards ?? []), ...(file.customCards ?? [])], file.cardFunctions, file.cardAdvances)),
+    /**
+     * v0.42.5: the player's current Hit Points, Hope and Armor.
+     *
+     * Only the CURRENT values. Their maxima are computed by the very sheet these feed, so the engine
+     * reads those off its own pass-1 totals rather than being handed a stale copy: that is what makes
+     * "missing Hope" right on a character whose card raised Max Hope.
+     */
+    vitals: { hp: file.resources?.hp, hope: file.resources?.hope, armor: file.resources?.armor },
   };
 }
 

@@ -10,10 +10,9 @@ import { FitLine } from '@/components/fit-line';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { appVersion, UpdateBanner } from '@/components/update-banner';
-import { Body, Display, DmRune, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import { CATALOG } from '@/data/catalog';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
-import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { showToast } from '@/components/toast';
 import { resetTours, shouldShow } from '@/lib/onboarding-store';
 import { useLayout } from '@/hooks/use-layout';
@@ -64,7 +63,7 @@ function DriftRow({ y, cards, duration, reverse, opacity }: { y: number; cards: 
   );
 }
 
-function MenuAction({ label, sub, glyph, onPress, delayIndex, dm, locked }: { label: string; sub: string; glyph: 'characters' | 'cards'; onPress: () => void; delayIndex: number; dm?: boolean; locked?: boolean }) {
+function MenuAction({ label, sub, glyph, onPress, delayIndex, locked }: { label: string; sub: string; glyph: 'characters' | 'cards'; onPress: () => void; delayIndex: number; locked?: boolean }) {
   // Web (the verify pipeline) renders the settled state directly — the entrance is native-only.
   const enter = useSharedValue(Platform.OS === 'web' ? 1 : 0);
   const press = useSharedValue(1);
@@ -77,11 +76,11 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, dm, locked }: { la
     transform: [{ translateY: (1 - enter.value) * (26 + delayIndex * 14) }, { scale: press.value }],
   }));
   // DM Mode (PRD #2): the same chrome drained of gold into the desaturated Golden-Gear-Edit palette.
-  const edge = dm ? DmRune.accentDim : Rune.goldEdge;
-  const bright = dm ? DmRune.accent : Rune.goldBright;
-  const accent = dm ? DmRune.red : Rune.red;
-  const ivory = dm ? DmRune.ivory : Rune.ivory;
-  const muted = dm ? DmRune.muted : Rune.muted;
+  const edge = Rune.goldEdge;
+  const bright = Rune.goldBright;
+  const accent = Rune.red;
+  const ivory = Rune.ivory;
+  const muted = Rune.muted;
   return (
     <Animated.View style={style}>
       <Pressable
@@ -135,7 +134,7 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, dm, locked }: { la
  * half depends on it, but that is now a side effect of going somewhere rather than the whole point of
  * the button.
  */
-function CampaignsButton({ dm, onPress }: { dm: boolean; onPress: () => void }) {
+function CampaignsButton({ onPress }: { onPress: () => void }) {
   const press = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
   return (
@@ -145,29 +144,9 @@ function CampaignsButton({ dm, onPress }: { dm: boolean; onPress: () => void }) 
         onPressIn={() => { press.value = withSpring(0.95, { damping: 22, stiffness: 320, mass: 0.6 }); }}
         onPressOut={() => { press.value = withSpring(1, { damping: 22, stiffness: 320, mass: 0.6 }); }}
         accessibilityRole="button"
-        accessibilityLabel={dm ? 'Back to playing' : 'Campaigns, for running a game'}>
+        accessibilityLabel="Campaigns, for running a game">
         <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={Rune.goldEdge} strokeWidth={1.3} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 20 }}>
-          <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{dm ? 'Play' : 'Campaigns'}</Text>
-        </ChamferBox>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-function ModeToggle({ dm, onToggle }: { dm: boolean; onToggle: () => void }) {
-  const press = useSharedValue(1);
-  const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
-  const edge = dm ? DmRune.accent : Rune.goldEdge;
-  return (
-    <Animated.View style={[anim, { alignSelf: 'center' }]}>
-      <Pressable
-        onPress={onToggle}
-        onPressIn={() => { press.value = withSpring(0.95, { damping: 22, stiffness: 320, mass: 0.6 }); }}
-        onPressOut={() => { press.value = withSpring(1, { damping: 22, stiffness: 320, mass: 0.6 }); }}
-        accessibilityRole="button"
-        accessibilityLabel={dm ? 'Switch to Player Mode' : 'Switch to DM Mode'}>
-        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={edge} strokeWidth={1.3} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 20 }}>
-          <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{dm ? 'DM Mode · On' : 'DM Mode · Off'}</Text>
+          <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>Campaigns</Text>
         </ChamferBox>
       </Pressable>
     </Animated.View>
@@ -181,11 +160,11 @@ function ModeToggle({ dm, onToggle }: { dm: boolean; onToggle: () => void }) {
  * play on, and a sound that fails to load is deliberately silent, so an app with broken audio looks
  * exactly like one with the volume down. Reporting "no sound" should not be the only way to find out.
  */
-function MuteToggle({ muted, dm, onToggle }: { muted: boolean; dm: boolean; onToggle: () => void }) {
+function MuteToggle({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
   const press = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
-  const edge = muted ? (dm ? DmRune.red : Rune.red) : dm ? DmRune.accent : Rune.goldEdge;
-  const glyph = muted ? (dm ? DmRune.red : Rune.red) : dm ? DmRune.accent : Rune.goldText;
+  const edge = muted ? Rune.red : Rune.goldEdge;
+  const glyph = muted ? Rune.red : Rune.goldText;
   return (
     <Animated.View style={anim}>
       <Pressable
@@ -230,12 +209,10 @@ export function MenuScreen() {
   const [ready, setReady] = useState(false);
   const { height: screenH } = useLayout();
   const driftY = (f: number) => Math.round(screenH * f);
-  const [dm, setDm] = useState(false);
   const [muted, setMuted] = useState(false);
   useEffect(() => {
     setMuted(applyStoredMute()); // item 6: honour the persisted UI-sound mute before anything plays
     preloadSfx(); // warm the audio engine + decode latency-sensitive sounds (#255)
-    void getDmMode().then(setDm);
     // One frame of intentional loading: lets fonts/thumb decodes land so the menu never flashes
     // half-drawn. Kept short — this screen has no real async data yet.
     const t = setTimeout(() => {
@@ -254,15 +231,6 @@ export function MenuScreen() {
   }, [ready, tourChecked, router]);
   // v0.41.4: nothing on this menu is gated any more. A campaign owns its own sessions, so there is
   // no "enabled party" to check for and no locked card to explain.
-
-  const toggleDm = useCallback(() => {
-    playSfx('buttonTap');
-    setDm((prev) => {
-      const next = !prev;
-      void setDmMode(next);
-      return next;
-    });
-  }, []);
 
   // item 6: the main-menu mute — silences every UI sound until re-enabled here. Tap plays only when
   // UN-muting (a muted app must make no sound on the tap that muted it).
@@ -287,7 +255,7 @@ export function MenuScreen() {
   if (!ready) return <LoadingScreen label="Stoking the forge" />;
 
   return (
-    <AppScreen dm={dm} overlay={updateDialog}>
+    <AppScreen overlay={updateDialog}>
       <View style={{ flex: 1 }}>
         {/* ambient deck, dim, behind everything — rows fill the gap BETWEEN the title and the
             actions (owner #102: never behind the title; the bottom row's spot is approved). */}
@@ -308,35 +276,30 @@ export function MenuScreen() {
           </Svg>
         </View>
 
-        {/* actions — labels + destinations swap in DM Mode (PRD #3) */}
+        {/**
+          * ONE MENU (v0.42.5, owner).
+          *
+          * "No longer do i need it to be a toggle between campaign and play because the DM interface
+          * for cards is the same interface as the player interface for cards. The only panel that is
+          * for dms is the campaigns interface, which is accessed via that button, no longer is it a
+          * switch for DM mode, no longer are there two versions of the main menu, only one."
+          *
+          * The two faces existed because the palette and the card library used to differ by mode.
+          * Neither is true any more: v0.42.4 made the app one palette, and the library was always the
+          * same screen. So what is left of "DM mode" is one destination, and a destination is a
+          * button, not a mode.
+          *
+          * The subtitles are SHORT now, for the owner's other note: they were long enough that the
+          * row auto-shrank them to fit, which made the one line of explanation the hardest thing on
+          * the screen to read.
+          */}
         <View style={{ flex: 1, justifyContent: 'flex-end', gap: 16, paddingBottom: 28 }}>
-          {dm ? (
-            <>
-{/* v0.41.4 (owner): Campaigns, and no lock. A campaign owns its own sessions, so there is
-                  nothing left for a second top-level destination to point at and nothing to unlock. The
-                  slot goes to the card library, which a DM had no way to reach without leaving DM Mode. */}
-              <MenuAction label="Campaigns" sub="Your games, their casts and their nights" glyph="characters" dm delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/parties' as Href); }} />
-              <MenuAction label="Cards" sub="The archive, and the expansions you author" glyph="cards" dm delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
-            </>
-          ) : (
-            <>
-              <MenuAction label="Characters" sub="Your roster, play, create, import" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
-              <MenuAction label="Cards" sub="Browse the archive, build homebrew" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
-            </>
-          )}
+          <MenuAction label="Characters" sub="Your roster" glyph="characters" delayIndex={0} onPress={() => { playSfx('selectCharacter'); router.push('/characters'); }} />
+          <MenuAction label="Cards" sub="Archive and homebrew" glyph="cards" delayIndex={1} onPress={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }} />
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-            {/* v0.42.4 (owner): straight into campaigns, not into a mode. Pressed while already in
-                DM mode it goes the other way, which is the way back to playing. */}
-            <CampaignsButton
-              dm={dm}
-              onPress={() => {
-                if (dm) { toggleDm(); return; }
-                playSfx('selectCharacter');
-                void setDmMode(true).then(() => router.push('/parties' as Href));
-                setDm(true);
-              }}
-            />
-            <MuteToggle muted={muted} dm={dm} onToggle={toggleMute} />
+            {/* The one DM destination there is. It no longer switches anything. */}
+            <CampaignsButton onPress={() => { playSfx('selectCharacter'); router.push('/parties' as Href); }} />
+            <MuteToggle muted={muted} onToggle={toggleMute} />
             {/* v0.22.0: the tour is re-openable, not a one-shot you can never find again. */}
             <Pressable
               onPress={() => { playSfx('buttonTap'); resetTours(); showToast('Tips are back on. They will appear as you go.'); }}
@@ -345,8 +308,8 @@ export function MenuScreen() {
               onLongPress={() => { playSfx('buttonTap'); showToast(`RuneKeep ${appVersion() ?? 'unknown'} ${Platform.OS === 'web' ? 'in your browser' : 'for Android'}`); }}
               accessibilityRole="button"
               accessibilityLabel="Show tips again, hold for the version">
-              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={dm ? DmRune.line : Rune.goldEdge} strokeWidth={1.3} style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 15, fontFamily: Display.black }}>?</Text>
+              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={Rune.goldEdge} strokeWidth={1.3} style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: Rune.goldText, fontSize: 15, fontFamily: Display.black }}>?</Text>
               </ChamferBox>
             </Pressable>
           </View>

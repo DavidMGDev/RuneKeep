@@ -67,6 +67,14 @@ export interface CardSection {
    * before this existed.
    */
   align?: 'left' | 'center' | 'right' | 'justify';
+  /**
+   * v0.42.5 (owner): this section IS A GAP, this many card px tall.
+   *
+   * It draws nothing and composes to nothing; it exists to push what follows it away from what came
+   * before. A section rather than a margin on its neighbours, because it moves and deletes like every
+   * other block and two of them are twice the space. See `lib/card-blocks`.
+   */
+  space?: number;
 }
 
 /** The section indexes of an ancestry's Feature 1 and Feature 2, in vertical order. Falls back to the
@@ -253,6 +261,21 @@ export interface Expansion {
    * limits nothing, which is every expansion written before this existed. See `lib/campaign-settings`.
    */
   campaign?: CampaignSettings;
+  /**
+   * v0.42.5 (owner): what this pack looked like the LAST TIME IT WAS SHARED.
+   *
+   * "Instead of making the expansion pack bump its version with every save (makes no sense since
+   * expansions have auto-save upon every card modification / creation) then make it so that when the
+   * user can successfully share it then the expansion bumps the version if there have been changes
+   * with respect to the last time it was shared."
+   *
+   * v0.42.1 bumped on every save, which with auto-save meant a version per keystroke: by the time a
+   * pack was finished it was at v340 and the number said nothing. A version is a thing OTHER PEOPLE
+   * see, so it moves when other people would see something different, which is at the moment of
+   * sharing and only if the contents changed. A signature rather than a flag, so it survives being
+   * exported and re-imported and cannot drift out of step with what was actually sent.
+   */
+  sharedSig?: string;
 }
 
 /** v0.12.2: official expansions default to DISABLED (must be opted into); user expansions default enabled. */

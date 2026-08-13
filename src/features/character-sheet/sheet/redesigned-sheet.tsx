@@ -1104,11 +1104,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           <LibraryForgedCard
             card={{ ...shim, functions: advancedFunctions(card, file.cardAdvances) }}
             functionStates={advancedStates(card, file.cardFunctions?.[id], file.cardAdvances)}
+            variableValue={cardVariableValue}
             onFunction={(fid, next) => mutateFile({ cardFunctions: { ...(fileRef.current?.cardFunctions ?? {}), [id]: { ...(fileRef.current?.cardFunctions?.[id] ?? {}), [fid]: next } } })}
           />
         ),
       };
     };
+    /**
+     * What a card's DICE multiplier resolves to for this character (v0.42.5).
+     *
+     * "A d6 per Proficiency" is two dice at tier two because THIS character's Proficiency is two, so
+     * the reader has to come from the sheet. Anything it does not know reads as 1, which leaves the
+     * die as the author wrote it rather than making it disappear.
+     */
+    const cardVariableValue = (v: string): number =>
+      v === 'proficiency' ? character.proficiency
+      : v === 'tier' ? tierForLevel(character.level)
+      : v === 'level' ? character.level
+      : (character.traits as Partial<Record<string, number>>)[v] ?? 1;
     const catItem = (id: string): CardItem | undefined => {
       const c = cardById(id);
       return c ? { id: c.id, source: c.source, thumb: c.thumb } : undefined;
@@ -2715,6 +2728,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       damageRoll: character.damageRoll ?? 0,
       spellcast: character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0,
       traits: character.traits as Partial<Record<string, number>>,
+      // v0.42.5: the live vitals, so a preset can carry "+ Missing Hit Points".
+      vitals: {
+        hp: character.hp,
+        maxHp: character.maxHp,
+        hope: character.hope.active,
+        hopeMax: character.hope.total,
+        armor: character.armor.active,
+        armorMax: character.armorScore,
+      },
       // v0.42.3: the character's own card elements, so a preset can carry "+ Combo Die".
       functions: functionVarValues(functionVars([...(fileRef.current?.libraryCards ?? []), ...(fileRef.current?.customCards ?? [])], fileRef.current?.cardFunctions, fileRef.current?.cardAdvances)),
     };

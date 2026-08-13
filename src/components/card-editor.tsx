@@ -18,7 +18,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { ART_H, FORGED_H, FORGED_W, ForgedCard, ForgedFaceCard } from '@/features/create/components/forged-card';
 import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
-import { addFunction, needsRemoveConfirm, removeFunction } from '@/lib/card-blocks';
+import { addFunction, isSpacer, needsRemoveConfirm, removeFunction, spacerSection } from '@/lib/card-blocks';
 import { type CardFunction, functionSummary, newFunction } from '@/lib/card-functions';
 import { type MarkCycle, pressMark, toggleBullet } from '@/lib/markdown-marks';
 import { type CardSection } from '@/lib/library';
@@ -224,6 +224,8 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
    * possibly a level advancement that are not visible in the row being tapped.
    */
   const [confirmRemove, setConfirmRemove] = useState<number | null>(null);
+  /** Where a press on a row's header began, so a drag can be told from a tap (v0.42.5). */
+  const pressAt = useRef<{ x: number; y: number } | null>(null);
   const update = (i: number, patch: Partial<CardSection>) => commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const addRow = () => { playSfx('buttonTap'); commit([...rows, { body: '' }]); };
   const canRemove = (i: number) => (ancestryFeatures ? !rows[i].feature : rows.length > minRows);
@@ -263,6 +265,26 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
         const rank = ancestryFeatures && r.feature ? ++featureRank : 0; // Feature 1/2 by vertical order
         const fn = r.functionId ? functions?.list.find((f) => f.id === r.functionId) : undefined;
         /**
+         * A SPACER row (v0.42.5, owner). It is a block like any other: it moves with the arrows and
+         * goes with the cross. All it offers is how big the gap is, which is the only thing it has.
+         */
+        if (isSpacer(r)) {
+          return (
+            <ChamferBox key={`sp-${i}`} chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ flex: 1, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Gap · {r.space ?? 8} tall</Text>
+                <MarkBtn small label="Smaller gap" onPress={() => update(i, { space: Math.max(2, (r.space ?? 8) - 4) })}><Text style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold }}>-</Text></MarkBtn>
+                <MarkBtn small label="Bigger gap" onPress={() => update(i, { space: Math.min(80, (r.space ?? 8) + 4) })}><Text style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold }}>+</Text></MarkBtn>
+                <MarkBtn small label="Move up" onPress={() => move(i, -1)}><Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>↑</Text></MarkBtn>
+                <MarkBtn small label="Move down" onPress={() => move(i, 1)}><Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>↓</Text></MarkBtn>
+                <MarkBtn small label="Remove gap" onPress={() => removeRow(i)}><Text style={{ color: '#E2705A', fontSize: 12, fontFamily: Body.bold }}>✕</Text></MarkBtn>
+              </View>
+              {/* The gap itself, at its real height, so the author is choosing a size they can see. */}
+              <View style={{ height: r.space ?? 8, backgroundColor: 'rgba(218,162,73,0.12)' }} />
+            </ChamferBox>
+          );
+        }
+        /**
          * A FUNCTION row (v0.42.3). It sits in the list exactly like a paragraph, moves with the same
          * two arrows and deletes with the same cross, because to the author it IS a block of the card.
          * Tapping it opens its configuration; the card at the top of the editor is where it is seen.
@@ -272,12 +294,43 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
           return (
             <ChamferBox key={r.functionId} chamfer={8} fill="rgba(14,17,22,0.96)" stroke={open ? Rune.goldEdge : 'rgba(218,162,73,0.5)'} strokeWidth={1.2} style={{ paddingHorizontal: 11, paddingVertical: 9, gap: 7 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Pressable onPress={() => { playSfx('buttonTap'); functions?.onEdit(open ? null : r.functionId!); }} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`${fn?.title || 'Element'} settings`}>
+                {/**
+                  * A SWIPE MUST NOT CLOSE IT (v0.42.5, owner).
+                  *
+                  * "The sections / functions items are easily tapped to close them by accident while
+                  * scrolling, i only wish to close them if I tap the X button, not if I swipe across
+                  * it to scroll the list of sections/functions."
+                  *
+                  * A React Native Pressable fires on RELEASE wherever the finger travelled, so
+                  * dragging the list by an open row's header closed it. Opening still happens on a
+                  * tap; CLOSING is the chevron at the right and nothing else, so a scroll that starts
+                  * anywhere on this row cannot collapse it. `onPressOut` compares the release point
+                  * with the press point and swallows anything that moved.
+                  */}
+                <Pressable
+                  onPressIn={(e) => { pressAt.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY }; }}
+                  onPress={(e) => {
+                    const at = pressAt.current;
+                    const moved = at ? Math.hypot(e.nativeEvent.pageX - at.x, e.nativeEvent.pageY - at.y) : 0;
+                    pressAt.current = null;
+                    if (moved > 8) return; // a drag, not a tap
+                    if (open) return; // closing is the chevron's job
+                    playSfx('buttonTap');
+                    functions?.onEdit(r.functionId!);
+                  }}
+                  style={{ flex: 1 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${fn?.title || 'Element'} settings`}>
                   <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.7, textTransform: 'uppercase' }}>{fn?.title || 'Element'}</Text>
                   <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, marginTop: 2 }}>{fn ? functionSummary(fn) : 'Configure it'}</Text>
                 </Pressable>
                 <MarkBtn label="Move up" onPress={() => move(i, -1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↑</Text></MarkBtn>
                 <MarkBtn label="Move down" onPress={() => move(i, 1)}><Text style={{ color: Rune.goldText, fontSize: 12.5, fontFamily: Body.bold }}>↓</Text></MarkBtn>
+                {open ? (
+                  <MarkBtn small label="Close these settings" onPress={() => { playSfx('buttonTap'); functions?.onEdit(null); }}>
+                    <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold }}>▲</Text>
+                  </MarkBtn>
+                ) : null}
                 <MarkBtn small label="Remove this element" onPress={() => setConfirmRemove(i)}><Text style={{ color: '#E2705A', fontSize: 12, fontFamily: Body.bold }}>✕</Text></MarkBtn>
               </View>
               {open && fn ? functions?.renderEditor(fn) : null}
@@ -393,6 +446,8 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
           what lets a feature card be arranged however the author wants. */}
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <RuneButton label="+ Add section" kind="ghost" dense height={34} style={{ flex: 1 }} muteSfx onPress={addRow} />
+        {/* v0.42.5 (owner): a gap, to separate sections and elements from each other. */}
+        <RuneButton label="+ Add gap" kind="ghost" dense height={34} style={{ flex: 0.7 }} muteSfx onPress={() => { playSfx('buttonTap'); commit([...rows, spacerSection()]); }} />
         {functions ? (
           <RuneButton
             label="+ Add function"

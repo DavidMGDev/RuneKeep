@@ -1,43 +1,50 @@
-RuneKeep v0.42.4 - One palette, real class pages, and a toolbar that fits.
+RuneKeep v0.42.5 - Dice on cards, one menu, and a share button that tells you why.
 
-ONE APP, ONE PALETTE
+ONE MENU
 
-- THE DM SCREENS ARE NOT GREY ANY MORE. Campaigns, sessions, encounters, the adversary library, every panel and every press: the same gold and ink the rest of the app uses. Player and DM are one interface now.
-- CAMPAIGNS IS A BUTTON ON THE MENU. One press, straight in, instead of flipping a mode switch and then finding them.
-- IT INTRODUCES ITSELF the first time: what a campaign is, what sessions and encounters hold, and the two things you can do from there that a player never sees. Once, and you can bring it back from the ? on the menu.
+- THERE IS NO DM MODE ANY MORE. One main menu, one card library, and a Campaigns button that goes straight to your games. Nothing toggles, nothing swaps, nothing is hidden behind a switch.
+- THE MENU DESCRIPTIONS ARE SHORT, so they stopped being shrunk to fit and are legible again.
 
-CLASS CARDS
+DICE, AS A CARD ELEMENT
 
-- EXPAND GIVES YOU THE CLASS'S OWN PAGES. Each page becomes its own card, exactly as it looks in character creation: the same art, the same plaque, the same colour. It no longer invents cards in a different format and fills them with things that were never on your class card.
-- THE FLAVOUR PAGE IS SKIPPED and the rest are numbered from 1. A three-ability class reads 1/3, 2/3, 3/3, not 2/4.
-- A CLASS CARD FROM ADD GEAR CAN EXPAND TOO, the same way, with the same numbering.
-- A CHARACTER THAT EXPANDED IN AN OLDER VERSION gets the real pages, and the cards the old version made are cleared away.
+- A FEATURE CARD CAN CARRY DICE and roll them, with the character sheet's own dice: the same faces, the same tumble, the same rising pitch as each one goes.
+- ONE DIE DRAWS SMALL, a handful draws smaller and fills the space. Tap the dice to roll, or give the element a Roll button.
+- ADD THE RESULTS UP with the same tally the dice tray uses, shown once every die has landed.
+- A DIE'S COUNT CAN BE MULTIPLIED BY A VARIABLE. "One d6 per Proficiency" is one die at tier one and two at tier two, on its own, forever. Proficiency, Tier, Level or any trait.
+- A LEVEL ADVANCEMENT CAN GRANT DICE, as many as you like: a d4 and a d6 and a d8 all arrive together and roll together. Taking it twice grants twice.
 
-TAP A TRAIT, ROLL IT
+SEE IT BEFORE YOU SHIP IT
 
-- Tapping a trait opens the dice tray and throws the duality pair with that trait's modifier. It used to do nothing unless the tray was already open.
+- THE ADVANCEMENT MENU HAS A PREVIEW. Toggle between the card as written and the card as it would be after each tier's advancement, drawn on the real card at the top of the editor.
+
+MORE VARIABLES
+
+- CURRENT AND MISSING HIT POINTS, HOPE AND ARMOR are now variables for card modifiers and for dice tray presets, always against YOUR maximum and never a global one. "Missing" is the headroom, which is what a card that pays off for being hurt wants.
+- YOUR OWN CARD ELEMENTS SHOW UP AS VARIABLES WHILE YOU ARE AUTHORING. A counter you made on one card can drive a modifier formula on another in the same pack.
 
 CAMPAIGN SETTINGS
 
-- THE FIRST STEP EXPLAINS ITSELF instead of asking for a name and a portrait a campaign does not have.
-- THE BUTTON SAYS "REMOVE SUMMONER" when pressing it removes the Summoner, and "Restore Summoner" when it is already out. It used to say Select.
-- "REMOVE ALL" AND "RESTORE ALL" replace Random. Rolling a random card to ban was never what anybody wanted.
-- NO EXPANSION QUESTION, NO DRAFT SAVED, NO LEAVE PROMPT. Nothing here is a character, so none of the ceremonies that belong to making one appear.
-- A RULE ABOUT CONTENT A PLAYER DOES NOT HAVE IS HARMLESS. Ban a class they lack and nothing happens to them. Allow something they lack and they are not shown it. The rule is kept either way, so installing the pack later brings it back.
+- THE EXPLANATION AT THE TOP IS ONE LINE, so the cards are legible again.
+- NO STEP IS BLOCKED. The subclass step shows every subclass from every enabled expansion, and the domain step shows every level 1 domain card, so you can turn any of them off without having built a character first.
+- WARNINGS WHEN THE RULES MAKE A CHARACTER IMPOSSIBLE: every class removed, a class left with no subclass, or a class whose two domains no longer hold two level 1 cards between them. Nothing else warns, because every other step can be emptied and simply skips.
+- TRAITS AND EXPERIENCES ARE NOT STEPS HERE. There is nothing on either to turn off.
 
 WRITING A CARD
 
-- THE TOOLBAR IS ONE ROW ON ITS OWN BAND, running the full width of the section to meet the border. You can tell the tools from the title field from the body field at a glance.
-- BOLD IS A BOLD B again, not the word "Bold" wrapped onto two lines.
-- ALIGNMENT IS ONE BUTTON that shows the alignment you are on and cycles to the next.
-- THE REORDER AND REMOVE BUTTONS ARE SMALLER, so the row reads as formatting first.
-- REMOVING A SECTION OR AN ELEMENT ASKS FIRST when there is something in it. An empty one still goes without a word.
+- ALIGNMENT WORKS AGAIN. It had stopped applying on any card without a functional element.
+- A GAP IS A BLOCK YOU CAN ADD, to separate sections and elements from each other. It moves and deletes like anything else, and two of them are twice the space.
+- OPEN SETTINGS NO LONGER CLOSE WHEN YOU SCROLL PAST THEM. They close on their own button.
+- LOCKED ELEMENTS CAN KEEP THE WORD "LOCKED" OFF THE CARD.
+- A COUNTDOWN CAN SHOW ITS RAISE BUTTON, faded until a level advancement unlocks it, or outright.
+- A TEXT ELEMENT CAN ARRIVE ALREADY SAYING SOMETHING, which is different from a placeholder: starting text is content the player was handed and can edit.
 
-CLASS CREATION
+SHARING A PACK
 
-- YOU ARE ASKED WHAT KIND OF CLASS CARD YOU ARE MAKING BEFORE THE EDITOR OPENS, in a proper dialog that explains both: a new class, or another page of one that already exists. It cannot change under you afterwards.
-- "ITS VOICE" IS NOW "WHAT THE CARD SAYS", and it explains that the summary is the only text this card prints, that another Class card becomes the next page, and that anything with a control on it wants a Feature card instead.
-- STARTING HIT POINTS CANNOT BE ZERO.
-- STARTING ITEMS SHOW THEIR REAL NAMES. Picked cards used to read "A card that is no longer here". The picker also only offers things that can actually be an item now.
+- THE SHARE BUTTON WEARS A YELLOW WARNING when something is blocking it.
+- IT OPENS A REPORT, not a toast: every problem, grouped under the card it belongs to, named, with what to do about it. Tap a card to go and fix it.
+- A CLASS IS REPORTED PART BY PART and a domain says WHICH LEVELS it still needs.
+- AN UNFINISHED PACK CANNOT BE SHARED. On Android it used to say it had failed and write the file anyway.
+- A NEW CUSTOM DOMAIN SHOWS A RED BLOCK saying exactly how many cards it is missing and at which levels, and turns green when it is playable.
+- THE VERSION MOVES WHEN YOU SHARE, and only if something changed since the last time you shared. It was counting saves, which with auto-save meant a version per keystroke.
 
 Sideload: enable Install unknown apps, then open the APK.

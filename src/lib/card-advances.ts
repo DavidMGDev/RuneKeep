@@ -84,13 +84,17 @@ export function advancedFunctions(card: AdvanceCard, taken: AdvanceTake[] | unde
   const mine = taken.filter((t) => t.key.startsWith(`${card.id}|`));
   if (!mine.length) return fns;
   let out = fns;
+  // v0.42.5: the index makes each TAKE distinct, which is what keeps two takes of a dice advancement
+  // from granting the same die twice under one id and collapsing into one.
+  let takeIndex = 0;
   for (const t of mine) {
+    takeIndex += 1;
     const a = card.advances.find((x) => advanceKey(card.id, x.id) === t.key);
     if (!a) continue; // an advancement the author has since deleted simply stops applying
     // The effect of the tier it was TAKEN at, not of the character's current tier: what a player
     // took at Tier 2 is theirs, and reaching Tier 3 must not silently rewrite it.
     const { effect } = advanceAt(a, t.tier);
-    out = out.map((f) => (f.id === a.functionId ? applyAdvance(f, {}, effect).fn : f));
+    out = out.map((f) => (f.id === a.functionId ? applyAdvance(f, {}, effect, `t${t.tier}-${takeIndex}`).fn : f));
   }
   return out;
 }
@@ -123,6 +127,11 @@ export function advancedStates(
 /** A one-line description of what an advancement does, for the level-up list. */
 export function advanceSummary(o: OfferedAdvance): string {
   const e = o.advance.effect;
-  const what = e.kind === 'unlock' ? 'unlocks it' : e.kind === 'set' ? `sets it to ${e.text ?? e.value}` : `${e.by > 0 ? '+' : ''}${e.by}`;
+  const what =
+    e.kind === 'unlock' ? 'unlocks it'
+    : e.kind === 'set' ? `sets it to ${e.text ?? e.value}`
+    // v0.42.5: a dice advancement GRANTS dice, so it reads as what you gain.
+    : e.kind === 'dice' ? `adds ${e.add.map((d) => `${d.count && d.count > 1 ? d.count : ''}${d.type}`).join(' + ') || 'dice'}`
+    : `${e.by > 0 ? '+' : ''}${e.by}`;
   return `${o.cardTitle}: ${what}`;
 }

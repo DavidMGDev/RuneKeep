@@ -1,3 +1,4 @@
+import type { EffectFormula } from './modifiers';
 import { type BaseStats, type CardEffect, computeSheet, effectiveLevel, type EffectSource, STAT_CAPS, tierForLevel } from './modifiers';
 
 const ZERO: BaseStats = {
@@ -326,5 +327,53 @@ describe('Max Hope is not a modifier (v0.35.1)', () => {
     const s = computeSheet(ZERO, 1, [src('Cursed', [{ target: 'scar', delta: 2 }, { target: 'hopeMax', delta: 4 }])]);
     expect(s.scar.total).toBe(2);
     expect(s.hopeMax.total).toBe(6);
+  });
+});
+
+/**
+ * v0.42.5 (owner): the six vital variables, each against the CHARACTER'S OWN maximum.
+ *
+ * The maxima come from the sheet being computed, which is the whole point: a card that raises Max
+ * Hope has to be counted before another card asks how much Hope is missing.
+ */
+describe('the vital variables', () => {
+  const vital = (variable: EffectFormula['variable'], ctx: Parameters<typeof computeSheet>[4]) =>
+    computeSheet(ZERO, 1, [src('Vitals', [{ target: 'evasion', dynamic: 'formula', formula: { variable } }])], null, ctx).evasion.total - ZERO.evasion;
+
+  const ctx = { vitals: { hp: 3, hope: 2, armor: 1 } };
+
+  it('reads current Hit Points, Hope and Armor straight from the player', () => {
+    expect(vital('currentHp', ctx)).toBe(3);
+    expect(vital('currentHope', ctx)).toBe(2);
+    expect(vital('currentArmor', ctx)).toBe(1);
+  });
+
+  it('reads MISSING as the headroom to the character own maximum', () => {
+    // The zero sheet's maxima are the defaults; missing is max minus current.
+    expect(vital('missingHp', ctx)).toBe(Math.max(0, ZERO.maxHp - 3));
+    expect(vital('missingHope', ctx)).toBe(Math.max(0, ZERO.hopeMax - 2));
+    expect(vital('missingArmor', ctx)).toBe(Math.max(0, ZERO.armorScore - 1));
+  });
+
+  it('counts a card that RAISED the maximum, which is why the max is read off the sheet', () => {
+    const s = computeSheet(
+      ZERO,
+      1,
+      [
+        src('Bigger heart', [{ target: 'maxHp', delta: 4 }]),
+        src('Scales', [{ target: 'evasion', dynamic: 'formula', formula: { variable: 'missingHp' } }]),
+      ],
+      null,
+      { vitals: { hp: 1 } },
+    );
+    expect(s.evasion.total - ZERO.evasion).toBe(ZERO.maxHp + 4 - 1);
+  });
+
+  it('never goes negative when a player is somehow over their maximum', () => {
+    expect(vital('missingHp', { vitals: { hp: 999 } })).toBe(0);
+  });
+
+  it('reads zero when the sheet is computed with no vitals at all', () => {
+    expect(vital('currentHp', undefined)).toBe(0);
   });
 });

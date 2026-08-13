@@ -22,7 +22,14 @@
  * and otherwise defers.
  */
 
-export type FunctionKind = 'counter' | 'text' | 'cycle';
+/**
+ * v0.42.5 (owner): `dice` is the fourth kind. A card that carries dice and rolls them, the way the
+ * character sheet's tray does. See `lib/card-dice` for what it holds and `card-dice-control` for how
+ * it behaves.
+ */
+import { type DiceRollMode, type DieSpec, withGrantedDice } from './card-dice';
+
+export type FunctionKind = 'counter' | 'text' | 'cycle' | 'dice';
 
 /**
  * Where the element sits relative to the card's body.
@@ -55,6 +62,14 @@ export interface CardFunction {
   title: string;
   /** The title is not printed on the card. It still names the element everywhere else. */
   titleHidden?: boolean;
+  /**
+   * v0.42.5 (owner): keep the LOCKED word off the card.
+   *
+   * A locked element prints "· LOCKED" after its name so a player is not left tapping something that
+   * will not move. On a card where every element is locked by design that is three copies of a word
+   * nobody needs, so it can be turned off. The element is still locked; it just stops announcing it.
+   */
+  lockedTextHidden?: boolean;
   /** v0.42.3: hug the content, or take the whole card width. Default hug. */
   width?: FunctionWidth;
   /** v0.42.3: how big the control draws. Default medium. */
@@ -81,11 +96,48 @@ export interface CardFunction {
   countdown?: boolean;
   /** Countdown only: pushed below zero it goes back to `start`. */
   loop?: boolean;
+  /**
+   * v0.42.5 (owner): a COUNTDOWN may still show its raise button.
+   *
+   * "It always hides the count up instead of giving the option to fade it out and/or unlock it in the
+   * future as a level advancement."
+   *
+   * Three states rather than two, because they are three different statements: `hidden` is the old
+   * behaviour and says the element only ever goes down; `faded` says it goes up too, one day, and
+   * shows the button greyed so the player knows to expect it; `shown` is an ordinary raise button on
+   * a counter that happens to start full. An advancement moves it from `faded` to `shown` with an
+   * `unlock`, which is the same word that opens a locked element.
+   */
+  raiseButton?: 'hidden' | 'faded' | 'shown';
 
   // --- text ---
   /** How many lines the field is. One is a word; several is a paragraph. */
   lines?: number;
+  /** The grey suggestion shown while the field is empty. */
   placeholder?: string;
+  /**
+   * v0.42.5 (owner): what the field ALREADY SAYS when the card arrives.
+   *
+   * "The text mode should have a placeholder option or a checkbox to set a starting text instead."
+   *
+   * The difference is real: a placeholder disappears the moment anybody types and is never part of
+   * the card's content, while starting text IS content the player was given and may edit. A card that
+   * hands somebody a filled-in line wants this one.
+   */
+  startText?: string;
+
+  // --- dice (v0.42.5) ---
+  /**
+   * The dice this element holds, each with a count and optionally a variable multiplying it.
+   *
+   * "If I set the default dice to just a d6 but I make it so that it is multiplied by a variable, say
+   * proficiency, then by tier two this section will have two d6 instead of just one." See `DieSpec`.
+   */
+  dice?: DieSpec[];
+  /** Add every result together and show the total, the way the tray does. */
+  diceTally?: boolean;
+  /** Tap the dice to roll them, or press a button under them. */
+  diceRollMode?: DiceRollMode;
 
   // --- cycle ---
   /** The states the button walks through, in order. */
@@ -159,6 +211,16 @@ export function advanceAt(a: CardAdvance, tier: number): { label: string; effect
 }
 
 export type AdvanceEffect =
+  /**
+   * v0.42.5 (owner): GRANT DICE to a dice element.
+   *
+   * "The level-advancements must allow me to add a list of dice gained upon level-advancement, so if
+   * I want then a level advancement can grant me a d4 a d6 and a d8 for this function section, they
+   * all get rolled together."
+   *
+   * Additive, and additive per TAKE: taking it twice grants twice, which is what twice-per-tier means.
+   */
+  | { kind: 'dice'; add: DieSpec[] }
   /** A counter's value, floor and ceiling all move by this much. "Your die goes up one step." */
   | { kind: 'step'; by: number }
   /** A counter is set to this, or a text field / cycle is set to this option. */
@@ -186,11 +248,13 @@ export function newFunction(id: string, kind: FunctionKind): CardFunction {
   const base = { id, kind, title: DEFAULT_TITLE[kind] };
   if (kind === 'counter') return { ...base, start: 0, max: undefined, countdown: false };
   if (kind === 'text') return { ...base, lines: 1, placeholder: '' };
+  // v0.42.5: one die, tapped to roll, no tally. The Brawler's Combo Die is exactly this.
+  if (kind === 'dice') return { ...base, dice: [{ id: 'die-1', type: 'd6' }], diceRollMode: 'tap', diceTally: false };
   return { ...base, options: ['Off', 'On'], startIndex: 0 };
 }
 
 /** What a brand new element is called before the author names it. */
-const DEFAULT_TITLE: Record<FunctionKind, string> = { counter: 'Counter', text: 'Notes', cycle: 'State' };
+const DEFAULT_TITLE: Record<FunctionKind, string> = { counter: 'Counter', text: 'Notes', cycle: 'State', dice: 'Dice' };
 
 /**
  * The state a function has before anyone has touched it.
@@ -201,7 +265,8 @@ const DEFAULT_TITLE: Record<FunctionKind, string> = { counter: 'Counter', text: 
  */
 export function defaultState(f: CardFunction): FunctionState {
   if (f.kind === 'counter') return { n: clampCounter(f, f.start ?? 0) };
-  if (f.kind === 'text') return { s: '' };
+  // v0.42.5: a text element may arrive already saying something (see `startText`).
+  if (f.kind === 'text') return { s: f.startText ?? '' };
   return { i: clampIndex(f.startIndex ?? 0, f.options?.length ?? 0) };
 }
 
@@ -218,7 +283,9 @@ export function clampCounter(f: CardFunction, n: number): number {
 export function canStepFunction(f: CardFunction, state: FunctionState, delta: number): boolean {
   if (f.kind !== 'counter' || f.locked) return false;
   const n = stateOf(f, state).n ?? 0;
-  if (delta > 0) return !f.countdown && (f.max == null || n < f.max);
+  // v0.42.5: a countdown whose author gave it a raise button may be raised. `hidden` (and absent, on
+  // a countdown) still means down only, which is what every countdown authored before this is.
+  if (delta > 0) return (!f.countdown || f.raiseButton === 'shown') && (f.max == null || n < f.max);
   // Down: a looping countdown may always be pushed off the bottom, because that is its wrap.
   if (f.countdown && f.loop) return true;
   return n > (f.min ?? 0);
@@ -261,7 +328,9 @@ export const setTextValue = (s: string): FunctionState => ({ s });
  * a new ceiling and a new current value, and leaving the value behind would show a d4's number under
  * a d6's label. An advancement that unlocks simply opens the element and leaves the number alone.
  */
-export function applyAdvance(f: CardFunction, state: FunctionState, effect: AdvanceEffect): { fn: CardFunction; state: FunctionState } {
+export function applyAdvance(f: CardFunction, state: FunctionState, effect: AdvanceEffect, takeId = 't'): { fn: CardFunction; state: FunctionState } {
+  // v0.42.5: dice are GRANTED, never replaced. `takeId` keeps two takes of one advancement apart.
+  if (effect.kind === 'dice') return { fn: { ...f, dice: withGrantedDice(f.dice, effect.add, takeId) }, state: stateOf(f, state) };
   if (effect.kind === 'unlock') return { fn: { ...f, locked: false, hidden: false }, state: stateOf(f, state) };
   if (effect.kind === 'set') {
     if (f.kind === 'counter') { const fn = { ...f, start: effect.value }; return { fn, state: { n: clampCounter(fn, effect.value) } }; }
@@ -306,6 +375,7 @@ export function functionSummary(f: CardFunction): string {
     return (f.countdown ? `Countdown, ${range}${f.loop ? ', restarts' : ''}` : `Counter, ${range}`) + lock;
   }
   if (f.kind === 'text') return `Text, ${f.lines && f.lines > 1 ? `${f.lines} lines` : 'one line'}` + lock;
+  if (f.kind === 'dice') return `Dice, ${(f.dice ?? []).map((d) => `${d.count && d.count > 1 ? d.count : ''}${d.type}${d.variable ? ' ×var' : ''}`).join(' + ') || 'none yet'}` + lock;
   return `Cycle, ${(f.options ?? []).length} options` + lock;
 }
 

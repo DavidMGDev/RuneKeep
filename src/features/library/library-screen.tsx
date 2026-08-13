@@ -7,12 +7,11 @@
  */
 import * as ImagePicker from 'expo-image-picker';
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
-import { ArtImage } from '@/components/art-image';
 import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
@@ -29,7 +28,6 @@ import {
   type LibraryCard,
   type LibraryContentType,
   type WeaponSpec,
-  expansionShareIssues,
   expansionSummary,
   incompleteSubclasses,
   isEnabledForCreation,
@@ -54,6 +52,11 @@ import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/l
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
+import { advancedFunctions } from '@/lib/card-advances';
+import { functionVars } from '@/lib/function-vars';
+import { afterShare, nextShareVersion } from '@/lib/pack-version';
+import { canSharePack, shareReport } from '@/lib/share-report';
+import { ShareReportDialog, WarningTriangle } from './share-report-dialog';
 import { itemTitleFor } from '@/lib/item-title';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
@@ -313,10 +316,41 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
             A playable domain needs at least one card at every level from 1 to 10, and two at level 1, so eleven at a minimum.
             Write as many more as you like: several cards can share a level, and the published domains do exactly that.
           </Text>
+          {/**
+            * THE RED BLOCK (v0.42.5, owner: "I still dont see the red warning block I asked for at
+            * the end of creating a new custom domain, where it must say how many domain cards are
+            * missing for this domain to be valid").
+            *
+            * v0.42.1 printed the first problem as one gold line, which reads as a hint rather than as
+            * a blocker, and a hint is not what an author needs when the pack cannot be shared. It is
+            * the same red panel the class form uses, saying the count and the levels, and it turns
+            * green the moment the domain is playable.
+            */}
           {card.title.trim() ? (
-            <Text style={{ color: domainProblems(card.title, siblings).length ? Rune.red : Rune.goldText, fontSize: 11, fontFamily: Body.bold, lineHeight: 15 }}>
-              {domainProblems(card.title, siblings)[0] ?? 'Every level is covered. This domain is ready.'}
-            </Text>
+            (() => {
+              const probs = domainProblems(card.title, siblings);
+              const cards = siblings.filter((c) => c.contentType === 'domain' && (c.domain ?? '').trim().toLowerCase() === card.title.trim().toLowerCase());
+              return probs.length ? (
+                <ChamferBox chamfer={8} fill="rgba(120,30,28,0.22)" stroke={Rune.red} strokeWidth={1.2} style={{ padding: 10, gap: 4 }}>
+                  <Text style={{ color: Rune.ivory, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                    This domain is not playable yet
+                  </Text>
+                  {probs.map((pr) => (
+                    <Text key={pr} style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>{'• '}{pr}</Text>
+                  ))}
+                  <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular, lineHeight: 14 }}>
+                    Write the missing ones as Domain cards in this pack and set each one&apos;s domain to {card.title.trim()}.
+                    The pack cannot be shared until they are there.
+                  </Text>
+                </ChamferBox>
+              ) : (
+                <ChamferBox chamfer={8} fill="rgba(30,80,45,0.2)" stroke="rgba(120,190,140,0.6)" strokeWidth={1.2} style={{ padding: 10 }}>
+                  <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.bold }}>
+                    Every level is covered. {cards.length} card{cards.length === 1 ? '' : 's'}, and this domain is playable.
+                  </Text>
+                </ChamferBox>
+              );
+            })()
           ) : null}
         </View>
       ) : null}
@@ -542,7 +576,14 @@ function MetaForm({ initial, onSave, onCancel }: { initial?: Expansion; onSave: 
     * place when a higher number arrives, and an author who forgets to raise it by hand ships an update
     * nobody receives. It is still shown, so a DM can tell a player which one they are on.
     */
-  const version = (initial?.version ?? 0) + 1;
+  /**
+   * v0.42.5 (owner): the version is stamped ON SHARE, not on save.
+   *
+   * With auto-save on every card edit, bumping here meant a version per keystroke and a number that
+   * said nothing. It moves when what would arrive on somebody's device is different, which is what a
+   * version is for. See `lib/pack-version`.
+   */
+  const version = initial?.version ?? 1;
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
       {/* v0.13.0: non-dismissing backdrop — a stray tap between fields must never destroy typed input.
@@ -603,6 +644,10 @@ export function LibraryScreen() {
   const [movingCards, setMovingCards] = useState<LibraryCard[]>([]);
   /** v0.42.3: the cards a delete is being confirmed for. */
   const [confirmDeleteCards, setConfirmDeleteCards] = useState<LibraryCard[]>([]);
+  /** v0.42.5: which tier the card preview is showing, for the advancement preview (item 7). */
+  const [previewTier, setPreviewTier] = useState<number | null>(null);
+  /** v0.42.5: the cards whose share report is on screen. */
+  const [reportFor, setReportFor] = useState<LibraryCard[] | null>(null);
   /** v0.42.4: the class-card question, asked before the editor opens. */
   const [askingClassRole, setAskingClassRole] = useState(false);
   /** v0.42.3: which of a class's three starting-item lists the card browser is filling. */
@@ -689,7 +734,7 @@ export function LibraryScreen() {
    * Each selected image becomes its own card, rendered edge to edge, which is what the Daggerheart
    * card creator's exports already are. They arrive untitled and generic deliberately: this is the
    * bulk step, and the editing pass afterwards is where each one is given a name and told what it is.
-   * `expansionShareIssues` is the gate that stops a pack leaving before then.
+   * `canSharePack` is the gate that stops a pack leaving before then.
    */
   const addCardsFromImages = useCallback(async (exp: Expansion) => {
     try {
@@ -756,7 +801,22 @@ export function LibraryScreen() {
         if (cur.includes(id)) return st;
         return { ...st, config: { ...st.config, classSpec: { ...spec, [key]: [...cur, id] } } };
       });
-    /** The card as it will be saved, so the preview above is the card and not an impression of it. */
+    /**
+     * The card as it will be saved, so the preview above is the card and not an impression of it.
+     *
+     * v0.42.5: and optionally as it would be AFTER an advancement, which is item 7. The takes are
+     * synthetic, one per advancement offered at the chosen tier, folded through the same
+     * `advancedFunctions` the sheet uses, so what the author is shown is what a player at that tier
+     * would actually hold.
+     */
+    const previewFns = (): CardFunction[] | undefined => {
+      if (previewTier == null || !cfg.functions?.length) return cfg.functions;
+      const id = existing?.id ?? 'preview';
+      const takes = (cfg.advances ?? [])
+        .filter((a) => !a.tiers.length || a.tiers.includes(previewTier))
+        .map((a) => ({ key: `${id}|${a.id}`, tier: previewTier }));
+      return advancedFunctions({ id, title: '', functions: cfg.functions, advances: cfg.advances }, takes);
+    };
     const previewCard = (d: CardDraft): LibraryCard => ({
       id: existing?.id ?? 'preview',
       contentType: cfg.contentType,
@@ -766,7 +826,7 @@ export function LibraryScreen() {
       color: d.color,
       typeLabel: cfg.typeLabel ?? d.typeLabel,
       sections: d.sections,
-      functions: cfg.functions,
+      functions: previewFns(),
       domain: cfg.domain,
       level: cfg.level,
       className: cfg.className,
@@ -784,6 +844,25 @@ export function LibraryScreen() {
         sectioned
         sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
         noFullImage={isFeature}
+        /**
+         * THE EXPANSION'S OWN ELEMENTS, as variables (v0.42.5, owner).
+         *
+         * "I created a counter function card that has a name, it was called Counter Variable. I went
+         * to create another card, which i wanted a modifier for, and I wanted the formula of that
+         * modifier to be based on the number of that counter, but Counter Variable does not show up
+         * as a variable for card modifiers."
+         *
+         * `functionVars` was only ever asked of a CHARACTER's cards, so while authoring there was no
+         * character and the list was empty. Here the pack itself is the source: every card in it, plus
+         * the one being edited, so an element can be referenced the moment it exists. No player state,
+         * so the values shown are the author's own defaults, which is the only truthful answer before
+         * anybody has played the card.
+         */
+        functionVars={functionVars(
+          [...selected.cards.filter((c) => c.id !== existing?.id), ...(cfg.functions?.length ? [{ id: existing?.id ?? 'preview', title: existing?.title?.trim() || 'This card', functions: cfg.functions, advances: cfg.advances }] : [])],
+          undefined,
+          [],
+        )}
         /**
          * THE PREVIEW (v0.42.3, owner): the real `LibraryForgedCard`, which is the component the
          * character sheet draws, with this card's own elements and live state. Not a mock-up of the
@@ -807,6 +886,8 @@ export function LibraryScreen() {
                   <FunctionEditor
                     fn={fn}
                     advance={(cfg.advances ?? []).find((a) => a.functionId === fn.id)}
+                    previewTier={previewTier}
+                    onPreviewTier={setPreviewTier}
                     onChange={(next) => setEditingCard((st) => (st ? { ...st, config: { ...st.config, functions: (st.config.functions ?? []).map((x) => (x.id === fn.id ? next : x)) } } : st))}
                     onAdvance={(a) =>
                       setEditingCard((st) =>
@@ -925,6 +1006,8 @@ export function LibraryScreen() {
   // ---- expansion detail ----
   if (selected) {
     const s = expansionSummary(selected);
+    /** What is stopping this pack from being shared. One answer, used by the badge and the dialog. */
+    const report = shareReport(selected);
     /**
      * The header, re-laid out (v0.42.3, owner: "this entire interface is pretty ass").
      *
@@ -939,16 +1022,38 @@ export function LibraryScreen() {
      * The gallery gets everything below, because the cards are what the screen is about, and the two
      * creation buttons close it off at the bottom where the primary action belongs.
      */
-    const share = (cards: LibraryCard[]) => {
+    /**
+     * SHARING, gated once (v0.42.5, owner).
+     *
+     * v0.42.4 checked, said "Could not share that expansion" in a toast, and on native wrote the file
+     * anyway: the check and the act were separate pieces of code and only one of them ran. There is
+     * one gate now, `canSharePack`, and the only path to `doShare` is through a dialog that exists
+     * solely when the report is clean.
+     *
+     * The VERSION is stamped here rather than on save (owner): a version is what an installed copy
+     * compares itself against, so it moves when what would arrive is different, and not when somebody
+     * typed a letter. See `lib/pack-version`.
+     */
+    const doShare = (cards: LibraryCard[]) => {
       playSfx('buttonTap');
-      const pack = cards === selected.cards ? selected : { ...selected, cards };
-      const issues = expansionShareIssues(pack);
-      if (issues.length) { setMessage({ title: 'Finish these cards first', body: `${issues.slice(0, 6).join('\n')}${issues.length > 6 ? `\nand ${issues.length - 6} more.` : ''}` }); return; }
+      const whole = cards === selected.cards;
+      const stamped = whole ? afterShare(selected) : { ...selected, cards, version: nextShareVersion({ ...selected, cards }) };
       // v0.34.8: the pictures travel INSIDE the file. A card's imageUri is a path into this phone, so
       // a pack shared without this arrived with every image blank.
-      void embedExpansionImages(pack)
-        .then((packed) => exportRkp({ kind: 'expansion', payload: packed }, pack.name))
-        .catch(() => showToast('Could not share that expansion.', 'error'));
+      void embedExpansionImages(stamped)
+        .then((packed) => exportRkp({ kind: 'expansion', payload: packed }, stamped.name))
+        .then(() => {
+          // Recorded only after the file actually left, so a failed write does not claim a version.
+          if (whole) void persist(stamped);
+          showToast(`${stamped.name} v${stamped.version} shared.`, 'success');
+        })
+        .catch(() => showToast('Could not write that file. Nothing was shared.', 'error'));
+    };
+    /** A selection of cards travels as a pack of its own, and is held to the same standard. */
+    const share = (cards: LibraryCard[]) => {
+      const pack = cards === selected.cards ? selected : { ...selected, cards };
+      if (!canSharePack(pack)) { setReportFor(cards); return; }
+      doShare(cards);
     };
     return (
       <AppScreen dm={dm} title={selected.name} onBack={() => setSelectedId(null)}>
@@ -956,7 +1061,7 @@ export function LibraryScreen() {
           <View style={{ gap: Gap.intra }}>
             <View style={{ gap: Gap.hair }}>
               <Text style={{ color: P.goldText, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-                by {selected.author || 'unknown'} · v{selected.version} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}
+                by {selected.author || 'unknown'} · v{nextShareVersion(selected)} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}
               </Text>
               {selected.description ? (
                 <Text style={{ color: P.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17 }}>{selected.description}</Text>
@@ -970,7 +1075,23 @@ export function LibraryScreen() {
                   and no pop-up on the way. See `create-screen`'s campaign mode. */}
               <RuneButton dm={dm} label="Campaign settings" kind="ghost" dense height={36} style={{ flex: 1.4 }} onPress={() => { playSfx('buttonTap'); router.push(`/create?campaign=${selected.id}` as Href); }} />
               {/* v0.34.8 (owner): saving a half-finished pack is fine, sending one is not. */}
-              <RuneButton dm={dm} label="Share pack" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => share(selected.cards)} />
+              {/**
+                * v0.42.5 (owner): "Add a yellow warning symbol in the corner of the Share Pack button
+                * for the expansion pack if it has red-warnings active, this way the user knows to tap
+                * it to see what problems have risen."
+                *
+                * The button always opens the report now, whether the pack is ready or not: the two
+                * questions it answers, "why can I not share this" and "is this ready", are the same
+                * question asked at different times.
+                */}
+              <View style={{ flex: 1 }}>
+                <RuneButton dm={dm} label="Share pack" kind="ghost" dense height={36} onPress={() => { playSfx('buttonTap'); setReportFor(selected.cards); }} />
+                {report.ok ? null : (
+                  <View pointerEvents="none" style={{ position: 'absolute', top: -5, right: -5 }}>
+                    <WarningTriangle size={16} />
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
@@ -1102,6 +1223,21 @@ export function LibraryScreen() {
               <RuneButton dm={dm} label="Cancel" kind="ghost" height={40} onPress={() => setAskingClassRole(false)} />
             </ChamferBox>
           </View>
+        ) : null}
+        {reportFor ? (
+          <ShareReportDialog
+            report={shareReport({ cards: reportFor })}
+            packName={selected.name}
+            onGoToCard={(cardId) => {
+              const i = selected.cards.findIndex((x) => x.id === cardId);
+              const c = selected.cards[i];
+              setReportFor(null);
+              if (!c) return;
+              setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } });
+            }}
+            onShare={() => { const cards = reportFor; setReportFor(null); doShare(cards); }}
+            onClose={() => setReportFor(null)}
+          />
         ) : null}
         {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
         {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
