@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { ImageCropper } from '@/components/image-cropper';
 import { ColorPalette } from '@/components/color-palette';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, DmRune, DmType } from '@/constants/theme';
@@ -46,12 +47,12 @@ export function IdentityEditor({
   const [draft, setDraft] = useState<DmIdentity>(initial);
   const [picking, setPicking] = useState(false);
 
+  /** v0.42.6: positioned before it is kept, like every other portrait in the app. */
+  const [cropping, setCropping] = useState<string | null>(null);
   const pickImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
-    // v0.26.0: own the file, or an update clears the cache it came from (see lib/owned-image).
     if (res.canceled || !res.assets[0]) return;
-    const owned = (await ownImage(res.assets[0].uri)) ?? undefined;
-    setDraft((d) => ({ ...d, imageUri: owned }));
+    setCropping(res.assets[0].uri);
   };
 
   /**
@@ -76,6 +77,19 @@ export function IdentityEditor({
     );
   }
 
+  if (cropping) {
+    // v0.42.6: an emblem is square, so it crops square. The frame's shape is the caller's, which is
+    // the whole reason the cropper takes an aspect rather than assuming a portrait.
+    return (
+      <ImageCropper
+        uri={cropping}
+        aspect={1}
+        title="Position the image"
+        onCancel={() => setCropping(null)}
+        onDone={(r) => { setCropping(null); void ownImage(r.uri).then((uri) => setDraft((d) => ({ ...d, imageUri: uri ?? undefined }))); }}
+      />
+    );
+  }
   return (
     <DmModal onClose={onCancel}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 340, maxHeight: 620, padding: 18 }}>

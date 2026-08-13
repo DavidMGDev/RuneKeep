@@ -29,8 +29,8 @@ const FILE_NAME = 'onboarding.json';
  * screen is coming, so the screen has to say so itself. Once, and re-openable from the menu's `?`
  * like every other tour.
  */
-export type TourId = 'welcome' | 'creation' | 'sheet' | 'campaigns';
-export const TOUR_IDS: TourId[] = ['welcome', 'creation', 'sheet', 'campaigns'];
+export type TourId = 'welcome' | 'creation' | 'sheet' | 'campaigns' | 'classcards';
+export const TOUR_IDS: TourId[] = ['welcome', 'creation', 'sheet', 'campaigns', 'classcards'];
 
 export interface TourState {
   done: boolean;
@@ -45,6 +45,7 @@ const FRESH: OnboardingState = {
   creation: { done: false, step: 0 },
   sheet: { done: false, step: 0 },
   campaigns: { done: false, step: 0 },
+  classcards: { done: false, step: 0 },
 };
 
 const fresh = (): OnboardingState => ({
@@ -52,6 +53,7 @@ const fresh = (): OnboardingState => ({
   creation: { ...FRESH.creation },
   sheet: { ...FRESH.sheet },
   campaigns: { ...FRESH.campaigns },
+  classcards: { ...FRESH.classcards },
 });
 
 type FS = typeof import('expo-file-system');

@@ -162,6 +162,7 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
         imageUri={card.imageUri}
         colorArt={card.color}
         pageMark={pageMark}
+        bannerArt={card.contentType === 'class'}
         multilineTitle
       />
     );
@@ -196,6 +197,7 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
       imageUri={card.imageUri}
       colorArt={card.color}
       pageMark={pageMark}
+      bannerArt={card.contentType === 'class'}
       multilineTitle
     />
   );

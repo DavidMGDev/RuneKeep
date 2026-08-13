@@ -241,6 +241,7 @@ export function ForgedCard({
   bodyBelow,
   bodyBlocks,
   blocksHeight = 0,
+  bannerArt,
 }: {
   title: string;
   kindLabel: string;
@@ -260,6 +261,13 @@ export function ForgedCard({
   bodyBlocks?: BodyBlock[];
   /** How much of the body's room the elements take, so the prose is sized around them. */
   blocksHeight?: number;
+  /**
+   * v0.42.6: draw `imageUri` as a BANNER rather than as the art.
+   *
+   * At the bundled banner's exact size, snapped to the top and centred across, over whatever colour
+   * the card carries. For a cut-out PNG on a class card, which is the case this exists for.
+   */
+  bannerArt?: boolean;
   accentDeep: string;
   Banner?: FC<SvgProps>;
   /** Player-supplied art (#107 experiences): fills the art zone instead of a banner. */
@@ -288,8 +296,26 @@ export function ForgedCard({
     // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
     <View style={{ width: FORGED_W, height: FORGED_H, backgroundColor: Rune.sheet, overflow: 'hidden' }}>
       {/* art zone — class-deep ground (or a flat random color, #153); a banner, or the player's image */}
-      <View style={{ height: ART_H, backgroundColor: !imageUri && colorArt ? colorArt : accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
-        {imageUri ? (
+      <View style={{ height: ART_H, backgroundColor: colorArt ?? accentDeep, alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' }}>
+        {/**
+          * A BANNER PNG sits where a banner sits (v0.42.6, owner).
+          *
+          * "Make sure that for class cards if I upload a transparent png it has no padding from the
+          * top, it should not center the png it should snap it to the top and be horizontally in the
+          * center... force the scale of pngs to be snapped onto the same dimensions the class banner
+          * has in the base game."
+          *
+          * A normal card image FILLS the art zone, which is right for a photograph and wrong for a
+          * cut-out banner: cover crops it and centring it leaves it floating. `bannerArt` draws the
+          * image at the bundled banner's exact box, hard against the top edge and centred across, so
+          * an uploaded banner lands where every published class's does.
+          *
+          * The colour is painted UNDER it either way, which is the owner's other ask: a class card can
+          * have a background colour AND a banner, the way the published ones do.
+          */}
+        {imageUri && bannerArt ? (
+          <ExpoImage source={{ uri: imageUri }} style={{ width: BANNER_W, height: BANNER_H }} contentFit="contain" cachePolicy="memory-disk" />
+        ) : imageUri ? (
           <ExpoImage source={{ uri: imageUri }} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />
         ) : colorArt ? null : fallbackArt != null ? (
           <ExpoImage source={fallbackArt} style={{ width: FORGED_W, height: ART_H }} contentFit="cover" cachePolicy="memory-disk" />

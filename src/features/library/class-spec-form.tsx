@@ -89,14 +89,24 @@ function Section({ title, hint, children }: { title: string; hint: string; child
 }
 
 /** What currently points at this class, or what is missing, in one line each. */
-function Attached({ label, cards, empty }: { label: string; cards: LibraryCard[]; empty: string }) {
+function Attached({ label, cards, empty, onOpen }: { label: string; cards: LibraryCard[]; empty: string; onOpen?: (id: string) => void }) {
   return (
     <View style={{ gap: 3 }}>
       <Text style={{ color: cards.length ? Rune.goldText : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase' }}>
         {label} · {cards.length}
       </Text>
       {cards.length ? (
-        cards.map((c) => <Text key={c.id} numberOfLines={1} style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular }}>{'• '}{c.title || 'Untitled'}</Text>)
+        /**
+         * v0.42.6: a page is TAPPABLE from here.
+         *
+         * The pack's gallery no longer lists pages beside their class (they are one card now), so this
+         * report is the way to them. A row that names a card you cannot open would be a dead end.
+         */
+        cards.map((c) => (
+          <Pressable key={c.id} onPress={onOpen ? () => onOpen(c.id) : undefined} disabled={!onOpen} accessibilityRole={onOpen ? 'button' : undefined} accessibilityLabel={onOpen ? `Edit ${c.title || 'this card'}` : undefined}>
+            <Text numberOfLines={1} style={{ color: onOpen ? Rune.goldText : Rune.sheet, fontSize: 11.5, fontFamily: Body.regular }}>{'• '}{c.title || 'Untitled'}{onOpen ? '  ›' : ''}</Text>
+          </Pressable>
+        ))
       ) : (
         <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic, lineHeight: 14 }}>{empty}</Text>
       )}
@@ -172,7 +182,7 @@ function ItemPicker({ label, hint, chosen, options, onChange }: { label: string;
   );
 }
 
-export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle, onPickItems, onChange, onClassName }: {
+export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle, onPickItems, onChange, onClassName, onOpenCard }: {
   spec: CustomClassSpec | undefined;
   /** The class card being edited, so the report can be about it by name. */
   card: LibraryCard;
@@ -194,6 +204,8 @@ export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle
   onChange: (s: CustomClassSpec) => void;
   /** A page card names the class it belongs to, which lives on the CARD rather than in the spec. */
   onClassName: (name: string | undefined) => void;
+  /** v0.42.6: open one of the cards this class reports, since they are no longer listed beside it. */
+  onOpenCard?: (id: string) => void;
 }) {
   const s = spec ?? EMPTY_CLASS_SPEC;
   const set = (patch: Partial<CustomClassSpec>) => onChange({ ...s, ...patch });
@@ -311,7 +323,7 @@ export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle
           <FormSection title="What points at this class" hint="Written elsewhere, as cards of their own, each naming this class. This is only the report.">
             <Attached label="Subclasses" cards={attachments.subclasses} empty="None yet. Make a Subclass card and set its class to this one." />
             <Attached label="Feature cards" cards={attachments.features} empty="None yet. Make a Feature card and set its class to this one." />
-            <Attached label="Extra pages" cards={attachments.pages} empty="None yet. Make another Class card, choose 'Another page of a class', and name this one." />
+            <Attached label="Extra pages" cards={attachments.pages} onOpen={onOpenCard} empty="None yet. Make another Class card, choose 'Another page of a class', and name this one." />
           </FormSection>
         </>
       )}

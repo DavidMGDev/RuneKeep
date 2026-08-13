@@ -30,6 +30,8 @@ import { domainLabel } from './domain-label';
 export interface CardFormFacts {
   contentType: LibraryContentType;
   domain?: string;
+  /** v0.42.6: a class card's spec, so a PAGE can be told from a base and write nothing. */
+  classSpec?: { role?: 'base' | 'page' };
   level?: number;
   className?: string;
   subclass?: string;
@@ -78,7 +80,16 @@ export function formMarkdown(f: CardFormFacts): string {
     case 'subclass':
       return join([row('Class', f.className), row('Subclass', f.subclass), row('Tier', SUBCLASS_TIER_LABEL[f.tier ?? 1])]);
     case 'class':
-      return join([row('Class', f.className)]);
+      /**
+       * v0.42.6 (owner): a class PAGE writes nothing.
+       *
+       * "Remove the automatic markdown generation for class card pages because it is unnecessary
+       * considering that the class card pages already copy the style of the original class card."
+       *
+       * It printed "Class: Warden" onto a card that already says Warden across the top in the class's
+       * own colour, which is the app repeating itself onto somebody's card.
+       */
+      return f.classSpec?.role === 'page' ? '' : join([row('Class', f.className)]);
     default:
       return '';
   }

@@ -44,6 +44,7 @@ import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store
 import { shouldShow } from '@/lib/onboarding-store';
 
 import { campaignWarnings } from '@/lib/campaign-warnings';
+import { ImageCropper } from '@/components/image-cropper';
 import { assembleClasses, faceMark } from '@/lib/custom-class-pages';
 import { classKeyOf } from '@/lib/custom-class';
 import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, setKeys, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
@@ -1625,13 +1626,21 @@ export function CreateScreen() {
     setEditingExperience(null);
   }, [draft.experiences, set]);
 
+  /**
+   * v0.42.6 (owner): the picture is POSITIONED before it is kept.
+   *
+   * "On both web and native i want when I upload a portrait I wish to be able to reposition / zoom /
+   * crop the image that I upload."
+   *
+   * The picker's own `allowsEditing` was turned off in #155 because its native crop box is square on
+   * Android and cannot be told otherwise. `components/image-cropper` is the app's own, the same on
+   * both platforms, and cropped to the portrait's real 3:4.
+   */
+  const [croppingPortrait, setCroppingPortrait] = useState<string | null>(null);
   const pickPortrait = useCallback(async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155) — positioned in the portrait mask instead
-    // v0.26.0: copy it somewhere the app owns first. The picker returns a path into the CACHE
-    // directory, which an app update is free to clear, and that is exactly why portraits kept
-    // disappearing from the roster after an update while the character file itself was fine.
-    if (!res.canceled && res.assets[0]) set({ portraitUri: await ownImage(res.assets[0].uri) });
-  }, [set]);
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
+    if (!res.canceled && res.assets[0]) setCroppingPortrait(res.assets[0].uri);
+  }, []);
 
   /** Read by the two skip paths, which must never land the DM on a step they cannot open. */
   const lockedRef = useRef<(k: DeckKey) => boolean>(() => false);
@@ -2250,6 +2259,17 @@ export function CreateScreen() {
       {/* v0.12.2: the per-character expansion picker — shown once the entry loader clears and the installed
           expansions are known. Base defaults checked (plus any expansion enabled-for-creation); confirming
           finalizes `picked`, which gates every content list above. */}
+      {/* v0.42.6: position it, then own it. `ownImage` copies out of the picker's cache directory,
+          which an app update is free to clear (v0.26.0), so it runs on the CROPPED file. */}
+      {croppingPortrait ? (
+        <ImageCropper
+          uri={croppingPortrait}
+          aspect={3 / 4}
+          title="Position your portrait"
+          onCancel={() => setCroppingPortrait(null)}
+          onDone={(r) => { setCroppingPortrait(null); void ownImage(r.uri).then((uri) => set({ portraitUri: uri })); }}
+        />
+      ) : null}
       {pickerOpen && expansions && !loaderUp ? (
         <ExpansionPicker
           expansions={expansions}
