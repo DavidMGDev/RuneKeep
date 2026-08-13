@@ -63,6 +63,22 @@ export function orderedFunctions(sections: CardSection[] | undefined, functions:
   return blocksOf(sections, functions).flatMap((b) => (b.fn ? [b.fn] : []));
 }
 
+/**
+ * A SPACER (v0.42.5, owner).
+ *
+ * "Make it so that in the section UI I can add a spacing element into the list, to cause an amount of
+ * separation between sections and between function elements in the case of feature cards."
+ *
+ * A section whose only content is a gap. It is a section rather than a property of its neighbours
+ * because that is how it behaves: it moves with the arrows, it is removed like anything else, and two
+ * of them are twice the gap. `space` is its height in card px, so an author can ask for a hairline or
+ * for half a card.
+ */
+export const spacerSection = (space = 8): CardSection => ({ body: '', space });
+
+/** Whether this section IS a spacer, which is what makes it draw nothing and compose to nothing. */
+export const isSpacer = (s: CardSection): boolean => !!s.space && !s.functionId;
+
 /** Add an element: its configuration, and the section that places it at the end of the body. */
 export function addFunction(
   sections: CardSection[] | undefined,
@@ -96,7 +112,7 @@ export function removeFunction(
  * tidying up is its own kind of hostile.
  */
 export const needsRemoveConfirm = (section: CardSection): boolean =>
-  !!section.functionId || !!section.body.trim() || !!(section.name ?? '').trim();
+  !!section.functionId || (!isSpacer(section) && (!!section.body.trim() || !!(section.name ?? '').trim()));
 
 /** Move a block up or down. Out of range is a no-op rather than an error, because it is a button. */
 export function moveBlock(sections: CardSection[], index: number, dir: -1 | 1): CardSection[] {

@@ -67,6 +67,14 @@ export interface CardSection {
    * before this existed.
    */
   align?: 'left' | 'center' | 'right' | 'justify';
+  /**
+   * v0.42.5 (owner): this section IS A GAP, this many card px tall.
+   *
+   * It draws nothing and composes to nothing; it exists to push what follows it away from what came
+   * before. A section rather than a margin on its neighbours, because it moves and deletes like every
+   * other block and two of them are twice the space. See `lib/card-blocks`.
+   */
+  space?: number;
 }
 
 /** The section indexes of an ancestry's Feature 1 and Feature 2, in vertical order. Falls back to the

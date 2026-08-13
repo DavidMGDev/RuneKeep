@@ -315,10 +315,41 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
             A playable domain needs at least one card at every level from 1 to 10, and two at level 1, so eleven at a minimum.
             Write as many more as you like: several cards can share a level, and the published domains do exactly that.
           </Text>
+          {/**
+            * THE RED BLOCK (v0.42.5, owner: "I still dont see the red warning block I asked for at
+            * the end of creating a new custom domain, where it must say how many domain cards are
+            * missing for this domain to be valid").
+            *
+            * v0.42.1 printed the first problem as one gold line, which reads as a hint rather than as
+            * a blocker, and a hint is not what an author needs when the pack cannot be shared. It is
+            * the same red panel the class form uses, saying the count and the levels, and it turns
+            * green the moment the domain is playable.
+            */}
           {card.title.trim() ? (
-            <Text style={{ color: domainProblems(card.title, siblings).length ? Rune.red : Rune.goldText, fontSize: 11, fontFamily: Body.bold, lineHeight: 15 }}>
-              {domainProblems(card.title, siblings)[0] ?? 'Every level is covered. This domain is ready.'}
-            </Text>
+            (() => {
+              const probs = domainProblems(card.title, siblings);
+              const cards = siblings.filter((c) => c.contentType === 'domain' && (c.domain ?? '').trim().toLowerCase() === card.title.trim().toLowerCase());
+              return probs.length ? (
+                <ChamferBox chamfer={8} fill="rgba(120,30,28,0.22)" stroke={Rune.red} strokeWidth={1.2} style={{ padding: 10, gap: 4 }}>
+                  <Text style={{ color: Rune.ivory, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                    This domain is not playable yet
+                  </Text>
+                  {probs.map((pr) => (
+                    <Text key={pr} style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>{'• '}{pr}</Text>
+                  ))}
+                  <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular, lineHeight: 14 }}>
+                    Write the missing ones as Domain cards in this pack and set each one&apos;s domain to {card.title.trim()}.
+                    The pack cannot be shared until they are there.
+                  </Text>
+                </ChamferBox>
+              ) : (
+                <ChamferBox chamfer={8} fill="rgba(30,80,45,0.2)" stroke="rgba(120,190,140,0.6)" strokeWidth={1.2} style={{ padding: 10 }}>
+                  <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.bold }}>
+                    Every level is covered. {cards.length} card{cards.length === 1 ? '' : 's'}, and this domain is playable.
+                  </Text>
+                </ChamferBox>
+              );
+            })()
           ) : null}
         </View>
       ) : null}
