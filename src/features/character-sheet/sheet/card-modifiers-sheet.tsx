@@ -35,6 +35,13 @@ function resolvedDelta(e: CardEffect, character: Character, level: number, numbe
       : f.variable === 'input' ? numberInput
       // v0.42.3: a card element the player is keeping. Zero when it is not on this character.
       : f.variable === 'function' ? (f.functionKey ? functionValues?.[f.functionKey] ?? 0 : 0)
+      // v0.42.5: the vitals, from the character the panel is previewing against.
+      : f.variable === 'currentHp' ? character.hp
+      : f.variable === 'missingHp' ? Math.max(0, character.maxHp - character.hp)
+      : f.variable === 'currentHope' ? character.hope.active
+      : f.variable === 'missingHope' ? Math.max(0, character.hope.total - character.hope.active)
+      : f.variable === 'currentArmor' ? character.armor.active
+      : f.variable === 'missingArmor' ? Math.max(0, character.armorScore - character.armor.active)
       // v0.41.0: the two roll bonuses are not on the sheet, so this preview shows what the character
       // currently has for them, which `Character` carries alongside the sheet's own numbers.
       : f.variable === 'attackRoll' ? character.attackRoll ?? 0

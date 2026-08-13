@@ -2715,6 +2715,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       damageRoll: character.damageRoll ?? 0,
       spellcast: character.spellcastTrait ? character.traits[character.spellcastTrait] ?? 0 : 0,
       traits: character.traits as Partial<Record<string, number>>,
+      // v0.42.5: the live vitals, so a preset can carry "+ Missing Hit Points".
+      vitals: {
+        hp: character.hp,
+        maxHp: character.maxHp,
+        hope: character.hope.active,
+        hopeMax: character.hope.total,
+        armor: character.armor.active,
+        armorMax: character.armorScore,
+      },
       // v0.42.3: the character's own card elements, so a preset can carry "+ Combo Die".
       functions: functionVarValues(functionVars([...(fileRef.current?.libraryCards ?? []), ...(fileRef.current?.customCards ?? [])], fileRef.current?.cardFunctions, fileRef.current?.cardAdvances)),
     };

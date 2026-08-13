@@ -54,6 +54,7 @@ import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/l
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
+import { functionVars } from '@/lib/function-vars';
 import { itemTitleFor } from '@/lib/item-title';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
@@ -784,6 +785,25 @@ export function LibraryScreen() {
         sectioned
         sectionsConfig={isAncestry ? { ancestryFeatures: true } : undefined}
         noFullImage={isFeature}
+        /**
+         * THE EXPANSION'S OWN ELEMENTS, as variables (v0.42.5, owner).
+         *
+         * "I created a counter function card that has a name, it was called Counter Variable. I went
+         * to create another card, which i wanted a modifier for, and I wanted the formula of that
+         * modifier to be based on the number of that counter, but Counter Variable does not show up
+         * as a variable for card modifiers."
+         *
+         * `functionVars` was only ever asked of a CHARACTER's cards, so while authoring there was no
+         * character and the list was empty. Here the pack itself is the source: every card in it, plus
+         * the one being edited, so an element can be referenced the moment it exists. No player state,
+         * so the values shown are the author's own defaults, which is the only truthful answer before
+         * anybody has played the card.
+         */
+        functionVars={functionVars(
+          [...selected.cards.filter((c) => c.id !== existing?.id), ...(cfg.functions?.length ? [{ id: existing?.id ?? 'preview', title: existing?.title?.trim() || 'This card', functions: cfg.functions, advances: cfg.advances }] : [])],
+          undefined,
+          [],
+        )}
         /**
          * THE PREVIEW (v0.42.3, owner): the real `LibraryForgedCard`, which is the component the
          * character sheet draws, with this card's own elements and live state. Not a mock-up of the

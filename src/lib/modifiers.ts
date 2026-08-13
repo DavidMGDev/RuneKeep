@@ -95,7 +95,24 @@ export interface EffectFormula {
    *    ("+Evasion equal to the Hit Points your target marked") cannot be derived from anything the
    *    app knows, so the card asks. See `numberInputs` on the character file.
    */
-  variable: 'level' | 'tier' | 'proficiency' | 'spellcast' | 'stress' | 'input' | 'function' | 'attackRoll' | 'spellcastRoll' | 'damageRoll' | TraitKey;
+  variable:
+    | 'level' | 'tier' | 'proficiency' | 'spellcast' | 'stress' | 'input' | 'function'
+    | 'attackRoll' | 'spellcastRoll' | 'damageRoll'
+    /**
+     * THE LIVE VITALS (v0.42.5, owner), each against the CHARACTER'S OWN maximum and never a global
+     * one: "always relative to the maximum the player has available, not always the 12 global
+     * maximum, rather their maximum."
+     *
+     * The maxima come from the sheet being computed (`out.maxHp`, `out.hopeMax`, `out.armorScore`),
+     * which is the finished pass-1 total, so a card that raises Max Hope is already counted when
+     * another card scales off missing Hope. The current values come from the context, because they
+     * are the player's and nothing computes them.
+     *
+     * `missing` is the headroom: max minus current, floored at zero. It is the one every "the lower
+     * you are, the stronger you get" card wants, and deriving it here means no card has to.
+     */
+    | 'currentHp' | 'missingHp' | 'currentHope' | 'missingHope' | 'currentArmor' | 'missingArmor'
+    | TraitKey;
   /**
    * v0.42.3: which FUNCTIONAL ELEMENT `variable: 'function'` reads, as `cardId|functionId`.
    *
@@ -236,6 +253,11 @@ export interface SheetContext {
   inputs?: Record<string, number>;
   /** v0.42.3: the live value of every numeric functional element, keyed `cardId|functionId`. */
   functions?: Record<string, number>;
+  /**
+   * v0.42.5: the player's CURRENT vitals. Their maxima are not here on purpose: those are computed,
+   * and reading them off the sheet is what keeps "missing" honest when a card has raised one.
+   */
+  vitals?: { hp?: number; hope?: number; armor?: number };
 }
 
 /** The targets that are actually SHEET stats — one base value, one row in the Modifiers panel. Excludes
@@ -346,6 +368,13 @@ function resolveFormula(
     // v0.42.3: a card's own counter. Zero when the card is gone, which is the same answer every
     // other missing source gives and keeps a formula from breaking a sheet.
     : f.variable === 'function' ? (f.functionKey ? ctx?.functions?.[f.functionKey] ?? 0 : 0)
+    // v0.42.5: the vitals. Current from the player, maximum from the sheet, missing from both.
+    : f.variable === 'currentHp' ? ctx?.vitals?.hp ?? 0
+    : f.variable === 'missingHp' ? Math.max(0, (out.maxHp?.total ?? 0) - (ctx?.vitals?.hp ?? 0))
+    : f.variable === 'currentHope' ? ctx?.vitals?.hope ?? 0
+    : f.variable === 'missingHope' ? Math.max(0, (out.hopeMax?.total ?? 0) - (ctx?.vitals?.hope ?? 0))
+    : f.variable === 'currentArmor' ? ctx?.vitals?.armor ?? 0
+    : f.variable === 'missingArmor' ? Math.max(0, (out.armorScore?.total ?? 0) - (ctx?.vitals?.armor ?? 0))
     : out[f.variable]?.total ?? 0; // a trait total (from pass 1)
   const div = f.divide && f.divide !== 0 ? f.divide : 1;
   const scaled = (base * (f.multiply ?? 1)) / div;

@@ -60,6 +60,14 @@ const PRESET_VARS: { key: EffectFormula['variable']; label: string }[] = [
   { key: 'tier', label: 'Tier' },
   { key: 'spellcast', label: 'Spellcast Trait' },
   { key: 'stress', label: 'Current Stress' },
+  // v0.42.5 (owner): the live vitals, each against the character's OWN maximum rather than a global
+  // one. "Missing" is the headroom, which is what a card that pays off for being hurt wants.
+  { key: 'currentHp', label: 'Current Hit Points' },
+  { key: 'missingHp', label: 'Missing Hit Points' },
+  { key: 'currentHope', label: 'Current Hope' },
+  { key: 'missingHope', label: 'Missing Hope' },
+  { key: 'currentArmor', label: 'Current Armor' },
+  { key: 'missingArmor', label: 'Missing Armor' },
   { key: 'agility', label: 'Agility' },
   { key: 'strength', label: 'Strength' },
   { key: 'finesse', label: 'Finesse' },

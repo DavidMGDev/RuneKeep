@@ -119,6 +119,8 @@ export interface PresetContext {
   damageRoll: number;
   spellcast: number;
   traits: Partial<Record<string, number>>;
+  /** v0.42.5: the character's live vitals and their own maxima, for the six vital variables. */
+  vitals?: { hp: number; maxHp: number; hope: number; hopeMax: number; armor: number; armorMax: number };
   /** v0.42.3: the live value of every numeric card element, keyed `cardId|functionId`. */
   functions?: Record<string, number>;
 }
@@ -174,6 +176,13 @@ function variableValue(v: EffectFormula['variable'], ctx: PresetContext): number
     : v === 'spellcastRoll' ? ctx.spellcastRoll
     : v === 'damageRoll' ? ctx.damageRoll
     : v === 'spellcast' ? ctx.spellcast
+    // v0.42.5: current from the character, missing as the headroom to their OWN maximum.
+    : v === 'currentHp' ? ctx.vitals?.hp ?? 0
+    : v === 'missingHp' ? Math.max(0, (ctx.vitals?.maxHp ?? 0) - (ctx.vitals?.hp ?? 0))
+    : v === 'currentHope' ? ctx.vitals?.hope ?? 0
+    : v === 'missingHope' ? Math.max(0, (ctx.vitals?.hopeMax ?? 0) - (ctx.vitals?.hope ?? 0))
+    : v === 'currentArmor' ? ctx.vitals?.armor ?? 0
+    : v === 'missingArmor' ? Math.max(0, (ctx.vitals?.armorMax ?? 0) - (ctx.vitals?.armor ?? 0))
     : ctx.traits[v] ?? 0
   );
 }

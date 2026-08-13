@@ -112,10 +112,14 @@ export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
 /** Formula variables a player can scale (#278). v0.21.0: `spellcast` = your subclass's Spellcast trait.
  *  v0.32.0 adds two that are not sheet stats: the Stress currently marked, and a NUMBER INPUT the
  *  card asks its owner for (per card, never shared). */
-const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'attackRoll', 'spellcastRoll', 'damageRoll', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'attackRoll', 'spellcastRoll', 'damageRoll', 'currentHp', 'missingHp', 'currentHope', 'missingHope', 'currentArmor', 'missingArmor', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
 const VAR_LABEL: Record<EffectFormula['variable'], string> = {
   level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', stress: 'Current Stress', input: 'Number Input',
   attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls', damageRoll: 'Damage Rolls',
+  // v0.42.5: the live vitals, each against the character's OWN maximum.
+  currentHp: 'Current Hit Points', missingHp: 'Missing Hit Points',
+  currentHope: 'Current Hope', missingHope: 'Missing Hope',
+  currentArmor: 'Current Armor', missingArmor: 'Missing Armor',
   agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge',
   // v0.42.3: not in FORMULA_VARS, because it is not one entry. A character's numeric card elements
   // are listed individually below, each already carrying its own functionKey.
@@ -128,6 +132,12 @@ const VAR_HINT: Partial<Record<EffectFormula['variable'], string>> = {
   attackRoll: 'Everything your cards add to an attack roll. Used by dice tray presets.',
   damageRoll: 'Everything your cards add to a damage roll. Used by dice tray presets.',
   spellcastRoll: 'Everything your cards add to a spellcast roll. Used by dice tray presets.',
+  currentHp: 'The Hit Points you have left right now.',
+  missingHp: 'How far below your maximum you are. Grows as you take damage.',
+  currentHope: 'The Hope you are holding right now.',
+  missingHope: 'How much Hope you could still gain before you are full.',
+  currentArmor: 'The armor slots you have left.',
+  missingArmor: 'How many armor slots you have spent.',
 };
 
 /**
