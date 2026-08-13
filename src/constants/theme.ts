@@ -32,23 +32,36 @@ export const Rune = {
  * One superfamily, weight contrast carries the hierarchy. No serif.
  */
 /**
- * DM Mode palette (v0.15.0) — the desaturated twin of `Rune`, reusing the Golden-Gear-Edit greys
- * (`#C4C8D0` / `#9AA0AA`) so DM surfaces read as "the same UI, drained of gold". Enabling DM Mode swaps
- * these in; disabling reverts entirely. `accent`/`accentDim` replace gold; `line` replaces goldEdge.
+ * ONE PALETTE (v0.42.4, owner).
+ *
+ * `DmRune` was the desaturated twin of `Rune`: the DM screens ran in greys so they read as "the same
+ * UI, drained of gold". The owner has decided against it. "I would like for the entire app from
+ * player to DM to have a cohesive UI... rework 100% of its colors so that they keep the color palette
+ * of the regular interface."
+ *
+ * So it is the ordinary palette wearing the DM names. Every `dm` prop, every `DmRune.accent` and every
+ * dm-aware component goes on compiling and simply stops being grey, which is why this is a remapping
+ * rather than a deletion: a sweep that replaced the references by hand would miss a screen, and the
+ * one it missed would be the one nobody opens until a session.
+ *
+ * The role names are kept because they are good names for what they do on those screens. `accent` is
+ * the structural colour, `line` the hairline, `red` the destructive one. They now resolve to gold,
+ * gold edge and the single heraldic red the rest of the app uses.
  */
 export const DmRune = {
-  ink: '#0B0E13',
-  panel: '#12151B',
+  ink: Rune.ink,
+  panel: Rune.panel,
   panelLit: '#1A1E26',
-  accent: '#C4C8D0', // was gold
-  accentDim: '#9AA0AA',
-  line: 'rgba(196,200,208,0.5)',
-  lineStrong: 'rgba(196,200,208,0.85)',
-  ivory: '#F0F1F4',
-  text: '#E7E9ED',
-  muted: '#8B909A',
-  red: '#B2564E', // desaturated heraldic red for destructive/loss accents + adversary outlines
-  ally: '#5FA69C', // friendly teal for ally NPC outlines (v0.17.0 item 5)
+  accent: Rune.goldText,
+  accentDim: Rune.bronze,
+  line: Rune.goldEdge,
+  lineStrong: 'rgba(218,162,73,0.85)',
+  ivory: Rune.ivory,
+  text: Rune.sheet,
+  muted: Rune.muted,
+  red: Rune.red,
+  /** Friendly teal for ally NPC outlines (v0.17.0 item 5). The one colour with a job of its own. */
+  ally: '#5FA69C',
 } as const;
 
 /**

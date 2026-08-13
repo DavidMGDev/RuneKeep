@@ -178,10 +178,19 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     const acqClassJobs: Job[] = acqClassKeys.flatMap((k) => {
       const def = CLASS_CARDS.find((c) => c.key === k)!;
       const fp = featurePages(k);
-      const tot = 1 + fp.length;
+      /**
+       * v0.42.4 (owner): the ABILITY pages are numbered, and the cover is not one of them.
+       *
+       * "Class cards when created into the character sheet show the first page as 2/4, which is
+       * unacceptable, i need the first page to just say 1/3, because the description page is skipped."
+       * The cover was counted in the denominator and its own mark pushed everything else along by one.
+       * It keeps its card, because an acquired class card is a whole class card; it simply stops
+       * being page one of a numbered set it is not part of.
+       */
+      const tot = fp.length;
       return [
-        { key: `acqclass-${k}`, raster: isVoidClass(k), node: <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={classColor(k).deep} Banner={def.Banner} pageMark={`1/${tot}`} classKey={k} /> },
-        ...fp.map((p) => ({ key: `acqfeat-${k}-${p.pageIndex}`, raster: isVoidClass(k), node: <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${p.pageIndex + 2}/${tot}`} sections={p.sections} accentDeep={classColor(k).deep} Banner={classBanner(k)} classKey={k} /> })),
+        { key: `acqclass-${k}`, raster: isVoidClass(k), node: <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={classColor(k).deep} Banner={def.Banner} classKey={k} /> },
+        ...fp.map((p) => ({ key: `acqfeat-${k}-${p.pageIndex}`, raster: isVoidClass(k), node: <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${p.pageIndex + 1}/${tot}`} sections={p.sections} accentDeep={classColor(k).deep} Banner={classBanner(k)} classKey={k} /> })),
       ];
     });
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.

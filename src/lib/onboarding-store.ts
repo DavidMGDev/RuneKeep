@@ -22,8 +22,15 @@ import { webGet, webSet } from './web-store';
 const WEB_KEY = 'runekeep.onboarding';
 const FILE_NAME = 'onboarding.json';
 
-export type TourId = 'welcome' | 'creation' | 'sheet';
-export const TOUR_IDS: TourId[] = ['welcome', 'creation', 'sheet'];
+/**
+ * v0.42.4 (owner): `campaigns` is the DM's first-run introduction.
+ *
+ * The Campaigns button goes straight in now, with no mode toggle in front of it saying what kind of
+ * screen is coming, so the screen has to say so itself. Once, and re-openable from the menu's `?`
+ * like every other tour.
+ */
+export type TourId = 'welcome' | 'creation' | 'sheet' | 'campaigns';
+export const TOUR_IDS: TourId[] = ['welcome', 'creation', 'sheet', 'campaigns'];
 
 export interface TourState {
   done: boolean;
@@ -37,12 +44,14 @@ const FRESH: OnboardingState = {
   welcome: { done: false, step: 0 },
   creation: { done: false, step: 0 },
   sheet: { done: false, step: 0 },
+  campaigns: { done: false, step: 0 },
 };
 
 const fresh = (): OnboardingState => ({
   welcome: { ...FRESH.welcome },
   creation: { ...FRESH.creation },
   sheet: { ...FRESH.sheet },
+  campaigns: { ...FRESH.campaigns },
 });
 
 type FS = typeof import('expo-file-system');

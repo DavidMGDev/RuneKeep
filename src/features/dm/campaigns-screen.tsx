@@ -10,7 +10,7 @@
  * asks twice, the second time in capitals. A campaign is a year of someone's Thursdays.
  */
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import Svg, { Line } from 'react-native-svg';
 
@@ -23,6 +23,7 @@ import { showToast } from '@/components/toast';
 import { Body, DmRune, DmType } from '@/constants/theme';
 import { type DmIdentity } from '@/lib/dm-identity';
 import { newParty, type Party } from '@/lib/party';
+import { shouldShow } from '@/lib/onboarding-store';
 import { deleteParty, listParties, saveParty } from '@/lib/party-store';
 import { deleteEncounter, deleteSession, listEncounters, listSessions } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
@@ -70,6 +71,26 @@ export function CampaignsScreen() {
     return () => { live = false; };
   }, []);
   useFocusEffect(reload);
+
+  /**
+   * The DM's first-run introduction (v0.42.4, owner).
+   *
+   * Campaigns used to sit behind a mode toggle, which at least announced that the app was about to
+   * become a different kind of thing. It is one press from the menu now, so the screen says what it
+   * is itself. Once, and re-openable from the menu's `?` like every other tour.
+   *
+   * Deferred by a tick for the reason the sheet's and the creator's tours are: two history entries in
+   * the same tick collapse in Firefox, and going back then overshoots the screen the tour is about.
+   */
+  const tourPushed = useRef(false);
+  useEffect(() => {
+    if (tourPushed.current) return;
+    const t = setTimeout(() => {
+      tourPushed.current = true;
+      if (shouldShow('campaigns')) router.push('/onboarding?tour=campaigns' as Href);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [router]);
 
   /**
    * Creating one asks for its identity FIRST (owner), then opens the cast.

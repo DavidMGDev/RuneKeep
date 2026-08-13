@@ -72,8 +72,26 @@ function recordItem(lc: LibraryCard): StraightItem {
   return { id: lc.id, custom: <LibraryForgedCard card={lc} /> };
 }
 
-export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCustom, onClose }: { acquiredIds: Set<string>; enabledExpansionIds?: string[]; onAdd: (id: string) => void; onAddCustom?: (card: LibraryCard) => void; onClose: () => void }) {
-  const [cat, setCat] = useState<Cat>('domain');
+/**
+ * The categories a card can be picked from when it is going to be a STARTING ITEM (v0.42.4, owner).
+ *
+ * A class hands out gear, not a domain card. The picker offered everything, so an author could pick
+ * a Level 1 Blade card as a starting item and the class would then hand out something the game has no
+ * way to give you at level one. Restricting the browser is half the fix; the other half is the list
+ * being able to NAME anything an older pack already picked (see the library screen's resolver).
+ */
+const ITEM_CATS: Cat[] = ['weapon', 'armor', 'loot', 'consumable'];
+
+export function GearBrowser({ acquiredIds, enabledExpansionIds, itemsOnly, onAdd, onAddCustom, onClose }: {
+  acquiredIds: Set<string>;
+  enabledExpansionIds?: string[];
+  /** v0.42.4: only what can be a starting item. Used by the class form's item lists. */
+  itemsOnly?: boolean;
+  onAdd: (id: string) => void;
+  onAddCustom?: (card: LibraryCard) => void;
+  onClose: () => void;
+}) {
+  const [cat, setCat] = useState<Cat>(itemsOnly ? 'weapon' : 'domain');
   const [tier, setTier] = useState<1 | 2 | 3 | 4>(1);
   // v0.12.2: ADD GEAR only offers content from THIS character's enabled expansions (base always).
   const allowed = useMemo(() => catalogFor(enabledExpansionIds), [enabledExpansionIds]);
@@ -189,7 +207,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
   }, [cat, tier, expOk, wantOfficial, wantHomebrew, recordWeapons, recordArmor, recordLoose]);
 
   const hasTransforms = useMemo(() => allowed.some((c) => c.kind === 'transformation'), [allowed]);
-  const TABS: { key: Cat; label: string }[] = [
+  const ALL_TABS: { key: Cat; label: string }[] = [
     { key: 'domain', label: 'Domains' }, { key: 'ancestry', label: 'Ancestry' },
     // v0.12.2 (A6): transformations are their own category, sitting beside Ancestry (their arsenal home).
     ...(hasTransforms ? [{ key: 'transformation' as Cat, label: 'Transform' }] : []),
@@ -197,6 +215,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, onAdd, onAddCust
     { key: 'subclass', label: 'Subclass' }, { key: 'class', label: 'Class' }, { key: 'weapon', label: 'Weapons' }, { key: 'armor', label: 'Armor' },
     { key: 'loot', label: 'Loot' }, { key: 'consumable', label: 'Consumables' },
   ];
+  const TABS = itemsOnly ? ALL_TABS.filter((t) => ITEM_CATS.includes(t.key)) : ALL_TABS;
 
   return (
     <FullScreenPanel

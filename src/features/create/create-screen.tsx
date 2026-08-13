@@ -31,7 +31,6 @@ import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
 import { featurePages, spellcastTraitForSubclass } from '@/data/class-data';
-import { classCards } from '@/lib/class-cards';
 import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
 import { lootById } from '@/data/loot-data';
 import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
@@ -1277,12 +1276,15 @@ export function CreateScreen() {
        * the subclass card, each page as an individual card." The deck you paged through to CHOOSE the
        * class is a decision aid; what you play with is one card per ability.
        */
+      /**
+       * v0.42.4 (owner): expanding writes NOTHING.
+       *
+       * A new character still starts expanded, but that is now a rendering decision rather than a
+       * pile of authored cards: the sheet draws the class's own pages as individual cards, in the
+       * format creation drew them. See `lib/class-cards`.
+       */
       classExpanded: true,
-      customCards: classCards(draft.className),
-      cardCategory: {
-        ...(draft.mixedAncestry ? { [draft.mixedAncestry.second!]: 'abilities' } : {}),
-        ...Object.fromEntries(classCards(draft.className).map((c) => [c.id, 'abilities'])),
-      },
+      cardCategory: draft.mixedAncestry ? { [draft.mixedAncestry.second!]: 'abilities' } : {},
     }).catch((e: unknown) => {
       // v0.22.0: this was awaited with NO catch, so a failed write produced no feedback at all.
       // Put the draft back so nothing is lost, and say what happened.

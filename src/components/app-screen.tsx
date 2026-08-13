@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Polyline } from 'react-native-svg';
 
 import FullUi from '../../assets/art/new/FullUI.svg';
-import FullUiDm from '../../assets/art/new/FullUI-dm.svg';
 import { Body, Display, DmRune, Rune } from '@/constants/theme';
 import { scaled, useFrame, useLayout } from '@/hooks/use-layout';
 import { useScreenEdge } from '@/lib/screen-dim';
@@ -113,7 +112,10 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
         </View>
         {/* Full-bleed sharp gold frame ON TOP of content (sharp 0-radius corners by design). */}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {dm ? <FullUiDm width="100%" height="100%" preserveAspectRatio="none" /> : <FullUi width="100%" height="100%" preserveAspectRatio="none" />}
+          {/* v0.42.4 (owner): ONE frame. The grey DM border went with the grey DM palette; every
+              screen wears the app's own gold edge now. The `dm` prop survives everywhere else because
+              it still means "this is a DM screen", it just no longer means "draw it in greys". */}
+          <FullUi width="100%" height="100%" preserveAspectRatio="none" />
         </View>
       </View>
       {/* painted inset bars, same belt-and-braces as the sheet */}

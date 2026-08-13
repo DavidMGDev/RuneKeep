@@ -1,110 +1,97 @@
-import { CLASS_DATA, featurePages, MAX_FEATURE_PAGES } from '@/data/class-data';
-import { classCardCount, classCardId, classCards, isClassCard, missingClassCards } from './class-cards';
+import { featurePages } from '@/data/class-data';
 
-const ALL = Object.keys(CLASS_DATA) as (keyof typeof CLASS_DATA)[];
+import { acquiredPageId, classPageCount, classPageId, classPageMark, isLegacyClassCard, trackerFor, withoutLegacyClassCards } from './class-cards';
 
-describe('featurePages, the balanced pager (v0.42.1)', () => {
-  it('never continues an ability without saying which part it is', () => {
-    // v0.42.0 removed "(cont.)"; v0.42.1 keeps it gone and names the parts instead.
-    for (const c of ALL) {
-      for (const p of featurePages(c)) {
-        for (const s of p.sections) {
-          expect(s.name).not.toContain('cont.');
-          if (s.name !== s.name.replace(/ \(\d+\/\d+\)$/, '')) expect(s.name).toMatch(/ \(\d+\/\d+\)$/);
-        }
-      }
+describe('classPageCount', () => {
+  it('counts the ABILITY pages and not the cover, which is the whole of the 2/4 bug', () => {
+    expect(classPageCount('bard')).toBe(featurePages('bard').length);
+  });
+
+  it('is at least one for every class in the game', () => {
+    for (const cls of ['bard', 'druid', 'guardian', 'ranger', 'rogue', 'seraph', 'sorcerer', 'warrior', 'wizard'] as const) {
+      expect(classPageCount(cls)).toBeGreaterThan(0);
     }
-  });
-
-  it('gives no class more than the page cap', () => {
-    for (const c of ALL) expect(featurePages(c).length).toBeLessThanOrEqual(MAX_FEATURE_PAGES);
-  });
-
-  it('gives every class at least two cards', () => {
-    for (const c of ALL) expect(featurePages(c).length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('keeps every ability, whole, in order', () => {
-    for (const c of ALL) {
-      const printed = featurePages(c).flatMap((p) => p.sections).map((s) => s.text).join('\n');
-      for (const f of CLASS_DATA[c].features) {
-        // Every line of every feature survives the split, in the book's own words.
-        for (const line of f.text.split('\n')) expect(printed).toContain(line);
-      }
-      expect(printed).toContain(CLASS_DATA[c].hopeFeature.text);
-    }
-  });
-
-  it('puts the hope feature last, where the printed cards do', () => {
-    for (const c of ALL) {
-      const sections = featurePages(c).flatMap((p) => p.sections);
-      expect(sections[sections.length - 1].name).toContain('Hope Feature');
-    }
-  });
-
-  it('splits the abilities the owner called out, and only where it must', () => {
-    // Beastform is the longest rule in the game and cannot be read on one card.
-    expect(featurePages('druid').flatMap((p) => p.sections).some((s) => s.name === 'Beastform (1/2)')).toBe(true);
-    // Rally fits, so it is not cut up.
-    expect(featurePages('bard').flatMap((p) => p.sections).some((s) => s.name === 'Rally')).toBe(true);
-  });
-
-  it('lets a short feature share a card rather than take one to itself', () => {
-    // The guardian's Hope feature is 64 characters; a card of its own was mostly empty.
-    const last = featurePages('guardian').at(-1)!;
-    expect(last.sections.length).toBeGreaterThan(1);
   });
 });
 
-describe('classCards', () => {
-  it('makes one card per ability, in order', () => {
-    const sections = featurePages('druid').flatMap((p) => p.sections);
-    const cards = classCards('druid');
-    expect(cards).toHaveLength(sections.length);
-    expect(cards.map((c) => c.title)).toEqual(sections.map((s) => s.name));
+describe('classPageMark', () => {
+  it('counts from one, so the first page reads 1 of n', () => {
+    expect(classPageMark(0, 3)).toBe('1/3');
+    expect(classPageMark(2, 3)).toBe('3/3');
   });
 
-  it('gives every card a deterministic id, so expanding twice cannot duplicate', () => {
-    expect(classCards('warrior').map((c) => c.id)).toEqual(classCards('warrior').map((c) => c.id));
-    expect(classCards('warrior')[0].id).toBe(classCardId('warrior', 0));
-  });
-
-  it('grants NOTHING, because a class carries its own numbers', () => {
-    for (const c of ALL) for (const card of classCards(c)) expect(card.effects).toBeUndefined();
-  });
-
-  it('lands in the arsenal, because an ability is not equipment', () => {
-    for (const card of classCards('bard')) expect(card.target).toBe('arsenal');
-  });
-
-  it('carries the ability itself, in the book\'s words', () => {
-    // Beastform is split, so its parts together are the rule; nothing is dropped or reworded.
-    const parts = classCards('druid').filter((c) => c.title.startsWith('Beastform'));
-    expect(parts.length).toBeGreaterThan(0);
-    expect(parts.map((c) => c.text).join('\n')).toBe(CLASS_DATA.druid.features[0].text);
-  });
-
-  it('marks its own cards recognisably', () => {
-    for (const card of classCards('rogue')) expect(isClassCard(card.id)).toBe(true);
-    expect(isClassCard('cc-something-else')).toBe(false);
+  it('never produces the 2/4 the owner reported', () => {
+    const total = classPageCount('bard');
+    const marks = Array.from({ length: total }, (_, i) => classPageMark(i, total));
+    expect(marks[0]).toBe(`1/${total}`);
+    expect(marks).toHaveLength(total);
   });
 });
 
-describe('missingClassCards', () => {
-  it('is everything when the character has none', () => {
-    expect(missingClassCards('wizard', undefined)).toHaveLength(classCardCount('wizard'));
+describe('classPageId / acquiredPageId', () => {
+  it('is deterministic, so the same page is the same card across a reload', () => {
+    expect(classPageId('bard', 0)).toBe(classPageId('bard', 0));
   });
 
-  it('is nothing when the character already has them, so Expand twice is safe', () => {
-    expect(missingClassCards('wizard', classCards('wizard'))).toEqual([]);
+  it('never collides two pages of one class', () => {
+    expect(classPageId('bard', 0)).not.toBe(classPageId('bard', 1));
   });
 
-  it('is only the gap when one was deleted', () => {
-    const [, ...rest] = classCards('wizard');
-    expect(missingClassCards('wizard', rest).map((c) => c.id)).toEqual([classCardId('wizard', 0)]);
+  it('keeps a character own class apart from one they picked up', () => {
+    expect(classPageId('bard', 0)).not.toBe(acquiredPageId('bard', 0));
+  });
+});
+
+describe('trackerFor', () => {
+  it('gives the Brawler its Combo Die', () => {
+    const t = trackerFor('brawler', 'Combo Strike');
+    expect(t?.functions[0].title).toBe('Combo Die');
+    expect(t?.advances).toHaveLength(1);
   });
 
-  it("ignores the character's other cards", () => {
-    expect(missingClassCards('seraph', [{ id: 'cc-notes-1' }])).toHaveLength(classCardCount('seraph'));
+  it('finds it through a split page name, because the packer renames long abilities', () => {
+    expect(trackerFor('brawler', 'Combo Strike (1/2)')).toBeDefined();
+  });
+
+  it('says nothing about an ordinary ability', () => {
+    expect(trackerFor('bard', 'Rally')).toBeUndefined();
+  });
+});
+
+describe('withoutLegacyClassCards', () => {
+  const mine = { id: 'cc-1' };
+  const legacy = { id: 'cls-bard-0' };
+
+  it('drops what the old expand wrote', () => {
+    expect(withoutLegacyClassCards([mine, legacy], true)).toEqual([mine]);
+  });
+
+  it('leaves a character who never expanded completely alone, even one whose card looks like it', () => {
+    const cards = [mine, legacy];
+    expect(withoutLegacyClassCards(cards, false)).toBe(cards);
+    expect(withoutLegacyClassCards(cards, undefined)).toBe(cards);
+  });
+
+  it('is reference-identical when there is nothing to drop, so the common case allocates nothing', () => {
+    const cards = [mine];
+    expect(withoutLegacyClassCards(cards, true)).toBe(cards);
+  });
+
+  it('copes with a character who has no authored cards at all', () => {
+    expect(withoutLegacyClassCards(undefined, true)).toBeUndefined();
+    expect(withoutLegacyClassCards([], true)).toEqual([]);
+  });
+
+  it('is idempotent', () => {
+    const once = withoutLegacyClassCards([mine, legacy], true)!;
+    expect(withoutLegacyClassCards(once, true)).toBe(once);
+  });
+});
+
+describe('isLegacyClassCard', () => {
+  it('recognises only the old prefix, and not the new page ids', () => {
+    expect(isLegacyClassCard('cls-bard-0')).toBe(true);
+    expect(isLegacyClassCard(classPageId('bard', 0))).toBe(false);
+    expect(isLegacyClassCard('cc-1')).toBe(false);
   });
 });

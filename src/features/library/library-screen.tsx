@@ -54,6 +54,7 @@ import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/l
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
+import { itemTitleFor } from '@/lib/item-title';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
 import { CounterField, SelectRow, TextField } from '@/components/form-controls';
@@ -352,7 +353,9 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems }: {
           card={{ ...card, className: config.className }}
           attachments={attachmentsFor(siblings, card.title)}
           classChoices={classChoices}
-          itemTitle={(id) => itemOptions.find((o) => o.id === id)?.title ?? 'A card that is no longer here'}
+          // v0.42.4 (owner): resolved against EVERY source a picked card can come from, not just the
+          // expansion's own gear. See `lib/item-title`.
+          itemTitle={(id) => itemTitleFor(id, siblings)}
           onPickItems={onPickItems}
           onClassName={(className) => set({ className })}
           onChange={(classSpec) => set({ classSpec })}
@@ -837,6 +840,7 @@ export function LibraryScreen() {
            */
           pickingItems ? (
             <GearBrowser
+              itemsOnly
               acquiredIds={new Set(itemIdsFor(cfg.classSpec, pickingItems))}
               enabledExpansionIds={[selected.id]}
               onAdd={(id) => { addStartingItem(pickingItems, id); setPickingItems(null); }}

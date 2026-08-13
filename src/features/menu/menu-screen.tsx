@@ -126,6 +126,34 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, dm, locked }: { la
 }
 
 /** The small "DM Mode" / "Player Mode" toggle below the actions (PRD #1). */
+/**
+ * CAMPAIGNS, in one press (v0.42.4, owner).
+ *
+ * This was the DM Mode toggle: a switch that changed which two destinations the menu offered, so
+ * reaching a campaign was two presses through a control that named a mode rather than a place. The
+ * owner's fix is the obvious one: name the place. It still turns DM mode on, because the menu's other
+ * half depends on it, but that is now a side effect of going somewhere rather than the whole point of
+ * the button.
+ */
+function CampaignsButton({ dm, onPress }: { dm: boolean; onPress: () => void }) {
+  const press = useSharedValue(1);
+  const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
+  return (
+    <Animated.View style={[anim, { alignSelf: 'center' }]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={() => { press.value = withSpring(0.95, { damping: 22, stiffness: 320, mass: 0.6 }); }}
+        onPressOut={() => { press.value = withSpring(1, { damping: 22, stiffness: 320, mass: 0.6 }); }}
+        accessibilityRole="button"
+        accessibilityLabel={dm ? 'Back to playing' : 'Campaigns, for running a game'}>
+        <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={Rune.goldEdge} strokeWidth={1.3} style={{ height: 38, justifyContent: 'center', paddingHorizontal: 20 }}>
+          <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 2.4, textTransform: 'uppercase' }}>{dm ? 'Play' : 'Campaigns'}</Text>
+        </ChamferBox>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 function ModeToggle({ dm, onToggle }: { dm: boolean; onToggle: () => void }) {
   const press = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({ transform: [{ scale: press.value }] }));
@@ -297,7 +325,17 @@ export function MenuScreen() {
             </>
           )}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-            <ModeToggle dm={dm} onToggle={toggleDm} />
+            {/* v0.42.4 (owner): straight into campaigns, not into a mode. Pressed while already in
+                DM mode it goes the other way, which is the way back to playing. */}
+            <CampaignsButton
+              dm={dm}
+              onPress={() => {
+                if (dm) { toggleDm(); return; }
+                playSfx('selectCharacter');
+                void setDmMode(true).then(() => router.push('/parties' as Href));
+                setDm(true);
+              }}
+            />
             <MuteToggle muted={muted} dm={dm} onToggle={toggleMute} />
             {/* v0.22.0: the tour is re-openable, not a one-shot you can never find again. */}
             <Pressable
