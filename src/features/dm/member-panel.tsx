@@ -124,7 +124,7 @@ export function MemberPanel({
 
   return (
     <Animated.View style={fadeStyle}>
-    <ChamferBox chamfer={11} fill={selected ? 'rgba(196,200,208,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : foe ? DmRune.red : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
+    <ChamferBox chamfer={11} fill={selected ? 'rgba(218,162,73,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : foe ? DmRune.red : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: DmRune.accent }, litStyle]} />
       {/* Any tap on the entry selects it while the list is selecting. */}
       {selecting ? (

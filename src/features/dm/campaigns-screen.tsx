@@ -133,7 +133,7 @@ export function CampaignsScreen() {
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
           <DmPress onPress={() => setCreating(true)} accessibilityRole="button" accessibilityLabel="Create your first campaign">
             {({ pressed }) => (
-              <ChamferBox chamfer={18} fill={pressed ? 'rgba(196,200,208,0.12)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.accent} strokeWidth={1.8} style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
+              <ChamferBox chamfer={18} fill={pressed ? 'rgba(218,162,73,0.12)' : 'rgba(14,17,22,0.9)'} stroke={DmRune.accent} strokeWidth={1.8} style={{ width: 170, height: 170, alignItems: 'center', justifyContent: 'center' }}>
                 <Svg width={64} height={64} viewBox="0 0 64 64">
                   <Line x1={32} y1={12} x2={32} y2={52} stroke={DmRune.accent} strokeWidth={4} />
                   <Line x1={12} y1={32} x2={52} y2={32} stroke={DmRune.accent} strokeWidth={4} />

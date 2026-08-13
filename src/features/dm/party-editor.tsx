@@ -52,7 +52,7 @@ function MemberRow({ file, present, onTogglePresent, onRemove }: { file: Charact
         <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {file.level} {cls.label}</Text>
       </View>
       <DmPress onPress={onTogglePresent} hitSlop={8} accessibilityRole="button" accessibilityLabel={present ? `${file.name} present` : `${file.name} absent`}>
-        <ChamferBox chamfer={5} fill={present ? 'rgba(196,200,208,0.14)' : 'transparent'} stroke={present ? DmRune.accent : DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 9, height: 26, justifyContent: 'center' }}>
+        <ChamferBox chamfer={5} fill={present ? 'rgba(218,162,73,0.14)' : 'transparent'} stroke={present ? DmRune.accent : DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 9, height: 26, justifyContent: 'center' }}>
           <Text style={{ color: present ? DmRune.accent : DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{present ? 'Present' : 'Absent'}</Text>
         </ChamferBox>
       </DmPress>
@@ -89,7 +89,7 @@ export function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candid
             const cls = classInfo(item.className);
             return (
               <DmPress onPress={() => toggle(item.id)} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={item.name}>
-                <ChamferBox chamfer={10} fill={on ? 'rgba(196,200,208,0.14)' : 'rgba(14,17,22,0.9)'} stroke={on ? DmRune.accent : DmRune.line} strokeWidth={on ? 1.5 : 1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
+                <ChamferBox chamfer={10} fill={on ? 'rgba(218,162,73,0.14)' : 'rgba(14,17,22,0.9)'} stroke={on ? DmRune.accent : DmRune.line} strokeWidth={on ? 1.5 : 1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
                   <Portrait uri={item.portraitUri} tint={classColor(item.className).bright} />
                   <View style={{ flex: 1 }}>
                     <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{item.name}</FitLine>

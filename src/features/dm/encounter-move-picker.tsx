@@ -35,7 +35,7 @@ function SessionOption({ s, chosen, onPick }: { s: Session; chosen: boolean; onP
       accessibilityRole="button"
       accessibilityState={{ selected: chosen }}
       accessibilityLabel={s.name}
-      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, paddingHorizontal: 8, borderRadius: 6, backgroundColor: chosen ? 'rgba(196,200,208,0.16)' : pressed ? 'rgba(196,200,208,0.1)' : 'transparent' })}>
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, paddingHorizontal: 8, borderRadius: 6, backgroundColor: chosen ? 'rgba(218,162,73,0.16)' : pressed ? 'rgba(218,162,73,0.1)' : 'transparent' })}>
       <IdentityBadge id={s} size={26} />
       <Text numberOfLines={1} style={{ flex: 1, color: chosen ? DmRune.accent : DmRune.text, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase' }}>{s.name}</Text>
       {chosen ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: DmRune.accent }} /> : null}
@@ -52,7 +52,7 @@ function CampaignFolder({ target, chosenId, onPick }: { target: MoveTarget; chos
         onPress={() => setOpen((o) => !o)}
         accessibilityRole="button"
         accessibilityLabel={`${target.campaign.name}, ${target.sessions.length} sessions`}
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, paddingHorizontal: 8, borderRadius: 6, backgroundColor: pressed ? 'rgba(196,200,208,0.1)' : 'transparent' })}>
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, paddingHorizontal: 8, borderRadius: 6, backgroundColor: pressed ? 'rgba(218,162,73,0.1)' : 'transparent' })}>
         <IdentityBadge id={target.campaign} size={26} />
         <Text numberOfLines={1} style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.5, textTransform: 'uppercase' }}>{target.campaign.name}</Text>
         <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold }}>{target.sessions.length}</Text>

@@ -74,7 +74,7 @@ function LogRow({ item, isNote, isDragged, selecting, on, showDropAbove, dragY, 
       {showDropAbove ? <View style={{ height: 2, backgroundColor: DmRune.accent, borderRadius: 1, marginBottom: 8, marginHorizontal: 4 }} /> : null}
       <ChamferBox
         chamfer={8}
-        fill={on ? 'rgba(196,200,208,0.16)' : isDragged ? 'rgba(28,33,42,0.98)' : isNote ? 'rgba(18,22,28,0.92)' : 'rgba(12,15,20,0.7)'}
+        fill={on ? 'rgba(218,162,73,0.16)' : isDragged ? 'rgba(28,33,42,0.98)' : isNote ? 'rgba(18,22,28,0.92)' : 'rgba(12,15,20,0.7)'}
         stroke={on ? DmRune.accent : isDragged ? DmRune.accent : isNote ? DmRune.line : 'transparent'}
         strokeWidth={on || isDragged ? 1.8 : 1.1}
         style={{ paddingRight: 10, paddingVertical: 9, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -82,7 +82,7 @@ function LogRow({ item, isNote, isDragged, selecting, on, showDropAbove, dragY, 
         {isNote && !selecting ? (
           <GestureDetector gesture={dragGesture}><GripLines /></GestureDetector>
         ) : !isNote ? (
-          <View style={{ width: 3, alignSelf: 'stretch', marginLeft: 10, backgroundColor: 'rgba(196,200,208,0.35)', borderRadius: 2 }} />
+          <View style={{ width: 3, alignSelf: 'stretch', marginLeft: 10, backgroundColor: 'rgba(218,162,73,0.35)', borderRadius: 2 }} />
         ) : (
           <View style={{ width: 34 }} />
         )}

@@ -2464,18 +2464,27 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
      * character creation shows. `cardCategory` still lands them where the player was looking.
      */
     const own = id.startsWith('features-');
+    /**
+     * The CATALOG id, not the instance id.
+     *
+     * A second copy of the same acquired class card arrives as `class-bard#2` (see `catalogIdOf`),
+     * and slicing that blind would look for a class called "bard#2" and find none. The copy and the
+     * original are the same class, so they expand into the same pages.
+     */
+    const baseId = catalogIdOf(id);
     if (own && f.classExpanded) return;
-    if (!own && (f.expandedClassCards ?? []).includes(id)) return;
-    const n = own ? classPageCount(f.className) : featurePages(id.slice(6) as typeof f.className).length;
+    if (!own && (f.expandedClassCards ?? []).includes(baseId)) return;
+    const key = baseId.slice(6);
+    const n = own ? classPageCount(f.className) : featurePages(key as ClassName).length;
     const ids = own
       ? Array.from({ length: n }, (_, i) => classPageId(f.className, i))
-      : Array.from({ length: n }, (_, i) => acquiredPageId(id.slice(6), i));
+      : Array.from({ length: n }, (_, i) => acquiredPageId(key, i));
     const cardCategory = { ...(f.cardCategory ?? {}) };
     for (const cid of ids) cardCategory[cid] = cat;
     commitFileRef.current(
       own
         ? { ...f, classExpanded: true, cardCategory }
-        : { ...f, expandedClassCards: [...(f.expandedClassCards ?? []), id], cardCategory },
+        : { ...f, expandedClassCards: [...(f.expandedClassCards ?? []), baseId], cardCategory },
     );
     playSfx('cardSelect');
     pushNotice(`${n} class ${n === 1 ? 'card' : 'cards'} added`);
@@ -3152,7 +3161,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, lineHeight: 17, marginTop: 8 }}>
                   {(() => {
                     const own = expandingClass.id.startsWith('features-');
-                    const n = own ? classPageCount(file.className) : featurePages(expandingClass.id.slice(6) as typeof file.className).length;
+                    const n = own ? classPageCount(file.className) : featurePages(catalogIdOf(expandingClass.id).slice(6) as ClassName).length;
                     return `Its ${n} ${n === 1 ? 'page becomes its own card' : 'pages become their own cards'}, here in this category, exactly as they look in character creation. The flavour page is left out: it is what you read while choosing a class.`;
                   })()}
                 </Text>
