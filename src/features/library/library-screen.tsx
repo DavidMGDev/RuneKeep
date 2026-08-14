@@ -7,7 +7,7 @@
  */
 import * as ImagePicker from 'expo-image-picker';
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -222,7 +222,15 @@ function Chip({ label, on, onPress }: { label: string; on: boolean; onPress: () 
 }
 
 // v0.13.0: all 15 class keys (base + Void) so Void subclasses/classes can be authored.
-const BUILTIN_CLASSES = CLASSES.map((c) => c.key);
+/**
+ * v0.42.7 (owner): the published classes, CAPITALISED.
+ *
+ * "Make all base game or expansion classes to be capitalized on their first letter, because currently
+ * they are lowercase looks ugly." They were the internal keys, which are lower-case because that is
+ * what they are matched on. `classKeyOf` lower-cases both sides of every comparison, so offering the
+ * label costs nothing and reads like a name.
+ */
+const BUILTIN_CLASSES = CLASSES.map((c) => c.label);
 const smallLabel = { color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' as const };
 const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 6 };
 
@@ -238,7 +246,7 @@ const DOMAIN_CARD_TYPES = ['Ability', 'Spell', 'Grimoire'] as const;
 
 /** The per-type mechanical/config fields shown inside the card editor (its `extraField`). The content
  *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
-function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCard }: {
+function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCard, onWriteItem }: {
   config: CardConfig;
   onChange: (c: CardConfig) => void;
   /** The card being edited, for the class report. */
@@ -249,6 +257,8 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
   onPickItems: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
   /** v0.42.6: open another card of this pack, for the class's report of its own pages. */
   onOpenCard: (id: string) => void;
+  /** v0.42.7: make a plain named item for one of the class's three lists. */
+  onWriteItem: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
 }) {
   const set = (patch: Partial<CardConfig>) => onChange({ ...config, ...patch });
   /**
@@ -270,6 +280,20 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
    * starts you with a torch and a rope as often as with something of its own, and an author who had
    * to re-make a Minor Health Potion to hand one out would make a slightly different one.
    */
+  /**
+   * Every category this pack has already named, deduplicated by key (v0.42.7).
+   *
+   * Read off the cards rather than stored anywhere: a category exists because a card is in it, so the
+   * list cannot drift from the truth and deleting the last card in one takes it with it.
+   */
+  const packCategories = (() => {
+    const out = new Map<string, { key: string; label: string; icon?: string }>();
+    for (const c of siblings) {
+      const fc = c.functionCategory;
+      if (fc?.label.trim() && !out.has(fc.key)) out.set(fc.key, fc);
+    }
+    return [...out.values()];
+  })();
   const itemOptions = [
     ...siblings
       .filter((c) => c.contentType === 'inventory' || c.contentType === 'weapon' || c.contentType === 'armor')
@@ -396,6 +420,7 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
           // expansion's own gear. See `lib/item-title`.
           itemTitle={(id) => itemTitleFor(id, siblings)}
           onPickItems={onPickItems}
+          onWriteItem={onWriteItem}
           onOpenCard={onOpenCard}
           onClassName={(className) => set({ className })}
           onChange={(classSpec) => set({ classSpec })}
@@ -435,7 +460,27 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
             <Text style={smallLabel}>Where this card lands</Text>
             <View style={chipRow}>
               <Chip label="The arsenal" on={!config.functionCategory} onPress={() => set({ functionCategory: undefined })} />
-              <Chip label="Its own category" on={!!config.functionCategory} onPress={() => set({ functionCategory: config.functionCategory ?? { key: `fc-${Date.now().toString(36)}`, label: '' } })} />
+              {/**
+                * REUSING A CATEGORY (v0.42.7, owner).
+                *
+                * "Allow the user creating a feature card to create their own category sure, but make
+                * sure that they can reuse and reselect that same custom category for all other feature
+                * cards, so that the category only gets created once."
+                *
+                * Every category any card in this pack has already defined is offered by name. Picking
+                * one copies its KEY as well as its label, which is the whole point: two cards in the
+                * same category are two cards that share a key, and a second card that merely typed the
+                * same word would have made a second category with the same name.
+                */}
+              {packCategories.map((c) => (
+                <Chip
+                  key={c.key}
+                  label={c.label}
+                  on={config.functionCategory?.key === c.key}
+                  onPress={() => set({ functionCategory: { ...c } })}
+                />
+              ))}
+              <Chip label="+ New category" on={!!config.functionCategory && !packCategories.some((c) => c.key === config.functionCategory?.key)} onPress={() => set({ functionCategory: { key: `fc-${Date.now().toString(36)}`, label: '' } })} />
             </View>
             {config.functionCategory ? (
               <View style={{ gap: 5 }}>
@@ -658,6 +703,18 @@ export function LibraryScreen() {
   const [askingClassRole, setAskingClassRole] = useState(false);
   /** v0.42.6: and then, for a page, which class it belongs to. Asked before the editor, not inside it. */
   const [askingParentClass, setAskingParentClass] = useState(false);
+  /**
+   * v0.42.7 (owner): a plain named item, made on the spot.
+   *
+   * It becomes a real inventory card in the pack, so it travels, can be edited later and shows up in
+   * the browser next time. What it skips is the ceremony: a name, and it is done. The id is handed to
+   * the editor through a ref, because the editor block is where a class's lists live and it is
+   * rebuilt on every keystroke.
+   */
+  const pendingWritten = useRef<{ which: 'fixed' | 'choiceA' | 'choiceB'; id: string } | null>(null);
+  /** v0.42.7: which list a written-on-the-spot starting item is going into. */
+  const [writingItem, setWritingItem] = useState<'fixed' | 'choiceA' | 'choiceB' | null>(null);
+  const [writtenTitle, setWrittenTitle] = useState('');
   /** v0.42.7: a feature or a subclass being asked which class it belongs to, before the editor. */
   const [askingClassFor, setAskingClassFor] = useState<'feature' | 'subclass' | null>(null);
   /** Bumped when the class-card explanation is dismissed, so this screen re-reads that it is done. */
@@ -807,6 +864,17 @@ export function LibraryScreen() {
       if (!c) return;
       setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } });
     };
+    /**
+     * A written item, once it has been saved, lands in the list that asked for it.
+     *
+     * The save is async and rebuilds this block, so the id is picked up here rather than passed: by
+     * the time this runs the card is really in the pack, which is what makes the list's name resolve.
+     */
+    if (pendingWritten.current) {
+      const p = pendingWritten.current;
+      pendingWritten.current = null;
+      setTimeout(() => addStartingItem(p.which, p.id), 0);
+    }
     /** Which ids one of the three starting-item lists is holding. */
     const itemIdsFor = (spec: CustomClassSpec | undefined, which: 'fixed' | 'choiceA' | 'choiceB'): string[] =>
       (which === 'fixed' ? spec?.fixedItemIds : which === 'choiceA' ? spec?.choiceAItemIds : spec?.choiceBItemIds) ?? [];
@@ -943,6 +1011,7 @@ export function LibraryScreen() {
             siblings={selected.cards.filter((c) => c.id !== existing?.id)}
             onPickItems={setPickingItems}
             onOpenCard={openCardById}
+            onWriteItem={setWritingItem}
             onChange={(config) => setEditingCard((s) => (s ? { ...s, config } : s))}
           />
         }
@@ -959,7 +1028,9 @@ export function LibraryScreen() {
             <GearBrowser
               itemsOnly
               acquiredIds={new Set(itemIdsFor(cfg.classSpec, pickingItems))}
-              enabledExpansionIds={[selected.id]}
+              // v0.42.7 (owner): "must include all homebrew weapons, armor or loot or consumables".
+              // Every enabled pack, not just this one, plus this one whether or not it is enabled yet.
+              enabledExpansionIds={[...new Set([selected.id, ...(expansions ?? []).filter(isExpansionEnabled).map((e) => e.id)])]}
               onAdd={(id) => { addStartingItem(pickingItems, id); setPickingItems(null); }}
               onAddCustom={(lc) => { addStartingItem(pickingItems, lc.id); setPickingItems(null); }}
               onClose={() => setPickingItems(null)}
@@ -1342,6 +1413,29 @@ export function LibraryScreen() {
           */}
         {/* The class picker, shared by a page, a feature and a subclass. What differs is only what it
             says it is for, and what the chosen class then does to the card. */}
+        {/* v0.42.7: the one-field maker for "50 feet of rope". */}
+        {writingItem ? (
+          <PopupDialog
+            title="Name the item"
+            body="It becomes a real card in this pack, with no picture and no rules text. You can open it later and give it either."
+            confirmLabel="Add it"
+            cancelLabel="Cancel"
+            onConfirm={() => {
+              const title = writtenTitle.trim();
+              const which = writingItem;
+              setWritingItem(null);
+              setWrittenTitle('');
+              if (!title) return;
+              const item: LibraryCard = { id: newId('lc'), contentType: 'inventory', title, text: '', imageUri: null };
+              pendingWritten.current = { which, id: item.id };
+              void persist({ ...selected, cards: [...selected.cards, item] });
+            }}
+            onCancel={() => { setWritingItem(null); setWrittenTitle(''); }}>
+            <View style={{ marginTop: 12 }}>
+              <TextField label="What it is" value={writtenTitle} placeholder="e.g. 50 feet of rope" maxLength={60} onChangeText={setWrittenTitle} />
+            </View>
+          </PopupDialog>
+        ) : null}
         {askingClassFor ? (
           <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
