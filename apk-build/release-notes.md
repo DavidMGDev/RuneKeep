@@ -1,30 +1,36 @@
-RuneKeep v0.42.6 - Homebrew classes you can actually play, and pictures you can position.
+RuneKeep v0.42.7 - A class's look, decided once.
 
-HOMEBREW CLASSES ARE PLAYABLE
+ONE CLASS, ONE STYLE
 
-- CUSTOM CLASSES APPEAR IN CHARACTER CREATION. They never did, and the reason went deeper than the picker: a homebrew class's numbers had never been read by anything. Its starting Evasion, its Hit Points, the two domains it grants and its starting items now drive the character, exactly as a published class does.
-- A CLASS AND ITS PAGES ARE ONE CARD. In creation, in Add Gear and in your pack, a homebrew class is a single card you flip through, the way a published class is. It is no longer two or four unrelated cards sitting next to each other.
-- PRESS EXPAND and its pages become individual cards, numbered from 1 because the flavour page is left out.
-- THE CLASS TRAVELS WITH THE CHARACTER. Its card and every page are embedded in the character file, so a hero keeps their class even if the pack is deleted or the file is sent to a friend.
+- A CLASS'S COLOUR AND BANNER ARE INHERITED BY EVERYTHING THAT BELONGS TO IT: its pages, its feature cards, its subclasses. Set it once on the class card and the whole set follows, including cards you write afterwards. Recolour the class and they all recolour with it.
+- YOU ARE ASKED WHICH CLASS BEFORE THE CARD OPENS, for a feature card and for a subclass as well as for a page. The editor then already shows the card in that class's colours, rather than changing under you later.
+- A SUBCLASS KEEPS ITS OWN PLAQUE. It wears the class's paint and still says Subclass.
+- A CLASS PAGE TAKES THE CLASS'S NAME in its preview, and is no longer asked to be given one of its own.
+- BASE GAME CLASSES ARE CAPITALISED everywhere they are offered.
 
-CLASS PAGES
+PICTURES AND COLOUR TOGETHER
 
-- YOU ARE ASKED WHICH CLASS BEFORE THE EDITOR OPENS, not four fields in. The page then takes that class's name, colour and art automatically, and restyling the class restyles every page of it.
-- A PAGE WRITES NOTHING OF ITS OWN into its body. It used to print "Class: Warden" onto a card that already says Warden across the top.
-- A CLASS NEEDS A PAGE, NOT A FEATURE CARD. A class's abilities are its pages; a Feature card is the optional extra for something with a control on it. Packs finished under the old rule still share.
+- A TRANSPARENT PICTURE KEEPS THE CARD'S COLOUR, on every card type. Upload a cut-out banner and change the background behind it as often as you like; only an opaque photograph still replaces the colour, and only that case asks first.
+- CLASS BANNERS ARE SNAPPED to the size and position the published class banners use.
+- THE COLOUR'S NAME IS NOT FLASHED over a picture any more.
+- THE RANDOM COLOUR BUTTON IS GONE. The Colors panel already has Surprise me.
+- THE HOLD INDICATOR CLEARS after you pick a picture. It used to stay washed across the card's art with nothing to remove it.
 
-WHAT A CLASS IS MADE OF
+CARDS THAT WENT MISSING
 
-- THE FIRST TIME YOU MAKE A CLASS CARD, the chooser explains the three kinds and how they fit together: class cards start a class, class pages carry its abilities and its Hope feature, and Feature cards are optional, never appear among the pages, and are the only kind that carries counters, dice, switches and level advancements. The ? on the main menu brings it back.
+- EVERY CARD IN A PACK IS VISIBLE IN ITS GALLERY. Class pages were being hidden there, which meant the share report could name a card that was nowhere on screen and the pack could neither be shared nor repaired.
+- A PACK WITH A DUPLICATED CARD IS REPAIRED WHEN IT IS READ, so a card that drew twice and deleted once is gone for good.
 
-BANNERS
+CAMPAIGN SETTINGS
 
-- A TRANSPARENT PNG ON A CLASS CARD IS DRAWN AS A BANNER: snapped to the top, centred across, and forced to the exact size the published class banners use. No padding, no cropping, no floating in the middle.
-- A CLASS CARD CAN HAVE A BACKGROUND COLOUR AND A BANNER AT THE SAME TIME, which is how the published ones are built.
+- THE SUBCLASS AND DOMAIN STEPS ARE FULL. They were empty rather than locked: a campaign opened with only the base game's content in scope, so there was nothing from your packs to turn off. Every enabled expansion is in scope now.
 
-POSITION YOUR PICTURES
+AUTHORING
 
-- EVERY PORTRAIT CAN BE REPOSITIONED, ZOOMED AND CROPPED WHEN YOU UPLOAD IT, on Android and in the browser alike. Drag to move, pinch to zoom, and what the frame shows is what is kept.
-- It crops to the right shape for what it is: a character portrait is tall, a campaign's emblem is square.
+- A CUSTOM CATEGORY IS MADE ONCE and offered by name to every other feature card, so two cards can genuinely share one.
+- STARTING ITEMS CAN JUST BE WRITTEN. A button next to the card browser takes a name and makes the card: 50 feet of rope, hand wraps from a mentor. The browser itself now offers homebrew gear from every enabled pack.
+- A SUBCLASS NO LONGER PRINTS ITS CLASS AND TIER INTO ITS OWN BODY. The card already shows both.
+- THE CLASS CARD EXPLANATION FITS ON THE SCREEN, and is three lines rather than three paragraphs.
+- FEATURE CARDS EXPLAIN THEMSELVES the first time you make one.
 
 Sideload: enable Install unknown apps, then open the APK.

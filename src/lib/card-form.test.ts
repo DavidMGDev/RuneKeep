@@ -16,10 +16,15 @@ describe('what the detail form writes onto a card', () => {
     );
   });
 
-  it('names a subclass card by its class, family and tier word', () => {
-    expect(formMarkdown({ contentType: 'subclass', className: 'druid', subclass: 'Warden', tier: 3 })).toBe(
-      ['**Class:** druid', '**Subclass:** Warden', '**Tier:** Mastery'].join('\n\n'),
-    );
+  /**
+   * v0.42.7 (owner): a subclass writes NOTHING into its body.
+   *
+   * "Subclass cards already have their type either foundation specialization or expertise, so it makes
+   * no sense that you make the subclass card have auto markdown for displaying its tier." The tier is
+   * printed under the title by the card itself, and the class is the card's whole appearance now.
+   */
+  it('writes nothing for a subclass, because the card already shows all of it', () => {
+    expect(formMarkdown({ contentType: 'subclass', className: 'druid', subclass: 'Warden', tier: 3 })).toBe('');
   });
 
   it('drops a row nobody filled in rather than printing it blank', () => {

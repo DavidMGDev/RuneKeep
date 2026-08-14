@@ -18,6 +18,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { ART_H, FORGED_H, FORGED_W, ForgedCard, ForgedFaceCard } from '@/features/create/components/forged-card';
 import { generatedSection, withGenerated } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
+import { canLayerColor, colorReplacesImage, showColorName } from '@/lib/image-transparency';
 import { addFunction, isSpacer, needsRemoveConfirm, removeFunction, spacerSection } from '@/lib/card-blocks';
 import { type CardFunction, functionSummary, newFunction } from '@/lib/card-functions';
 import { type MarkCycle, pressMark, toggleBullet } from '@/lib/markdown-marks';
@@ -578,7 +579,18 @@ export function ArtGesture({ onTap, onHold, reduced, children }: { onTap: () => 
             if (!reduced) charge.value = withDelay(HOLD_GRACE_MS, withTiming(1, { duration: HOLD_MS - HOLD_GRACE_MS, easing: Easing.out(Easing.cubic) }));
           })
           .onStart(() => runOnJS(fire)())
-          .onFinalize((_e, ok) => { if (!ok) { cancelAnimation(charge); charge.value = withTiming(0, { duration: 160 }); } }),
+          /**
+           * The waterline ALWAYS drains (v0.42.7, owner).
+           *
+           * "When holding the color area of a card to set an image, it stays highlighted with the
+           * yellowish hold progress bar once my image is uploaded."
+           *
+           * It only reset when the hold was CANCELLED. A successful hold left it at full while the
+           * picker took over, and the picker is a screen away, so returning showed a card with a gold
+           * wash across its art that nothing would clear. The unmount cleanup below never fired
+           * because the editor stays mounted underneath.
+           */
+          .onFinalize(() => { cancelAnimation(charge); charge.value = withTiming(0, { duration: 160 }); }),
         Gesture.Tap().maxDistance(16).onEnd((_e, ok) => { if (ok) runOnJS(onTap)(); }),
       ),
     [charge, fire, onTap, reduced],
@@ -843,7 +855,17 @@ export function CardEditor({
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 }); // no forced crop (#155)
     // v0.26.0: own it before storing the path — the picker's URI points into a cache an update clears.
     // v0.34.8: art, so this is NOT a whole-card face; picking art turns that off again.
-    if (!res.canceled && res.assets[0]) { const uri = await ownImage(res.assets[0].uri); setDraft((d) => ({ ...d, imageUri: uri, color: null, fullImage: false })); }
+    /**
+     * v0.42.7 (owner): a CUT-OUT keeps the card's colour.
+     *
+     * "If the uploaded image has transparency allow the color to be changed." The two were exclusive,
+     * which is right for a photograph (the colour would be behind something opaque) and exactly wrong
+     * for a banner. See `lib/image-transparency`.
+     */
+    if (!res.canceled && res.assets[0]) {
+      const uri = await ownImage(res.assets[0].uri);
+      setDraft((d) => ({ ...d, imageUri: uri, color: canLayerColor(uri) ? d.color : null, fullImage: false }));
+    }
   }, []);
   /**
    * A card that IS one picture (v0.34.8, owner).
@@ -872,12 +894,20 @@ export function CardEditor({
   const [colorNonce, setColorNonce] = useState(0);
   const applyColor = useCallback((c: string) => {
     playSfx('tokenCopyColor');
-    setDraft((d) => ({ ...d, color: c === 'random' ? randomCardColor() : c, imageUri: null, fullImage: false }));
+    // A cut-out is KEPT and the colour goes behind it; an opaque picture is replaced, as before.
+    setDraft((d) => ({
+      ...d,
+      color: c === 'random' ? randomCardColor() : c,
+      imageUri: canLayerColor(d.imageUri) ? d.imageUri : null,
+      fullImage: canLayerColor(d.imageUri) ? d.fullImage : false,
+    }));
     setColorNonce((n) => n + 1);
   }, []);
   const setColor = useCallback(
     (c: string) => {
-      if (draft.imageUri) { setAskColor(c); return; }
+      // v0.42.7 (owner): "no pop-up for warning the user that their image will be removed by changing
+      // colour, because this doesn't happen with images that have transparency in them."
+      if (colorReplacesImage(draft.imageUri)) { setAskColor(c); return; }
       applyColor(c);
     },
     [applyColor, draft.imageUri],
@@ -1079,7 +1109,9 @@ export function CardEditor({
             {/* Tappable TYPE CHIP (#214): the plaque IS the card's type — tap it to cycle the label. A
                 transparent hit-band over the divider seam (~40% down), so the player taps the chip on
                 the card itself. Only when type options are supplied (New Card), not experiences. */}
-            <ColorNameFlash color={draft.imageUri ? null : draft.color} nonce={colorNonce} />
+            {/* v0.42.7 (owner): never over a picture. It is a label drawn across the art zone, and
+                over a banner it lands on the banner. */}
+            <ColorNameFlash color={showColorName(draft.imageUri) ? draft.color : null} nonce={colorNonce} />
             {typeGroups?.length && !experienceMode && !faceMode ? (
               <Pressable
                 onPress={() => setPickType(true)}
@@ -1100,11 +1132,11 @@ export function CardEditor({
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
+          {/* v0.42.7 (owner): "the random color button in card creation is redundant because the colors
+              button already has a surprise me button." Two buttons, both wider for it. */}
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Add Image" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={pickImage} />
-            <RuneButton label="Random Color" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={rollColor} muteSfx />
-            {/* v0.34.3: the same swatch grid the moodboard uses, for a colour you actually chose. */}
-            <RuneButton label="Colors" kind="ghost" dense height={36} style={{ flex: 0.8 }} onPress={() => setPickColor(true)} />
+            <RuneButton label="Colors" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => setPickColor(true)} />
           </View>
           {/* v0.34.8 (owner): a card that is nothing but a finished picture, for faces exported from
               the Daggerheart card creator. The name and type below still apply; they stop being

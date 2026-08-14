@@ -121,7 +121,7 @@ function Attached({ label, cards, empty, onOpen }: { label: string; cards: Libra
  * the ADD GEAR browser: the same interface the sheet uses to add a card, which draws real cards and
  * already knows about this expansion's own items and the base game's loot.
  */
-function ItemList({ label, hint, ids, itemTitle, onPick, onChange }: { label: string; hint: string; ids: string[]; itemTitle: (id: string) => string; onPick: () => void; onChange: (ids: string[]) => void }) {
+function ItemList({ label, hint, ids, itemTitle, onPick, onWrite, onChange }: { label: string; hint: string; ids: string[]; itemTitle: (id: string) => string; onPick: () => void; onWrite: () => void; onChange: (ids: string[]) => void }) {
   return (
     <View style={{ gap: Gap.hair }}>
       <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</Text>
@@ -138,7 +138,19 @@ function ItemList({ label, hint, ids, itemTitle, onPick, onChange }: { label: st
       ) : (
         <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.italic }}>Nothing picked yet.</Text>
       )}
-      <RuneButton label={ids.length ? '+ Pick another' : '+ Pick from the card browser'} kind="ghost" dense height={34} onPress={onPick} />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <RuneButton label={ids.length ? '+ Pick a card' : '+ Pick from the browser'} kind="ghost" dense height={34} style={{ flex: 1 }} onPress={onPick} />
+        {/**
+          * v0.42.7 (owner): or just WRITE ONE.
+          *
+          * "They can also have a button to just write a title for an item card with no image, just
+          * like 50 feet of rope or hand wraps from a mentor and stuff like that."
+          *
+          * Most starting gear is a line of text. Making an author build a whole card for a coil of
+          * rope, so that a class can hand out a coil of rope, was work with nothing at the end of it.
+          */}
+        <RuneButton label="+ Write one" kind="ghost" dense height={34} style={{ flex: 1 }} onPress={onWrite} />
+      </View>
     </View>
   );
 }
@@ -182,7 +194,7 @@ function ItemPicker({ label, hint, chosen, options, onChange }: { label: string;
   );
 }
 
-export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle, onPickItems, onChange, onClassName, onOpenCard }: {
+export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle, onPickItems, onWriteItem, onChange, onClassName, onOpenCard }: {
   spec: CustomClassSpec | undefined;
   /** The class card being edited, so the report can be about it by name. */
   card: LibraryCard;
@@ -199,6 +211,8 @@ export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle
    * this expansion's own records, so the picker here is a button, not another chip cloud.
    */
   onPickItems: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
+  /** v0.42.7: make a plain named item on the spot, for the ropes and the hand wraps. */
+  onWriteItem: (which: 'fixed' | 'choiceA' | 'choiceB') => void;
   /** What a picked item id is CALLED, so the list reads as cards rather than as ids. */
   itemTitle: (id: string) => string;
   onChange: (s: CustomClassSpec) => void;
@@ -315,9 +329,9 @@ export function ClassSpecForm({ spec, card, attachments, classChoices, itemTitle
           </FormSection>
 
           <FormSection title="Starting items" hint="One thing everyone gets, and two choices they make. Picked from the same card browser the sheet uses, so you are choosing real cards.">
-            <ItemList label="Everyone receives" hint="At least one." ids={s.fixedItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('fixed')} onChange={(fixedItemIds) => set({ fixedItemIds })} />
-            <ItemList label="First choice" hint="At least two to choose between." ids={s.choiceAItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('choiceA')} onChange={(choiceAItemIds) => set({ choiceAItemIds })} />
-            <ItemList label="Second choice" hint="At least two to choose between." ids={s.choiceBItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('choiceB')} onChange={(choiceBItemIds) => set({ choiceBItemIds })} />
+            <ItemList label="Everyone receives" hint="At least one." ids={s.fixedItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('fixed')} onWrite={() => onWriteItem('fixed')} onChange={(fixedItemIds) => set({ fixedItemIds })} />
+            <ItemList label="First choice" hint="At least two to choose between." ids={s.choiceAItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('choiceA')} onWrite={() => onWriteItem('choiceA')} onChange={(choiceAItemIds) => set({ choiceAItemIds })} />
+            <ItemList label="Second choice" hint="At least two to choose between." ids={s.choiceBItemIds ?? []} itemTitle={itemTitle} onPick={() => onPickItems('choiceB')} onWrite={() => onWriteItem('choiceB')} onChange={(choiceBItemIds) => set({ choiceBItemIds })} />
           </FormSection>
 
           <FormSection title="What points at this class" hint="Written elsewhere, as cards of their own, each naming this class. This is only the report.">

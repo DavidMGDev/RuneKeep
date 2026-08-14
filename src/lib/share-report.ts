@@ -19,6 +19,7 @@
  */
 
 import { classProblems, domainProblems, classKeyOf } from './custom-class';
+import { displayTitle } from './class-identity';
 import { CONTENT_TYPE_LABEL, type Expansion, type LibraryCard } from './library';
 
 /** Everything wrong with one card, under its name. */
@@ -42,7 +43,9 @@ export interface ShareReport {
   count: number;
 }
 
-const nameOf = (c: LibraryCard, i: number): string => c.title.trim() || `Untitled card ${i + 1}`;
+const nameOf = (c: LibraryCard, i: number, cards?: LibraryCard[]): string =>
+  // v0.42.7: a page is named by its class, which is the only name it has.
+  displayTitle(c, cards) || `Untitled card ${i + 1}`;
 
 /**
  * The whole report.
@@ -96,7 +99,7 @@ export function shareReport(exp: Pick<Expansion, 'cards'>): ShareReport {
     }
 
     if (problems.length) {
-      cards.push({ cardId: c.id, title: nameOf(c, i), kind: CONTENT_TYPE_LABEL[c.contentType] ?? 'Card', problems });
+      cards.push({ cardId: c.id, title: nameOf(c, i, exp.cards), kind: CONTENT_TYPE_LABEL[c.contentType] ?? 'Card', problems });
     }
   });
 

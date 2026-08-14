@@ -310,10 +310,24 @@ export function CreateScreen() {
       if (!live) return;
       setExpansions(all);
       // Characterize takes the app's enabled packs as given; nothing is asked and nothing waits.
-      if (params.encId && params.cid) setPicked(new Set([BASE_PICK_ID, ...all.filter(isEnabledForCreation).map((e) => e.id)]));
+      /**
+       * v0.42.7 (owner): AUTHORING sees every enabled pack, which is why the subclass and domain
+       * steps were empty.
+       *
+       * "In the campaign setup the character creation steps for subclass and domain are still locked."
+       * They were not locked, they were EMPTY: `picked` starts as base-only unless a route param says
+       * otherwise, and every content list is gated on it, so a DM writing rules was shown the base
+       * game's subclasses and nothing else, and a step with no cards draws no carousel at all.
+       *
+       * A campaign's rules cover whatever is enabled in the Cards menu, which is the same set
+       * characterize already takes for the same reason.
+       */
+      if ((params.encId && params.cid) || typeof params.campaign === 'string') {
+        setPicked(new Set([BASE_PICK_ID, ...all.filter(isEnabledForCreation).map((e) => e.id)]));
+      }
     });
     return () => { live = false; };
-  }, [params.encId, params.cid]);
+  }, [params.encId, params.cid, params.campaign]);
   // v0.10.3 (B4): homebrew content offered in the matching decks — now intersected with the PICKED set, so
   // only content from expansions this hero opted into shows. An official pack contributes nothing here (its
   // cards live in the catalog, gated by the same `picked`); custom expansions contribute their cards.

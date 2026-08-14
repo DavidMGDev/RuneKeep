@@ -101,7 +101,15 @@ export const classPageCount = (spec: CustomClassSpec | undefined, featureCards =
 export function classProblems(card: LibraryCard, attached?: { features: number; subclasses: number; pages?: number }): string[] {
   const out: string[] = [];
   const spec = card.classSpec;
-  if (!card.title.trim()) out.push('give the class a name');
+  /**
+   * v0.42.7 (owner): a PAGE takes its class's name, so it is never asked for one.
+   *
+   * "Class cards that are just pages for previously existing classes or user's custom classes, must
+   * copy their title... and thus when fixed it should not show the warning for give the class a name,
+   * since it will always be based on a previous class."
+   */
+  const isPage = card.classSpec?.role === 'page';
+  if (!isPage && !card.title.trim()) out.push('give the class a name');
   if (!spec) return [...out, 'fill in the class details'];
   /**
    * A PAGE owes almost nothing (v0.42.3).
