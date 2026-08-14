@@ -409,13 +409,35 @@ export function expansionShareIssues(exp: Expansion): string[] {
 
 /** Validate + normalize a parsed object into an Expansion. Throws on anything that isn't one — the
  *  single trust boundary for imported `.rkp` expansion payloads. */
+/**
+ * A pack's cards, with duplicates and strays removed (v0.42.7, owner).
+ *
+ * "On old expansions some cards are duplicated or some cards are missing from the gallery but present
+ * in the data."
+ *
+ * Two ids the same is a card that draws twice and deletes once, which is how a pack ends up with a
+ * card an author cannot get rid of. It has happened through copy-between-expansions and through
+ * importing a pack over itself, and both are one-liners to guard: the FIRST of a repeated id wins,
+ * because that is the one the author has been editing.
+ */
+export function dedupeCards(cards: LibraryCard[]): LibraryCard[] {
+  const seen = new Set<string>();
+  return cards.filter((c) => {
+    if (!c?.id || seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
+}
+
 export function validateExpansion(o: unknown): Expansion {
   if (!o || typeof o !== 'object') throw new Error('Not an expansion');
   const e = o as Record<string, unknown>;
   if (typeof e.id !== 'string' || !e.id) throw new Error('Expansion missing id');
   if (typeof e.name !== 'string') throw new Error('Expansion missing name');
   if (!Array.isArray(e.cards)) throw new Error('Expansion missing cards');
-  const cards: LibraryCard[] = (e.cards as unknown[]).map((raw, i) => normalizeLibraryCard(raw, i));
+  // v0.42.7: DEDUPED on the way in, so an older pack carrying a repeated id stops drawing one card
+  // twice and deleting it once. See `dedupeCards`.
+  const cards: LibraryCard[] = dedupeCards((e.cards as unknown[]).map((raw, i) => normalizeLibraryCard(raw, i)));
   return {
     id: e.id,
     name: e.name,

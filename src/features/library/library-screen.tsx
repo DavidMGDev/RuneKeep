@@ -53,7 +53,8 @@ import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
 import { domainLabel } from '@/lib/domain-label';
 import { advancedFunctions } from '@/lib/card-advances';
-import { classTitles, withoutClassPages } from '@/lib/custom-class-pages';
+import { classTitles } from '@/lib/custom-class-pages';
+import { BUILTIN_CLASS_LABELS, classIdentityFor, inheritsClassLook, withClassIdentity, withClassIdentityAsPage } from '@/lib/class-identity';
 import { finishTour, shouldShow } from '@/lib/onboarding-store';
 import { functionVars } from '@/lib/function-vars';
 import { afterShare, nextShareVersion } from '@/lib/pack-version';
@@ -657,6 +658,8 @@ export function LibraryScreen() {
   const [askingClassRole, setAskingClassRole] = useState(false);
   /** v0.42.6: and then, for a page, which class it belongs to. Asked before the editor, not inside it. */
   const [askingParentClass, setAskingParentClass] = useState(false);
+  /** v0.42.7: a feature or a subclass being asked which class it belongs to, before the editor. */
+  const [askingClassFor, setAskingClassFor] = useState<'feature' | 'subclass' | null>(null);
   /** Bumped when the class-card explanation is dismissed, so this screen re-reads that it is done. */
   const [, setTourNonce] = useState(0);
   /** v0.42.3: which of a class's three starting-item lists the card browser is filling. */
@@ -833,7 +836,21 @@ export function LibraryScreen() {
         .map((a) => ({ key: `${id}|${a.id}`, tier: previewTier }));
       return advancedFunctions({ id, title: '', functions: cfg.functions, advances: cfg.advances }, takes);
     };
-    const previewCard = (d: CardDraft): LibraryCard => ({
+    /**
+     * v0.42.7 (owner): the preview ALREADY wears its class.
+     *
+     * "The goal is to have a cohesive class styling that only has to be done once, and by the time i
+     * go into the card creator i already see the same style of its assigned class."
+     *
+     * A page takes the class's title as well, which is item 10: a page is the class card, and it was
+     * showing an empty title and demanding one. See `lib/class-identity`.
+     */
+    const dressed = (c: LibraryCard): LibraryCard => {
+      if (!inheritsClassLook(c)) return c;
+      const id = classIdentityFor(selected.cards, c.className);
+      return c.contentType === 'class' ? withClassIdentityAsPage(c, id) : withClassIdentity(c, id);
+    };
+    const previewCard = (d: CardDraft): LibraryCard => dressed({
       id: existing?.id ?? 'preview',
       contentType: cfg.contentType,
       title: d.title,
@@ -1113,10 +1130,23 @@ export function LibraryScreen() {
           </View>
 
           {/* v0.42.3 (owner): the cards, drawn as cards. See `expansion-gallery-view`. */}
-          {/* v0.42.6 (owner): a class and its pages are ONE card, so the pages are not listed beside
-              it. Editing one is tapping the class and turning to its page. */}
+          {/**
+            * EVERY CARD IS VISIBLE (v0.42.7, owner).
+            *
+            * "Some cards are missing from the gallery but present in the data because share pack does
+            * not let me share because of the existence of the invisible cards."
+            *
+            * v0.42.6 hid class PAGES here, on the reasoning that a class and its pages are one card.
+            * That is true of creation and of Add Gear, where a class is a thing you pick; it is false
+            * of the pack's own gallery, which is the only place an author can reach a card to fix or
+            * delete it. Hiding one there meant the share report could name a card that was nowhere on
+            * screen, and the pack could not be shared or repaired.
+            *
+            * So: the gallery shows everything the pack contains, always. Assembly stays where it
+            * belongs, in the two places a class is CHOSEN.
+            */}
           <ExpansionGallery
-            cards={withoutClassPages(selected.cards)}
+            cards={selected.cards}
             dm={dm}
             actions={{
               onEdit: (c) =>
@@ -1151,6 +1181,15 @@ export function LibraryScreen() {
               // v0.42.4 (owner): a CLASS card is asked what kind it is before the editor opens, because
               // the answer decides every field in it. Everything else goes straight in.
               if (t === 'class') { setAskingClassRole(true); return; }
+              /**
+               * v0.42.7 (owner): a FEATURE and a SUBCLASS are asked their class first, too.
+               *
+               * "When making a feature card give the user a pop-up where they choose what class that
+               * feature belongs to", and the same for a subclass, "and thus copies the style of the
+               * class it is going to be a subclass for". The answer decides how the card LOOKS, so
+               * being asked after writing it would mean watching it change underneath you.
+               */
+              if (t === 'feature' || t === 'subclass') { setAskingClassFor(t); return; }
               setEditingCard({ index: 'new', config: defaultConfigFor(t) });
             }}
             onClose={() => setChoosingType(false)}
@@ -1205,13 +1244,17 @@ export function LibraryScreen() {
           <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
             <DimScreen opacity={0.9} />
-            <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 336, paddingHorizontal: 16, paddingVertical: 16, gap: Gap.group }}>
-              <View style={{ gap: Gap.hair }}>
-                <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What kind of class card?</Text>
-                <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
-                  Pick now: the two are different cards, and this cannot be changed afterwards without starting again.
-                </Text>
-              </View>
+            {/**
+              * v0.42.7 (owner): it must FIT.
+              *
+              * "The onboarding for the class cards is making the pop-up bleed outside the screen."
+              * Three paragraphs of explanation, two option blocks and a button came to more than a
+              * phone is tall. The box is now bounded and its middle scrolls, which is the only shape
+              * that cannot bleed whatever is put in it, and the explanation itself is cut to the three
+              * sentences that actually answer the question being asked.
+              */}
+            <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 332, maxHeight: '86%', paddingHorizontal: 14, paddingVertical: 14, gap: Gap.intra }}>
+              <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What kind of class card?</Text>
 
               {/**
                 * THE THREE KINDS OF CARD A CLASS IS MADE OF (v0.42.6, owner).
@@ -1225,54 +1268,48 @@ export function LibraryScreen() {
                 * question is actually being asked, and an explanation somewhere else is an explanation
                 * nobody reads.
                 */}
-              {shouldShow('classcards') ? (
-                <ChamferBox chamfer={9} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ padding: 11, gap: 7 }}>
-                  <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.9, textTransform: 'uppercase' }}>How a class is put together</Text>
-                  <Text style={{ color: Rune.sheet, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
-                    <Text style={{ fontFamily: Body.bold }}>A class card</Text> starts a class. It carries the numbers, the two domains and the
-                    starting items, and it is what a player picks at character creation. It has to be finished before the pack can be shared.
-                  </Text>
-                  <Text style={{ color: Rune.sheet, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
-                    <Text style={{ fontFamily: Body.bold }}>Class pages</Text> are the rest of that same card: its abilities, its Hope feature, anything
-                    else it needs to say. They take the class&apos;s name, colour and art automatically, and they join it as pages you flip through. A
-                    class needs at least one.
-                  </Text>
-                  <Text style={{ color: Rune.sheet, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
-                    <Text style={{ fontFamily: Body.bold }}>Feature cards</Text> are optional and separate. They never appear among the class&apos;s pages;
-                    they land in the player&apos;s arsenal as cards of their own, and they are the only kind that carries counters, dice, switches and
-                    level advancements. Reach for one when an ability needs something the player presses.
-                  </Text>
-                  <RuneButton dm={dm} label="Got it" kind="ghost" dense height={32} onPress={() => { playSfx('buttonTap'); finishTour('classcards'); setTourNonce((n) => n + 1); }} />
-                </ChamferBox>
-              ) : null}
+              <ScrollView showsVerticalScrollIndicator contentContainerStyle={{ gap: Gap.intra, paddingBottom: 2 }}>
+                {shouldShow('classcards') ? (
+                  <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ padding: 10, gap: 5 }}>
+                    <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
+                      <Text style={{ fontFamily: Body.bold }}>Class card</Text>: starts a class and carries its numbers, domains and starting items.
+                    </Text>
+                    <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
+                      <Text style={{ fontFamily: Body.bold }}>Class page</Text>: another page of that same card, for its abilities and its Hope feature. It takes the class&apos;s look automatically.
+                    </Text>
+                    <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
+                      <Text style={{ fontFamily: Body.bold }}>Feature card</Text>: optional, a card of its own in the player&apos;s arsenal. The only kind that carries counters, dice and switches.
+                    </Text>
+                    <RuneButton dm={dm} label="Got it" kind="ghost" dense height={30} onPress={() => { playSfx('buttonTap'); finishTour('classcards'); setTourNonce((n) => n + 1); }} />
+                  </ChamferBox>
+                ) : null}
 
-              <Pressable
-                onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setEditingCard({ index: 'new', config: { contentType: 'class', classSpec: { ...EMPTY_CLASS_SPEC, role: 'base' } } }); }}
-                accessibilityRole="button"
-                accessibilityLabel="A new class">
-                <ChamferBox chamfer={9} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 12, gap: 5 }}>
-                  <Text style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>A new class</Text>
-                  <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
-                    Its first page. It carries the starting Evasion and Hit Points, the two domains it grants and the
-                    starting items, and every subclass, feature and page you write afterwards points back at it.
-                  </Text>
-                </ChamferBox>
-              </Pressable>
+                <Pressable
+                  onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setEditingCard({ index: 'new', config: { contentType: 'class', classSpec: { ...EMPTY_CLASS_SPEC, role: 'base' } } }); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="A new class">
+                  <ChamferBox chamfer={8} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 4 }}>
+                    <Text style={{ color: Rune.ivory, fontSize: 14.5, fontFamily: Body.bold }}>A new class</Text>
+                    <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14 }}>
+                      Its first page: the numbers, the two domains and the starting items. Everything else points back at it.
+                    </Text>
+                  </ChamferBox>
+                </Pressable>
 
-              <Pressable
-                onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setAskingParentClass(true); }}
-                accessibilityRole="button"
-                accessibilityLabel="Another page of a class">
-                <ChamferBox chamfer={9} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 12, gap: 5 }}>
-                  <Text style={{ color: Rune.ivory, fontSize: 15, fontFamily: Body.bold }}>Another page of a class</Text>
-                  <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
-                    More of a class that already exists, yours or one from the base game. It carries only its own text,
-                    and it becomes the next page of that class wherever the class is read.
-                  </Text>
-                </ChamferBox>
-              </Pressable>
+                <Pressable
+                  onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setAskingParentClass(true); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Another page of a class">
+                  <ChamferBox chamfer={8} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 4 }}>
+                    <Text style={{ color: Rune.ivory, fontSize: 14.5, fontFamily: Body.bold }}>Another page of a class</Text>
+                    <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14 }}>
+                      More of a class that already exists, yours or one from the base game. It takes that class&apos;s name and look.
+                    </Text>
+                  </ChamferBox>
+                </Pressable>
+              </ScrollView>
 
-              <RuneButton dm={dm} label="Cancel" kind="ghost" height={40} onPress={() => setAskingClassRole(false)} />
+              <RuneButton dm={dm} label="Cancel" kind="ghost" height={38} onPress={() => setAskingClassRole(false)} />
             </ChamferBox>
           </View>
         ) : null}
@@ -1303,6 +1340,65 @@ export function LibraryScreen() {
           * class's name, its colour and its art, and an author who answered it four fields in had
           * already been asked for things the class was going to supply.
           */}
+        {/* The class picker, shared by a page, a feature and a subclass. What differs is only what it
+            says it is for, and what the chosen class then does to the card. */}
+        {askingClassFor ? (
+          <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
+            <DimScreen opacity={0.9} />
+            <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 332, maxHeight: '86%', paddingHorizontal: 14, paddingVertical: 14, gap: Gap.intra }}>
+              <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {askingClassFor === 'feature' ? 'Whose feature is this?' : 'A subclass of which class?'}
+              </Text>
+              <ScrollView showsVerticalScrollIndicator contentContainerStyle={{ gap: Gap.tightRow, paddingBottom: 2 }}>
+                {askingClassFor === 'feature' && shouldShow('featurecards') ? (
+                  <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ padding: 10, gap: 5 }}>
+                    <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
+                      A feature card is a card of its own in the player&apos;s arsenal. It never appears among the class&apos;s pages.
+                    </Text>
+                    <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
+                      It is the only kind that carries counters, dice, switches and text fields, and the only kind whose numbers can be
+                      rolled with or used in a modifier. Reach for one when an ability needs something the player presses.
+                    </Text>
+                    <RuneButton dm={dm} label="Got it" kind="ghost" dense height={30} onPress={() => { playSfx('buttonTap'); finishTour('featurecards'); setTourNonce((n) => n + 1); }} />
+                  </ChamferBox>
+                ) : null}
+                {/* Belonging to no class at all is allowed: a feature can be a loose card. */}
+                {askingClassFor === 'feature' ? (
+                  <Pressable onPress={() => { playSfx('buttonTap'); const t = askingClassFor; setAskingClassFor(null); setEditingCard({ index: 'new', config: defaultConfigFor(t) }); }} accessibilityRole="button" accessibilityLabel="No class">
+                    <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12 }}>
+                      <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.semibold }}>No class, a card on its own</Text>
+                    </ChamferBox>
+                  </Pressable>
+                ) : null}
+                {classTitles(selected.cards).map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => { playSfx('buttonTap'); const k = askingClassFor; setAskingClassFor(null); setEditingCard({ index: 'new', config: { ...defaultConfigFor(k), className: t } }); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Of ${t}`}>
+                    <ChamferBox chamfer={8} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.1} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 12 }}>
+                      <Text style={{ color: Rune.ivory, fontSize: 14, fontFamily: Body.bold }}>{t}</Text>
+                    </ChamferBox>
+                  </Pressable>
+                ))}
+                <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 6 }}>Base game classes</Text>
+                {BUILTIN_CLASS_LABELS.map((t) => (
+                  <Pressable
+                    key={t}
+                    onPress={() => { playSfx('buttonTap'); const k = askingClassFor; setAskingClassFor(null); setEditingCard({ index: 'new', config: { ...defaultConfigFor(k), className: t } }); }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Of ${t}`}>
+                    <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.1} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12 }}>
+                      <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.semibold }}>{t}</Text>
+                    </ChamferBox>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <RuneButton dm={dm} label="Cancel" kind="ghost" height={38} onPress={() => setAskingClassFor(null)} />
+            </ChamferBox>
+          </View>
+        ) : null}
         {askingParentClass ? (
           <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
@@ -1333,7 +1429,7 @@ export function LibraryScreen() {
                 ))}
                 {/* A page for a PUBLISHED class, which is how somebody adds their own to a Bard. */}
                 <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 6 }}>Base game classes</Text>
-                {BUILTIN_CLASSES.map((t) => (
+                {BUILTIN_CLASS_LABELS.map((t) => (
                   <Pressable
                     key={t}
                     onPress={() => { playSfx('buttonTap'); setAskingParentClass(false); setEditingCard({ index: 'new', config: { contentType: 'class', className: t, classSpec: { ...EMPTY_CLASS_SPEC, role: 'page' } } }); }}

@@ -78,7 +78,18 @@ export function formMarkdown(f: CardFormFacts): string {
       // v0.42.3: printed the way the book prints it. The stored key is untouched (`lib/domain-label`).
       return join([row('Domain', domainLabel(f.domain)), row('Level', f.level)]);
     case 'subclass':
-      return join([row('Class', f.className), row('Subclass', f.subclass), row('Tier', SUBCLASS_TIER_LABEL[f.tier ?? 1])]);
+      /**
+       * v0.42.7 (owner): a subclass writes NOTHING.
+       *
+       * "Subclass cards already have their type either foundation specialization or expertise, so it
+       * makes no sense that you make the subclass card have auto markdown for displaying its tier,
+       * remove the auto markdown section for the custom subclass cards's tier and class."
+       *
+       * Exactly so: the tier is printed under the title by the card itself, and the class is now the
+       * card's whole appearance. Printing both again into the body was the app narrating what the card
+       * already shows.
+       */
+      return '';
     case 'class':
       /**
        * v0.42.6 (owner): a class PAGE writes nothing.
