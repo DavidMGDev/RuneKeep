@@ -27,6 +27,15 @@ The script is idempotent: first run is ~15-25 min (Gradle + native C++ compile),
    debug-signed so it sideloads).
 5. Renames the APK to `Runekeep <ver>.apk` and uploads it via `gh release create <ver>`.
 
+## What publishing a release also does (v0.43.0)
+
+`gh release create` fires `.github/workflows/production.yml`, which moves the **`production`** branch
+to the commit that release's tag points at. Cloudflare Pages watches that branch and rebuilds the web
+build from it, so the site and the APK are always the same version of the app and there is nothing to
+deploy by hand. See `docs/web-deploy.md`.
+
+Publishing with `-NoRelease` therefore does NOT update the site, which is the point of that flag.
+
 ## Bumping the release version
 
 Edit `$ver` at the top of `build-apk.ps1` (drives the tag, the APK filename, and the release title), bump

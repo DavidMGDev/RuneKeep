@@ -93,18 +93,54 @@ console rather than guessing.
 
 To update later, repeat step 2 with **Create new deployment**.
 
-### The better way (deploys itself when you push)
+### The better way: connect it to the `production` branch (v0.43.0)
 
 1. **Workers & Pages** → **Create** → **Pages** → **Connect to Git**, and pick the RuneKeep repo.
 2. Settings:
+   - Production branch: **`production`**
    - Framework preset: **None**
    - Build command: `npx expo export --platform web`
    - Build output directory: `dist`
-   - Node version: add an environment variable `NODE_VERSION` = `22`
+   - Node version: nothing to set. `.nvmrc` in the repo root says 22 and Cloudflare reads it.
 3. **Save and Deploy.**
 
-Every push to `main` now rebuilds and republishes. Cloudflare's free build minutes are generous and a
-90 second build will not trouble them.
+That is the whole of it. Cloudflare rebuilds and republishes every time `production` moves.
+
+#### Why a branch of its own
+
+`main` is where work lands, several times a day, including half-finished things. The site should
+change when a RELEASE says so, and a branch that answers exactly one question — what is live — is the
+cheapest way to say that.
+
+So `production` is a POINTER to the last released commit, and nothing is developed on it.
+`.github/workflows/production.yml` moves it, on a published GitHub release, to the commit that
+release's tag points at — which is the same commit the APK was built from, so the site and the
+Android build are never two different versions of the app.
+
+It carries SOURCE, not artifacts. Cloudflare runs the export itself, so `dist/` stays gitignored and
+the 63 MB of card art is never committed twice.
+
+#### Releasing, end to end
+
+```bash
+npm run build:apk         # builds the APK, publishes the GitHub release
+```
+
+Publishing the release fires the workflow, the workflow moves `production`, Cloudflare sees the push
+and rebuilds. Nothing else to press.
+
+#### Promoting or rolling back by hand
+
+Actions → **production** → **Run workflow**, and pick the branch or tag to promote. Use it to put the
+site back on the previous release without publishing anything, or to re-deploy when a release went
+out before the site was ready.
+
+#### If the site is behind
+
+Check the **production** workflow run for that release first. A red run means `production` never
+moved and Cloudflare has nothing new to build; a green run means the problem is on Cloudflare's side,
+so look at its deployment log. If the deploy is green and the browser still shows the old build, that
+is the cache trap below, not the branch.
 
 ### Routing
 
