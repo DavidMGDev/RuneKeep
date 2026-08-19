@@ -110,6 +110,26 @@ $env:PATH = (Join-Path $jdk 'bin') + ';' + $env:PATH
 Write-Host "JDK  : $jdk" -ForegroundColor Green
 & (Join-Path $jdk 'bin\javac.exe') -version
 
+Section "bash"
+# react-native-audio-api's `downloadPrebuiltBinaries` task SHELLS OUT TO BASH, and Gradle inherits
+# this process's PATH. With no bash on it the task dies as "A problem occurred starting process
+# 'command 'bash''" nine minutes into the build, which names neither bash nor the module that wanted
+# it in any useful way.
+#
+# Git for Windows ships one, and `Git\bin\bash.exe` is the wrapper that sets up a real MSYS
+# environment (so the script it runs can find `unzip`, which is the other thing this task needs).
+# Only `Git\bin` goes on the PATH, never `Git\usr\bin`: that one carries find.exe and sort.exe, which
+# would shadow the Windows tools of the same name for every child process of this build.
+if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
+  $gitBin = @("$env:ProgramFiles\Git\bin", "${env:ProgramFiles(x86)}\Git\bin", "$env:LOCALAPPDATA\Programs\Git\bin") |
+    Where-Object { Test-Path (Join-Path $_ 'bash.exe') } | Select-Object -First 1
+  if (-not $gitBin) { Fail "no bash found - install Git for Windows (react-native-audio-api's build shells out to it)" }
+  $env:PATH = $gitBin + ';' + $env:PATH
+  Write-Host "bash : $(Join-Path $gitBin 'bash.exe')" -ForegroundColor Green
+} else {
+  Write-Host "bash : $((Get-Command bash).Source)" -ForegroundColor Green
+}
+
 Section "Clean sdkmanager staging"
 foreach ($p in @((Join-Path $sdk '.temp'), (Join-Path $sdk '.downloadIntermediates'))) {
   if (Test-Path $p) { Write-Host "  removing $p"; Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
