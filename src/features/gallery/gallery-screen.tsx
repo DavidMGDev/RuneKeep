@@ -25,6 +25,7 @@ import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/cla
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { focusHaptic } from '@/lib/haptics';
 import { type Expansion, type LibraryCard, type LibraryContentType } from '@/lib/library';
+import { contentTypes } from '@/lib/content-types';
 import { listExpansions } from '@/lib/library-store';
 import { isEnabledForCreation } from '@/lib/library';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
@@ -44,7 +45,9 @@ type GalleryItem =
   | { type: 'card'; id: string; label: string; card: CatalogCard }
   /** v0.32.2: a card from an installed expansion. It lives in whichever kind its content is, not in a
    *  Homebrew corner of its own, so a custom weapon is found by looking under Weapons. */
-  | { type: 'lib'; id: string; label: string; lib: LibraryCard }
+  /** v0.43.0: `pack` is every installed card, so a chip inherited from a class, a domain or a type
+   *  resolves here exactly as it does in the library. See `lib/card-plaque`. */
+  | { type: 'lib'; id: string; label: string; lib: LibraryCard; pack: LibraryCard[] }
   | { type: 'weapon'; id: string; label: string; weapon: WeaponDef }
   | { type: 'armor'; id: string; label: string; armor: ArmorDef }
   | { type: 'loot'; id: string; label: string; loot: LootDef }
@@ -104,6 +107,22 @@ export function libraryKind(t: LibraryContentType): GalleryKind {
   return t === 'weapon' ? 'weapon' : t === 'armor' ? 'armor' : t === 'inventory' || t === 'generic' ? 'loot' : (t as GalleryKind);
 }
 
+/** The archive's chip key for one invented kind. Namespaced so it can never collide with a real one. */
+export const typeKindKey = (typeId: string): GalleryKind => `type:${typeId}` as GalleryKind;
+
+/**
+ * Where a library card files in the archive (v0.43.0).
+ *
+ * A card of an invented kind, and the type card that declares it, file under that kind: "these cards
+ * should appear inside the card archive and the card library". Filing them under Loot, which is where
+ * a plain card went, would have hidden a campaign's Orders among sixty trinkets.
+ */
+export function libItemKind(c: LibraryCard): GalleryKind {
+  if (c.contentType === 'type') return typeKindKey(c.id);
+  if (c.customType) return typeKindKey(c.customType);
+  return libraryKind(c.contentType);
+}
+
 function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string>, library: LibraryCard[] = [], libPack: Map<string, string> = new Map()): GalleryItem[] {
   const wantKind = (k: GalleryKind) => !f.kinds.size || f.kinds.has(k);
   const wantSource = (src: 'official' | 'homebrew') => !f.sources.size || f.sources.has(src);
@@ -157,7 +176,7 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
   // custom gear the same way it does to published gear; the domain/level axes apply to custom domains.
   if (wantSource('homebrew')) {
     for (const c of library) {
-      const k = libraryKind(c.contentType);
+      const k = libItemKind(c);
       if (!wantKind(k)) continue;
       if (f.tiers.size) {
         const t = c.weapon?.tier ?? c.armor?.tier;
@@ -165,7 +184,7 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
       } else if (equipDim) continue;
       if (f.domains.size && (c.contentType !== 'domain' || !c.domain || !f.domains.has(c.domain as DomainName))) continue;
       if (f.levels.size && (c.contentType !== 'domain' || c.level == null || !f.levels.has(c.level))) continue;
-      out.push({ type: 'lib', id: c.id, label: c.title || 'Untitled', lib: c });
+      out.push({ type: 'lib', id: c.id, label: c.title || 'Untitled', lib: c, pack: library });
     }
   }
   return f.packs.size ? out.filter((it) => f.packs.has(packOfItem(it, libPack))) : out;
@@ -365,7 +384,7 @@ function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem,
             {card.type === 'card' ? (
               <ArtImage source={card.card.source} fit="contain" />
             ) : card.type === 'lib' ? (
-              <ScaledCard width={w}><LibraryForgedCard card={card.lib} /></ScaledCard>
+              <ScaledCard width={w}><LibraryForgedCard card={card.lib} pack={card.pack} /></ScaledCard>
             ) : (
               <ScaledForged item={card} width={w} />
             )}
@@ -407,7 +426,7 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, s
         {item.type === 'card' ? (
           <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
         ) : item.type === 'lib' ? (
-          <ScaledCard width={cellW}><LibraryForgedCard card={item.lib} /></ScaledCard>
+          <ScaledCard width={cellW}><LibraryForgedCard card={item.lib} pack={item.pack} /></ScaledCard>
         ) : item.type === 'class' ? (
           <ScaledCard width={cellW}>
             <ForgedCard title={item.def.title} kindLabel="Class" body={item.def.body} accentDeep={classColor(item.def.key).deep} Banner={item.def.Banner} classKey={item.def.key} />
@@ -518,6 +537,8 @@ export function GalleryScreen() {
     return () => { live = false; };
   }, []);
   const cards = useMemo(() => applyFilters(filters, gated, enabledExp ?? new Set(), library, libPack), [filters, gated, enabledExp, library, libPack]);
+  /** The kinds installed packs have invented, as filter chips of their own (v0.43.0). */
+  const typeKinds = useMemo(() => contentTypes(library).map((t) => ({ key: typeKindKey(t.id), label: t.title.trim() })), [library]);
   const toggle = useCallback(<T,>(set: Set<T>, v: T): Set<T> => {
     const next = new Set(set);
     if (next.has(v)) next.delete(v);
@@ -576,7 +597,7 @@ export function GalleryScreen() {
             continue;
           }
           const node =
-            it.type === 'lib' ? <LibraryForgedCard card={it.lib} />
+            it.type === 'lib' ? <LibraryForgedCard card={it.lib} pack={it.pack} />
             : it.type === 'weapon' ? <ForgedWeaponCard weapon={it.weapon} />
             : it.type === 'armor' ? <ForgedArmorCard armor={it.armor} />
             : it.type === 'loot' ? <ForgedLootCard loot={it.loot} />
@@ -715,8 +736,9 @@ export function GalleryScreen() {
               ))}
             </FilterBand>
           ) : null}
+          {/* v0.43.0: one extra chip per kind an installed pack invented, after the game's own. */}
           <FilterBand label="Type">
-            {KINDS.map((k) => (
+            {[...KINDS, ...typeKinds].map((k) => (
               <RuneChip key={k.key} label={k.label} active={filters.kinds.has(k.key)} onPress={() => setFilters((f) => ({ ...f, kinds: toggle(f.kinds, k.key) }))} />
             ))}
           </FilterBand>

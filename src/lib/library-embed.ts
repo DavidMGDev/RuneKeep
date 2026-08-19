@@ -8,6 +8,7 @@
  * circuits on an empty/absent store. This is the ONE module the sheet resolver + creation forge share.
  */
 import type { CharacterFile } from './character-file';
+import { plaqueLabelFor } from './card-plaque';
 import { CONTENT_TYPE_LABEL, type ArmorSpec, type LibraryCard } from './library';
 import type { CardEffect } from './modifiers';
 
@@ -15,9 +16,25 @@ export function libraryCardById(file: CharacterFile | undefined, id: string): Li
   return file?.libraryCards?.find((c) => c.id === id);
 }
 
-/** The plaque label for an embedded card — the user's custom label else the content-type word. */
-export function libraryCardKindLabel(lc: LibraryCard): string {
-  return lc.typeLabel || CONTENT_TYPE_LABEL[lc.contentType];
+/**
+ * What a TYPE card's own chip says when nobody has named it: its name, not the word "Type".
+ *
+ * A type card is a template that declares a kind, and the chip it previews is the chip its cards will
+ * wear, so it should be showing that chip rather than a label about templates.
+ */
+const defaultKindLabel = (lc: LibraryCard): string =>
+  lc.contentType === 'type' ? lc.title.trim() || CONTENT_TYPE_LABEL.type : CONTENT_TYPE_LABEL[lc.contentType];
+
+/**
+ * The plaque label for an embedded card.
+ *
+ * v0.43.0: the card's own label still wins, then a chip INHERITED from the class, domain or type it
+ * belongs to, then what kind of card it is. `pack` is the cards the label can be resolved against;
+ * without it only the card's own fields are read, which is what every caller did before. See
+ * `lib/card-plaque`.
+ */
+export function libraryCardKindLabel(lc: LibraryCard, pack?: readonly LibraryCard[]): string {
+  return plaqueLabelFor(lc, defaultKindLabel(lc), pack);
 }
 
 /** The card body as markdown: a bold stat line for weapon/armor, then the sections (or flat text).

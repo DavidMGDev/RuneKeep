@@ -6,13 +6,22 @@ import { type GoldAmount } from './components/gold-card';
 // ---------- draft ----------
 
 export type CardDeckKey = 'class' | 'subclass' | 'ancestry' | 'community' | 'domains' | 'transformation';
-/** v0.36 adds three CHARACTERIZE-only steps: `carry` (what the stat block hands over), `level`, and
- *  `transformation`. They never appear in ordinary character creation. */
-export type DeckKey = CardDeckKey | 'carry' | 'level' | 'traits' | 'experiences' | 'weapons' | 'armor' | 'inventory';
+/**
+ * v0.36 adds three CHARACTERIZE-only steps: `carry` (what the stat block hands over), `level`, and
+ * `transformation`. They never appear in ordinary character creation.
+ *
+ * v0.43.0 adds CUSTOM steps: one per content type an enabled pack invented and asked to be asked
+ * about. The key is `custom:<type card id>`, which is a template literal rather than a widened string
+ * so a typo still fails to compile and every switch on a deck stays exhaustive over the built-ins.
+ * See `lib/content-types`.
+ */
+export type DeckKey = CardDeckKey | 'carry' | 'level' | 'traits' | 'experiences' | 'weapons' | 'armor' | 'inventory' | `custom:${string}`;
 
 export const isCardDeck = (k: DeckKey): k is CardDeckKey => k === 'class' || k === 'subclass' || k === 'ancestry' || k === 'community' || k === 'domains' || k === 'transformation';
-/** Decks that drive the STRAIGHT carousel (card scans + forged cards), incl. weapons/armor/inventory. */
-export const isCarouselDeck = (k: DeckKey): boolean => isCardDeck(k) || k === 'carry' || k === 'weapons' || k === 'armor' || k === 'inventory';
+/** Decks that drive the STRAIGHT carousel (card scans + forged cards), incl. weapons/armor/inventory.
+ *  v0.43.0: a custom step offers real cards, so it browses like every other card step. */
+export const isCarouselDeck = (k: DeckKey): boolean =>
+  isCardDeck(k) || k === 'carry' || k === 'weapons' || k === 'armor' || k === 'inventory' || k.startsWith('custom:');
 
 /**
  * v0.10.6 (Feature 3): which mixed-ancestry slot the Random button fills next, and the alternation
@@ -86,4 +95,12 @@ export interface Draft {
   /** The level chosen on the Level step (characterize only). Absent = whatever the stat block said. */
   level?: number;
   transformationCardId?: string | null;
+  /**
+   * v0.43.0 (owner): what was chosen on each CUSTOM step, keyed by the type card's id.
+   *
+   * A list rather than one id because a type says how many cards its step asks for ("I can say, hey,
+   * I need you to pick two or three cards"). Absent on every draft made before packs could add a
+   * step, which is what keeps an old saved draft loading byte for byte.
+   */
+  customPicks?: Record<string, string[]>;
 }

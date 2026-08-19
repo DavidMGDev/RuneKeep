@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -47,7 +47,7 @@ export function StepBtn({ label, onPress, disabled, a11y }: { label: string; onP
  * v0.32.0: a minus and a plus flank the number. Typing a value from scratch every time is the wrong
  * interaction for a figure you are nudging ("it was 3, now it is 4"), which is most of the time.
  */
-export function NumberKeypad({ title, subtitle, min = 1, max = 9, initial, dm, onSubmit, onClose }: { title: string; subtitle?: string; min?: number; max?: number; /** v0.32.0: the number already set, so the keypad opens on it rather than empty. */ initial?: number; /** v0.22.0: this is the PRIMARY stat-editing surface of DM mode, and it was gold-and-red. */ dm?: boolean; onSubmit: (n: number) => void; onClose: () => void }) {
+export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial, dm, onSubmit, onClose }: { title: string; subtitle?: string; /** v0.43.0: one row of controls between the subtitle and the number, for a question the number alone cannot answer (ADD GEAR's roll pad asks which table). */ extra?: ReactNode; min?: number; max?: number; /** v0.32.0: the number already set, so the keypad opens on it rather than empty. */ initial?: number; /** v0.22.0: this is the PRIMARY stat-editing surface of DM mode, and it was gold-and-red. */ dm?: boolean; onSubmit: (n: number) => void; onClose: () => void }) {
   const { scale } = useLayout();
   const vis = useSharedValue(0);
   const [typed, setTyped] = useState(initial != null && initial !== 0 ? String(initial) : '');
@@ -89,6 +89,7 @@ export function NumberKeypad({ title, subtitle, min = 1, max = 9, initial, dm, o
         <ChamferBox chamfer={16} fill="rgba(11,14,19,0.98)" stroke={dm ? DmRune.line : 'rgba(218,162,73,0.6)'} strokeWidth={1.4} style={{ width: scaled(264, scale), maxWidth: '92%', padding: scaled(16, scale), gap: 12 }}>
           <Text style={{ color: dm ? DmRune.accent : Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>{title}</Text>
           {subtitle ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, textAlign: 'center', marginTop: -6 }}>{subtitle}</Text> : null}
+          {extra}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: 52 }}>
             <StepBtn label="−" onPress={() => step(-1)} disabled={val <= min} a11y="One less" />
             <Text style={{ minWidth: 92, textAlign: 'center', color: typed ? (dm ? DmRune.ivory : Rune.sheet) : Rune.muted, fontSize: 40, fontFamily: Display.black, lineHeight: 44 }}>{typed || '0'}</Text>

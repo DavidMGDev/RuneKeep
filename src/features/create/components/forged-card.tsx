@@ -4,7 +4,7 @@ import { Text, type TextProps, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, type SvgProps } from 'react-native-svg';
 
 import { CardMarkdownBody } from '@/components/card-markdown';
-import { DividerPlaque, getPlaqueTheme } from './card-divider';
+import { DividerPlaque, getPlaqueTheme, type PlaqueTheme } from './card-divider';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type ClassName } from '@/constants/identity';
 import { type ArmorDef, type WeaponDef } from '@/data/equipment-data';
@@ -242,6 +242,7 @@ export function ForgedCard({
   bodyBlocks,
   blocksHeight = 0,
   bannerArt,
+  plaqueTheme,
 }: {
   title: string;
   kindLabel: string;
@@ -287,8 +288,15 @@ export function ForgedCard({
   experience?: boolean;
   /** The experience bonus to show (e.g. +2), experience cards only. */
   modifier?: number;
+  /**
+   * v0.43.0: the chip's colours, when the card's author chose them.
+   *
+   * Absent falls through to the bundled palette keyed on `kindLabel`, which is every card written
+   * before authors could choose. See `lib/card-plaque`.
+   */
+  plaqueTheme?: PlaqueTheme;
 }) {
-  const theme = getPlaqueTheme(kindLabel, classKey);
+  const theme = plaqueTheme ?? getPlaqueTheme(kindLabel, classKey);
   // v0.36: the title is sized here, from the text, into a band that never changes height.
   const titleFit = fitTitle(title, BODY_TEXT_W, BODY_TITLE_H, 17);
   void multilineTitle; // the band is fixed now, so a long title shrinks instead of taking rows.

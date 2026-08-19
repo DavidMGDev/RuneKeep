@@ -137,6 +137,26 @@ const KIND_THEMES: Record<string, PlaqueTheme> = {
 };
 
 /**
+ * An AUTHORED chip, as a theme (v0.43.0, owner).
+ *
+ * The two stops are drawn as the gradient; one stop on its own is taken as a flat band, because a
+ * gradient from a colour to nothing is not a thing anybody means. The text colour defaults to the
+ * parchment ivory, which reads on every dark band and is the safe answer when an author has picked
+ * colours and not thought about the type sitting on them.
+ *
+ * Returns nothing when the spec says nothing about colour, so a type that only renamed its chip keeps
+ * whatever palette its kind already had.
+ */
+export function plaqueThemeOf(spec: { from?: string; to?: string; text?: string } | undefined): PlaqueTheme | undefined {
+  if (!spec) return undefined;
+  const { from, to, text } = spec;
+  if (!from && !to) return undefined;
+  const textColor = text || '#FAF8F2';
+  if (from && to) return { gradientStops: [{ offset: '0%', color: from }, { offset: '100%', color: to }], textColor };
+  return { solidColor: (from || to)!, textColor };
+}
+
+/**
  * Returns a custom plaque theme (gradient or solid background, and label text color)
  * based on the card's kindLabel and optional class key.
  */

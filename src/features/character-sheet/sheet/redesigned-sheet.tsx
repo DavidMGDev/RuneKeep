@@ -1701,11 +1701,25 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     if (!f) return;
     const inst: LibraryCard = { ...card, id: `lc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` };
     const enable = (inst.effects?.length ?? 0) > 0 || inst.contentType === 'armor';
+    /**
+     * v0.43.0: a card of an INVENTED kind teaches this character the kind's name.
+     *
+     * A player handed an Order mid-campaign should be able to write another one, and the type picker
+     * reads `customCardTypes`. The name comes off the chip the browser stamped on the way out (see
+     * `lib/card-plaque`), so it is the word the card itself prints.
+     */
+    const learntType = inst.customType ? (inst.plaque?.label ?? '').trim() : '';
     const valid = !!category && category !== 'wildshape' && category !== 'martialform' && (isBuiltinCategory(category) || (f.customCategories ?? []).some((c) => c.id === category));
     setFile((cur) => {
       if (!cur) return cur;
       const override = valid ? { cardCategory: { ...(cur.cardCategory ?? {}), [inst.id]: category! } } : {};
-      const next = { ...cur, libraryCards: [...(cur.libraryCards ?? []), inst], ...(enable ? { enabledCardIds: [...(cur.enabledCardIds ?? []), inst.id] } : {}), ...override };
+      const next = {
+        ...cur,
+        libraryCards: [...(cur.libraryCards ?? []), inst],
+        ...(enable ? { enabledCardIds: [...(cur.enabledCardIds ?? []), inst.id] } : {}),
+        ...(learntType && !(cur.customCardTypes ?? []).includes(learntType) ? { customCardTypes: [...(cur.customCardTypes ?? []), learntType] } : {}),
+        ...override,
+      };
       saveFileRef.current(next);
       return next;
     });

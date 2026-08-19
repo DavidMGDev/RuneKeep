@@ -2,4 +2,6 @@
 module.exports = {
   preset: 'jest-expo',
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
+  // A .css import is a web build detail; see scripts/jest-style-stub.js.
+  moduleNameMapper: { '\\.css$': '<rootDir>/scripts/jest-style-stub.js' },
 };

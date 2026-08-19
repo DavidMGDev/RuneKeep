@@ -66,7 +66,7 @@ export function dmDecks(file: CharacterFile): Record<string, DmCard[]> {
     const c = cardById(id);
     if (c) { push(cat, { id: c.id, label: c.label, thumb: c.thumb, source: c.source }); return; }
     const lib = libraryCardById(file, id);
-    if (lib) push(cat, { id, label: lib.title || 'Card', node: <LibraryForgedCard card={lib} /> });
+    if (lib) push(cat, { id, label: lib.title || 'Card', node: <LibraryForgedCard card={lib} pack={file.libraryCards} /> });
   };
 
   // --- Arsenal, in the sheet's order: domains, origins, class, weapons, experiences, authored ---

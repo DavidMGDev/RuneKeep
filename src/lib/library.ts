@@ -18,7 +18,7 @@ import type { CardEffect } from '@/lib/modifiers';
  * elements. Renamed from "functional card", which described the machinery rather than the thing: a
  * feature card is how a class gives a player something to track, switch or write on.
  */
-export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'customDomain' | 'subclass' | 'class' | 'feature' | 'weapon' | 'armor' | 'inventory' | 'generic';
+export type LibraryContentType = 'ancestry' | 'community' | 'domain' | 'customDomain' | 'subclass' | 'class' | 'type' | 'feature' | 'weapon' | 'armor' | 'inventory' | 'generic';
 
 /** Only a Feature card offers functional elements, and only a Feature card may have any. */
 export const CARRIES_FUNCTIONS = (t: LibraryContentType): boolean => t === 'feature';
@@ -30,6 +30,7 @@ export const CONTENT_TYPE_LABEL: Record<LibraryContentType, string> = {
   customDomain: 'Domain',
   subclass: 'Subclass',
   class: 'Class',
+  type: 'Type',
   feature: 'Feature',
   weapon: 'Weapon',
   armor: 'Armor',
@@ -105,6 +106,54 @@ export interface ArmorSpec {
   thresholds: string;
   tier: 1 | 2 | 3 | 4;
 }
+
+/**
+ * THE CHIP, as a thing an author decides (v0.43.0, owner).
+ *
+ * "I can't customize the chip. It will always say class with a red and darker red gradient, and I
+ * don't like that." Every card prints one word on a coloured band at the seam between its art and its
+ * text, and until now that band was chosen for you by the card's kind.
+ *
+ * Two stops and a text colour, and no more: the band is 10dp of type, and every rule the bundled
+ * palette follows (`KIND_THEMES`) exists because a gradient with any more range in it loses the word
+ * at one end. Absent on every card written before this existed, which keeps the bundled palette.
+ */
+export interface PlaqueSpec {
+  /** The word printed on it. Blank falls back to what the card IS, which is the old behaviour. */
+  label?: string;
+  /** Gradient start. Both colours absent means only the label was customised. */
+  from?: string;
+  /** Gradient end. */
+  to?: string;
+  /** The label's colour. */
+  text?: string;
+}
+
+/**
+ * A CONTENT TYPE: a kind of card an expansion invents (v0.43.0, owner).
+ *
+ * "The user doesn't have the ability to add a new type of card that adds a new step to the character
+ * creation, and I feel like that's necessary." The owner's case is a campaign where a character
+ * belongs to one of the Orders of the Knights Radiant: not an ancestry, not a community, not a
+ * subclass, but a new question the character creator should ask.
+ *
+ * The card carrying this is a TEMPLATE, exactly as a class card and a custom domain card are. It is
+ * never held by anybody. What it does is declare that a kind exists, so cards can name it and every
+ * surface that lists kinds of card lists this one too.
+ */
+export interface TypeSpec {
+  /** Whether character creation asks this question at all. */
+  step: boolean;
+  /** The word on the rail. Blank uses the type's own name. */
+  stepLabel?: string;
+  /** How many cards the step asks for. One unless the author says otherwise. */
+  pick: number;
+  /** One line under the step's title, telling the player what they are choosing. */
+  stepHint?: string;
+}
+
+/** A type's step, ready to ask. `pick` is clamped, because a step that wants zero cards is not a step. */
+export const typeStepPick = (t: TypeSpec | undefined): number => Math.max(1, Math.min(10, Math.round(t?.pick ?? 1)));
 
 export interface LibraryCard {
   /** Stable id, immutable across expansion versions (so existing characters keep resolving). */
@@ -189,6 +238,25 @@ export interface LibraryCard {
   /** v0.10.2: mechanical data for weapon/armor content so it works in creation + on the sheet. */
   weapon?: WeaponSpec;
   armor?: ArmorSpec;
+  /**
+   * v0.43.0 (owner): this card's own chip, overriding both its kind's colours and any it inherits.
+   *
+   * On a TEMPLATE card (a class, a custom domain, a type) it is the chip the whole set wears; on an
+   * ordinary card it is that card saying something different from its set. See `lib/card-plaque`.
+   */
+  plaque?: PlaqueSpec;
+  /**
+   * v0.43.0 (owner): the CONTENT TYPE this card declares. Only a `type` card carries one.
+   */
+  typeSpec?: TypeSpec;
+  /**
+   * v0.43.0 (owner): the id of the `type` card this card is an instance of.
+   *
+   * This is the whole of belonging to an invented kind: the card is still an ordinary card with an
+   * ordinary body, and this one field is what puts it in the type's creation step, its archive
+   * filter, its ADD GEAR tab and its section of the pack's gallery.
+   */
+  customType?: string;
   /** v0.13.1 (#357): a catalog-reference card — points at a bundled CATALOG id so a receiving phone
    *  resolves the real card art/identity locally (system card scans are images, never sent as bytes). */
   catalogId?: string;
@@ -341,7 +409,35 @@ export function contentForCreation(enabled: Expansion[]): CreationContent {
   return out;
 }
 
-const CONTENT_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'subclass', 'class', 'weapon', 'armor', 'inventory', 'generic'];
+/**
+ * Every content type a card may arrive as.
+ *
+ * v0.43.0: `customDomain`, `feature` and `type` were missing, so importing a pack silently DOWNGRADED
+ * a custom domain or a feature card to a plain Card, which is the one thing this normalizer must
+ * never do to content somebody wrote.
+ */
+const CONTENT_TYPES: LibraryContentType[] = ['ancestry', 'community', 'domain', 'customDomain', 'subclass', 'class', 'type', 'feature', 'weapon', 'armor', 'inventory', 'generic'];
+
+/** One plaque spec off the wire, with anything that is not a string dropped. */
+function normalizePlaque(raw: unknown): PlaqueSpec | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const str = (k: string) => (typeof o[k] === 'string' ? (o[k] as string) : undefined);
+  const out: PlaqueSpec = { label: str('label'), from: str('from'), to: str('to'), text: str('text') };
+  return out.label || out.from || out.to || out.text ? out : undefined;
+}
+
+/** One type spec off the wire. A pack that says it has a step but no count still gets a workable one. */
+function normalizeTypeSpec(raw: unknown): TypeSpec | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  return {
+    step: o.step === true,
+    stepLabel: typeof o.stepLabel === 'string' ? o.stepLabel : undefined,
+    stepHint: typeof o.stepHint === 'string' ? o.stepHint : undefined,
+    pick: typeof o.pick === 'number' ? o.pick : 1,
+  };
+}
 
 /** Validate + normalize ONE raw card into a LibraryCard. Throws on a malformed/id-less card. Shared by
  *  `validateExpansion` and `parseCharacterFile` (embedded `libraryCards`) — one trust boundary. */
@@ -375,6 +471,10 @@ export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
     armor: c.armor && typeof c.armor === 'object' ? (c.armor as ArmorSpec) : undefined,
     catalogId: typeof c.catalogId === 'string' ? c.catalogId : undefined,
     fullImage: c.fullImage === true ? true : undefined,
+    // v0.43.0: the invented-kind fields. All optional, so a pack written before them is unchanged.
+    plaque: normalizePlaque(c.plaque),
+    typeSpec: contentType === 'type' ? normalizeTypeSpec(c.typeSpec) : undefined,
+    customType: typeof c.customType === 'string' ? c.customType : undefined,
   };
 }
 
@@ -400,6 +500,10 @@ export function expansionShareIssues(exp: Expansion): string[] {
     if (c.contentType === 'subclass' && !c.className?.trim()) out.push(`${name(c, i)} needs the class it belongs to.`);
     if (c.contentType === 'class' && !c.classSpec && !c.className?.trim()) out.push(`${name(c, i)} needs the class it belongs to.`);
     if (c.fullImage && !c.imageUri) out.push(`${name(c, i)} is an image card with no image.`);
+    // v0.43.0: a card of an invented kind whose kind is not in the pack is a card nobody can file.
+    if (c.customType && !exp.cards.some((t) => t.contentType === 'type' && t.id === c.customType)) {
+      out.push(`${name(c, i)} belongs to a type that is not in this pack.`);
+    }
   });
   // v0.42.0 (owner): a homebrew CLASS must be complete and must have a subclass, or the person who
   // receives it cannot make a character with it. ONE gate, so the toast and the button cannot disagree.
