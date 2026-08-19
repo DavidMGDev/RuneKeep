@@ -17,6 +17,8 @@ import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { authoredSections } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
+import { resolvedPlaque } from '@/lib/card-plaque';
+import { plaqueThemeOf } from './card-divider';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
 import { View } from 'react-native';
 
@@ -56,8 +58,16 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
   return lc.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[lc.tier ?? 1] : undefined;
 }
 
-export function LibraryForgedCard({ card, struckIndex, functionStates, onFunction, variableValue, pageMark }: {
+export function LibraryForgedCard({ card, pack, struckIndex, functionStates, onFunction, variableValue, pageMark }: {
   card: LibraryCard;
+  /**
+   * v0.43.0: the cards this one can resolve its CHIP against — its expansion, or a character's own
+   * embedded copies.
+   *
+   * Absent draws the card's own chip only, which is every call site written before templates could
+   * hand one down. See `lib/card-plaque`.
+   */
+  pack?: readonly LibraryCard[];
   /**
    * v0.42.6: the "1/3" a card carries when it is one FACE of a paginated card.
    *
@@ -135,6 +145,15 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
    * into the same shape, so an old card with an above-placed counter still draws above the text and
    * nothing anybody wrote is lost. See `lib/card-blocks`.
    */
+  /**
+   * The chip, resolved once for both drawing paths below (v0.43.0).
+   *
+   * The label and the colours travel together on purpose: a card that inherits its class's chip
+   * should inherit the word as well as the paint, or a Feature card would come out saying FEATURE in
+   * the class's colours, which reads as a mistake rather than as a set.
+   */
+  const kindLabel = libraryCardKindLabel(card, pack);
+  const plaqueTheme = plaqueThemeOf(resolvedPlaque(card, pack));
   const { sections, functions } = migrateBlocks(card.sections, card.functions);
   const blocks = blocksOf(sections, functions);
   /**
@@ -155,7 +174,8 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
     return (
       <ForgedCard
         title={card.title}
-        kindLabel={libraryCardKindLabel(card)}
+        kindLabel={kindLabel}
+        plaqueTheme={plaqueTheme}
         subtitle={libraryCardSubtitle(card)}
         body={libraryCardBody(card, struckIndex)}
         accentDeep={Rune.panel}
@@ -188,7 +208,8 @@ export function LibraryForgedCard({ card, struckIndex, functionStates, onFunctio
   return (
     <ForgedCard
       title={card.title}
-      kindLabel={libraryCardKindLabel(card)}
+      kindLabel={kindLabel}
+      plaqueTheme={plaqueTheme}
       subtitle={libraryCardSubtitle(card)}
       body=""
       bodyBlocks={bodyBlocks}

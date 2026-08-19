@@ -18,6 +18,8 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
+import { ColorPalette } from '@/components/color-palette';
+import { Overlay } from '@/components/overlay-host';
 import { Body, Display, DmRune, Gap, Rune } from '@/constants/theme';
 import { ALL_DOMAINS, CLASSES } from '@/constants/identity';
 import { playSfx } from '@/lib/sfx';
@@ -27,6 +29,8 @@ import {
   type Expansion,
   type LibraryCard,
   type LibraryContentType,
+  type PlaqueSpec,
+  type TypeSpec,
   type WeaponSpec,
   expansionSummary,
   incompleteSubclasses,
@@ -48,6 +52,8 @@ import { type CardAdvance, type CardFunction, type FunctionState, meaningfulFunc
 import { prunedFunctions } from '@/lib/card-blocks';
 import { attachmentsFor, classTitlesIn, subclassNamesFor } from '@/lib/class-links';
 import { paginate, sectionOf } from '@/lib/expansion-sort';
+import { cardsOfType, contentTypes } from '@/lib/content-types';
+import { plaqueIsSet } from '@/lib/card-plaque';
 import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/lib/card-move';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
@@ -63,7 +69,7 @@ import { ShareReportDialog, WarningTriangle } from './share-report-dialog';
 import { itemTitleFor } from '@/lib/item-title';
 import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
-import { CounterField, SelectRow, TextField } from '@/components/form-controls';
+import { CounterField, SelectRow, SwitchRow, TextField } from '@/components/form-controls';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { ExpansionGallery } from './expansion-gallery-view';
 import { FunctionEditor } from './function-editor';
@@ -104,6 +110,13 @@ const TYPE_GROUPS: { label: string; hint: string; types: LibraryContentType[] }[
   { label: 'Domains', hint: 'A domain of your own, and the cards that fill it. A playable domain needs at least eleven: one at each level, two at level 1, and as many more as you like.', types: ['customDomain', 'domain'] },
   { label: 'Who a character is', hint: 'Options offered at character creation.', types: ['ancestry', 'community'] },
   { label: 'What they carry', hint: 'Gear, anything that lands in the inventory, and a plain card for whatever the rest of this list does not cover.', types: ['weapon', 'armor', 'inventory', 'generic'] },
+  /**
+   * A KIND OF CARD OF YOUR OWN (v0.43.0, owner).
+   *
+   * Last, because it is the rarest thing to make and the one with the widest reach: everything above
+   * slots into a question the game already asks, and this one invents the question.
+   */
+  { label: 'A kind of card the game does not have', hint: 'A Type declares a new kind of card: the Orders of a knightly society, the bloodlines of a house, the vows of an order. Give it a chip, then write its cards. It can add a step of its own to character creation.', types: ['type'] },
 ];
 const WEAPON_TRAITS = ['Agility', 'Strength', 'Finesse', 'Instinct', 'Presence', 'Knowledge'];
 const WEAPON_RANGES = ['Melee', 'Very Close', 'Close', 'Far', 'Very Far'];
@@ -138,6 +151,12 @@ interface CardConfig {
   armor?: ArmorSpec;
   /** generic 'Card': an optional custom plaque label typed by the user (Feature 6). */
   typeLabel?: string;
+  /** v0.43.0: the chip this card wears, or (on a template) hands to its whole set. */
+  plaque?: PlaqueSpec;
+  /** v0.43.0: a `type` card's declaration — whether it adds a creation step, and what it asks. */
+  typeSpec?: TypeSpec;
+  /** v0.43.0: the invented kind this card belongs to, by type-card id. */
+  customType?: string;
 }
 
 /** Fresh config for a newly-chosen content type (Feature 5). */
@@ -150,8 +169,16 @@ function defaultConfigFor(t: LibraryContentType): CardConfig {
   if (t === 'subclass') return { contentType: t, tier: 1 };
   if (t === 'weapon') return { contentType: t, weapon: { ...DEFAULT_WEAPON } };
   if (t === 'armor') return { contentType: t, armor: { ...DEFAULT_ARMOR } };
+  // v0.43.0: a new type asks its question at creation unless its author turns that off, because a
+  // type nobody is asked about is a type that only exists in the archive.
+  if (t === 'type') return { contentType: t, typeSpec: { step: true, pick: 1 } };
   return { contentType: t };
 }
+
+/** Whether this content type is a TEMPLATE: a declaration of a set rather than a card. See
+ *  `lib/card-plaque`. A class PAGE is not one; it is a face of the class it belongs to. */
+const isTemplateConfig = (c: CardConfig): boolean =>
+  c.contentType === 'type' || c.contentType === 'customDomain' || (c.contentType === 'class' && c.classSpec?.role !== 'page');
 
 function LibInput({ label, value, onChangeText, placeholder, keyboardType, maxLength }: { label: string; value: string; onChangeText: (s: string) => void; placeholder?: string; keyboardType?: 'default' | 'number-pad'; maxLength?: number }) {
   return (
@@ -243,6 +270,65 @@ const chipRow = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap:
  * Each has a plaque of its own keyed to exactly these words, so a homebrew Spell reads as a Spell.
  */
 const DOMAIN_CARD_TYPES = ['Ability', 'Spell', 'Grimoire'] as const;
+
+/**
+ * THE CHIP, edited (v0.43.0, owner).
+ *
+ * "What I would want to do is have the ability to make a gradient, not something fully detailed, just
+ * a good system to preview the chip."
+ *
+ * Two stops and a text colour. There is no separate swatch preview here on purpose: the card at the
+ * top of the editor is already drawing the real chip, live, from this very spec, and a second smaller
+ * preview beside the controls would be one more thing that can disagree with the card.
+ */
+function ChipEditor({ plaque, defaultLabel, note, onChange }: {
+  plaque: PlaqueSpec | undefined;
+  /** What the chip says today, shown as the field's placeholder. */
+  defaultLabel: string;
+  /** One line saying who else wears this chip. */
+  note: string;
+  onChange: (p: PlaqueSpec | undefined) => void;
+}) {
+  const [picking, setPicking] = useState<'from' | 'to' | 'text' | null>(null);
+  const p = plaque ?? {};
+  const set = (patch: Partial<PlaqueSpec>) => onChange({ ...p, ...patch });
+  const swatches: { key: 'from' | 'to' | 'text'; label: string; value?: string; fallback: string }[] = [
+    { key: 'from', label: 'Left', value: p.from, fallback: '#2C3038' },
+    { key: 'to', label: 'Right', value: p.to, fallback: '#414750' },
+    { key: 'text', label: 'Word', value: p.text, fallback: '#FAF8F2' },
+  ];
+  return (
+    <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
+      <Text style={smallLabel}>The chip</Text>
+      <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>{note}</Text>
+      <TextField label="Word on the chip" value={p.label ?? ''} placeholder={defaultLabel} maxLength={24} onChangeText={(label) => set({ label })} />
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {swatches.map((sw) => (
+          <Pressable key={sw.key} onPress={() => { playSfx('buttonTap'); setPicking(sw.key); }} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`${sw.label} colour`}>
+            <ChamferBox chamfer={6} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ paddingVertical: 7, alignItems: 'center', gap: 5 }}>
+              <View style={{ width: 30, height: 14, borderRadius: 3, backgroundColor: sw.value ?? sw.fallback, opacity: sw.value ? 1 : 0.4, borderWidth: 1, borderColor: 'rgba(0,0,0,0.5)' }} />
+              <Text style={{ color: sw.value ? Rune.sheet : Rune.muted, fontSize: 10, fontFamily: Body.bold }}>{sw.label}</Text>
+            </ChamferBox>
+          </Pressable>
+        ))}
+      </View>
+      <RuneButton label="Back to the default chip" kind="ghost" dense height={34} onPress={() => onChange(undefined)} />
+      {/* The palette covers the screen, so it is published at the editor's root rather than drawn
+          inside this scrolling column. See `components/overlay-host`. */}
+      {picking ? (
+        <Overlay>
+          <ColorPalette
+            title={picking === 'text' ? 'The word on the chip' : picking === 'from' ? 'The chip, on the left' : 'The chip, on the right'}
+            current={p[picking] ?? null}
+            allowRandom
+            onPick={(c) => { set({ [picking]: c }); setPicking(null); }}
+            onClose={() => setPicking(null)}
+          />
+        </Overlay>
+      ) : null}
+    </View>
+  );
+}
 
 /** The per-type mechanical/config fields shown inside the card editor (its `extraField`). The content
  *  type is chosen up front (Feature 5), so this no longer offers a type switcher. */
@@ -383,9 +469,80 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
           ) : null}
         </View>
       ) : null}
+      {/**
+        * A CONTENT TYPE (v0.43.0, owner).
+        *
+        * Everything a type declares, in the order it matters: whether the game asks about it, what it
+        * asks, and how many answers it takes. The chip is below, with the other templates' chips.
+        */}
+      {t === 'type' ? (
+        <View style={{ gap: 6 }}>
+          <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
+            A kind of card the game does not have. Name it above, give it a chip below, then write its cards in this
+            pack and set each one&apos;s type to this. They appear wherever cards appear: the archive, this pack&apos;s
+            gallery, Add Gear, and the card menu on a player&apos;s sheet.
+          </Text>
+          <SwitchRow
+            label="Ask for this in character creation"
+            hint="A step of its own, beside Transformations, where every custom step goes."
+            on={config.typeSpec?.step !== false}
+            onToggle={() => set({ typeSpec: { pick: 1, ...(config.typeSpec ?? {}), step: config.typeSpec?.step === false } })}
+          />
+          {config.typeSpec?.step !== false ? (
+            <>
+              <TextField label="What the step is called" value={config.typeSpec?.stepLabel ?? ''} placeholder={card.title.trim() || 'The type\u2019s name'} maxLength={24} onChangeText={(stepLabel) => set({ typeSpec: { pick: 1, step: true, ...(config.typeSpec ?? {}), stepLabel } })} />
+              <TextField label="What the step says" value={config.typeSpec?.stepHint ?? ''} placeholder="One line telling the player what they are choosing." maxLength={120} onChangeText={(stepHint) => set({ typeSpec: { pick: 1, step: true, ...(config.typeSpec ?? {}), stepHint } })} />
+              {/* v0.43.0 (owner): "I can say, hey, I need you to pick two or three cards." */}
+              <CounterField label="How many cards it asks for" value={config.typeSpec?.pick ?? 1} min={1} max={10} onChange={(pick) => set({ typeSpec: { step: true, ...(config.typeSpec ?? {}), pick } })} />
+            </>
+          ) : null}
+          {/**
+            * THE COUNT, said out loud.
+            *
+            * A step with no cards behind it cannot be answered, so it is not offered at all (see
+            * `lib/content-types`). Saying so here is the difference between an author noticing and an
+            * author wondering why their step never appears.
+            */}
+          {(() => {
+            const mine = cardsOfType(siblings, card.id).length;
+            return mine === 0 ? (
+              <ChamferBox chamfer={8} fill="rgba(120,30,28,0.22)" stroke={Rune.red} strokeWidth={1.2} style={{ padding: 10, gap: 4 }}>
+                <Text style={{ color: Rune.ivory, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>No cards of this type yet</Text>
+                <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
+                  Save this, then use Add card: this type is offered there by name. Until it has cards it stays out of
+                  character creation, because a step with no answers cannot be finished.
+                </Text>
+              </ChamferBox>
+            ) : (
+              <ChamferBox chamfer={8} fill="rgba(30,80,45,0.2)" stroke="rgba(120,190,140,0.6)" strokeWidth={1.2} style={{ padding: 10 }}>
+                <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.bold }}>
+                  {mine} card{mine === 1 ? '' : 's'} of this type in this pack.
+                </Text>
+              </ChamferBox>
+            );
+          })()}
+        </View>
+      ) : null}
+      {/**
+        * WHICH INVENTED KIND THIS CARD IS (v0.43.0).
+        *
+        * Chosen in the Add card chooser, and changeable here, because the alternative to changing it
+        * is deleting the card and writing it again.
+        */}
+      {t !== 'type' && !isTemplateConfig(config) && contentTypes(siblings).length ? (
+        <View style={{ gap: 5 }}>
+          <Text style={smallLabel}>A card of one of this pack&apos;s types (optional)</Text>
+          <View style={chipRow}>
+            <Chip label="Nothing" on={!config.customType} onPress={() => set({ customType: undefined })} />
+            {contentTypes(siblings).map((ct) => (
+              <Chip key={ct.id} label={ct.title.trim()} on={config.customType === ct.id} onPress={() => set({ customType: ct.id })} />
+            ))}
+          </View>
+        </View>
+      ) : null}
       {/* v0.42.1 (owner): ANY card may name the class it belongs to, so a feature card, a tracker or
           a subclass all attach the same way and the class card reports them. */}
-      {t !== 'class' && t !== 'customDomain' ? (
+      {t !== 'class' && t !== 'customDomain' && t !== 'type' ? (
         <View style={{ gap: 5 }}>
           <Text style={smallLabel}>Belongs to a class (optional)</Text>
           <View style={chipRow}>
@@ -531,19 +688,73 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
       {t === 'generic' || t === 'feature' ? (
         <TextField label="Type label (optional)" hint="The word printed on the plaque. Left blank it says what kind of card this is." value={config.typeLabel ?? ''} placeholder="e.g. Consumable, Relic" onChangeText={(typeLabel) => set({ typeLabel })} />
       ) : null}
+      {/**
+        * THE CHIP (v0.43.0, owner).
+        *
+        * On a TEMPLATE it is the set's chip and it is handed down; on an ordinary card it is that one
+        * card disagreeing with its set. Both are the same three controls, so there is one place to
+        * look for them. See `lib/card-plaque`.
+        */}
+      {/* Weapons and armor draw their own stat-block cards, whose plaque is part of that layout
+          rather than a word an author chose, so there is nothing here for a chip to change. */}
+      {t === 'weapon' || t === 'armor' ? null : (
+      <ChipEditor
+        plaque={config.plaque}
+        defaultLabel={CONTENT_TYPE_LABEL[t]}
+        note={
+          t === 'type'
+            ? 'The chip every card of this type wears, unless that card sets one of its own.'
+            : t === 'customDomain'
+              ? 'The chip every card of this domain wears, unless that card sets one of its own.'
+              : t === 'class'
+                ? 'The chip this class hands to its pages, its features and its subclasses.'
+                : 'This card only. Leave it alone and it wears its class, domain or type\u2019s chip.'
+        }
+        onChange={(plaque) => set({ plaque })}
+      />
+      )}
     </View>
   );
 }
 
-/** New-card type chooser (Feature 5): pick the content type BEFORE authoring. */
-function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => void; onClose: () => void }) {
+/**
+ * New-card type chooser (Feature 5): pick the content type BEFORE authoring.
+ *
+ * v0.43.0: it SCROLLS, and it leads with the kinds this pack invented. The list grew a group and can
+ * now grow one entry per type the author has made ("the expansion card creator should also have an
+ * added option to create a new type of card depending on whatever they made"), so a fixed box was
+ * going to bleed off the bottom of a phone the moment anybody used the feature.
+ */
+function TypeChooser({ types, onPick, onClose }: { types: LibraryCard[]; onPick: (t: LibraryContentType, customType?: string) => void; onClose: () => void }) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
       {/* v0.13.0: non-dismissing backdrop — closing is deliberate (the Cancel button), never a stray tap. */}
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
       <DimScreen opacity={0.9} />
-      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16, gap: 12 }}>
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 330, maxHeight: '86%', paddingHorizontal: 16, paddingVertical: 16, gap: 12 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>What are you making?</Text>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>
+        {/**
+          * THE PACK'S OWN KINDS, first.
+          *
+          * A type exists so its cards can be written, so the moment one exists this is what the
+          * author is most likely here to do.
+          */}
+        {types.length ? (
+          <View style={{ gap: 6 }}>
+            <Text style={smallLabel}>This pack&apos;s own kinds</Text>
+            <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>Cards of a type you invented. They wear its chip and answer its step.</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {types.map((ct) => (
+                <Pressable key={ct.id} onPress={() => { playSfx('buttonTap'); onPick('generic', ct.id); }} accessibilityRole="button" accessibilityLabel={ct.title.trim()}>
+                  <View style={{ paddingHorizontal: 13, paddingVertical: 9, borderRadius: 6, backgroundColor: 'rgba(200,27,24,0.16)', borderWidth: 1, borderColor: Rune.red }}>
+                    <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{ct.title.trim()}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
         {/**
           * Grouped, not a heap (v0.42.1, owner).
           *
@@ -566,6 +777,7 @@ function TypeChooser({ onPick, onClose }: { onPick: (t: LibraryContentType) => v
             </View>
           </View>
         ))}
+        </ScrollView>
         <RuneButton label="Cancel" kind="ghost" height={40} onPress={onClose} />
       </ChamferBox>
     </View>
@@ -862,7 +1074,7 @@ export function LibraryScreen() {
       const i = selected.cards.findIndex((x) => x.id === cardId);
       const c = selected.cards[i];
       if (!c) return;
-      setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } });
+      setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel, plaque: c.plaque, typeSpec: c.typeSpec, customType: c.customType } });
     };
     /**
      * A written item, once it has been saved, lands in the list that asked for it.
@@ -931,10 +1143,24 @@ export function LibraryScreen() {
       domain: cfg.domain,
       level: cfg.level,
       className: cfg.className,
+      /**
+       * v0.43.0 (owner): the SPEC, which is what makes a page a page.
+       *
+       * "If I create a new class, and then I create another page of that class, the preview doesn't
+       * inherit the styling, which is wrong." It was: `inheritsClassLook` asks whether the card is a
+       * class page, and it asks by reading `classSpec.role`, which this object did not carry. So
+       * `dressed` saw a plain class card, declined to dress it, and the preview opened in the default
+       * paint on the one card that was supposed to arrive already wearing its class.
+       */
+      classSpec: cfg.classSpec,
       subclass: cfg.subclass,
       tier: cfg.tier,
       weapon: cfg.weapon,
       armor: cfg.armor,
+      // v0.43.0: the chip, and the kind this card belongs to, so both preview live.
+      plaque: cfg.plaque,
+      typeSpec: cfg.typeSpec,
+      customType: cfg.customType,
       fullImage: d.fullImage,
     });
     return (
@@ -972,6 +1198,8 @@ export function LibraryScreen() {
         renderPreview={(d) => (
           <LibraryForgedCard
             card={previewCard(d)}
+            // v0.43.0: the pack, so an inherited chip resolves in the preview as it will on the card.
+            pack={selected.cards}
             functionStates={fnStates}
             onFunction={(fid, next) => setFnStates((st) => ({ ...st, [fid]: next }))}
           />
@@ -1001,6 +1229,36 @@ export function LibraryScreen() {
                 ),
               }
             : undefined
+        }
+        /**
+         * A TEMPLATE IS NOT A CARD (v0.43.0, owner).
+         *
+         * "I need you to make it very clear that this is not a customizable area. This is just a card
+         * template; it's not an individual card that's being created, it's a system that's being
+         * started."
+         *
+         * So the body controls go, and this takes their place. What is left in the editor is the
+         * identity: the name, the art, the colour and the chip, which is exactly what a template owns
+         * and hands to everything that joins it.
+         */
+        templateNotice={
+          isTemplateConfig(cfg) ? (
+            <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 5 }}>
+              <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                {cfg.contentType === 'class' ? 'This starts a class' : cfg.contentType === 'customDomain' ? 'This starts a domain' : 'This starts a kind of card'}
+              </Text>
+              <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
+                {cfg.contentType === 'class'
+                  ? 'Not a card somebody holds: a class, which its pages, its features and its subclasses belong to. Its body is its summary, written in the class details below. Write the rest as separate cards and point them at this one.'
+                  : cfg.contentType === 'customDomain'
+                    ? 'Not a card somebody holds: a domain, which its domain cards belong to. Write those as Domain cards in this pack and set each one\u2019s domain to this.'
+                    : 'Not a card somebody holds: a kind of card, which its own cards belong to. Write those with Add card, where this type is offered by name.'}
+              </Text>
+              <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular, lineHeight: 14 }}>
+                Its name, its picture, its colour and its chip are what it hands down. There is no body to write here and nothing to modify.
+              </Text>
+            </ChamferBox>
+          ) : undefined
         }
         // v0.30.0: the details block, rewritten as the form below is filled in.
         generatedBody={formMarkdown(cfg)}
@@ -1049,10 +1307,27 @@ export function LibraryScreen() {
             color: d.color,
             effects: d.effects,
             typeLabel: cfg.contentType === 'generic' ? cfg.typeLabel : d.typeLabel,
+            /**
+             * v0.43.0: the chip, the declaration, and the kind this card joins.
+             *
+             * An empty chip spec is stored as nothing, so "back to the default chip" really is the
+             * default rather than a spec that happens to say nothing.
+             */
+            plaque: plaqueIsSet(cfg.plaque) ? cfg.plaque : undefined,
+            typeSpec: cfg.contentType === 'type' ? { step: cfg.typeSpec?.step !== false, stepLabel: cfg.typeSpec?.stepLabel, stepHint: cfg.typeSpec?.stepHint, pick: cfg.typeSpec?.pick ?? 1 } : undefined,
+            customType: cfg.contentType === 'type' ? undefined : cfg.customType,
             sections: d.sections,
             domain: cfg.contentType === 'domain' ? cfg.domain : undefined,
             level: cfg.contentType === 'domain' ? cfg.level ?? 1 : undefined,
-            className: cfg.contentType === 'class' ? undefined : cfg.className,
+            /**
+             * v0.43.0: a class PAGE keeps the class it belongs to.
+             *
+             * This dropped `className` for every card of type `class`, pages included, so a page was
+             * saved with nothing pointing at its class: it failed its own validator ("say which class
+             * this page belongs to"), fell out of `assembleClass`, and could not inherit the look the
+             * author had just chosen for it. Only a BASE class card has no parent, because it IS one.
+             */
+            className: cfg.contentType === 'class' && cfg.classSpec?.role !== 'page' ? undefined : cfg.className,
             linkSubclass: cfg.contentType === 'class' ? undefined : cfg.linkSubclass,
             classRole: cfg.classRole,
             classSpec: cfg.contentType === 'class' ? cfg.classSpec : undefined,
@@ -1223,7 +1498,7 @@ export function LibraryScreen() {
               onEdit: (c) =>
                 setEditingCard({
                   index: selected.cards.findIndex((x) => x.id === c.id),
-                  config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel },
+                  config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel, plaque: c.plaque, typeSpec: c.typeSpec, customType: c.customType },
                 }),
               onShare: (cs) => {
                 // One card goes as a card (it can travel by NFC); several go as a pack of their own.
@@ -1247,8 +1522,12 @@ export function LibraryScreen() {
         ) : null}
         {choosingType ? (
           <TypeChooser
-            onPick={(t) => {
+            types={contentTypes(selected.cards)}
+            onPick={(t, customType) => {
               setChoosingType(false);
+              // v0.43.0: a card of one of this pack's own kinds. It is an ordinary card that names a
+              // type, so there is nothing else to ask: straight into the editor.
+              if (customType) { setEditingCard({ index: 'new', config: { ...defaultConfigFor(t), customType } }); return; }
               // v0.42.4 (owner): a CLASS card is asked what kind it is before the editor opens, because
               // the answer decides every field in it. Everything else goes straight in.
               if (t === 'class') { setAskingClassRole(true); return; }
@@ -1393,7 +1672,7 @@ export function LibraryScreen() {
               const c = selected.cards[i];
               setReportFor(null);
               if (!c) return;
-              setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel } });
+              setEditingCard({ index: i, config: { advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel, plaque: c.plaque, typeSpec: c.typeSpec, customType: c.customType } });
             }}
             onShare={() => { const cards = reportFor; setReportFor(null); doShare(cards); }}
             onClose={() => setReportFor(null)}

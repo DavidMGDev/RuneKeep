@@ -1,4 +1,5 @@
 import { TRAIT_ORDER } from '@/features/character-sheet/character';
+import { type CustomStep, isCustomStep, stepTypeId } from '@/lib/content-types';
 import { GOLD_DEFAULT } from './components/gold-card';
 import { type DeckKey, type Draft } from './create-types';
 
@@ -28,10 +29,21 @@ export const EMPTY: Draft = {
 export const MIXED_ANCESTRY_ID = 'ancestry-mixed';
 export const SINGLE_ANCESTRY_ID = 'ancestry-single';
 
-export function deckDone(deck: DeckKey, d: Draft): boolean {
+export function deckDone(deck: DeckKey, d: Draft, steps: CustomStep[] = []): boolean {
   // v0.36: SKIP answers a step. A stat block being characterized does not have to acquire a
   // community it never had, so every step but Class can be answered with nothing, and Forge arms.
   if (d.skipped?.includes(deck)) return true;
+  /**
+   * v0.43.0: a custom step is done when it holds as many cards as its type asked for.
+   *
+   * A step whose type is not in `steps` counts as done rather than blocking: that is a pack that has
+   * been switched off since the draft was saved, and a creator stuck on a step that no longer exists
+   * would be a creator that can never finish.
+   */
+  if (isCustomStep(deck)) {
+    const want = steps.find((s) => s.key === deck)?.pick;
+    return want == null || (d.customPicks?.[stepTypeId(deck)]?.length ?? 0) >= want;
+  }
   switch (deck) {
     case 'carry':
       // Reviewing what is carried over is not a decision that can be left unmade: the DM either
@@ -64,6 +76,9 @@ export function deckDone(deck: DeckKey, d: Draft): boolean {
       // nothing counts as an answer. An older draft that set the whole-step skip still counts.
       return d.inventorySkipped || (d.inventoryItemIds.length + (d.inventorySkips?.length ?? 0)) >= 2 || (d.inventoryLibIds?.length ?? 0) > 0;
   }
+  // Unreachable: every custom step returned above and every built-in has a case. A step nobody
+  // recognises must never be the reason Forge stays disabled, so the answer here is "done".
+  return true;
 }
 
 export const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
@@ -88,7 +103,7 @@ export const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
  * Then the ordinary order, with Transform sitting after Ancestry, where it reads as another thing
  * you ARE rather than another thing you carry.
  */
-export function decksFor(characterize: boolean, transformations: boolean): { key: DeckKey; label: string; stub?: boolean }[] {
+export function decksFor(characterize: boolean, transformations: boolean, custom: CustomStep[] = []): { key: DeckKey; label: string; stub?: boolean }[] {
   /**
    * TRANSFORM is not characterize-only (v0.36.2, owner).
    *
@@ -97,8 +112,25 @@ export function decksFor(characterize: boolean, transformations: boolean): { key
    * two new steps above it stay characterize-only: a player has nothing to inherit and levels up
    * through play rather than choosing a level at creation.
    */
+  /**
+   * WHERE A CUSTOM STEP GOES (v0.43.0, owner).
+   *
+   * "All new custom steps should go right alongside transformations. Wherever transformations are,
+   * they go alongside them; if transformations are disabled, they go in their place or nearby."
+   *
+   * So both ride the same insertion point, after Ancestry: Transform first when it is on, then every
+   * custom step in the order the packs declare them. With Transform off they simply take its place,
+   * which is what "or nearby" asks for and is also the only position that does not move depending on
+   * an unrelated pack being enabled.
+   */
+  const extras: { key: DeckKey; label: string; stub?: boolean }[] = [
+    ...(transformations ? [{ key: 'transformation' as DeckKey, label: 'Transform' }] : []),
+    ...custom.map((c) => ({ key: c.key as DeckKey, label: c.label })),
+  ];
   const withTransform = (list: { key: DeckKey; label: string; stub?: boolean }[]) =>
-    !transformations ? list : list.flatMap((d) => (d.key === 'ancestry' ? [d, { key: 'transformation' as DeckKey, label: 'Transform' }] : [d]));
+    !extras.length ? list : list.flatMap((d) => (d.key === 'ancestry' ? [d, ...extras] : [d]));
+  // v0.43.0: a custom step is a PLAYER's question. Characterizing a stat block is the DM turning a
+  // monster into a character, and asking it which knightly order it belongs to is not that.
   if (!characterize) return withTransform(DECKS);
   const out: { key: DeckKey; label: string; stub?: boolean }[] = [
     // v0.36.1 (owner): LEVEL sits with Inherit, not after Class. Both are things the stat block
@@ -108,5 +140,5 @@ export function decksFor(characterize: boolean, transformations: boolean): { key
   ];
   // Only when the pack is switched on in the app's own expansion list. A step listing six cards the
   // app has been told not to show would be a step that cannot be answered.
-  return [...out, ...withTransform(DECKS)];
+  return [...out, ...withTransform(DECKS).filter((d) => !isCustomStep(d.key))];
 }

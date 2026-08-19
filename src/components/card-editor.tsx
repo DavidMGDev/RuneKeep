@@ -762,6 +762,7 @@ export function CardEditor({
   sectionsConfig,
   sectionFunctions,
   generatedBody,
+  templateNotice,
 }: {
   kindLabel: string;
   /** v0.14.0: the centered line under the title in the LIVE preview — the subclass tier word, so an
@@ -833,6 +834,17 @@ export function CardEditor({
   renderPreview?: (draft: CardDraft) => ReactNode;
   /** v0.42.3: a card whose elements ARE the card cannot be replaced by a picture of one. */
   noFullImage?: boolean;
+  /**
+   * THIS CARD IS A TEMPLATE (v0.43.0, owner).
+   *
+   * A class, a custom domain and a content type are not cards anybody holds: each declares a set that
+   * other cards join. So the body controls are replaced by this block, which says what is being
+   * started and what to write next. There is nothing to section and nothing to modify, and offering
+   * either was the editor pretending a declaration is a card.
+   *
+   * "Remove the sections from the content creation; I want to focus on the chip."
+   */
+  templateNotice?: ReactNode;
   /**
    * v0.42.3: a full-screen panel drawn OVER the editor, at its root.
    *
@@ -1165,7 +1177,9 @@ export function CardEditor({
             />
             <CharCount value={draft.title} max={expMode ? 160 : TITLE_MAX} />
           </ChamferBox>
-          {expMode ? null : sectioned ? (
+          {templateNotice ? (
+            templateNotice
+          ) : expMode ? null : sectioned ? (
             <SectionsField
               sections={draft.sections ?? []}
               onChange={(sections) => setDraft((d) => ({ ...d, sections }))}
@@ -1196,7 +1210,7 @@ export function CardEditor({
               <CharCount value={draft.text} max={TEXT_MAX} />
             </ChamferBox>
           )}
-          {expMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} experiences={experiences} />}
+          {expMode || templateNotice ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} experiences={experiences} />}
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />

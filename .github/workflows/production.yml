@@ -1,0 +1,45 @@
+# Move `production` to whatever was just released (v0.43.0).
+#
+# Cloudflare Pages watches `production` and rebuilds the site from it, so this branch answers one
+# question and only one: WHAT IS LIVE. `main` is where work lands and it moves several times a day;
+# the site should move when a release says so, which is what this does.
+#
+# Nothing here builds the site. Cloudflare runs `npx expo export --platform web` itself and serves
+# `dist/` (see docs/web-deploy.md), so the branch carries source, not artifacts, and the 63 MB of
+# card art never goes into git twice.
+name: production
+
+on:
+  # A published GitHub release. `github.sha` is the commit the release's tag points at, which is the
+  # commit that was actually built and shipped as the APK.
+  release:
+    types: [published]
+  # An escape hatch: promote any branch by hand from the Actions tab, for a rollback or a re-deploy
+  # when a release was published before the site was ready.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One promotion at a time. Two releases published a minute apart would otherwise race, and the loser
+# would decide what is live.
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Point production at ${{ github.sha }}
+        run: |
+          echo "Promoting ${GITHUB_SHA} (${GITHUB_REF_NAME}) to production."
+          # FORCED on purpose. `production` is a pointer to the last released commit, not a line of
+          # development, so a hotfix released from an older commit has to be able to move it BACK.
+          # A fast-forward-only push would refuse that and the site would silently stay on the
+          # broken build, which is the one failure mode this branch exists to prevent.
+          git push --force origin "${GITHUB_SHA}:refs/heads/production"

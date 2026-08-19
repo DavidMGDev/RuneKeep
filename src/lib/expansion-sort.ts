@@ -23,7 +23,9 @@ import type { LibraryCard, LibraryContentType } from './library';
  * are the parts you dip into rather than read through.
  */
 const TYPE_ORDER: LibraryContentType[] = [
-  'class', 'subclass', 'feature', 'customDomain', 'domain', 'ancestry', 'community', 'weapon', 'armor', 'inventory', 'generic',
+  // v0.43.0: a `type` sits with the other TEMPLATES, ahead of the content that joins it, for the same
+  // reason the class leads: it is what everything after it points at.
+  'class', 'subclass', 'feature', 'customDomain', 'domain', 'type', 'ancestry', 'community', 'weapon', 'armor', 'inventory', 'generic',
 ];
 
 const rank = (t: LibraryContentType): number => {
@@ -74,6 +76,7 @@ export function sectionOf(c: LibraryCard): string {
   if (c.contentType === 'subclass') return `${(c.className ?? 'Unattached').trim()} subclasses`;
   if (c.contentType === 'feature') return `${(c.className ?? 'Unattached').trim()} features`;
   if (c.contentType === 'customDomain') return 'Domains';
+  if (c.contentType === 'type') return 'Kinds of card';
   if (c.contentType === 'class') return 'Classes';
   if (c.contentType === 'weapon' || c.contentType === 'armor' || c.contentType === 'inventory') return 'Gear and items';
   if (c.contentType === 'ancestry') return 'Ancestries';

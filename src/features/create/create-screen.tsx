@@ -40,6 +40,8 @@ import { itemColor } from '@/data/item-colors';
 import { useForgedSnapshots } from './components/forged-snapshots';
 import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
 import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } from './create-types';
+import { cardsOfType, customSteps, isCustomStep, stepTypeId, typeLabelsFrom } from '@/lib/content-types';
+import { withResolvedPlaque } from '@/lib/card-plaque';
 import { clearDraft, isResumable, loadDraft, saveDraft } from '@/lib/draft-store';
 import { shouldShow } from '@/lib/onboarding-store';
 
@@ -136,7 +138,7 @@ const skipInventoryCard = (choice: 0 | 1): StraightItem => ({
 // other forged cards. Stats for weapon/armor are folded into the body.
 // `struckIndex` (v0.12.4): strike a section's text (mixed-ancestry crossed-out feature) live in the
 // creation carousel — structured ancestries have no webp to overlay, so the cross-out rides the markdown.
-const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => {
+const libCardItem = (lc: LibraryCard, struckIndex?: number, pack?: LibraryCard[]): StraightItem => {
   /**
    * A PRINTED FACE is ONE image (v0.33.0, corrected v0.33.1).
    *
@@ -158,7 +160,7 @@ const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => {
    */
   const face = VOID_ANCESTRY_FACE[lc.id];
   if (face) return { id: lc.id, label: lc.title || 'Card', thumb: face };
-  return { id: lc.id, label: lc.title || 'Card', custom: <LibraryForgedCard card={lc} struckIndex={struckIndex} /> };
+  return { id: lc.id, label: lc.title || 'Card', custom: <LibraryForgedCard card={lc} pack={pack} struckIndex={struckIndex} /> };
 };
 
 /**
@@ -168,7 +170,7 @@ const libCardItem = (lc: LibraryCard, struckIndex?: number): StraightItem => {
 function draftHasContent(d: unknown): boolean {
   const x = d as Draft | undefined;
   if (!x) return false;
-  return !!x.name?.trim() || DECKS.some((k) => deckDone(k.key, x));
+  return !!x.name?.trim() || Object.values(x.customPicks ?? {}).some((p) => p.length) || DECKS.some((k) => deckDone(k.key, x));
 }
 
 /**
@@ -460,16 +462,34 @@ export function CreateScreen() {
   const inheritedTraits = useMemo(() => ({ ...(statBlock as unknown as { traits?: Partial<Record<TraitKey, number>> } | null)?.traits }), [statBlock]);
   /** Transformations follow the APP's expansion switch, not this character's picks (owner). */
   const transformationsOn = !!expansions?.some((e) => e.id === 'void' && isEnabledForCreation(e));
+  /**
+   * EVERY card the picked packs bring, unbucketed (v0.43.0).
+   *
+   * `contentForCreation` files cards into the eight kinds the game has, which is exactly the wrong
+   * shape for a kind the game does not have. The invented kinds read the raw list instead. See
+   * `lib/content-types`.
+   */
+  const pickedCards = useMemo(() => (expansions ?? []).filter((e) => picked.has(e.id)).flatMap((e) => e.cards), [expansions, picked]);
+  /** The steps those packs ask the creator to ask (v0.43.0). */
+  const customStepList = useMemo(() => customSteps(pickedCards), [pickedCards]);
   const deckList = useMemo(
     () =>
-      decksFor(characterizing, transformationsOn)
+      decksFor(characterizing, transformationsOn, customStepList)
         // v0.42.5 (owner): "Traits and experiences should not be an available step in this campaign
         // settings UI, since nothing will be disabled here." Both are the player's own, made from
         // nothing a pack ships, so there is nothing on either to turn off.
         .filter((d) => !authoring || (d.key !== 'traits' && d.key !== 'experiences'))
+        // v0.43.0: campaign settings decide what the GAME offers, and an invented kind is entirely
+        // the pack's own: disabling it is disabling the pack. Listing it here would be a step whose
+        // Remove button did nothing, since the campaign filter does not run on a custom deck.
+        .filter((d) => !authoring || !isCustomStep(d.key))
         .filter((d) => authoring || isStepOn(campaign, d.key)),
-    [characterizing, transformationsOn, campaign, authoring],
+    [characterizing, transformationsOn, customStepList, campaign, authoring],
   );
+  /** `deckDone`, with this creation's custom steps in scope. One helper so no call site forgets them. */
+  const stepDone = useCallback((k: DeckKey, d: Draft) => deckDone(k, d, customStepList), [customStepList]);
+  const stepsListRef = useRef(customStepList);
+  stepsListRef.current = customStepList;
   const classOptional = characterizing && canSkipClass(carry, carryOff);
 
   /**
@@ -743,8 +763,10 @@ export function CreateScreen() {
    * the v0.27.0 cache was already sparing the catalog ones.
    */
   const keepLib = useCallback(
-    (lc: LibraryCard, struckIndex?: number) => keep(`lib|${lc.id}|${lc.title}|${(lc.sections ?? []).length}|${struckIndex ?? ''}`, () => libCardItem(lc, struckIndex)),
-    [keep],
+    // v0.43.0: the pack rides the cache key through the card's own chip, since a chip INHERITED from
+    // a class, a domain or a type is resolved against it and would otherwise be cached stale.
+    (lc: LibraryCard, struckIndex?: number) => keep(`lib|${lc.id}|${lc.title}|${(lc.sections ?? []).length}|${struckIndex ?? ''}|${lc.customType ?? ''}|${lc.plaque?.label ?? ''}`, () => libCardItem(lc, struckIndex, pickedCards)),
+    [keep, pickedCards],
   );
   const forgedItem = useCallback(
     (key: string, label: string, live: ReactNode): StraightItem => {
@@ -790,6 +812,9 @@ export function CreateScreen() {
     return campaignWarnings(campaign, { classes, subclasses, domainCards });
   }, [authoring, campaign, creationClassCards, libContent, picked]);
   const rawItems: StraightItem[] = useMemo(() => {
+    // v0.43.0: a custom step offers the cards of its type, drawn as themselves. Nothing bundled can
+    // ever answer one of these, so it never merges with the catalog.
+    if (isCustomStep(deck)) return cardsOfType(pickedCards, stepTypeId(deck)).map((lc) => keepLib(lc));
     if (deck === 'carry') {
       // A greyed card is DIMMED rather than outlined: an outline is what selection looks like
       // everywhere else in the creator, and here selecting a card is how you throw it away.
@@ -975,7 +1000,7 @@ export function CreateScreen() {
         ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, picked, creationClassCards, carry, carryOff, carryColor]);
+  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, pickedCards, picked, creationClassCards, carry, carryOff, carryColor]);
   const items: StraightItem[] = useMemo(() => {
     if (!campaign.on || !CAMPAIGN_DECKS.includes(deck)) return rawItems;
     // AUTHORING marks the off cards; PLAYING drops them. Same rule, two sides of it: the DM needs to
@@ -989,6 +1014,7 @@ export function CreateScreen() {
     // v0.42.3: authoring outlines nothing. A red outline means "this is your pick", and in this mode
     // there are no picks: greying is the whole vocabulary, exactly as it is on the Inherit step.
     if (authoring) return [];
+    if (isCustomStep(deck)) return draft.customPicks?.[stepTypeId(deck)] ?? [];
     // The carry step never outlines anything: greying is its whole vocabulary (see `items`).
     if (deck === 'carry') return [];
     if (deck === 'weapons') {
@@ -1106,6 +1132,8 @@ export function CreateScreen() {
         case 'inventory':
           return { inventoryItemIds: [], inventoryLibIds: [], inventorySkips: [] };
       }
+      // v0.43.0: a custom step, which goes back to having chosen nothing.
+      return isCustomStep(k) ? { customPicks: { ...(draftRef.current.customPicks ?? {}), [stepTypeId(k)]: [] } } : {};
     },
     [statBlock, inheritedTraits],
   );
@@ -1226,6 +1254,25 @@ export function CreateScreen() {
         });
         return;
       }
+      /**
+       * A CUSTOM STEP takes as many cards as its type asked for (v0.43.0).
+       *
+       * Tapping a picked card frees it; tapping a new one past the limit drops the OLDEST, which is
+       * the rule the domain step already uses and the only one that never leaves the player stuck
+       * with a full hand and no way to change their mind in one tap.
+       */
+      if (isCustomStep(deck)) {
+        const typeId = stepTypeId(deck);
+        const want = stepsListRef.current.find((x) => x.key === deck)?.pick ?? 1;
+        const cur = draft.customPicks?.[typeId] ?? [];
+        const next = cur.includes(id)
+          ? cur.filter((x) => x !== id)
+          : cur.length < want
+            ? [...cur, id]
+            : [...cur.slice(1), id];
+        set({ customPicks: { ...(draft.customPicks ?? {}), [typeId]: next } });
+        return;
+      }
       if (!isCardDeck(deck)) return;
       switch (deck) {
         case 'class': {
@@ -1338,18 +1385,18 @@ export function CreateScreen() {
   // v0.36.1: the name is a step in the skip menu, so skipping it answers it (it falls back to
   // whatever the stat block was called, which is the only name anybody has offered).
   const nameDone = draft.name.trim().length > 0 || !!draft.nameSkipped;
-  const complete = deckList.every((d) => deckDone(d.key, draft)) && nameDone;
+  const complete = deckList.every((d) => stepDone(d.key, draft)) && nameDone;
   // Aggregate progress (v0.22.0). The rail showed per-step ticks but nothing showed how close you
   // were overall, and the NAME requirement had no representation on the rail at all — so a player
   // could hold ten gold ticks and a disabled Forge button with no explanation of why.
   const steps = deckList.length + 1; // +1 for the name
-  const stepsDone = deckList.filter((d) => deckDone(d.key, draft)).length + (nameDone ? 1 : 0);
-  const missingLabel = !nameDone ? 'a name' : (deckList.find((d) => !deckDone(d.key, draft))?.label.toLowerCase() ?? null);
+  const stepsDone = deckList.filter((d) => stepDone(d.key, draft)).length + (nameDone ? 1 : 0);
+  const missingLabel = !nameDone ? 'a name' : (deckList.find((d) => !stepDone(d.key, draft))?.label.toLowerCase() ?? null);
 
   /** Tapping Forge while incomplete jumps to the first unmet step instead of doing nothing. */
   const jumpToMissing = useCallback(() => {
     playSfx('buttonTap');
-    const next = deckList.find((d) => !deckDone(d.key, draft) && !locked(d.key));
+    const next = deckList.find((d) => !stepDone(d.key, draft) && !locked(d.key));
     if (next) switchDeck(next.key);
     else nameRef.current?.focus(); // every deck is done, so the name is what's left
   }, [draft, switchDeck, deckList]);
@@ -1364,10 +1411,20 @@ export function CreateScreen() {
     // v0.42.6: `classes` joins the list, so a homebrew class and its pages travel with the character
     // the same way its ancestry and its domain cards do.
     if (libContent) for (const arr of [libContent.ancestries, libContent.communities, libContent.subclasses, libContent.domains, libContent.armor, libContent.inventory, libContent.classes]) for (const c of arr) libById.set(c.id, c);
+    /**
+     * v0.43.0: cards of an INVENTED kind, chosen on a custom step.
+     *
+     * They are not one of the eight kinds `contentForCreation` buckets, so they come off the raw
+     * pack list. `withResolvedPlaque` stamps whatever chip they inherit from their type, because from
+     * here on the character is on its own: the pack can be disabled or deleted and this copy still has
+     * to look like what it was. See `lib/card-plaque`.
+     */
+    const customPickIds = Object.values(draft.customPicks ?? {}).flat();
+    for (const c of pickedCards) if (customPickIds.includes(c.id)) libById.set(c.id, withResolvedPlaque(c, pickedCards));
     const classPageIds = draft.customClassId
       ? (libContent?.classes ?? []).filter((c) => c.classSpec?.role === 'page' && classKeyOf(c.className) === chosenClassKey).map((c) => c.id)
       : [];
-    const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, draft.customClassId, ...classPageIds, ...draft.domainCardIds, ...draft.inventoryLibIds].filter((x): x is string => !!x);
+    const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, draft.customClassId, ...classPageIds, ...draft.domainCardIds, ...draft.inventoryLibIds, ...customPickIds].filter((x): x is string => !!x);
     const libraryCards = [...new Set(pickedIds)].map((pid) => libById.get(pid)).filter((c): c is LibraryCard => !!c);
     // v0.10.5: a custom subclass FOUNDATION drags its specialization + mastery siblings along (same family
     // + class) so the subclass-upgrade advancement can add them on level-up. They stay hidden on the sheet
@@ -1423,6 +1480,15 @@ export function CreateScreen() {
       ...(enabledCustom.length ? { enabledCardIds: enabledCustom } : {}),
       ...(enabledExpansionIds.length ? { enabledExpansionIds } : {}),
       gold: draft.gold,
+      /**
+       * v0.43.0 (owner): the KINDS this character's packs invented, kept on the character.
+       *
+       * "Players who have this expansion enabled will be able to create this type of card in the
+       * menu." The sheet's type picker reads `customCardTypes`, so the labels are written here, at
+       * the moment the packs are known, rather than making the heaviest screen in the app load every
+       * expansion to ask the same question again.
+       */
+      ...(typeLabelsFrom(pickedCards).length ? { customCardTypes: typeLabelsFrom(pickedCards) } : {}),
       level: 1,
       /**
        * A new hero arrives with its class ALREADY EXPANDED (v0.42.0, owner).
@@ -1439,7 +1505,17 @@ export function CreateScreen() {
        * format creation drew them. See `lib/class-cards`.
        */
       classExpanded: true,
-      cardCategory: draft.mixedAncestry ? { [draft.mixedAncestry.second!]: 'abilities' } : {},
+      /**
+       * v0.43.0: a card chosen on a custom step lands in the ARSENAL.
+       *
+       * The deck builder files a loose embedded card into the inventory, which is right for a rope
+       * and wrong for the Order a character belongs to: it is something they ARE, and it belongs
+       * beside their ancestry and their class rather than among their supplies.
+       */
+      cardCategory: {
+        ...(draft.mixedAncestry ? { [draft.mixedAncestry.second!]: 'abilities' } : {}),
+        ...Object.fromEntries(customPickIds.map((cid) => [cid, 'abilities'])),
+      },
     }).catch((e: unknown) => {
       // v0.22.0: this was awaited with NO catch, so a failed write produced no feedback at all.
       // Put the draft back so nothing is lost, and say what happened.
@@ -1449,7 +1525,7 @@ export function CreateScreen() {
     });
     clearDraft(); // only now: the draft has become a character and must not be offered back
     router.replace({ pathname: '/sheet', params: { id } });
-  }, [complete, draft, router, libContent, picked]);
+  }, [complete, draft, router, libContent, pickedCards, picked]);
 
   /**
    * BACK to the encounter, never a second copy of it (v0.36.3, owner).
@@ -1661,10 +1737,14 @@ export function CreateScreen() {
   const locked = (k: DeckKey) =>
     ((k === 'subclass' || k === 'domains') && !draft.className) || !!deckList.find((d) => d.key === k)?.stub; // stubs land next issue
   lockedRef.current = locked;
-  const maxSelect = deck === 'domains' || deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
+  const maxSelect = isCustomStep(deck)
+    ? (customStepList.find((x) => x.key === deck)?.pick ?? 1)
+    : deck === 'domains' || deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
   // 'domains' used to fall back to the word 'card' — the least specific label in the app, on the one
   // step where you pick two. It only shows now when the centred card's own name is too long to fit.
-  const noun = deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'domain card' : deck === 'armor' ? 'armor' : deck;
+  const noun = isCustomStep(deck)
+    ? (customStepList.find((x) => x.key === deck)?.label.toLowerCase() ?? 'card')
+    : deck === 'weapons' ? weaponSlot : deck === 'class' ? 'class' : deck === 'domains' ? 'domain card' : deck === 'armor' ? 'armor' : deck;
   const centerItem = items[Math.min(centerIdx, Math.max(0, items.length - 1))];
   const allCarryOff = carry.length > 0 && carryOff.size >= carry.length;
   const [skipMenu, setSkipMenu] = useState(false);
@@ -1714,7 +1794,7 @@ export function CreateScreen() {
     const skipped = [...(draftRef.current.skipped ?? []), k];
     const order = decksRef.current.filter((x) => !x.stub && !lockedRef.current(x.key));
     const at = order.findIndex((x) => x.key === k);
-    const next = order.slice(at + 1).find((x) => !deckDone(x.key, { ...draftRef.current, skipped }));
+    const next = order.slice(at + 1).find((x) => !deckDone(x.key, { ...draftRef.current, skipped }, stepsListRef.current));
     if (next) switchDeckRef.current(next.key);
   }, []);
   const SkipStep = useCallback(
@@ -1841,6 +1921,20 @@ export function CreateScreen() {
     const two = <T,>(a: T[]): T[] => { const p = [...a]; const o: T[] = []; while (p.length && o.length < 2) o.push(p.splice(Math.floor(Math.random() * p.length), 1)[0]); return o; };
     playSfx('cardSelect');
     let focusId: string | undefined; // the picked card to recenter the carousel on (Feature 2)
+    // v0.43.0: a custom step rolls from its own type's cards, taking exactly as many as it asks for.
+    if (isCustomStep(deck)) {
+      const typeId = stepTypeId(deck);
+      const want = stepsListRef.current.find((x) => x.key === deck)?.pick ?? 1;
+      const pool = cardsOfType(pickedCards, typeId).map((c) => c.id);
+      const rolled: string[] = [];
+      const left = [...pool];
+      while (left.length && rolled.length < want) rolled.push(left.splice(Math.floor(Math.random() * left.length), 1)[0]);
+      set({ customPicks: { ...(draftRef.current.customPicks ?? {}), [typeId]: rolled } });
+      focusId = rolled[rolled.length - 1];
+      const idx = items.findIndex((it) => it.id === focusId);
+      if (idx >= 0) carouselRef.current?.scrollTo(idx);
+      return;
+    }
     switch (deck) {
       case 'class': { const k = pick(creationClassCards.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
       case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => c.id)); if (id) { set({ subclassCardId: id }); focusId = id; } break; }
@@ -1873,7 +1967,7 @@ export function CreateScreen() {
       const idx = items.findIndex((it) => it.id === focusId);
       if (idx >= 0) carouselRef.current?.scrollTo(idx);
     }
-  }, [deck, draft.className, draft.mixedAncestry, weaponKind, invChoice, items, set, picked, creationClassCards]);
+  }, [deck, draft.className, draft.mixedAncestry, weaponKind, invChoice, items, set, picked, pickedCards, creationClassCards]);
 
   return (
     <AppScreen
@@ -2020,7 +2114,7 @@ export function CreateScreen() {
               deck={d.key}
               label={d.label}
               active={deck === d.key}
-              done={!d.stub && deckDone(d.key, draft)}
+              done={!d.stub && stepDone(d.key, draft)}
               locked={locked(d.key)}
               pulseToken={d.key === 'domains' || d.key === 'subclass' ? unlockPulse : 0}
               onPress={() => switchDeck(d.key)}
@@ -2072,6 +2166,26 @@ export function CreateScreen() {
               />
             </View>
           ) : null}
+          {/**
+            * WHAT A CUSTOM STEP IS ASKING (v0.43.0).
+            *
+            * A step the game did not ship needs a sentence: nothing about "Knights Radiant" on a rail
+            * tab tells a player what they are choosing or how many. The author writes it; when they
+            * have not, the count alone is still worth saying.
+            */}
+          {isCustomStep(deck) ? (() => {
+            const st = customStepList.find((x) => x.key === deck);
+            if (!st) return null;
+            const chosen = draft.customPicks?.[st.typeId]?.length ?? 0;
+            return (
+              <View style={{ paddingHorizontal: 18, marginTop: 4, gap: 2 }}>
+                {st.hint ? <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, textAlign: 'center', lineHeight: 15 }}>{st.hint}</Text> : null}
+                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', textAlign: 'center' }}>
+                  {`Pick ${st.pick}, ${chosen} chosen`}
+                </Text>
+              </View>
+            );
+          })() : null}
           {isCarouselDeck(deck) && items.length > 0 ? (
             <Animated.View style={[{ flex: 1 }, modeFadeStyle]}>
               <StraightCarousel
@@ -2325,7 +2439,7 @@ export function CreateScreen() {
              * gets forged.
              */
             if (andForge) { void forgeCharacterized(applied); return; }
-            const next = decksRef.current.find((d) => !deckDone(d.key, applied) && !lockedRef.current(d.key));
+            const next = decksRef.current.find((d) => !deckDone(d.key, applied, stepsListRef.current) && !lockedRef.current(d.key));
             if (next) switchDeck(next.key);
             else void forgeCharacterized(applied);
           }}

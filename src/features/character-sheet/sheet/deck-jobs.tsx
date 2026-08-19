@@ -272,9 +272,11 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
       return {
         // v0.34.3: `typeLabel` rides the key too. It is printed on the plaque, so a card that arrives
         // with one (or is given one) has to re-forge like any other content change.
-        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel, lc.fullImage ? 'face' : '')}`,
+        // v0.43.0: the CHIP rides the key too, for the same reason `typeLabel` does — it is printed
+        // on the card, so a card that gains or changes one has to re-forge.
+        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel, lc.fullImage ? 'face' : '', lc.plaque?.label, lc.plaque?.from, lc.plaque?.to, lc.plaque?.text)}`,
         id: lc.id,
-        node: <LibraryForgedCard card={lc} struckIndex={struckIndex} />,
+        node: <LibraryForgedCard card={lc} pack={file.libraryCards} struckIndex={struckIndex} />,
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
         // image-bearing card (avoids the async-art flicker, per the forged-card cache rules).
         raster: !!lc.imageUri || !!VOID_ANCESTRY_FACE[lc.id],

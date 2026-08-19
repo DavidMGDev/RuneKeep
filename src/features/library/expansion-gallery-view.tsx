@@ -41,8 +41,10 @@ export interface GalleryActions {
 }
 
 /** One card, drawn at its real size and scaled into its tile. */
-function Tile({ card, w, h, selected, dim, onPress, onHold }: {
+function Tile({ card, pack, w, h, selected, dim, onPress, onHold }: {
   card: LibraryCard;
+  /** v0.43.0: the pack, so a card wearing its class's, domain's or type's chip draws it here too. */
+  pack: LibraryCard[];
   w: number;
   h: number;
   selected: boolean;
@@ -64,7 +66,7 @@ function Tile({ card, w, h, selected, dim, onPress, onHold }: {
       <View style={{ width: w, height: h, overflow: 'hidden' }}>
         {/* The card at its own size, scaled from its top-left corner into the tile. */}
         <View style={{ width: FORGED_W, height: FORGED_H, transform: [{ scale }], transformOrigin: 'top left' }} pointerEvents="none">
-          <LibraryForgedCard card={card} />
+          <LibraryForgedCard card={card} pack={pack} />
         </View>
       </View>
       {/* Selection is an OUTLINE, which is what selection looks like everywhere else in this app. */}
@@ -104,6 +106,7 @@ export function ExpansionGallery({ cards, dm, actions }: { cards: LibraryCard[];
               <Tile
                 key={c.id}
                 card={c}
+                pack={cards}
                 w={grid.tileW}
                 h={grid.tileH}
                 selected={sel.selected.has(c.id)}

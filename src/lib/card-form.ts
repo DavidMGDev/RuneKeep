@@ -30,8 +30,9 @@ import { domainLabel } from './domain-label';
 export interface CardFormFacts {
   contentType: LibraryContentType;
   domain?: string;
-  /** v0.42.6: a class card's spec, so a PAGE can be told from a base and write nothing. */
-  classSpec?: { role?: 'base' | 'page' };
+  /** v0.42.6: a class card's spec, so a PAGE can be told from a base and write nothing. v0.43.0
+   *  carries the summary too, because a base class card's body IS its summary. */
+  classSpec?: { role?: 'base' | 'page'; summary?: string };
   level?: number;
   className?: string;
   subclass?: string;
@@ -99,8 +100,27 @@ export function formMarkdown(f: CardFormFacts): string {
        *
        * It printed "Class: Warden" onto a card that already says Warden across the top in the class's
        * own colour, which is the app repeating itself onto somebody's card.
+       *
+       * v0.43.0: a BASE class card prints its SUMMARY. The summary is the class's own introduction,
+       * asked for by the class form in so many words ("What this class is, in two or three
+       * sentences") and until now it went nowhere anybody could read it, while the card's body was a
+       * blank the author had to fill in a second time. A template's body is what it declares.
        */
-      return f.classSpec?.role === 'page' ? '' : join([row('Class', f.className)]);
+      return f.classSpec?.role === 'page' ? '' : (f.classSpec?.summary ?? '').trim();
+    /**
+     * A TEMPLATE'S BODY (v0.43.0, owner).
+     *
+     * "In that text area, I need you to make it very clear that this is not a customizable area. This
+     * is just a card template; it's not an individual card that's being created, it's a system that's
+     * being started."
+     *
+     * So the card says so, on the card, everywhere the card is drawn, rather than the editor saying
+     * it once and the shipped card looking like an empty card of the ordinary kind.
+     */
+    case 'customDomain':
+      return 'A domain this pack adds. Its cards are the cards that name it.';
+    case 'type':
+      return 'A kind of card this pack adds. Its cards are the cards that name it.';
     default:
       return '';
   }

@@ -42,9 +42,21 @@ $base = 'https://dl.google.com/android/repository'
 function Section($m) { Write-Host "`n==== $m ====" -ForegroundColor Cyan }
 function Fail($m)    { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
 
-# 7-Zip (fast extract); fall back to Expand-Archive
+# 7-Zip (fast extract), else bsdtar, else Expand-Archive.
 $sevenZip = @("$env:ProgramFiles\7-Zip\7z.exe", "${env:ProgramFiles(x86)}\7-Zip\7z.exe") |
   Where-Object { Test-Path $_ } | Select-Object -First 1
+# v0.43.0: `tar` sits between them, and it matters. Expand-Archive takes MINUTES on the 600 MB NDK
+# zip, so the fallback path on a machine without 7-Zip read as a hang rather than as a slow install.
+# bsdtar has shipped in system32 since Windows 10 and handles zip, so there is now no machine where
+# this step is slow.
+$bsdTar = (Get-Command tar.exe -ErrorAction SilentlyContinue).Source
+
+function Expand-Zip($zip, $dest) {
+  New-Item -ItemType Directory -Force $dest | Out-Null
+  if ($sevenZip)   { & $sevenZip x $zip "-o$dest" -y | Out-Null; return }
+  if ($bsdTar)     { & $bsdTar -xf $zip -C $dest; return }
+  Expand-Archive -Path $zip -DestinationPath $dest -Force
+}
 
 # Download $url, extract, and place its single top folder at $target. Skips if $target/$marker exists.
 function Install-SdkZip($name, $url, $target, $marker) {
@@ -59,8 +71,7 @@ function Install-SdkZip($name, $url, $target, $marker) {
   curl.exe -L -o $zip $url
   if (-not (Test-Path $zip) -or (Get-Item $zip).Length -lt 1MB) { Fail "$name download failed" }
   Write-Host ("  extracting $name ({0:N0} MB)..." -f ((Get-Item $zip).Length / 1MB))
-  New-Item -ItemType Directory -Force $tmp | Out-Null
-  if ($sevenZip) { & $sevenZip x $zip "-o$tmp" -y | Out-Null } else { Expand-Archive -Path $zip -DestinationPath $tmp -Force }
+  Expand-Zip $zip $tmp
   $inner = Get-ChildItem $tmp -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $inner) { Fail "$name extract produced no folder" }
   New-Item -ItemType Directory -Force (Split-Path $target -Parent) | Out-Null
@@ -75,7 +86,49 @@ function Install-SdkZip($name, $url, $target, $marker) {
 Section "Environment"
 Write-Host "Repo : $repo"
 Write-Host "SDK  : $sdk"
-Write-Host "7-Zip: $(if ($sevenZip) { $sevenZip } else { 'not found (Expand-Archive fallback)' })"
+Write-Host "Unzip: $(if ($sevenZip) { $sevenZip } elseif ($bsdTar) { $bsdTar } else { 'Expand-Archive (slow)' })"
+
+Section "JDK"
+# Gradle needs a JDK, and finds it through JAVA_HOME rather than through PATH. A machine with only a
+# JRE answers `java -version` and then fails the build 39 seconds in with "No Java compiler found",
+# which is why this resolves javac explicitly and says so up front instead.
+#
+# Order: an already-correct JAVA_HOME, then whatever javac is on PATH, then the copy
+# bootstrap-sdk.ps1 unpacks. First one with a real compiler in it wins.
+# Built step by step rather than as one array literal: `Split-Path $null` is an ERROR in PS 5.1, so
+# on a machine with no javac on PATH the whole expression blew up and this found nothing at all --
+# including the JDK the bootstrap had just unpacked, which is the one case it exists for.
+$jdkCandidates = New-Object System.Collections.ArrayList
+if ($env:JAVA_HOME) { [void]$jdkCandidates.Add($env:JAVA_HOME) }
+$javacCmd = Get-Command javac -ErrorAction SilentlyContinue
+if ($javacCmd) { [void]$jdkCandidates.Add((Split-Path (Split-Path $javacCmd.Source -Parent) -Parent)) }
+[void]$jdkCandidates.Add((Join-Path $env:LOCALAPPDATA 'RuneKeep\jdk-21'))
+$jdk = $jdkCandidates | Where-Object { Test-Path (Join-Path $_ 'bin\javac.exe') } | Select-Object -First 1
+if (-not $jdk) { Fail "no JDK found (a JRE is not enough) - run: powershell -ExecutionPolicy Bypass -File apk-build/bootstrap-sdk.ps1" }
+$env:JAVA_HOME = $jdk
+$env:PATH = (Join-Path $jdk 'bin') + ';' + $env:PATH
+Write-Host "JDK  : $jdk" -ForegroundColor Green
+& (Join-Path $jdk 'bin\javac.exe') -version
+
+Section "bash"
+# react-native-audio-api's `downloadPrebuiltBinaries` task SHELLS OUT TO BASH, and Gradle inherits
+# this process's PATH. With no bash on it the task dies as "A problem occurred starting process
+# 'command 'bash''" nine minutes into the build, which names neither bash nor the module that wanted
+# it in any useful way.
+#
+# Git for Windows ships one, and `Git\bin\bash.exe` is the wrapper that sets up a real MSYS
+# environment (so the script it runs can find `unzip`, which is the other thing this task needs).
+# Only `Git\bin` goes on the PATH, never `Git\usr\bin`: that one carries find.exe and sort.exe, which
+# would shadow the Windows tools of the same name for every child process of this build.
+if (-not (Get-Command bash -ErrorAction SilentlyContinue)) {
+  $gitBin = @("$env:ProgramFiles\Git\bin", "${env:ProgramFiles(x86)}\Git\bin", "$env:LOCALAPPDATA\Programs\Git\bin") |
+    Where-Object { Test-Path (Join-Path $_ 'bash.exe') } | Select-Object -First 1
+  if (-not $gitBin) { Fail "no bash found - install Git for Windows (react-native-audio-api's build shells out to it)" }
+  $env:PATH = $gitBin + ';' + $env:PATH
+  Write-Host "bash : $(Join-Path $gitBin 'bash.exe')" -ForegroundColor Green
+} else {
+  Write-Host "bash : $((Get-Command bash).Source)" -ForegroundColor Green
+}
 
 Section "Clean sdkmanager staging"
 foreach ($p in @((Join-Path $sdk '.temp'), (Join-Path $sdk '.downloadIntermediates'))) {
@@ -87,7 +140,7 @@ Install-SdkZip "platform-tools"       "$base/platform-tools-latest-windows.zip" 
 Install-SdkZip "build-tools;35.0.0"   "$base/build-tools_r35_windows.zip"       (Join-Path $sdk 'build-tools\35.0.0')    'source.properties'
 Install-SdkZip "platforms;android-35" "$base/platform-35_r02.zip"               (Join-Path $sdk 'platforms\android-35')  'android.jar'
 Install-SdkZip "ndk;27.1.12297006"    "$base/android-ndk-r27b-windows.zip"      (Join-Path $sdk 'ndk\27.1.12297006')     'source.properties'
-if (-not (Test-Path (Join-Path $sdk 'cmake\3.22.1\bin\cmake.exe'))) { Fail "cmake;3.22.1 missing (expected already installed)" }
+if (-not (Test-Path (Join-Path $sdk 'cmake\3.22.1\bin\cmake.exe'))) { Fail "cmake;3.22.1 missing - run: powershell -ExecutionPolicy Bypass -File apk-build/bootstrap-sdk.ps1" }
 Write-Host "All SDK components present." -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
@@ -111,8 +164,7 @@ if (Test-Path $rnaDir) {
     $nz = Join-Path $env:TEMP 'rk-ninja.zip'; $nx = Join-Path $env:TEMP 'rk-ninja-x'
     curl.exe -fsSL 'https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip' -o $nz
     if (Test-Path $nx) { Remove-Item -Recurse -Force $nx }
-    New-Item -ItemType Directory -Force $nx | Out-Null
-    if ($sevenZip) { & $sevenZip x $nz "-o$nx" -y | Out-Null } else { Expand-Archive -Path $nz -DestinationPath $nx -Force }
+    Expand-Zip $nz $nx
     if (Test-Path $ninja) { Copy-Item -Force $ninja (Join-Path $sdk 'cmake\3.22.1\bin\ninja-old.exe.bak') }
     Copy-Item -Force (Join-Path $nx 'ninja.exe') $ninja
     Remove-Item -Force $nz -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force $nx -ErrorAction SilentlyContinue
@@ -125,8 +177,7 @@ if (Test-Path $rnaDir) {
     $az = Join-Path $env:TEMP 'rk-rna-android.zip'
     curl.exe -fsSL 'https://github.com/software-mansion-labs/rn-audio-libs/releases/download/v3.1.0/android.zip' -o $az
     $extDir = Join-Path $rnaDir 'common\cpp\audioapi\external'
-    New-Item -ItemType Directory -Force $extDir | Out-Null
-    if ($sevenZip) { & $sevenZip x $az "-o$extDir" -y | Out-Null } else { Expand-Archive -Path $az -DestinationPath $extDir -Force }
+    Expand-Zip $az $extDir
     Remove-Item -Recurse -Force (Join-Path $extDir '__MACOSX') -ErrorAction SilentlyContinue
     Remove-Item -Force $az -ErrorAction SilentlyContinue
     if (Test-Path $extAndroid) { Write-Host "  prebuilt libs -> $extAndroid" -ForegroundColor Green } else { Fail "audio-api prebuilt android libs missing after extract" }

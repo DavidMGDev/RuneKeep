@@ -27,6 +27,25 @@ describe('what the detail form writes onto a card', () => {
     expect(formMarkdown({ contentType: 'subclass', className: 'druid', subclass: 'Warden', tier: 3 })).toBe('');
   });
 
+  /**
+   * v0.43.0 (owner): a TEMPLATE's body says what it starts.
+   *
+   * "In that text area, I need you to make it very clear that this is not a customizable area. This
+   * is just a card template; it's not an individual card that's being created, it's a system that's
+   * being started." A class is the exception only in wording: its body is its own summary, which is
+   * the introduction the class form already asks for and which used to go nowhere.
+   */
+  it('says what a domain and a type start, on the card', () => {
+    expect(formMarkdown({ contentType: 'customDomain' })).toBe('A domain this pack adds. Its cards are the cards that name it.');
+    expect(formMarkdown({ contentType: 'type' })).toBe('A kind of card this pack adds. Its cards are the cards that name it.');
+  });
+
+  it('gives a base class card its summary as its body, and a page nothing at all', () => {
+    expect(formMarkdown({ contentType: 'class', className: 'Warden', classSpec: { role: 'base', summary: 'Stone and stubbornness.' } })).toBe('Stone and stubbornness.');
+    expect(formMarkdown({ contentType: 'class', className: 'Warden', classSpec: { role: 'page', summary: 'Stone and stubbornness.' } })).toBe('');
+    expect(formMarkdown({ contentType: 'class', className: 'Warden' })).toBe('');
+  });
+
   it('drops a row nobody filled in rather than printing it blank', () => {
     // v0.42.3: the KEY stays lower-case, the printing is capitalised. See `lib/domain-label`.
     expect(formMarkdown({ contentType: 'domain', domain: 'arcana' })).toBe('**Domain:** Arcana');
