@@ -55,8 +55,18 @@ __pycache__/
 # all web-render scratch
 .rk-*
 
-# Card LOD thumbs are build artifacts - regenerate with python scripts/generate_lods.py
-assets/extracted_cards/**/*_lod.webp
+# Card LOD thumbs USED to be ignored here as build artifacts, regenerated with
+# `python scripts/generate_lods.py`. They are committed now (v0.43.0).
+#
+# They are not artifacts of the build; they are INPUTS to it. `src/data/catalog.ts` require()s all 369
+# of them by name, so a clone without them cannot bundle at all -- which is exactly what Cloudflare
+# Pages is, and its build died on the first one:
+#
+#   Unable to resolve module ../../assets/extracted_cards/Domains/Arcana/arcana-01-1_lod.webp
+#
+# The alternative was making every build host run Python and Pillow to regenerate 3.3 MB of thumbs
+# that change about once a year, next to the 32.5 MB of full-res card art already committed beside
+# them. Regenerate with the script when the source art changes, and commit the result.
 
 # Local-only rulebook reference scratch (licensed; transcribe to data, NEVER push)
 assets/temp/
