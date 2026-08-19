@@ -88,6 +88,28 @@ Write-Host "Repo : $repo"
 Write-Host "SDK  : $sdk"
 Write-Host "Unzip: $(if ($sevenZip) { $sevenZip } elseif ($bsdTar) { $bsdTar } else { 'Expand-Archive (slow)' })"
 
+Section "JDK"
+# Gradle needs a JDK, and finds it through JAVA_HOME rather than through PATH. A machine with only a
+# JRE answers `java -version` and then fails the build 39 seconds in with "No Java compiler found",
+# which is why this resolves javac explicitly and says so up front instead.
+#
+# Order: an already-correct JAVA_HOME, then whatever javac is on PATH, then the copy
+# bootstrap-sdk.ps1 unpacks. First one with a real compiler in it wins.
+# Built step by step rather than as one array literal: `Split-Path $null` is an ERROR in PS 5.1, so
+# on a machine with no javac on PATH the whole expression blew up and this found nothing at all --
+# including the JDK the bootstrap had just unpacked, which is the one case it exists for.
+$jdkCandidates = New-Object System.Collections.ArrayList
+if ($env:JAVA_HOME) { [void]$jdkCandidates.Add($env:JAVA_HOME) }
+$javacCmd = Get-Command javac -ErrorAction SilentlyContinue
+if ($javacCmd) { [void]$jdkCandidates.Add((Split-Path (Split-Path $javacCmd.Source -Parent) -Parent)) }
+[void]$jdkCandidates.Add((Join-Path $env:LOCALAPPDATA 'RuneKeep\jdk-21'))
+$jdk = $jdkCandidates | Where-Object { Test-Path (Join-Path $_ 'bin\javac.exe') } | Select-Object -First 1
+if (-not $jdk) { Fail "no JDK found (a JRE is not enough) - run: powershell -ExecutionPolicy Bypass -File apk-build/bootstrap-sdk.ps1" }
+$env:JAVA_HOME = $jdk
+$env:PATH = (Join-Path $jdk 'bin') + ';' + $env:PATH
+Write-Host "JDK  : $jdk" -ForegroundColor Green
+& (Join-Path $jdk 'bin\javac.exe') -version
+
 Section "Clean sdkmanager staging"
 foreach ($p in @((Join-Path $sdk '.temp'), (Join-Path $sdk '.downloadIntermediates'))) {
   if (Test-Path $p) { Write-Host "  removing $p"; Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }

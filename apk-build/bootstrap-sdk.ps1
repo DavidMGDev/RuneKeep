@@ -2,9 +2,12 @@
 #
 #   powershell -ExecutionPolicy Bypass -File apk-build/bootstrap-sdk.ps1
 #
-# build-apk.ps1 installs most of the SDK itself, but it ASSUMES three things are already there and
-# fails with a bare "cmake;3.22.1 missing (expected already installed)" when they are not:
+# build-apk.ps1 installs most of the SDK itself, but it ASSUMES four things are already there and
+# fails with a bare "cmake;3.22.1 missing (expected already installed)" (or, worse, 39 seconds into
+# Gradle) when they are not:
 #
+#   0. a real JDK     - Gradle compiles Java and needs `javac`. A JRE is not enough, and the error
+#                       it gives ("No Java compiler found") does not say which of the two you have.
 #   1. cmdline-tools  - not used by the build, but it is what `sdkmanager` lives in, and having it
 #                       means the SDK can be inspected and repaired by hand later.
 #   2. cmake;3.22.1   - react-native-audio-api compiles C++ and Gradle looks for exactly this version.
@@ -12,7 +15,7 @@
 #                       been accepted, and it looks for hash files rather than asking.
 #
 # That was fine on a machine where somebody had once run Android Studio. On a clean one it is a dead
-# end, so this puts the three in place and nothing else. Idempotent: everything already installed is
+# end, so this puts the four in place and nothing else. Idempotent: everything already installed is
 # left alone, so re-running it costs a few seconds.
 #
 # Extraction is `tar` (bsdtar, in system32 since Windows 10) rather than Expand-Archive, which takes
@@ -54,6 +57,47 @@ function Get-SdkZip($name, $url, $target, $marker) {
 Section "Android SDK bootstrap"
 Write-Host "SDK: $sdk"
 New-Item -ItemType Directory -Force $sdk | Out-Null
+
+Section "JDK 21"
+# Gradle needs a JDK. This machine had Temurin's JRE on PATH, which answers `java -version` perfectly
+# and has no `javac` in it, so the build got 39 seconds in and failed with "No Java compiler found,
+# please ensure you are running Gradle with a JDK" -- an error that never mentions the word JRE.
+#
+# The ZIP build is used rather than the installer: no admin, nothing registered, nothing that can
+# change which `java` the rest of the machine resolves.
+$jdkHome = Join-Path $env:LOCALAPPDATA 'RuneKeep\jdk-21'
+# Step by step, not one array literal: `Split-Path $null` is an ERROR in PS 5.1 and takes the whole
+# expression with it on exactly the machine this is meant to help.
+$jdkFound = New-Object System.Collections.ArrayList
+if ($env:JAVA_HOME) { [void]$jdkFound.Add($env:JAVA_HOME) }
+$javacCmd = Get-Command javac -ErrorAction SilentlyContinue
+if ($javacCmd) { [void]$jdkFound.Add((Split-Path (Split-Path $javacCmd.Source -Parent) -Parent)) }
+$existing = $jdkFound | Where-Object { Test-Path (Join-Path $_ 'bin\javac.exe') } | Select-Object -First 1
+if ($existing) {
+  Write-Host "  a JDK is already here: $existing" -ForegroundColor Green
+} elseif (Test-Path (Join-Path $jdkHome 'bin\javac.exe')) {
+  Write-Host "  JDK 21 already installed at $jdkHome" -ForegroundColor Green
+} else {
+  $jz = Join-Path $env:TEMP 'rk-bs-jdk.zip'
+  $jx = Join-Path $env:TEMP 'rk-bs-jdk-x'
+  Write-Host "  downloading Temurin JDK 21 ..." -ForegroundColor Yellow
+  curl.exe -L --retry 3 -o $jz 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse'
+  if (-not (Test-Path $jz) -or (Get-Item $jz).Length -lt 50MB) { Fail 'JDK download failed' }
+  if (Test-Path $jx) { Remove-Item -Recurse -Force $jx }
+  New-Item -ItemType Directory -Force $jx | Out-Null
+  Write-Host ("  extracting JDK ({0:N0} MB)..." -f ((Get-Item $jz).Length / 1MB))
+  tar.exe -xf $jz -C $jx
+  if ($LASTEXITCODE -ne 0) { Fail 'JDK extract failed' }
+  $inner = Get-ChildItem $jx -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'bin\javac.exe') } | Select-Object -First 1
+  if (-not $inner) { Fail 'JDK extract produced no jdk folder' }
+  if (Test-Path $jdkHome) { Remove-Item -Recurse -Force $jdkHome }
+  New-Item -ItemType Directory -Force (Split-Path $jdkHome -Parent) | Out-Null
+  Move-Item $inner.FullName $jdkHome
+  Remove-Item -Force $jz -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force $jx -ErrorAction SilentlyContinue
+  if (-not (Test-Path (Join-Path $jdkHome 'bin\javac.exe'))) { Fail 'JDK install incomplete (no bin/javac.exe)' }
+  Write-Host "  JDK 21 -> $jdkHome" -ForegroundColor Green
+}
 
 Section "cmdline-tools"
 Get-SdkZip 'cmdline-tools' "$base/commandlinetools-win-11076708_latest.zip" (Join-Path $sdk 'cmdline-tools\latest') 'bin'
