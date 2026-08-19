@@ -31,15 +31,23 @@ jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
+      # No checkout. Moving a branch pointer is one API call, and cloning this repo to do it means
+      # pulling 60 MB of card art on every release to run one line of git that touches none of it.
       - name: Point production at ${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           echo "Promoting ${GITHUB_SHA} (${GITHUB_REF_NAME}) to production."
-          # FORCED on purpose. `production` is a pointer to the last released commit, not a line of
-          # development, so a hotfix released from an older commit has to be able to move it BACK.
-          # A fast-forward-only push would refuse that and the site would silently stay on the
-          # broken build, which is the one failure mode this branch exists to prevent.
-          git push --force origin "${GITHUB_SHA}:refs/heads/production"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/production" >/dev/null 2>&1; then
+            # FORCED on purpose. `production` is a pointer to the last released commit, not a line of
+            # development, so a hotfix released from an older commit has to be able to move it BACK.
+            # Refusing a non-fast-forward would leave the site on the broken build, which is the one
+            # failure mode this branch exists to prevent.
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/production" \
+              -f sha="${GITHUB_SHA}" -F force=true --jq '.object.sha'
+          else
+            # First run on a repo that has no production branch yet.
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref=refs/heads/production -f sha="${GITHUB_SHA}" --jq '.object.sha'
+          fi
