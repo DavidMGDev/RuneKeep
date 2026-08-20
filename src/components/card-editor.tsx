@@ -1131,7 +1131,21 @@ export function CardEditor({
           */}
         {templateMode ? (
           <View style={{ alignItems: 'center', paddingVertical: 14, gap: 10 }}>
-            {renderPreview ? renderPreview(draft) : null}
+            {/**
+              * ON THE CARD'S OWN GROUND (v0.43.2, owner).
+              *
+              * "I don't like that they're on an invisible background. I want them to be on a white
+              * background. Not a full card-sized background, just a rectangle that fits them through
+              * with a little bit of padding on the top and bottom... No padding on the left and
+              * right, because it's a decoration that goes with no padding from left to right."
+              *
+              * So the band is exactly as wide as the ornament and generous above and below it. The
+              * colour is `Rune.sheet`, which is the parchment a real card is drawn on rather than a
+              * flat #FFFFFF, so the gold reads here exactly as it will on the card.
+              */}
+            <View style={{ backgroundColor: Rune.sheet, paddingVertical: 26 }}>
+              {renderPreview ? renderPreview(draft) : null}
+            </View>
             <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>The chip, at its real size</Text>
           </View>
         ) : (
