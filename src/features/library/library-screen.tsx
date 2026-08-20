@@ -286,28 +286,42 @@ const DOMAIN_CARD_TYPES = ['Ability', 'Spell', 'Grimoire'] as const;
  * top of the editor is already drawing the real chip, live, from this very spec, and a second smaller
  * preview beside the controls would be one more thing that can disagree with the card.
  */
-function ChipEditor({ plaque, note, onChange }: {
+function ChipEditor({ plaque, note, fallback, onChange }: {
   plaque: PlaqueSpec | undefined;
   /** One line saying who else wears this chip. */
   note: string;
+  /**
+   * The chip this card wears when the author sets nothing (v0.43.2).
+   *
+   * Passed in rather than assumed, because the editor was telling a lie: the swatches showed a
+   * neutral grey as "Default" while the card itself was drawn in whatever `getPlaqueTheme` gives that
+   * kind of card, which for an invented type is the parchment-and-red generic. What a control says
+   * the default is has to be the default.
+   */
+  fallback: { from: string; to: string; ink: string };
   onChange: (p: PlaqueSpec | undefined) => void;
 }) {
   const [picking, setPicking] = useState<'from' | 'to' | 'text' | null>(null);
   const p = plaque ?? {};
   const set = (patch: Partial<PlaqueSpec>) => onChange({ ...p, ...patch });
-  /** What the word will actually be drawn in: the author's choice, or the derived one. */
-  const ink = plaqueInk(p);
   const inkIsAuto = !p.text;
-  const bandFrom = p.from ?? DEFAULT_FROM;
-  const bandTo = p.to ?? DEFAULT_TO;
-  const unreadable = !inkIsAuto && !inkReads(ink, p.from, p.to);
+  const bandFrom = p.from ?? fallback.from;
+  const bandTo = p.to ?? fallback.to;
+  /**
+   * What the word will actually be drawn in.
+   *
+   * With a band of their own it is derived from that band; with no band at all it is whatever the
+   * card's own kind already uses, so this row matches the preview above it in every case.
+   */
+  const ink = p.text ? plaqueInk(p) : p.from || p.to ? plaqueInk({ from: bandFrom, to: bandTo }) : fallback.ink;
+  const unreadable = !inkIsAuto && !inkReads(ink, bandFrom, bandTo);
   /** One colour, as a swatch big enough to judge. */
   const Swatch = ({ label, value, fallback, onPress }: { label: string; value?: string; fallback: string; onPress: () => void }) => (
     <Pressable onPress={onPress} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`${label}. ${value ? nearestColorName(value) : 'Not set'}`}>
       <ChamferBox chamfer={7} fill="rgba(20,24,31,0.75)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ padding: 8, gap: 6, alignItems: 'center' }}>
         <View style={{ width: '100%', height: 30, borderRadius: 4, backgroundColor: value ?? fallback, opacity: value ? 1 : 0.45, borderWidth: 1, borderColor: 'rgba(0,0,0,0.45)' }} />
         <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.bold }}>{label}</Text>
-        <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 9, fontFamily: Body.regular }}>{value ? nearestColorName(value) : 'Default'}</Text>
+        <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 9, fontFamily: Body.regular }}>{value ? nearestColorName(value) : `Default, ${nearestColorName(fallback)}`}</Text>
       </ChamferBox>
     </Pressable>
   );
@@ -319,8 +333,8 @@ function ChipEditor({ plaque, note, onChange }: {
       {/* THE BAND: two stops, side by side and large enough to actually judge against each other. */}
       <Text style={smallLabel}>The band</Text>
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <Swatch label="Left" value={p.from} fallback={DEFAULT_FROM} onPress={() => { playSfx('buttonTap'); setPicking('from'); }} />
-        <Swatch label="Right" value={p.to} fallback={DEFAULT_TO} onPress={() => { playSfx('buttonTap'); setPicking('to'); }} />
+        <Swatch label="Left" value={p.from} fallback={fallback.from} onPress={() => { playSfx('buttonTap'); setPicking('from'); }} />
+        <Swatch label="Right" value={p.to} fallback={fallback.to} onPress={() => { playSfx('buttonTap'); setPicking('to'); }} />
       </View>
 
       {/**
@@ -456,7 +470,16 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
         : t === 'class'
           ? 'This class hands this chip to its info cards, its features and its subclasses.'
           : 'This card only. Leave it alone and it wears its class, domain or type\u2019s chip.';
-  const chip = <ChipEditor plaque={config.plaque} note={chipNote} onChange={(plaque) => set({ plaque })} />;
+  /** The theme this card's chip falls back to, which is what the bundled palette gives its kind. */
+  const fallbackTheme = getPlaqueTheme(card.title.trim() || CONTENT_TYPE_LABEL[t]);
+  const chipFallback = {
+    from: fallbackTheme.gradientStops?.[0]?.color ?? fallbackTheme.solidColor ?? DEFAULT_FROM,
+    to: fallbackTheme.gradientStops?.[1]?.color ?? fallbackTheme.solidColor ?? DEFAULT_TO,
+    ink: fallbackTheme.textColor,
+  };
+  const chip = <ChipEditor plaque={config.plaque} note={chipNote} fallback={chipFallback} onChange={(plaque) => set({ plaque })} />;
+  /** Opens already on for a card that has one, so a chip set last time is not hidden behind a switch. */
+  const [showChip, setShowChip] = useState(plaqueIsSet(config.plaque));
   return (
     <View style={{ gap: 8 }}>
       {/**
@@ -774,11 +797,38 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
         * card disagreeing with its set. Both are the same three controls, so there is one place to
         * look for them. See `lib/card-plaque`.
         */}
-      {/* Weapons and armor draw their own stat-block cards, whose plaque is part of that layout
-          rather than a word an author chose, so there is nothing here for a chip to change. A
-          TEMPLATE already showed it at the top, where it belongs. */}
+      {/**
+        * ON AN ORDINARY CARD THE CHIP IS OPT-IN (v0.43.2, owner).
+        *
+        * "On any regular card type, the configuration of the chip should be first in a checkbox.
+        * Until I hit that checkbox to customize the chip, I should not get the option to customize
+        * the chip, because the customization for the chip is very distracting and looks like it's too
+        * important."
+        *
+        * Exactly so: on a domain card or an item the chip is a detail, and three colour controls sat
+        * below the fields that actually matter shouting for attention. It opens already on for a card
+        * that HAS a custom chip, so nobody has to hunt for the one they set last time.
+        *
+        * Weapons and armor draw their own stat-block cards, whose plaque is part of that layout
+        * rather than a word an author chose, so they are not offered it at all. A TEMPLATE showed it
+        * at the top, where it belongs, because there it is the whole point of the screen.
+        */}
       {template || t === 'weapon' || t === 'armor' ? null : (
-        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>{chip}</View>
+        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10, gap: 8 }}>
+          <SwitchRow
+            label="Give this card its own chip"
+            hint="Left off, it wears the chip of its class, its domain or its type."
+            on={showChip}
+            onToggle={() => {
+              const next = !showChip;
+              setShowChip(next);
+              // Turning it off puts the card back on its set's chip rather than leaving a hidden one
+              // applied, which would be a setting nobody can see and nobody can undo.
+              if (!next) set({ plaque: undefined });
+            }}
+          />
+          {showChip ? chip : null}
+        </View>
       )}
     </View>
   );

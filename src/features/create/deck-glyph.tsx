@@ -5,6 +5,27 @@ import { type DeckKey } from './create-types';
 /** The per-deck nav glyph: a small hand-drawn SVG icon for each creation step. */
 export function DeckGlyph({ deck, color }: { deck: DeckKey; color: string }) {
   const s = { fill: 'none', stroke: color, strokeWidth: 1.8, strokeLinejoin: 'miter' as const };
+  /**
+   * A CUSTOM STEP, from a type an expansion invented (v0.43.2, owner).
+   *
+   * "The step that I created by creating a type card has no logo... It's compressed and it's not the
+   * same size as the rest of the steps, breaking the UI."
+   *
+   * Exactly the failure the `carry`/`level` comment below describes: the switch had no arm for these
+   * keys, so it returned nothing and the tab collapsed to a squashed box with a label and no 20dp
+   * icon above it, next to nine tabs that had one.
+   *
+   * The mark is a CARD WITH ITS CHIP ACROSS IT, because that is what a type is: a kind of card,
+   * defined by the chip its cards wear. It reads as its own thing beside the hexagons and the sword.
+   */
+  if (deck.startsWith('custom:')) {
+    return (
+      <Svg width={20} height={20} viewBox="0 0 22 22">
+        <Rect x={4} y={2} width={14} height={18} rx={1.5} {...s} />
+        <Rect x={2.5} y={9} width={17} height={4} rx={1} fill={color} stroke="none" />
+      </Svg>
+    );
+  }
   switch (deck) {
     // v0.36.1: the three characterize-only steps had no glyph at all, so their tabs collapsed to a
     // squashed box with nothing above the label while every other tab held a 20dp icon.

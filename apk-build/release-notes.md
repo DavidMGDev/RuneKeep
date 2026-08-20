@@ -1,33 +1,21 @@
-RuneKeep v0.43.1 - A template stops pretending to be a card.
+RuneKeep v0.43.2 - The expansion editor stops throwing you out.
 
-WHAT A CLASS, A DOMAIN AND A TYPE ACTUALLY ARE
+THE BIG ONE
 
-- THESE THREE START SYSTEMS AND NOBODY EVER HOLDS ONE. Making one no longer shows you a whole card, which was the most confusing thing about it: the editor looked exactly like the editor for the thing you were being told you were not making.
-- THE PREVIEW IS THE CHIP, at the size the card really draws it, with its gold seam ornament and nothing else.
-- THE CHIP IS THE FIRST THING YOU SET, at the top, because on a template it is very nearly the only thing there is to set.
-- THE NAME IS THE CHIP. One field, and the chip says what you typed.
-- GONE FROM THESE THREE: the picture, the background colour, the whole-card-image option, the body, the sections and the modifiers. None of them meant anything on a card nobody holds.
-- IN THE PACK GALLERY THEY ARE STILL REAL CARDS, marked with a hatch across the face and a band at the foot that says so. At thumbnail size the ones that start systems are the ones with texture on them.
-- THEY ARE NOT IN THE CARD ARCHIVE OR IN ADD GEAR any more, because a player cannot hold one.
-- SUBCLASSES ARE NOT IN THIS GROUP. A subclass is a card, written one card at a time, and it is unchanged.
+- ADDING OR EDITING A CARD NO LONGER KICKS YOU BACK TO THE PACK LIST. This was my fault and it was in v0.43.1. The back guard added in that release tidied up after itself by stepping back through the browser's history, and guards hand over: the library screen stands its guard down at the exact moment the card editor raises one. Standing down ran the tidy-up, the tidy-up was a real navigation, and so OPENING A CARD POPPED THE PAGE. Every time, on the web, for every kind of card.
+- The guard cannot navigate at all any more. It is not that it is more careful; the thing that moves you is no longer reachable from that code.
+- BACK NOW ASKS BEFORE IT THROWS AWAY A DRAFT, which is what it was supposed to do in the first place. It also closes what is open first: the dialog you can see, then the expansion, then the screen.
+- Verified in a real browser this time, not by reasoning: open a card, edit it, press the browser's Back, get asked, keep writing, save, reopen. That check is why the second bug below was found too.
 
-CLASS INFO CARDS
+CUSTOM STEPS LOOK LIKE STEPS
 
-- A CLASS IS NOW TWO THINGS: the class card, which declares it, and CLASS INFO CARDS, which are the pages a player reads. Write as many as the class needs.
-- THE FIRST INFO CARD DECIDES THE LOOK OF THE REST. Give it a banner and a colour and every info card after it inherits both, which is what was broken: the look was being read off the class card, which no longer has one, so the second page inherited nothing.
-- OLD PACKS ARE ADAPTED AUTOMATICALLY, when you open them and when you import them. A class card written the old way, carrying a banner and prose, is split in two: the class keeps its name, chip and numbers, and a new info card takes the banner, the colour and everything written on it. Nothing is discarded, and it happens once.
+- A STEP FROM ONE OF YOUR TYPES HAS AN ICON. It had none, so its tab collapsed to a squashed box with a label and nothing above it, beside nine tabs holding a proper glyph. The mark is a card with its chip across it, which is what a type is.
+- ITS TEXT IS TYPESET. The line you write for the step was plain unstyled text in the middle of a screen where everything else is a gold seam or an uppercase counter. It now reads as the step's own heading, your sentence, and the count.
 
 THE CHIP EDITOR
 
-- THE WORD COLOURS ITSELF. Leave it alone and it is worked out from the band and changes when the band changes. It is a tint of your own colours rather than flat white or flat black, so a crimson chip gets warm bone and a sage one gets cool.
-- CHOOSE ONE YOURSELF AND IT STAYS, and an Auto button beside it hands the decision back without touching your gradient.
-- IT SAYS WHEN A WORD WILL NOT READ against the band you put it on.
-- THE TWO BAND COLOURS ARE SIDE BY SIDE and large enough to judge against each other, each naming its own colour.
-- BACK TO THE DEFAULT CHIP IS A SMALL LINK at the bottom. It undoes everything above it and used to be the biggest control on screen.
-
-BACK NO LONGER THROWS AWAY YOUR WORK
-
-- IN A BROWSER, BACK ASKS FIRST. Pressing Back, swiping back, Alt+Left or the mouse's side button while writing a card used to leave the library entirely and take the draft with it. The guard existed and did nothing on the web: it was listening for Android's hardware key only.
-- BACK CLOSES WHAT IS OPEN, then the expansion, then the screen. A pop-up mid-flow, or a whole expansion you had open, is what Back closes now, instead of the route.
+- ON AN ORDINARY CARD THE CHIP IS BEHIND A SWITCH, and off by default. On a domain card or an item it is a detail, and three colour controls were shouting over the fields that matter. It opens already on for a card that has one.
+- ON A CLASS, A DOMAIN OR A TYPE the chip and its gold ornament now sit on the card's own parchment, at the ornament's exact width with room above and below, instead of floating on nothing.
+- THE EDITOR NOW TELLS THE TRUTH ABOUT THE DEFAULT. The swatches said the default band was a neutral grey while the card was drawn in the parchment its kind actually uses. They name the real colour now, and the word row shows the word exactly as the card will.
 
 Sideload: enable Install unknown apps, then open the APK.

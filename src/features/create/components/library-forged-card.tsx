@@ -20,7 +20,7 @@ import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
 import { isTemplateCard, resolvedPlaque } from '@/lib/card-plaque';
 import { plaqueThemeOf } from './card-divider';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
-import { type ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import { Text, View } from 'react-native';
 import Svg, { Defs, Line, Pattern, Rect } from 'react-native-svg';
 
@@ -77,15 +77,24 @@ export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
  * gallery of thirty cards the three that start systems are the three with texture on them.
  */
 function SystemCardMark({ label }: { label: string }) {
+  /**
+   * A UNIQUE id per instance, which on the web is not optional.
+   *
+   * Every inline `<svg>` on a page shares ONE document, so a hard-coded pattern id means the second
+   * card of this kind on screen references the first one's pattern. This project has already been
+   * bitten by exactly that: v0.24.3 shipped every class banner painted with the wrong gradient
+   * because SVGO minified ids per file and they all collided (see `docs/web-deploy.md`).
+   */
+  const patternId = `rk-system-hatch-${useId()}`;
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} pointerEvents="none">
       <Svg width="100%" height="100%">
         <Defs>
-          <Pattern id="rk-system-hatch" patternUnits="userSpaceOnUse" width={10} height={10}>
+          <Pattern id={patternId} patternUnits="userSpaceOnUse" width={10} height={10}>
             <Line x1={0} y1={10} x2={10} y2={0} stroke="#0B0E13" strokeWidth={1.4} strokeOpacity={0.16} />
           </Pattern>
         </Defs>
-        <Rect x={0} y={0} width="100%" height="100%" fill="url(#rk-system-hatch)" />
+        <Rect x={0} y={0} width="100%" height="100%" fill={`url(#${patternId})`} />
       </Svg>
       {/* The band sits at the foot, where a normal card has its watermark and nothing else. */}
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(11,14,19,0.86)', paddingVertical: 3, alignItems: 'center' }}>

@@ -2177,11 +2177,22 @@ export function CreateScreen() {
             const st = customStepList.find((x) => x.key === deck);
             if (!st) return null;
             const chosen = draft.customPicks?.[st.typeId]?.length ?? 0;
+            /**
+             * v0.43.2 (owner): "it's literally just default text. It has no styling whatsoever."
+             *
+             * It was two bare `Text` nodes in the middle of a screen where every other label is a
+             * gold-hairline seam or an uppercase counter. So the author's own line is now typeset the
+             * way the rest of creation is: the step's name as a `SectionDivider`, their sentence
+             * under it, and the count as the same uppercase gold the other steps use for progress.
+             */
             return (
-              <View style={{ paddingHorizontal: 18, marginTop: 4, gap: 2 }}>
-                {st.hint ? <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, textAlign: 'center', lineHeight: 15 }}>{st.hint}</Text> : null}
-                <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', textAlign: 'center' }}>
-                  {`Pick ${st.pick}, ${chosen} chosen`}
+              <View style={{ paddingHorizontal: 18, marginTop: 6, gap: 6 }}>
+                <SectionDivider label={st.label} />
+                {st.hint ? (
+                  <Text style={{ color: Rune.sheet, fontSize: 12, fontFamily: Body.medium, textAlign: 'center', lineHeight: 16.5 }}>{st.hint}</Text>
+                ) : null}
+                <Text style={{ color: chosen >= st.pick ? Rune.goldBright : Rune.goldText, fontSize: 9.5, fontFamily: Body.bold, letterSpacing: 1.6, textTransform: 'uppercase', textAlign: 'center' }}>
+                  {st.pick === 1 ? (chosen ? 'Chosen' : 'Choose one') : `${chosen} of ${st.pick} chosen`}
                 </Text>
               </View>
             );
