@@ -108,19 +108,20 @@ export function formMarkdown(f: CardFormFacts): string {
        */
       return f.classSpec?.role === 'page' ? '' : (f.classSpec?.summary ?? '').trim();
     /**
-     * A TEMPLATE'S BODY (v0.43.0, owner).
+     * A TEMPLATE PRINTS NO PROSE (v0.43.1, owner).
      *
-     * "In that text area, I need you to make it very clear that this is not a customizable area. This
-     * is just a card template; it's not an individual card that's being created, it's a system that's
-     * being started."
+     * v0.43.0 had these cards explain themselves in their own body: "A kind of card this pack adds.
+     * Its cards are the cards that name it." The owner on reading it: "that copy is very confusing".
+     * It is the app narrating its own data model onto a card, and it told an author nothing they could
+     * act on.
      *
-     * So the card says so, on the card, everywhere the card is drawn, rather than the editor saying
-     * it once and the shipped card looking like an empty card of the ordinary kind.
+     * What tells them the card is different is now VISUAL and it is on the card itself: the system
+     * hatch and its band (see `library-forged-card`). A sentence competing with that would be saying
+     * the same thing twice, worse.
      */
     case 'customDomain':
-      return 'A domain this pack adds. Its cards are the cards that name it.';
     case 'type':
-      return 'A kind of card this pack adds. Its cards are the cards that name it.';
+      return '';
     default:
       return '';
   }

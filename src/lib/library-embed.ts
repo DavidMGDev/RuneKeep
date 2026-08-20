@@ -8,7 +8,7 @@
  * circuits on an empty/absent store. This is the ONE module the sheet resolver + creation forge share.
  */
 import type { CharacterFile } from './character-file';
-import { plaqueLabelFor } from './card-plaque';
+import { isTemplateCard, plaqueLabelFor } from './card-plaque';
 import { CONTENT_TYPE_LABEL, type ArmorSpec, type LibraryCard } from './library';
 import type { CardEffect } from './modifiers';
 
@@ -17,13 +17,15 @@ export function libraryCardById(file: CharacterFile | undefined, id: string): Li
 }
 
 /**
- * What a TYPE card's own chip says when nobody has named it: its name, not the word "Type".
+ * What a TEMPLATE'S own chip says when nobody has named it: the thing it declares.
  *
- * A type card is a template that declares a kind, and the chip it previews is the chip its cards will
- * wear, so it should be showing that chip rather than a label about templates.
+ * v0.43.1, owner: "the title and chip will be shared, so whatever the class is called, the chip will
+ * read [that]". A class named Shaman shows SHAMAN on the chip the author is designing, a domain shows
+ * its own name, and a type shows its kind, rather than all three showing the word for what sort of
+ * template they are. Every other card still says what KIND of card it is.
  */
 const defaultKindLabel = (lc: LibraryCard): string =>
-  lc.contentType === 'type' ? lc.title.trim() || CONTENT_TYPE_LABEL.type : CONTENT_TYPE_LABEL[lc.contentType];
+  isTemplateCard(lc) ? lc.title.trim() || CONTENT_TYPE_LABEL[lc.contentType] : CONTENT_TYPE_LABEL[lc.contentType];
 
 /**
  * The plaque label for an embedded card.

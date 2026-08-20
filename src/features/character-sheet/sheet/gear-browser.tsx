@@ -206,7 +206,13 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, itemsOnly, onAdd
   const recordDomains = useMemo(() => records.filter((c) => c.contentType === 'domain'), [records]);
   const recordCommunities = useMemo(() => records.filter((c) => c.contentType === 'community'), [records]);
   const recordSubclasses = useMemo(() => records.filter((c) => c.contentType === 'subclass'), [records]);
-  const recordClasses = useMemo(() => records.filter((c) => c.contentType === 'class'), [records]);
+  /**
+   * v0.43.1: CLASS INFO CARDS, not class templates.
+   *
+   * A class card declares the class and nobody ever holds one, so offering it here handed a player a
+   * card with a name and no content. The pages are what a class actually is to a player.
+   */
+  const recordClasses = useMemo(() => records.filter((c) => c.contentType === 'class' && c.classSpec?.role === 'page'), [records]);
   const domains = useMemo(() => [...new Set([...allowed.filter((c) => c.kind === 'domain' && c.domain).map((c) => c.domain!), ...(recordDomains.map((c) => c.domain).filter(Boolean) as string[])])], [allowed, recordDomains]);
   /** An invented kind's cards are real forged cards, so they browse in the carousel, not as a list. */
   const isCardKind = (CARD_KINDS as string[]).includes(cat) || isTypeCat(cat);

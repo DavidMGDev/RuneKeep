@@ -41,16 +41,43 @@ const BUILTIN = new Map(CLASSES.map((c) => [classKeyOf(c.label), c]));
 /**
  * The identity of the class this card names.
  *
- * A homebrew class's own base card wins; a published class falls back to its bundled colour, which is
- * what makes a page written for the Bard look like the Bard without the author choosing anything.
- * Returns nothing for a card that names no class, which is most cards.
+ * A homebrew class's own cards win; a published class falls back to its bundled colour, which is what
+ * makes a class info card written for the Bard look like the Bard without the author choosing
+ * anything. Returns nothing for a card that names no class, which is most cards.
+ *
+ * ## Where the PAINT comes from (v0.43.1, owner)
+ *
+ * The FIRST CLASS INFO CARD, not the class card.
+ *
+ * "If I create a new class called Shaman, that new class is a card that no one will ever have... If I
+ * want to actually populate a class with information, then I create a class info card. And if I
+ * populate that Shaman class info card, the first one, with a banner... whenever I create the second
+ * class info card, then it copies the style from class info number one."
+ *
+ * The class card is a TEMPLATE now: a name and a chip, and nothing a player ever holds, so it has no
+ * banner and no background to give anybody. Reading the paint off it meant every class authored the
+ * new way handed down nothing at all, which is the owner's "it doesn't actually copy the style
+ * completely". The base is still where the NAME and the chip live, because those are the class
+ * itself rather than one page of it.
+ *
+ * It falls back to the base card's own paint for a pack written the OLD way, where the class card WAS
+ * the first info card and carried the banner. See `lib/expansion-migrate`.
  */
 export function classIdentityFor(cards: LibraryCard[] | undefined, className: string | undefined): ClassIdentity | undefined {
   const key = classKeyOf(className);
   if (!key) return undefined;
-  const base = (cards ?? []).find((c) => c.contentType === 'class' && c.classSpec?.role !== 'page' && classKeyOf(c.title) === key);
-  if (base) {
-    return { title: base.title.trim(), color: base.color, imageUri: base.imageUri, key: undefined };
+  const all = cards ?? [];
+  const base = all.find((c) => c.contentType === 'class' && c.classSpec?.role !== 'page' && classKeyOf(c.title) === key);
+  // Authoring order, which is array order: the first info card written for this class is the one
+  // whose look the rest of them take.
+  const firstInfo = all.find((c) => c.contentType === 'class' && c.classSpec?.role === 'page' && classKeyOf(c.className) === key);
+  if (base || firstInfo) {
+    return {
+      title: (base?.title ?? firstInfo?.className ?? '').trim(),
+      color: firstInfo?.color ?? base?.color ?? null,
+      imageUri: firstInfo?.imageUri ?? base?.imageUri ?? null,
+      key: undefined,
+    };
   }
   const builtin = BUILTIN.get(key);
   if (builtin) return { title: builtin.label, color: classColor(builtin.key).deep, imageUri: null, key: builtin.key };

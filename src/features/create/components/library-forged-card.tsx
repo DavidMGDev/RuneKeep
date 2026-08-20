@@ -17,18 +17,20 @@ import { VOID_ANCESTRY_FACE } from '@/data/void-ancestries';
 import { authoredSections } from '@/lib/card-form';
 import { composeSections } from '@/lib/card-markdown';
 import { libraryCardBody, libraryCardKindLabel } from '@/lib/library-embed';
-import { resolvedPlaque } from '@/lib/card-plaque';
+import { isTemplateCard, resolvedPlaque } from '@/lib/card-plaque';
 import { plaqueThemeOf } from './card-divider';
 import { SUBCLASS_TIER_LABEL, type LibraryCard } from '@/lib/library';
-import { View } from 'react-native';
+import { type ReactNode } from 'react';
+import { Text, View } from 'react-native';
+import Svg, { Defs, Line, Pattern, Rect } from 'react-native-svg';
 
 import { CardFunctionControl, functionHeight } from '@/components/card-function-control';
 import { blocksOf, isSpacer, migrateBlocks } from '@/lib/card-blocks';
 import type { FunctionState } from '@/lib/card-functions';
 import type { EffectFormula } from '@/lib/modifiers';
-import { Rune } from '@/constants/theme';
+import { Body, Rune } from '@/constants/theme';
 
-import { type BodyBlock, ForgedArmorCard, ForgedCard, ForgedFaceCard, ForgedLootCard, ForgedWeaponCard } from './forged-card';
+import { type BodyBlock, ForgedArmorCard, ForgedCard, ForgedFaceCard, FORGED_H, ForgedLootCard, FORGED_W, ForgedWeaponCard } from './forged-card';
 
 /**
  * The equipment cards print ONE feature line. Homebrew keeps it in the body as `**Name:** text`
@@ -56,6 +58,59 @@ function specFeature(text: string): { name: string; text: string } | undefined {
  *  bake it into the art). Only subclass content carries one. */
 export function libraryCardSubtitle(lc: LibraryCard): string | undefined {
   return lc.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[lc.tier ?? 1] : undefined;
+}
+
+/**
+ * THIS CARD STARTS A SYSTEM (v0.43.1, owner).
+ *
+ * "I just want a good indicator that this card is different from the rest. So yeah, maybe even an SVG
+ * that just has a different pattern on top of the card, to make it look different from all the other
+ * cards. Creating a class, creating a type, or creating a domain should have a distinction for it to
+ * not be so confusing, since this is a very different card and the players will not have this in
+ * their hand."
+ *
+ * A diagonal hatch across the whole face and one band across the foot. Drawn OVER the card rather
+ * than replacing any of it, so the author still sees the real thing, and at low opacity so it reads
+ * as a watermark rather than as damage.
+ *
+ * The hatch is what carries the meaning at thumbnail size, where the band's words are illegible: in a
+ * gallery of thirty cards the three that start systems are the three with texture on them.
+ */
+function SystemCardMark({ label }: { label: string }) {
+  return (
+    <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} pointerEvents="none">
+      <Svg width="100%" height="100%">
+        <Defs>
+          <Pattern id="rk-system-hatch" patternUnits="userSpaceOnUse" width={10} height={10}>
+            <Line x1={0} y1={10} x2={10} y2={0} stroke="#0B0E13" strokeWidth={1.4} strokeOpacity={0.16} />
+          </Pattern>
+        </Defs>
+        <Rect x={0} y={0} width="100%" height="100%" fill="url(#rk-system-hatch)" />
+      </Svg>
+      {/* The band sits at the foot, where a normal card has its watermark and nothing else. */}
+      <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(11,14,19,0.86)', paddingVertical: 3, alignItems: 'center' }}>
+        <Text allowFontScaling={false} numberOfLines={1} style={{ color: Rune.goldText, fontSize: 6.5, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+          {label}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A card, with the system mark over it when it IS one.
+ *
+ * A plain pass-through for every ordinary card, so the overwhelming majority of cards gain nothing
+ * but one component in the tree, and the two drawing paths below stay identical to each other.
+ */
+function Marked({ card, children }: { card: LibraryCard; children: ReactNode }) {
+  if (!isTemplateCard(card)) return <>{children}</>;
+  return (
+    <View style={{ width: FORGED_W, height: FORGED_H }}>
+      {children}
+      <SystemCardMark label="Starts a system - players never hold this" />
+    </View>
+  );
 }
 
 export function LibraryForgedCard({ card, pack, struckIndex, functionStates, onFunction, variableValue, pageMark }: {
@@ -172,19 +227,21 @@ export function LibraryForgedCard({ card, pack, struckIndex, functionStates, onF
   const hasSpacers = blocks.some((x) => isSpacer(x.section));
   if (!hasFunctions && !hasAlignment && !hasSpacers) {
     return (
-      <ForgedCard
-        title={card.title}
-        kindLabel={kindLabel}
-        plaqueTheme={plaqueTheme}
-        subtitle={libraryCardSubtitle(card)}
-        body={libraryCardBody(card, struckIndex)}
-        accentDeep={Rune.panel}
-        imageUri={card.imageUri}
-        colorArt={card.color}
-        pageMark={pageMark}
-        bannerArt={card.contentType === 'class'}
-        multilineTitle
-      />
+      <Marked card={card}>
+        <ForgedCard
+          title={card.title}
+          kindLabel={kindLabel}
+          plaqueTheme={plaqueTheme}
+          subtitle={libraryCardSubtitle(card)}
+          body={libraryCardBody(card, struckIndex)}
+          accentDeep={Rune.panel}
+          imageUri={card.imageUri}
+          colorArt={card.color}
+          pageMark={pageMark}
+          bannerArt={card.contentType === 'class'}
+          multilineTitle
+        />
+      </Marked>
     );
   }
   const bodyBlocks: BodyBlock[] = blocks.map((x, i) =>
@@ -206,6 +263,7 @@ export function LibraryForgedCard({ card, pack, struckIndex, functionStates, onF
         : { key: `s${i}`, text: sectionMarkdown(x.section, i === struckIndex), align: x.section.align },
   );
   return (
+    <Marked card={card}>
     <ForgedCard
       title={card.title}
       kindLabel={kindLabel}
@@ -221,6 +279,7 @@ export function LibraryForgedCard({ card, pack, struckIndex, functionStates, onF
       bannerArt={card.contentType === 'class'}
       multilineTitle
     />
+    </Marked>
   );
 }
 

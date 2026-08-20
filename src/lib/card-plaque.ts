@@ -24,9 +24,15 @@
 import { classKeyOf } from './custom-class';
 import type { LibraryCard, PlaqueSpec } from './library';
 
-/** Whether this card is a TEMPLATE: a declaration of a set rather than a card anybody holds. */
-export const isTemplateCard = (c: Pick<LibraryCard, 'contentType'>): boolean =>
-  c.contentType === 'class' || c.contentType === 'customDomain' || c.contentType === 'type';
+/**
+ * Whether this card is a TEMPLATE: a declaration of a set rather than a card anybody holds.
+ *
+ * v0.43.1: a class INFO CARD is not one. It shares `contentType: 'class'` with the card that declares
+ * the class, and it is the page a player actually reads, so the two are told apart by `classSpec.role`
+ * exactly as `lib/custom-class-pages` tells them apart.
+ */
+export const isTemplateCard = (c: Pick<LibraryCard, 'contentType' | 'classSpec'>): boolean =>
+  (c.contentType === 'class' && c.classSpec?.role !== 'page') || c.contentType === 'customDomain' || c.contentType === 'type';
 
 const norm = (s: string | undefined): string => (s ?? '').trim().toLowerCase();
 

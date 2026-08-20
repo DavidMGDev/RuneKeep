@@ -4,6 +4,7 @@ import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import CardDividerSvg from '../../../../assets/art/cardElements/CardDivider.svg';
 import { type ClassName } from '@/constants/identity';
+import { plaqueInk } from '@/lib/plaque-ink';
 
 // Source geometry: divider viewBox 1979x151; the inner mask plaque is 1321x192 and, centered on
 // the divider (owner: grow ~3px left / ~1px up at source scale), cuts the divider's center
@@ -149,9 +150,11 @@ const KIND_THEMES: Record<string, PlaqueTheme> = {
  */
 export function plaqueThemeOf(spec: { from?: string; to?: string; text?: string } | undefined): PlaqueTheme | undefined {
   if (!spec) return undefined;
-  const { from, to, text } = spec;
+  const { from, to } = spec;
   if (!from && !to) return undefined;
-  const textColor = text || '#FAF8F2';
+  // v0.43.1: the word's colour is the author's when they set one, and derived from the band when they
+  // did not. It was a flat ivory, which vanished on any pale gradient. See `lib/plaque-ink`.
+  const textColor = plaqueInk(spec);
   if (from && to) return { gradientStops: [{ offset: '0%', color: from }, { offset: '100%', color: to }], textColor };
   return { solidColor: (from || to)!, textColor };
 }

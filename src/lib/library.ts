@@ -533,6 +533,14 @@ export function dedupeCards(cards: LibraryCard[]): LibraryCard[] {
   });
 }
 
+/**
+ * v0.43.1: a pack arriving from someone else is adapted at the same moment it is validated.
+ *
+ * "When you import an expansion on an updated device... I need you to adapt them so that they work
+ * flawlessly." An import is the one path where the pack has never been read by this app before, so
+ * doing it anywhere later would mean a freshly imported pack behaving differently from an installed
+ * one for exactly one screen. Imported at call time to keep the module graph acyclic.
+ */
 export function validateExpansion(o: unknown): Expansion {
   if (!o || typeof o !== 'object') throw new Error('Not an expansion');
   const e = o as Record<string, unknown>;
@@ -542,6 +550,8 @@ export function validateExpansion(o: unknown): Expansion {
   // v0.42.7: DEDUPED on the way in, so an older pack carrying a repeated id stops drawing one card
   // twice and deleting it once. See `dedupeCards`.
   const cards: LibraryCard[] = dedupeCards((e.cards as unknown[]).map((raw, i) => normalizeLibraryCard(raw, i)));
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { migrateCards } = require('./expansion-migrate') as typeof import('./expansion-migrate');
   return {
     id: e.id,
     name: e.name,
@@ -549,7 +559,7 @@ export function validateExpansion(o: unknown): Expansion {
     description: typeof e.description === 'string' ? e.description : '',
     version: typeof e.version === 'number' && e.version > 0 ? Math.floor(e.version) : 1,
     createdAt: typeof e.createdAt === 'string' ? e.createdAt : new Date(0).toISOString(),
-    cards,
+    cards: migrateCards(cards),
     enabled: typeof e.enabled === 'boolean' ? e.enabled : undefined,
   };
 }

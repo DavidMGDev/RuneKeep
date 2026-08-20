@@ -28,16 +28,15 @@ describe('what the detail form writes onto a card', () => {
   });
 
   /**
-   * v0.43.0 (owner): a TEMPLATE's body says what it starts.
+   * v0.43.1 (owner): a TEMPLATE prints NO prose.
    *
-   * "In that text area, I need you to make it very clear that this is not a customizable area. This
-   * is just a card template; it's not an individual card that's being created, it's a system that's
-   * being started." A class is the exception only in wording: its body is its own summary, which is
-   * the introduction the class form already asks for and which used to go nowhere.
+   * v0.43.0 had these cards explain themselves in their own body. The owner on reading it: "that copy
+   * is very confusing". What marks the card as different is visual and on the card itself now (the
+   * system hatch and its band), so a sentence saying the same thing would be saying it twice, worse.
    */
-  it('says what a domain and a type start, on the card', () => {
-    expect(formMarkdown({ contentType: 'customDomain' })).toBe('A domain this pack adds. Its cards are the cards that name it.');
-    expect(formMarkdown({ contentType: 'type' })).toBe('A kind of card this pack adds. Its cards are the cards that name it.');
+  it('writes nothing onto a domain or a type, because the card itself says it', () => {
+    expect(formMarkdown({ contentType: 'customDomain' })).toBe('');
+    expect(formMarkdown({ contentType: 'type' })).toBe('');
   });
 
   it('gives a base class card its summary as its body, and a page nothing at all', () => {
