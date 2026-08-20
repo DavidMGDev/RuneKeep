@@ -55,7 +55,17 @@ describe('assembleClass', () => {
   it('puts the base first and its pages after, in authored order', () => {
     const cards = [base('Warden'), page('p1', 'Warden'), page('p2', 'Warden')];
     const a = assembleClass(cards, cards[0]);
-    expect(a.faces.map((f) => f.id)).toEqual(['base-Warden', 'p1', 'p2']);
+    /**
+     * v0.43.1: the CLASS CARD IS NOT A FACE. It is a template that declares the class, not a page
+     * anybody reads, and putting it in the deck put a card with a name and no content at the front
+     * of every homebrew class.
+     */
+    expect(a.faces.map((f) => f.id)).toEqual(['p1', 'p2']);
+  });
+
+  it('shows the class card only when the class has no info cards yet', () => {
+    const cards = [base('Warden')];
+    expect(assembleClass(cards, cards[0]).faces.map((f) => f.id)).toEqual(['base-Warden']);
   });
 
   it('matches the class however the author capitalised it', () => {

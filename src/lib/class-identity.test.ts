@@ -28,9 +28,34 @@ describe('classIdentityFor', () => {
     expect(id.key).toBe('bard');
   });
 
-  it('ignores a PAGE when looking for the class, because a page is not the class', () => {
-    const pages = [card({ contentType: 'class', title: 'Not the base', className: 'Warden', classSpec: { role: 'page' } as never })];
-    expect(classIdentityFor(pages, 'Warden')?.color).toBeUndefined();
+  /**
+   * v0.43.1: the class card is a chip-only TEMPLATE with no banner and no background, so the paint
+   * has to come from the first class info card or every class authored the new way hands down
+   * nothing. The NAME still comes from the class card, because that is the class itself.
+   */
+  it('takes the paint from the FIRST class info card', () => {
+    const cards = [
+      card({ contentType: 'class', title: 'Warden' }),
+      card({ contentType: 'class', title: 'ignored', className: 'Warden', color: '#123456', imageUri: 'banner.png', classSpec: { role: 'page' } as never }),
+      card({ contentType: 'class', title: 'ignored too', className: 'Warden', color: '#999999', imageUri: 'other.png', classSpec: { role: 'page' } as never }),
+    ];
+    const id = classIdentityFor(cards, 'Warden')!;
+    expect(id.title).toBe('Warden');
+    expect(id.color).toBe('#123456');
+    expect(id.imageUri).toBe('banner.png');
+  });
+
+  /** A pack written the OLD way, where the class card WAS the first info card and carried the art. */
+  it('falls back to the class card own paint when no info card has any', () => {
+    const cards = [card({ contentType: 'class', title: 'Warden', color: '#abcdef', imageUri: 'old.png' })];
+    const id = classIdentityFor(cards, 'Warden')!;
+    expect(id.color).toBe('#abcdef');
+    expect(id.imageUri).toBe('old.png');
+  });
+
+  it('still names the class from an info card when the class card is missing', () => {
+    const orphan = [card({ contentType: 'class', title: 'A page', className: 'Warden', color: '#222222', classSpec: { role: 'page' } as never })];
+    expect(classIdentityFor(orphan, 'Warden')?.color).toBe('#222222');
   });
 
   it('says nothing about a card that names no class', () => {

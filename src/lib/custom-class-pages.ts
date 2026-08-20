@@ -27,10 +27,15 @@
 import { classKeyOf } from './custom-class';
 import type { LibraryCard } from './library';
 
-/** Whether this card is the FIRST page of a homebrew class: the one everything else points at. */
+/**
+ * Whether this card IS the class: the template everything else points at (v0.43.1).
+ *
+ * A name and a chip, and nothing else. No player ever holds one, which is why it is not among the
+ * faces below.
+ */
 export const isClassBase = (c: LibraryCard): boolean => c.contentType === 'class' && c.classSpec?.role !== 'page';
 
-/** Whether this card is a further page of some class. */
+/** Whether this card is a CLASS INFO CARD: one of the pages a player actually holds. */
 export const isClassPage = (c: LibraryCard): boolean => c.contentType === 'class' && c.classSpec?.role === 'page';
 
 /** A homebrew class, assembled. */
@@ -43,21 +48,33 @@ export interface ClassAssembly {
 }
 
 /**
- * A page wearing its class's identity.
+ * A class info card wearing its class's identity.
  *
- * Title, colour and art come from the base; the text, the sections and anything functional stay the
- * page's own. Done at read time rather than copied on save, so an author who recolours the class card
- * recolours its pages with it and never has to go and find them.
+ * The TITLE is the class's, from the class card. The paint is `look`'s: the first info card of this
+ * class (v0.43.1), because the class card is a chip-only template with no banner to hand down. A card
+ * with art of its own keeps it; the rest of the set falls in behind the first one.
+ *
+ * Done at read time rather than copied on save, so an author who re-banners the first info card
+ * re-banners the whole set and never has to go and find them.
  */
-export function inheritedPage(page: LibraryCard, base: LibraryCard): LibraryCard {
-  return { ...page, title: base.title, color: base.color, imageUri: page.imageUri ?? base.imageUri, className: base.title };
+export function inheritedPage(page: LibraryCard, base: LibraryCard, look: LibraryCard = base): LibraryCard {
+  return { ...page, title: base.title, color: page.color ?? look.color, imageUri: page.imageUri ?? look.imageUri, className: base.title };
 }
 
-/** Assemble one class from a pack's cards. */
+/**
+ * Assemble one class from a pack's cards.
+ *
+ * v0.43.1: the FACES are the class info cards, and the class card itself is not among them. It is a
+ * template that declares the class, not a page anybody reads, so putting it in the deck put a card
+ * with a name and no content at the front of every homebrew class. A class with no info cards yet
+ * still shows the class card, because a class you cannot see at all cannot be chosen.
+ */
 export function assembleClass(cards: LibraryCard[], base: LibraryCard): ClassAssembly {
   const key = classKeyOf(base.title);
-  const pages = cards.filter((c) => isClassPage(c) && classKeyOf(c.className) === key).map((p) => inheritedPage(p, base));
-  return { base, pages, faces: [base, ...pages] };
+  const own = cards.filter((c) => isClassPage(c) && classKeyOf(c.className) === key);
+  const look = own[0] ?? base;
+  const pages = own.map((p) => inheritedPage(p, base, look));
+  return { base, pages, faces: pages.length ? pages : [base] };
 }
 
 /**

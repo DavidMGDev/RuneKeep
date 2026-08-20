@@ -1,32 +1,33 @@
-RuneKeep v0.43.0 - Search the shelf, and invent a step.
+RuneKeep v0.43.1 - A template stops pretending to be a card.
 
-ADD GEAR CAN BE ASKED
+WHAT A CLASS, A DOMAIN AND A TYPE ACTUALLY ARE
 
-- A SEARCH BAR ON WEAPONS, ARMOR, LOOT AND CONSUMABLES, under the tier chips where a tab has them and under the tabs where it does not. It matches on everything the row knows: the name, the trait, the range, the damage, the feature text, the roll number. Every word you type has to match somewhere, so "d10 agility" and "two handed" are sensible questions and the hyphen never matters.
-- EVERY WEAPON SAYS HOW MANY HANDS IT TAKES, official and homebrew alike, beside its trait and its damage.
-- LOOT AND CONSUMABLES HAVE A ROLL PAD. Tap the hash beside the search bar, pick Table 1 or Table 2, type the number you rolled, and that exact item is added. It opens over the browser, not behind it.
+- THESE THREE START SYSTEMS AND NOBODY EVER HOLDS ONE. Making one no longer shows you a whole card, which was the most confusing thing about it: the editor looked exactly like the editor for the thing you were being told you were not making.
+- THE PREVIEW IS THE CHIP, at the size the card really draws it, with its gold seam ornament and nothing else.
+- THE CHIP IS THE FIRST THING YOU SET, at the top, because on a template it is very nearly the only thing there is to set.
+- THE NAME IS THE CHIP. One field, and the chip says what you typed.
+- GONE FROM THESE THREE: the picture, the background colour, the whole-card-image option, the body, the sections and the modifiers. None of them meant anything on a card nobody holds.
+- IN THE PACK GALLERY THEY ARE STILL REAL CARDS, marked with a hatch across the face and a band at the foot that says so. At thumbnail size the ones that start systems are the ones with texture on them.
+- THEY ARE NOT IN THE CARD ARCHIVE OR IN ADD GEAR any more, because a player cannot hold one.
+- SUBCLASSES ARE NOT IN THIS GROUP. A subclass is a card, written one card at a time, and it is unchanged.
 
-A KIND OF CARD THE GAME DOES NOT HAVE
+CLASS INFO CARDS
 
-- EXPANSIONS CAN INVENT A TYPE. The Orders of a knightly society, the bloodlines of a house, the vows of an order: a kind of card the rulebook has no slot for. Make it in Add card, give it a name and a chip, then write its cards, which the chooser offers by name from then on.
-- A TYPE CAN ADD ITS OWN STEP TO CHARACTER CREATION, and say how many cards that step asks for. Custom steps sit beside Transformations, or in their place when no pack offers one.
-- ITS CARDS TURN UP EVERYWHERE CARDS DO: a filter chip of their own in the card archive, a tab of their own in Add Gear, and the type's name in the card menu on the sheet of anyone who made a character with the pack.
+- A CLASS IS NOW TWO THINGS: the class card, which declares it, and CLASS INFO CARDS, which are the pages a player reads. Write as many as the class needs.
+- THE FIRST INFO CARD DECIDES THE LOOK OF THE REST. Give it a banner and a colour and every info card after it inherits both, which is what was broken: the look was being read off the class card, which no longer has one, so the second page inherited nothing.
+- OLD PACKS ARE ADAPTED AUTOMATICALLY, when you open them and when you import them. A class card written the old way, carrying a banner and prose, is split in two: the class keeps its name, chip and numbers, and a new info card takes the banner, the colour and everything written on it. Nothing is discarded, and it happens once.
 
-THE CHIP IS YOURS
+THE CHIP EDITOR
 
-- THE CHIP CAN BE SET ON A CLASS, A DOMAIN AND A TYPE: the word it prints, two colours for the band and one for the word, previewed live on the card above.
-- AND IT IS INHERITED, like the colour and the banner already are. A class hands its chip to its pages, its features and its subclasses; a domain hands it to its domain cards; a type hands it to every card of that type. Set it once, change it once.
-- A CARD CAN STILL DISAGREE with its set and carry a chip of its own.
+- THE WORD COLOURS ITSELF. Leave it alone and it is worked out from the band and changes when the band changes. It is a tint of your own colours rather than flat white or flat black, so a crimson chip gets warm bone and a sage one gets cool.
+- CHOOSE ONE YOURSELF AND IT STAYS, and an Auto button beside it hands the decision back without touching your gradient.
+- IT SAYS WHEN A WORD WILL NOT READ against the band you put it on.
+- THE TWO BAND COLOURS ARE SIDE BY SIDE and large enough to judge against each other, each naming its own colour.
+- BACK TO THE DEFAULT CHIP IS A SMALL LINK at the bottom. It undoes everything above it and used to be the biggest control on screen.
 
-TEMPLATES STOP PRETENDING TO BE CARDS
+BACK NO LONGER THROWS AWAY YOUR WORK
 
-- A CLASS, A DOMAIN AND A TYPE ARE TEMPLATES, and the editor now says so where the body used to be. No section rows, no modifiers: nothing on a declaration means either of those. What is left is the name, the picture, the colour and the chip, which is what a template hands down.
-- A BASE CLASS CARD PRINTS ITS SUMMARY. The class form has always asked what the class is in two or three sentences, and until now that went nowhere anybody could read it.
-
-FIXED
-
-- A CLASS PAGE OPENS ALREADY WEARING ITS CLASS. It was showing the default paint on the one card that exists to look like something else.
-- A CLASS PAGE KEEPS THE CLASS IT BELONGS TO when it is saved. It was being dropped, which left the page failing its own check, out of its class's card, and unable to inherit anything.
-- IMPORTING A PACK NO LONGER DOWNGRADES a custom domain or a feature card into a plain Card.
+- IN A BROWSER, BACK ASKS FIRST. Pressing Back, swiping back, Alt+Left or the mouse's side button while writing a card used to leave the library entirely and take the draft with it. The guard existed and did nothing on the web: it was listening for Android's hardware key only.
+- BACK CLOSES WHAT IS OPEN, then the expansion, then the screen. A pop-up mid-flow, or a whole expansion you had open, is what Back closes now, instead of the route.
 
 Sideload: enable Install unknown apps, then open the APK.

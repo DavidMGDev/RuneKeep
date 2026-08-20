@@ -125,6 +125,8 @@ export function QuickCardFlow({
   }, [draft, kindLabel, onSave]);
   const dirty = draft.title.trim().length > 0 || draft.text.trim().length > 0 || !!draft.imageUri;
   const [leaving, setLeaving] = useState(false);
+  // Sheet-only, and the sheet's own browser guard already closes this flow: Android key only here.
+  // See `hooks/use-back-guard`.
   useBackGuard(useCallback(() => {
     if (step === 'confirm') { setStep('edit'); return; } // Back steps back through the flow first
     if (dirty) setLeaving(true);

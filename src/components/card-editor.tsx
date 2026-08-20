@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ownImage } from '@/lib/owned-image';
 import React, { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { scrollFieldIntoView, RESERVES_KEYBOARD_SPACE } from '@/lib/web-keyboard';
-import { BackHandler, Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
+import { Keyboard, Pressable, ScrollView, type StyleProp, Text, TextInput, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Svg, { Circle, Line } from 'react-native-svg';
 import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming } from 'react-native-reanimated';
@@ -30,6 +30,7 @@ import { effectsForType, isExperienceType, withTypeEffects } from '@/features/ch
 import { Overlay, OverlayHost } from '@/components/overlay-host';
 import { playSfx } from '@/lib/sfx';
 import { DimScreen } from '@/lib/screen-dim';
+import { useBackGuard } from '@/hooks/use-back-guard';
 import { useFrame } from '@/hooks/use-layout';
 
 export interface CardDraft {
@@ -685,14 +686,14 @@ export function ColorOverArtDialog({ onConfirm, onCancel }: { onConfirm: () => v
  * The handler is registered LAST here (the newest listener wins in React Native), which is what makes
  * it beat the sheet's own Back handling while the editor is open.
  */
-export function useBackGuard(handler: () => void) {
-  const ref = useRef(handler);
-  ref.current = handler;
-  useEffect(() => {
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => { ref.current(); return true; });
-    return () => sub.remove();
-  }, []);
-}
+/**
+ * Re-exported so every existing call site keeps working (v0.43.1).
+ *
+ * The implementation moved to `hooks/use-back-guard` and gained the browser half: this one listened
+ * only to Android's hardware key, so on the web a half-written card was thrown away by the back
+ * button with no question asked.
+ */
+export { useBackGuard };
 
 /**
  * The question Back asks (v0.34.8, owner): keep going, keep the work, or drop it.
@@ -763,6 +764,7 @@ export function CardEditor({
   sectionFunctions,
   generatedBody,
   templateNotice,
+  templateMode = false,
 }: {
   kindLabel: string;
   /** v0.14.0: the centered line under the title in the LIVE preview — the subclass tier word, so an
@@ -845,6 +847,22 @@ export function CardEditor({
    * "Remove the sections from the content creation; I want to focus on the chip."
    */
   templateNotice?: ReactNode;
+  /**
+   * THIS IS NOT A CARD (v0.43.1, owner).
+   *
+   * "It's very confusing that I'm creating whole cards that aren't going to actually become cards...
+   * I don't actually want to see a card. The preview should just be the chip and the golden outline
+   * that goes as a decoration in the cards so that I can see how it looks."
+   *
+   * A class, a domain and a content type declare a system; nobody ever holds one. Showing a full card
+   * preview made the editor look exactly like the editor for the thing the author was being told they
+   * were NOT making, which is the single most confusing thing about authoring one.
+   *
+   * So the whole card apparatus goes: the art, the colour, the whole-card-image escape hatch, the
+   * body, the modifiers. What is left is the name and the chip, which is all a template has. The
+   * caller draws the chip itself through `renderPreview`.
+   */
+  templateMode?: boolean;
   /**
    * v0.42.3: a full-screen panel drawn OVER the editor, at its root.
    *
@@ -1003,7 +1021,12 @@ export function CardEditor({
     () => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text, effects: withTypeEffects(draft.effects, draft.typeLabel ?? kindLabel) }),
     [draft, onSave, sectioned, kindLabel],
   );
-  useBackGuard(useCallback(() => { if (dirty) setLeaving(true); else onCancel(); }, [dirty, onCancel]));
+  useBackGuard(
+    useCallback(() => { if (dirty) setLeaving(true); else onCancel(); }, [dirty, onCancel]),
+    // In-sheet (`scrimless`) the sheet's own browser guard is already armed and its chain closes this
+    // editor; arming a second one would answer a single Back twice. Standalone, this IS the guard.
+    { web: !scrimless },
+  );
 
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
@@ -1099,8 +1122,19 @@ export function CardEditor({
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* top gap: collapses while typing so the card + fields ride up to just below the border (#227) */}
         <Animated.View style={topSpacer} />
-        {/* live preview — scales down from its TOP while a field is focused, the negative margin pulling
-            the fields up so they sit above the keyboard */}
+        {/**
+          * A TEMPLATE previews as its CHIP (v0.43.1).
+          *
+          * No art gesture, no keyboard-driven scaling and no tappable plaque: there is no art to
+          * change, the thing is 40dp tall so it never needs to shrink for a keyboard, and the chip is
+          * edited by the controls below rather than by tapping it.
+          */}
+        {templateMode ? (
+          <View style={{ alignItems: 'center', paddingVertical: 14, gap: 10 }}>
+            {renderPreview ? renderPreview(draft) : null}
+            <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>The chip, at its real size</Text>
+          </View>
+        ) : (
         <Animated.View style={[{ transformOrigin: 'top center' }, previewStyle]}>
           {/* v0.34.3: the art is the same tap-and-hold control the quick flow has. The labelled
               buttons below stay: this is the advanced editor, and it should have both. */}
@@ -1134,6 +1168,8 @@ export function CardEditor({
             ) : null}
           </ArtGesture>
         </Animated.View>
+        )}
+        {templateMode ? null : (
         <Text style={{ marginTop: 8, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', textAlign: 'center', paddingHorizontal: 24 }}>
           {faceMode
             ? 'This card is the picture. Tap it to choose another one.'
@@ -1141,19 +1177,23 @@ export function CardEditor({
               ? 'Tap the art for a new color, hold it for a picture. Tap the type to change it.'
               : 'Tap the art for a new color, hold it for a picture.'}
         </Text>
+        )}
         {/* fields */}
         <View style={{ width: 320, marginTop: 16, gap: 9 }}>
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
           {/* v0.42.7 (owner): "the random color button in card creation is redundant because the colors
               button already has a surprise me button." Two buttons, both wider for it. */}
+          {/* A template has no art and no background: it is a name and a chip. */}
+          {templateMode ? null : (
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Add Image" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={pickImage} />
             <RuneButton label="Colors" kind="ghost" dense height={36} style={{ flex: 1 }} onPress={() => setPickColor(true)} />
           </View>
+          )}
           {/* v0.34.8 (owner): a card that is nothing but a finished picture, for faces exported from
               the Daggerheart card creator. The name and type below still apply; they stop being
               printed, because the picture already says them. */}
-          {experienceMode || noFullImage ? null : (
+          {experienceMode || noFullImage || templateMode ? null : (
             <RuneButton
               label={faceMode ? 'Back to a RuneKeep card' : 'Use a whole card image'}
               kind="ghost"
@@ -1162,12 +1202,16 @@ export function CardEditor({
               onPress={faceMode ? () => setDraft((d) => ({ ...d, fullImage: false })) : pickFullImage}
             />
           )}
+          {templateMode ? templateNotice : null}
+          {templateMode ? (
+            <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Name, which is what the chip says</Text>
+          ) : null}
           <ChamferBox chamfer={8} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ minHeight: expMode ? 80 : 46, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: expMode ? 9 : 0 }}>
             <TextInput
               value={draft.title}
               onChangeText={(title) => setDraft((d) => ({ ...d, title }))}
               onFocus={onFieldFocus}
-              placeholder={expMode ? 'A word, or a whole phrase' : 'Title'}
+              placeholder={expMode ? 'A word, or a whole phrase' : templateMode ? 'e.g. Shaman' : 'Title'}
               placeholderTextColor={Rune.muted}
               selectionColor={Rune.goldBright}
               multiline={expMode}
@@ -1177,7 +1221,7 @@ export function CardEditor({
             />
             <CharCount value={draft.title} max={expMode ? 160 : TITLE_MAX} />
           </ChamferBox>
-          {templateNotice ? (
+          {templateMode ? null : templateNotice ? (
             templateNotice
           ) : expMode ? null : sectioned ? (
             <SectionsField
@@ -1210,13 +1254,15 @@ export function CardEditor({
               <CharCount value={draft.text} max={TEXT_MAX} />
             </ChamferBox>
           )}
-          {expMode || templateNotice ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} experiences={experiences} />}
+          {expMode || templateNotice || templateMode ? null : <EffectsField effects={draft.effects} onChange={(effects) => setDraft((d) => ({ ...d, effects }))} onRequestPick={setPickEffect} onRequestPickVar={setPickVar} experiences={experiences} />}
           {extraField}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
             <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
             <RuneButton label={saveLabel} kind="primary" height={42} style={{ flex: 1.4 }} disabled={!canSave} onPress={commit} />
           </View>
-          <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>Same format as every RuneKeep card.</Text>
+          <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center' }}>
+            {templateMode ? 'This is a template. It never becomes a card in anybody\u2019s hand.' : 'Same format as every RuneKeep card.'}
+          </Text>
         </View>
         {/* v0.23.0: a spacer the exact height of the keyboard, so Cancel and Save can always be
             reached and are never underneath it. */}

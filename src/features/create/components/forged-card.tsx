@@ -216,6 +216,30 @@ function BodyBlocks({ blocks, title, hasSubtitle, controlHeight }: { blocks: Bod
 }
 
 /**
+ * THE CHIP, ON ITS OWN (v0.43.1, owner).
+ *
+ * "I don't actually want to see a card. The preview should just be the chip and the golden outline
+ * that goes as a decoration in the cards so that I can see how it looks."
+ *
+ * A class, a domain and a content type are TEMPLATES: they declare a system and nobody ever holds
+ * one. Previewing them as a whole card was the single most confusing thing about authoring one,
+ * because the thing on screen looked exactly like the thing the author was being told they were not
+ * making. So the preview is the seam ornament and the plaque, at the size the card draws them, and
+ * nothing else.
+ *
+ * `width` defaults to the card's own, so what is shown here is the size it will really be.
+ */
+export function ChipPreview({ label, theme, width = FORGED_W + 14 }: { label: string; theme: PlaqueTheme; width?: number }) {
+  return (
+    <View style={{ width, alignItems: 'center' }} pointerEvents="none">
+      <DividerPlaque width={width} gradientStops={theme.gradientStops} maskFill={theme.solidColor}>
+        <PlaqueLabel text={label} textColor={theme.textColor} />
+      </DividerPlaque>
+    </View>
+  );
+}
+
+/**
  * A FORGED card: a code-rendered element that lives among the scanned cards as an equal — same
  * aspect, same reading order as the printed layout: art, the owner's CardDivider seam with its
  * inner-mask plaque carrying the kind label, title, body, footer watermark. It IS its own LOD

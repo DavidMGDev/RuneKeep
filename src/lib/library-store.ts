@@ -6,6 +6,7 @@
  */
 import { Platform } from 'react-native';
 
+import { migrateExpansion } from './expansion-migrate';
 import { type Expansion, type LibraryCard, mergeDecision } from './library';
 import { parseRkp, type RkpContent, RUNE_EXT, serializeRkp } from './rkp';
 import { webGet, webSet } from './web-store';
@@ -34,8 +35,31 @@ function webWrite(all: Expansion[]) {
   webSet(WEB_KEY, JSON.stringify(all));
 }
 
+/**
+ * Every pack, brought into the current shape on the way out (v0.43.1).
+ *
+ * A pack authored before class cards split into a template and its info cards is adapted here rather
+ * than at each of the dozen places that read one, so no screen ever has to know which era a pack came
+ * from. The migration is pure and idempotent and returns the SAME object when there is nothing to do,
+ * which is what lets this write back only the packs that actually changed. See `lib/expansion-migrate`.
+ */
 export async function listExpansions(): Promise<Expansion[]> {
-  if (Platform.OS === 'web') return webList().sort((a, b) => a.name.localeCompare(b.name));
+  const raw = await readAllExpansions();
+  const out: Expansion[] = [];
+  for (const e of raw) {
+    const migrated = migrateExpansion(e);
+    // Persist the adaptation, once, so the author sees the same pack next time and the split is not
+    // recomputed on every read. Best effort: a failed write leaves the migrated copy in memory, which
+    // is still correct for this session.
+    if (migrated !== e) await saveExpansion(migrated).catch(() => {});
+    out.push(migrated);
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The packs exactly as stored, before any adaptation. */
+async function readAllExpansions(): Promise<Expansion[]> {
+  if (Platform.OS === 'web') return webList();
   const { File } = fs();
   const files = libraryDir()
     .list()
@@ -48,7 +72,7 @@ export async function listExpansions(): Promise<Expansion[]> {
       // a corrupt/foreign file is simply not listed
     }
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
 }
 
 export async function saveExpansion(exp: Expansion): Promise<void> {
@@ -60,11 +84,15 @@ export async function saveExpansion(exp: Expansion): Promise<void> {
 }
 
 export async function getExpansion(id: string): Promise<Expansion | null> {
-  if (Platform.OS === 'web') return webList().find((e) => e.id === id) ?? null;
+  // Same adaptation as `listExpansions`, because this is the other door into a stored pack.
+  if (Platform.OS === 'web') {
+    const found = webList().find((e) => e.id === id);
+    return found ? migrateExpansion(found) : null;
+  }
   const f = new (fs().File)(libraryDir(), `${id}.json`);
   if (!f.exists) return null;
   try {
-    return JSON.parse(f.textSync()) as Expansion;
+    return migrateExpansion(JSON.parse(f.textSync()) as Expansion);
   } catch {
     return null;
   }

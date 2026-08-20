@@ -26,6 +26,7 @@ import { NfcSendModal } from '@/features/share/nfc-modal';
 import { focusHaptic } from '@/lib/haptics';
 import { type Expansion, type LibraryCard, type LibraryContentType } from '@/lib/library';
 import { contentTypes } from '@/lib/content-types';
+import { isTemplateCard } from '@/lib/card-plaque';
 import { listExpansions } from '@/lib/library-store';
 import { isEnabledForCreation } from '@/lib/library';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
@@ -176,6 +177,14 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
   // custom gear the same way it does to published gear; the domain/level axes apply to custom domains.
   if (wantSource('homebrew')) {
     for (const c of library) {
+      /**
+       * v0.43.1: a TEMPLATE is not in the archive.
+       *
+       * The archive is what a player and a DM browse and share FROM, and a class card, a domain card
+       * or a type card is a declaration that nobody ever holds. They are authored, edited and read in
+       * the pack's own gallery, which is where they belong.
+       */
+      if (isTemplateCard(c)) continue;
       const k = libItemKind(c);
       if (!wantKind(k)) continue;
       if (f.tiers.size) {

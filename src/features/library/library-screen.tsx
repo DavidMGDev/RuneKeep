@@ -18,6 +18,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
+import { useBackGuard } from '@/hooks/use-back-guard';
 import { ColorPalette } from '@/components/color-palette';
 import { Overlay } from '@/components/overlay-host';
 import { Body, Display, DmRune, Gap, Rune } from '@/constants/theme';
@@ -54,6 +55,8 @@ import { attachmentsFor, classTitlesIn, subclassNamesFor } from '@/lib/class-lin
 import { paginate, sectionOf } from '@/lib/expansion-sort';
 import { cardsOfType, contentTypes } from '@/lib/content-types';
 import { plaqueIsSet } from '@/lib/card-plaque';
+import { DEFAULT_FROM, DEFAULT_TO, inkReads, plaqueInk } from '@/lib/plaque-ink';
+import { nearestColorName } from '@/lib/color';
 import { dependencyNote, extraDependencies, moveCards, type MoveMode } from '@/lib/card-move';
 import { getDmMode, setDmMode } from '@/lib/dm-mode';
 import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/custom-class';
@@ -71,6 +74,8 @@ import { GearBrowser } from '@/features/character-sheet/sheet/gear-browser';
 import { CATEGORY_ICON_KEYS, CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
 import { CounterField, SelectRow, SwitchRow, TextField } from '@/components/form-controls';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
+import { ChipPreview } from '@/features/create/components/forged-card';
+import { getPlaqueTheme, plaqueThemeOf } from '@/features/create/components/card-divider';
 import { ExpansionGallery } from './expansion-gallery-view';
 import { FunctionEditor } from './function-editor';
 import { CardFunctionsForm, ClassSpecForm } from './class-spec-form';
@@ -281,10 +286,8 @@ const DOMAIN_CARD_TYPES = ['Ability', 'Spell', 'Grimoire'] as const;
  * top of the editor is already drawing the real chip, live, from this very spec, and a second smaller
  * preview beside the controls would be one more thing that can disagree with the card.
  */
-function ChipEditor({ plaque, defaultLabel, note, onChange }: {
+function ChipEditor({ plaque, note, onChange }: {
   plaque: PlaqueSpec | undefined;
-  /** What the chip says today, shown as the field's placeholder. */
-  defaultLabel: string;
   /** One line saying who else wears this chip. */
   note: string;
   onChange: (p: PlaqueSpec | undefined) => void;
@@ -292,34 +295,84 @@ function ChipEditor({ plaque, defaultLabel, note, onChange }: {
   const [picking, setPicking] = useState<'from' | 'to' | 'text' | null>(null);
   const p = plaque ?? {};
   const set = (patch: Partial<PlaqueSpec>) => onChange({ ...p, ...patch });
-  const swatches: { key: 'from' | 'to' | 'text'; label: string; value?: string; fallback: string }[] = [
-    { key: 'from', label: 'Left', value: p.from, fallback: '#2C3038' },
-    { key: 'to', label: 'Right', value: p.to, fallback: '#414750' },
-    { key: 'text', label: 'Word', value: p.text, fallback: '#FAF8F2' },
-  ];
+  /** What the word will actually be drawn in: the author's choice, or the derived one. */
+  const ink = plaqueInk(p);
+  const inkIsAuto = !p.text;
+  const bandFrom = p.from ?? DEFAULT_FROM;
+  const bandTo = p.to ?? DEFAULT_TO;
+  const unreadable = !inkIsAuto && !inkReads(ink, p.from, p.to);
+  /** One colour, as a swatch big enough to judge. */
+  const Swatch = ({ label, value, fallback, onPress }: { label: string; value?: string; fallback: string; onPress: () => void }) => (
+    <Pressable onPress={onPress} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`${label}. ${value ? nearestColorName(value) : 'Not set'}`}>
+      <ChamferBox chamfer={7} fill="rgba(20,24,31,0.75)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ padding: 8, gap: 6, alignItems: 'center' }}>
+        <View style={{ width: '100%', height: 30, borderRadius: 4, backgroundColor: value ?? fallback, opacity: value ? 1 : 0.45, borderWidth: 1, borderColor: 'rgba(0,0,0,0.45)' }} />
+        <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.bold }}>{label}</Text>
+        <Text numberOfLines={1} style={{ color: Rune.muted, fontSize: 9, fontFamily: Body.regular }}>{value ? nearestColorName(value) : 'Default'}</Text>
+      </ChamferBox>
+    </Pressable>
+  );
   return (
-    <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>
+    <View style={{ gap: 10 }}>
       <Text style={smallLabel}>The chip</Text>
-      <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>{note}</Text>
-      <TextField label="Word on the chip" value={p.label ?? ''} placeholder={defaultLabel} maxLength={24} onChangeText={(label) => set({ label })} />
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        {swatches.map((sw) => (
-          <Pressable key={sw.key} onPress={() => { playSfx('buttonTap'); setPicking(sw.key); }} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`${sw.label} colour`}>
-            <ChamferBox chamfer={6} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ paddingVertical: 7, alignItems: 'center', gap: 5 }}>
-              <View style={{ width: 30, height: 14, borderRadius: 3, backgroundColor: sw.value ?? sw.fallback, opacity: sw.value ? 1 : 0.4, borderWidth: 1, borderColor: 'rgba(0,0,0,0.5)' }} />
-              <Text style={{ color: sw.value ? Rune.sheet : Rune.muted, fontSize: 10, fontFamily: Body.bold }}>{sw.label}</Text>
+      <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 15 }}>{note}</Text>
+
+      {/* THE BAND: two stops, side by side and large enough to actually judge against each other. */}
+      <Text style={smallLabel}>The band</Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Swatch label="Left" value={p.from} fallback={DEFAULT_FROM} onPress={() => { playSfx('buttonTap'); setPicking('from'); }} />
+        <Swatch label="Right" value={p.to} fallback={DEFAULT_TO} onPress={() => { playSfx('buttonTap'); setPicking('to'); }} />
+      </View>
+
+      {/**
+        * THE WORD, automatic until it is not (v0.43.1, owner).
+        *
+        * "If the user hasn't configured a word color, just keep it automatic... unless they define one
+        * specifically, which overrides whatever automatic work the UI is doing."
+        *
+        * So this row always shows the colour the word is REALLY being drawn in, and says whether that
+        * was chosen or worked out. Setting one is a tap on the row; giving it back is the small link
+        * beside it, which resets the word and leaves the band exactly as it is. See `lib/plaque-ink`.
+        */}
+      <Text style={smallLabel}>The word</Text>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        <Pressable onPress={() => { playSfx('buttonTap'); setPicking('text'); }} style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`Word colour, ${inkIsAuto ? 'automatic' : nearestColorName(ink)}. Tap to choose one`}>
+          <ChamferBox chamfer={7} fill={`${bandFrom}`} stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ height: 44, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: ink, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+              {inkIsAuto ? 'Automatic' : nearestColorName(ink)}
+            </Text>
+          </ChamferBox>
+        </Pressable>
+        {!inkIsAuto ? (
+          <Pressable onPress={() => { playSfx('buttonTap'); set({ text: undefined }); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Let the word colour itself again">
+            <ChamferBox chamfer={6} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.4)" strokeWidth={1} style={{ height: 44, paddingHorizontal: 12, justifyContent: 'center' }}>
+              <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, textTransform: 'uppercase', letterSpacing: 0.6 }}>Auto</Text>
             </ChamferBox>
           </Pressable>
-        ))}
+        ) : null}
       </View>
-      <RuneButton label="Back to the default chip" kind="ghost" dense height={34} onPress={() => onChange(undefined)} />
+      <Text style={{ color: Rune.muted, fontSize: 9.5, fontFamily: Body.regular, lineHeight: 13 }}>
+        {inkIsAuto
+          ? 'The word colours itself from the band, and changes when you change the band.'
+          : 'You chose this one, so it stays whatever the band does.'}
+      </Text>
+      {unreadable ? (
+        <Text style={{ color: Rune.red, fontSize: 10, fontFamily: Body.bold, lineHeight: 14 }}>
+          This word is close to the band it sits on and will be hard to read. Auto picks one that is not.
+        </Text>
+      ) : null}
+
+      {/* Small, and last: it undoes everything above, so it should never be the biggest thing here. */}
+      <Pressable onPress={() => { playSfx('buttonTap'); onChange(undefined); }} hitSlop={6} accessibilityRole="button" accessibilityLabel="Back to the default chip" style={{ alignSelf: 'flex-start', paddingVertical: 4 }}>
+        <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.bold, textDecorationLine: 'underline' }}>Back to the default chip</Text>
+      </Pressable>
+
       {/* The palette covers the screen, so it is published at the editor's root rather than drawn
           inside this scrolling column. See `components/overlay-host`. */}
       {picking ? (
         <Overlay>
           <ColorPalette
             title={picking === 'text' ? 'The word on the chip' : picking === 'from' ? 'The chip, on the left' : 'The chip, on the right'}
-            current={p[picking] ?? null}
+            current={p[picking] ?? (picking === 'text' ? ink : picking === 'from' ? bandFrom : bandTo)}
             allowRandom
             onPick={(c) => { set({ [picking]: c }); setPicking(null); }}
             onClose={() => setPicking(null)}
@@ -394,8 +447,34 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
   const t = config.contentType;
   const w = config.weapon ?? DEFAULT_WEAPON;
   const a = config.armor ?? DEFAULT_ARMOR;
+  const template = isTemplateConfig(config);
+  const chipNote =
+    t === 'type'
+      ? 'Every card of this type wears this chip, unless that card sets one of its own.'
+      : t === 'customDomain'
+        ? 'Every card of this domain wears this chip, unless that card sets one of its own.'
+        : t === 'class'
+          ? 'This class hands this chip to its info cards, its features and its subclasses.'
+          : 'This card only. Leave it alone and it wears its class, domain or type\u2019s chip.';
+  const chip = <ChipEditor plaque={config.plaque} note={chipNote} onChange={(plaque) => set({ plaque })} />;
   return (
     <View style={{ gap: 8 }}>
+      {/**
+        * ON A TEMPLATE THE CHIP COMES FIRST (v0.43.1, owner).
+        *
+        * "Make sure that on these three cards, the chip is the first thing you configure. I want that
+        * on the top so that it's very obviously the thing to be configured, and the user is not lost
+        * as to why this card is sort of different."
+        *
+        * It is also nearly the only thing to configure on one, so burying it under the class numbers
+        * put the whole point of the screen below the fold.
+        */}
+      {template ? (
+        <>
+          {chip}
+          <View style={{ height: 1, backgroundColor: 'rgba(218,162,73,0.25)', marginVertical: 4 }} />
+        </>
+      ) : null}
       <Text style={smallLabel}>{CONTENT_TYPE_LABEL[t]} details</Text>
       {t === 'domain' ? (
         <>
@@ -696,22 +775,10 @@ function ContentConfig({ config, onChange, card, siblings, onPickItems, onOpenCa
         * look for them. See `lib/card-plaque`.
         */}
       {/* Weapons and armor draw their own stat-block cards, whose plaque is part of that layout
-          rather than a word an author chose, so there is nothing here for a chip to change. */}
-      {t === 'weapon' || t === 'armor' ? null : (
-      <ChipEditor
-        plaque={config.plaque}
-        defaultLabel={CONTENT_TYPE_LABEL[t]}
-        note={
-          t === 'type'
-            ? 'The chip every card of this type wears, unless that card sets one of its own.'
-            : t === 'customDomain'
-              ? 'The chip every card of this domain wears, unless that card sets one of its own.'
-              : t === 'class'
-                ? 'The chip this class hands to its pages, its features and its subclasses.'
-                : 'This card only. Leave it alone and it wears its class, domain or type\u2019s chip.'
-        }
-        onChange={(plaque) => set({ plaque })}
-      />
+          rather than a word an author chose, so there is nothing here for a chip to change. A
+          TEMPLATE already showed it at the top, where it belongs. */}
+      {template || t === 'weapon' || t === 'armor' ? null : (
+        <View style={{ borderTopWidth: 1, borderTopColor: 'rgba(218,162,73,0.25)', paddingTop: 10 }}>{chip}</View>
       )}
     </View>
   );
@@ -1043,6 +1110,41 @@ export function LibraryScreen() {
     }
   }, [reload]);
 
+  /**
+   * BACK CLOSES WHAT IS OPEN, and only then leaves (v0.43.1, owner).
+   *
+   * "I don't want pressing back to just nuke me back to the main menu. That should never happen,
+   * ever, unless I am actually trying to do that."
+   *
+   * It did, from anywhere in this screen, because nothing here handled Back at all: the router simply
+   * popped the route. So a pop-up mid-flow, or a whole expansion you had open, went with it.
+   *
+   * Topmost first, exactly as the sheet does it: the dialog you can see, then the expansion, then the
+   * screen. Disabled while the CARD EDITOR is up, because the editor arms its own guard and asks its
+   * own question about the draft in it; two guards would push two history entries and answer one
+   * press twice. See `hooks/use-back-guard`.
+   */
+  useBackGuard(
+    useCallback(() => {
+      if (confirmDeleteExp) { setConfirmDeleteExp(null); return; }
+      if (confirmDeleteCards.length) { setConfirmDeleteCards([]); return; }
+      if (movingCards.length) { setMovingCards([]); return; }
+      if (reportFor) { setReportFor(null); return; }
+      if (nfcSend) { setNfcSend(null); return; }
+      if (message) { setMessage(null); return; }
+      if (holdingExp) { setHoldingExp(null); return; }
+      if (writingItem) { setWritingItem(null); return; }
+      if (askingClassFor) { setAskingClassFor(null); return; }
+      if (askingParentClass) { setAskingParentClass(false); return; }
+      if (askingClassRole) { setAskingClassRole(false); return; }
+      if (choosingType) { setChoosingType(false); return; }
+      if (metaForm) { setMetaForm(null); return; }
+      if (selectedId) { setSelectedId(null); return; } // back to the hub, not out of the library
+      router.back();
+    }, [confirmDeleteExp, confirmDeleteCards, movingCards, reportFor, nfcSend, message, holdingExp, writingItem, askingClassFor, askingParentClass, askingClassRole, choosingType, metaForm, selectedId, router]),
+    { enabled: !editingCard },
+  );
+
   if (!expansions) return <LoadingScreen label="Opening the library" />;
 
   // ---- card editor overlay (author/edit a card inside the selected expansion) ----
@@ -1195,15 +1297,33 @@ export function LibraryScreen() {
          * character sheet draws, with this card's own elements and live state. Not a mock-up of the
          * card and not a swatch in a panel: what is approved here is what ships.
          */
-        renderPreview={(d) => (
-          <LibraryForgedCard
-            card={previewCard(d)}
-            // v0.43.0: the pack, so an inherited chip resolves in the preview as it will on the card.
-            pack={selected.cards}
-            functionStates={fnStates}
-            onFunction={(fid, next) => setFnStates((st) => ({ ...st, [fid]: next }))}
-          />
-        )}
+        /**
+         * A TEMPLATE PREVIEWS AS ITS CHIP (v0.43.1, owner).
+         *
+         * "I don't actually want to see a card. The preview should just be the chip and the golden
+         * outline that goes as a decoration in the cards so that I can see how it looks."
+         *
+         * Drawn at the size the card draws it, from the very spec the controls below are editing, so
+         * what is approved here is what the set will wear. Everything else still previews as the real
+         * card, because everything else IS one.
+         */
+        templateMode={isTemplateConfig(cfg)}
+        renderPreview={(d) =>
+          isTemplateConfig(cfg) ? (
+            <ChipPreview
+              label={d.title.trim() || CONTENT_TYPE_LABEL[cfg.contentType]}
+              theme={plaqueThemeOf(cfg.plaque) ?? getPlaqueTheme(d.title.trim() || CONTENT_TYPE_LABEL[cfg.contentType])}
+            />
+          ) : (
+            <LibraryForgedCard
+              card={previewCard(d)}
+              // v0.43.0: the pack, so an inherited chip resolves in the preview as it will on the card.
+              pack={selected.cards}
+              functionStates={fnStates}
+              onFunction={(fid, next) => setFnStates((st) => ({ ...st, [fid]: next }))}
+            />
+          )
+        }
         sectionFunctions={
           isFeature
             ? {
@@ -1243,19 +1363,20 @@ export function LibraryScreen() {
          */
         templateNotice={
           isTemplateConfig(cfg) ? (
-            <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 5 }}>
+            <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 4 }}>
               <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>
-                {cfg.contentType === 'class' ? 'This starts a class' : cfg.contentType === 'customDomain' ? 'This starts a domain' : 'This starts a kind of card'}
+                {cfg.contentType === 'class' ? 'You are starting a class' : cfg.contentType === 'customDomain' ? 'You are starting a domain' : 'You are starting a kind of card'}
               </Text>
+              {/* What to do NEXT, which is the only thing an author needs from this box. */}
               <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
                 {cfg.contentType === 'class'
-                  ? 'Not a card somebody holds: a class, which its pages, its features and its subclasses belong to. Its body is its summary, written in the class details below. Write the rest as separate cards and point them at this one.'
+                  ? 'Give it a name and a chip. Then add Class info cards for the pages players read: the first one you write decides the look of the rest.'
                   : cfg.contentType === 'customDomain'
-                    ? 'Not a card somebody holds: a domain, which its domain cards belong to. Write those as Domain cards in this pack and set each one\u2019s domain to this.'
-                    : 'Not a card somebody holds: a kind of card, which its own cards belong to. Write those with Add card, where this type is offered by name.'}
+                    ? 'Give it a name and a chip. Then write Domain cards in this pack and set each one\u2019s domain to this.'
+                    : 'Give it a name and a chip. Then use Add card, where this type is offered by name, to write its cards.'}
               </Text>
               <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.regular, lineHeight: 14 }}>
-                Its name, its picture, its colour and its chip are what it hands down. There is no body to write here and nothing to modify.
+                Nobody ever holds this one.
               </Text>
             </ChamferBox>
           ) : undefined
@@ -1622,10 +1743,10 @@ export function LibraryScreen() {
                 {shouldShow('classcards') ? (
                   <ChamferBox chamfer={8} fill="rgba(20,24,31,0.7)" stroke="rgba(218,162,73,0.35)" strokeWidth={1.1} style={{ padding: 10, gap: 5 }}>
                     <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
-                      <Text style={{ fontFamily: Body.bold }}>Class card</Text>: starts a class and carries its numbers, domains and starting items.
+                      <Text style={{ fontFamily: Body.bold }}>Class card</Text>: starts the class. A name and a chip, plus its numbers, domains and starting items. Nobody ever holds one.
                     </Text>
                     <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
-                      <Text style={{ fontFamily: Body.bold }}>Class page</Text>: another page of that same card, for its abilities and its Hope feature. It takes the class&apos;s look automatically.
+                      <Text style={{ fontFamily: Body.bold }}>Class info card</Text>: a page a player actually reads. Write as many as the class needs; the FIRST one decides the look of the rest.
                     </Text>
                     <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
                       <Text style={{ fontFamily: Body.bold }}>Feature card</Text>: optional, a card of its own in the player&apos;s arsenal. The only kind that carries counters, dice and switches.
@@ -1641,7 +1762,7 @@ export function LibraryScreen() {
                   <ChamferBox chamfer={8} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 4 }}>
                     <Text style={{ color: Rune.ivory, fontSize: 14.5, fontFamily: Body.bold }}>A new class</Text>
                     <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14 }}>
-                      Its first page: the numbers, the two domains and the starting items. Everything else points back at it.
+                      A name, a chip, the numbers, the two domains and the starting items. Everything else points back at it, and no player ever holds it.
                     </Text>
                   </ChamferBox>
                 </Pressable>
@@ -1649,11 +1770,11 @@ export function LibraryScreen() {
                 <Pressable
                   onPress={() => { playSfx('buttonTap'); setAskingClassRole(false); setAskingParentClass(true); }}
                   accessibilityRole="button"
-                  accessibilityLabel="Another page of a class">
+                  accessibilityLabel="A class info card">
                   <ChamferBox chamfer={8} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 4 }}>
-                    <Text style={{ color: Rune.ivory, fontSize: 14.5, fontFamily: Body.bold }}>Another page of a class</Text>
+                    <Text style={{ color: Rune.ivory, fontSize: 14.5, fontFamily: Body.bold }}>A class info card</Text>
                     <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14 }}>
-                      More of a class that already exists, yours or one from the base game. It takes that class&apos;s name and look.
+                      A page players read, for a class that already exists, yours or one from the base game. It takes that class&apos;s name and chip, and the first one you write sets the banner and colour for all of them.
                     </Text>
                   </ChamferBox>
                 </Pressable>
@@ -1778,7 +1899,7 @@ export function LibraryScreen() {
             <DimScreen opacity={0.9} />
             <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 336, maxHeight: 560, paddingHorizontal: 16, paddingVertical: 16, gap: Gap.group }}>
               <View style={{ gap: Gap.hair }}>
-                <Text style={{ color: Rune.goldText, fontSize: 17, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>A page of which class?</Text>
+                <Text style={{ color: Rune.goldText, fontSize: 17, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Info card for which class?</Text>
                 <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 15 }}>
                   The page takes that class&apos;s name, colour and art, and joins its card as the next page. Only its text is its own.
                 </Text>
