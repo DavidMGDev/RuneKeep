@@ -89,3 +89,6 @@ RuneKeep-web-*.zip
 .claude/*
 !.claude/settings.json
 !.claude/memory/
+
+# Claude Code memory notes stay local
+.claude/memory/
