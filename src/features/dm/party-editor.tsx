@@ -22,9 +22,9 @@ import { FitLine } from '@/components/fit-line';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
-import { classColor, classInfo } from '@/constants/identity';
+import { classColor } from '@/constants/identity';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
-import { type CharacterFile } from '@/lib/character-file';
+import { type CharacterFile, classLabel } from '@/lib/character-file';
 import { importCharacter, listCharacters } from '@/lib/character-store';
 import { initialVitals } from '@/lib/dm-vitals';
 import { type DmIdentity } from '@/lib/dm-identity';
@@ -43,13 +43,12 @@ function Portrait({ uri, tint }: { uri: string | null; tint: string }) {
 }
 
 function MemberRow({ file, present, onTogglePresent, onRemove }: { file: CharacterFile; present: boolean; onTogglePresent: () => void; onRemove: () => void }) {
-  const cls = classInfo(file.className);
   return (
     <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke={DmRune.line} strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10, opacity: present ? 1 : 0.5 }}>
       <Portrait uri={file.portraitUri} tint={classColor(file.className).bright} />
       <View style={{ flex: 1 }}>
         <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{file.name}</FitLine>
-        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {file.level} {cls.label}</Text>
+        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {file.level} {classLabel(file)}</Text>
       </View>
       <DmPress onPress={onTogglePresent} hitSlop={8} accessibilityRole="button" accessibilityLabel={present ? `${file.name} present` : `${file.name} absent`}>
         <ChamferBox chamfer={5} fill={present ? 'rgba(218,162,73,0.14)' : 'transparent'} stroke={present ? DmRune.accent : DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 9, height: 26, justifyContent: 'center' }}>
@@ -86,14 +85,13 @@ export function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candid
           contentContainerStyle={{ gap: 10, paddingBottom: 10 }}
           renderItem={({ item }) => {
             const on = sel.has(item.id);
-            const cls = classInfo(item.className);
             return (
               <DmPress onPress={() => toggle(item.id)} accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={item.name}>
                 <ChamferBox chamfer={10} fill={on ? 'rgba(218,162,73,0.14)' : 'rgba(14,17,22,0.9)'} stroke={on ? DmRune.accent : DmRune.line} strokeWidth={on ? 1.5 : 1.2} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
                   <Portrait uri={item.portraitUri} tint={classColor(item.className).bright} />
                   <View style={{ flex: 1 }}>
                     <FitLine style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.6, textTransform: 'uppercase' }}>{item.name}</FitLine>
-                    <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {item.level} {cls.label}</Text>
+                    <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 3 }}>Lvl {item.level} {classLabel(item)}</Text>
                   </View>
                   <ChamferBox chamfer={4} fill={on ? DmRune.accent : 'transparent'} stroke={DmRune.accentDim} strokeWidth={1.2} style={{ width: 22, height: 22, alignItems: 'center', justifyContent: 'center' }}>
                     {on ? <Svg width={12} height={12} viewBox="0 0 12 12"><Polyline points="2,6 5,9 10,3" fill="none" stroke={DmRune.ink} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}

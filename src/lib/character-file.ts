@@ -719,7 +719,7 @@ export function toSheetCharacter(file: CharacterFile): Character {
     name: activeWildshapeName(file) ?? file.name,
     // v0.35: the level the sheet is computed at, so a DM's level modifier reads on the sheet too.
     level: sheet.level.total,
-    className: file.classless ? '' : cls.label, // v0.36.2: a classless character names no class
+    className: classLabel(file), // v0.36.2: a classless character names no class; v0.43.3: homebrew names its own
     subclass: subclass?.label.replace(/ Foundation$/, '') ?? libTitle(file.subclassCardId) ?? '',
     spellcastTrait,
     // v0.41.0: what cards add to a roll. Carried, never applied: the app does not roll your checks.

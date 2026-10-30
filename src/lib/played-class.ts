@@ -23,6 +23,7 @@
 import { type ClassName, classInfo } from '@/constants/identity';
 import { CLASS_DATA } from '@/data/class-data';
 import { classKeyOf } from './custom-class';
+import { assembleClass } from './custom-class-pages';
 import type { LibraryCard } from './library';
 
 /** Everything the sheet needs to know about a character's class, whoever wrote it. */
@@ -86,13 +87,21 @@ export function belongsToPlayedClass(file: ClassCarrier, cardClassName: string |
 }
 
 /**
- * The starting items a class hands out, by list.
+ * The bundled class whose CONTENT this character gets (v0.43.3, playtest).
  *
- * Bundled classes keep their own kit (`CLASS_INVENTORY`), which this deliberately does not touch: a
- * homebrew class's three lists are the only thing here.
+ * "Al crear el personaje me da la clase de Druida." `className` on a homebrew character is the carrier
+ * from `playedClass` above: it paints the sheet and it means nothing else. Every question of the form
+ * "is this a Druid", "which class cards", "which kit" asks here, so a Shaman carried by Druid gets no
+ * Beastform, no Druid pages and no Druid inventory.
  */
-export function customStartingItems(file: ClassCarrier): { fixed: string[]; choiceA: string[]; choiceB: string[] } | null {
-  const spec = customClassCard(file)?.classSpec;
-  if (!spec) return null;
-  return { fixed: spec.fixedItemIds ?? [], choiceA: spec.choiceAItemIds ?? [], choiceB: spec.choiceBItemIds ?? [] };
+export const bundledClassOf = (file: ClassCarrier): ClassName | undefined => (customClassCard(file) ? undefined : file.className);
+
+/** Druids get Beastform, whether it is their class or their multiclass. */
+export const hasBeastform = (file: ClassCarrier & { multiclassName?: string }): boolean =>
+  bundledClassOf(file) === 'druid' || file.multiclassName === 'druid';
+
+/** The pages of the homebrew class this character plays, each wearing the class's title and art. */
+export function customClassPages(file: ClassCarrier): LibraryCard[] {
+  const card = customClassCard(file);
+  return card ? assembleClass(file.libraryCards ?? [], card).pages : [];
 }

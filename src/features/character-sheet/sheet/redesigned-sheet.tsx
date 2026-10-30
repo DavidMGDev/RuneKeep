@@ -22,7 +22,7 @@ import { CATALOG, cardById } from '@/data/catalog';
 import { CLASSES, classInfo, type ClassName } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
-import { CLASS_DATA, featurePages } from '@/data/class-data';
+import { featurePages } from '@/data/class-data';
 import { acquiredPageId, classPageCount, classPageId } from '@/lib/class-cards';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
@@ -30,6 +30,7 @@ import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
 import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID } from '@/data/martial-form-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
+import { bundledClassOf, customClassCard, customClassPages, hasBeastform, playedClass } from '@/lib/played-class';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardHasEffects, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
@@ -134,7 +135,6 @@ const lockedGray = (s: PipState) => (s === 'locked' ? '#6E6A64' : undefined);
 
 /** #311: Beastform belongs to Druids AND anyone who multiclassed into Druid (they gain the class
  *  feature). Used to gate the wildshape deck + the Beastform category for both. */
-const hasBeastform = (f: { className: string; multiclassName?: string }) => f.className === 'druid' || f.multiclassName === 'druid';
 
 /**
  * A stress pip (#70 C → #77): a 44x22 CHAMFERED shape (45° cuts like the domain chips — never
@@ -1078,7 +1078,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
        * and Warlock trackers have followed since v0.19.1: anything with a control on it renders its
        * real component. It costs a forge slot and buys a card that actually does what it says.
        */
-      const lc = file.libraryCards?.find((c) => c.id === id);
+      const lc = customClassPages(file).find((c) => c.id === id) ?? file.libraryCards?.find((c) => c.id === id);
       if (lc?.functions?.length) return liveFunctionCard(lc, lc);
       const j = libJobs.find((x) => x.id === id);
       if (!j) return undefined;
@@ -1223,6 +1223,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const featItem = file.classExpanded
       ? pagesOf((i) => classPageId(file.className, i), faces)
       : coverOf(`features-${file.className}`, faces);
+    // v0.43.3: a homebrew class is its pages, in the Arsenal where a published class's pages sit.
+    const homebrewClass = customClassCard(file);
+    const homebrewPages = customClassPages(file);
+    const classPageItems = homebrewPages.map((p) => libItem(p.id)).filter((x): x is CardItem => !!x);
     // Multiclass (#311): the additional class's feature card (multi-page), assembled exactly like the
     // primary's, plus the chosen subclass FOUNDATION card. Both ride the arsenal next to the originals.
     const mcFaceJobs = mcFeatJobs;
@@ -1300,12 +1304,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // the Warlock (Patron / Spheres / Favor). Never deletable or duplicatable (guards below); movable like
     // any card via a category override. Source/thumb are placeholders — the live node renders.
     const trackerSubclass = file.subclassCardId?.includes('theurgy') ? 'theurgy' as const : file.subclassCardId?.includes('necromancy') ? 'necromancy' as const : undefined;
-    const classTrackerItems: CardItem[] = file.className === 'summoner'
+    const played = bundledClassOf(file);
+    const classTrackerItems: CardItem[] = played === 'summoner'
       ? [{ id: SUMMONER_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <SummonerTrackerCard state={file.classTracker} subclass={trackerSubclass} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
-      : file.className === 'warlock'
+      : played === 'warlock'
       ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
       : [];
-    const abilities = [...domainItems, ...(ancestryC ? [ancestryC] : []), ...secondAncestryItem, ...(communityC ? [communityC] : []), ...(subclassC ? [subclassC] : []), ...mcSubclassItem, ...featItem, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
+    const abilities = [...domainItems, ...(ancestryC ? [ancestryC] : []), ...secondAncestryItem, ...(communityC ? [communityC] : []), ...(subclassC ? [subclassC] : []), ...mcSubclassItem, ...featItem, ...classPageItems, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
@@ -1317,7 +1322,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // pass, so a catalog weapon no longer duplicates into both Arsenal and Inventory.
     // v0.10.3: embedded homebrew cards NOT bound to a structural/domain slot (weapon/armor/inventory/
     // generic added via ADD GEAR) ride the inventory deck.
-    const structuralLibIds = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...file.domainCardIds]);
+    const structuralLibIds = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...file.domainCardIds, homebrewClass?.id ?? '', ...homebrewPages.map((p) => p.id)]);
     const acquiredSet = new Set(file.acquiredCardIds ?? []);
     const looseLibItems = (file.libraryCards ?? [])
       .filter((lc) => {
@@ -1518,26 +1523,26 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const levelData = useMemo(() => {
     type ClassOpt = { key: string; label: string; domains: string[]; subclasses: { id: string; label: string }[] };
     if (!file) return { domainOptions: [] as DomainCardInfo[], classOptions: [] as ClassOpt[], defaults: { maxHp: 6, stressMax: 6, evasion: 10 } };
-    const cls = classInfo(file.className);
+    // v0.43.3: what the character PLAYS, so a Shaman levels into Shaman domains, not its carrier's.
+    const data = playedClass(file);
     const owned = new Set(file.domainCardIds);
     const targetLevel = file.level + 1;
     // #311: multiclass domain access — cards from the additional domain unlock at HALF the (target)
     // level, rounded up. Original domains stay at full level. Owned domains are excluded from the picker.
-    const ownedDomains = new Set<string>([...cls.domains, ...(file.multiclassDomain ? [file.multiclassDomain] : [])]);
+    const ownedDomains = new Set<string>([...data.domains, ...(file.multiclassDomain ? [file.multiclassDomain] : [])]);
     const halfLevel = Math.ceil(targetLevel / 2);
     const mcDomain = file.multiclassDomain;
     const domainOptions: DomainCardInfo[] = CATALOG.filter((c) => {
       if (c.kind !== 'domain' || !c.domain || owned.has(c.id)) return false;
-      if (cls.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel) return true;
+      if (data.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel) return true;
       if (mcDomain && c.domain === mcDomain && (c.level ?? 0) <= halfLevel) return true; // #311
       return false;
     }).map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], source: c.source as DomainCardInfo['source'], domain: c.domain, level: c.level }));
-    const data = CLASS_DATA[file.className];
     // #311: each multiclassable class with the domains it can grant (those the character lacks) + its
     // subclass FOUNDATION cards (one of which the player picks to gain that subclass's foundation feature).
     // v0.12.2: only multiclass into classes from THIS character's enabled expansions (base always).
     const charExp = new Set(file.enabledExpansionIds ?? []);
-    const classOptions: ClassOpt[] = CLASSES.filter((c) => c.key !== file.className && (!classExpansion(c.key) || charExp.has(classExpansion(c.key)!))).map((c) => ({
+    const classOptions: ClassOpt[] = CLASSES.filter((c) => c.key !== bundledClassOf(file) && (!classExpansion(c.key) || charExp.has(classExpansion(c.key)!))).map((c) => ({
       key: c.key,
       label: c.label,
       domains: classInfo(c.key).domains.filter((d) => !ownedDomains.has(d)),
@@ -1751,7 +1756,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // current category is still valid (so a transiently-empty category — e.g. its only card mid-reforge
   // after an edit — doesn't yank the player away). The over-scroll `ring` below drops empty categories.
   const validRing = useMemo(() => {
-    const isDruid = file?.className === 'druid' || file?.multiclassName === 'druid'; // #311: incl. multiclass
+    const isDruid = !!file && hasBeastform(file); // #311: incl. multiclass
     const companion = hasCompanion({ subclassCardId: file?.subclassCardId ?? '', multiclassSubclassCardId: file?.multiclassSubclassCardId }); // #311
     const favorites = !!file && fileHasFavorites(file); // v0.9.8: in the ring only once there's a favorite
     const martial = hasMartialForm({ subclassCardId: file?.subclassCardId ?? '', multiclassSubclassCardId: file?.multiclassSubclassCardId }); // #357

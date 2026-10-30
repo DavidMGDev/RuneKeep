@@ -32,6 +32,7 @@ import { WILDSHAPES } from '@/data/wildshape-data';
 import { libraryCardById } from '@/lib/library-embed';
 import { tierForLevel } from '@/lib/modifiers';
 import type { CharacterFile } from '@/lib/character-file';
+import { bundledClassOf, customClassCard, customClassPages } from '@/lib/played-class';
 import { fileDecks, type SeedCard } from '@/lib/dm-card-list';
 
 /** One card as the DM's carousel wants it: printed artwork where the game has some, else the live card. */
@@ -80,6 +81,12 @@ export function dmDecks(file: CharacterFile): Record<string, DmCard[]> {
   if (jobs.classJob) {
     push('abilities', { id: jobs.classJob.key, label: 'Class', node: jobs.classJob.node, faces: jobs.featJobs.map((j) => j.node) });
   }
+  // A homebrew class is its pages, one card each, exactly as the sheet shows it.
+  const classPages = customClassPages(file);
+  for (const p of classPages) {
+    const j = jobs.libJobs.find((x) => x.id === p.id);
+    if (j) push('abilities', jobCard(j, p.title));
+  }
   if (jobs.mcClassJob) {
     push('abilities', { id: jobs.mcClassJob.key, label: 'Class', node: jobs.mcClassJob.node, faces: jobs.mcFeatJobs.map((j) => j.node) });
   }
@@ -97,11 +104,12 @@ export function dmDecks(file: CharacterFile): Record<string, DmCard[]> {
   }
   for (const j of jobs.expJobs) push('abilities', jobCard(j, 'Experience'));
   for (const j of jobs.customCardJobs) if (j.target !== 'inventory') push('abilities', jobCard(j, 'Card'));
-  if (file.className === 'summoner') {
+  const played = bundledClassOf(file);
+  if (played === 'summoner') {
     const sub = file.subclassCardId?.includes('theurgy') ? ('theurgy' as const) : file.subclassCardId?.includes('necromancy') ? ('necromancy' as const) : undefined;
     push('abilities', { id: SUMMONER_TRACKER_ID, label: 'Summoner', node: <SummonerTrackerCard state={file.classTracker} subclass={sub} level={file.level} onChange={() => {}} /> });
   }
-  if (file.className === 'warlock') push('abilities', { id: WARLOCK_TRACKER_ID, label: 'Warlock', node: <WarlockTrackerCard state={file.classTracker} level={file.level} onChange={() => {}} /> });
+  if (played === 'warlock') push('abilities', { id: WARLOCK_TRACKER_ID, label: 'Warlock', node: <WarlockTrackerCard state={file.classTracker} level={file.level} onChange={() => {}} /> });
 
   // --- Inventory: the kit, the chosen items, gold, gear, authored items, loose homebrew ---
   for (const j of jobs.invJobs) push('inventory', jobCard(j, labelOf(file, j.id ?? j.key, 'Item')));
@@ -113,7 +121,7 @@ export function dmDecks(file: CharacterFile): Record<string, DmCard[]> {
   for (const j of jobs.acqArmorJobs) push('inventory', jobCard(j, labelOf(file, j.id ?? j.key, 'Armor')));
   for (const j of jobs.acqLootJobs) push('inventory', jobCard(j, labelOf(file, j.id ?? j.key, 'Loot')));
   for (const j of jobs.customCardJobs) if (j.target !== 'arsenal') push('inventory', jobCard(j, 'Card'));
-  const structural = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...(file.domainCardIds ?? [])]);
+  const structural = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...(file.domainCardIds ?? []), customClassCard(file)?.id ?? '', ...classPages.map((p) => p.id)]);
   for (const j of jobs.libJobs) {
     const id = j.id ?? j.key;
     if (structural.has(id)) continue;

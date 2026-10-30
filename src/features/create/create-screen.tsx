@@ -18,6 +18,7 @@ import { showToast } from '@/components/toast';
 import { type ClassName, CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identity';
 import { Body, Rune } from '@/constants/theme';
 import { CATALOG, cardById } from '@/data/catalog';
+import { effectsForCardId } from '@/features/cards/card-effects';
 import { type TraitKey } from '@/features/character-sheet/character';
 import { type CharacterFile, type CustomCardDef, newCharacterId, toSheetCharacter } from '@/lib/character-file';
 import { getCharacter, saveCharacter } from '@/lib/character-store';
@@ -33,7 +34,7 @@ import { CLASS_CARDS } from './components/class-cards';
 import { featurePages, spellcastTraitForSubclass } from '@/data/class-data';
 import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
 import { lootById } from '@/data/loot-data';
-import { PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
+import { armorById, PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
 import { CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 
@@ -47,10 +48,10 @@ import { shouldShow } from '@/lib/onboarding-store';
 
 import { campaignWarnings } from '@/lib/campaign-warnings';
 import { ImageCropper } from '@/components/image-cropper';
-import { assembleClasses, faceMark } from '@/lib/custom-class-pages';
+import { assembleClass, assembleClasses, faceMark } from '@/lib/custom-class-pages';
 import { classKeyOf } from '@/lib/custom-class';
 import { type CampaignSettings, campaignNote, EMPTY_CAMPAIGN_SETTINGS, isOptionOn, isStepOn, mergeSettings, optionKey, setKeys, stepKey, syncSteps, toggleKey } from '@/lib/campaign-settings';
-import { DECKS, deckDone, decksFor, EMPTY, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
+import { CLASS_RESET, DECKS, deckDone, decksFor, domainCardsWanted, EMPTY, inventoryGroups, MIXED_ANCESTRY_ID, SINGLE_ANCESTRY_ID } from './create-constants';
 import { CharacterizeTraitsTab, LevelTab } from './characterize-tabs';
 import { canSkipClass, cardedItems, carriesThresholds, carryItems, type CarryItem, heldEffectsFor, isGenericName, keptLevel, levelForStatBlock } from '@/lib/characterize';
 import { SkipMenu, SkipMenuButton, type SkipStepRow } from './skip-menu';
@@ -249,7 +250,7 @@ export function CreateScreen() {
   const nameRef = useRef<TextInput>(null);
   const draftRef = useRef<Draft>(EMPTY);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
-  const [resumeOffer, setResumeOffer] = useState<{ draft: Draft; deck?: string; savedAt: string } | null>(null);
+  const [resumeOffer, setResumeOffer] = useState<{ draft: Draft; deck?: string; picked?: string[]; savedAt: string } | null>(null);
   const [resumeChecked, setResumeChecked] = useState(false);
   const [deck, setDeck] = useState<DeckKey>('class');
   // v0.12.2: per-character EXPANSION PICKER — which content packs this hero can draw from. `picked` holds
@@ -574,6 +575,13 @@ export function CreateScreen() {
     [draft.customClassId, libContent],
   );
   const chosenClassKey = classKeyOf(customClass ? customClass.title : (draft.className ?? ''));
+  /** The inventory step's two questions, for whichever class this is. */
+  const invGroups = useMemo(() => inventoryGroups(draft.className, customClass?.classSpec), [draft.className, customClass]);
+  /** What picking a class writes. Bundled by `class-<key>`, homebrew by card id, on its carrier. */
+  const classChoice = useCallback((id: string): Partial<Draft> => {
+    const custom = (libContent?.classes ?? []).find((c) => c.id === id);
+    return { className: custom ? carrierClassFor(custom) : (id.replace('class-', '') as ClassName), customClassId: custom ? id : null, ...CLASS_RESET };
+  }, [libContent]);
   const creationClassCards = useMemo(
     () => CLASS_CARDS.filter((c) => { const e = classExpansion(c.key); return !e || picked.has(e); }),
     [picked],
@@ -862,6 +870,22 @@ export function CreateScreen() {
       //
       // v0.26.0: ONE choice at a time. `invChoice` selects which of the guide's two groups is on
       // screen, so choice 1 offers the first pair and choice 2 the second.
+      //
+      // v0.43.3 (playtest): a homebrew class offers its own two lists and nothing else. An id there is
+      // a card in a pack, or a bundled loot, weapon or armor card; one the pack no longer has is dropped.
+      if (customClass) {
+        const offered = (invGroups[invChoice] ?? []).flatMap((id): StraightItem[] => {
+          const lc = pickedCards.find((c) => c.id === id);
+          if (lc) return [keepLib(lc)];
+          const loot = lootById(id);
+          const weapon = weaponById(id);
+          const armor = armorById(id);
+          const label = loot?.name ?? weapon?.name ?? armor?.name;
+          if (!label) return [];
+          return [keep(`inv|${id}`, () => ({ id, label, custom: loot ? <ForgedLootCard loot={loot} /> : weapon ? <ForgedWeaponCard weapon={weapon} /> : <ForgedArmorCard armor={armor!} /> }))];
+        });
+        return [...offered, keep(`invskip|${invChoice}`, () => skipInventoryCard(invChoice))];
+      }
       const cinv = draft.className ? CLASS_INVENTORY[draft.className] : null;
       const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
       const group = cinv?.choices[invChoice] ?? [];
@@ -950,7 +974,7 @@ export function CreateScreen() {
          * was a step they could not use at all.
          */
         return [
-          ...CATALOG.filter((c) => c.kind === 'subclass' && (authoring || c.className === draft.className) && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
+          ...CATALOG.filter((c) => c.kind === 'subclass' && (authoring || (!draft.customClassId && c.className === draft.className)) && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
           ...(libContent?.subclasses ?? []).filter((c) => (!c.tier || c.tier === 1) && (authoring || !c.className || classKeyOf(c.className) === chosenClassKey)).map((lc) => keepLib(lc)),
         ];
       case 'ancestry': {
@@ -996,11 +1020,12 @@ export function CreateScreen() {
           : (classInfo(draft.className).domains as string[]);
         return [
           ...pair.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => keep(`cat|${c.id}`, () => ({ id: c.id, label: c.label, thumb: c.thumb, source: c.source }))),
-          ...(libContent?.domains ?? []).map((lc) => keepLib(lc)),
+          // v0.43.3: a homebrew class grants its two domains and no others, so a pack's other cards wait.
+          ...(libContent?.domains ?? []).filter((c) => !customClass || (pair.some((d) => classKeyOf(d) === classKeyOf(c.domain)) && (c.level ?? 1) === 1)).map((lc) => keepLib(lc)),
         ];
       }
     }
-  }, [deck, draft.className, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, pickedCards, picked, creationClassCards, carry, carryOff, carryColor]);
+  }, [deck, draft.className, draft.customClassId, customClass, chosenClassKey, invGroups, draft.mixedAncestry, sources, weaponKind, weaponSlot, invChoice, forgedItem, keep, keepLib, libContent, pickedCards, picked, creationClassCards, carry, carryOff, carryColor]);
   const items: StraightItem[] = useMemo(() => {
     if (!campaign.on || !CAMPAIGN_DECKS.includes(deck)) return rawItems;
     // AUTHORING marks the off cards; PLAYING drops them. Same rule, two sides of it: the DM needs to
@@ -1109,10 +1134,10 @@ export function CreateScreen() {
         case 'level':
           return { level: levelForStatBlock(statBlock?.tier, statBlock?.difficulty) };
         case 'class':
-          // Subclass and domains are chosen FROM a class, so they go with it.
-          return { className: null, subclassCardId: null, domainCardIds: [] };
+          // Subclass, domains and items are chosen FROM a class, so they go with it.
+          return { className: null, customClassId: null, ...CLASS_RESET };
         case 'subclass':
-          return { subclassCardId: null };
+          return { subclassCardId: null, domainCardIds: draftRef.current.domainCardIds.slice(0, domainCardsWanted(null)) };
         case 'ancestry':
           return { ancestryCardId: null, mixedAncestry: null };
         case 'transformation':
@@ -1224,33 +1249,34 @@ export function CreateScreen() {
         return;
       }
       if (deck === 'inventory') {
+        const ids = new Set(invGroups[invChoice] ?? []);
+        // Homebrew inventory rides Choice 1 (see `rawItems`), so it is cleared by anything that answers it.
+        const clearLib = invChoice === 0 ? { inventoryLibIds: [] } : {};
         // v0.26.0: taking nothing answers THIS choice, and clears whatever it had chosen.
         if (id.startsWith('inventory-skip')) {
           const skips = new Set(draft.inventorySkips ?? []);
-          const group = CLASS_INVENTORY[draft.className!]?.choices[invChoice] ?? [];
-          const ids = new Set(group.map(itemOptionId));
           if (skips.has(invChoice)) skips.delete(invChoice);
           else skips.add(invChoice);
-          set({ inventorySkips: [...skips], inventorySkipped: false, inventoryItemIds: draft.inventoryItemIds.filter((x) => !ids.has(x)) });
+          set({ inventorySkips: [...skips], inventorySkipped: false, inventoryItemIds: draft.inventoryItemIds.filter((x) => !ids.has(x)), ...clearLib });
           return;
         }
-        // v0.10.3: a homebrew inventory card toggles into the loose picks (no 2-item cap; clears skip).
-        if ((libContent?.inventory ?? []).some((c) => c.id === id)) {
+        // v0.10.3: a homebrew inventory card, offered beside the potions on Choice 1.
+        // v0.43.3 (playtest): it answers that choice like they do, instead of being a free third pick.
+        if (!ids.has(id) && (libContent?.inventory ?? []).some((c) => c.id === id)) {
           const had = draft.inventoryLibIds.includes(id);
-          set({ inventoryLibIds: had ? draft.inventoryLibIds.filter((x) => x !== id) : [...draft.inventoryLibIds, id], inventorySkipped: false });
+          set({ inventoryLibIds: had ? [] : [id], inventoryItemIds: draft.inventoryItemIds.filter((x) => !ids.has(x)), inventorySkips: (draft.inventorySkips ?? []).filter((c) => c !== invChoice), inventorySkipped: false });
           return;
         }
         // optional items: pick up to TWO (#136), replacing the oldest like domains. Any pick clears skip.
         // One pick per choice: choosing replaces whatever this choice held, rather than filling a
         // shared pool of two. That pool let a player take both potions and no keepsake.
-        const group = CLASS_INVENTORY[draft.className!]?.choices[invChoice] ?? [];
-        const ids = new Set(group.map(itemOptionId));
         const others = draft.inventoryItemIds.filter((x) => !ids.has(x));
         const has = draft.inventoryItemIds.includes(id);
         set({
           inventoryItemIds: has ? others : [...others, id],
           inventorySkips: (draft.inventorySkips ?? []).filter((c) => c !== invChoice),
           inventorySkipped: false,
+          ...clearLib,
         });
         return;
       }
@@ -1283,20 +1309,16 @@ export function CreateScreen() {
            * keyed lookup want one; `customClassId` is what makes it that class. Picking either kind
            * clears the subclass and the domain cards, because both belonged to the last one.
            */
-          const custom = (libContent?.classes ?? []).find((c) => c.id === id);
-          if (custom) {
-            if (draft.customClassId === id) set({ className: null, customClassId: null, subclassCardId: null, domainCardIds: [] });
-            else set({ className: carrierClassFor(custom), customClassId: id, subclassCardId: null, domainCardIds: [] });
-            return;
-          }
-          const key = id.replace('class-', '') as ClassName;
-          if (draft.className === key && !draft.customClassId) set({ className: null, customClassId: null, subclassCardId: null, domainCardIds: [] });
-          else set({ className: key, customClassId: null, subclassCardId: null, domainCardIds: [] });
+          const already = draft.customClassId ? draft.customClassId === id : id === `class-${draft.className}`;
+          set(already ? { className: null, customClassId: null, ...CLASS_RESET } : classChoice(id));
           return;
         }
-        case 'subclass':
-          set({ subclassCardId: draft.subclassCardId === id ? null : id });
+        case 'subclass': {
+          const next = draft.subclassCardId === id ? null : id;
+          // Prepared's third domain card goes with the subclass that granted it.
+          set({ subclassCardId: next, domainCardIds: draft.domainCardIds.slice(0, domainCardsWanted(next)) });
           return;
+        }
         case 'ancestry': {
           // #265 mode toggle cards.
           if (id === MIXED_ANCESTRY_ID) { set({ mixedAncestry: { first: null, second: null }, ancestryCardId: null }); return; }
@@ -1323,13 +1345,13 @@ export function CreateScreen() {
         case 'domains': {
           const has = draft.domainCardIds.includes(id);
           if (has) set({ domainCardIds: draft.domainCardIds.filter((x) => x !== id) });
-          else if (draft.domainCardIds.length < 2) set({ domainCardIds: [...draft.domainCardIds, id] });
-          else set({ domainCardIds: [draft.domainCardIds[1], id] });
+          else if (draft.domainCardIds.length < domainCardsWanted(draft.subclassCardId)) set({ domainCardIds: [...draft.domainCardIds, id] });
+          else set({ domainCardIds: [...draft.domainCardIds.slice(1), id] });
           return;
         }
       }
     },
-    [deck, draft, set, weaponSlot, invChoice, secondaryAllowed, libContent, unskip, carry, carryOff, statBlock],
+    [deck, draft, set, weaponSlot, invChoice, invGroups, classChoice, secondaryAllowed, libContent, unskip, carry, carryOff, statBlock],
   );
 
   // v0.23.0: teach the creator when the creator opens, not on first launch.
@@ -1368,7 +1390,7 @@ export function CreateScreen() {
     const mine = stored?.draft?.characterize?.combatantId ?? null;
     const want = characterizing ? params.cid! : null;
     if (mine !== want) { if (!characterizing) clearDraft(); return; }
-    if (isResumable(stored, draftHasContent) && stored) setResumeOffer({ draft: stored.draft, deck: stored.deck, savedAt: stored.savedAt });
+    if (isResumable(stored, draftHasContent) && stored) setResumeOffer({ draft: stored.draft, deck: stored.deck, picked: stored.picked, savedAt: stored.savedAt });
     else clearDraft();
   }, [resumeChecked, characterizing, params.cid]);
 
@@ -1401,6 +1423,26 @@ export function CreateScreen() {
     else nameRef.current?.focus(); // every deck is done, so the name is what's left
   }, [draft, switchDeck, deckList]);
 
+  /**
+   * What a homebrew class puts on the character (v0.43.3, playtest).
+   *
+   * Its card and pages, and its items: what everyone receives plus what was chosen. A pack's item is
+   * embedded like any other homebrew card. A bundled one is acquired, which is how it reaches the
+   * Inventory with its real card, because `inventoryItemIds` only names the printed class kits.
+   */
+  const classKit = useCallback((d: Draft): { embed: string[]; acquired: string[] } => {
+    const classes = libContent?.classes ?? [];
+    const base = d.customClassId ? classes.find((c) => c.id === d.customClassId) : undefined;
+    if (!base) return { embed: [], acquired: [] };
+    const fixed = d.skipped?.includes('inventory') ? [] : (base.classSpec?.fixedItemIds ?? []);
+    const items = [...fixed, ...d.inventoryItemIds];
+    const inPack = (id: string) => pickedCards.some((c) => c.id === id);
+    return {
+      embed: [base.id, ...assembleClass(classes, base).pages.map((p) => p.id), ...items.filter(inPack)],
+      acquired: items.filter((id) => !inPack(id)),
+    };
+  }, [libContent, pickedCards]);
+
   const forge = useCallback(async () => {
     if (!complete || !draft.className) return;
     const id = newCharacterId();
@@ -1421,10 +1463,9 @@ export function CreateScreen() {
      */
     const customPickIds = Object.values(draft.customPicks ?? {}).flat();
     for (const c of pickedCards) if (customPickIds.includes(c.id)) libById.set(c.id, withResolvedPlaque(c, pickedCards));
-    const classPageIds = draft.customClassId
-      ? (libContent?.classes ?? []).filter((c) => c.classSpec?.role === 'page' && classKeyOf(c.className) === chosenClassKey).map((c) => c.id)
-      : [];
-    const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, draft.customClassId, ...classPageIds, ...draft.domainCardIds, ...draft.inventoryLibIds, ...customPickIds].filter((x): x is string => !!x);
+    const kit = classKit(draft);
+    for (const c of pickedCards) if (kit.embed.includes(c.id)) libById.set(c.id, c);
+    const pickedIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.subclassCardId, draft.communityCardId, draft.armorId, ...kit.embed, ...draft.domainCardIds, ...draft.inventoryLibIds, ...customPickIds].filter((x): x is string => !!x);
     const libraryCards = [...new Set(pickedIds)].map((pid) => libById.get(pid)).filter((c): c is LibraryCard => !!c);
     // v0.10.5: a custom subclass FOUNDATION drags its specialization + mastery siblings along (same family
     // + class) so the subclass-upgrade advancement can add them on level-up. They stay hidden on the sheet
@@ -1443,10 +1484,16 @@ export function CreateScreen() {
     // inert in their arsenal and an Armor Score of zero, because equipping is a hold the player has
     // not learned yet. Armor is the one starting card whose whole purpose is its numbers, so leaving
     // it off made a fresh sheet simply wrong. Onboarding recommends tidying the rest away afterwards.
+    // v0.43.3 (playtest): a printed origin card's passive starts ON too, as a homebrew one's always has.
+    // An Elf's extra downtime move lives on the ancestry card, and a new Elf rested with two.
+    const originIds = [draft.mixedAncestry ? draft.mixedAncestry.first : draft.ancestryCardId, draft.mixedAncestry?.second, draft.communityCardId, draft.subclassCardId].filter((x): x is string => !!x);
+    const originPassives = originIds.filter((oid) => !libById.has(oid) && effectsForCardId(oid, { mixedAncestry: draft.mixedAncestry } as CharacterFile).length > 0);
     const enabledCustom = [
       ...libraryCards.filter((c) => (c.effects?.length ?? 0) > 0 || c.contentType === 'armor').map((c) => c.id),
       ...(draft.armorId ? [draft.armorId] : []),
+      ...originPassives,
     ];
+    const acquired = [...(draft.mixedAncestry ? [draft.mixedAncestry.second!] : []), ...kit.acquired];
     // v0.12.2: record which EXPANSIONS this hero was created with (real ids only — the implicit base is
     // dropped). Omitted when empty so a base-only save stays byte-identical / back-compat.
     const enabledExpansionIds = [...picked].filter((id) => id !== BASE_PICK_ID);
@@ -1466,7 +1513,8 @@ export function CreateScreen() {
       ancestryCardId: draft.mixedAncestry ? draft.mixedAncestry.first! : draft.ancestryCardId!,
       // Both ancestry cards land in Arsenal, side by side (#276 item 3): the first is the origin card
       // (already in abilities); the second rides in via acquiredCardIds, so pin it to abilities too.
-      ...(draft.mixedAncestry ? { mixedAncestry: { first: draft.mixedAncestry.first!, second: draft.mixedAncestry.second! }, acquiredCardIds: [draft.mixedAncestry.second!] } : {}),
+      ...(draft.mixedAncestry ? { mixedAncestry: { first: draft.mixedAncestry.first!, second: draft.mixedAncestry.second! } } : {}),
+      ...(acquired.length ? { acquiredCardIds: acquired } : {}),
       communityCardId: draft.communityCardId!,
       domainCardIds: draft.domainCardIds,
       traits: draft.traits as Record<TraitKey, number>, // complete ⇒ all six assigned
@@ -1475,7 +1523,7 @@ export function CreateScreen() {
       weaponPrimaryId: draft.weaponPrimaryId ?? undefined,
       weaponSecondaryId: draft.weaponSecondaryId,
       armorId: draft.armorId ?? undefined,
-      inventoryItemIds: draft.inventoryItemIds,
+      inventoryItemIds: draft.customClassId ? [] : draft.inventoryItemIds, // a homebrew class's went into `kit`
       ...(libraryCards.length ? { libraryCards } : {}),
       ...(enabledCustom.length ? { enabledCardIds: enabledCustom } : {}),
       ...(enabledExpansionIds.length ? { enabledExpansionIds } : {}),
@@ -1525,7 +1573,7 @@ export function CreateScreen() {
     });
     clearDraft(); // only now: the draft has become a character and must not be offered back
     router.replace({ pathname: '/sheet', params: { id } });
-  }, [complete, draft, router, libContent, pickedCards, picked]);
+  }, [complete, draft, router, libContent, pickedCards, picked, classKit]);
 
   /**
    * BACK to the encounter, never a second copy of it (v0.36.3, owner).
@@ -1601,9 +1649,12 @@ export function CreateScreen() {
 
     const libById = new Map<string, LibraryCard>();
     if (libContent) for (const arr of [libContent.ancestries, libContent.communities, libContent.subclasses, libContent.domains, libContent.armor, libContent.inventory]) for (const c of arr) libById.set(c.id, c);
-    const pickedIds = [d.mixedAncestry ? d.mixedAncestry.first : d.ancestryCardId, d.mixedAncestry?.second, d.subclassCardId, d.communityCardId, d.armorId, ...d.domainCardIds, ...d.inventoryLibIds].filter((x): x is string => !!x);
+    // v0.43.3: a characterized Shaman stays a Shaman. This path never carried `customClassId`.
+    const kit = classKit(d);
+    for (const c of pickedCards) if (kit.embed.includes(c.id)) libById.set(c.id, c);
+    const pickedIds = [d.mixedAncestry ? d.mixedAncestry.first : d.ancestryCardId, d.mixedAncestry?.second, d.subclassCardId, d.communityCardId, d.armorId, ...kit.embed, ...d.domainCardIds, ...d.inventoryLibIds].filter((x): x is string => !!x);
     const libraryCards = [...new Set(pickedIds)].map((pid) => libById.get(pid)).filter((c): c is LibraryCard => !!c);
-    const acquired = d.transformationCardId ? [d.transformationCardId] : [];
+    const acquired = [...(d.transformationCardId ? [d.transformationCardId] : []), ...kit.acquired];
 
     const common = {
       schemaVersion: 1 as const,
@@ -1613,6 +1664,7 @@ export function CreateScreen() {
       portraitUri: d.portraitUri,
       className,
       ...(classless ? { classless: true as const } : {}),
+      ...(d.customClassId ? { customClassId: d.customClassId } : {}),
       subclassCardId: d.subclassCardId ?? '',
       ancestryCardId: (d.mixedAncestry ? d.mixedAncestry.first : d.ancestryCardId) ?? '',
       communityCardId: d.communityCardId ?? '',
@@ -1622,7 +1674,7 @@ export function CreateScreen() {
       weaponPrimaryId: d.weaponPrimaryId ?? undefined,
       weaponSecondaryId: d.weaponSecondaryId,
       armorId: d.armorId ?? undefined,
-      inventoryItemIds: d.inventoryItemIds,
+      inventoryItemIds: d.customClassId ? [] : d.inventoryItemIds,
       ...(libraryCards.length ? { libraryCards } : {}),
       ...(acquired.length ? { acquiredCardIds: acquired } : {}),
       ...([...picked].filter((x) => x !== BASE_PICK_ID).length ? { enabledExpansionIds: [...picked].filter((x) => x !== BASE_PICK_ID) } : {}),
@@ -1705,7 +1757,7 @@ export function CreateScreen() {
     }
     clearDraft();
     backToEncounter();
-  }, [carry, carryOff, carryColor, libContent, picked, backToEncounter]);
+  }, [carry, carryOff, carryColor, libContent, picked, pickedCards, classKit, backToEncounter]);
 
   /** Write an experience into its slot. Shared so the quick flow and the full editor cannot drift. */
   const saveExperience = useCallback((slot: number, d: { title: string; imageUri: string | null; color: string | null; effects?: CardEffect[] }) => {
@@ -1739,7 +1791,7 @@ export function CreateScreen() {
   lockedRef.current = locked;
   const maxSelect = isCustomStep(deck)
     ? (customStepList.find((x) => x.key === deck)?.pick ?? 1)
-    : deck === 'domains' || deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
+    : deck === 'domains' ? domainCardsWanted(draft.subclassCardId) : deck === 'inventory' || (deck === 'ancestry' && !!draft.mixedAncestry) ? 2 : 1;
   // 'domains' used to fall back to the word 'card' — the least specific label in the app, on the one
   // step where you pick two. It only shows now when the centred card's own name is too long to fit.
   const noun = isCustomStep(deck)
@@ -1799,10 +1851,7 @@ export function CreateScreen() {
   }, []);
   const SkipStep = useCallback(
     () =>
-      // v0.36.2 (owner): TRANSFORMATION is skippable in ordinary creation too. It is the one step a
-      // player can reach without having asked for it (enabling the pack turns it on for everyone),
-      // so it is also the one step outside characterize that has to be answerable with nothing.
-      (characterizing ? deck !== 'class' && deck !== 'carry' : deck === 'transformation') ? (
+      characterizing && deck !== 'class' && deck !== 'carry' ? (
         <RuneButton label={draft.skipped?.includes(deck) ? 'Skipped' : 'Skip'} kind="ghost" dense height={30} muteSfx onPress={skipStep} accessibilityLabel={`Skip ${deck}`} />
       ) : null,
     [characterizing, deck, draft.skipped, skipStep],
@@ -1918,7 +1967,10 @@ export function CreateScreen() {
 
   const randomize = useCallback(() => {
     const pick = <T,>(a: T[]): T | undefined => (a.length ? a[Math.floor(Math.random() * a.length)] : undefined);
-    const two = <T,>(a: T[]): T[] => { const p = [...a]; const o: T[] = []; while (p.length && o.length < 2) o.push(p.splice(Math.floor(Math.random() * p.length), 1)[0]); return o; };
+    const some = <T,>(a: T[], n: number): T[] => { const p = [...a]; const o: T[] = []; while (p.length && o.length < n) o.push(p.splice(Math.floor(Math.random() * p.length), 1)[0]); return o; };
+    // v0.43.3: Random rolls from what is ON SCREEN. It kept a second copy of the rules for each list,
+    // keyed on the carrier, so a Shaman's Random answered as a Druid and ignored campaign limits.
+    const onScreen = items.map((it) => it.id);
     playSfx('cardSelect');
     let focusId: string | undefined; // the picked card to recenter the carousel on (Feature 2)
     // v0.43.0: a custom step rolls from its own type's cards, taking exactly as many as it asks for.
@@ -1936,8 +1988,8 @@ export function CreateScreen() {
       return;
     }
     switch (deck) {
-      case 'class': { const k = pick(creationClassCards.map((c) => c.key)); if (k) { set({ className: k, subclassCardId: null, domainCardIds: [] }); focusId = `class-${k}`; } break; }
-      case 'subclass': { if (!draft.className) break; const id = pick(CATALOG.filter((c) => c.kind === 'subclass' && c.className === draft.className && c.tier === 1 && (!c.expansion || picked.has(c.expansion))).map((c) => c.id)); if (id) { set({ subclassCardId: id }); focusId = id; } break; }
+      case 'class': { const id = pick(onScreen); if (id) { set(classChoice(id)); focusId = id; } break; }
+      case 'subclass': { if (!draft.className) break; const id = pick(onScreen); if (id) { set({ subclassCardId: id, domainCardIds: draftRef.current.domainCardIds.slice(0, domainCardsWanted(id)) }); focusId = id; } break; }
       case 'ancestry': {
         const anc = CATALOG.filter((c) => c.kind === 'ancestry' && (!c.expansion || picked.has(c.expansion))).map((c) => c.id);
         if (draft.mixedAncestry) {
@@ -1958,16 +2010,16 @@ export function CreateScreen() {
       }
       case 'transformation': { const id = pick(CATALOG.filter((c) => c.kind === 'transformation').map((c) => c.id)); if (id) { set({ transformationCardId: id }); focusId = id; } break; }
       case 'community': { const id = pick(CATALOG.filter((c) => c.kind === 'community' && (!c.expansion || picked.has(c.expansion))).map((c) => c.id)); if (id) { set({ communityCardId: id }); focusId = id; } break; }
-      case 'domains': { if (!draft.className) break; const pool = classInfo(draft.className).domains.flatMap((d) => CATALOG.filter((c) => c.kind === 'domain' && c.domain === d && c.level === 1 && (!c.expansion || picked.has(c.expansion)))).map((c) => c.id); const picks = two(pool); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
+      case 'domains': { if (!draft.className) break; const picks = some(onScreen, domainCardsWanted(draftRef.current.subclassCardId)); set({ domainCardIds: picks }); focusId = picks[picks.length - 1]; break; }
       case 'weapons': { const w = pick(PRIMARY_WEAPONS.filter((x) => x.kind === weaponKind && (!x.expansion || picked.has(x.expansion)))); if (w) { set({ weaponPrimaryId: w.id, weaponsSkipped: false, ...(w.burden === 'Two-Handed' ? { weaponSecondaryId: null } : {}) }); focusId = w.id; } break; }
       case 'armor': { const id = pick(TIER1_ARMOR.filter((a) => !a.expansion || picked.has(a.expansion)).map((a) => a.id)); if (id) { set({ armorId: id, armorSkipped: false }); focusId = id; } break; }
-      case 'inventory': { if (!draft.className) break; const groups = CLASS_INVENTORY[draft.className]?.choices ?? []; const picks = groups.map((g) => itemOptionId(g[Math.floor(Math.random() * g.length)])); set({ inventoryItemIds: picks, inventorySkips: [], inventorySkipped: false }); focusId = picks[invChoice] ?? picks[picks.length - 1]; break; }
+      case 'inventory': { if (!draft.className) break; const rolled = invGroups.map((g) => pick(g)); const picks = rolled.filter((x): x is string => !!x); set({ inventoryItemIds: picks, inventoryLibIds: [], inventorySkips: rolled.flatMap((x, i) => (x ? [] : [i])), inventorySkipped: false }); focusId = rolled[invChoice] ?? picks[picks.length - 1]; break; }
     }
     if (focusId) {
       const idx = items.findIndex((it) => it.id === focusId);
       if (idx >= 0) carouselRef.current?.scrollTo(idx);
     }
-  }, [deck, draft.className, draft.mixedAncestry, weaponKind, invChoice, items, set, picked, pickedCards, creationClassCards]);
+  }, [deck, draft.className, draft.mixedAncestry, weaponKind, invChoice, invGroups, items, set, picked, pickedCards, classChoice]);
 
   return (
     <AppScreen
@@ -2154,7 +2206,7 @@ export function CreateScreen() {
           ) : null}
           {/* v0.26.0: the guide's two inventory choices, one at a time, presented exactly like the
               weapon slots above so the pattern is already familiar by the time it appears. */}
-          {deck === 'inventory' && (draft.className ? CLASS_INVENTORY[draft.className].choices.length > 1 : false) ? (
+          {deck === 'inventory' && invGroups.length > 1 ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 4, paddingHorizontal: 4 }}>
               <Segmented
                 options={[
@@ -2387,8 +2439,8 @@ export function CreateScreen() {
               </Text>
             </Pressable>
           ) : (
-          <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
-            {deck === 'carry' ? `Carrying ${carry.length - carryOff.size}/${carry.length}` : deck === 'inventory' ? `Picked ${draft.inventoryItemIds.length}/2` : `Picked ${selectedIds.length}/${maxSelect}`}
+          <Text style={{ color: (deck === 'inventory' ? draft.inventoryItemIds.length + draft.inventoryLibIds.length : selectedIds.length) >= maxSelect ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.2 }}>
+            {deck === 'carry' ? `Carrying ${carry.length - carryOff.size}/${carry.length}` : deck === 'inventory' ? `Picked ${draft.inventoryItemIds.length + draft.inventoryLibIds.length}/2` : `Picked ${selectedIds.length}/${maxSelect}`}
           </Text>
           )}
         </Animated.View>
@@ -2489,7 +2541,10 @@ export function CreateScreen() {
           onConfirm={() => {
             const o = resumeOffer;
             setDraft(o.draft);
-            if (o.deck) setDeck(o.deck as DeckKey);
+            // v0.43.3: the packs come back with the draft, or a homebrew class in it would not resolve.
+            if (o.picked) setPicked(new Set(o.picked));
+            // A draft saved on the old Transform step lands on Class, since that step is gone.
+            if (o.deck && (characterizing || o.deck !== 'transformation')) setDeck(o.deck as DeckKey);
             setResumeOffer(null);
           }}
           onCancel={() => { clearDraft(); setResumeOffer(null); }}
