@@ -1,21 +1,21 @@
-RuneKeep v0.43.2 - The expansion editor stops throwing you out.
+RuneKeep v0.43.3 - A homebrew class is its own class.
 
 THE BIG ONE
 
-- ADDING OR EDITING A CARD NO LONGER KICKS YOU BACK TO THE PACK LIST. This was my fault and it was in v0.43.1. The back guard added in that release tidied up after itself by stepping back through the browser's history, and guards hand over: the library screen stands its guard down at the exact moment the card editor raises one. Standing down ran the tidy-up, the tidy-up was a real navigation, and so OPENING A CARD POPPED THE PAGE. Every time, on the web, for every kind of card.
-- The guard cannot navigate at all any more. It is not that it is more careful; the thing that moves you is no longer reachable from that code.
-- BACK NOW ASKS BEFORE IT THROWS AWAY A DRAFT, which is what it was supposed to do in the first place. It also closes what is open first: the dialog you can see, then the expansion, then the screen.
-- Verified in a real browser this time, not by reasoning: open a card, edit it, press the browser's Back, get asked, keep writing, save, reopen. That check is why the second bug below was found too.
+- A HOMEBREW CLASS NO LONGER TURNS INTO THE CLASS IT BORROWS ITS LOOK FROM. Every homebrew class is paired with a printed class for its colours and banner, and too much of the app read that pairing as the class itself. A Shaman paired with Druid was offered Druid subclasses, rolled Druid domains on Random, was given Druid items, arrived on the sheet as "LVL 1 DRUID" holding Druid's pages and Beastform, and found its own class cards filed in the Inventory. The pairing now decides the colours and nothing else.
+- THE SUBCLASS, DOMAIN AND INVENTORY STEPS OFFER THE HOMEBREW CLASS'S OWN CHOICES, and Random rolls from what is on screen, so it can no longer pick something the step does not offer. That also makes Random respect campaign limits.
+- THE ITEMS A HOMEBREW CLASS HANDS OUT ARE ACTUALLY HANDED OUT: what everyone receives, plus one pick from each of its two lists.
+- ON THE SHEET the class reads by its own name, its pages sit in the Arsenal where a printed class's pages sit, and the class card that starts the system stays out of your hand.
+- Changing class clears everything the last class gave you, including its items. Resuming a draft brings back the packs it was made with, so a homebrew class in it still resolves.
 
-CUSTOM STEPS LOOK LIKE STEPS
+CREATION
 
-- A STEP FROM ONE OF YOUR TYPES HAS AN ICON. It had none, so its tab collapsed to a squashed box with a label and nothing above it, beside nine tabs holding a proper glyph. The mark is a card with its chip across it, which is what a type is.
-- ITS TEXT IS TYPESET. The line you write for the step was plain unstyled text in the middle of a screen where everything else is a gold seam or an uppercase counter. It now reads as the step's own heading, your sentence, and the count.
+- TRANSFORMATIONS ARE NO LONGER A CREATION STEP. Becoming a vampire is something that happens in play. Transformation cards are in Add Gear under Transform, and in the card gallery under Transformations, whenever The Void is enabled.
+- SCHOOL OF KNOWLEDGE TAKES A THIRD DOMAIN CARD at creation, as Prepared says. Choosing another subclass gives the third card back.
+- THE INVENTORY STEP IS TWO CHOICES FOR EVERY CLASS. A homebrew item offered beside the potions now answers that choice instead of being a free extra pick.
 
-THE CHIP EDITOR
+THE SHEET
 
-- ON AN ORDINARY CARD THE CHIP IS BEHIND A SWITCH, and off by default. On a domain card or an item it is a detail, and three colour controls were shouting over the fields that matter. It opens already on for a card that has one.
-- ON A CLASS, A DOMAIN OR A TYPE the chip and its gold ornament now sit on the card's own parchment, at the ornament's exact width with room above and below, instead of floating on nothing.
-- THE EDITOR NOW TELLS THE TRUTH ABOUT THE DEFAULT. The swatches said the default band was a neutral grey while the card was drawn in the parchment its kind actually uses. They name the real colour now, and the word row shows the word exactly as the card will.
+- A NEW ELF RESTS WITH THREE DOWNTIME MOVES. Celestial Trance lives on the ancestry card, and new characters arrived with that card switched off. Every printed ancestry, community and subclass passive now starts switched on. An existing character can switch theirs on by tapping the card.
 
 Sideload: enable Install unknown apps, then open the APK.

@@ -1,5 +1,8 @@
+import { type ClassName } from '@/constants/identity';
+import { CLASS_INVENTORY, itemOptionId } from '@/data/class-inventory-data';
 import { TRAIT_ORDER } from '@/features/character-sheet/character';
 import { type CustomStep, isCustomStep, stepTypeId } from '@/lib/content-types';
+import { type CustomClassSpec } from '@/lib/custom-class';
 import { GOLD_DEFAULT } from './components/gold-card';
 import { type DeckKey, type Draft } from './create-types';
 
@@ -24,6 +27,34 @@ export const EMPTY: Draft = {
   inventoryLibIds: [],
   gold: GOLD_DEFAULT,
 };
+
+/**
+ * Everything that belonged to the last class (v0.43.3).
+ *
+ * One value, because there are several ways to change class and each of them used to clear its own
+ * idea of this list. Random left `customClassId` behind and every path left the old class's items.
+ */
+export const CLASS_RESET: Partial<Draft> = { subclassCardId: null, domainCardIds: [], inventoryItemIds: [], inventoryLibIds: [], inventorySkips: [], inventorySkipped: false };
+
+/**
+ * How many domain cards creation asks for (v0.43.3, playtest).
+ *
+ * School of Knowledge's Prepared: "Take an additional domain card of your level or lower from a domain
+ * you have access to." At creation that is simply one more level 1 card.
+ */
+export const domainCardsWanted = (subclassCardId: string | null): number =>
+  subclassCardId === 'subclass-school-of-knowledge-1-foundation' ? 3 : 2;
+
+/**
+ * The inventory step's two questions, by option id (v0.43.3).
+ *
+ * A homebrew class asks its own lists. It always answers with both, even an empty one, because the
+ * step is done when both have an answer and an unfinished class must not leave it unanswerable.
+ */
+export function inventoryGroups(className: ClassName | null, spec?: CustomClassSpec): string[][] {
+  if (spec) return [spec.choiceAItemIds ?? [], spec.choiceBItemIds ?? []];
+  return (className ? CLASS_INVENTORY[className].choices : []).map((group) => group.map(itemOptionId));
+}
 
 /** Synthetic ancestry-carousel cards (#265): the last card toggles single↔mixed mode. */
 export const MIXED_ANCESTRY_ID = 'ancestry-mixed';
@@ -62,7 +93,7 @@ export function deckDone(deck: DeckKey, d: Draft, steps: CustomStep[] = []): boo
     case 'community':
       return !!d.communityCardId;
     case 'domains':
-      return d.domainCardIds.length === 2;
+      return d.domainCardIds.length >= domainCardsWanted(d.subclassCardId);
     case 'traits':
       return TRAIT_ORDER.every((t) => d.traits[t.key] !== undefined);
     case 'experiences':
@@ -74,7 +105,8 @@ export function deckDone(deck: DeckKey, d: Draft, steps: CustomStep[] = []): boo
     case 'inventory':
       // v0.26.0: the guide asks TWO questions, and the step is done when both have an answer. Taking
       // nothing counts as an answer. An older draft that set the whole-step skip still counts.
-      return d.inventorySkipped || (d.inventoryItemIds.length + (d.inventorySkips?.length ?? 0)) >= 2 || (d.inventoryLibIds?.length ?? 0) > 0;
+      // v0.43.3: a homebrew card answers the choice it is offered on, the same as anything beside it.
+      return d.inventorySkipped || (d.inventoryItemIds.length + (d.inventorySkips?.length ?? 0) + (d.inventoryLibIds?.length ?? 0)) >= 2;
   }
   // Unreachable: every custom step returned above and every built-in has a case. A step nobody
   // recognises must never be the reason Forge stays disabled, so the answer here is "done".
@@ -102,16 +134,12 @@ export const DECKS: { key: DeckKey; label: string; stub?: boolean }[] = [
  * rides with it for the same reason: it is another number the stat block worked out, not a choice.
  * Then the ordinary order, with Transform sitting after Ancestry, where it reads as another thing
  * you ARE rather than another thing you carry.
+ *
+ * v0.43.3 (playtest): "Transformations should not be part of character creation since they are not a
+ * default thing." So Transform is characterize-only again, undoing v0.36.2. A player who becomes a
+ * vampire picks the card up in Add Gear, under its Transform tab.
  */
 export function decksFor(characterize: boolean, transformations: boolean, custom: CustomStep[] = []): { key: DeckKey; label: string; stub?: boolean }[] {
-  /**
-   * TRANSFORM is not characterize-only (v0.36.2, owner).
-   *
-   * Enabling a pack that adds transformations turns the step on for everyone, players included, and
-   * a player gets a Skip on it because being a vampire is not something the game asks of you. The
-   * two new steps above it stay characterize-only: a player has nothing to inherit and levels up
-   * through play rather than choosing a level at creation.
-   */
   /**
    * WHERE A CUSTOM STEP GOES (v0.43.0, owner).
    *
@@ -124,7 +152,7 @@ export function decksFor(characterize: boolean, transformations: boolean, custom
    * an unrelated pack being enabled.
    */
   const extras: { key: DeckKey; label: string; stub?: boolean }[] = [
-    ...(transformations ? [{ key: 'transformation' as DeckKey, label: 'Transform' }] : []),
+    ...(characterize && transformations ? [{ key: 'transformation' as DeckKey, label: 'Transform' }] : []),
     ...custom.map((c) => ({ key: c.key as DeckKey, label: c.label })),
   ];
   const withTransform = (list: { key: DeckKey; label: string; stub?: boolean }[]) =>

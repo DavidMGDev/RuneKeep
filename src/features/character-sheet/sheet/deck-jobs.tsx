@@ -37,10 +37,9 @@ import { contentSig } from '@/lib/content-sig';
 import { featureSectionIndexes } from '@/lib/library';
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { tierForLevel } from '@/lib/modifiers';
+import { expandedMark } from '@/lib/custom-class-pages';
+import { bundledClassOf, customClassCard, customClassPages, hasBeastform } from '@/lib/played-class';
 import { wildshapeSummary } from './sheet-utils';
-
-/** Druids get Beastform, whether it is their class or their multiclass. */
-const hasBeastform = (f: { className: string; multiclassName?: string }) => f.className === 'druid' || f.multiclassName === 'druid';
 
 export type DeckJob = { key: string; node: ReactNode; raster?: boolean; art?: string; id?: string };
 export type CustomDeckJob = DeckJob & { target: 'inventory' | 'arsenal' | 'both' };
@@ -77,6 +76,8 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     const empty = { featJobs: [] as Job[], classJob: null as Job | null, mcClassJob: null as Job | null, mcFeatJobs: [] as Job[], expJobs: [] as Job[], weaponJobs: [] as Job[], armorJob: null as Job | null, invJobs: [] as Job[], customCardJobs: [] as CustomJob[], acqWeaponJobs: [] as Job[], acqArmorJobs: [] as Job[], acqLootJobs: [] as Job[], acqClassJobs: [] as Job[], notesJobs: [] as Job[], libJobs: [] as Job[], wildshapeFaceJobs: [] as Job[], martialJobs: [] as Job[] };
     if (!file) return empty;
     const cls = file.className;
+    // v0.43.3: a homebrew class holds its own pages (below), never its carrier's.
+    const ownClass = !file.classless && !!bundledClassOf(file);
     const classDef = CLASS_CARDS.find((c) => c.key === cls);
     const title = classDef?.title ?? cls.charAt(0).toUpperCase() + cls.slice(1);
     const fpages = featurePages(cls);
@@ -91,11 +92,11 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     // face 0 = the class card (#110: the missing first page); same deck-wide marks as the forge
     // v0.36.2: a CLASSLESS character shows no class card and no feature pages. Its file names a class
     // only because the shape requires one; none of it is theirs.
-    const classJob = classDef && !file.classless
+    const classJob = classDef && ownClass
       ? { key: `class-${cls}`, raster: isVoidClass(cls), node: <ForgedCard title={title} kindLabel="Class" body={classDef.body} accentDeep={classColor(cls).deep} Banner={classDef.Banner} pageMark={`1/${total}`} classKey={cls} /> }
       : null;
     // Void class banners are expo-image rasters (async decode) — settle before capture (raster flag)
-    const featJobs = (file.classless ? [] : fpages).map((p) => ({
+    const featJobs = (ownClass ? fpages : []).map((p) => ({
       key: `feat-${cls}-${p.pageIndex}`,
       raster: isVoidClass(cls),
       node: (
@@ -194,11 +195,12 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
       ];
     });
     // Inventory item cards (#136): the default kit (auto), the chosen options, and the custom items.
-    const cinv = CLASS_INVENTORY[cls];
+    // v0.43.3: a homebrew class's items are real cards on the file (see `forge`), so it has no kit here.
+    const cinv = customClassCard(file) ? null : CLASS_INVENTORY[cls];
     const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
     // v0.36: a characterized adversary takes NO starting kit. It is not a hero who packed a bag, and
     // a wraith carrying a torch and fifty feet of rope because a Guardian would is simply wrong.
-    const kitJobs: Job[] = file.skipStartingKit
+    const kitJobs: Job[] = file.skipStartingKit || !cinv
       ? []
       : cinv.take.map((name, i) => ({ key: `kit-${cls}-${i}`, node: <ForgedCard title={itemTitle(name)} kindLabel="Item" body={`You carry ${name}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle /> }));
     const chosenIds = file.inventoryItemIds ?? [];
@@ -210,8 +212,7 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
      * name. Both ids are accepted: heroes made before this hold the authored id, and rewriting their
      * files to chase a nicer card would be a migration for a cosmetic gain.
      */
-    const chosenJobs: Job[] = cinv.choices
-      .flat()
+    const chosenJobs: Job[] = (cinv?.choices.flat() ?? [])
       .map((name): Job | null => {
         const held = [itemOptionId(name), authoredItemOptionId(name)].find((id) => chosenIds.includes(id));
         if (!held) return null;
@@ -259,7 +260,12 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     // Embedded homebrew cards (v0.10.3): each picked LibraryCard forges to a card the carousel treats
     // like any scanned card. Structural/domain ones slot into their positions below; loose ones (weapon/
     // armor/inventory/generic added via ADD GEAR) ride the inventory deck.
-    const libJobs: Job[] = (file.libraryCards ?? []).map((lc) => {
+    // v0.43.3: a page of this character's homebrew class draws as a class card, numbered among its pages.
+    const classPages = customClassPages(file);
+    const libJobs: Job[] = (file.libraryCards ?? []).map((held) => {
+      const pageAt = classPages.findIndex((p) => p.id === held.id);
+      const lc = pageAt >= 0 ? classPages[pageAt] : held;
+      const pageMark = pageAt >= 0 ? expandedMark(pageAt, classPages.length) : undefined;
       // mixed-ancestry cross-out (v0.10.4): strike the feature the mix crosses out on THIS ancestry card.
       // v0.13.0: features can sit at ANY section index — resolve trait 1|2 through featureSectionIndexes.
       const crossed = lc.contentType === 'ancestry' ? mixedCrossedTrait(file, lc.id) : 0;
@@ -274,9 +280,9 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
         // with one (or is given one) has to re-forge like any other content change.
         // v0.43.0: the CHIP rides the key too, for the same reason `typeLabel` does — it is printed
         // on the card, so a card that gains or changes one has to re-forge.
-        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel, lc.fullImage ? 'face' : '', lc.plaque?.label, lc.plaque?.from, lc.plaque?.to, lc.plaque?.text)}`,
+        key: `lib-${lc.id}-${contentSig(lc.title, lc.text, lc.imageUri, lc.color, secSig, crossed, lc.typeLabel, lc.fullImage ? 'face' : '', lc.plaque?.label, lc.plaque?.from, lc.plaque?.to, lc.plaque?.text, pageMark)}`,
         id: lc.id,
-        node: <LibraryForgedCard card={lc} pack={file.libraryCards} struckIndex={struckIndex} />,
+        node: <LibraryForgedCard card={lc} pack={file.libraryCards} struckIndex={struckIndex} pageMark={pageMark} />,
         // v0.21.0: bundled Hope-and-Fear ancestry art is an image too, so rasterize those cards like any
         // image-bearing card (avoids the async-art flicker, per the forged-card cache rules).
         raster: !!lc.imageUri || !!VOID_ANCESTRY_FACE[lc.id],
