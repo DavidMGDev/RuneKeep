@@ -31,7 +31,8 @@ export default function Sheet() {
       .then(async (file) => {
         if (!file) return file;
         const packs = await listExpansions().catch(() => []);
-        const whole = withClassCards(file, packs.flatMap((e) => e.cards));        if (whole !== file) await saveCharacter(whole);
+        const whole = withClassCards(file, packs.flatMap((e) => e.cards));
+        if (whole !== file) await saveCharacter(whole);
         return whole;
       })
       .then((file) => {
