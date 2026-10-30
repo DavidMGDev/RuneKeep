@@ -32,7 +32,7 @@ import { WILDSHAPES } from '@/data/wildshape-data';
 import { libraryCardById } from '@/lib/library-embed';
 import { tierForLevel } from '@/lib/modifiers';
 import type { CharacterFile } from '@/lib/character-file';
-import { bundledClassOf, customClassCard, customClassPages } from '@/lib/played-class';
+import { bundledClassOf, customClassCard, customClassFeatures, customClassPages } from '@/lib/played-class';
 import { fileDecks, type SeedCard } from '@/lib/dm-card-list';
 
 /** One card as the DM's carousel wants it: printed artwork where the game has some, else the live card. */
@@ -82,7 +82,8 @@ export function dmDecks(file: CharacterFile): Record<string, DmCard[]> {
     push('abilities', { id: jobs.classJob.key, label: 'Class', node: jobs.classJob.node, faces: jobs.featJobs.map((j) => j.node) });
   }
   // A homebrew class is its pages, one card each, exactly as the sheet shows it.
-  const classPages = customClassPages(file);
+  // v0.43.4: its feature cards ride with them.
+  const classPages = [...customClassPages(file), ...customClassFeatures(file)];
   for (const p of classPages) {
     const j = jobs.libJobs.find((x) => x.id === p.id);
     if (j) push('abilities', jobCard(j, p.title));
@@ -125,7 +126,9 @@ export function dmDecks(file: CharacterFile): Record<string, DmCard[]> {
   for (const j of jobs.libJobs) {
     const id = j.id ?? j.key;
     if (structural.has(id)) continue;
-    push('inventory', jobCard(j, labelOf(file, id, 'Card')));
+    // v0.43.4: a class page or feature card is an ability, as on the sheet.
+    const kind = file.libraryCards?.find((c) => c.id === id)?.contentType;
+    push(kind === 'class' || kind === 'feature' ? 'abilities' : 'inventory', jobCard(j, labelOf(file, id, 'Card')));
   }
   for (const id of file.acquiredCardIds ?? []) if (!id.startsWith('class-')) catalogCard('inventory', id);
 

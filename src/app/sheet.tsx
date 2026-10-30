@@ -8,7 +8,9 @@ import { Rune } from '@/constants/theme';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RedesignedSheet } from '@/features/character-sheet/sheet/redesigned-sheet';
 import { type CharacterFile } from '@/lib/character-file';
-import { getCharacter } from '@/lib/character-store';
+import { getCharacter, saveCharacter } from '@/lib/character-store';
+import { listExpansions } from '@/lib/library-store';
+import { withClassCards } from '@/lib/played-class';
 import { shouldShow } from '@/lib/onboarding-store';
 import { playSfx } from '@/lib/sfx';
 
@@ -21,9 +23,21 @@ export default function Sheet() {
   useEffect(() => {
     if (!id) return;
     let live = true;
-    getCharacter(id).then((file) => {
-      if (live) setState({ loaded: true, file });
-    });
+    /**
+     * v0.43.4 (playtest): a homebrew character is made whole from the packs on this device before the
+     * sheet sees it. See `withClassCards`. Best effort: a pack that will not load leaves it as it was.
+     */
+    getCharacter(id)
+      .then(async (file) => {
+        if (!file) return file;
+        const packs = await listExpansions().catch(() => []);
+        const whole = withClassCards(file, packs.flatMap((e) => e.cards));
+        if (whole !== file) await saveCharacter(whole);
+        return whole;
+      })
+      .then((file) => {
+        if (live) setState({ loaded: true, file });
+      });
     return () => {
       live = false;
     };

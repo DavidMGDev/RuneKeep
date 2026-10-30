@@ -21,6 +21,7 @@ import { CATALOG, cardById } from '@/data/catalog';
 import { effectsForCardId } from '@/features/cards/card-effects';
 import { type TraitKey } from '@/features/character-sheet/character';
 import { type CharacterFile, type CustomCardDef, newCharacterId, toSheetCharacter } from '@/lib/character-file';
+import { withClassCards } from '@/lib/played-class';
 import { getCharacter, saveCharacter } from '@/lib/character-store';
 import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { contentForCreation, type CreationContent, type Expansion, featureSectionIndexes, isEnabledForCreation, type LibraryCard, subclassFamilyKey } from '@/lib/library';
@@ -1497,7 +1498,9 @@ export function CreateScreen() {
     // v0.12.2: record which EXPANSIONS this hero was created with (real ids only — the implicit base is
     // dropped). Omitted when empty so a base-only save stays byte-identical / back-compat.
     const enabledExpansionIds = [...picked].filter((id) => id !== BASE_PICK_ID);
-    await saveCharacter({
+    // v0.43.4 (playtest): `withClassCards` hands a homebrew class its feature cards, as it does to a
+    // character made before this, when the sheet opens.
+    await saveCharacter(withClassCards({
       schemaVersion: 1,
       id,
       createdAt: new Date().toISOString(),
@@ -1564,7 +1567,7 @@ export function CreateScreen() {
         ...(draft.mixedAncestry ? { [draft.mixedAncestry.second!]: 'abilities' } : {}),
         ...Object.fromEntries(customPickIds.map((cid) => [cid, 'abilities'])),
       },
-    }).catch((e: unknown) => {
+    }, pickedCards)).catch((e: unknown) => {
       // v0.22.0: this was awaited with NO catch, so a failed write produced no feedback at all.
       // Put the draft back so nothing is lost, and say what happened.
       saveDraft(draft, { deck, picked: [...picked] });
@@ -1713,12 +1716,13 @@ export function CreateScreen() {
     // v0.36.3 (owner): the Statblock is the FIRST card in the arsenal. `cardOrder` is the same
     // field a player's own drag writes, so nothing new is needed and the DM can drag it elsewhere.
     const lead = customCards.find((c) => c.id === 'cz-carry-statblock')?.id;
-    const file = {
+    // v0.43.4: a homebrew class's feature cards come with it.
+    const file = withClassCards({
       ...common,
       customCards,
       enabledCardIds: [...new Set(enabledCardIds)],
       ...(lead ? { cardOrder: { abilities: [lead] } } : {}),
-    } as CharacterFile;
+    } as CharacterFile, pickedCards);
 
     try {
       await saveCharacter(file);

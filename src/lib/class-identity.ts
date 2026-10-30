@@ -117,6 +117,18 @@ export const inheritsClassLook = (c: LibraryCard): boolean =>
   (c.contentType === 'class' && c.classSpec?.role === 'page') || c.contentType === 'feature' || c.contentType === 'subclass';
 
 /**
+ * A card dressed in its class's look, if its kind takes one, from the class found in `cards`.
+ *
+ * v0.43.4 (playtest): the editor was the only place this happened, so a Shaman's feature card was
+ * green-bannered while it was being written and bare in the hand of the Shaman holding it.
+ */
+export function dressedForClass(c: LibraryCard, cards: LibraryCard[] | undefined): LibraryCard {
+  if (!inheritsClassLook(c)) return c;
+  const id = classIdentityFor(cards, c.className);
+  return c.contentType === 'class' ? withClassIdentityAsPage(c, id) : withClassIdentity(c, id);
+}
+
+/**
  * The title a card should SHOW, once identity is applied.
  *
  * Only a page borrows one. This is what stops "give the class a name" being demanded of a page that

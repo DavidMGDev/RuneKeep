@@ -22,6 +22,7 @@ import { isEnabledForCreation, type LibraryCard } from '@/lib/library';
 import { libraryCardEffects } from '@/lib/library-embed';
 import { hasHomebrew, type BrowseCat, keepSource, type SourceFilter } from '@/lib/homebrew-filter';
 import { withResolvedPlaque } from '@/lib/card-plaque';
+import { dressedForClass } from '@/lib/class-identity';
 import { cardsOfType, contentTypes } from '@/lib/content-types';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { listExpansions } from '@/lib/library-store';
@@ -191,14 +192,16 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, itemsOnly, onAdd
    * all kinds). v0.43.0: drawn against the whole record set, so a card wearing its class's, domain's
    * or type's chip shows it here as well as in the library.
    */
-  const recordItem = useCallback((lc: LibraryCard): StraightItem => ({ id: lc.id, custom: <LibraryForgedCard card={lc} pack={records} /> }), [records]);
+  const recordItem = useCallback((lc: LibraryCard): StraightItem => ({ id: lc.id, custom: <LibraryForgedCard card={dressedForClass(lc, records)} pack={records} /> }), [records]);
   /**
    * Handing a homebrew card OUT (v0.43.0).
    *
    * The copy is stamped with whatever chip it inherits before it leaves, because from here it goes on
    * to a character, where the pack that defines that chip may not be installed. See `lib/card-plaque`.
+   * v0.43.4: and with its class's title and banner, for the same reason. A class page used to arrive
+   * as the bare card its author sees half-written, under its own title and with no banner.
    */
-  const handOut = useCallback((lc: LibraryCard) => onAddCustom?.(withResolvedPlaque(lc, records)), [onAddCustom, records]);
+  const handOut = useCallback((lc: LibraryCard) => onAddCustom?.(withResolvedPlaque(dressedForClass(lc, records), records)), [onAddCustom, records]);
   const recordWeapons = useMemo(() => records.filter((c) => c.contentType === 'weapon'), [records]);
   const recordArmor = useMemo(() => records.filter((c) => c.contentType === 'armor'), [records]);
   const recordLoose = useMemo(() => records.filter((c) => c.contentType === 'inventory' || c.contentType === 'generic'), [records]);

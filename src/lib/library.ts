@@ -441,6 +441,37 @@ function normalizeTypeSpec(raw: unknown): TypeSpec | undefined {
 
 /** Validate + normalize ONE raw card into a LibraryCard. Throws on a malformed/id-less card. Shared by
  *  `validateExpansion` and `parseCharacterFile` (embedded `libraryCards`) — one trust boundary. */
+const hasStringId = (x: unknown): boolean => !!x && typeof x === 'object' && typeof (x as { id?: unknown }).id === 'string';
+const strings = (x: unknown): string[] => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : []);
+
+/** A class spec off the wire, with every list a list, because the sheet filters them unguarded. */
+function normalizeClassSpec(raw: unknown): CustomClassSpec | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const num = (k: string) => (typeof o[k] === 'number' ? (o[k] as number) : 0);
+  const hope = (o.hopeFeature ?? {}) as Record<string, unknown>;
+  return {
+    role: o.role === 'page' ? 'page' : o.role === 'base' ? 'base' : undefined,
+    startingEvasion: num('startingEvasion'),
+    startingHp: num('startingHp'),
+    hopeFeature: { name: typeof hope.name === 'string' ? hope.name : '', text: typeof hope.text === 'string' ? hope.text : '' },
+    summary: typeof o.summary === 'string' ? o.summary : '',
+    domains: strings(o.domains),
+    fixedItemIds: strings(o.fixedItemIds),
+    choiceAItemIds: strings(o.choiceAItemIds),
+    choiceBItemIds: strings(o.choiceBItemIds),
+    classItems: typeof o.classItems === 'string' ? o.classItems : undefined,
+    features: Array.isArray(o.features) ? (o.features as { name?: unknown; text?: unknown }[]).filter((f) => f && typeof f === 'object').map((f) => ({ name: typeof f.name === 'string' ? f.name : '', text: typeof f.text === 'string' ? f.text : '' })) : undefined,
+  };
+}
+
+function normalizeFunctionCategory(raw: unknown): LibraryCard['functionCategory'] {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.key !== 'string' || !o.key) return undefined;
+  return { key: o.key, label: typeof o.label === 'string' ? o.label : '', icon: typeof o.icon === 'string' ? o.icon : undefined };
+}
+
 export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
   if (!raw || typeof raw !== 'object') throw new Error(`Card ${i} malformed`);
   const c = raw as Record<string, unknown>;
@@ -464,9 +495,27 @@ export function normalizeLibraryCard(raw: unknown, i = 0): LibraryCard {
     sections: Array.isArray(c.sections)
       ? (c.sections as unknown[]).map((s) => {
           const o = (s ?? {}) as Record<string, unknown>;
-          return { name: typeof o.name === 'string' ? o.name : undefined, body: typeof o.body === 'string' ? o.body : '', feature: o.feature === true ? true : undefined, generated: o.generated === true ? true : undefined };
+          return {
+            name: typeof o.name === 'string' ? o.name : undefined,
+            body: typeof o.body === 'string' ? o.body : '',
+            feature: o.feature === true ? true : undefined,
+            generated: o.generated === true ? true : undefined,
+            functionId: typeof o.functionId === 'string' ? o.functionId : undefined,
+            align: o.align === 'left' || o.align === 'center' || o.align === 'right' || o.align === 'justify' ? o.align : undefined,
+            space: typeof o.space === 'number' && o.space >= 0 ? o.space : undefined,
+          };
         })
       : undefined,
+    // v0.43.4 (playtest): everything v0.42 added. This list was never extended, so every character
+    // LOAD stripped a homebrew class of its spec (a Shaman read as its carrier, its pages fell into the
+    // Inventory) and every pack IMPORT arrived with no class details, no counters and no elements.
+    spellcastTrait: typeof c.spellcastTrait === 'string' ? c.spellcastTrait : undefined,
+    classSpec: normalizeClassSpec(c.classSpec),
+    functions: Array.isArray(c.functions) ? (c.functions as unknown[]).filter(hasStringId) as CardFunction[] : undefined,
+    advances: Array.isArray(c.advances) ? (c.advances as unknown[]).filter(hasStringId) as CardAdvance[] : undefined,
+    functionCategory: normalizeFunctionCategory(c.functionCategory),
+    linkSubclass: typeof c.linkSubclass === 'string' ? c.linkSubclass : undefined,
+    classRole: c.classRole === 'feature' ? 'feature' : undefined,
     weapon: c.weapon && typeof c.weapon === 'object' ? (c.weapon as WeaponSpec) : undefined,
     armor: c.armor && typeof c.armor === 'object' ? (c.armor as ArmorSpec) : undefined,
     catalogId: typeof c.catalogId === 'string' ? c.catalogId : undefined,
@@ -561,5 +610,7 @@ export function validateExpansion(o: unknown): Expansion {
     createdAt: typeof e.createdAt === 'string' ? e.createdAt : new Date(0).toISOString(),
     cards: migrateCards(cards),
     enabled: typeof e.enabled === 'boolean' ? e.enabled : undefined,
+    // v0.43.4: the DM's campaign settings travel with the pack (v0.42.1) and were dropped right here.
+    campaign: e.campaign && typeof e.campaign === 'object' && typeof (e.campaign as CampaignSettings).on === 'boolean' ? { on: (e.campaign as CampaignSettings).on, disabled: strings((e.campaign as CampaignSettings).disabled) } : undefined,
   };
 }

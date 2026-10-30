@@ -30,7 +30,8 @@ import { lootById } from '@/data/loot-data';
 import { applyWildshapeCost, isWildshapeId, WILDSHAPES, wildshapeById } from '@/data/wildshape-data';
 import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID } from '@/data/martial-form-data';
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
-import { bundledClassOf, customClassCard, customClassPages, hasBeastform, playedClass } from '@/lib/played-class';
+import { bundledClassOf, customClassCard, customClassFeatures, customClassPages, hasBeastform, playedClass } from '@/lib/played-class';
+import { dressedForClass } from '@/lib/class-identity';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardHasEffects, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
@@ -1078,7 +1079,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
        * and Warlock trackers have followed since v0.19.1: anything with a control on it renders its
        * real component. It costs a forge slot and buys a card that actually does what it says.
        */
-      const lc = customClassPages(file).find((c) => c.id === id) ?? file.libraryCards?.find((c) => c.id === id);
+      const held = file.libraryCards?.find((c) => c.id === id);
+      const lc = customClassPages(file).find((c) => c.id === id) ?? (held && dressedForClass(held, file.libraryCards));
       if (lc?.functions?.length) return liveFunctionCard(lc, lc);
       const j = libJobs.find((x) => x.id === id);
       if (!j) return undefined;
@@ -1226,7 +1228,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // v0.43.3: a homebrew class is its pages, in the Arsenal where a published class's pages sit.
     const homebrewClass = customClassCard(file);
     const homebrewPages = customClassPages(file);
-    const classPageItems = homebrewPages.map((p) => libItem(p.id)).filter((x): x is CardItem => !!x);
+    // v0.43.4: and its feature cards beside them (live, so a counter on one can be pressed).
+    const homebrewFeatures = customClassFeatures(file);
+    const classPageItems = [...homebrewPages, ...homebrewFeatures].map((p) => libItem(p.id)).filter((x): x is CardItem => !!x);
     // Multiclass (#311): the additional class's feature card (multi-page), assembled exactly like the
     // primary's, plus the chosen subclass FOUNDATION card. Both ride the arsenal next to the originals.
     const mcFaceJobs = mcFeatJobs;
@@ -1322,18 +1326,21 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // pass, so a catalog weapon no longer duplicates into both Arsenal and Inventory.
     // v0.10.3: embedded homebrew cards NOT bound to a structural/domain slot (weapon/armor/inventory/
     // generic added via ADD GEAR) ride the inventory deck.
-    const structuralLibIds = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...file.domainCardIds, homebrewClass?.id ?? '', ...homebrewPages.map((p) => p.id)]);
+    const structuralLibIds = new Set<string>([file.subclassCardId, file.ancestryCardId, file.communityCardId, ...(file.mixedAncestry ? [file.mixedAncestry.second] : []), ...file.domainCardIds, homebrewClass?.id ?? '', ...homebrewPages.map((p) => p.id), ...homebrewFeatures.map((p) => p.id)]);
     const acquiredSet = new Set(file.acquiredCardIds ?? []);
-    const looseLibItems = (file.libraryCards ?? [])
-      .filter((lc) => {
-        if (structuralLibIds.has(lc.id)) return false;
-        // v0.10.5: a custom subclass specialization/mastery card is embedded at creation but only shows
-        // once the subclass-upgrade advancement acquires it.
-        if (lc.contentType === 'subclass' && (lc.tier ?? 1) > 1) return acquiredSet.has(lc.id);
-        return true;
-      })
-      .map((lc) => libItem(lc.id))
-      .filter((x): x is CardItem => !!x);
+    const looseLib = (file.libraryCards ?? []).filter((lc) => {
+      if (structuralLibIds.has(lc.id)) return false;
+      // v0.10.5: a custom subclass specialization/mastery card is embedded at creation but only shows
+      // once the subclass-upgrade advancement acquires it.
+      if (lc.contentType === 'subclass' && (lc.tier ?? 1) > 1) return acquiredSet.has(lc.id);
+      return true;
+    });
+    // v0.43.4 (playtest): a class page or feature card from ADD GEAR is an ability, not a supply. It
+    // joins the Arsenal, where an acquired printed class card has always gone.
+    const isAbilityCard = (lc: LibraryCard) => lc.contentType === 'class' || lc.contentType === 'feature';
+    const libItems = (cards: LibraryCard[]) => cards.map((lc) => libItem(lc.id)).filter((x): x is CardItem => !!x);
+    abilities.push(...libItems(looseLib.filter(isAbilityCard)));
+    const looseLibItems = libItems(looseLib.filter((lc) => !isAbilityCard(lc)));
     // v0.36.3 (owner): a CHARACTERIZED character carries no purse. Gold is a player's running
     // total; an adversary turned into a character has none and never will unless someone gives it
     // one, and a permanent 0 gold card is one more thing in a deck that is meant to be lean.

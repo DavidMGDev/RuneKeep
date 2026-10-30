@@ -81,3 +81,20 @@ describe('validateExpansion (import trust boundary)', () => {
     expect(() => validateExpansion({ id: 'e', name: 'N', cards: [{ contentType: 'domain' }] })).toThrow(/id/);
   });
 });
+
+describe('validateExpansion keeps what v0.42 added (v0.43.4)', () => {
+  it('a shared homebrew class arrives with its spec, its counters and the DM campaign settings', () => {
+    const e = validateExpansion({
+      id: 'e', name: 'N', campaign: { on: true, disabled: ['class:x'] },
+      cards: [
+        { id: 'c', contentType: 'class', title: 'Shaman', classSpec: { role: 'base', startingEvasion: 11, startingHp: 7, domains: ['sage'] } },
+        { id: 'f', contentType: 'feature', title: 'Vodou', className: 'Shaman', linkSubclass: 'Bones', functions: [{ id: 'f1', kind: 'counter', title: 'Charges' }], advances: [{ id: 'a1' }], functionCategory: { key: 'fc', label: 'Rites' } },
+      ],
+    });
+    expect(e.cards[0].classSpec).toMatchObject({ role: 'base', startingEvasion: 11, domains: ['sage'], fixedItemIds: [] });
+    expect(e.cards[1]).toMatchObject({ linkSubclass: 'Bones', functionCategory: { key: 'fc', label: 'Rites' } });
+    expect(e.cards[1].functions?.[0].id).toBe('f1');
+    expect(e.cards[1].advances?.[0].id).toBe('a1');
+    expect(e.campaign).toEqual({ on: true, disabled: ['class:x'] });
+  });
+});
