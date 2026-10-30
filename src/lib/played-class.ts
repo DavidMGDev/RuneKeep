@@ -22,9 +22,11 @@
 
 import { type ClassName, classInfo } from '@/constants/identity';
 import { CLASS_DATA } from '@/data/class-data';
+import type { CharacterFile } from './character-file';
+import { linksToClass } from './class-links';
 import { classKeyOf } from './custom-class';
 import { assembleClass } from './custom-class-pages';
-import type { LibraryCard } from './library';
+import { type LibraryCard, subclassFamilyName } from './library';
 
 /** Everything the sheet needs to know about a character's class, whoever wrote it. */
 export interface PlayedClass {
@@ -46,6 +48,8 @@ export interface ClassCarrier {
   /** v0.42.6: the embedded homebrew class card this character is playing, if it is playing one. */
   customClassId?: string;
   libraryCards?: LibraryCard[];
+  /** v0.43.4: a homebrew subclass decides which of the class's subclass feature cards apply. */
+  subclassCardId?: string;
 }
 
 /** The homebrew class card a character is playing, if any. */
@@ -104,4 +108,83 @@ export const hasBeastform = (file: ClassCarrier & { multiclassName?: string }): 
 export function customClassPages(file: ClassCarrier): LibraryCard[] {
   const card = customClassCard(file);
   return card ? assembleClass(file.libraryCards ?? [], card).pages : [];
+}
+
+/** A class's FEATURE CARD: its own type since v0.42.3, or a generic card marked as one before that. */
+const isFeatureCard = (c: LibraryCard): boolean => c.contentType === 'feature' || (c.contentType === 'generic' && c.classRole === 'feature');
+
+/** The homebrew subclass family this character took, if it took one. */
+const subclassFamilyOf = (file: ClassCarrier): string | undefined => {
+  const lc = file.subclassCardId ? file.libraryCards?.find((c) => c.id === file.subclassCardId) : undefined;
+  return lc?.contentType === 'subclass' ? subclassFamilyName(lc) : undefined;
+};
+
+/**
+ * The feature cards a character of this class holds (v0.43.4, playtest).
+ *
+ * "Vodou Healing Powers" is a feature card that names the Shaman, and nothing ever handed it to a
+ * Shaman: creation embedded the class and its pages and stopped there. A card linked to the whole
+ * class is every Shaman's; one linked to a subclass is only that subclass's.
+ */
+export function classFeatureCards(cards: LibraryCard[], classTitle: string, subclassFamily?: string): LibraryCard[] {
+  return cards.filter((c) => isFeatureCard(c) && linksToClass(c, classTitle) && (!classKeyOf(c.linkSubclass) || classKeyOf(c.linkSubclass) === classKeyOf(subclassFamily)));
+}
+
+/** The feature cards of the homebrew class this character plays, as held on the file. */
+export function customClassFeatures(file: ClassCarrier): LibraryCard[] {
+  const card = customClassCard(file);
+  return card ? classFeatureCards(file.libraryCards ?? [], card.title, subclassFamilyOf(file)) : [];
+}
+
+/** What `normalizeLibraryCard` dropped from every embedded card before v0.43.4. */
+const STRIPPED = ['spellcastTrait', 'classSpec', 'functions', 'advances', 'functionCategory', 'linkSubclass', 'classRole'] as const;
+const hasElements = (c: LibraryCard): boolean => !!c.sections?.some((s) => s.functionId || s.align || s.space !== undefined);
+
+/**
+ * A character's homebrew cards made whole from the packs on this device (v0.43.4, playtest).
+ *
+ * Two things, both the same complaint, "Shaman's feature card isn't in the arsenal":
+ *
+ * 1. RESTORE. Until v0.43.4 every load of a character stripped its embedded cards of the fields v0.42
+ *    added, and the next save made that permanent. A Shaman saved that way has a class card with no
+ *    spec, so it read as its carrier and its pages fell into the Inventory. Whatever a held card is
+ *    missing that the same card in an installed pack has, it gets back. Nothing it HAS is touched.
+ * 2. FEATURES. Its class's feature cards, embedded like its pages, each in the category its author
+ *    chose for it. Creation runs this too, so a new character and a repaired one end up the same.
+ *
+ * Returns the same object when there is nothing to do, so a caller can tell whether to save.
+ */
+export function withClassCards(file: CharacterFile, packCards: LibraryCard[]): CharacterFile {
+  const byId = new Map(packCards.map((c) => [c.id, c]));
+  let restoredAny = false;
+  const held = (file.libraryCards ?? []).map((c) => {
+    const src = byId.get(c.id);
+    if (!src) return c;
+    const patch: Partial<LibraryCard> = {};
+    for (const k of STRIPPED) if (c[k] === undefined && src[k] !== undefined) Object.assign(patch, { [k]: src[k] });
+    if (hasElements(src) && !hasElements(c)) patch.sections = src.sections;
+    if (!Object.keys(patch).length) return c;
+    restoredAny = true;
+    return { ...c, ...patch };
+  });
+  const next = restoredAny ? { ...file, libraryCards: held } : file;
+  const card = customClassCard(next);
+  if (!card) return next;
+  const missing = classFeatureCards(packCards, card.title, subclassFamilyOf(next)).filter((c) => !held.some((h) => h.id === c.id));
+  if (!missing.length) return next;
+  const cats = [...(next.customCategories ?? [])];
+  const placed: Record<string, string> = {};
+  for (const c of missing) {
+    const fc = c.functionCategory;
+    if (!fc) continue;
+    if (!cats.some((x) => x.id === fc.key)) cats.push({ id: fc.key, label: fc.label.trim() || 'Features', icon: fc.icon ?? 'star' });
+    placed[c.id] = fc.key;
+  }
+  const effective = missing.filter((c) => (c.effects?.length ?? 0) > 0).map((c) => c.id);
+  return {
+    ...next,
+    libraryCards: [...held, ...missing],
+    ...(effective.length ? { enabledCardIds: [...(next.enabledCardIds ?? []), ...effective] } : {}),
+    ...(Object.keys(placed).length ? { customCategories: cats, cardCategory: { ...(next.cardCategory ?? {}), ...placed } } : {}),
+  };
 }

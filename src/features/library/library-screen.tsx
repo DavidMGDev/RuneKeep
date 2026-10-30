@@ -63,7 +63,7 @@ import { type CustomClassSpec, domainProblems, EMPTY_CLASS_SPEC } from '@/lib/cu
 import { domainLabel } from '@/lib/domain-label';
 import { advancedFunctions } from '@/lib/card-advances';
 import { classTitles } from '@/lib/custom-class-pages';
-import { BUILTIN_CLASS_LABELS, classIdentityFor, inheritsClassLook, withClassIdentity, withClassIdentityAsPage } from '@/lib/class-identity';
+import { BUILTIN_CLASS_LABELS, dressedForClass } from '@/lib/class-identity';
 import { finishTour, shouldShow } from '@/lib/onboarding-store';
 import { functionVars } from '@/lib/function-vars';
 import { afterShare, nextShareVersion } from '@/lib/pack-version';
@@ -1277,11 +1277,7 @@ export function LibraryScreen() {
      * A page takes the class's title as well, which is item 10: a page is the class card, and it was
      * showing an empty title and demanding one. See `lib/class-identity`.
      */
-    const dressed = (c: LibraryCard): LibraryCard => {
-      if (!inheritsClassLook(c)) return c;
-      const id = classIdentityFor(selected.cards, c.className);
-      return c.contentType === 'class' ? withClassIdentityAsPage(c, id) : withClassIdentity(c, id);
-    };
+    const dressed = (c: LibraryCard): LibraryCard => dressedForClass(c, selected.cards);
     const previewCard = (d: CardDraft): LibraryCard => dressed({
       id: existing?.id ?? 'preview',
       contentType: cfg.contentType,

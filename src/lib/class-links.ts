@@ -84,6 +84,17 @@ export function subclassNamesFor(cards: LibraryCard[], classTitle: string): stri
   return out;
 }
 
-/** Every class an expansion offers, by title, so a card's link can be chosen rather than typed. */
-export const classTitlesIn = (cards: LibraryCard[]): string[] =>
-  cards.filter((c) => c.contentType === 'class' && c.title.trim()).map((c) => c.title.trim());
+/**
+ * Every class an expansion offers, by title, so a card's link can be chosen rather than typed.
+ *
+ * v0.43.4 (playtest): class CARDS only, once each. A class's info pages are class cards too and carry
+ * its title, so a Shaman with two pages was offered as "Shaman Shaman Shaman".
+ */
+export const classTitlesIn = (cards: LibraryCard[]): string[] => {
+  const out: string[] = [];
+  for (const c of cards) {
+    const t = c.title.trim();
+    if (c.contentType === 'class' && c.classSpec?.role !== 'page' && t && !out.some((x) => classKeyOf(x) === classKeyOf(t))) out.push(t);
+  }
+  return out;
+};

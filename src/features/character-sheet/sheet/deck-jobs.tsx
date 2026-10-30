@@ -38,6 +38,7 @@ import { featureSectionIndexes } from '@/lib/library';
 import { mixedCrossedTrait } from '@/lib/library-embed';
 import { tierForLevel } from '@/lib/modifiers';
 import { expandedMark } from '@/lib/custom-class-pages';
+import { dressedForClass } from '@/lib/class-identity';
 import { bundledClassOf, customClassCard, customClassPages, hasBeastform } from '@/lib/played-class';
 import { wildshapeSummary } from './sheet-utils';
 
@@ -264,7 +265,8 @@ export function buildDeckJobs(deckFile: CharacterFile | null | undefined): DeckJ
     const classPages = customClassPages(file);
     const libJobs: Job[] = (file.libraryCards ?? []).map((held) => {
       const pageAt = classPages.findIndex((p) => p.id === held.id);
-      const lc = pageAt >= 0 ? classPages[pageAt] : held;
+      // v0.43.4: anything else of a class (a feature card, a subclass) wears that class's look too.
+      const lc = pageAt >= 0 ? classPages[pageAt] : dressedForClass(held, file.libraryCards);
       const pageMark = pageAt >= 0 ? expandedMark(pageAt, classPages.length) : undefined;
       // mixed-ancestry cross-out (v0.10.4): strike the feature the mix crosses out on THIS ancestry card.
       // v0.13.0: features can sit at ANY section index — resolve trait 1|2 through featureSectionIndexes.
