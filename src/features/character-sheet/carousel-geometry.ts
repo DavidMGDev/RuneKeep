@@ -218,6 +218,12 @@ export function slotOpacityAt(distSteps: number, expandP: number = 1): number {
   return Math.min(1, Math.max(0, (cut - distSteps) / 0.4));
 }
 
+/** Only skip fully transparent normal slots; editing and focus can bring distant cards on-screen. */
+export function canSkipSlotTransform(distSteps: number, expandP: number, editP: number, focused: boolean): boolean {
+  'worklet';
+  return editP === 0 && !focused && slotOpacityAt(distSteps, expandP) === 0;
+}
+
 /** Smooth center-out scale: centermost largest, tapering to SCALE_MIN. */
 export function cardScaleAt(theta: number): number {
   'worklet';

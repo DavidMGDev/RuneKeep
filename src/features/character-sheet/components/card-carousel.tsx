@@ -34,6 +34,7 @@ import {
   CARD_H,
   CARD_W,
   cardScaleAt,
+  canSkipSlotTransform,
   COLLAPSE_TRIGGER,
   COMPACT_DROP,
   COMPACT_SCALE,
@@ -277,6 +278,12 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
     const mapped = po ? po[slotId] : undefined;
     const idx = mapped !== undefined ? mapped : index;
     const p = expandProgress.value;
+    // Keep thumbs mounted, but avoid trigonometry and transform construction for invisible slots.
+    // Read on the UI thread so a distant gear jump needs no React commit to restore the geometry.
+    if (canSkipSlotTransform(Math.abs(idx - rotation.value / ANGLE_STEP), p, editMode.value,
+      fullscreenProgress.value > 0 && Math.round(focusIndex.value) === idx)) {
+      return { opacity: 0, zIndex: 0, transform: [{ translateX: -10000 }, { translateY: 0 }, { rotateZ: '0rad' }, { scale: 0 }] };
+    }
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
     const stepNow = (COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p) * (1 - GRIND_TIGHTEN * grindProgress.value);
     const centerPos = rotation.value / ANGLE_STEP;
