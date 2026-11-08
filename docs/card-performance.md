@@ -1,8 +1,8 @@
 # Card performance investigation
 
-Status: experiment for device testing, not approved for production. Baseline: v0.43.5.
+Status: selected optimizations authorized for release as v0.43.6. Baseline: v0.43.5.
 
-## Findings from the current implementation
+## Findings from the v0.43.5 implementation
 
 - `components/card-carousel.tsx` mounts a `CardSlot` for every card. Each slot owns several animated styles, shared values, and gestures. Its main style computes sine, cosine, Gaussian scale and transforms even when the visibility curve returns zero. Drawing fewer textures does not bound this CPU work.
 - Full-resolution images mount only within two slots of the settled center. The center intentionally stops following during a gear grind, while live card bodies follow a separate bucketed center. A distant jump therefore needs a React commit and image decode after release. Making the entire deck full resolution would trade that delay for memory pressure.
@@ -13,11 +13,15 @@ Status: experiment for device testing, not approved for production. Baseline: v0
 
 These are code findings, not device profiles. No claim of measured FPS, memory savings, or instant distant-card loading is made.
 
-## First experiment in this PR
+## Changes selected for release
 
 Short-circuit the main per-card transform calculation only when the card is already fully transparent, edit mode is fully closed, and the card is not the focused fullscreen card. Retain every mounted thumbnail, original visibility curve, image windows, gestures, and visible-card geometry. This uses existing Reanimated worklets and adds no dependency.
 
 Tests sweep fractional positions through the compact/expanded visibility boundary and verify that editing, focus, and transition states cannot be culled. This addresses one CPU cost, not all animated-style subscriptions or distant full-resolution decode.
+
+The release also indexes embedded cards, forge jobs, authored cards and assembled homebrew class pages once per deck rebuild. The live scroll center warms an additional image-only band with the existing two-card radius. The union of settled and live bands mounts at most ten full-resolution images (plus explicitly carried cards), regardless of deck length. Token overlays and page controls keep their original settled window.
+
+Interaction testing found an existing sorting defect: in-deck reorder assigned category overrides to every sorted card. Starting weapons have appearances in Arsenal and Inventory; the new override moved both appearances into Arsenal. The reorder now assigns categories only to cards actually crossing decks.
 
 ## Recommended sequence after testing
 
@@ -46,7 +50,7 @@ Tests sweep fractional positions through the compact/expanded visibility boundar
 - Edit mode: raise distant cards, group drag with autoscroll, sort, drop, exit midway through transitions. No missing carried cards or changed selection.
 - Roll dice, toggle equipment, modify tokens, switch pages and open homebrew controls; no stale state.
 - Capture baseline and experimental traces on the same device with the same decks, cold and warm caches. Reject if scrolling improves but peak memory, opening time or distant-card readiness regresses.
-- User tests and approves the experimental PR before merge. Publishing this experiment is not authorized.
+- User authorized implementation, interaction testing, merge and release. No Android device was attached for physical touch or native frame-time measurements.
 
 ## Primary references
 
@@ -57,3 +61,9 @@ Tests sweep fractional positions through the compact/expanded visibility boundar
 - [FlashList v2 architecture](https://shopify.engineering/flashlist-v2)
 
 - [Skia installation requirements](https://wcandillon.github.io/react-native-skia/v2/docs/getting-started/installation/)
+
+## Verification for v0.43.6
+
+- TypeScript and 106 unit suites (1,632 tests) pass.
+- `node scripts/card-interactions.mjs http://localhost:8081` uses an isolated browser profile and a 108-card mixed fixture. It asserts real gear scrolling, edge-hold category switching, gear-hold edit entry, group selection and drag order, select/deselect all, animated sort order and membership, edit gear scrolling, exit to compact, category switching, fullscreen, page taps and page swipes. It reads provider state from React dev fibers for assertions and calls provider actions for fixture setup and actions otherwise reached through menus; gesture checks use real mouse input. Run with `RK_FIREFOX=1` for Firefox. This script requires the dev server, not a production minified bundle.
+- Repeated screenshots are inspected for card appearance; this is not a pixel-perfect cross-platform proof. Native release build is required as well. No physical Android device is attached, so native FPS, memory usage and physical touch remain unmeasured.

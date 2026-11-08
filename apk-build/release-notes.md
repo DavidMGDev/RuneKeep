@@ -1,7 +1,10 @@
-RuneKeep v0.43.5 - Combo Die and equipment fixes.
+RuneKeep v0.43.6 - Card performance and Golden Gear sorting.
 
-- Brawler Combo Die upgrades appear during level-up, starting at d4 and ending at d10. One upgrade is earned per tier from tier 2 onward. Unused upgrades carry forward and can be spent on later level-ups, at most once per level-up.
-- Existing Brawlers and multiclass Brawlers receive a live Combo Die tracker without needing to recreate the character.
-- Secondary weapons can be unequipped even when they have no numeric stat modifiers. The equip control is available for all weapons and armor.
+- Fully invisible cards skip transform calculations in the normal fan. Their thumbnails remain mounted, and editing and fullscreen focus retain the complete animation path.
+- Full-resolution artwork gets ready around the live scrolling position as well as the settled position, including Golden Gear scroll. Image coverage stays bounded; token overlays and page controls keep their existing coverage.
+- Large homebrew decks reuse card and class-page indexes instead of repeatedly scanning and rebuilding them for each card.
+- Sorting or dragging cards within a deck preserves their category assignments. Sorting starting weapons in the Arsenal no longer pulls their Inventory appearances into the Arsenal.
+
+Card artwork, fan geometry, gestures and live controls retain their existing rendering. No character migration is required.
 
 Sideload: enable Install unknown apps, then open the APK.

@@ -59,6 +59,12 @@ export const WINDOW_HALF = 3;
  *  it can ever fade in. Everything further lives on its always-mounted thumb. */
 export const IMG_MOUNT_HALF = 2;
 
+/** Warm the live scroll destination too, even while the settled center freezes during a grind.
+ * Each band is bounded; tokens and multi-face controls retain their original settled window. */
+export function mountCardArt(index: number, settled: number, live: number, carried: boolean): boolean {
+  return carried || Math.abs(index - settled) <= IMG_MOUNT_HALF || Math.abs(index - live) <= IMG_MOUNT_HALF;
+}
+
 /**
  * How many cards each side of center mount their LIVE body (v0.28.0).
  *

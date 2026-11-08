@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { canSkipSlotTransform, ANGLE_STEP, cardScaleAt, clampRot, imageOpacityAt, maxRotation, SCALE_MAX, SCALE_MIN, slotOpacityAt, snapRot, WINDOW_HALF } from './carousel-geometry';
+import { mountCardArt, IMG_MOUNT_HALF, canSkipSlotTransform, ANGLE_STEP, cardScaleAt, clampRot, imageOpacityAt, maxRotation, SCALE_MAX, SCALE_MIN, slotOpacityAt, snapRot, WINDOW_HALF } from './carousel-geometry';
 
 describe('cardScaleAt', () => {
   it('is largest at the center (theta 0)', () => {
@@ -104,5 +104,23 @@ describe('invisible slot transform fast path', () => {
     const index = 999;
     expect(canSkipSlotTransform(Math.abs(index - 0), 0, 0, false)).toBe(true);
     expect(canSkipSlotTransform(Math.abs(index - 999), 0, 0, false)).toBe(false);
+  });
+});
+
+describe('bounded image warmup during Golden Gear scroll', () => {
+  it('retains all original images and every carried card through distant jumps', () => {
+    for (const center of [0, 12, 499, 999]) {
+      for (const live of [0, 500, 999]) {
+        for (let i = 0; i < 1000; i++) {
+          if (Math.abs(i - center) <= IMG_MOUNT_HALF) expect(mountCardArt(i, center, live, false)).toBe(true);
+          expect(mountCardArt(i, center, live, true)).toBe(true);
+        }
+        expect(mountCardArt(live, center, live, false)).toBe(true);
+      }
+    }
+  });
+  it('bounds decode coverage independently of total deck size and preserves destination neighbors', () => {
+    const mounted = Array.from({ length: 1000 }, (_, i) => i).filter((i) => mountCardArt(i, 20, 900, false));
+    expect(mounted).toEqual([18, 19, 20, 21, 22, 898, 899, 900, 901, 902]);
   });
 });

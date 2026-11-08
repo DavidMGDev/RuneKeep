@@ -1068,6 +1068,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     const file = deckFile;
     const none = { decks: undefined as Record<string, CardItem[]> | undefined, categoryMeta: undefined as Record<string, { label: string; icon?: string; builtin: boolean }> | undefined, originIndices: undefined as [number, number, number] | undefined };
     if (!file) return none;
+    // Index once per deck rebuild instead of scanning and assembling class pages for every card.
+    const heldById = new Map((file.libraryCards ?? []).map((c) => [c.id, c]));
+    const libJobsById = new Map(libJobs.map((j) => [j.id, j]));
+    const customById = new Map((file.customCards ?? []).map((c) => [c.id, c]));
+    const acqClassJobsByKey = new Map(acqClassJobs.map((j) => [j.key, j]));
+    const homebrewPages = customClassPages(file);
+    const classPagesById = new Map(homebrewPages.map((c) => [c.id, c]));
     // v0.10.3: an embedded homebrew card forges into a CardItem in its own structural slot (so origin
     // badges + ordering keep working). `libItem` returns the forged image once ready, else a live node so
     // the card is never momentarily missing. A file with no libraryCards never calls it — identical to before.
@@ -1079,10 +1086,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
        * and Warlock trackers have followed since v0.19.1: anything with a control on it renders its
        * real component. It costs a forge slot and buys a card that actually does what it says.
        */
-      const held = file.libraryCards?.find((c) => c.id === id);
-      const lc = customClassPages(file).find((c) => c.id === id) ?? (held && dressedForClass(held, file.libraryCards));
+      const held = heldById.get(id);
+      const lc = classPagesById.get(id) ?? (held && dressedForClass(held, file.libraryCards));
       if (lc?.functions?.length) return liveFunctionCard(lc, lc);
-      const j = libJobs.find((x) => x.id === id);
+      const j = libJobsById.get(id);
       if (!j) return undefined;
       const src = featureSources[j.key];
       return src ? { id, source: src.full, thumb: src.thumb } : { id, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, live: j.node };
@@ -1171,7 +1178,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         if (c) return { level: c.level ?? 0, domain: c.domain ?? '', item: { id: c.id, source: c.source, thumb: c.thumb } as CardItem };
         const it = libItem(id); // v0.10.3: a custom domain card resolves + sorts by its authored level/domain
         if (!it) return null;
-        const lc = file.libraryCards?.find((x) => x.id === id);
+        const lc = heldById.get(id);
         return { level: lc?.level ?? 0, domain: lc?.domain ?? '', item: it };
       })
       .filter((x): x is { level: number; domain: string; item: CardItem } => !!x)
@@ -1228,7 +1235,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       : coverOf(`features-${file.className}`, faces);
     // v0.43.3: a homebrew class is its pages, in the Arsenal where a published class's pages sit.
     const homebrewClass = customClassCard(file);
-    const homebrewPages = customClassPages(file);
     // v0.43.4: and its feature cards beside them (live, so a counter on one can be pressed).
     const homebrewFeatures = customClassFeatures(file);
     const classPageItems = [...homebrewPages, ...homebrewFeatures].map((p) => libItem(p.id)).filter((x): x is CardItem => !!x);
@@ -1250,7 +1256,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // v0.42.1: an authored card carrying elements is LIVE, for the same reason a homebrew one is:
     // a picture cannot be pressed. This is what makes an expanded Brawler's Combo Die a real tracker.
     const customItem = (j: { id?: string; key: string; node: ReactNode }): CardItem => {
-      const cc = (file.customCards ?? []).find((c) => c.id === j.id);
+      const cc = j.id ? customById.get(j.id) : undefined;
       return cc?.functions?.length ? liveFunctionCard(cc) : forgedItem(j);
     };
     const arsenalCustom = customCardJobs.filter((j) => j.target !== 'inventory').map(customItem);
@@ -1270,7 +1276,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         const faceKeys = [`acqclass-${k}`, ...featurePages(k as typeof file.className).map((p) => `acqfeat-${k}-${p.pageIndex}`)];
         const faces = faceKeys.map((key) => {
           const src = featureSources[key];
-          return src ? { source: src.full, thumb: src.thumb } : { custom: acqClassJobs.find((j) => j.key === key)?.node };
+          return src ? { source: src.full, thumb: src.thumb } : { custom: acqClassJobsByKey.get(key)?.node };
         });
         const first = faces.find((f) => 'source' in f && f.source) as { source: { uri: string }; thumb: { uri: string } } | undefined;
         // v0.27.0: a single-page acquired class card still needs a card, and in a browser NONE of
@@ -1295,7 +1301,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         const pages = featurePages(k as typeof file.className).map((pg) => {
           const key = `acqfeat-${k}-${pg.pageIndex}`;
           const src = featureSources[key];
-          return src ? { source: src.full, thumb: src.thumb } : { custom: acqClassJobs.find((j) => j.key === key)?.node };
+          return src ? { source: src.full, thumb: src.thumb } : { custom: acqClassJobsByKey.get(key)?.node };
         });
         return pagesOf((i) => acquiredPageId(k, i), pages);
       });
@@ -1877,9 +1883,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onReorderCards = useCallback((movedIds: string[], toCat: string, orderedIds: string[]) => {
     setFile((f) => {
       if (!f) return f;
-      const moved = new Set(movedIds);
+      // Sorting within a deck must not re-file its other appearances (starting weapons ride two decks).
+      const alreadyHere = new Set((carouselDecks?.[toCat] ?? []).map((c) => c.id));
+      const moved = new Set(movedIds.filter((id) => !alreadyHere.has(id)));
       const cardCategory = { ...(f.cardCategory ?? {}) };
-      for (const id of movedIds) cardCategory[id] = toCat;
+      for (const id of moved) cardCategory[id] = toCat;
       const cardOrder = { ...(f.cardOrder ?? {}) };
       for (const k of Object.keys(cardOrder)) if (k !== toCat) cardOrder[k] = cardOrder[k].filter((x) => !moved.has(x));
       cardOrder[toCat] = orderedIds;
@@ -1887,7 +1895,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       saveFileRef.current(next);
       return next;
     });
-  }, []);
+  }, [carouselDecks]);
   // Delete ANY cards (#248 item 5): strip authored/acquired/domain entries + enabled/override/tokens,
   // and add every id to `removedCardIds` so SYSTEM cards (origins, class feature, equipment, gold) drop
   // from the decks too — everything is deletable. Re-derives stats (a deleted card may have been enabled).
