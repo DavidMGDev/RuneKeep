@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { ANGLE_STEP, cardScaleAt, clampRot, imageOpacityAt, maxRotation, SCALE_MAX, SCALE_MIN, slotOpacityAt, snapRot, WINDOW_HALF } from './carousel-geometry';
+import { mountCardArt, IMG_MOUNT_HALF, canSkipSlotTransform, ANGLE_STEP, cardScaleAt, clampRot, imageOpacityAt, maxRotation, SCALE_MAX, SCALE_MIN, slotOpacityAt, snapRot, WINDOW_HALF } from './carousel-geometry';
 
 describe('cardScaleAt', () => {
   it('is largest at the center (theta 0)', () => {
@@ -82,5 +82,45 @@ describe('rotation clamping + snapping (finite deck)', () => {
     expect(snapRot(ANGLE_STEP * 2.6, 18)).toBeCloseTo(ANGLE_STEP * 3, 6);
     expect(snapRot(-1, 18)).toBe(0);
     expect(snapRot(9999, 18)).toBeCloseTo(maxRotation(18), 6);
+  });
+});
+
+describe('invisible slot transform fast path', () => {
+  it('never skips any part of the fan or its fading edge, including expand transitions', () => {
+    for (let p = 0; p <= 100; p++) {
+      for (let d = 0; d <= 800; d++) {
+        const opacity = slotOpacityAt(d / 100, p / 100);
+        expect(canSkipSlotTransform(d / 100, p / 100, 0, false)).toBe(opacity === 0);
+      }
+    }
+  });
+  it('keeps distant focused, dragging, sorting and edit-transition slots on the original path', () => {
+    expect(canSkipSlotTransform(1000, 1, 0, true)).toBe(false);
+    for (const edit of [0.001, 0.5, 1]) {
+      expect(canSkipSlotTransform(1000, 1, edit, false)).toBe(false);
+    }
+  });
+  it('restores geometry immediately for a distant jump without waiting for a React window update', () => {
+    const index = 999;
+    expect(canSkipSlotTransform(Math.abs(index - 0), 0, 0, false)).toBe(true);
+    expect(canSkipSlotTransform(Math.abs(index - 999), 0, 0, false)).toBe(false);
+  });
+});
+
+describe('bounded image warmup during Golden Gear scroll', () => {
+  it('retains all original images and every carried card through distant jumps', () => {
+    for (const center of [0, 12, 499, 999]) {
+      for (const live of [0, 500, 999]) {
+        for (let i = 0; i < 1000; i++) {
+          if (Math.abs(i - center) <= IMG_MOUNT_HALF) expect(mountCardArt(i, center, live, false)).toBe(true);
+          expect(mountCardArt(i, center, live, true)).toBe(true);
+        }
+        expect(mountCardArt(live, center, live, false)).toBe(true);
+      }
+    }
+  });
+  it('bounds decode coverage independently of total deck size and preserves destination neighbors', () => {
+    const mounted = Array.from({ length: 1000 }, (_, i) => i).filter((i) => mountCardArt(i, 20, 900, false));
+    expect(mounted).toEqual([18, 19, 20, 21, 22, 898, 899, 900, 901, 902]);
   });
 });

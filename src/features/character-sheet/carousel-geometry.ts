@@ -59,6 +59,12 @@ export const WINDOW_HALF = 3;
  *  it can ever fade in. Everything further lives on its always-mounted thumb. */
 export const IMG_MOUNT_HALF = 2;
 
+/** Warm the live scroll destination too, even while the settled center freezes during a grind.
+ * Each band is bounded; tokens and multi-face controls retain their original settled window. */
+export function mountCardArt(index: number, settled: number, live: number, carried: boolean): boolean {
+  return carried || Math.abs(index - settled) <= IMG_MOUNT_HALF || Math.abs(index - live) <= IMG_MOUNT_HALF;
+}
+
 /**
  * How many cards each side of center mount their LIVE body (v0.28.0).
  *
@@ -216,6 +222,12 @@ export function slotOpacityAt(distSteps: number, expandP: number = 1): number {
   // 0 or 1 at rest (the saveLayerAlpha rule) at BOTH endpoints of the expand progress.
   const cut = 6.45 + (3.45 - 6.45) * expandP;
   return Math.min(1, Math.max(0, (cut - distSteps) / 0.4));
+}
+
+/** Only skip fully transparent normal slots; editing and focus can bring distant cards on-screen. */
+export function canSkipSlotTransform(distSteps: number, expandP: number, editP: number, focused: boolean): boolean {
+  'worklet';
+  return editP === 0 && !focused && slotOpacityAt(distSteps, expandP) === 0;
 }
 
 /** Smooth center-out scale: centermost largest, tapering to SCALE_MIN. */

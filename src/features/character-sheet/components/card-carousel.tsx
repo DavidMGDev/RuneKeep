@@ -34,6 +34,7 @@ import {
   CARD_H,
   CARD_W,
   cardScaleAt,
+  canSkipSlotTransform,
   COLLAPSE_TRIGGER,
   COMPACT_DROP,
   COMPACT_SCALE,
@@ -60,6 +61,7 @@ import {
   pickWedgeFull,
   imageOpacityAt,
   IMG_MOUNT_HALF,
+  mountCardArt,
   LIVE_BUCKET,
   LIVE_MOUNT_HALF,
   MAX_FLING_VEL,
@@ -166,6 +168,8 @@ const FlipCard = memo(function FlipCard({ faceCount, index, dir, renderFace, onS
 });
 
 interface SlotProps {
+  /** Image-only decode coverage. Token overlays retain withImage coverage. */
+  withArt: boolean;
   index: number;
   item: CardItem;
   count: number;
@@ -259,7 +263,7 @@ interface SlotProps {
   menuBounce: SharedValue<number>;
 }
 
-const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLive, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, cornerTone, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, sortGather, sortSetSV, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
+const CardSlot = memo(function CardSlot({ index, item, count, withImage, withArt, withLive, rotation, expandProgress, fullscreenProgress, grindProgress, overscrollX, riseProgress, switching, machineState, focusIndex, closeFullscreen, registerPager, enabled, cornerTone, crossTrait, onToggle, tokens, editMode, raised, editing, onRaise, grabIndex, grabX, grabY, grabXAnim, grabYAnim, hoverAnim, gapWidth, dropSpread, dropTo, grabAnim, editGrabbed, grabIsGroup, editFlat, sortGather, sortSetSV, pendingOrderSV, raiseOrderSV, raisedBeforeSV, raiseCountSV, shake, breathe, menuCardIdx, menuBounce }: SlotProps) {
   // Web reports gesture x in CSS pixels, not design pixels (see coordScale in CardCarousel):
   // without this the left/right half that decides which way a multi-page card turns lands at about a
   // quarter of the card instead of the middle.
@@ -277,6 +281,12 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
     const mapped = po ? po[slotId] : undefined;
     const idx = mapped !== undefined ? mapped : index;
     const p = expandProgress.value;
+    // Keep thumbs mounted, but avoid trigonometry and transform construction for invisible slots.
+    // Read on the UI thread so a distant gear jump needs no React commit to restore the geometry.
+    if (canSkipSlotTransform(Math.abs(idx - rotation.value / ANGLE_STEP), p, editMode.value,
+      fullscreenProgress.value > 0 && Math.round(focusIndex.value) === idx)) {
+      return { opacity: 0, zIndex: 0, transform: [{ translateX: -10000 }, { translateY: 0 }, { rotateZ: '0rad' }, { scale: 0 }] };
+    }
     // Grinding the inner gear tightens the fan (#62 D): same card size, ~5 cards skimming past.
     const stepNow = (COMPACT_STEP + (ANGLE_STEP - COMPACT_STEP) * p) * (1 - GRIND_TIGHTEN * grindProgress.value);
     const centerPos = rotation.value / ANGLE_STEP;
@@ -643,7 +653,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
                 ) : (
                   <>
                     <CardThumb item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} />
-                    {withImage ? (
+                    {withArt ? (
                       <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
                         <Card item={{ id: `${item.id}#${pageIdx}`, source: curFace!.source!, thumb: curFace!.thumb! }} width={CARD_W} height={CARD_H} />
                       </Animated.View>
@@ -670,7 +680,7 @@ const CardSlot = memo(function CardSlot({ index, item, count, withImage, withLiv
               <CardThumb item={item} />
               {/* Full-res layer: only near the center; the ±IMG_MOUNT_HALF boundary holds it at
                   alpha 0, decoded and ready to fade in without a pop (#54 B, #78). */}
-              {withImage ? (
+              {withArt ? (
                 <Animated.View style={[StyleSheet.absoluteFill, imgFade]}>
                   <Card item={item} width={CARD_W} height={CARD_H} />
                 </Animated.View>
@@ -1904,6 +1914,7 @@ export function CardCarousel() {
         index={i}
         item={deck[i]}
         count={count}
+        withArt={mountCardArt(i, c, liveC, carried)}
         withImage={carried || Math.abs(i - c) <= IMG_MOUNT_HALF}
         withLive={carried || Math.abs(i - liveC) <= LIVE_MOUNT_HALF}
         rotation={rotation}
