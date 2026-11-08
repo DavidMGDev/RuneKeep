@@ -1,4 +1,6 @@
 import type { CharacterFile } from './character-file';
+import { bundledTrackerCards } from './class-cards';
+import { advancedFunctions, offeredAdvances } from './card-advances';
 import { advRemaining, applyLevelUp, availableAdvancements, type LevelDefaults, type LevelUpPlan, picksUsed, tierForLevel } from './leveling';
 
 const DEF: LevelDefaults = { maxHp: 6, stressMax: 6, evasion: 10 };
@@ -256,5 +258,34 @@ describe('level cap + subclass placement (v0.10.5)', () => {
 describe('tierForLevel re-export', () => {
   it('matches the rest module', () => {
     expect([1, 2, 5, 8].map(tierForLevel)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe('Brawler combo advancement', () => {
+  it('also supports multiclass Brawlers and omits classless trackers', () => {
+    expect(bundledTrackerCards(baseFile({ multiclassName: 'brawler' }))).toHaveLength(1);
+    expect(bundledTrackerCards(baseFile({ className: 'brawler', classless: true }))).toHaveLength(0);
+  });
+  it('offers a tracker even for an older, unexpanded character and carries unused tiers forward', () => {
+    let file = baseFile({ className: 'brawler', level: 7, classExpanded: false });
+    const cards = bundledTrackerCards(file);
+    const key = offeredAdvances(cards, 4, [])[0].key;
+    expect(availableAdvancements(file, 8).some((a) => a.key === 'card')).toBe(true);
+    for (const expected of [1, 2, 3]) {
+      expect(offeredAdvances(cards, 4, file.cardAdvances)).toHaveLength(1);
+      expect(offeredAdvances(cards, 4, file.cardAdvances, [key])).toHaveLength(0);
+      file = applyLevelUp(file, plan({ advancements: [{ key: 'card', cardAdvanceKey: key }] }), DEF);
+      expect(advancedFunctions(cards[0], file.cardAdvances)[0].startIndex).toBe(expected);
+    }
+    expect(offeredAdvances(cards, 4, file.cardAdvances)).toHaveLength(0);
+    expect(cards[0].functions[0].options).toEqual(['d4', 'd6', 'd8', 'd10']);
+  });
+  it('earns one upgrade per tier, including takes deferred from earlier tiers', () => {
+    const cards = bundledTrackerCards(baseFile({ className: 'brawler' }));
+    const key = offeredAdvances(cards, 2, [])[0].key;
+    expect(offeredAdvances(cards, 1, [])).toHaveLength(0);
+    expect(offeredAdvances(cards, 2, [{ key, tier: 2 }])).toHaveLength(0);
+    expect(offeredAdvances(cards, 3, [{ key, tier: 3 }])).toHaveLength(1);
+    expect(offeredAdvances(cards, 3, [{ key, tier: 3 }, { key, tier: 3 }])).toHaveLength(0);
   });
 });
