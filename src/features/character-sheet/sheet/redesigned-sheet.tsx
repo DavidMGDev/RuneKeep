@@ -23,7 +23,7 @@ import { CLASSES, classInfo, type ClassName } from '@/constants/identity';
 import { classExpansion } from '@/lib/expansions';
 import { CLASS_CARDS } from '@/features/create/components/class-cards';
 import { featurePages } from '@/data/class-data';
-import { acquiredPageId, classPageCount, classPageId } from '@/lib/class-cards';
+import { bundledTrackerCards, acquiredPageId, classPageCount, classPageId } from '@/lib/class-cards';
 import { LibraryForgedCard } from '@/features/create/components/library-forged-card';
 import { armorById, weaponById } from '@/data/equipment-data';
 import { lootById } from '@/data/loot-data';
@@ -34,7 +34,7 @@ import { bundledClassOf, customClassCard, customClassFeatures, customClassPages,
 import { dressedForClass } from '@/lib/class-identity';
 import { restMoveLimit } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
-import { cardHasEffects, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
+import { cardCanToggle, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
 import { applyPromotions, resolveCopyDeletions } from '@/lib/card-copies';
 import { imageForPrint, type PdfCard } from '@/lib/card-pdf';
 import { equipNoticeFor } from '@/data/card-notices';
@@ -1222,6 +1222,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
      * thing that stopped deriving; now it only chooses which shape to derive, so expanding costs
      * nothing, cannot duplicate, and is undoable in principle by the same flag.
      */
+    const trackerItems = bundledTrackerCards(file).map((c) => liveFunctionCard(c));
     const featItem = file.classExpanded
       ? pagesOf((i) => classPageId(file.className, i), faces)
       : coverOf(`features-${file.className}`, faces);
@@ -1314,7 +1315,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       : played === 'warlock'
       ? [{ id: WARLOCK_TRACKER_ID, source: GENERIC_CARD_ART, thumb: GENERIC_CARD_ART, interactive: true, live: <WarlockTrackerCard state={file.classTracker} level={file.level} onChange={(patch) => mutateFile({ classTracker: { ...file.classTracker, ...patch } })} /> }]
       : [];
-    const abilities = [...domainItems, ...(ancestryC ? [ancestryC] : []), ...secondAncestryItem, ...(communityC ? [communityC] : []), ...(subclassC ? [subclassC] : []), ...mcSubclassItem, ...featItem, ...classPageItems, ...mcFeatItem, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
+    const abilities = [...domainItems, ...(ancestryC ? [ancestryC] : []), ...secondAncestryItem, ...(communityC ? [communityC] : []), ...(subclassC ? [subclassC] : []), ...mcSubclassItem, ...featItem, ...classPageItems, ...mcFeatItem, ...trackerItems, ...weaponItems, ...acqWeaponItems, ...acqClassItems, ...expItems, ...arsenalCustom, ...classTrackerItems];
     // inventory = ONLY the player's stuff (#136: never the sample deck) — kit + chosen + custom +
     // gold + weapons + armor. Returned as an array (even while forging) so it NEVER falls back.
     const invItems = forgedItems(invJobs);
@@ -2292,7 +2293,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
          *    a bug rather than as a rule.
          */
         if (kind === 'domain') { domain.add(ref); toggleable.add(ref); }
-        if (cardHasEffects(ref, file)) toggleable.add(ref);
+        if (cardCanToggle(ref, file)) toggleable.add(ref);
       }
     }
     /**
@@ -2752,8 +2753,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    */
   /** The character's numeric card elements, for the preset editor's variable list (v0.42.3). */
   const presetCardVars = useMemo(
-    () => functionVars([...(file?.libraryCards ?? []), ...(file?.customCards ?? [])], file?.cardFunctions, file?.cardAdvances),
-    [file?.libraryCards, file?.customCards, file?.cardFunctions, file?.cardAdvances],
+    () => functionVars([...(file ? bundledTrackerCards(file) : []), ...(file?.libraryCards ?? []), ...(file?.customCards ?? [])], file?.cardFunctions, file?.cardAdvances),
+    [file?.className, file?.classless, file?.multiclassName, file?.libraryCards, file?.customCards, file?.cardFunctions, file?.cardAdvances],
   );
   const playPreset = useCallback((preset: DicePreset) => {
     const ctx = {
@@ -2776,7 +2777,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         armorMax: character.armorScore,
       },
       // v0.42.3: the character's own card elements, so a preset can carry "+ Combo Die".
-      functions: functionVarValues(functionVars([...(fileRef.current?.libraryCards ?? []), ...(fileRef.current?.customCards ?? [])], fileRef.current?.cardFunctions, fileRef.current?.cardAdvances)),
+      functions: functionVarValues(functionVars([...(fileRef.current ? bundledTrackerCards(fileRef.current) : []), ...(fileRef.current?.libraryCards ?? []), ...(fileRef.current?.customCards ?? [])], fileRef.current?.cardFunctions, fileRef.current?.cardAdvances)),
     };
     trayRef.current?.playPreset(preset.dice, preset.name, modifierValue(preset.modifier, ctx));
   }, [character]);

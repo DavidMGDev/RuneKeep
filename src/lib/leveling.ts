@@ -14,6 +14,7 @@
 import type { TraitKey } from '@/features/character-sheet/character';
 import { CATALOG, cardById } from '@/data/catalog';
 import type { CharacterFile } from './character-file';
+import { bundledTrackerCards } from './class-cards';
 import { type AdvanceCard, hasCardAdvances } from './card-advances';
 import { addCompanionExperience, applyCompanionOption, companionOf, hasCompanion } from './companion';
 import { subclassFamilyKey } from './library';
@@ -101,7 +102,7 @@ export function availableAdvancements(file: CharacterFile, newLevel: number): Ad
  * bundled class's own trackers live once the class has been expanded into cards.
  */
 export function advanceCardsOf(file: CharacterFile): AdvanceCard[] {
-  return [...(file.libraryCards ?? []), ...(file.customCards ?? [])].filter((c) => c.advances?.length);
+  return [...bundledTrackerCards(file), ...(file.libraryCards ?? []), ...(file.customCards ?? [])].filter((c) => c.advances?.length);
 }
 export function isTierStart(newLevel: number): boolean {
   return newLevel === 2 || newLevel === 5 || newLevel === 8;

@@ -1,6 +1,7 @@
 import { type CharacterFile, sheetBreakdown, toSheetCharacter } from '@/lib/character-file';
 import { VOID_ANCESTRIES } from '@/data/void-ancestries';
-import { cardHasEffects, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, refOf, sourceLabelForCardId } from './card-effects';
+import { SECONDARY_WEAPONS } from '@/data/equipment-data';
+import { cardCanToggle, cardHasEffects, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, isEditableCard, refOf, sourceLabelForCardId } from './card-effects';
 
 function baseFile(over: Partial<CharacterFile> = {}): CharacterFile {
   return {
@@ -297,5 +298,15 @@ describe('toSheetCharacter with enabled cards', () => {
       enabledCardIds: ['cc-hp'],
     });
     expect(toSheetCharacter(file).maxHp).toBe(12); // 7 + 9 clamped to 12
+  });
+});
+
+describe('equipment toggle eligibility', () => {
+  it('allows every secondary weapon to be unequipped, even without stat modifiers', () => {
+    expect(SECONDARY_WEAPONS.some((w) => !cardHasEffects(w.id))).toBe(true);
+    for (const w of SECONDARY_WEAPONS) {
+      expect(cardCanToggle(w.id, baseFile({ enabledCardIds: [w.id] }))).toBe(true);
+      expect(cardCanToggle(`${w.id}#2`)).toBe(true);
+    }
   });
 });

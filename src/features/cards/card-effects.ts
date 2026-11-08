@@ -157,6 +157,14 @@ export function rawEffectsForCardId(rawId: string, file?: CharacterFile): CardEf
   return [];
 }
 
+/** Equipment remains equippable even when its rules grant no numeric modifier. */
+export function cardCanToggle(id: string, file?: CharacterFile): boolean {
+  const ref = contentIdOf(id, file);
+  const lib = libraryCardById(file, ref);
+  return !!weaponById(ref) || !!armorById(ref) || lib?.contentType === 'weapon' || lib?.contentType === 'armor'
+    || cardById(ref)?.kind === 'domain' || cardHasEffects(id, file);
+}
+
 /** Whether a card has any stat effect at all (so the UI can decide if it is "equippable for stats"). */
 export function cardHasEffects(id: string, file?: CharacterFile): boolean {
   return effectsForCardId(id, file).length > 0;

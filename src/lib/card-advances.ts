@@ -56,8 +56,12 @@ export function offeredAdvances(cards: AdvanceCard[], tier: number, taken: Advan
   for (const c of cards) {
     for (const a of c.advances ?? []) {
       const key = advanceKey(c.id, a.id);
-      const used = takesOf(taken, key, tier) + pending.filter((p) => p === key).length;
-      if (advanceRemaining(a, tier, used) <= 0) continue;
+      const queued = pending.filter((p) => p === key).length;
+      if (a.carryForward) {
+        const allowance = a.tiers.filter((t) => t <= tier).length * a.perTier;
+        const used = (taken ?? []).filter((t) => t.key === key).length;
+        if (!a.tiers.includes(tier) || queued || used >= allowance) continue;
+      } else if (advanceRemaining(a, tier, takesOf(taken, key, tier) + queued) <= 0) continue;
       // v0.42.3: the advancement AS IT IS AT THIS TIER. A per-tier override changes both what the
       // level-up list says and what taking it does, so resolving it here is what keeps the two in
       // step wherever it is drawn.

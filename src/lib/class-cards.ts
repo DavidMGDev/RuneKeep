@@ -26,6 +26,8 @@
  * old path already wrote cards onto.
  */
 
+import type { CharacterFile } from './character-file';
+import { bundledClassOf } from './played-class';
 import type { ClassName } from '@/constants/identity';
 import { featurePages } from '@/data/class-data';
 import type { CardAdvance, CardFunction } from './card-functions';
@@ -43,8 +45,8 @@ import type { CardAdvance, CardFunction } from './card-functions';
  */
 export const CLASS_TRACKERS: Record<string, { functions: CardFunction[]; advances: CardAdvance[] }> = {
   'brawler|Combo Strike': {
-    functions: [{ id: 'combo', kind: 'cycle', title: 'Combo Die', options: ['d4', 'd6', 'd8', 'd10', 'd12'], startIndex: 0, locked: true }],
-    advances: [{ id: 'combo-up', label: 'Increase your Combo Die by one step', functionId: 'combo', tiers: [], perTier: 1, effect: { kind: 'step', by: 1 } }],
+    functions: [{ id: 'combo', kind: 'cycle', title: 'Combo Die', options: ['d4', 'd6', 'd8', 'd10'], startIndex: 0, locked: true }],
+    advances: [{ id: 'combo-up', label: 'Increase your Combo Die by one step', functionId: 'combo', tiers: [2, 3, 4], perTier: 1, carryForward: true, effect: { kind: 'step', by: 1 } }],
   },
 };
 
@@ -97,4 +99,13 @@ export const isLegacyClassCard = (id: string): boolean => id.startsWith('cls-');
 export function withoutLegacyClassCards<T extends { id: string }>(cards: T[] | undefined, expanded: boolean | undefined): T[] | undefined {
   if (!expanded || !cards?.length) return cards;
   return cards.some((c) => isLegacyClassCard(c.id)) ? cards.filter((c) => !isLegacyClassCard(c.id)) : cards;
+}
+
+/** Derived for old and new characters alike, independently of class-page expansion. */
+export function bundledTrackerCards(file: CharacterFile) {
+  const classes = [...new Set([file.classless ? undefined : bundledClassOf(file), file.multiclassName])];
+  return classes.includes('brawler') ? [{
+    id: 'class-tracker-brawler', title: 'Combo Die', text: 'Increase your Combo Die by one step as a level advancement, once per level. Unused tier upgrades carry forward. Maximum d10.',
+    imageUri: null, ...CLASS_TRACKERS['brawler|Combo Strike'],
+  }] : [];
 }

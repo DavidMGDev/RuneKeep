@@ -190,6 +190,8 @@ export interface CardAdvance {
   tiers: number[];
   /** How many times it may be taken PER TIER. The owner asked for once or twice. */
   perTier: 1 | 2;
+  /** Unused eligible tiers accumulate; at most one take per level-up. */
+  carryForward?: boolean;
   /** What it does, at any tier that does not say otherwise. */
   effect: AdvanceEffect;
   /**
