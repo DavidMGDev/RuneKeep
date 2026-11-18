@@ -682,12 +682,16 @@ function SheetBackGuard(props: BackGuardState) {
         if (p.damageOpen) { p.onCloseDamage(); return true; }
         if (p.floatKind === 'custom' && p.newCardBackRef?.current) { p.newCardBackRef.current(); return true; }
         if (p.floatKind) { p.onCloseFloat(); return true; }
-        if (menuOpenRef.current) { closeMenu(); return true; }
-        // v0.11.2 item 5: Golden Gear Edit is ONE cohesive mode — Back exits ALL of it (dim + banner + row
-        // + selection) in a single press, before the plain expanded/collapse states.
-        if (editingRef.current) { exitEdit(true); return true; }
-        if (machineState.value === 'fullscreen') { closeFullscreen(); return true; }
-        if (machineState.value === 'expanded') { collapse(); return true; }
+        // Desktop: the carousel is not on screen (a window widened from a phone layout may have left it
+        // fullscreen or expanded underneath), so Back goes to the table instead of closing invisible states.
+        if (!p.desktopBackRef) {
+          if (menuOpenRef.current) { closeMenu(); return true; }
+          // v0.11.2 item 5: Golden Gear Edit is ONE cohesive mode — Back exits ALL of it (dim + banner + row
+          // + selection) in a single press, before the plain expanded/collapse states.
+          if (editingRef.current) { exitEdit(true); return true; }
+          if (machineState.value === 'fullscreen') { closeFullscreen(); return true; }
+          if (machineState.value === 'expanded') { collapse(); return true; }
+        }
         if (p.desktopBackRef?.current?.()) return true;
         p.onLeave(); // nothing open → confirm before leaving (never an accidental exit)
         return true;
@@ -1621,6 +1625,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // #318: consecutive attempts to enable a 6th domain card without leaving fullscreen. 3 in a row
   // overrides the cap (a debug escape hatch); reset on any other toggle or on leaving fullscreen.
   const domainOverrideRef = useRef(0);
+  // The card the streak belongs to: insisting three times is about ONE card (the desktop menu can equip another
+  // without the focus changing, and must not inherit the count).
+  const domainOverrideIdRef = useRef<string | null>(null);
   // Level Up (#167): the domain cards available to gain (≤ the NEXT level, in this class's domains,
   // not already owned), the multiclass options, and the class-derived stat defaults.
   const levelData = useMemo(() => {
@@ -2517,6 +2524,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           const enabledDomains = [...cur].filter((x) => cardById(x)?.kind === 'domain' && !isPermanentCard(x, file)).length;
           if (enabledDomains >= 5) {
             if (force !== undefined) { playSfx('floatMenuClose'); return; } // bulk: respect the cap, skip this one
+            if (domainOverrideIdRef.current !== ref) { domainOverrideIdRef.current = ref; domainOverrideRef.current = 0; }
             domainOverrideRef.current += 1;
             if (domainOverrideRef.current < 3) { playSfx('floatMenuClose'); pushNotice('Maximum 5 Domain Cards'); return; }
             domainOverrideRef.current = 0; // 3rd insistence → let it through
@@ -3162,7 +3170,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <DesktopTable onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
+                <DesktopTable canInspect={!!file} onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />

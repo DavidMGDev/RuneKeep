@@ -63,7 +63,7 @@ interface Target {
   z: number;
 }
 
-export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onManage, onExit }: { onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
+export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, backRef, onManage, onExit }: { canInspect: boolean; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
   const ctx = useCarousel();
@@ -186,9 +186,10 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
       const ids = k.deck.map((c) => c.id), at = k.focusId ? ids.indexOf(k.focusId) : -1;
       if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } else if (!tokenDismiss.current?.()) release(); return; }
       if (k.menu) return; // the menu owns the keys while it is open
-      if (e.shiftKey && (key === 'arrowright' || key === 'd' || key === 'arrowleft' || key === 'a')) { e.preventDefault(); moveRef.current((key === 'arrowright' || key === 'd') ? 1 : -1); return; }
-      if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + 1) % ids.length]); return; }
-      if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at <= 0 ? ids.length - 1 : at - 1]); return; }
+      if (key === '[' || key === ']') { e.preventDefault(); moveRef.current(key === ']' ? 1 : -1); return; }
+      const stride = e.shiftKey ? 2 : 1; // Shift moves two at a time, as the keys page teaches
+      if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + stride) % ids.length]); return; }
+      if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? ids.length - 1 : (at - stride + ids.length * 2) % ids.length]); return; }
       // The provider plays the deck-switch sound itself.
       if (key === 'q' || key === 'e') { ctx.cycleCategory(key === 'q' ? -1 : 1); return; }
       if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) ctx.setCategory(c); return; }
@@ -239,7 +240,8 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   // Keyed by the card's REF, so every copy (Favorites included) shares one board, as on the phone.
   const tokenKey = focused ? focused.ref ?? focused.id : null;
   // Under the WHOLE controls block: a paged card adds its page row (about 50 px) above the buttons.
-  const drawerTop = 36 + focusW * 1.4 + 18 + ((focused?.faces?.length ?? 0) > 1 ? 92 : 42) + (canReorder ? 26 : 0) + 10; // + the position line
+  const [ctrlH, setCtrlH] = useState(68);
+  const drawerTop = 36 + focusW * 1.4 + 18 + ctrlH + 10; // under the controls as they actually laid out (pages, wrap, position line)
   const onPlaceToken = useCallback((t: PlacedToken) => { if (tokenKey) ctx.placeToken(tokenKey, t); }, [tokenKey, ctx]);
   const onRemoveToken = useCallback((id: string) => { if (tokenKey) ctx.removeToken(tokenKey, id); }, [tokenKey, ctx]);
   const onUpdateToken = useCallback((id: string, patch: Partial<PlacedToken>) => { if (tokenKey) ctx.updateToken(tokenKey, id, patch); }, [tokenKey, ctx]);
@@ -279,6 +281,9 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
           <FocusControls
             item={focused}
             top={36 + focusW * 1.4 + 18}
+            maxW={areaW - 24}
+            onHeight={setCtrlH}
+            canInspect={canInspect}
             cx={cx}
             page={pages[focused.id] ?? 0}
             onPage={(p) => setPages((m) => ({ ...m, [focused.id]: p }))}
@@ -418,7 +423,7 @@ function Layered({ item, full }: { item: { id: string; source: CardItem['source'
 }
 
 /** The controls under the focused card: the phone's focused-card row, plus what a hold or a page swipe does there. */
-function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease, position, onMove }: { item: CardItem; top: number; cx: number; page: number; onPage: (p: number) => void; onEdit?: () => void; onRelease: () => void; position?: { at: number; of: number }; onMove?: (dir: -1 | 1) => void }) {
+function FocusControls({ item, top, cx, maxW, onHeight, canInspect, page, onPage, onEdit, onRelease, position, onMove }: { maxW: number; onHeight: (h: number) => void; canInspect: boolean; item: CardItem; top: number; cx: number; page: number; onPage: (p: number) => void; onEdit?: () => void; onRelease: () => void; position?: { at: number; of: number }; onMove?: (dir: -1 | 1) => void }) {
   const ctx = useCarousel();
   const ref = item.ref ?? item.id;
   const on = ctx.enabledIds.has(ref);
@@ -426,7 +431,7 @@ function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease, positio
   const faces = item.faces?.length ?? 0;
   const buttons: { label: string; onPress: () => void; active?: boolean; hidden?: boolean }[] = [
     { label: on ? 'Equipped' : 'Equip', onPress: () => ctx.toggleCard(item.id), active: on, hidden: permanent },
-    { label: 'Modifiers', onPress: () => ctx.showCardInfo(item.id) },
+    { label: 'Modifiers', onPress: () => ctx.showCardInfo(item.id), hidden: !canInspect },
     { label: ctx.cardStates.modsOff.has(ref) ? 'Toggle on' : 'Toggle', onPress: () => ctx.toggleCardModifiers(item.id), hidden: !ctx.cardStates.toggleable.has(ref) || !(on || permanent) }, // the phone's rule: only on a card that applies
     { label: '#', onPress: () => ctx.editNumberInput(item.id), hidden: !ctx.cardStates.numberInput.has(ref) },
     { label: 'Expand', onPress: () => ctx.expandClassCard(item.id), hidden: !ctx.cardStates.expandable.has(ref) },
@@ -435,7 +440,7 @@ function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease, positio
   ];
   const shown = buttons.filter((b) => !b.hidden);
   return (
-    <View style={{ position: 'absolute', top, left: cx - 360, width: 720, alignItems: 'center', gap: 10, zIndex: 400 }}>
+    <View onLayout={(e) => onHeight(Math.ceil(e.nativeEvent.layout.height))} style={{ position: 'absolute', top, left: cx - Math.min(720, maxW) / 2, width: Math.min(720, maxW), alignItems: 'center', gap: 10, zIndex: 400 }}>
       {faces > 1 ? (
         <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
           <DeskButton label="Previous page" glyph="‹" onPress={() => { playSfx('transitionStart'); onPage((page - 1 + faces) % faces); }} />
@@ -445,12 +450,12 @@ function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease, positio
           <DeskButton label="Next page" glyph="›" onPress={() => { playSfx('transitionStart'); onPage((page + 1) % faces); }} />
         </View>
       ) : null}
-      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, alignItems: 'center' }}>
         {onMove && position && position.at > 0 ? <DeskButton label="Move left in the deck" glyph="←" onPress={() => onMove(-1)} /> : null}
         {shown.map((b) => <DeskButton key={b.label} label={b.label} onPress={b.onPress} active={b.active} />)}
         {onMove && position && position.at < position.of - 1 ? <DeskButton label="Move right in the deck" glyph="→" onPress={() => onMove(1)} /> : null}
       </View>
-      {position ? <Text style={{ color: Rune.muted, fontFamily: Body.medium, fontSize: 11, letterSpacing: 0.6 }}>{`Card ${position.at + 1} of ${position.of}. Shift with A or D moves it.`}</Text> : null}
+      {position ? <Text style={{ color: Rune.muted, fontFamily: Body.medium, fontSize: 11, letterSpacing: 0.6 }}>{`Card ${position.at + 1} of ${position.of}. The [ and ] keys move it.`}</Text> : null}
     </View>
   );
 }
