@@ -23,7 +23,10 @@ export function EditCardFlow({
   onSave,
   onDelete,
   onCancel,
+  backRef,
 }: {
+  /** Set by the sheet, which owns Back: it calls the editor's guarded close. */
+  backRef?: React.MutableRefObject<(() => void) | null>;
   file: CharacterFile;
   cardId: string;
   customTypes: string[];
@@ -58,6 +61,7 @@ export function EditCardFlow({
       extraField={<HoldToConfirm label="Hold to delete card" onConfirm={() => onDelete(cardId)} />}
       onSave={(d) => onSave(cardId, d)}
       onCancel={onCancel}
+      backRef={backRef}
     />
   );
 }

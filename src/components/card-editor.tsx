@@ -810,7 +810,7 @@ export function CardEditor({
   scrimless?: boolean;
   /** Set by a host that owns Back (the sheet's New Card flow): it calls the editor's guarded close. */
   backRef?: React.MutableRefObject<(() => void) | null>;
-  /** Holds the live draft, for a host that swaps the editor out (the catalogue) and brings the same draft back. */
+  /** Holds the live draft while it has unsaved changes (null when clean), for a host that swaps the editor out and brings it back. */
   draftRef?: React.MutableRefObject<CardDraft | null>;
   /** The draft was handed over and has never been saved, so leaving asks even before an edit. */
   unsaved?: boolean;
@@ -1040,7 +1040,8 @@ export function CardEditor({
   // Back closes what is on top first, a picker or a question, and only then the editor (desktop's side layers
   // already do this; this is the phone's and the compact browser's way to the same order).
   const guardedClose = useCallback(() => {
-    if (pickEffect != null) setPickEffect(null);
+    if (askColor) setAskColor(null);
+    else if (pickEffect != null) setPickEffect(null);
     else if (pickVar != null) setPickVar(null);
     else if (pickColor) setPickColor(false);
     else if (pickType) setPickType(false);
@@ -1048,14 +1049,14 @@ export function CardEditor({
     else if (leaving) setLeaving(false);
     else if (dirty) setLeaving(true);
     else onCancel();
-  }, [pickEffect, pickVar, pickColor, pickType, askRewrite, leaving, dirty, onCancel]);
+  }, [askColor, pickEffect, pickVar, pickColor, pickType, askRewrite, leaving, dirty, onCancel]);
   useBackGuard(
     guardedClose,
     // In-sheet (`scrimless`) the sheet's own browser guard is already armed and its chain closes this
     // editor; arming a second one would answer a single Back twice. Standalone, this IS the guard.
     { web: !scrimless },
   );
-  useEffect(() => { if (draftRef) draftRef.current = draft; }, [draftRef, draft]);
+  useEffect(() => { if (draftRef) draftRef.current = dirty ? draft : null; }, [draftRef, draft, dirty]);
   useEffect(() => {
     if (!backRef) return;
     backRef.current = guardedClose;

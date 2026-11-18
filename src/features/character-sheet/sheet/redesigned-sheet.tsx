@@ -16,7 +16,7 @@ import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DesktopPortal } from '@/components/desktop-portal';
-import { isLeavingSpares, leaveThroughSpares } from '@/hooks/use-back-guard';
+import { endLeave, isLeavingSpares, leaveThroughSpares } from '@/hooks/use-back-guard';
 import { useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -644,6 +644,8 @@ interface BackGuardState {
   closeMinorRef?: React.MutableRefObject<(() => boolean) | null>;
   /** The New Card flow's own step back: destination picker to editor, editor through its unsaved-work guard. */
   newCardBackRef?: React.MutableRefObject<(() => void) | null>;
+  /** The card editor's own guarded close, while an existing card is being edited. */
+  editBackRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 /**
@@ -665,6 +667,7 @@ function SheetBackGuard(props: BackGuardState) {
   menuOpenRef.current = menuOpen;
   const editingRef = useRef(editing);
   editingRef.current = editing;
+  useEffect(() => { endLeave(); }, []);
   useFocusEffect(
     useCallback(() => {
       const onBack = () => {
@@ -674,7 +677,7 @@ function SheetBackGuard(props: BackGuardState) {
         if (p.desktopBackRef && layersRef.current && layersRef.current.dismissTop() !== 'none') return true;
         if (p.leaveConfirm) { p.onCloseLeave(); return true; }
         if (p.closeMinorRef?.current?.()) return true;
-        if (p.editCardId) { p.onCloseEdit(); return true; }
+        if (p.editCardId) { if (p.editBackRef?.current) p.editBackRef.current(); else p.onCloseEdit(); return true; }
         if (p.cardInfoId) { p.onCloseCardInfo(); return true; }
         if (p.damageOpen) { p.onCloseDamage(); return true; }
         if (p.floatKind === 'custom' && p.newCardBackRef?.current) { p.newCardBackRef.current(); return true; }
@@ -1586,6 +1589,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const desktopBackRef = useRef<(() => boolean) | null>(null);
   const closeMinorRef = useRef<(() => boolean) | null>(null);
   const newCardBackRef = useRef<(() => void) | null>(null);
+  const editBackRef = useRef<(() => void) | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; ids: string[] } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
@@ -3045,6 +3049,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           desktopBackRef={desktop ? desktopBackRef : undefined}
           closeMinorRef={desktop ? closeMinorRef : undefined}
           newCardBackRef={newCardBackRef}
+          editBackRef={editBackRef}
         />
         {/* v0.13.2 (#359): always-on NFC card receiving. Inside the providers so it can read carousel
             `editing`; suppressed only while a focused interface is open (never by card view state). */}
@@ -3342,7 +3347,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* edit a player-authored card (#264 item 5): from the gallery's Edit or the fullscreen pencil.
               From fullscreen the carousel stays mounted+fullscreen behind this editor (#276 item 4). */}
           {editCardId && file ? (
-            <EditCardFlow key={editCardId} file={file} cardId={editCardId} customTypes={customCardTypes} onSave={onSaveEditedCard} onDelete={onDeleteEditedCard} onCancel={() => setEditCardId(null)} />
+            <EditCardFlow key={editCardId} backRef={editBackRef} file={file} cardId={editCardId} customTypes={customCardTypes} onSave={onSaveEditedCard} onDelete={onDeleteEditedCard} onCancel={() => setEditCardId(null)} />
           ) : null}
           {/**
             * The Expand confirmation (v0.42.0, owner).

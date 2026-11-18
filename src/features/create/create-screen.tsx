@@ -1595,8 +1595,10 @@ export function CreateScreen() {
    * Going BACK returns to the screen we left, which reloads on focus and reads the truth off disk.
    */
   const backToEncounter = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace(`/encounter?id=${draftRef.current.characterize?.encounterId}` as Href);
+    leaveThroughSpares(() => {
+      if (router.canGoBack()) router.back();
+      else router.replace(`/encounter?id=${draftRef.current.characterize?.encounterId}` as Href);
+    });
   }, [router]);
 
   /**

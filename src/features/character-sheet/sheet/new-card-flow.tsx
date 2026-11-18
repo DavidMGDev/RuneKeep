@@ -73,6 +73,8 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   // Back, from the sheet: one step at a time, and through the open editor's own guard so a draft is never dropped.
   const editorBack = useRef<(() => void) | null>(null);
   const editorDraft = useRef<CardDraft | null>(null);
+  // The editor's draft was carried across the catalogue with changes in it: still unsaved when it comes back.
+  const [carried, setCarried] = useState(false);
   useEffect(() => {
     if (!backRef) return;
     backRef.current = () => {
@@ -179,9 +181,9 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   // The catalog (system gear/loot) suits the gear-bearing decks + custom categories, not Notes.
   const showsCatalog = onAcquire && category !== 'notes';
   const catalogBtn = showsCatalog
-    ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => { cameFromEditor.current = true; if (editorDraft.current) setHandoff(editorDraft.current); setMode('catalog'); }} />
+    ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => { cameFromEditor.current = true; if (editorDraft.current) { setHandoff(editorDraft.current); setCarried(true); } setMode('catalog'); }} />
     : undefined;
   // A handed-over draft (from Quick Card or back from the destination picker) has never been saved.
-  const unsaved = !!handoff && (!!handoff.title.trim() || !!handoff.text.trim() || !!handoff.imageUri);
+  const unsaved = carried || !!handoff && (!!handoff.title.trim() || !!handoff.text.trim() || !!handoff.imageUri);
   return <CardEditor backRef={editorBack} draftRef={editorDraft} unsaved={unsaved} initial={handoff} kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" experiences={experiences} onSave={finish} onCancel={onCancel} />;
 }

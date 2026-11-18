@@ -18,7 +18,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { CardEditor, type CardDraft } from '@/components/card-editor';
-import { useBackGuard } from '@/hooks/use-back-guard';
+import { leaveThroughSpares, useBackGuard } from '@/hooks/use-back-guard';
 import { ColorPalette } from '@/components/color-palette';
 import { Overlay } from '@/components/overlay-host';
 import { Body, Display, DmRune, Gap, Rune } from '@/constants/theme';
@@ -1190,7 +1190,7 @@ export function LibraryScreen() {
       if (choosingType) { setChoosingType(false); return; }
       if (metaForm) { setMetaForm(null); return; }
       if (selectedId) { setSelectedId(null); return; } // back to the hub, not out of the library
-      router.back();
+      leaveThroughSpares(() => router.back());
     }, [confirmDeleteExp, confirmDeleteCards, movingCards, reportFor, nfcSend, message, holdingExp, writingItem, askingClassFor, askingParentClass, askingClassRole, choosingType, metaForm, selectedId, router]),
     { enabled: !editingCard },
   );
@@ -2009,7 +2009,7 @@ export function LibraryScreen() {
   const officialExps = expansions.filter((e) => e.official === true);
   const customExps = expansions.filter((e) => !e.official);
   return (
-    <AppScreen dm={dm} title="Card library" onBack={() => router.back()}>
+    <AppScreen dm={dm} title="Card library" onBack={() => leaveThroughSpares(() => router.back())}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
         <Pressable onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} accessibilityRole="button" accessibilityLabel="Browse the card archive">
           {({ pressed }) => (

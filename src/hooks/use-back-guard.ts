@@ -29,13 +29,32 @@ const spareIsOurs = () => !!(window.history.state as { rkGuard?: boolean } | nul
 const pushSpareEntry = () => window.history.pushState({ ...((window.history.state as object | null) ?? {}), rkGuard: true }, '');
 const guards = createGuardStack({
   pushSpare: () => {
-    if (isWeb()) pushSpareEntry();
+    if (isWeb() && !leavingSpares) pushSpareEntry();
   },
 });
 
 /** True while `leaveThroughSpares` is stepping off spare entries: no guard answers those Backs. */
 let leavingSpares = false;
 export const isLeavingSpares = () => leavingSpares;
+let leaveListener: (() => void) | null = null;
+const dropLeaveListener = () => {
+  if (leaveListener) window.removeEventListener('popstate', leaveListener);
+  leaveListener = null;
+};
+/** Run `fn` after the next popstate (after every other listener), replacing any step still waiting. */
+const afterNextPop = (fn: () => void) => {
+  dropLeaveListener();
+  leaveListener = () => { dropLeaveListener(); setTimeout(fn, 0); };
+  window.addEventListener('popstate', leaveListener);
+};
+/**
+ * A leave is over: its own pop arrived, or a screen that guards Back has armed (a leave by `router.replace`
+ * never pops, so the next guarded screen ends it). Called by that screen before it arms.
+ */
+export function endLeave() {
+  leavingSpares = false;
+  if (isWeb()) dropLeaveListener();
+}
 
 /**
  * Run a confirmed leave (`router.back()` and friends) from a screen that keeps spare history entries.
@@ -50,14 +69,12 @@ export function leaveThroughSpares(go: () => void) {
   leavingSpares = true;
   const st = window.history.state as { rkGuard?: boolean; rkSheet?: boolean } | null;
   if (st?.rkGuard || st?.rkSheet) {
-    window.addEventListener('popstate', () => setTimeout(() => leaveThroughSpares(go), 0), { once: true });
+    afterNextPop(() => leaveThroughSpares(go));
     window.history.back();
     return;
   }
   // The leave itself pops too, and the screen's guards are still mounted for it: they stand aside for that one.
-  const done = () => { leavingSpares = false; };
-  window.addEventListener('popstate', () => setTimeout(done, 0), { once: true });
-  setTimeout(done, 1500); // shortcut: a leave that never pops (router.replace) clears here; fine unless a leave takes longer
+  afterNextPop(endLeave);
   go();
 }
 
@@ -80,7 +97,7 @@ export function leaveThroughSpares(go: () => void) {
  */
 const SPARE_RETRIES = [0, 120, 400];
 function ensureSpare(attempt = 0) {
-  if (!isWeb() || !guards.hasWeb()) return;
+  if (!isWeb() || !guards.hasWeb() || leavingSpares) return;
   if (!spareIsOurs()) pushSpareEntry();
   const next = attempt + 1;
   if (next < SPARE_RETRIES.length) setTimeout(() => ensureSpare(next), SPARE_RETRIES[next]);
@@ -91,6 +108,7 @@ let detach: (() => void) | null = null;
 function syncWebListener() {
   if (!isWeb()) return;
   if (guards.hasWeb() && !detach) {
+    endLeave();
     ensureSpare();
     const onPop = () => { if (!leavingSpares) guards.onPop(); };
     window.addEventListener('popstate', onPop);
