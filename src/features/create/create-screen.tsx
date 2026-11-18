@@ -1,3 +1,4 @@
+import { leaveThroughSpares } from '@/hooks/use-back-guard';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
@@ -2033,7 +2034,7 @@ export function CreateScreen() {
         // Authoring writes as it goes, so leaving is leaving. Nothing is half-saved and there is
         // nothing to warn about.
         if (authoring) { router.back(); return; }
-        if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); router.back(); }
+        if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); leaveThroughSpares(() => router.back()); }
       }}
       // v0.25.0: Forge is DIM until the character is finished, so the button reports readiness instead
       // of claiming it from the first screen. It stays tappable on purpose: tapping it while
@@ -2479,10 +2480,10 @@ export function CreateScreen() {
           title="Leave character creation?"
           body="Your progress is saved as a draft, you can pick it up next time you start a new hero. Discard it instead to start clean."
           confirmLabel="Keep draft & leave"
-          onConfirm={() => { setLeaveConfirm(false); router.back(); }}
+          onConfirm={() => { setLeaveConfirm(false); leaveThroughSpares(() => router.back()); }}
           onCancel={() => setLeaveConfirm(false)}>
           <View style={{ marginTop: 16 }}>
-            <RuneButton label="Discard draft" kind="ghost" height={40} onPress={() => { clearDraft(); setLeaveConfirm(false); router.back(); }} />
+            <RuneButton label="Discard draft" kind="ghost" height={40} onPress={() => { clearDraft(); setLeaveConfirm(false); leaveThroughSpares(() => router.back()); }} />
           </View>
         </PopupDialog>
       ) : null}

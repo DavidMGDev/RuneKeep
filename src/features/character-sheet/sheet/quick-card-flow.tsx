@@ -53,7 +53,7 @@ export function QuickCardFlow({
   /** Hand the draft to the full editor. */
   onAdvanced: (draft: CardDraft) => void;
   /** v0.30.0: bring cards in from a `.rune` file instead of authoring one. Absent = not offered. */
-  onImport?: () => void;
+  onImport?: (draft: CardDraft) => void;
   /** v0.31.0: the types the plaque may be set to. Absent = the plaque is not a control (Experiences). */
   typeGroups?: { label: string; types: string[] }[];
 }) {
@@ -132,10 +132,14 @@ export function QuickCardFlow({
   // Sheet-only, and the sheet's own browser guard already closes this flow: Android key only here.
   // See `hooks/use-back-guard`.
   const guardedClose = useCallback(() => {
+    // A picker or question on top closes first (desktop's side layers do this on their own).
+    if (pickType) { setPickType(false); return; }
+    if (askColor) { setAskColor(false); return; }
+    if (leaving) { setLeaving(false); return; }
     if (step === 'confirm') { setStep('edit'); return; } // Back steps back through the flow first
     if (dirty) setLeaving(true);
     else onCancel();
-  }, [dirty, onCancel, step]);
+  }, [pickType, askColor, leaving, dirty, onCancel, step]);
   // The browser's Back already reaches this through the sheet's guard (and, on desktop, the side-slot registry),
   // so this one answers the Android key only; arming both answered a single Back twice.
   useBackGuard(guardedClose, { web: !backRef });
@@ -296,7 +300,7 @@ export function QuickCardFlow({
             <RuneButton label="Advanced options" kind="ghost" dense height={34} onPress={() => onAdvanced(draft)} />
             {/* v0.30.0: the other way to get a card, for one somebody already made. Takes a single
                 card or a whole stack, from anywhere in the app that exports. */}
-            {onImport ? <RuneButton label="Import from a file" kind="ghost" dense height={34} onPress={onImport} /> : null}
+            {onImport ? <RuneButton label="Import from a file" kind="ghost" dense height={34} onPress={() => onImport(draft)} /> : null}
           </View>
         ) : (
           <View style={{ width: 320, marginTop: 18, gap: 9 }}>

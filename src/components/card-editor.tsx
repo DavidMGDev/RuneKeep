@@ -762,6 +762,7 @@ export function CardEditor({
   overlay,
   scrimless = false,
   backRef,
+  draftRef,
   unsaved = false,
   sectioned = false,
   sectionsConfig,
@@ -809,6 +810,8 @@ export function CardEditor({
   scrimless?: boolean;
   /** Set by a host that owns Back (the sheet's New Card flow): it calls the editor's guarded close. */
   backRef?: React.MutableRefObject<(() => void) | null>;
+  /** Holds the live draft, for a host that swaps the editor out (the catalogue) and brings the same draft back. */
+  draftRef?: React.MutableRefObject<CardDraft | null>;
   /** The draft was handed over and has never been saved, so leaving asks even before an edit. */
   unsaved?: boolean;
   /** Optional extra control rendered in the fields column (#164: the inventory/arsenal target picker). */
@@ -1030,23 +1033,34 @@ export function CardEditor({
     () => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text, effects: withTypeEffects(draft.effects, draft.typeLabel ?? kindLabel) }),
     [draft, onSave, sectioned, kindLabel],
   );
-  const guardedClose = useCallback(() => { if (dirty) setLeaving(true); else onCancel(); }, [dirty, onCancel]);
+  // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
+  // instead of being clipped inside the scrolling fields column.
+  const [pickEffect, setPickEffect] = useState<number | null>(null);
+  const [pickVar, setPickVar] = useState<number | null>(null); // #325: formula-variable picker
+  // Back closes what is on top first, a picker or a question, and only then the editor (desktop's side layers
+  // already do this; this is the phone's and the compact browser's way to the same order).
+  const guardedClose = useCallback(() => {
+    if (pickEffect != null) setPickEffect(null);
+    else if (pickVar != null) setPickVar(null);
+    else if (pickColor) setPickColor(false);
+    else if (pickType) setPickType(false);
+    else if (askRewrite != null) setAskRewrite(null);
+    else if (leaving) setLeaving(false);
+    else if (dirty) setLeaving(true);
+    else onCancel();
+  }, [pickEffect, pickVar, pickColor, pickType, askRewrite, leaving, dirty, onCancel]);
   useBackGuard(
     guardedClose,
     // In-sheet (`scrimless`) the sheet's own browser guard is already armed and its chain closes this
     // editor; arming a second one would answer a single Back twice. Standalone, this IS the guard.
     { web: !scrimless },
   );
+  useEffect(() => { if (draftRef) draftRef.current = draft; }, [draftRef, draft]);
   useEffect(() => {
     if (!backRef) return;
     backRef.current = guardedClose;
     return () => { backRef.current = null; };
   }, [backRef, guardedClose]);
-
-  // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
-  // instead of being clipped inside the scrolling fields column.
-  const [pickEffect, setPickEffect] = useState<number | null>(null);
-  const [pickVar, setPickVar] = useState<number | null>(null); // #325: formula-variable picker
 
   // Entrance (#201): the scrim fades in and the card + fields rise/fade in instead of popping.
   const reduced = useReducedMotion();

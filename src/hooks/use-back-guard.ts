@@ -22,11 +22,44 @@ const isWeb = () => Platform.OS === 'web' && typeof window !== 'undefined';
 const spareIsOurs = () => !!(window.history.state as { rkGuard?: boolean } | null)?.rkGuard;
 
 /** The app's one guard stack, and its one spare history entry. */
+/**
+ * A spare is the router's own entry (its `id`) with our flag on it. An entry WITHOUT the id makes React
+ * Navigation read a Back that lands on it as a deep link and reset the root, remounting the screen.
+ */
+const pushSpareEntry = () => window.history.pushState({ ...((window.history.state as object | null) ?? {}), rkGuard: true }, '');
 const guards = createGuardStack({
   pushSpare: () => {
-    if (isWeb()) window.history.pushState({ rkGuard: true }, '');
+    if (isWeb()) pushSpareEntry();
   },
 });
+
+/** True while `leaveThroughSpares` is stepping off spare entries: no guard answers those Backs. */
+let leavingSpares = false;
+export const isLeavingSpares = () => leavingSpares;
+
+/**
+ * Run a confirmed leave (`router.back()` and friends) from a screen that keeps spare history entries.
+ *
+ * The router counts a spare and the entry under it as ONE place (they share its id), so a `router.back()`
+ * from on top of a spare spends its single browser step on the spare and then rewrites the screen's own
+ * entry as the destination: an extra Back stop, and a stale Forward. Stepping off the spares first, with
+ * every guard told to stand aside, leaves the router's count and the browser's in agreement.
+ */
+export function leaveThroughSpares(go: () => void) {
+  if (!isWeb()) { go(); return; }
+  leavingSpares = true;
+  const st = window.history.state as { rkGuard?: boolean; rkSheet?: boolean } | null;
+  if (st?.rkGuard || st?.rkSheet) {
+    window.addEventListener('popstate', () => setTimeout(() => leaveThroughSpares(go), 0), { once: true });
+    window.history.back();
+    return;
+  }
+  // The leave itself pops too, and the screen's guards are still mounted for it: they stand aside for that one.
+  const done = () => { leavingSpares = false; };
+  window.addEventListener('popstate', () => setTimeout(done, 0), { once: true });
+  setTimeout(done, 1500); // shortcut: a leave that never pops (router.replace) clears here; fine unless a leave takes longer
+  go();
+}
 
 /**
  * Put a spare entry on top, and KEEP CHECKING for a moment.
@@ -48,7 +81,7 @@ const guards = createGuardStack({
 const SPARE_RETRIES = [0, 120, 400];
 function ensureSpare(attempt = 0) {
   if (!isWeb() || !guards.hasWeb()) return;
-  if (!spareIsOurs()) window.history.pushState({ rkGuard: true }, '');
+  if (!spareIsOurs()) pushSpareEntry();
   const next = attempt + 1;
   if (next < SPARE_RETRIES.length) setTimeout(() => ensureSpare(next), SPARE_RETRIES[next]);
 }
@@ -59,7 +92,7 @@ function syncWebListener() {
   if (!isWeb()) return;
   if (guards.hasWeb() && !detach) {
     ensureSpare();
-    const onPop = () => { guards.onPop(); };
+    const onPop = () => { if (!leavingSpares) guards.onPop(); };
     window.addEventListener('popstate', onPop);
     detach = () => window.removeEventListener('popstate', onPop);
     return;

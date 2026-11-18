@@ -16,6 +16,7 @@ import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DesktopPortal } from '@/components/desktop-portal';
+import { isLeavingSpares, leaveThroughSpares } from '@/hooks/use-back-guard';
 import { useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -713,6 +714,7 @@ function SheetBackGuard(props: BackGuardState) {
         };
         arm();
         const onPop = () => {
+          if (isLeavingSpares()) return; // a confirmed leave stepping off the spare: not a Back to answer
           onBack();
           // Re-arm. The entry we just consumed has to be replaced or the next back leaves for real.
           arm();
@@ -3423,7 +3425,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 // v0.29.1: cover the trip back. The roster reads its characters from disk, and on a
                 // slow device that is a beat of bright parchment giving way to nothing.
                 setLeaving(true);
-                requestAnimationFrame(() => { if (router.canGoBack()) router.back(); else router.replace('/'); });
+                requestAnimationFrame(() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else router.replace('/'); }));
               }}
               onCancel={() => setLeaveConfirm(false)}
             />
