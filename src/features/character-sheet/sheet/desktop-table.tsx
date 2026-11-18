@@ -2,7 +2,7 @@
 import GearFront from '../../../../assets/art/gears/U2-Outspike.svg';
 import GearBack from '../../../../assets/art/gears/U3-InnerSymbols.svg';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -16,7 +16,9 @@ import { useCarousel } from '../carousel-context';
 import { Card, CardThumb } from '../components/card';
 import { type CornerTone, EnabledCorner } from '../components/enabled-corner';
 import { TokenBoard } from '../components/card-token-board';
-import type { PlacedToken } from '../components/card-tokens';
+import { BakedTokenLayer, type PlacedToken } from '../components/card-tokens';
+import { TraitCrossOut } from '../components/trait-cross-out';
+import { catalogIdOf } from '@/features/cards/card-effects';
 import { TOKEN_COLORS } from '../components/card-tokens-data';
 import { CategoryGlyph } from './deck-toggle-icon';
 
@@ -214,6 +216,8 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   }, [focusId, reduced]);
   // Keyed by the card's REF, so every copy (Favorites included) shares one board, as on the phone.
   const tokenKey = focused ? focused.ref ?? focused.id : null;
+  // Under the WHOLE controls block: a paged card adds its page row (about 50 px) above the buttons.
+  const drawerTop = 36 + focusW * 1.4 + 18 + ((focused?.faces?.length ?? 0) > 1 ? 92 : 42) + 10;
   const onPlaceToken = useCallback((t: PlacedToken) => { if (tokenKey) ctx.placeToken(tokenKey, t); }, [tokenKey, ctx]);
   const onRemoveToken = useCallback((id: string) => { if (tokenKey) ctx.removeToken(tokenKey, id); }, [tokenKey, ctx]);
   const onUpdateToken = useCallback((id: string, patch: Partial<PlacedToken>) => { if (tokenKey) ctx.updateToken(tokenKey, id, patch); }, [tokenKey, ctx]);
@@ -241,6 +245,9 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
             page={Math.min(pages[item.id] ?? 0, Math.max(0, (item.faces?.length ?? 1) - 1))}
             enabled={ctx.enabledIds.has(item.ref ?? item.id)}
             tone={cornerTone(item.ref ?? item.id, ctx.cardStates)}
+            // The phone's baked layer, until the focused card's board takes over; keyed by ref, as the board is.
+            tokens={item.id === tokensFor ? undefined : ctx.cardTokens[item.ref ?? item.id] ?? ctx.cardTokens[item.id]}
+            crossTrait={ctx.crossOuts[item.id]}
             reduced={reduced}
             onPress={onCardPress}
             onHover={onCardHover}
@@ -267,7 +274,8 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
               tokens={ctx.cardTokens[tokenKey] ?? ctx.cardTokens[focused.id] ?? []}
               drawerColor={ctx.tokenColor || TOKEN_COLORS[0]}
               scale={1}
-              drawerTop={36 + focusW * 1.4 + 18 + 52}
+              drawerTop={drawerTop}
+              dieMenuUp={drawerTop + 60 + 6 + 110 > tableH}
               onPlace={onPlaceToken}
               onRemove={onRemoveToken}
               onUpdate={onUpdateToken}
@@ -330,7 +338,7 @@ function MenuRow({ label, danger, onPress }: { label: string; danger?: boolean; 
 }
 
 /** One card, one element. It never remounts while its deck is up; only its target moves. */
-const DeskCard = memo(function DeskCard({ item, target, hovered, focused, page, enabled, tone, reduced, onPress, onHover }: { item: CardItem; target: Target | undefined; hovered: boolean; focused: boolean; page: number; enabled: boolean; tone: CornerTone; reduced: boolean; onPress: (id: string, live: boolean) => void; onHover: (id: string, on: boolean) => void }) {
+const DeskCard = memo(function DeskCard({ item, target, hovered, focused, page, enabled, tone, tokens, crossTrait, reduced, onPress, onHover }: { item: CardItem; target: Target | undefined; hovered: boolean; focused: boolean; page: number; enabled: boolean; tone: CornerTone; tokens?: PlacedToken[]; crossTrait?: 1 | 2; reduced: boolean; onPress: (id: string, live: boolean) => void; onHover: (id: string, on: boolean) => void }) {
   const base = target ?? { x: 0, y: 2000, w: 1, r: 0, z: 0 };
   const lift = hovered && !focused;
   const t = lift ? { x: base.x, y: base.y - 74, w: base.w * 1.16, r: 0, z: 200 } : base;
@@ -366,7 +374,9 @@ const DeskCard = memo(function DeskCard({ item, target, hovered, focused, page, 
         ) : (
           <Layered item={item} full={focused} />
         )}
+        {tokens?.length ? <View style={StyleSheet.absoluteFill} pointerEvents="none"><BakedTokenLayer tokens={tokens} cardW={CW} cardH={CH} /></View> : null}
         {enabled ? <EnabledCorner width={CW} height={CH} tone={tone} /> : null}
+        {crossTrait ? <TraitCrossOut width={CW} height={CH} catalogId={catalogIdOf(item.id)} crossedTrait={crossTrait} /> : null}
       </Pressable>
     </Animated.View>
   );

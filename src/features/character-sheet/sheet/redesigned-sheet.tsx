@@ -16,7 +16,7 @@ import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DesktopPortal } from '@/components/desktop-portal';
-import { endLeave, hasSheetSpare, isLeavingSpares, leaveThroughSpares, setSheetSpare } from '@/hooks/use-back-guard';
+import { clearSheetSpare, endLeave, isLeavingSpares, leaveThroughSpares, markSheetSpare, sheetSpareHere } from '@/hooks/use-back-guard';
 import { DesktopContext, useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -667,7 +667,7 @@ function SheetBackGuard(props: BackGuardState) {
   menuOpenRef.current = menuOpen;
   const editingRef = useRef(editing);
   editingRef.current = editing;
-  useEffect(() => { endLeave(); setSheetSpare(false); }, []);
+  useEffect(() => { endLeave(); if (!sheetSpareHere()) clearSheetSpare(); }, []);
   useFocusEffect(
     useCallback(() => {
       const onBack = () => {
@@ -714,15 +714,15 @@ function SheetBackGuard(props: BackGuardState) {
         // Whether one is armed is tracked beside the flag (see `setSheetSpare`): the router can strip the flag.
         const arm = () => {
           const st = window.history.state as { rkSheet?: boolean } | null;
-          if (st?.rkSheet) { setSheetSpare(true); return; }
-          if (hasSheetSpare()) return;
+          if (st?.rkSheet) { markSheetSpare(); return; }
+          if (sheetSpareHere()) return;
           window.history.pushState({ ...(st ?? {}), rkSheet: true }, '');
-          setSheetSpare(true);
+          markSheetSpare();
         };
         arm();
         const onPop = () => {
           if (isLeavingSpares()) return; // a confirmed leave stepping off the spare: not a Back to answer
-          setSheetSpare(false); // this Back consumed it
+          clearSheetSpare(); // this Back consumed it
           onBack();
           // Re-arm. The entry we just consumed has to be replaced or the next back leaves for real.
           arm();
@@ -2814,6 +2814,14 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const moodboard = useMemo(() => readMoodboard(file?.moodboard), [file?.moodboard]);
   const onMoodboard = useCallback((next: MoodboardItem[]) => mutateFile({ moodboard: next }), [mutateFile]);
   const onOpenBoard = useCallback(() => setBoardOpen(true), []);
+  // The moodboard replaces the sheet and with it the sheet's Back guard. While it is up, browser Back closes it
+  // (as the hardware key does), and the spare that Back consumed stops being tracked; the guard re-arms on return.
+  useEffect(() => {
+    if (!boardOpen || Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onPop = () => { if (isLeavingSpares()) return; clearSheetSpare(); setBoardOpen(false); };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [boardOpen]);
 
   /**
    * The dice tray (v0.39.0, owner).
@@ -3439,7 +3447,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 // v0.29.1: cover the trip back. The roster reads its characters from disk, and on a
                 // slow device that is a beat of bright parchment giving way to nothing.
                 setLeaving(true);
-                requestAnimationFrame(() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else router.replace('/'); }));
+                requestAnimationFrame(() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else { router.replace('/'); endLeave(); } }));
               }}
               onCancel={() => setLeaveConfirm(false)}
             />

@@ -79,7 +79,7 @@ const OPEN_W = 66; // the closed "open drawer" button
 const OPEN_H = 42;
 const DRAWER_TOP = 6;
 /** The dice dropdown: four to a row, so eight dice are two tidy rows under the source (v0.34.4). */
-const DIE_MENU_W = 4 * 46 + 3 * 4 + 12;
+const DIE_MENU_W = 4 * 46 + 3 * 4 + 12 + 3; // + the 1.4 border each side, which the width includes
 
 const newTokenId = () => `tk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -703,6 +703,8 @@ export interface TokenBoardProps {
   /** Top offset for the drawer (#248 item 7): screen-space hosts pass the safe-area inset so it clears
    *  the status bar / screen border, matching the in-stage board's inset. Defaults to 6. */
   drawerTop?: number;
+  /** Open the dice list ABOVE the drawer (a host whose drawer sits low, the desktop table). */
+  dieMenuUp?: boolean;
   /** Card actions (#293) shown in the drawer's left panel when open: edit a custom card / delete a
    *  catalog card. `canAct` is false for beastform (no panel); `editable` picks the pencil vs the trash. */
   onEditCard?: () => void;
@@ -712,7 +714,7 @@ export interface TokenBoardProps {
 }
 
 /** The reusable token surface — fills its parent; pass the focused card's `cardRect` in parent space. */
-export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlace, onRemove, onUpdate, onSetDrawerColor, drawerTop = DRAWER_TOP, onEditCard, onRequestDelete, canAct = false, editable = false }: TokenBoardProps) {
+export function TokenBoard({ cardRect, width, height, tokens, drawerColor, scale, onPlace, onRemove, onUpdate, onSetDrawerColor, drawerTop = DRAWER_TOP, dieMenuUp = false, onEditCard, onRequestDelete, canAct = false, editable = false }: TokenBoardProps) {
   const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [dieType, setDieType] = useState<DieType>('d20'); // the source die's current size (#293)
@@ -877,7 +879,7 @@ export function TokenBoard({ cardRect, width, tokens, drawerColor, scale, onPlac
           {dieMenu ? (
             <>
               <Pressable style={StyleSheet.absoluteFill} onPress={() => setDieMenu(false)} accessibilityRole="button" accessibilityLabel="Close the dice list" />
-              <View style={{ position: 'absolute', left: Math.max(SIDE, rightX + sideW - DIE_MENU_W), top: drawerTop + PANEL_H + 6, width: DIE_MENU_W, backgroundColor: 'rgba(14,17,22,0.97)', borderRadius: 12, borderWidth: 1.4, borderColor: Rune.goldEdge, paddingVertical: 8, paddingHorizontal: 6, flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+              <View style={{ position: 'absolute', left: Math.max(SIDE, rightX + sideW - DIE_MENU_W), ...(dieMenuUp ? { bottom: height - drawerTop + 6 } : { top: drawerTop + PANEL_H + 6 }), width: DIE_MENU_W, backgroundColor: 'rgba(14,17,22,0.97)', borderRadius: 12, borderWidth: 1.4, borderColor: Rune.goldEdge, paddingVertical: 8, paddingHorizontal: 6, flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
                 {DIE_TYPES.map((t) => (
                   <Pressable
                     key={t}
