@@ -1,6 +1,8 @@
 import { DESKTOP_PAGE_PAD, useDesktopPage } from '@/hooks/use-desktop';
 import { DesktopTopBar } from '@/components/desktop-top-bar';
-import { type ReactNode, useLayoutEffect, useRef } from 'react';
+import { createSideLayers, PageSideContext } from '@/components/desktop-portal';
+import { useScreenFocus } from '@/hooks/use-screen-focus';
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Polyline } from 'react-native-svg';
@@ -33,6 +35,8 @@ interface AppScreenProps {
   navReplace?: boolean;
   /** Desktop pages: no header menu (a tour is not a place to navigate from). */
   hideNav?: boolean;
+  /** Desktop pages: px from the content's left edge to where the pop-up sidebar opens (past the left column). */
+  sideAnchor?: number;
   /** Screen heading, drawn inside the frame's top band. Omit for fully custom headers (menu). */
   title?: string;
   onBack?: () => void;
@@ -59,7 +63,7 @@ interface AppScreenProps {
  * within it. Plain flex (dp), NOT DesignStage — these screens scroll and adapt (DESIGN.md).
  * The sheet keeps its own ornamental border; everything else lives in this frame.
  */
-export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, desktopMaxWidth, navGuard, navReplace, hideNav, children }: AppScreenProps) {
+export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, desktopMaxWidth, navGuard, navReplace, hideNav, sideAnchor = 0, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
   // v0.24.1: what the tablet margins copy. Every AppScreen paints ink to its left and right edges.
   useScreenEdge(Rune.ink);
@@ -69,6 +73,29 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
   // Desktop pages (v0.45.0): the frame art is stretched across a whole window there, so content keeps further in.
   const desktopPage = useDesktopPage();
   const headerRef = useRef<View>(null);
+  // Desktop pages (v0.45.0): pop-ups open in a sidebar past the page's left column instead of dimming the screen.
+  const [sideHost, setSideHost] = useState<HTMLElement | null>(null);
+  const [openPanels, setOpenPanels] = useState(0);
+  const [layers] = useState(() => createSideLayers(setOpenPanels));
+  const [barBottom, setBarBottom] = useState(110);
+  const { width: winW, height: winH } = useLayout();
+  const sideLeft = DESKTOP_PAGE_PAD + sideAnchor;
+  const sideW = Math.min(PAGE_SIDE_W, Math.max(320, winW - sideLeft - DESKTOP_PAGE_PAD));
+  const pageSide = useMemo(
+    () => (desktopPage ? { host: sideHost, layers, frame: { width: sideW, height: winH - barBottom - 14, scale: 1, offsetX: sideLeft, offsetY: barBottom } } : null),
+    [desktopPage, sideHost, layers, sideW, winH, barBottom, sideLeft],
+  );
+  // Escape closes the sidebar's top panel (a dialog that handles Escape itself has already claimed the key).
+  const front = useScreenFocus();
+  useEffect(() => {
+    if (!desktopPage || !openPanels || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || !front()) return;
+      if (layers.dismissTop() !== 'none') e.preventDefault();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [desktopPage, openPanels, layers, front]);
   useLayoutEffect(() => {
     const el = headerRef.current as unknown as HTMLElement | null;
     if (!el?.setAttribute) return;
@@ -90,7 +117,9 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
         <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: desktopPage ? DESKTOP_PAGE_PAD : scaled(18, scale), paddingTop: desktopPage ? 26 : title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
           {desktopPage && title ? (
             // Desktop pages (v0.45.0): a header bar instead of the phone's header under the frame's top band.
-            <DesktopTopBar ref={headerRef} title={title} onBack={onBack} right={headerRight} navGuard={navGuard} navReplace={navReplace} hideNav={hideNav} />
+            <View onLayout={(e) => setBarBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height + 6))}>
+              <DesktopTopBar ref={headerRef} title={title} onBack={onBack} right={headerRight} navGuard={navGuard} navReplace={navReplace} hideNav={hideNav} />
+            </View>
           ) : title ? (
             // The header FOLLOWS the border's top band (owner #102): back pinned in the left
             // corner, the right control in the right corner, and a smaller CENTERED title between
@@ -131,7 +160,9 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
               ) : null}
             </View>
           ) : null}
-          {desktopPage && desktopMaxWidth ? <View style={{ flex: 1, width: '100%', maxWidth: desktopMaxWidth, alignSelf: 'center' }}>{children}</View> : children}
+          <PageSideContext.Provider value={pageSide}>
+            {desktopPage && desktopMaxWidth ? <View style={{ flex: 1, width: '100%', maxWidth: desktopMaxWidth, alignSelf: 'center' }}>{children}</View> : children}
+          </PageSideContext.Provider>
         </View>
         {/* Full-bleed sharp gold frame ON TOP of content (sharp 0-radius corners by design). Not on a desktop
             page: stretched across a window it is a phone's border on a monitor. */}
@@ -145,12 +176,22 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
       {/* painted inset bars, same belt-and-braces as the sheet */}
       <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: top, backgroundColor: Rune.ink }} />
       <View pointerEvents="none" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: bottom, backgroundColor: Rune.ink }} />
+      {/* Desktop pages: a click outside the open sidebar closes its top panel, and the sidebar slot itself. */}
+      {desktopPage && openPanels ? (
+        <Pressable style={[StyleSheet.absoluteFill, { zIndex: 499 }]} onPress={() => layers.dismissTop()} accessibilityRole="button" accessibilityLabel="Close the panel" {...({ tabIndex: -1 } as object)} />
+      ) : null}
+      {desktopPage ? (
+        <View ref={setSideHost as never} pointerEvents="box-none" style={{ position: 'absolute', left: sideLeft, top: barBottom, width: sideW, bottom: 14, zIndex: 500 }} />
+      ) : null}
       {/* Last, so a dialog's scrim covers the frame art and the inset bands rather than sitting in a
           rectangle inside them (v0.33.0). */}
-      {overlay}
+      <PageSideContext.Provider value={pageSide}>{overlay}</PageSideContext.Provider>
     </View>
   );
 }
+
+/** A desktop page's pop-up sidebar width, in px. */
+const PAGE_SIDE_W = 480;
 
 /** Tiny tracked-gold section label used across the dark screens. `dm` desaturates it (v0.15.0). */
 export function SectionLabel({ children, style, dm }: { children: ReactNode; style?: object; dm?: boolean }) {

@@ -1,10 +1,31 @@
 import { createContext, type ReactNode, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { createPortal } from 'react-dom';
 
 import { StageScaleReset } from '@/components/design-stage';
 import { useDesktop } from '@/hooks/use-desktop';
 import { FrameContext } from '@/hooks/use-layout';
+import { Rune } from '@/constants/theme';
+
+type Box = { width: number; height: number; scale: number; offsetX: number; offsetY: number };
+
+/**
+ * A desktop PAGE's sidebar slot (v0.45.0): what used to be a full-screen dimmed pop-up opens here instead, a
+ * panel that grows out of the page's left column. Set by AppScreen on desktop pages; null everywhere else.
+ */
+export const PageSideContext = createContext<{ host: HTMLElement | null; layers: SideLayers; frame: Box } | null>(null);
+
+const InPageSide = createContext(false);
+/** True inside a desktop page's sidebar: a pop-up drops its scrim and sits at the top of the panel, full width. */
+export const useInPageSide = () => useContext(InPageSide);
+/** For a pop-up that wraps itself in a portal: asks the question from INSIDE it, where the answer is set. */
+export function InPageSideCheck({ children }: { children: (inSide: boolean) => ReactNode }) {
+  return <>{children(useContext(InPageSide))}</>;
+}
+
+/** A pop-up's body in a page's sidebar: padded, top-aligned, scrolling when it runs long. */
+export const PAGE_SIDE_BODY = { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, padding: 22, justifyContent: 'flex-start', alignItems: 'stretch' } as const;
 
 /**
  * Renders `children` into one of the desktop sheet's hosts (v0.44.0). Outside the desktop sheet it renders
@@ -17,12 +38,16 @@ import { FrameContext } from '@/hooks/use-layout';
  */
 export function DesktopPortal({ to, children, priority = 'panel', onDismiss }: { to: 'table' | 'side'; children: ReactNode; /** Bands, low to high: panel, dialog, share, progress; open order breaks ties within one. */ priority?: LayerPriority; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
   const desktop = useDesktop();
+  const pageSide = useContext(PageSideContext);
   const frame = useMemo(() => {
     if (!desktop) return null;
     const box = to === 'side' ? desktop.side : desktop.table;
     return { width: box.width, height: box.height, scale: 1, offsetX: box.left, offsetY: box.top };
   }, [desktop, to]);
   const host = desktop ? (to === 'table' ? desktop.tableHost : desktop.sideHost) : null;
+  if (!desktop && to === 'side' && pageSide?.host) {
+    return createPortal(<SideLayer page layers={pageSide.layers} frame={pageSide.frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, pageSide.host);
+  }
   if (!desktop || !frame) return <>{children}</>;
   if (to === 'side' && host) return createPortal(<SideLayer layers={desktop.layers} frame={frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, host);
   // The host mounts one frame after the port; render nothing rather than in the wrong place meanwhile.
@@ -54,10 +79,11 @@ export interface SideLayers {
   dismissTop(): 'none' | 'dismissed' | 'blocked';
 }
 
-export function createSideLayers(): SideLayers {
+export function createSideLayers(onCount?: (open: number) => void): SideLayers {
   let seq = 0;
   const layers = new Map<number, { el: HTMLElement; dismiss: () => void; hasDismiss: () => boolean }>();
   const sync = () => {
+    onCount?.(layers.size);
     const top = layers.size ? Math.max(...layers.keys()) : -1;
     layers.forEach((l, rank) => (rank === top ? l.el.removeAttribute('inert') : l.el.setAttribute('inert', '')));
   };
@@ -78,7 +104,7 @@ export function createSideLayers(): SideLayers {
 /** The layer a portal was written inside, so a picker opened from a panel always ranks above that panel. */
 const ParentLayer = createContext<(() => number) | null>(null);
 
-function SideLayer({ layers, frame, priority, onDismiss, children }: { layers: SideLayers; frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; priority: LayerPriority; onDismiss?: () => void; children: ReactNode }) {
+function SideLayer({ layers, frame, priority, onDismiss, page = false, children }: { layers: SideLayers; frame: Box; priority: LayerPriority; onDismiss?: () => void; page?: boolean; children: ReactNode }) {
   // Ranked once, when the layer COMMITS (not during render, so an abandoned render ranks nothing); a remount is
   // a reopening and ranks as new. The layout effect re-renders before paint, so the z-index is never seen at 0.
   const [rank, setRank] = useState(0);
@@ -104,7 +130,16 @@ function SideLayer({ layers, frame, priority, onDismiss, children }: { layers: S
     <View ref={ref as never} style={[StyleSheet.absoluteFill, { zIndex: rank }]} pointerEvents="box-none">
       <ParentLayer.Provider value={claim}>
         <FrameContext.Provider value={frame}>
-          <StageScaleReset>{children}</StageScaleReset>
+          {page ? (
+            // A page's sidebar: a panel that slides out of the left column, framed on its open side.
+            <Animated.View entering={FadeInLeft.duration(220)} style={[StyleSheet.absoluteFill, { backgroundColor: Rune.ink, borderRightWidth: 1, borderLeftWidth: 1, borderColor: 'rgba(218,162,73,0.3)', overflow: 'hidden' }]}>
+              <InPageSide.Provider value>
+                <StageScaleReset>{children}</StageScaleReset>
+              </InPageSide.Provider>
+            </Animated.View>
+          ) : (
+            <StageScaleReset>{children}</StageScaleReset>
+          )}
         </FrameContext.Provider>
       </ParentLayer.Provider>
     </View>

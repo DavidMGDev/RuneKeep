@@ -26,11 +26,15 @@ import { NameDialog } from '@/features/dm/dm-ui';
 import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picker';
 import { Portrait } from '@/components/portrait';
 import { DimScreen } from '@/lib/screen-dim';
+import { DesktopPortal, PAGE_SIDE_BODY } from '@/components/desktop-portal';
 import { useDesktopPage } from '@/hooks/use-desktop';
 import { useDialogKeys } from '@/hooks/use-dialog-keys';
 import { RosterDossier } from './desktop-roster';
 
 /** v0.36.1: the shared chamfered portrait, so the roster matches every other list in the app. */
+/** The desktop roster's list column; the pop-up sidebar opens past its divider. */
+const ROSTER_LIST_W = 380;
+
 function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
   return <Portrait uri={uri} size={58} chamfer={8} tint={tint} fill={Rune.ink} />;
 }
@@ -311,6 +315,7 @@ export function RosterScreen() {
   return (
     <AppScreen
       inertHeader={desktop && modalOpen}
+      sideAnchor={desktop ? ROSTER_LIST_W + 1 : 0}
       title="Characters"
       onBack={() => router.back()}
       headerRight={
@@ -333,7 +338,7 @@ export function RosterScreen() {
       <View ref={bodyRef} style={{ flex: 1 }}>
       {files.length === 0 && desktop ? (
         <View style={{ flex: 1, flexDirection: 'row' }}>
-          <View style={{ width: 380, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)', gap: 12 }}>
+          <View style={{ width: ROSTER_LIST_W, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)', gap: 12 }}>
             <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase', marginTop: 6 }}>No characters yet</Text>
             <NewCharacterRow label="Create your first character" sub="Class, ancestry, cards, one step at a time" onPress={onNewCharacter} />
             <NewCharacterRow label="Import a character" sub="A file a friend sent you" onPress={onImport} quiet />
@@ -370,7 +375,7 @@ export function RosterScreen() {
         </View>
       ) : (
         <View style={desktop ? { flex: 1, flexDirection: 'row', gap: 0 } : { flex: 1 }}>
-        <View style={desktop ? { width: 380, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)' } : { flex: 1 }}>
+        <View style={desktop ? { width: ROSTER_LIST_W, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)' } : { flex: 1 }}>
           <SectionList
             ref={listRef}
             onScrollToIndexFailed={() => { const id = keys.current.selected; if (id && scrollRetry.current++ < 3) setTimeout(() => scrollToRef.current(id), 120); }}
@@ -507,11 +512,14 @@ export function RosterScreen() {
 
       {/* Move-to-folder chooser */}
       {movingChar ? (
-        <View ref={chooserRef} style={[StyleSheet.absoluteFill, { zIndex: 250, alignItems: 'center', justifyContent: 'center' }]}>
-          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={() => setMovingChar(null)} accessibilityRole="button" accessibilityLabel="Dismiss" />
-          <DimScreen opacity={0.82} />
+        <DesktopPortal to="side" priority="dialog" onDismiss={() => setMovingChar(null)}>
+        <View ref={chooserRef} style={desktop ? PAGE_SIDE_BODY : [StyleSheet.absoluteFill, { zIndex: 250, alignItems: 'center', justifyContent: 'center' }]}>
+          {desktop ? null : <>
+            <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={() => setMovingChar(null)} accessibilityRole="button" accessibilityLabel="Dismiss" />
+            <DimScreen opacity={0.82} />
+          </>}
           <Pressable onPress={() => {}} accessibilityElementsHidden>
-          <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.5} style={{ width: 312, padding: 20, gap: 8 }}>
+          <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.5} style={{ width: desktop ? undefined : 312, padding: 20, gap: 8 }}>
             <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to folder</Text>
             {index.folders.map((fo) => (
               <Pressable key={fo.id} onPress={() => { const c = movingChar; setMovingChar(null); commitIndex(assign(index, c.id, fo.id)); }} accessibilityRole="button" accessibilityLabel={fo.name} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 8, backgroundColor: pressed ? 'rgba(218,162,73,0.12)' : 'transparent', borderRadius: 6 })}>
@@ -527,6 +535,7 @@ export function RosterScreen() {
           </ChamferBox>
           </Pressable>
         </View>
+        </DesktopPortal>
       ) : null}
 
       {/* Folder actions */}

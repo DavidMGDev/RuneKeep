@@ -1,4 +1,4 @@
-import { DesktopPortal } from '@/components/desktop-portal';
+import { DesktopPortal, InPageSideCheck, PAGE_SIDE_BODY } from '@/components/desktop-portal';
 import { type ReactNode, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -79,11 +79,14 @@ export function PopupDialog({
   useDialogKeys(rootRef, { enabled: desktopPage || desktopSheet, onEscape: desktopPage ? dismiss : undefined, initialLabel: initialFocus === 'confirm' ? confirmLabel : cancelLabel });
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={dismiss}>
-    <View ref={rootRef} style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={dismiss} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} accessibilityRole="button" accessibilityLabel="Dismiss" />
-      <DimScreen opacity={0.82} />
+    <InPageSideCheck>{(inSide) => (
+    <View ref={rootRef} style={inSide ? PAGE_SIDE_BODY : [StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
+      {inSide ? null : <>
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={dismiss} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} accessibilityRole="button" accessibilityLabel="Dismiss" />
+        <DimScreen opacity={0.82} />
+      </>}
       {/* tap-absorb wrapper (#3): a near-miss inside the panel never falls through to the scrim */}
-      <Pressable onPress={() => {}} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} style={{ width: scaled(320, scale), maxWidth: '92%' }}>
+      <Pressable onPress={() => {}} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} style={inSide ? undefined : { width: scaled(320, scale), maxWidth: '92%' }}>
         <ChamferBox
           chamfer={14}
           fill={dm ? 'rgba(16,17,19,0.985)' : 'rgba(12,15,20,0.985)'}
@@ -105,6 +108,7 @@ export function PopupDialog({
         </ChamferBox>
       </Pressable>
     </View>
+    )}</InPageSideCheck>
     </DesktopPortal>
   );
 }

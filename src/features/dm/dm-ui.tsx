@@ -7,6 +7,7 @@ import { Pressable, type PressableProps, StyleSheet, Text, TextInput, View } fro
 import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { DesktopPortal, InPageSideCheck, PAGE_SIDE_BODY, useInPageSide } from '@/components/desktop-portal';
 import { RuneButton } from '@/components/rune-button';
 import Svg, { Line } from 'react-native-svg';
 
@@ -24,6 +25,22 @@ import { useAndroidBack } from './use-android-back';
 export function DmModal({ onClose, children, contentStyle }: { onClose: () => void; children: ReactNode; contentStyle?: object }) {
   // Android hardware back closes the modal instead of popping the screen (item 3).
   useAndroidBack(() => { onClose(); return true; });
+  // Desktop pages: in the sidebar instead, without a scrim.
+  return (
+    <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
+      <DmModalBody onClose={onClose} contentStyle={contentStyle}>{children}</DmModalBody>
+    </DesktopPortal>
+  );
+}
+
+function DmModalBody({ onClose, children, contentStyle }: { onClose: () => void; children: ReactNode; contentStyle?: object }) {
+  if (useInPageSide()) {
+    return (
+      <View style={PAGE_SIDE_BODY}>
+        <SideFill>{children}</SideFill>
+      </View>
+    );
+  }
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 300, alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={StyleSheet.absoluteFill}>
@@ -42,6 +59,9 @@ export function DmModal({ onClose, children, contentStyle }: { onClose: () => vo
   );
 }
 
+/** In the sidebar a dialog's fixed-width panel stretches to the sidebar's width. */
+export const SideFill = ({ children }: { children: ReactNode }) => <View style={{ alignSelf: 'stretch' }}>{children}</View>;
+
 /** A modal single-line text prompt (name a party / session / folder / adversary). DM-desaturated by
  *  default; pass `dm={false}` for the gold roster variant. */
 export function NameDialog({ title, initial = '', placeholder, confirmLabel = 'Save', dm = true, onConfirm, onCancel }: { title: string; initial?: string; placeholder?: string; confirmLabel?: string; dm?: boolean; onConfirm: (name: string) => void; onCancel: () => void }) {
@@ -54,7 +74,8 @@ export function NameDialog({ title, initial = '', placeholder, confirmLabel = 'S
   return (
     <DmModal onClose={onCancel}>
       <View ref={rootRef}>
-      <ChamferBox chamfer={14} fill="rgba(12,15,20,0.98)" stroke={p.line} strokeWidth={1.5} style={{ width: 312, padding: 22 }}>
+      <InPageSideCheck>{(inSide) => (
+      <ChamferBox chamfer={14} fill="rgba(12,15,20,0.98)" stroke={p.line} strokeWidth={1.5} style={{ width: inSide ? undefined : 312, padding: 22 }}>
         <Text style={{ color: p.title, fontSize: DmType.panel, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>{title}</Text>
         <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={p.inner} strokeWidth={1.1} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 16 }}>
           <TextInput
@@ -73,6 +94,7 @@ export function NameDialog({ title, initial = '', placeholder, confirmLabel = 'S
           <RuneButton label={confirmLabel} kind="secondary" height={42} dm={dm} disabled={!value.trim()} style={{ flex: 1 }} onPress={() => onConfirm(value.trim())} />
         </View>
       </ChamferBox>
+      )}</InPageSideCheck>
       </View>
     </DmModal>
   );

@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { DesktopPortal, PAGE_SIDE_BODY, useInPageSide } from '@/components/desktop-portal';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { expansionCardCount, isOfficialExpansion } from '@/lib/expansions';
@@ -74,17 +75,12 @@ export function ExpansionPicker({ expansions, initial, onConfirm, onCancel }: { 
   );
   const canContinue = checked.size > 0; // Base is locked ON, so this is always true — a defensive guard.
 
+  // Desktop pages: a sidebar panel next to the button that opened it, with Escape and a click outside as Cancel.
   return (
-    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 12000, alignItems: 'center', justifyContent: 'center' }}>
-      {/* non-dismissing backdrop: the picker must be resolved via Continue (no outside-tap close) */}
-      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
-      <DimScreen opacity={0.92} />
-      <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 344, maxWidth: '92%', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16, gap: 12 }}>
-        <View style={{ gap: 3 }}>
-          <Text style={{ color: Rune.goldText, fontSize: 20, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Choose expansions</Text>
-          <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.medium, lineHeight: 16 }}>Pick which content this hero can draw from. You can always start with just the base game.</Text>
-        </View>
-        <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+    <DesktopPortal to="side" priority="dialog" onDismiss={onCancel}>
+      <PickerBody inner={
+        <>
+        <ScrollView style={{ maxHeight: 360, flexGrow: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           <PickRow name="Base Game" subtitle="Core classes, ancestries, communities & domains" checked locked onToggle={() => {}} />
           {rows.map((r) => (
             <PickRow key={r.id} name={r.name} subtitle={r.subtitle} checked={checked.has(r.id)} onToggle={() => toggle(r.id)} />
@@ -94,6 +90,37 @@ export function ExpansionPicker({ expansions, initial, onConfirm, onCancel }: { 
           {onCancel ? <RuneButton label="Cancel" kind="ghost" height={44} style={{ flex: 1 }} onPress={onCancel} /> : null}
           <RuneButton label="Continue" kind="primary" height={44} style={{ flex: 1.6 }} disabled={!canContinue} onPress={() => onConfirm(new Set(checked))} accessibilityLabel="Continue to character creation" />
         </View>
+        </>
+      } />
+    </DesktopPortal>
+  );
+}
+
+function PickerBody({ inner }: { inner: ReactNode }) {
+  const inSide = useInPageSide();
+  const head = (
+    <View style={{ gap: inSide ? 8 : 3 }}>
+      <Text style={{ color: inSide ? Rune.ivory : Rune.goldText, fontSize: inSide ? 26 : 20, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: inSide ? 1.2 : 0.5 }}>Choose expansions</Text>
+      <Text style={{ color: Rune.muted, fontSize: inSide ? 13.5 : 11.5, fontFamily: Body.medium, lineHeight: inSide ? 20 : 16 }}>Pick which content this hero can draw from. You can always start with just the base game.</Text>
+    </View>
+  );
+  if (inSide) {
+    // The sidebar is the panel: no second frame inside it, just the heading on a hairline and the list.
+    return (
+      <View style={[PAGE_SIDE_BODY, { padding: 28, gap: 18 }]}>
+        <View style={{ paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: 'rgba(218,162,73,0.22)' }}>{head}</View>
+        {inner}
+      </View>
+    );
+  }
+  return (
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 12000, alignItems: 'center', justifyContent: 'center' }}>
+      {/* non-dismissing backdrop: the picker must be resolved via Continue (no outside-tap close) */}
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
+      <DimScreen opacity={0.92} />
+      <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 344, maxWidth: '92%', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16, gap: 12 }}>
+        {head}
+        {inner}
       </ChamferBox>
     </View>
   );
