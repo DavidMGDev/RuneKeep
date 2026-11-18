@@ -255,6 +255,8 @@ export function CreateScreen() {
   const nameRef = useRef<TextInput>(null);
   const draftRef = useRef<Draft>(EMPTY);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
+  /** Where a confirmed leave goes: Back, or the page picked in the desktop header's menu. */
+  const leaveTo = useRef<(() => void) | null>(null);
   const [resumeOffer, setResumeOffer] = useState<{ draft: Draft; deck?: string; picked?: string[]; savedAt: string } | null>(null);
   const [resumeChecked, setResumeChecked] = useState(false);
   const [deck, setDeck] = useState<DeckKey>('class');
@@ -2307,6 +2309,12 @@ export function CreateScreen() {
   return (
     <AppScreen
       dm={authoring}
+      // The desktop header's menu asks the same question Back does before leaving a hero part-made.
+      navGuard={(go) => {
+        if (authoring || !draftHasContent(draft)) { go(); return; }
+        leaveTo.current = go;
+        setLeaveConfirm(true);
+      }}
       title={authoring ? (campaignExp?.name ?? 'Campaign settings') : 'New hero'}
       onBack={() => {
         // Authoring writes as it goes, so leaving is leaving. Nothing is half-saved and there is
@@ -2563,10 +2571,10 @@ export function CreateScreen() {
           title="Leave character creation?"
           body="Your progress is saved as a draft, you can pick it up next time you start a new hero. Discard it instead to start clean."
           confirmLabel="Keep draft & leave"
-          onConfirm={() => { setLeaveConfirm(false); leaveThroughSpares(() => router.back()); }}
-          onCancel={() => setLeaveConfirm(false)}>
+          onConfirm={() => { setLeaveConfirm(false); const to = leaveTo.current; leaveTo.current = null; if (to) to(); else leaveThroughSpares(() => router.back()); }}
+          onCancel={() => { leaveTo.current = null; setLeaveConfirm(false); }}>
           <View style={{ marginTop: 16 }}>
-            <RuneButton label="Discard draft" kind="ghost" height={40} onPress={() => { clearDraft(); setLeaveConfirm(false); leaveThroughSpares(() => router.back()); }} />
+            <RuneButton label="Discard draft" kind="ghost" height={40} onPress={() => { clearDraft(); setLeaveConfirm(false); const to = leaveTo.current; leaveTo.current = null; if (to) to(); else leaveThroughSpares(() => router.back()); }} />
           </View>
         </PopupDialog>
       ) : null}
