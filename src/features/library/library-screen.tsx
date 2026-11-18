@@ -7,7 +7,7 @@
  */
 import * as ImagePicker from 'expo-image-picker';
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -42,7 +42,9 @@ import {
 } from '@/lib/library';
 import { formMarkdown } from '@/lib/card-form';
 import { ownImage } from '@/lib/owned-image';
-import { cardById } from '@/data/catalog';
+import { CATALOG, cardById } from '@/data/catalog';
+import { ArtImage } from '@/components/art-image';
+import { useDesktopPage } from '@/hooks/use-desktop';
 import { ALL_LOOT } from '@/data/loot-data';
 import { expansionCardCount, isOfficialExpansion, seedOfficialExpansions } from '@/lib/expansions';
 import { deleteExpansion, exportRkp, importExpansionRkp, listExpansions, saveExpansion } from '@/lib/library-store';
@@ -1009,6 +1011,7 @@ function incompleteSubclassWarning(cards: LibraryCard[]): string | null {
 
 export function LibraryScreen() {
   const router = useRouter();
+  const desktop = useDesktopPage();
   const [expansions, setExpansions] = useState<Expansion[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<{ index: number | 'new'; config: CardConfig; draft?: CardDraft } | null>(null);
@@ -1532,7 +1535,7 @@ export function LibraryScreen() {
     const cardCount = expansionCardCount(selected);
     const on = isEnabledForCreation(selected);
     return (
-      <AppScreen dm={dm} title={selected.name} onBack={() => setSelectedId(null)}>
+      <AppScreen dm={dm} desktopMaxWidth={880} title={selected.name} onBack={() => setSelectedId(null)}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
           <ChamferBox chamfer={10} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ padding: 12, gap: 8 }}>
             <Text style={{ color: P.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {selected.author || 'unknown'} · {cardCount} card{cardCount === 1 ? '' : 's'}</Text>
@@ -1603,7 +1606,7 @@ export function LibraryScreen() {
       doShare(cards);
     };
     return (
-      <AppScreen dm={dm} title={selected.name} onBack={() => setSelectedId(null)}>
+      <AppScreen dm={dm} desktopMaxWidth={880} title={selected.name} onBack={() => setSelectedId(null)}>
         <View style={{ flex: 1, gap: Gap.group }}>
           <View style={{ gap: Gap.intra }}>
             <View style={{ gap: Gap.hair }}>
@@ -2009,7 +2012,51 @@ export function LibraryScreen() {
   const officialExps = expansions.filter((e) => e.official === true);
   const customExps = expansions.filter((e) => !e.official);
   return (
-    <AppScreen dm={dm} title="Card library" onBack={() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else { router.replace('/'); endLeave(); } })}>
+    <AppScreen
+      dm={dm}
+      title="Card library"
+      onBack={() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else { router.replace('/'); endLeave(); } })}
+      headerRight={desktop ? (
+        <>
+          <RuneButton dm={dm} label="Import a file" kind="secondary" height={38} onPress={onImport} />
+          <RuneButton dm={dm} label="New expansion" kind="primary" height={38} onPress={() => setMetaForm('new')} />
+        </>
+      ) : undefined}>
+      {desktop ? (
+        // Desktop (v0.45.0): the archive as a wide banner of real cards, then the expansions in a grid.
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 26, paddingBottom: 30 }}>
+          <ArchiveBanner onOpen={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} />
+          {officialExps.length > 0 ? (
+            <View style={{ gap: 12 }}>
+              <SectionLine label="Official expansions" color={P.goldText} />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
+                {officialExps.map((e) => (
+                  <View key={e.id} style={{ width: '32%', minWidth: 340, flexGrow: 1 }}>
+                    <ExpansionRow e={e} on={isEnabledForCreation(e)} cardCount={expansionCardCount(e)} onOpen={() => openExpansion(e)} onToggle={() => toggleExpansion(e, !isEnabledForCreation(e))} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          <View style={{ gap: 12 }}>
+            <SectionLine label="My expansions" color={P.goldText} />
+            {customExps.length === 0 ? (
+              <Text style={{ color: P.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 21 }}>
+                No expansions yet. Create one to author homebrew cards, or import one a friend shared with you.
+              </Text>
+            ) : (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14 }}>
+                {customExps.map((e) => (
+                  <View key={e.id} style={{ width: '32%', minWidth: 340, flexGrow: 1 }}>
+                    <ExpansionRow e={e} on={isExpansionEnabled(e)} cardCount={expansionSummary(e).cardCount} onOpen={() => openExpansion(e)} onToggle={() => toggleExpansion(e, !isExpansionEnabled(e))} onHold={() => { playSfx('cardSelect'); setHoldingExp(e); }} />
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      ) : (
+      <>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
         <Pressable onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} accessibilityRole="button" accessibilityLabel="Browse the card archive">
           {({ pressed }) => (
@@ -2071,6 +2118,8 @@ export function LibraryScreen() {
         <RuneButton dm={dm} label="Import a file" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
         <RuneButton dm={dm} label="New expansion" kind="primary" height={46} style={{ flex: 1 }} onPress={() => setMetaForm('new')} />
       </View>
+      </>
+      )}
 
       {metaForm === 'new' ? (
         <MetaForm
@@ -2130,5 +2179,51 @@ export function LibraryScreen() {
         />
       ) : null}
     </AppScreen>
+  );
+}
+
+/** A section's name on a gold hairline, the hub's divider. */
+function SectionLine({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <Text style={{ color, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.6, textTransform: 'uppercase' }}>{label}</Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: 'rgba(218,162,73,0.25)' }} />
+    </View>
+  );
+}
+
+/**
+ * The way into the card archive on a desktop window (v0.45.0): a wide banner with a hand of real cards fanned
+ * across it, lifting a little under the pointer, so it reads as the place where every card lives.
+ */
+function ArchiveBanner({ onOpen }: { onOpen: () => void }) {
+  const [hover, setHover] = useState(false);
+  const fan = useMemo(() => {
+    const domains = CATALOG.filter((c) => c.kind === 'domain');
+    return Array.from({ length: 7 }, (_, i) => domains[(11 + i * 37) % domains.length]);
+  }, []);
+  return (
+    <Pressable onPress={onOpen} onHoverIn={() => setHover(true)} onHoverOut={() => setHover(false)} accessibilityRole="button" accessibilityLabel="Browse the card archive">
+      <ChamferBox chamfer={16} fill={hover ? 'rgba(20,24,31,0.96)' : 'rgba(14,17,22,0.92)'} stroke={hover ? Rune.goldBright : 'rgba(218,162,73,0.5)'} strokeWidth={1.4}
+        style={{ height: 230, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 34, overflow: 'hidden' }}>
+        <View style={{ width: 360, gap: 8 }}>
+          <Text style={{ color: Rune.ivory, fontSize: 30, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>Card archive</Text>
+          <Text style={{ color: Rune.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 21 }}>Every system card, weapon and armor, with the packs you have switched on. Filter, read and share them.</Text>
+          <Text style={{ color: hover ? Rune.goldBright : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.6, textTransform: 'uppercase', marginTop: 8 }}>Open the archive</Text>
+        </View>
+        <View style={{ flex: 1, height: 230, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 7 * 70 + 80, height: 190 }}>
+            {fan.map((c, i) => {
+              const o = i - 3;
+              return (
+                <View key={c.id} style={{ position: 'absolute', left: i * 70, top: Math.abs(o) * 5 - (hover ? 8 : 0), width: 124, height: 174, transform: [{ rotate: `${o * 4}deg` }], zIndex: 10 - Math.abs(o) }}>
+                  <ArtImage source={c.thumb} fit="contain" />
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </ChamferBox>
+    </Pressable>
   );
 }

@@ -25,6 +25,8 @@ export function useScreenInsets() {
 interface AppScreenProps {
   /** Web: the header leaves the Tab order and stops taking input (a dialog of the screen's own is up). */
   inertHeader?: boolean;
+  /** Desktop pages: keep the content (not the header bar) at most this wide, centred. For forms and editors. */
+  desktopMaxWidth?: number;
   /** Screen heading, drawn inside the frame's top band. Omit for fully custom headers (menu). */
   title?: string;
   onBack?: () => void;
@@ -51,7 +53,7 @@ interface AppScreenProps {
  * within it. Plain flex (dp), NOT DesignStage — these screens scroll and adapt (DESIGN.md).
  * The sheet keeps its own ornamental border; everything else lives in this frame.
  */
-export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, children }: AppScreenProps) {
+export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, desktopMaxWidth, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
   // v0.24.1: what the tablet margins copy. Every AppScreen paints ink to its left and right edges.
   useScreenEdge(Rune.ink);
@@ -123,7 +125,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
               ) : null}
             </View>
           ) : null}
-          {children}
+          {desktopPage && desktopMaxWidth ? <View style={{ flex: 1, width: '100%', maxWidth: desktopMaxWidth, alignSelf: 'center' }}>{children}</View> : children}
         </View>
         {/* Full-bleed sharp gold frame ON TOP of content (sharp 0-radius corners by design). Not on a desktop
             page: stretched across a window it is a phone's border on a monitor. */}
