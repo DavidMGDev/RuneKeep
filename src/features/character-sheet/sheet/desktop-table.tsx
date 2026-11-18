@@ -77,8 +77,10 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // A new deck starts with nothing in focus; a focused card that left the deck (moved, deleted) drops focus.
-  useEffect(() => { setFocusId(null); setHoverId(null); setMenu(null); }, [category]);
-  useEffect(() => { if (focusId && !deck.some((c) => c.id === focusId)) setFocusId(null); }, [deck, focusId]);
+  const endFocus = useRef(ctx.endCardFocus);
+  endFocus.current = ctx.endCardFocus;
+  useEffect(() => { endFocus.current(); setFocusId(null); setHoverId(null); setMenu(null); }, [category]);
+  useEffect(() => { if (focusId && !deck.some((c) => c.id === focusId)) { endFocus.current(); setFocusId(null); } }, [deck, focusId]);
 
   const port = desktop?.port;
   const tableW = Math.max(0, winW - (port ? port.left + port.width : 0));
@@ -114,9 +116,10 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   const focus = useCallback((id: string) => {
     if (id === focusId) return;
     playSfx('cardSelect');
+    if (focusId) ctx.endCardFocus(); // a different card takes the slot: the override streak ends, as on the phone
     setHoverId(null);
     setFocusId(id);
-  }, [focusId]);
+  }, [focusId, ctx]);
   // Reorder (the phone's Edit Mode drag): the focused card moves one place, persisted through the same path.
   const canReorder = !!ctx.onReorderCards && category !== FAVORITES_CATEGORY && deck.length > 1;
   const moveFocused = useCallback((dir: -1 | 1) => {
@@ -131,8 +134,9 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   const release = useCallback(() => {
     if (!focusId) return;
     playSfx('cardDeselect');
+    ctx.endCardFocus(); // leaving the slot ends a domain-cap override streak, as leaving fullscreen does
     setFocusId(null);
-  }, [focusId]);
+  }, [focusId, ctx]);
 
   const tokenDismiss = useRef<(() => boolean) | null>(null);
   const focusRef = useRef(focusId);
@@ -423,7 +427,7 @@ function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease, positio
   const buttons: { label: string; onPress: () => void; active?: boolean; hidden?: boolean }[] = [
     { label: on ? 'Equipped' : 'Equip', onPress: () => ctx.toggleCard(item.id), active: on, hidden: permanent },
     { label: 'Modifiers', onPress: () => ctx.showCardInfo(item.id) },
-    { label: ctx.cardStates.modsOff.has(ref) ? 'Toggle on' : 'Toggle', onPress: () => ctx.toggleCardModifiers(item.id), hidden: !ctx.cardStates.toggleable.has(ref) },
+    { label: ctx.cardStates.modsOff.has(ref) ? 'Toggle on' : 'Toggle', onPress: () => ctx.toggleCardModifiers(item.id), hidden: !ctx.cardStates.toggleable.has(ref) || !(on || permanent) }, // the phone's rule: only on a card that applies
     { label: '#', onPress: () => ctx.editNumberInput(item.id), hidden: !ctx.cardStates.numberInput.has(ref) },
     { label: 'Expand', onPress: () => ctx.expandClassCard(item.id), hidden: !ctx.cardStates.expandable.has(ref) },
     { label: 'Edit', onPress: () => onEdit?.(), hidden: !onEdit },

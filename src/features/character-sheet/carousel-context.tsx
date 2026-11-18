@@ -152,6 +152,8 @@ interface CarouselContextValue {
   toggleCard: (id: string) => void;
   /** Open the per-card modifier view (#175): the focused card's "Modifiers" button calls this. */
   showCardInfo: (id: string) => void;
+  /** v0.44.0 desktop: a card left the focus slot, which ends a domain-cap override streak as leaving fullscreen does. */
+  endCardFocus: () => void;
   /**
    * What a card IS, beyond equipped (v0.32.0). All keyed by the card's ref, like `enabledIds`.
    *
@@ -599,6 +601,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     [],
   );
   const noopInfo = useCallback((_id: string) => {}, []);
+  const noopEndFocus = useCallback(() => {}, []);
   const emptyTokens = useMemo<Record<string, PlacedToken[]>>(() => ({}), []);
   const noopPlace = useCallback((_cardId: string, _token: PlacedToken) => {}, []);
   const noopRemoveToken = useCallback((_cardId: string, _tokenId: string) => {}, []);
@@ -667,6 +670,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       expandClassCard: (id: string) => onExpandClassCard?.(id, category),
       editNumberInput: onEditNumberInput ?? noopToggle,
       showCardInfo: onShowCardInfo ?? noopInfo,
+      endCardFocus: onLeaveFullscreen ?? noopEndFocus,
       cardTokens: cardTokens ?? emptyTokens,
       tokenColor: tokenColor ?? '',
       tokenDrawerX: tokenDrawerX ?? 0.5,
@@ -676,7 +680,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, sortFnRef, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, cardAction, isFavorited, enabledIds, emptyEnabled, cardStates, emptyCardStates, crossOuts, emptyCrossOuts, onToggleCard, onToggleCardModifiers, onExpandClassCard, onEditNumberInput, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, sortFnRef, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, cardAction, isFavorited, enabledIds, emptyEnabled, cardStates, emptyCardStates, crossOuts, emptyCrossOuts, onToggleCard, onToggleCardModifiers, onExpandClassCard, onEditNumberInput, noopToggle, onShowCardInfo, noopInfo, onLeaveFullscreen, noopEndFocus, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
