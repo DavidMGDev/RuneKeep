@@ -22,7 +22,7 @@ const NAV: { label: string; href: string; route: string; match: (p: string) => b
  * of where else you can go (the current place lit), and the page's own actions on the right. It sits on a
  * hairline, the way the desktop mockup's pages do.
  */
-export const DesktopTopBar = forwardRef<View, { title: string; onBack?: () => void; right?: ReactNode; navGuard?: (go: () => void) => void; navReplace?: boolean }>(function DesktopTopBar({ title, onBack, right, navGuard, navReplace }, ref) {
+export const DesktopTopBar = forwardRef<View, { title: string; onBack?: () => void; right?: ReactNode; navGuard?: (go: () => void) => void; navReplace?: boolean; hideNav?: boolean }>(function DesktopTopBar({ title, onBack, right, navGuard, navReplace, hideNav }, ref) {
   const pathname = usePathname();
   const router = useRouter();
   const inStack = useNavigationState((st) => st?.routes?.map((r) => r.name) ?? []);
@@ -45,11 +45,11 @@ export const DesktopTopBar = forwardRef<View, { title: string; onBack?: () => vo
       {onBack ? <BackButton onPress={onBack} /> : null}
       <Text numberOfLines={1} style={{ flexShrink: 1, minWidth: compact ? 230 : 300, color: Rune.ivory, fontSize: compact ? 24 : 32, fontFamily: Display.black, letterSpacing: compact ? 1 : 1.4, textTransform: 'uppercase' }}>{title}</Text>
       <View style={{ flex: 1 }} />
-      <View accessibilityRole={'navigation' as never} style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: compact ? 0 : 4 }}>
+      {hideNav ? null : <View accessibilityRole={'navigation' as never} style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: compact ? 0 : 4 }}>
         {NAV.map((n) => (
           <NavLink key={n.href} compact={compact} label={n.label} active={n.match(pathname)} onPress={() => goTo(n)} />
         ))}
-      </View>
+      </View>}
       {right ? <View style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: compact ? 8 : 10, marginLeft: compact ? 0 : 8 }}>{right}</View> : null}
     </View>
   );

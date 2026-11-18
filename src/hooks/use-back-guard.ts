@@ -170,7 +170,8 @@ const SPARE_RETRIES = [0, 60, 120, 250, 400, 800];
 let armPath: string | null = null;
 function ensureSpare(attempt = 0) {
   if (!isWeb() || !guards.hasWeb() || leavingSpares) return;
-  const arrived = !armPath || window.location.pathname === armPath;
+  const bare = (p: string) => p.replace(/\/+$/, '') || '/'; // '/library/' is '/library'
+  const arrived = !armPath || bare(window.location.pathname) === bare(armPath);
   if (arrived && !spareIsOurs()) {
     if (onGuardSpare()) window.history.replaceState({ ...((window.history.state as object | null) ?? {}), rkGuard: true }, '');
     else pushSpareEntry();
@@ -194,6 +195,9 @@ function syncWebListener() {
   if (!guards.hasWeb() && detach) {
     detach();
     detach = null;
+    // The key only means "our spare" while a guard is armed: a later replace (Forge to the sheet) keeps the
+    // browser slot and its key for a different, real entry.
+    guardSpareKey = null;
     // The spare entry is abandoned rather than unwound. Unwinding it is a REAL navigation, and doing
     // that on cleanup is the v0.43.1 bug that threw authors out of the expansion editor every time
     // they opened a card: see `lib/back-guard`.

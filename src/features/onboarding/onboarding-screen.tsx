@@ -357,8 +357,9 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
   if (desktop) {
     // Desktop (v0.45.0): one wide card in the middle of the window, the illustration beside the words.
     return (
-      // Leaving a tour by the header menu finishes it, as Skip does, and takes it off the stack.
-      <AppScreen title={TITLE[tour]} navReplace navGuard={(leave) => { finishTour(tour); leave(); }} onBack={safeStep === 0 ? undefined : () => go(safeStep - 1)}>
+      // No header menu: a tour is not a place to navigate from (it can sit over the sheet's own history entry),
+      // and Skip is the way out.
+      <AppScreen title={TITLE[tour]} hideNav onBack={safeStep === 0 ? undefined : () => go(safeStep - 1)}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 30 }}>
           <ChamferBox chamfer={18} fill="rgba(14,17,22,0.94)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.4} style={{ width: 1000, maxWidth: '100%', flexDirection: 'row', gap: 44, paddingHorizontal: 44, paddingVertical: 40, minHeight: 460 }}>
             <Animated.View style={[{ width: 440, alignItems: 'center', justifyContent: 'center' }, fadeStyle]}>

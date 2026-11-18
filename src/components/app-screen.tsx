@@ -31,6 +31,8 @@ interface AppScreenProps {
   navGuard?: (go: () => void) => void;
   /** Desktop pages: the header menu replaces this page instead of stacking on it (a page that must not linger). */
   navReplace?: boolean;
+  /** Desktop pages: no header menu (a tour is not a place to navigate from). */
+  hideNav?: boolean;
   /** Screen heading, drawn inside the frame's top band. Omit for fully custom headers (menu). */
   title?: string;
   onBack?: () => void;
@@ -57,7 +59,7 @@ interface AppScreenProps {
  * within it. Plain flex (dp), NOT DesignStage — these screens scroll and adapt (DESIGN.md).
  * The sheet keeps its own ornamental border; everything else lives in this frame.
  */
-export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, desktopMaxWidth, navGuard, navReplace, children }: AppScreenProps) {
+export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, desktopMaxWidth, navGuard, navReplace, hideNav, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
   // v0.24.1: what the tablet margins copy. Every AppScreen paints ink to its left and right edges.
   useScreenEdge(Rune.ink);
@@ -88,7 +90,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
         <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: desktopPage ? DESKTOP_PAGE_PAD : scaled(18, scale), paddingTop: desktopPage ? 26 : title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
           {desktopPage && title ? (
             // Desktop pages (v0.45.0): a header bar instead of the phone's header under the frame's top band.
-            <DesktopTopBar ref={headerRef} title={title} onBack={onBack} right={headerRight} navGuard={navGuard} navReplace={navReplace} />
+            <DesktopTopBar ref={headerRef} title={title} onBack={onBack} right={headerRight} navGuard={navGuard} navReplace={navReplace} hideNav={hideNav} />
           ) : title ? (
             // The header FOLLOWS the border's top band (owner #102): back pinned in the left
             // corner, the right control in the right corner, and a smaller CENTERED title between
