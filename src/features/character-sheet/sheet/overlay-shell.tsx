@@ -16,6 +16,7 @@ import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, w
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, Rune } from '@/constants/theme';
 import { scaled, useLayout } from '@/hooks/use-layout';
+import { useDesktop } from '@/hooks/use-desktop';
 import { playSfx } from '@/lib/sfx';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -90,7 +91,59 @@ export function OverlayShell({
     onClose();
   };
   const scrimStyle = useAnimatedStyle(() => ({ opacity: p.value }));
+  const desktop = !!useDesktop();
+  const drawerStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateX: (1 - p.value) * -12 }] }));
   const boxStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 18 }, { scale: 0.95 + 0.05 * p.value }] }));
+  // Desktop (v0.45.0): the demo's drawer. It fills the side slot beside the port, top to bottom: a big title, the
+  // body scrolling in the middle, and the footer's actions pinned to the bottom edge.
+  if (desktop) {
+    return (
+      <DesktopPortal to="side" priority={priority} onDismiss={close}>
+        <Animated.View style={[{ position: 'absolute', top: 0, left: 0, bottom: 0, right: 0, zIndex: 10000 }, drawerStyle]}>
+          <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1, padding: 24, gap: 16 }}>
+            <View style={{ paddingRight: 36 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Text numberOfLines={2} style={{ flexShrink: 1, color: Rune.ivory, fontSize: 30, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.3 }}>{title}</Text>
+                {titleAction ? (
+                  <Pressable onPress={titleAction.onPress} hitSlop={6} accessibilityRole="button" accessibilityLabel={titleAction.label} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                    <ChamferBox chamfer={6} fill={Rune.ink} stroke={Rune.goldEdge} strokeWidth={1.1} style={{ paddingHorizontal: 12, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: Rune.goldText, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{titleAction.label}</Text>
+                    </ChamferBox>
+                  </Pressable>
+                ) : null}
+              </View>
+              {subtitle ? <Text style={{ color: Rune.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 19, marginTop: 4 }}>{subtitle}</Text> : null}
+            </View>
+            <Pressable onPress={close} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close" style={{ position: 'absolute', top: 16, right: 16, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
+            </Pressable>
+            {header}
+            {scroll ? (
+              <ScrollView
+                style={{ flex: 1 }}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingBottom: 2 }}
+                keyboardShouldPersistTaps="handled"
+                scrollEventThrottle={64}
+                onScroll={
+                  onEndReached
+                    ? (e) => {
+                        const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+                        if (contentOffset.y + layoutMeasurement.height >= contentSize.height - layoutMeasurement.height) onEndReached();
+                      }
+                    : undefined
+                }>
+                {children}
+              </ScrollView>
+            ) : (
+              <View style={{ flex: 1, gap: 8 }}>{children}</View>
+            )}
+            {footer ? <View>{footer}</View> : null}
+          </ChamferBox>
+        </Animated.View>
+      </DesktopPortal>
+    );
+  }
   // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
     <DesktopPortal to="side" priority={priority} onDismiss={close}>

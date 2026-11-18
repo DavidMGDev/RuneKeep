@@ -22,7 +22,7 @@ export function ModifiersPanel({ file, onClose, header }: { file: CharacterFile;
     <OverlayShell title="Modifiers" subtitle={subtitle} onClose={onClose} header={header}>
       {enabledCount === 0 ? (
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18, marginBottom: 2 }}>
-          Press and hold a card in the carousel to equip it — its modifiers will appear here, layered on your base stats.
+          Equip a card and its modifiers appear here, layered on your base stats.
         </Text>
       ) : null}
       {EFFECT_TARGETS.map((t) => (

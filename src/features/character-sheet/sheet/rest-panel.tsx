@@ -6,6 +6,7 @@ import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { applyRestMoves, BASE_REST_MOVES, movesFor, restMoveById, type RestKind, type RestLogEntry, type RestMove, type RestSelection, tierForLevel } from '@/lib/rest';
+import { useDesktop } from '@/hooks/use-desktop';
 import { playSfx } from '@/lib/sfx';
 
 import type { Character } from '../character';
@@ -44,7 +45,9 @@ function MoveCard({ move, count, atMax, onAdd, onRemove }: { move: RestMove; cou
  */
 export function RestPanel({ character, moveLimit = BASE_REST_MOVES, onApply, onClose }: { character: Character; /** Ceiling on downtime moves — 3 for a character keeping an elf's Celestial Trance. */ moveLimit?: number; onApply: (next: Character) => void; onClose: () => void }) {
   const limitWord = moveLimit === 2 ? 'two' : moveLimit === 3 ? 'three' : String(moveLimit);
-  const [kind, setKind] = useState<RestKind | null>(null);
+  const desktop = !!useDesktop();
+  // Desktop opens on Short rest with Long a tab away (the demo); a phone asks first.
+  const [kind, setKind] = useState<RestKind | null>(desktop ? 'short' : null);
   const [picks, setPicks] = useState<string[]>([]);
   const [withParty, setWithParty] = useState(false);
   const [result, setResult] = useState<RestLogEntry[] | null>(null);
@@ -54,7 +57,7 @@ export function RestPanel({ character, moveLimit = BASE_REST_MOVES, onApply, onC
   const tier = tierForLevel(character.level);
 
   const reset = () => {
-    setKind(null);
+    setKind(desktop ? 'short' : null);
     setPicks([]);
     setResult(null);
     setRolling(null);
@@ -164,6 +167,68 @@ export function RestPanel({ character, moveLimit = BASE_REST_MOVES, onApply, onC
   // ---- choose moves ----
   const moves = movesFor(kind);
   const hasPrepare = picks.some((id) => restMoveById(id)?.effect === 'hope');
+  if (desktop) {
+    const kindWord = kind === 'long' ? 'long' : 'short';
+    // A click takes the move; another click takes it again while there is room, and once there is not, a click
+    // puts it back. So the same move twice is two clicks, as on the phone's + button.
+    const clickMove = (id: string) => (picks.length < moveLimit ? addPick(id) : countOf(id) ? setPicks((p) => { playSfx('cardDeselect'); return p.filter((x) => x !== id); }) : undefined);
+    return (
+      <OverlayShell
+        title="Rest"
+        subtitle={`Catch your breath or make camp. Choose up to ${limitWord} moves.`}
+        onClose={onClose}
+        header={
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(['short', 'long'] as const).map((k) => (
+              <Pressable key={k} style={{ flex: 1 }} onPress={() => { if (k === kind) return; playSfx('buttonTap'); setKind(k); setPicks([]); }} accessibilityRole="tab" accessibilityState={{ selected: k === kind }} accessibilityLabel={k === 'short' ? 'Short rest' : 'Long rest'}>
+                {({ hovered }: { hovered?: boolean }) => (
+                  <ChamferBox chamfer={7} fill={k === kind ? '#1d0f10' : hovered ? '#1A1E26' : Rune.ink} stroke={k === kind ? Rune.red : Rune.goldEdge} strokeWidth={1.3} style={{ height: 38, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: k === kind ? Rune.ivory : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{k} rest</Text>
+                  </ChamferBox>
+                )}
+              </Pressable>
+            ))}
+          </View>
+        }
+        footer={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={{ flex: 1, color: Rune.muted, fontSize: 11, fontFamily: Body.bold, letterSpacing: 1.3, textTransform: 'uppercase' }}>{picks.length} of {moveLimit} chosen</Text>
+            <View style={{ minWidth: 264 }}>
+              {picks.length === 0 ? (
+                <RuneButton label={`Take a ${kindWord} rest`} kind="primary" height={40} disabled onPress={reset} />
+              ) : (
+                <HoldToConfirm label={`Hold to take a ${kindWord} rest`} height={40} chamfer={7} sfx={null} onConfirm={confirm} />
+              )}
+            </View>
+          </View>
+        }>
+        {moves.map((m) => {
+          const n = countOf(m.id);
+          return (
+            <Pressable key={m.id} onPress={() => clickMove(m.id)} accessibilityRole="button" accessibilityState={{ selected: n > 0 }} accessibilityLabel={n ? `${m.title}, chosen ${n === 1 ? 'once' : 'twice'}` : m.title}>
+              {({ hovered }: { hovered?: boolean }) => (
+                <ChamferBox chamfer={10} fill={n ? '#1d0f10' : hovered ? '#1A1E26' : Rune.ink} stroke={n ? Rune.red : Rune.goldEdge} strokeWidth={1.3} style={{ paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 0.3, textTransform: 'uppercase' }}>{m.title}</Text>
+                    <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.medium, lineHeight: 18, marginTop: 2 }}>{m.blurb}</Text>
+                  </View>
+                  {n > 1 ? <Text style={{ color: Rune.goldBright, fontSize: 16, fontFamily: Display.black }}>×{n}</Text> : null}
+                </ChamferBox>
+              )}
+            </Pressable>
+          );
+        })}
+        {hasPrepare ? (
+          <Pressable onPress={() => setWithParty((v) => !v)} accessibilityRole="checkbox" accessibilityState={{ checked: withParty }} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 4 }}>
+            <ChamferBox chamfer={4} fill={withParty ? Rune.red : 'transparent'} stroke={withParty ? Rune.red : Rune.muted} strokeWidth={1.6} style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+              {withParty ? <Text style={{ color: Rune.ivory, fontSize: 13, fontFamily: Body.bold }}>✓</Text> : null}
+            </ChamferBox>
+            <Text style={{ color: Rune.sheet, fontSize: 13, fontFamily: Body.medium }}>Prepare with the party (gain 2 Hope)</Text>
+          </Pressable>
+        ) : null}
+      </OverlayShell>
+    );
+  }
   return (
     <OverlayShell
       title={kind === 'long' ? 'Long Rest' : 'Short Rest'}

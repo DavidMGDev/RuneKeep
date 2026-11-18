@@ -100,7 +100,7 @@ function FolderHeader({ folder, count, collapsed, onToggle, onActions }: { folde
   );
 }
 
-/** Desktop (v0.45.0): an empty roster's row, shaped like a character row, that starts one. */
+/** Desktop (v0.45.0): a row shaped like a character row that starts one (or imports one), under the list. */
 function NewCharacterRow({ label, sub, onPress, quiet }: { label: string; sub: string; onPress: () => void; quiet?: boolean }) {
   const [hover, setHover] = useState(false);
   return (
@@ -384,6 +384,13 @@ export function RosterScreen() {
             contentContainerStyle={{ paddingTop: 4, paddingBottom: 16 }}
             showsVerticalScrollIndicator={false}
             stickySectionHeadersEnabled={false}
+            // Desktop: making or importing another hero is always the last two rows of the list.
+            ListFooterComponent={desktop ? (
+              <View style={{ gap: 12, marginTop: 4 }}>
+                <NewCharacterRow label="New character" sub="Class, ancestry, cards, one step at a time" onPress={onNewCharacter} />
+                <NewCharacterRow label="Import a character" sub="A file a friend sent you" onPress={onImport} quiet />
+              </View>
+            ) : null}
             renderSectionHeader={({ section }) => {
               const s = section as unknown as Section;
               // Ungrouped needs no header when there are NO folders at all (flat list, as before).

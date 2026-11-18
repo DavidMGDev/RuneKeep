@@ -1,5 +1,5 @@
-import { memo, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import type { View as RNView } from 'react-native';
 import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -67,39 +67,85 @@ function decksOf(file: CharacterFile) {
 }
 
 const SHOW_W = 150;
-/** The tightest a fan packs before it scrolls sideways instead. */
-const MIN_STEP = 40;
+const SHOW_H = SHOW_W * 1.4;
+/** Room between cards, and around the row so a card lifting under the pointer is never cut off. */
+const GAP = 18;
+const PAD_X = 14;
+const LIFT_ROOM = 28;
+const FADE = 56;
 
-/** One deck, fanned: the cards overlap more as the deck grows so the row never scrolls sideways. */
+/**
+ * One deck as a row of same-size cards you look along (v0.45.0, owner): no overlap, a clear gap, and a deck
+ * longer than the pane scrolls sideways with the mouse wheel. Each edge fades while there is more to see that
+ * way, so a card at the border dissolves instead of being cut.
+ */
 function DeckRow({ title, cards }: { title: string; cards: DmCard[] }) {
   const [rowW, setRowW] = useState(0);
-  const step = cards.length > 1 ? Math.min(SHOW_W - 30, Math.max(MIN_STEP, (rowW - SHOW_W) / (cards.length - 1))) : 0;
-  const fanW = SHOW_W + Math.max(0, cards.length - 1) * step + 12;
-  const scrolls = rowW > 0 && fanW > rowW;
+  const [x, setX] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const wrapRef = useRef<View>(null);
+  const contentW = PAD_X * 2 + cards.length * SHOW_W + Math.max(0, cards.length - 1) * GAP;
+  const maxX = Math.max(0, contentW - rowW);
+
+  // The wheel scrolls the row sideways (a vertical wheel included) while the row has somewhere to go.
+  useEffect(() => {
+    const el = wrapRef.current as unknown as HTMLElement | null;
+    const node = (scrollRef.current as unknown as { getScrollableNode?: () => HTMLElement } | null)?.getScrollableNode?.();
+    if (Platform.OS !== 'web' || !el?.addEventListener || !node) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return;
+      const d = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * (e.deltaMode === 1 ? 40 : 1);
+      const atEdge = (d < 0 && node.scrollLeft <= 0) || (d > 0 && node.scrollLeft >= node.scrollWidth - node.clientWidth - 1);
+      if (atEdge) return; // nothing further this way: let the page scroll
+      e.preventDefault();
+      node.scrollBy({ left: d * 1.6, behavior: 'smooth' });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [rowW, cards.length]);
+
+  // The edges fade only where the row continues.
+  useEffect(() => {
+    const el = wrapRef.current as unknown as HTMLElement | null;
+    if (Platform.OS !== 'web' || !el?.style) return;
+    const l = x > 2 ? FADE : 0;
+    const r = x < maxX - 2 ? FADE : 0;
+    const mask = l || r ? `linear-gradient(to right, transparent 0, #000 ${l}px, #000 calc(100% - ${r}px), transparent 100%)` : '';
+    el.style.setProperty('mask-image', mask);
+    el.style.setProperty('-webkit-mask-image', mask);
+  }, [x, maxX]);
+
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: 6 }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 12 }}>
         <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1.6, textTransform: 'uppercase' }}>{title}</Text>
         <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold }}>{cards.length} {cards.length === 1 ? 'card' : 'cards'}</Text>
       </View>
-      <View onLayout={(e) => setRowW(e.nativeEvent.layout.width)} style={{ height: SHOW_W * 1.4 + 26, paddingTop: 20 }}>
+      <View ref={wrapRef} onLayout={(e) => setRowW(e.nativeEvent.layout.width)} style={{ marginHorizontal: -PAD_X }}>
         {cards.length === 0 ? (
-          <ChamferBox chamfer={10} fill="rgba(14,17,22,0.6)" stroke="rgba(218,162,73,0.3)" strokeWidth={1.2} style={{ width: SHOW_W, height: SHOW_W * 1.4, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>Empty</Text>
-          </ChamferBox>
-        ) : rowW > 0 ? (
-          // A deck too long to fan in the width scrolls sideways rather than running off the pane.
-          <ScrollView horizontal scrollEnabled={scrolls} showsHorizontalScrollIndicator={scrolls} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} contentContainerStyle={{ width: Math.max(fanW, rowW) }}>
-            {cards.map((c, i) => <FannedCard key={c.id} card={c} left={i * step} index={i} />)}
+          <View style={{ paddingHorizontal: PAD_X, paddingTop: LIFT_ROOM, paddingBottom: 10 }}>
+            <ChamferBox chamfer={10} fill="rgba(14,17,22,0.6)" stroke="rgba(218,162,73,0.3)" strokeWidth={1.2} style={{ width: SHOW_W, height: SHOW_H, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>Empty</Text>
+            </ChamferBox>
+          </View>
+        ) : (
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            scrollEventThrottle={32}
+            onScroll={(e) => setX(e.nativeEvent.contentOffset.x)}
+            contentContainerStyle={{ paddingHorizontal: PAD_X, paddingTop: LIFT_ROOM, paddingBottom: 10, gap: GAP }}>
+            {cards.map((c, i) => <FannedCard key={c.id} card={c} index={i} />)}
           </ScrollView>
-        ) : null}
+        )}
       </View>
     </View>
   );
 }
 
-/** A card in a deck row: dealt in left to right, lifting and coming to the front under the pointer. */
-const FannedCard = memo(function FannedCard({ card, left, index }: { card: DmCard; left: number; index: number }) {
+/** A card in a deck row: dealt in left to right, lifting under the pointer. */
+const FannedCard = memo(function FannedCard({ card, index }: { card: DmCard; index: number }) {
   const reduced = useReducedMotion();
   const lift = useSharedValue(0);
   const deal = useSharedValue(reduced ? 1 : 0);
@@ -113,8 +159,7 @@ const FannedCard = memo(function FannedCard({ card, left, index }: { card: DmCar
   const liftStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -lift.value * 18 }, { scale: 1 + lift.value * 0.06 }] }));
   const k = SHOW_W / CW;
   return (
-    <Animated.View
-      style={[{ position: 'absolute', left, top: 20, width: SHOW_W, height: SHOW_W * 1.4, zIndex: hover ? 100 : index }, dealStyle]}>
+    <Animated.View style={[{ width: SHOW_W, height: SHOW_H, zIndex: hover ? 1 : 0 }, dealStyle]}>
       {/* The hit area stays where the card rests; only the art lifts, so a pointer near the edge never loses it. */}
       <Pressable
         focusable={false}

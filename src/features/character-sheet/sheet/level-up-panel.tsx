@@ -370,14 +370,15 @@ export function LevelUpPanel({
       {/* opaque catching backdrop (#258): NO pointerEvents="none" — it must absorb every tap so nothing
           ever falls through to the character sheet / carousel underneath. Button-only close. */}
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} />
-      <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
+      {/* Desktop: the demo's drawer, filling the side slot with its big title (the same shell as Rest and State). */}
+      <Animated.View style={[desktopSheet ? { flex: 1 } : { flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
        {/* creation-style bordered panel (#242 item 6) — the level-up UI lives inside it */}
-       <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ flex: 1, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
+       <ChamferBox chamfer={desktopSheet ? 14 : 18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={desktopSheet ? { flex: 1, padding: 24 } : { flex: 1, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
         {/* header */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: desktopSheet ? 16 : 8 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Level Up</Text>
-            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>{`Level ${file.level} → ${newLevel} · Tier ${tier}`}</Text>
+            <Text style={desktopSheet ? { color: Rune.ivory, fontSize: 30, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.3 } : { color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Level Up</Text>
+            <Text style={{ color: Rune.muted, fontSize: desktopSheet ? 14 : 12, fontFamily: Body.medium, marginTop: desktopSheet ? 4 : 0 }}>{`Level ${file.level} → ${newLevel} · Tier ${tier}`}</Text>
           </View>
           <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
             <Text style={{ color: Rune.muted, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
