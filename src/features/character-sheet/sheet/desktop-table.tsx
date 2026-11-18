@@ -21,6 +21,8 @@ import { TraitCrossOut } from '../components/trait-cross-out';
 import { catalogIdOf } from '@/features/cards/card-effects';
 import { TOKEN_COLORS } from '../components/card-tokens-data';
 import { CategoryGlyph } from './deck-toggle-icon';
+import { SortPanel } from './sort-panel';
+import type { CharacterFile } from '@/lib/character-file';
 
 /**
  * The desktop card table (v0.44.0).
@@ -63,7 +65,7 @@ interface Target {
   z: number;
 }
 
-export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, backRef, onManage, onExit }: { canInspect: boolean; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
+export function DesktopTable({ canInspect, sortFile, onEditCard, editableIds, overlay: overlayProp, backRef, onManage, onExit }: { canInspect: boolean; sortFile?: CharacterFile; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
   const ctx = useCarousel();
@@ -75,6 +77,9 @@ export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, bac
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [pages, setPages] = useState<Record<string, number>>({});
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  // The phone's Sort, for a whole deck: it opens in the side slot and the table waits behind it like any panel.
+  const [sorting, setSorting] = useState(false);
+  const overlay = overlayProp || sorting;
 
   // A new deck starts with nothing in focus; a focused card that left the deck (moved, deleted) drops focus.
   const endFocus = useRef(ctx.endCardFocus);
@@ -259,7 +264,17 @@ export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, bac
     <DesktopPortal to="table">
       <View style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, overflow: 'hidden' }}>
         <TableGear category={category} cx={cx} tableH={tableH} handW={handW} reduced={reduced} />
-        <DeckRail top={port ? port.top + 200 * port.scale : 120} maxH={tableH - (port ? port.top + 200 * port.scale : 120) - 24} onManage={onManage} onExit={onExit} />
+        <DeckRail top={port ? port.top + 200 * port.scale : 120} maxH={tableH - (port ? port.top + 200 * port.scale : 120) - 24} onManage={onManage} onSort={canReorder ? () => { playSfx('floatMenuOpen'); setSorting(true); } : undefined} onExit={onExit} />
+        {sorting ? (
+          <DesktopPortal to="side" priority="dialog" onDismiss={() => setSorting(false)}>
+            <SortPanel
+              file={sortFile}
+              ids={deck.map((c) => c.id)}
+              onApply={(ordered, moved) => { playSfx('cardDragEnd'); ctx.onReorderCards?.(moved, category, ordered); }}
+              onClose={() => setSorting(false)}
+            />
+          </DesktopPortal>
+        ) : null}
         {deck.length === 0 ? (
           <Text style={{ position: 'absolute', left: areaL, width: areaW, top: tableH * 0.42, textAlign: 'center', color: Rune.muted, fontFamily: Body.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</Text>
         ) : null}
@@ -482,7 +497,7 @@ function DeskButton({ label, glyph, onPress, active }: { label: string; glyph?: 
 }
 
 /** Decks as chips beside the port. One red marker slides between them; nothing blinks on and off. */
-function DeckRail({ top, maxH, onManage, onExit }: { top: number; maxH: number; onManage: () => void; onExit: () => void }) {
+function DeckRail({ top, maxH, onManage, onSort, onExit }: { top: number; maxH: number; onManage: () => void; onSort?: () => void; onExit: () => void }) {
   const ctx = useCarousel();
   const { ring, category, categoryMeta } = ctx;
   const decks: CardCategory[] = useMemo(() => [...ring.filter((c) => c !== FAVORITES_CATEGORY), FAVORITES_CATEGORY], [ring]);
@@ -514,6 +529,7 @@ function DeckRail({ top, maxH, onManage, onExit }: { top: number; maxH: number; 
       </ScrollView>
       <View style={{ marginTop: 18, gap: 6 }}>
         <RailLink label="Manage cards" onPress={onManage} />
+        {onSort ? <RailLink label="Sort this deck" onPress={onSort} /> : null}
         <RailLink label="Back to characters" onPress={onExit} />
       </View>
     </View>

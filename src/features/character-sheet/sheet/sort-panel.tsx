@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -46,12 +46,19 @@ function SortArrow({ down, color }: { down: boolean; color: string }) {
  * The panel decides the ORDER and hands it to the carousel, which owns the animation. It never writes
  * to the character itself.
  */
-export function SortPanel({ file, onClose }: { file?: CharacterFile; onClose: () => void }) {
+export function SortPanel({ file, onClose, ids, onApply }: {
+  file?: CharacterFile;
+  onClose: () => void;
+  /** v0.45.0 desktop: the cards to sort (the whole deck) instead of the phone's raised selection. */
+  ids?: string[];
+  /** v0.45.0 desktop: where the order goes, instead of the phone carousel's animated sort. */
+  onApply?: (ordered: string[], moved: string[]) => void;
+}) {
   const { raisedIds, decks, category, sortFnRef } = useCarousel();
   const [key, setKey] = useState<SortKey>('color');
 
   const deckIds = useMemo(() => (decks[category] ?? []).map((c) => c.id), [decks, category]);
-  const selected = useMemo(() => deckIds.filter((id) => raisedIds.has(id)), [deckIds, raisedIds]);
+  const selected = useMemo(() => ids ?? deckIds.filter((id) => raisedIds.has(id)), [ids, deckIds, raisedIds]);
   const enough = selected.length >= 2;
 
   const apply = (dir: SortDir) => {
@@ -62,18 +69,20 @@ export function SortPanel({ file, onClose }: { file?: CharacterFile; onClose: ()
     // places, which reads as the control having failed rather than as "already in that order".
     if (ordered.every((id, i) => id === deckIds[i])) { playSfx('buttonTap'); onClose(); return; }
     const sel = new Set(selected);
-    sortFnRef.current?.(ordered, ordered.filter((id) => sel.has(id)));
+    const moved = ordered.filter((id) => sel.has(id));
+    if (onApply) onApply(ordered, moved);
+    else sortFnRef.current?.(ordered, moved);
     onClose();
   };
 
   return (
-    <View style={[box(-120, -160, 652, 1212), { zIndex: 60, alignItems: 'center', justifyContent: 'center' }]}>
+    <View style={[onApply ? StyleSheet.absoluteFill : box(-120, -160, 652, 1212), { zIndex: 60, alignItems: 'center', justifyContent: 'center' }]}>
       {/* The absorber. It has no onPress: a tap anywhere but a control does nothing at all. */}
-      <Pressable style={[box(0, 0, 652, 1212), { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={() => {}} accessibilityLabel="Sort options" />
+      <Pressable style={[onApply ? StyleSheet.absoluteFill : box(0, 0, 652, 1212), { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={() => {}} accessibilityLabel="Sort options" />
       <ChamferBox chamfer={14} fill={PANEL} stroke={GRAY_DIM} strokeWidth={1.4} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16 }}>
-        <Text style={{ color: GRAY, fontSize: 17, fontFamily: Display.black, letterSpacing: 1.6, textTransform: 'uppercase' }}>Sort Selected</Text>
+        <Text style={{ color: GRAY, fontSize: 17, fontFamily: Display.black, letterSpacing: 1.6, textTransform: 'uppercase' }}>{ids ? 'Sort this deck' : 'Sort Selected'}</Text>
         <Text style={{ color: GRAY_DIM, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>
-          {enough ? `${selected.length} cards, in the slots they already hold. Nothing else moves.` : 'Pick at least two cards to sort.'}
+          {ids ? (enough ? `${selected.length} cards in this deck.` : 'A deck needs at least two cards to sort.') : enough ? `${selected.length} cards, in the slots they already hold. Nothing else moves.` : 'Pick at least two cards to sort.'}
         </Text>
 
         <View style={{ gap: 6 }}>

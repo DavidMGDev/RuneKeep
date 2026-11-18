@@ -3185,7 +3185,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <DesktopTable canInspect={!!file} onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
+                <DesktopTable canInspect={!!file} sortFile={file ?? undefined} onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
