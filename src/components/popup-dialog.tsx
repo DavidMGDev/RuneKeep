@@ -80,7 +80,7 @@ export function PopupDialog({
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={dismiss}>
     <View ref={rootRef} style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={dismiss} accessibilityRole="button" accessibilityLabel="Dismiss" />
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={dismiss} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} accessibilityRole="button" accessibilityLabel="Dismiss" />
       <DimScreen opacity={0.82} />
       {/* tap-absorb wrapper (#3): a near-miss inside the panel never falls through to the scrim */}
       <Pressable onPress={() => {}} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} style={{ width: scaled(320, scale), maxWidth: '92%' }}>
