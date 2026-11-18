@@ -99,11 +99,16 @@ export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, bac
   const targets = useMemo(() => {
     const t: Record<string, Target> = {};
     const n = hand.length, mid = (n - 1) / 2;
-    const step = n > 1 ? Math.min(handW * 0.8, (areaW - handW - 120) / (n - 1)) : 0;
+    // A narrow table fans the hand across its whole width (under the rail, which ends well above it); a wide one
+    // keeps the hand centred under the focus slot.
+    const narrow = areaW < 700;
+    const fanCx = narrow ? tableW / 2 : cx;
+    const span = narrow ? tableW - 48 : areaW - 120;
+    const step = n > 1 ? Math.min(handW * 0.8, (span - handW) / (n - 1)) : 0;
     hand.forEach((c, i) => {
       const o = i - mid;
       t[c.id] = {
-        x: cx + o * step,
+        x: fanCx + o * step,
         y: tableH + handW * 1.4 * (HAND_SINK - 0.5) + Math.min(Math.abs(o) ** 1.6 * 3.6, 46),
         w: handW,
         r: Math.max(-12, Math.min(12, o * 3.4)),
@@ -112,11 +117,12 @@ export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, bac
     });
     if (focusId) t[focusId] = { x: cx, y: 36 + (focusW * 1.4) / 2, w: focusW, r: 0, z: 300 };
     return t;
-  }, [hand, focusId, cx, areaW, handW, tableH, focusW]);
+  }, [hand, focusId, cx, areaW, tableW, handW, tableH, focusW]);
 
   const focus = useCallback((id: string) => {
     if (id === focusId) return;
-    playSfx('cardSelect');
+    // The phone's sounds: a card coming up into focus, or a tick as the next one takes its place.
+    playSfx(focusId ? 'carouselScroll' : 'cardFullscreenEnter');
     if (focusId) ctx.endCardFocus(); // a different card takes the slot: the override streak ends, as on the phone
     setHoverId(null);
     setFocusId(id);
@@ -134,7 +140,7 @@ export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, bac
   }, [deck, focusId, ctx, category]);
   const release = useCallback(() => {
     if (!focusId) return;
-    playSfx('cardDeselect');
+    playSfx('transitionIconFilled'); // the phone's leave-fullscreen sound
     ctx.endCardFocus(); // leaving the slot ends a domain-cap override streak, as leaving fullscreen does
     setFocusId(null);
   }, [focusId, ctx]);
