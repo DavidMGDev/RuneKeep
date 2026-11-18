@@ -1,4 +1,5 @@
 import { DesktopPortal } from '@/components/desktop-portal';
+import { useDesktop } from '@/hooks/use-desktop';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
@@ -1048,7 +1049,10 @@ export function CardEditor({
   // below the UI border (item 1) — never off-screen. The card scale is COMPUTED from the space left
   // after the fields, so on short screens it shrinks just enough; if that would leave it < 50px tall,
   // it FADES OUT instead and fades back when typing ends (item 1).
-  const { height: screenH, scale: frameScale } = useFrame();
+  const frame = useFrame();
+  const desktopSlot = useDesktop()?.side;
+  const screenH = desktopSlot ? desktopSlot.height : frame.height;
+  const frameScale = desktopSlot ? 1 : frame.scale;
   const insets = useSafeAreaInsets();
   // In the in-sheet (scrimless) full-screen frame (#252) the bordered frame already provides the top
   // inset, so the content's own top gap is small; standalone (creation) keeps the safe-area gap.

@@ -638,6 +638,8 @@ interface BackGuardState {
   onLeave: () => void;
   /** v0.44.0 desktop: lets the card table consume a back press (returning its focused card) before leaving. */
   desktopBackRef?: React.MutableRefObject<(() => boolean) | null>;
+  /** v0.44.0 desktop: closes the small dialogs the back order does not know about (number keypad, move, delete). */
+  closeMinorRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 /**
@@ -708,7 +710,12 @@ function SheetBackGuard(props: BackGuardState) {
         const onEsc = (e: KeyboardEvent) => {
           const p = ref.current;
           if (e.key !== 'Escape') return;
-          if (p.leaveConfirm || p.editCardId || p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
+          // A field keeps its own Escape, and the card editor and New Card own theirs: they guard unsaved
+          // work behind their Cancel, which Escape must never bypass.
+          if (/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+          if (p.editCardId || p.floatKind === 'custom') return;
+          if (p.closeMinorRef?.current?.()) return;
+          if (p.leaveConfirm || p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
         };
         document.addEventListener('keydown', onEsc);
         escGuard = () => document.removeEventListener('keydown', onEsc);
@@ -1551,6 +1558,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // v0.44.0: on the desktop sheet the hand moves to the desktop table and panels open beside the port.
   const desktop = useDesktop();
   const desktopBackRef = useRef<(() => boolean) | null>(null);
+  const closeMinorRef = useRef<(() => boolean) | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; ids: string[] } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
@@ -2561,7 +2569,13 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    */
   const [expandingClass, setExpandingClass] = useState<{ cat: CardCategory; id: string } | null>(null);
   // v0.44.0 desktop: everything that should hold the port and the card table still while it is open.
-  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq);
+  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait);
+  closeMinorRef.current = () => {
+    if (numberCardId) { setNumberCardId(null); return true; }
+    if (deleteReq) { setDeleteReq(null); return true; }
+    if (moveReq) { setMoveReq(null); return true; }
+    return false;
+  };
   const doExpandClass = useCallback((cat: CardCategory, id: string) => {
     setExpandingClass(null);
     const f = fileRef.current;
@@ -2986,6 +3000,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           onCloseFloat={() => { setFloatKind(null); setNewCardCat(null); }}
           onLeave={() => setLeaveConfirm(true)}
           desktopBackRef={desktop ? desktopBackRef : undefined}
+          closeMinorRef={desktop ? closeMinorRef : undefined}
         />
         {/* v0.13.2 (#359): always-on NFC card receiving. Inside the providers so it can read carousel
             `editing`; suppressed only while a focused interface is open (never by card view state). */}

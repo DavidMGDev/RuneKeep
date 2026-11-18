@@ -1,4 +1,6 @@
-import { Image } from 'expo-image';
+// The vector gears: drawn this large, the 600 px rasters the phone uses would be upscaled more than twice over.
+import GearFront from '../../../../assets/art/gears/U2-Outspike.svg';
+import GearBack from '../../../../assets/art/gears/U3-InnerSymbols.svg';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -33,11 +35,10 @@ import { CategoryGlyph } from './deck-toggle-icon';
 const CW = 230;
 const CH = 322;
 const RAIL_W = 206;
+const NO_CARDS: CardItem[] = [];
 const HAND_SINK = 0.42; // how much of a hand card hangs below the window edge
 const MOVE_MS = 380;
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
-const GEAR = require('../../../../assets/art/gears/raster/U2.webp');
-const GEAR_BACK = require('../../../../assets/art/gears/raster/U3.webp');
 
 function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
   if (states.modsOff.has(ref)) return 'muted';
@@ -58,7 +59,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   const { width: winW, height: winH } = useWindowDimensions();
   const ctx = useCarousel();
   const { decks, category } = ctx;
-  const deck = decks[category] ?? [];
+  const deck = decks[category] ?? NO_CARDS;
   const reduced = useReducedMotion();
 
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -123,6 +124,14 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
     if (id === focusRef.current) return;
     setHoverId((h) => (on ? id : h === id ? null : h));
   }, []);
+  // A panel opening (from the sheet or the rail) closes the card menu, and the whole table goes inert behind it:
+  // no clicks, no Tab stops, as the sheet is behind a phone panel.
+  useEffect(() => { if (overlay) setMenu(null); }, [overlay]);
+  useEffect(() => {
+    const host = desktop?.tableHost;
+    if (!host) return;
+    if (overlay) host.setAttribute('inert', ''); else host.removeAttribute('inert');
+  }, [overlay, desktop?.tableHost]);
   // Back (browser button or Alt+Left) returns the focused card before the sheet offers to leave.
   useEffect(() => {
     backRef.current = () => { if (!focusRef.current) return false; release(); return true; };
@@ -224,14 +233,22 @@ function CardMenu({ id, x, y, tableW, tableH, onFocus, onClose }: { id: string; 
   const ref = item.ref ?? item.id;
   const fav = ctx.isFavorited(id);
   const run = (fn: () => void) => () => { onClose(); fn(); };
-  const rows: { label: string; onPress: () => void; hidden?: boolean; danger?: boolean }[] = [
-    { label: 'Bring into focus', onPress: run(onFocus) },
-    { label: ctx.enabledIds.has(ref) ? 'Unequip' : 'Equip', onPress: run(() => ctx.toggleCard(id)), hidden: ctx.cardStates.permanent.has(ref) },
-    { label: fav ? 'Remove from Favorites' : 'Add to Favorites', onPress: run(() => ctx.cardAction(fav ? 'unfavorite' : 'favorite', [id])) },
-    { label: 'Move to deck', onPress: run(() => ctx.cardAction('move', [id])) },
-    { label: ctx.nfcAvailable ? 'Share' : 'Export', onPress: run(() => ctx.cardAction('nfc', [id])) },
-    { label: 'Delete', onPress: run(() => ctx.cardAction('delete', [id])), danger: true },
-  ];
+  // Inside Favorites the cards are mirror copies, and the phone's wheel offers them one thing: leaving Favorites.
+  // Everywhere else `favorite` is the toggle for a source card; `unfavorite` only ever takes a mirror id.
+  const mirror = ctx.category === FAVORITES_CATEGORY;
+  const rows: { label: string; onPress: () => void; hidden?: boolean; danger?: boolean }[] = mirror
+    ? [
+        { label: 'Bring into focus', onPress: run(onFocus) },
+        { label: 'Remove from Favorites', onPress: run(() => ctx.cardAction('unfavorite', [id])) },
+      ]
+    : [
+        { label: 'Bring into focus', onPress: run(onFocus) },
+        { label: ctx.enabledIds.has(ref) ? 'Unequip' : 'Equip', onPress: run(() => ctx.toggleCard(id)), hidden: ctx.cardStates.permanent.has(ref) },
+        { label: fav ? 'Remove from Favorites' : 'Add to Favorites', onPress: run(() => ctx.cardAction('favorite', [id])) },
+        { label: 'Move to deck', onPress: run(() => ctx.cardAction('move', [id])) },
+        { label: ctx.nfcAvailable ? 'Share' : 'Export', onPress: run(() => ctx.cardAction('nfc', [id])) },
+        { label: 'Delete', onPress: run(() => ctx.cardAction('delete', [id])), danger: true },
+      ];
   const shown = rows.filter((r) => !r.hidden);
   const W = 220, H = shown.length * 38 + 14;
   return (
@@ -280,6 +297,8 @@ const DeskCard = memo(function DeskCard({ item, target, hovered, focused, page, 
         onPress={() => onPress(item.id, !!(item.live && !face))}
         onHoverIn={() => onHover(item.id, true)}
         onHoverOut={() => onHover(item.id, false)}
+        // Not a Tab stop: the table owns the keys (A/D, Space, Esc), so a focused button cannot swallow Space.
+        focusable={false}
         accessibilityRole="button"
         accessibilityLabel={!focused ? 'Bring this card into focus' : item.live && !face ? 'Focused card' : 'Focused card. Click to return it to your hand'}
         style={{ width: CW, height: CH, cursor: 'pointer' } as never}>
@@ -438,10 +457,10 @@ function TableGear({ category, cx, tableH, handW, reduced }: { category: CardCat
   return (
     <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}>
       <Animated.View style={[{ position: 'absolute', left: cx - size * 0.58, top: centreY - size * 0.58, width: size * 1.16, height: size * 1.16, opacity: 0.07 }, back]}>
-        <Image source={GEAR_BACK} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+        <GearBack width="100%" height="100%" />
       </Animated.View>
       <Animated.View style={[{ position: 'absolute', left: cx - size / 2, top: centreY - size / 2, width: size, height: size, opacity: 0.14 }, front]}>
-        <Image source={GEAR} style={{ width: '100%', height: '100%' }} contentFit="contain" />
+        <GearFront width="100%" height="100%" />
       </Animated.View>
     </View>
   );
