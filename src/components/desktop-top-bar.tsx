@@ -1,6 +1,6 @@
 import { type Href, usePathname, useRouter } from 'expo-router';
 import { forwardRef, type ReactNode, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -23,17 +23,19 @@ const NAV: { label: string; href: string; match: (p: string) => boolean }[] = [
 export const DesktopTopBar = forwardRef<View, { title: string; onBack?: () => void; right?: ReactNode }>(function DesktopTopBar({ title, onBack, right }, ref) {
   const pathname = usePathname();
   const router = useRouter();
+  // A narrow window (down to 1100px) tightens the bar so the page's name always keeps its room.
+  const compact = useWindowDimensions().width < 1400;
   return (
-    <View ref={ref} style={{ flexDirection: 'row', alignItems: 'center', gap: 22, paddingBottom: 16, marginBottom: 22, borderBottomWidth: 1, borderBottomColor: 'rgba(218,162,73,0.22)' }}>
+    <View ref={ref} style={{ flexDirection: 'row', alignItems: 'center', gap: compact ? 14 : 22, paddingBottom: 16, marginBottom: 22, borderBottomWidth: 1, borderBottomColor: 'rgba(218,162,73,0.22)' }}>
       {onBack ? <BackButton onPress={onBack} /> : null}
-      <Text numberOfLines={1} style={{ flexShrink: 1, color: Rune.ivory, fontSize: 32, fontFamily: Display.black, letterSpacing: 1.4, textTransform: 'uppercase' }}>{title}</Text>
+      <Text numberOfLines={1} style={{ flexShrink: 0, color: Rune.ivory, fontSize: compact ? 24 : 32, fontFamily: Display.black, letterSpacing: compact ? 1 : 1.4, textTransform: 'uppercase' }}>{title}</Text>
       <View style={{ flex: 1 }} />
-      <View accessibilityRole={'navigation' as never} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View accessibilityRole={'navigation' as never} style={{ flexDirection: 'row', alignItems: 'center', gap: compact ? 0 : 4 }}>
         {NAV.map((n) => (
-          <NavLink key={n.href} label={n.label} active={n.match(pathname)} onPress={() => { playSfx('buttonTap'); router.navigate(n.href as Href); }} />
+          <NavLink key={n.href} compact={compact} label={n.label} active={n.match(pathname)} onPress={() => { playSfx('buttonTap'); router.dismissTo(n.href as Href); }} />
         ))}
       </View>
-      {right ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8 }}>{right}</View> : null}
+      {right ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: compact ? 8 : 10, marginLeft: compact ? 0 : 8 }}>{right}</View> : null}
     </View>
   );
 });
@@ -55,7 +57,7 @@ function BackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function NavLink({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function NavLink({ label, active, onPress, compact }: { label: string; active: boolean; onPress: () => void; compact?: boolean }) {
   const [hover, setHover] = useState(false);
   return (
     <Pressable
@@ -65,7 +67,7 @@ function NavLink({ label, active, onPress }: { label: string; active: boolean; o
       accessibilityRole="link"
       accessibilityState={{ selected: active }}
       accessibilityLabel={active ? `${label}, current page` : label}
-      style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
+      style={{ paddingHorizontal: compact ? 8 : 12, paddingVertical: 8 }}>
       <Text style={{ color: active ? Rune.ivory : hover ? Rune.goldBright : Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.6, textTransform: 'uppercase' }}>{label}</Text>
       <View style={{ height: 2, marginTop: 5, backgroundColor: active ? Rune.red : hover ? 'rgba(224,181,99,0.5)' : 'transparent' }} />
     </Pressable>

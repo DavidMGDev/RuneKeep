@@ -559,11 +559,14 @@ export const StraightCarousel = forwardRef<
     let acc = 0;
     let last = 0;
     const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return; // the browser's zoom
       e.preventDefault();
       const now = performance.now();
       if (now - last > 220) acc = 0; // a new gesture starts fresh
       last = now;
-      acc += Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      // Lines and pages (a notched mouse wheel in some browsers) count as the pixels they stand for.
+      const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? el.clientHeight || 600 : 1;
+      acc += (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * unit;
       if (Math.abs(acc) < 60) return;
       const dir = acc > 0 ? 1 : -1;
       acc = 0;
@@ -573,6 +576,7 @@ export const StraightCarousel = forwardRef<
     };
     const onDown = (e: PointerEvent) => { rightDown.value = e.button === 2; };
     const onUp = () => { rightDown.value = false; };
+    window.addEventListener('blur', onUp); // a release outside the window never arrives
     const onMenu = (e: MouseEvent) => e.preventDefault();
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('pointerdown', onDown, true);
@@ -582,6 +586,7 @@ export const StraightCarousel = forwardRef<
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('blur', onUp);
       el.removeEventListener('contextmenu', onMenu);
     };
   }, [pointer, rightDown]);
@@ -671,7 +676,7 @@ export const StraightCarousel = forwardRef<
           // gear pad is left over from a gesture that never finalized. Left alone it freezes index
           // publication for good. Nothing legitimately holds it up across touches, so unwind it.
           if (!padTouch.value && grind.value !== 0) grind.value = withTiming(0, { duration: 120 });
-          if (padTouch.value) {
+          if (padTouch.value && !rightDown.value) {
             grind.value = withTiming(1, { duration: 160 });
             gearPrevTX.value = 0; // #258: reset swoosh tracking for the new grind
             gearDirX.value = 0;
@@ -680,6 +685,13 @@ export const StraightCarousel = forwardRef<
         })
         .onUpdate((e) => {
           if (fs.value > 0.5) return;
+          // A right-button press only grinds once it is a drag: wind the gear up on the first move.
+          if (padTouch.value && rightDown.value && !scrolled.value) {
+            grind.value = withTiming(1, { duration: 160 });
+            gearPrevTX.value = 0;
+            gearDirX.value = 0;
+            gearPipIdx.value = Math.round(pos.value);
+          }
           scrolled.value = true;
           if (padTouch.value) {
             // #258: gear swoosh on a fast direction-reversal

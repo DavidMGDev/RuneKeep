@@ -448,7 +448,10 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, s
       <View style={{ width: cellW, height: cellH, opacity: selecting && !selected ? 0.55 : 1, zIndex: hover ? 5 : 0, transform: [{ scale: hover ? 1.06 : 1 }, { translateY: hover ? -4 : 0 }] }}>
         {item.type === 'card' ? (
           // A pointer resting on a card swaps in the full card: the thumbnail is too small to read.
-          <ArtImage source={hover ? item.card.source : item.card.thumb} fit="contain" recyclingKey={item.id} />
+          <>
+            <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
+            {hover ? <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}><ArtImage source={item.card.source} fit="contain" /></View> : null}
+          </>
         ) : item.type === 'lib' ? (
           <ScaledCard width={cellW}><LibraryForgedCard card={item.lib} pack={item.pack} /></ScaledCard>
         ) : item.type === 'class' ? (
@@ -584,6 +587,7 @@ export function GalleryScreen() {
   // v0.23.0: the grid lives inside AppScreen's measured column, so size cells against THAT, and add
   // columns rather than inflating each cell. Phones keep the 3 they have always had.
   // Desktop (v0.45.0): a filter sidebar, the grid, and a focus pane; the grid keeps at least four columns.
+  const narrowBar = width < 1400;
   const paneW = Math.round(Math.min(420, Math.max(340, width * 0.24)));
   const colGap = desktop ? 14 : 10;
   const gridW = desktop ? width - DESKTOP_PAGE_PAD * 2 - paneW - DESK_GAP : Math.min(width, maxContent);
@@ -785,9 +789,9 @@ export function GalleryScreen() {
           {desktop ? (
             <>
               <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginRight: 4 }}>{cards.length} card{cards.length === 1 ? '' : 's'}</Text>
-              {activeCount ? <RuneButton label="Clear filters" kind="ghost" height={38} onPress={() => { playSfx('buttonTap'); clearFilters(); }} /> : null}
-              {selecting && selected.size ? <RuneButton label={`Share ${selected.size} picked`} kind="primary" height={38} onPress={() => shareItems(pickedFrom(everything, selected))} /> : null}
-              <RuneButton label={selecting ? 'Done selecting' : 'Select cards'} kind="secondary" height={38} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
+              {activeCount ? <RuneButton label={narrowBar ? 'Clear' : 'Clear filters'} kind="ghost" dense height={36} onPress={() => { playSfx('buttonTap'); clearFilters(); }} /> : null}
+              {selecting && selected.size ? <RuneButton label={narrowBar ? `Share ${selected.size}` : `Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(pickedFrom(everything, selected))} /> : null}
+              <RuneButton label={selecting ? 'Done' : narrowBar ? 'Select' : 'Select cards'} kind="secondary" dense height={36} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
             </>
           ) : null}
           <Pressable onPress={() => { playSfx('buttonTap'); router.push('/adversary-library' as Href); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary library">
@@ -974,10 +978,13 @@ function kindLine(item: GalleryItem): string {
  * can be done with it. A class card pages through its rules here; the full-size reader is one button away.
  */
 function ArchiveFocus({ item, width, onShare, onPrint, onOpen }: { item: GalleryItem | null; width: number; onShare?: () => void; onPrint?: () => void; onOpen?: () => void }) {
-  const { height } = useLayout();
+  const [paneH, setPaneH] = useState(0);
   const [pageState, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [item?.id]);
-  const w = Math.round(Math.min(width - 24, (height - 330) / 1.4));
+  // Sized from the pane's own height (the filters above take a share of the window), leaving room for the
+  // name, the page row and the actions; the pane scrolls if a short window still cannot hold it all.
+  const reserve = 170 + (item?.type === 'class' ? 46 : 0);
+  const w = Math.round(Math.max(150, Math.min(width - 24, ((paneH || 600) - reserve) / 1.4)));
   const h = w * 1.4;
   // The page may belong to the PREVIOUS card for one render (the reset is an effect), so it is clamped here.
   const pageCount = item?.type === 'class' ? 1 + featurePages(item.def.key).length : 1;
@@ -1008,7 +1015,7 @@ function ArchiveFocus({ item, width, onShare, onPrint, onOpen }: { item: Gallery
     face = <ScaledForged item={item} width={w} />;
   }
   return (
-    <View style={{ width, alignItems: 'center', paddingTop: 6, gap: 14 }}>
+    <ScrollView style={{ width }} onLayout={(e) => setPaneH(e.nativeEvent.layout.height)} contentContainerStyle={{ alignItems: 'center', paddingTop: 6, paddingBottom: 12, gap: 14 }} showsVerticalScrollIndicator={false}>
       <Animated.View key={`${item.id}-${page}`} entering={FadeIn.duration(160)} style={{ width: w, height: h }}>
         <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.label}, view full size`} style={{ width: w, height: h, cursor: 'zoom-in' } as never}>
           {face}
@@ -1030,6 +1037,6 @@ function ArchiveFocus({ item, width, onShare, onPrint, onOpen }: { item: Gallery
         {onPrint ? <RuneButton label="Print" kind="secondary" dense height={38} style={{ flexGrow: 1 }} onPress={onPrint} /> : null}
         {onOpen ? <RuneButton label="View full size" kind="secondary" dense height={38} style={{ flexGrow: 1 }} onPress={onOpen} /> : null}
       </View>
-    </View>
+    </ScrollView>
   );
 }
