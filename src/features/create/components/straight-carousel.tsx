@@ -190,6 +190,7 @@ const FlipCard = memo(function FlipCard({ faces, index, dir, fullRes, animate, o
 });
 
 interface SlotProps {
+  zoom: number;
   index: number;
   item: StraightItem;
   count: number;
@@ -216,14 +217,14 @@ interface SlotProps {
   crossTrait?: 1 | 2;
 }
 
-const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
+const Slot = memo(function Slot({ zoom, index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
   const slotStageScale = useStageScale();
   const coordScale = Platform.OS === 'web' ? slotStageScale : 1;
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
     const ad = Math.abs(d);
-    let x = d * SPACING * (1 - GRIND_TIGHTEN_L * g);
+    let x = d * SPACING * zoom * (1 - GRIND_TIGHTEN_L * g);
     // v0.26.0: shrink to fit a short rail.
     //
     // The card is a fixed 322dp tall and sits at REST_FRAC down the rail, so on a short viewport its
@@ -231,7 +232,8 @@ const Slot = memo(function Slot({ index, item, count, width, pos, grind, fs, foc
     // mobile web whenever the browser's own chrome is showing, which is most of the time. The card
     // gives way instead: it is never bigger than the space it has, and never smaller than half, since
     // below that it stops being readable and something else has gone wrong.
-    const fit = railH.value > 0 ? Math.min(1, Math.max(0.5, railH.value / (FORGED_H * CARD_SCALE / REST_FRAC / 2))) : 1;
+    // Desktop (v0.45.0) zooms the resting card; the rail still caps it, so it never outgrows the space it has.
+    const fit = railH.value > 0 ? Math.min(zoom, Math.max(0.5, railH.value / (FORGED_H * CARD_SCALE / REST_FRAC / 2))) : zoom;
     let scale = CARD_SCALE * fit * (1 - Math.min(ad, 3.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
     let y = 0;
     // visibility window: solid then a quick fade band; widens while grinding
@@ -367,8 +369,10 @@ export const StraightCarousel = forwardRef<
      *  one -- grew down into the buttons and overlapped them. Reserving the band makes the card
      *  centre itself in the space that is actually free. */
     reserveBottom?: number;
+    /** v0.45.0: how much bigger the resting cards and their spacing are (a desktop window has the room). 1 = phone. */
+    zoom?: number;
   }
->(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0 }, ref) {
+>(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0, zoom = 1 }, ref) {
   const count = items.length;
   /**
    * v0.27.3: the deck, read through a ref so the GESTURES never re-identify.
@@ -623,7 +627,7 @@ export const StraightCarousel = forwardRef<
               }
             }
           }
-          const ratio = padTouch.value ? gearRatio : SPACING;
+          const ratio = padTouch.value ? gearRatio : SPACING * zoom;
           const raw = startPos.value - e.translationX / ratio;
           const max = count - 1;
           pos.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
@@ -649,7 +653,7 @@ export const StraightCarousel = forwardRef<
             if (e.translationY > 60 || e.velocityY > 600) runOnJS(closeFs)();
             return;
           }
-          const ratio = padTouch.value ? gearRatio : SPACING;
+          const ratio = padTouch.value ? gearRatio : SPACING * zoom;
           const v = Math.max(-MAX_FLING_VEL * 4, Math.min(MAX_FLING_VEL * 4, -e.velocityX / ratio));
           pos.value = withSpring(clampIdx(Math.round(pos.value + v * FLING_TIME), count), { ...SNAP_SPRING, velocity: v });
           if (padTouch.value) grind.value = withTiming(0, { duration: 220 });
@@ -737,6 +741,7 @@ export const StraightCarousel = forwardRef<
                   Math.abs(i - winCentre) > WIN_HALF ? null : (
                   <Slot
                     key={item.id}
+                    zoom={zoom}
                     index={i}
                     item={item}
                     count={count}

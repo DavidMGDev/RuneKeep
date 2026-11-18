@@ -173,6 +173,6 @@ function MarginStrip({ side, width, topBar, bottomBar, dim }: { side: 'left' | '
 
 const DESKTOP_PORT_PAD = 14;
 /** Routes with a full-page desktop layout (v0.45.0). A route joins when its screen reads `useDesktopPage()`. */
-const DESKTOP_PAGES = new Set(['/', '/characters', '/gallery']);
+const DESKTOP_PAGES = new Set(['/', '/characters', '/gallery', '/create']);
 /** How wide the side slot is that panels open into, in window pixels. A panel is laid out for a phone. */
 const SIDE_W = 440;

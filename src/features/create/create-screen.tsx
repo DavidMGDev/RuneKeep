@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ownImage } from '@/lib/owned-image';
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { BackHandler, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 
@@ -66,7 +66,9 @@ import { initialVitals } from '@/lib/dm-vitals';
 import { mutedCardColor } from '@/components/card-editor';
 import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
-import { DeckTab, SectionDivider, Segmented } from './create-ui';
+import { DeckStepRow, DeckTab, HeroColumn, type HeroRow, SectionDivider, Segmented } from './create-ui';
+import { useDesktopPage } from '@/hooks/use-desktop';
+import { useLayout } from '@/hooks/use-layout';
 import { ExperiencesTab } from './experiences-tab';
 import { QuickCardFlow } from '@/features/character-sheet/sheet/quick-card-flow';
 import type { CardEffect } from '@/lib/modifiers';
@@ -475,6 +477,11 @@ export function CreateScreen() {
   const pickedCards = useMemo(() => (expansions ?? []).filter((e) => picked.has(e.id)).flatMap((e) => e.cards), [expansions, picked]);
   /** The steps those packs ask the creator to ask (v0.43.0). */
   const customStepList = useMemo(() => customSteps(pickedCards), [pickedCards]);
+  const desktop = useDesktopPage();
+  const { width: screenW } = useLayout();
+  // Desktop: the side columns give way on a narrow window, and the deck grows into whatever the middle has.
+  const sideW = Math.round(Math.min(CREATE_SIDE_W, Math.max(220, screenW * 0.19)));
+  const carouselZoom = desktop ? Math.max(1, Math.min(1.6, (screenW - 68 - sideW * 2 - CREATE_GAP * 2) / 370)) : 1;
   const deckList = useMemo(
     () =>
       decksFor(characterizing, transformationsOn, customStepList)
@@ -2028,51 +2035,9 @@ export function CreateScreen() {
     }
   }, [deck, draft.className, draft.mixedAncestry, weaponKind, invChoice, invGroups, items, set, picked, pickedCards, classChoice]);
 
-  return (
-    <AppScreen
-      dm={authoring}
-      title={authoring ? (campaignExp?.name ?? 'Campaign settings') : 'New hero'}
-      onBack={() => {
-        // Authoring writes as it goes, so leaving is leaving. Nothing is half-saved and there is
-        // nothing to warn about.
-        if (authoring) { router.back(); return; }
-        if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); leaveThroughSpares(() => router.back()); }
-      }}
-      // v0.25.0: Forge is DIM until the character is finished, so the button reports readiness instead
-      // of claiming it from the first screen. It stays tappable on purpose: tapping it while
-      // incomplete jumps to the step that is missing, which is more use than a dead control, and a
-      // truly dead Forge with no explanation is the thing this replaced in the first place.
-      headerRight={
-        authoring ? (
-          // v0.42.3: Done, not Forge. Nothing is being built; the rules are already saved.
-          <RuneButton dm label="Done" kind="primary" height={26} dense onPress={() => router.back()} accessibilityLabel="Finish setting the campaign rules" />
-        ) : (
-        <RuneButton
-          label={forging ? 'Forging' : 'Forge'}
-          kind={complete ? 'primary' : 'ghost'}
-          height={26}
-          dense
-          disabled={forging}
-          onPress={() => {
-            if (forging) return;
-            if (!complete) { jumpToMissing(); return; }
-            // v0.36.2 (owner): never fail in silence. Forge either runs or says why it cannot.
-            void (characterizing ? forgeCharacterized() : forge()).catch(() => showToast('Could not forge this character. Nothing was changed.', 'error'));
-          }}
-          accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`}
-        />
-        )
-      }>
-      <Animated.View style={[{ flex: 1 }, entryStyle]}>
-        {/**
-          * WHAT THIS SCREEN IS (v0.42.4, owner).
-          *
-          * "Replace the Name and Portrait section (Details) and replace it with an explanation that
-          * selecting anything in this UI will remove it from the character creation options."
-          *
-          * A campaign has no name and no portrait; the pack it lives in has both. Standing here with
-          * a Name field was the screen telling the DM it was something it is not.
-          */}
+  // The screen's pieces, named so the phone and desktop layouts can arrange the same JSX (v0.45.0).
+  const detailsEl = (
+    <>
         {authoring ? (
           /**
            * ONE LINE (v0.42.5, owner: "the description on top is too big, pushing the interface down
@@ -2146,10 +2111,18 @@ export function CreateScreen() {
 
         </>
         )}
+    </>
+  );
+  const dividerEl = (
+    <>
         {/* ---- cards ---- */}
         <View style={{ marginTop: 6 }}>
           <SectionDivider label="Cards" />
         </View>
+    </>
+  );
+  const progressEl = (
+    <>
         {/* v0.22.0: aggregate progress. The rail carried per-step ticks but nothing said how close
             you were overall, and the NAME requirement wasn't on the rail at all — so ten gold ticks
             plus a dead Forge button had no explanation. */}
@@ -2164,6 +2137,10 @@ export function CreateScreen() {
             {complete ? 'Ready to forge' : `Next: ${missingLabel}`}
           </Text>
         </View>
+    </>
+  );
+  const railEl = (
+    <>
         {/* The deck rail (#107, nine steps): fixed-width tabs, free scroll. A thin custom scroll
             indicator (#110) tracks position instead of the old static chevron. */}
         <DeckRail>
@@ -2181,6 +2158,10 @@ export function CreateScreen() {
           ))}
         </DeckRail>
 
+    </>
+  );
+  const contentEl = (
+    <>
         {/* ---- the forge content: card carousel, or the traits/experiences builders ---- */}
         {/* a relative container so the deck-swap loader can sit AT the card rest position, not the
             top of the content (#150 follow-up) */}
@@ -2265,6 +2246,7 @@ export function CreateScreen() {
                 selectedIds={selectedIds}
                 crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
                 reserveBottom={CONTROLS_BAND}
+                zoom={carouselZoom}
                 // v0.36.1 (owner): the LEFT of the two middles. With two cards `floor(n/2)` opened on
                 // the last one, so the deck arrived already scrolled to the end, which reads as a
                 // mistake. `floor((n-1)/2)` is the true middle for odd counts and the left one for even.
@@ -2301,6 +2283,82 @@ export function CreateScreen() {
         </Animated.View>
         {pendingDeck ? <DeckLoader /> : null}
         </View>
+    </>
+  );
+  const heroRows: HeroRow[] = desktop ? deckList.map((d) => heroRowFor(d.key, d.label, draft, !d.stub && stepDone(d.key, draft), locked(d.key))) : [];
+
+  return (
+    <AppScreen
+      dm={authoring}
+      title={authoring ? (campaignExp?.name ?? 'Campaign settings') : 'New hero'}
+      onBack={() => {
+        // Authoring writes as it goes, so leaving is leaving. Nothing is half-saved and there is
+        // nothing to warn about.
+        if (authoring) { router.back(); return; }
+        if (draftHasContent(draft)) setLeaveConfirm(true); else { clearDraft(); leaveThroughSpares(() => router.back()); }
+      }}
+      // v0.25.0: Forge is DIM until the character is finished, so the button reports readiness instead
+      // of claiming it from the first screen. It stays tappable on purpose: tapping it while
+      // incomplete jumps to the step that is missing, which is more use than a dead control, and a
+      // truly dead Forge with no explanation is the thing this replaced in the first place.
+      headerRight={
+        authoring ? (
+          // v0.42.3: Done, not Forge. Nothing is being built; the rules are already saved.
+          <RuneButton dm label="Done" kind="primary" height={26} dense onPress={() => router.back()} accessibilityLabel="Finish setting the campaign rules" />
+        ) : (
+        <RuneButton
+          label={forging ? 'Forging' : 'Forge'}
+          kind={complete ? 'primary' : 'ghost'}
+          height={26}
+          dense
+          disabled={forging}
+          onPress={() => {
+            if (forging) return;
+            if (!complete) { jumpToMissing(); return; }
+            // v0.36.2 (owner): never fail in silence. Forge either runs or says why it cannot.
+            void (characterizing ? forgeCharacterized() : forge()).catch(() => showToast('Could not forge this character. Nothing was changed.', 'error'));
+          }}
+          accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`}
+        />
+        )
+      }>
+      <Animated.View style={[{ flex: 1 }, entryStyle]}>
+        {/**
+          * WHAT THIS SCREEN IS (v0.42.4, owner).
+          *
+          * "Replace the Name and Portrait section (Details) and replace it with an explanation that
+          * selecting anything in this UI will remove it from the character creation options."
+          *
+          * A campaign has no name and no portrait; the pack it lives in has both. Standing here with
+          * a Name field was the screen telling the DM it was something it is not.
+          */}
+        {desktop ? (
+          // Desktop (v0.45.0): the same pieces in three columns. Steps and details on the left, the deck in the
+          // middle, the hero coming together on the right. The side columns are equal, so the select controls
+          // (drawn across the screen's bottom) stay centred under the middle.
+          <View style={{ flex: 1, flexDirection: 'row', gap: CREATE_GAP }}>
+            <ScrollView style={{ width: sideW, flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+              {detailsEl}
+              {dividerEl}
+              {progressEl}
+              <View style={{ gap: 6, marginTop: 4 }}>
+                {deckList.map((d) => (
+                  <DeckStepRow key={d.key} deck={d.key} label={d.label} active={deck === d.key} done={!d.stub && stepDone(d.key, draft)} locked={locked(d.key)} pulseToken={d.key === 'domains' || d.key === 'subclass' ? unlockPulse : 0} onPress={() => switchDeck(d.key)} />
+                ))}
+              </View>
+            </ScrollView>
+            <View style={{ flex: 1, overflow: 'hidden' }}>{contentEl}</View>
+            <HeroColumn width={sideW} rows={heroRows} onJump={(k) => { if (!locked(k)) switchDeck(k); }} />
+          </View>
+        ) : (
+          <>
+            {detailsEl}
+            {dividerEl}
+            {progressEl}
+            {railEl}
+            {contentEl}
+          </>
+        )}
       </Animated.View>
       {/* v0.26.0: experiences are authored through the SAME quick flow as cards on the sheet.
           Two ways to make a thing was one too many, and the quick flow is the better one here: an
@@ -2560,4 +2618,38 @@ export function CreateScreen() {
       ) : null}
     </AppScreen>
   );
+}
+
+/** Desktop creation (v0.45.0): the step and hero columns' width, and the gutter between the three columns. */
+const CREATE_SIDE_W = 290;
+const CREATE_GAP = 28;
+
+const TRAIT_SHORT: Record<string, string> = { agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge' };
+const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+
+/** What one step holds so far, for the desktop hero column: catalog cards as thumbs, everything else as words. */
+function heroRowFor(key: DeckKey, label: string, d: Draft, done: boolean, isLocked: boolean): HeroRow {
+  const thumbsOf = (ids: (string | null | undefined)[]) => ids.map((id) => (id ? cardById(id)?.thumb : undefined)).filter((t): t is number => typeof t === 'number');
+  let thumbs: number[] = [];
+  let text = '';
+  switch (key) {
+    case 'class': text = d.className ? (CLASS_CARDS.find((c) => c.key === d.className)?.title ?? d.className) : ''; break;
+    case 'subclass': thumbs = thumbsOf([d.subclassCardId]); break;
+    case 'ancestry': thumbs = d.mixedAncestry ? thumbsOf([d.mixedAncestry.first, d.mixedAncestry.second]) : thumbsOf([d.ancestryCardId]); break;
+    case 'community': thumbs = thumbsOf([d.communityCardId]); break;
+    case 'domains': thumbs = thumbsOf(d.domainCardIds); break;
+    case 'transformation': thumbs = thumbsOf([d.transformationCardId]); break;
+    case 'traits': text = Object.entries(d.traits).filter(([, v]) => typeof v === 'number').map(([k, v]) => `${TRAIT_SHORT[k] ?? k} ${signed(v as number)}`).join(', '); break;
+    case 'experiences': text = d.experiences.map((e) => e.title).filter(Boolean).join(', '); break;
+    case 'weapons': text = d.weaponsSkipped ? 'None' : [d.weaponPrimaryId, d.weaponSecondaryId].map((id) => (id ? weaponById(id)?.name : null)).filter(Boolean).join(', '); break;
+    case 'armor': text = d.armorSkipped ? 'None' : d.armorId ? (armorById(d.armorId)?.name ?? '') : ''; break;
+    case 'inventory': text = d.inventoryItemIds.map((id) => lootById(id)?.name ?? id).join(', ') || (d.inventoryLibIds.length ? `${d.inventoryLibIds.length} homebrew` : ''); break;
+    case 'level': text = d.level ? `Level ${d.level}` : ''; break;
+    default: {
+      // A custom step holds the picks filed under its type.
+      if (isCustomStep(key)) thumbs = thumbsOf(d.customPicks?.[stepTypeId(key)] ?? []);
+    }
+  }
+  if (!thumbs.length && !text && done && d.skipped?.includes(key)) text = 'Skipped';
+  return { key, label, done, locked: isLocked, thumbs, text };
 }
