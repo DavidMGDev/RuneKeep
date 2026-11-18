@@ -1,3 +1,4 @@
+import { useDesktopPage } from '@/hooks/use-desktop';
 import { type ReactNode } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,6 +55,8 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
   const titleColor = dm ? DmRune.ivory : Rune.ivory;
   const backStroke = dm ? DmRune.accent : Rune.goldEdge;
   const { scale, maxContent } = useLayout();
+  // Desktop pages (v0.45.0): the frame art is stretched across a whole window there, so content keeps further in.
+  const desktopPage = useDesktopPage();
   return (
     // height/width 100% + overflow hidden belt-and-braces: on web the router wrapper sizes to
     // content — tall content collapsed the flex chain (menu) and a wide min-content child pushed
@@ -67,7 +70,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
             phone layout is byte-identical. This one wrapper is what makes every non-sheet screen
             read the same on a tablet: rows stop being 760dp wide for a five-character name, buttons
             stop spanning the display, and prose keeps a sane measure. */}
-        <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: scaled(18, scale), paddingTop: title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
+        <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: desktopPage ? 34 : scaled(18, scale), paddingTop: title ? (desktopPage ? 16 : 8) : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
           {title ? (
             // The header FOLLOWS the border's top band (owner #102): back pinned in the left
             // corner, the right control in the right corner, and a smaller CENTERED title between

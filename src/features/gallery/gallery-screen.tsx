@@ -2,7 +2,7 @@ import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { cancelAnimation, Easing, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, FadeIn, runOnJS, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
@@ -13,7 +13,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { gridColumns, useLayout } from '@/hooks/use-layout';
 import { RuneChip } from './components/rune-chip';
 import { classColor, type DomainName, DomainColors } from '@/constants/identity';
-import { Body, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 import { catalogFor, classExpansion, globallyEnabledExpansionIds } from '@/lib/expansions';
 import { type CatalogCard, type CatalogKind } from '@/data/catalog';
@@ -35,6 +35,8 @@ import { PrintableImage, PrintStage, type PrintStageHandle } from '@/features/cr
 import { usePrintJob } from '@/features/share/print-job';
 import { type RkpContent } from '@/lib/rkp';
 import { useScreenDim } from '@/lib/screen-dim';
+import { useDesktopPage } from '@/hooks/use-desktop';
+import { RuneButton } from '@/components/rune-button';
 
 // The archive browses catalog cards AND equipment. Weapons/armor have no image assets — they render
 // live via the forged components — so the grid item is a union (v0.10.0, owner: "all weapons and armor
@@ -66,6 +68,10 @@ const KINDS: { key: GalleryKind; label: string }[] = [
   { key: 'loot', label: 'Loot' },
   { key: 'consumable', label: 'Consumables' },
 ];
+/** Desktop archive (v0.45.0): the filter sidebar's width and the gutter between its three columns. */
+const DESK_SIDE_W = 248;
+const DESK_GAP = 24;
+
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const TIERS = [1, 2, 3, 4];
 
@@ -421,17 +427,20 @@ function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem,
  * rather than a picture, so the whole archive was paying that price for a state change that had
  * nothing to do with any of them.
  */
-const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, selected, onOpen, onHold }: { item: GalleryItem; cellW: number; cellH: number; selecting?: boolean; selected?: boolean; onOpen: (item: GalleryItem) => void; onHold?: (item: GalleryItem) => void }) {
+const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, selected, focused, onOpen, onHold }: { item: GalleryItem; cellW: number; cellH: number; selecting?: boolean; selected?: boolean; focused?: boolean; onOpen: (item: GalleryItem) => void; onHold?: (item: GalleryItem) => void }) {
+  const [hover, setHover] = useState(false);
   return (
     <Pressable
       onPress={() => onOpen(item)}
+      onHoverIn={() => setHover(true)}
+      onHoverOut={() => setHover(false)}
       onLongPress={onHold ? () => onHold(item) : undefined}
       delayLongPress={420}
       accessibilityRole="button"
       accessibilityState={{ selected: !!selected }}
       accessibilityLabel={selecting ? `${item.label}, ${selected ? 'selected' : 'not selected'}` : `${item.label}, open card`}
       style={{ width: cellW }}>
-      <View style={{ width: cellW, height: cellH, opacity: selecting && !selected ? 0.55 : 1 }}>
+      <View style={{ width: cellW, height: cellH, opacity: selecting && !selected ? 0.55 : 1, transform: [{ translateY: hover && !focused ? -4 : 0 }] }}>
         {item.type === 'card' ? (
           <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
         ) : item.type === 'lib' ? (
@@ -443,6 +452,8 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, s
         ) : (
           <ScaledForged item={item} width={cellW} />
         )}
+        {/* Desktop: the card in the focus pane wears the red edge the sheet's selected things wear. */}
+        {focused ? <View pointerEvents="none" style={{ position: 'absolute', left: -3, top: -3, right: -3, bottom: -3, borderWidth: 2, borderColor: Rune.red, borderRadius: 7 }} /> : null}
         {/* v0.35: the check rides the art, not the label, so a long name cannot push it off. */}
         {selected ? (
           <View style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: Rune.red, alignItems: 'center', justifyContent: 'center' }}>
@@ -450,7 +461,7 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, s
           </View>
         ) : null}
       </View>
-      <Text numberOfLines={1} style={{ color: selected ? Rune.goldBright : Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
+      <Text numberOfLines={1} style={{ color: selected || focused ? Rune.goldBright : Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 0.4, textAlign: 'center', marginTop: 4 }}>
         {item.label}
       </Text>
     </Pressable>
@@ -474,6 +485,10 @@ export function GalleryScreen() {
   const [ready, setReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [reading, setReading] = useState<GalleryItem | null>(null);
+  const desktop = useDesktopPage();
+  /** Desktop: the card in the focus pane. A click focuses; the reader is one button away. */
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const listRef = useRef<FlatList<GalleryItem>>(null);
   // v0.13.1 (#357): hold-to-share — the NFC send panel for the held card (DMs granting cards).
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; items?: GalleryItem[] } | null>(null);
   /**
@@ -559,9 +574,12 @@ export function GalleryScreen() {
   const { width, isTablet, maxContent } = useLayout();
   // v0.23.0: the grid lives inside AppScreen's measured column, so size cells against THAT, and add
   // columns rather than inflating each cell. Phones keep the 3 they have always had.
-  const gridW = Math.min(width, maxContent);
-  const cols = gridColumns(gridW, isTablet);
-  const cellW = Math.floor((gridW - 36 - (cols - 1) * 10) / cols);
+  // Desktop (v0.45.0): a filter sidebar, the grid, and a focus pane; the grid keeps at least four columns.
+  const paneW = Math.round(Math.min(420, Math.max(340, width * 0.24)));
+  const colGap = desktop ? 14 : 10;
+  const gridW = desktop ? width - 36 - DESK_SIDE_W - paneW - DESK_GAP * 2 : Math.min(width, maxContent);
+  const cols = desktop ? Math.max(4, Math.floor((gridW + colGap) / (176 + colGap))) : gridColumns(gridW, isTablet);
+  const cellW = desktop ? Math.floor((gridW - (cols - 1) * colGap) / cols) : Math.floor((gridW - 36 - (cols - 1) * 10) / cols);
   const cellH = Math.round(cellW * 1.4);
   /**
    * Virtualisation (v0.27.2).
@@ -648,83 +666,47 @@ export function GalleryScreen() {
   }, [selected, cards, shareItems]);
 
   const openCard = useCallback((item: GalleryItem) => {
+    if (!selecting && desktop) { playSfx('cardSelect'); setFocusId(item.id); return; }
     if (!selecting) { setReading(item); return; }
     playSfx(selected.has(item.id) ? 'cardDeselect' : 'cardSelect');
     setSelected((s) => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
-  }, [selecting, selected]);
+  }, [selecting, selected, desktop]);
+  const focused = desktop ? cards.find((c) => c.id === focusId) ?? cards[0] ?? null : null;
+  const focusedId = focused?.id ?? null;
+  // Keys (desktop): arrows walk the grid, Escape closes the reader. Off while a share or print panel is up.
+  const keys = useRef({ cards, cols, focusedId, reading: !!reading, busy: false });
+  keys.current = { cards, cols, focusedId, reading: !!reading, busy: !!nfcSend || printJob.busy };
+  useEffect(() => {
+    if (!desktop || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      const k = keys.current;
+      if (k.busy || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+      if (e.key === 'Escape' && k.reading) { setReading(null); return; }
+      if (k.reading) return;
+      const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' ? k.cols : e.key === 'ArrowUp' ? -k.cols : 0;
+      if (!step || !k.cards.length) return;
+      e.preventDefault();
+      const at = Math.max(0, k.cards.findIndex((c) => c.id === k.focusedId));
+      const next = Math.max(0, Math.min(k.cards.length - 1, at + step));
+      if (next === at) return;
+      playSfx('cardSelect');
+      setFocusId(k.cards[next].id);
+      listRef.current?.scrollToIndex({ index: Math.floor(next / k.cols), viewPosition: 0.5, animated: true });
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [desktop]);
   const renderCard = useCallback(
     ({ item }: { item: GalleryItem }) => (
-      <GalleryCell item={item} cellW={cellW} cellH={cellH} selecting={selecting} selected={selected.has(item.id)} onOpen={openCard} onHold={selecting ? onHoldGroup : undefined} />
+      <GalleryCell item={item} cellW={cellW} cellH={cellH} selecting={selecting} selected={selected.has(item.id)} focused={desktop && !selecting && item.id === focusedId} onOpen={openCard} onHold={selecting ? onHoldGroup : undefined} />
     ),
-    [cellW, cellH, openCard, selecting, selected, onHoldGroup],
+    [cellW, cellH, openCard, selecting, selected, onHoldGroup, desktop, focusedId],
   );
 
   if (!ready || !enabledExp) return <LoadingScreen label="Opening the archive" />;
 
-  return (
-    <AppScreen
-      title="Card archive"
-      onBack={() => router.back()}
-      headerRight={
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Pressable onPress={() => { playSfx('buttonTap'); router.push('/adversary-library' as Href); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary library">
-            <Svg width={20} height={20} viewBox="0 0 24 24">
-              <Path d="M12 3 C7 3 4 6.6 4 11 C4 13.7 5.2 15.2 6 16.3 L6 19 H8.5 V17 H10.5 V19 H13.5 V17 H15.5 V19 H18 L18 16.3 C18.8 15.2 20 13.7 20 11 C20 6.6 17 3 12 3 Z" fill="none" stroke={Rune.goldText} strokeWidth={1.5} strokeLinejoin="round" />
-              <Circle cx={9} cy={11.2} r={1.7} fill={Rune.goldText} />
-              <Circle cx={15} cy={11.2} r={1.7} fill={Rune.goldText} />
-            </Svg>
-          </Pressable>
-        </View>
-      }>
-      {/* v0.23.0: the filter control lives in the content, not the header corner. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        <Pressable
-          onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityState={{ expanded: drawerOpen }}
-          accessibilityLabel={`Filters, ${activeCount} active`}>
-          <ChamferBox chamfer={5} fill={activeCount ? 'rgba(200,27,24,0.16)' : 'transparent'} stroke={activeCount ? Rune.red : Rune.goldEdge} strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 30 }}>
-            <Svg width={14} height={13} viewBox="0 0 18 16">
-              <Line x1={1} y1={3} x2={17} y2={3} stroke={Rune.goldEdge} strokeWidth={2} />
-              <Line x1={4} y1={8} x2={14} y2={8} stroke={Rune.goldEdge} strokeWidth={2} />
-              <Line x1={7} y1={13} x2={11} y2={13} stroke={Rune.goldEdge} strokeWidth={2} />
-            </Svg>
-            <Text style={{ color: activeCount ? Rune.goldBright : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-              {activeCount ? `Filters · ${activeCount}` : 'Filters'}
-            </Text>
-            <Svg width={9} height={6} viewBox="0 0 10 7" style={{ transform: [{ rotate: drawerOpen ? '180deg' : '0deg' }] }}>
-              <Polyline points="1,1 5,6 9,1" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} />
-            </Svg>
-          </ChamferBox>
-        </Pressable>
-        {activeCount ? (
-          <Pressable onPress={() => { playSfx('buttonTap'); clearFilters(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear filters">
-            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Clear</Text>
-          </Pressable>
-        ) : null}
-        <View style={{ flex: 1 }} />
-        {/* v0.35 (owner): pick several cards, then hold one of them to share the lot. */}
-        <Pressable
-          onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityState={{ selected: selecting }}
-          accessibilityLabel={selecting ? 'Stop selecting' : 'Select cards'}>
-          <ChamferBox chamfer={5} fill={selecting ? 'rgba(200,27,24,0.16)' : 'transparent'} stroke={selecting ? Rune.red : Rune.goldEdge} strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 30 }}>
-            <Text style={{ color: selecting ? Rune.goldBright : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
-              {selecting ? (selected.size ? `${selected.size} picked` : 'Done') : 'Select'}
-            </Text>
-          </ChamferBox>
-        </Pressable>
-      </View>
-      {selecting ? (
-        <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginBottom: 8 }}>
-          Tap cards to pick them, then hold any one of them to share the set.
-        </Text>
-      ) : null}
-      {drawerOpen ? (
-        <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 9 }}>
+  const bands = (
+    <>
           {/* v0.32.2: SOURCE is a filter inside the archive, not a category of its own. Neither chip
               lit shows both, which is why there is no "All". */}
           {/* v0.34.0: with no expansions installed there is no homebrew to filter to, and a lit chip
@@ -778,6 +760,129 @@ export function GalleryScreen() {
               />
             ))}
           </FilterBand>
+    </>
+  );
+
+  return (
+    <AppScreen
+      title="Card archive"
+      onBack={() => router.back()}
+      headerRight={
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Pressable onPress={() => { playSfx('buttonTap'); router.push('/adversary-library' as Href); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary library">
+            <Svg width={20} height={20} viewBox="0 0 24 24">
+              <Path d="M12 3 C7 3 4 6.6 4 11 C4 13.7 5.2 15.2 6 16.3 L6 19 H8.5 V17 H10.5 V19 H13.5 V17 H15.5 V19 H18 L18 16.3 C18.8 15.2 20 13.7 20 11 C20 6.6 17 3 12 3 Z" fill="none" stroke={Rune.goldText} strokeWidth={1.5} strokeLinejoin="round" />
+              <Circle cx={9} cy={11.2} r={1.7} fill={Rune.goldText} />
+              <Circle cx={15} cy={11.2} r={1.7} fill={Rune.goldText} />
+            </Svg>
+          </Pressable>
+        </View>
+      }>
+      {desktop ? (
+        <View style={{ flex: 1, flexDirection: 'row', gap: DESK_GAP }}>
+          <ScrollView style={{ width: DESK_SIDE_W, flexGrow: 0 }} contentContainerStyle={{ gap: 12, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{ flex: 1, color: Rune.muted, fontSize: 11, fontFamily: Body.medium, letterSpacing: 0.6 }}>{cards.length} card{cards.length === 1 ? '' : 's'}</Text>
+              {activeCount ? (
+                <Pressable onPress={() => { playSfx('buttonTap'); clearFilters(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear filters">
+                  <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Clear filters</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {bands}
+            <View style={{ gap: 8, marginTop: 4 }}>
+              <RuneButton label={selecting ? 'Stop selecting' : 'Select cards'} kind="secondary" dense height={36} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
+              {selecting && selected.size ? (
+                <RuneButton label={`Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(cards.filter((c) => selected.has(c.id)))} />
+              ) : null}
+              {selecting ? <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 16 }}>Click cards to pick them, then share the set.</Text> : null}
+            </View>
+          </ScrollView>
+          <View style={{ width: gridW }}>
+            <FlatList
+              ref={listRef}
+              key={`cols-${cols}`}
+              data={cards}
+              keyExtractor={(c) => c.id}
+              numColumns={cols}
+              columnWrapperStyle={{ gap: colGap }}
+              contentContainerStyle={{ gap: 12, paddingBottom: 28, paddingTop: 6 }}
+              showsVerticalScrollIndicator={false}
+              windowSize={5}
+              initialNumToRender={cols * 4}
+              maxToRenderPerBatch={cols * 2}
+              updateCellsBatchingPeriod={50}
+              getItemLayout={getRowLayout}
+              onScrollToIndexFailed={() => {}}
+              ListEmptyComponent={
+                <View style={{ alignItems: 'center', paddingTop: 80, gap: 8 }}>
+                  <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Body.bold, letterSpacing: 1 }}>Nothing matches</Text>
+                  <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>Loosen a filter to see more of the archive.</Text>
+                </View>
+              }
+              renderItem={renderCard}
+            />
+          </View>
+          <ArchiveFocus
+            item={focused}
+            width={paneW}
+            onShare={focused && focused.type !== 'class' ? () => shareItems([focused]) : undefined}
+            onPrint={focused ? () => onPrintItems([focused]) : undefined}
+            onOpen={focused ? () => { playSfx('cardFullscreenEnter'); setReading(focused); } : undefined}
+          />
+        </View>
+      ) : (
+      <>
+      {/* v0.23.0: the filter control lives in the content, not the header corner. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <Pressable
+          onPress={() => { playSfx('buttonTap'); setDrawerOpen((o) => !o); }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: drawerOpen }}
+          accessibilityLabel={`Filters, ${activeCount} active`}>
+          <ChamferBox chamfer={5} fill={activeCount ? 'rgba(200,27,24,0.16)' : 'transparent'} stroke={activeCount ? Rune.red : Rune.goldEdge} strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 30 }}>
+            <Svg width={14} height={13} viewBox="0 0 18 16">
+              <Line x1={1} y1={3} x2={17} y2={3} stroke={Rune.goldEdge} strokeWidth={2} />
+              <Line x1={4} y1={8} x2={14} y2={8} stroke={Rune.goldEdge} strokeWidth={2} />
+              <Line x1={7} y1={13} x2={11} y2={13} stroke={Rune.goldEdge} strokeWidth={2} />
+            </Svg>
+            <Text style={{ color: activeCount ? Rune.goldBright : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+              {activeCount ? `Filters · ${activeCount}` : 'Filters'}
+            </Text>
+            <Svg width={9} height={6} viewBox="0 0 10 7" style={{ transform: [{ rotate: drawerOpen ? '180deg' : '0deg' }] }}>
+              <Polyline points="1,1 5,6 9,1" fill="none" stroke={Rune.goldEdge} strokeWidth={1.6} />
+            </Svg>
+          </ChamferBox>
+        </Pressable>
+        {activeCount ? (
+          <Pressable onPress={() => { playSfx('buttonTap'); clearFilters(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear filters">
+            <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Clear</Text>
+          </Pressable>
+        ) : null}
+        <View style={{ flex: 1 }} />
+        {/* v0.35 (owner): pick several cards, then hold one of them to share the lot. */}
+        <Pressable
+          onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityState={{ selected: selecting }}
+          accessibilityLabel={selecting ? 'Stop selecting' : 'Select cards'}>
+          <ChamferBox chamfer={5} fill={selecting ? 'rgba(200,27,24,0.16)' : 'transparent'} stroke={selecting ? Rune.red : Rune.goldEdge} strokeWidth={1.1} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, height: 30 }}>
+            <Text style={{ color: selecting ? Rune.goldBright : Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+              {selecting ? (selected.size ? `${selected.size} picked` : 'Done') : 'Select'}
+            </Text>
+          </ChamferBox>
+        </Pressable>
+      </View>
+      {selecting ? (
+        <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginBottom: 8 }}>
+          Tap cards to pick them, then hold any one of them to share the set.
+        </Text>
+      ) : null}
+      {drawerOpen ? (
+        <ChamferBox chamfer={10} fill="rgba(14,17,22,0.96)" stroke="rgba(218,162,73,0.4)" strokeWidth={1.2} style={{ paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, gap: 9 }}>
+          {bands}
         </ChamferBox>
       ) : null}
 
@@ -807,6 +912,8 @@ export function GalleryScreen() {
         }
         renderItem={renderCard}
       />
+      </>
+      )}
 
       {reading ? (
         reading.type === 'class' ? (
@@ -833,5 +940,83 @@ export function GalleryScreen() {
         />
       ) : null}
     </AppScreen>
+  );
+}
+
+/** What a card is, in a few words, for the focus pane. */
+function kindLine(item: GalleryItem): string {
+  switch (item.type) {
+    case 'card': {
+      const c = item.card;
+      if (c.kind === 'domain' && c.domain) return `${c.domain} domain${c.level ? `, level ${c.level}` : ''}`;
+      return cap(c.kind);
+    }
+    case 'lib': return item.lib.typeLabel?.trim() || cap(item.lib.contentType);
+    case 'weapon': return `Weapon, tier ${item.weapon.tier}`;
+    case 'armor': return `Armor, tier ${item.armor.tier}`;
+    case 'loot': return item.loot.kind === 'consumable' ? 'Consumable' : 'Loot';
+    case 'class': return 'Class';
+  }
+}
+
+/**
+ * The archive's focus pane on a desktop window (v0.45.0): the clicked card at reading size, what it is, and what
+ * can be done with it. A class card pages through its rules here; the full-size reader is one button away.
+ */
+function ArchiveFocus({ item, width, onShare, onPrint, onOpen }: { item: GalleryItem | null; width: number; onShare?: () => void; onPrint?: () => void; onOpen?: () => void }) {
+  const { height } = useLayout();
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage(0); }, [item?.id]);
+  const w = Math.round(Math.min(width - 24, (height - 330) / 1.4));
+  const h = w * 1.4;
+  if (!item) {
+    return (
+      <View style={{ width, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.medium }}>Pick a card to read it here.</Text>
+      </View>
+    );
+  }
+  let face: ReactNode;
+  let pages = 1;
+  if (item.type === 'class') {
+    const def = item.def;
+    const feats = featurePages(def.key);
+    pages = 1 + feats.length;
+    const deep = classColor(def.key).deep;
+    face = page === 0
+      ? <ForgedCard title={def.title} kindLabel="Class" body={def.body} accentDeep={deep} Banner={def.Banner} pageMark={`1/${pages}`} classKey={def.key} />
+      : <ForgedTextCard title={def.title} kindLabel="Features" pageMark={`${page + 1}/${pages}`} sections={feats[page - 1].sections} accentDeep={deep} Banner={def.Banner} classKey={def.key} />;
+    face = <ScaledCard width={w}>{face}</ScaledCard>;
+  } else if (item.type === 'card') {
+    face = <ArtImage source={item.card.source} fit="contain" recyclingKey={`focus-${item.id}`} />;
+  } else if (item.type === 'lib') {
+    face = <ScaledCard width={w}><LibraryForgedCard card={item.lib} pack={item.pack} /></ScaledCard>;
+  } else {
+    face = <ScaledForged item={item} width={w} />;
+  }
+  return (
+    <View style={{ width, alignItems: 'center', paddingTop: 6, gap: 14 }}>
+      <Animated.View key={`${item.id}-${page}`} entering={FadeIn.duration(160)} style={{ width: w, height: h }}>
+        <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${item.label}, view full size`} style={{ width: w, height: h, cursor: 'zoom-in' } as never}>
+          {face}
+        </Pressable>
+      </Animated.View>
+      {pages > 1 ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <RuneButton label="Previous page" kind="ghost" dense height={32} onPress={() => { playSfx('transitionStart'); setPage((p) => (p - 1 + pages) % pages); }} />
+          <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold }}>{page + 1} of {pages}</Text>
+          <RuneButton label="Next page" kind="ghost" dense height={32} onPress={() => { playSfx('transitionStart'); setPage((p) => (p + 1) % pages); }} />
+        </View>
+      ) : null}
+      <View style={{ alignSelf: 'stretch', paddingHorizontal: 12, gap: 4 }}>
+        <Text numberOfLines={2} style={{ color: Rune.ivory, fontSize: 22, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{item.label}</Text>
+        <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{kindLine(item)}</Text>
+      </View>
+      <View style={{ alignSelf: 'stretch', paddingHorizontal: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {onShare ? <RuneButton label="Share" kind="primary" dense height={38} style={{ flexGrow: 1 }} onPress={onShare} /> : null}
+        {onPrint ? <RuneButton label="Print" kind="secondary" dense height={38} style={{ flexGrow: 1 }} onPress={onPrint} /> : null}
+        {onOpen ? <RuneButton label="View full size" kind="secondary" dense height={38} style={{ flexGrow: 1 }} onPress={onOpen} /> : null}
+      </View>
+    </View>
   );
 }
