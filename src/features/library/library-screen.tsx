@@ -2025,7 +2025,7 @@ export function LibraryScreen() {
       {desktop ? (
         // Desktop (v0.45.0): the archive as a wide banner of real cards, then the expansions in a grid.
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 26, paddingBottom: 30 }}>
-          <ArchiveBanner onOpen={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} />
+          <ArchiveBanner onOpen={() => { playSfx('enterCardViewer'); leaveThroughSpares(() => router.push('/gallery')); }} />
           {officialExps.length > 0 ? (
             <View style={{ gap: 12 }}>
               <SectionLine label="Official expansions" color={P.goldText} />
@@ -2058,7 +2058,7 @@ export function LibraryScreen() {
       ) : (
       <>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
-        <Pressable onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} accessibilityRole="button" accessibilityLabel="Browse the card archive">
+        <Pressable onPress={() => { playSfx('enterCardViewer'); leaveThroughSpares(() => router.push('/gallery')); }} accessibilityRole="button" accessibilityLabel="Browse the card archive">
           {({ pressed }) => (
             <ChamferBox chamfer={12} fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.9)'} stroke="rgba(218,162,73,0.5)" strokeWidth={1.3} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 14 }}>
               <Svg width={24} height={24} viewBox="0 0 24 24">

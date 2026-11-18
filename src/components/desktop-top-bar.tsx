@@ -22,7 +22,7 @@ const NAV: { label: string; href: string; route: string; match: (p: string) => b
  * of where else you can go (the current place lit), and the page's own actions on the right. It sits on a
  * hairline, the way the desktop mockup's pages do.
  */
-export const DesktopTopBar = forwardRef<View, { title: string; onBack?: () => void; right?: ReactNode; navGuard?: (go: () => void) => void }>(function DesktopTopBar({ title, onBack, right, navGuard }, ref) {
+export const DesktopTopBar = forwardRef<View, { title: string; onBack?: () => void; right?: ReactNode; navGuard?: (go: () => void) => void; navReplace?: boolean }>(function DesktopTopBar({ title, onBack, right, navGuard, navReplace }, ref) {
   const pathname = usePathname();
   const router = useRouter();
   const inStack = useNavigationState((st) => st?.routes?.map((r) => r.name) ?? []);
@@ -33,7 +33,8 @@ export const DesktopTopBar = forwardRef<View, { title: string; onBack?: () => vo
    */
   const goTo = (n: (typeof NAV)[number]) => {
     playSfx('buttonTap');
-    const go = () => leaveThroughSpares(() => (inStack.includes(n.route) ? router.dismissTo(n.href as Href) : router.push(n.href as Href)));
+    // A page that must not stay behind (creation once its draft is kept or discarded, a tour) is replaced.
+    const go = () => leaveThroughSpares(() => (inStack.includes(n.route) ? router.dismissTo(n.href as Href) : navReplace ? router.replace(n.href as Href) : router.push(n.href as Href)));
     if (navGuard) navGuard(go);
     else go();
   };

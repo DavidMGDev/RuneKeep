@@ -12,7 +12,7 @@
  * where they are testable without a screen. This file is the React and DOM half: when to arm, and the
  * one genuinely awkward thing, below.
  */
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, usePathname } from 'expo-router';
 import { useCallback, useRef } from 'react';
 import { BackHandler, Platform } from 'react-native';
 
@@ -27,7 +27,16 @@ const spareIsOurs = () => !!(window.history.state as { rkGuard?: boolean } | nul
  * `id`: an alias of the entry under it would be indistinguishable from that entry, so a retry or a leave could
  * mistake the real one for the spare. (The sheet's spare does copy it; see `SheetBackGuard`.)
  */
-const pushSpareEntry = () => window.history.pushState({ rkGuard: true }, '');
+const pushSpareEntry = () => {
+  window.history.pushState({ rkGuard: true }, '');
+  guardSpareKey = navEntry()?.key ?? null;
+};
+/**
+ * The guard spare's Navigation API entry key. The router can rewrite the spare's state (flag gone) while it
+ * restores a screen; the key survives that, so a retry re-marks the same entry instead of stacking a second.
+ */
+let guardSpareKey: string | null = null;
+const onGuardSpare = () => { const k = navEntry()?.key; return !!k && k === guardSpareKey; };
 const guards = createGuardStack({
   pushSpare: () => {
     if (isWeb() && !leavingSpares) pushSpareEntry();
@@ -125,8 +134,10 @@ export function leaveThroughSpares(go: () => void) {
   if (!isWeb()) { go(); return; }
   leavingSpares = true;
   const st = window.history.state as { rkGuard?: boolean; rkSheet?: boolean } | null;
-  if (st?.rkGuard || onSheetSpare()) {
-    if (!st?.rkGuard) clearSheetSpare();
+  const guardSpare = !!st?.rkGuard || onGuardSpare();
+  if (guardSpare || onSheetSpare()) {
+    if (guardSpare) guardSpareKey = null;
+    else clearSheetSpare();
     afterNextPop(() => leaveThroughSpares(go));
     window.history.back();
     return;
@@ -153,10 +164,17 @@ export function leaveThroughSpares(go: () => void) {
  * top, so this adds ONE entry in total however many times it runs, and it stops quickly rather than
  * fighting the router forever.
  */
-const SPARE_RETRIES = [0, 120, 400];
+const SPARE_RETRIES = [0, 60, 120, 250, 400, 800];
+/** The route of the screen that armed the spare. The spare goes on top of THAT screen's own entry: pushed while
+ *  the address still shows the screen before it, it would sit under the router's entry and split the history. */
+let armPath: string | null = null;
 function ensureSpare(attempt = 0) {
   if (!isWeb() || !guards.hasWeb() || leavingSpares) return;
-  if (!spareIsOurs()) pushSpareEntry();
+  const arrived = !armPath || window.location.pathname === armPath;
+  if (arrived && !spareIsOurs()) {
+    if (onGuardSpare()) window.history.replaceState({ ...((window.history.state as object | null) ?? {}), rkGuard: true }, '');
+    else pushSpareEntry();
+  }
   const next = attempt + 1;
   if (next < SPARE_RETRIES.length) setTimeout(() => ensureSpare(next), SPARE_RETRIES[next]);
 }
@@ -194,12 +212,14 @@ function syncWebListener() {
 export function useBackGuard(handler: () => void, { enabled = true, web = true }: { enabled?: boolean; web?: boolean } = {}) {
   const ref = useRef(handler);
   ref.current = handler;
+  const pathname = usePathname();
   // On FOCUS rather than on mount, so a screen that is navigated away from stands its guard down and
   // re-arms on the way back, instead of answering for a screen nobody is looking at.
   useFocusEffect(
     useCallback(() => {
       if (!enabled) return;
       const off = guards.register({ run: () => ref.current(), web });
+      armPath = pathname;
       syncWebListener();
       // Android's key is per-listener and last-registered-first, which already gives topmost-wins.
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -211,6 +231,6 @@ export function useBackGuard(handler: () => void, { enabled = true, web = true }
         off();
         syncWebListener();
       };
-    }, [enabled, web]),
+    }, [enabled, web, pathname]),
   );
 }

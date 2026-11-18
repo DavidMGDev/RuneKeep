@@ -2309,6 +2309,8 @@ export function CreateScreen() {
   return (
     <AppScreen
       dm={authoring}
+      // Leaving by the menu takes the creator off the stack, so Back can never return to a discarded draft.
+      navReplace
       // The desktop header's menu asks the same question Back does before leaving a hero part-made.
       navGuard={(go) => {
         if (authoring || !draftHasContent(draft)) { go(); return; }

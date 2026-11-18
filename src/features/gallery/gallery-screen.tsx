@@ -783,7 +783,8 @@ export function GalleryScreen() {
   return (
     <AppScreen
       title="Card archive"
-      onBack={() => router.back()}
+      // With nothing under it (reached by replace), Back still goes somewhere: the menu.
+      onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))}
       headerRight={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: desktop ? 10 : 0 }}>
           {desktop ? (
