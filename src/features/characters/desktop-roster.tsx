@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import type { View as RNView } from 'react-native';
 import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ArtImage } from '@/components/art-image';
@@ -28,7 +29,7 @@ export function RosterDossier({ file, onOpen, onShare, onRename, onMove, onDelet
   onMove: () => void;
   onDelete: () => void;
 }) {
-  const decks = useMemo(() => dmDecks(file), [file]);
+  const decks = useMemo(() => decksOf(file), [file]);
   const tint = classColor(file.className);
   return (
     <Animated.View key={file.id} entering={FadeIn.duration(180)} style={{ flex: 1 }}>
@@ -57,12 +58,24 @@ export function RosterDossier({ file, onOpen, onShare, onRename, onMove, onDelet
   );
 }
 
+/** Built decks per character file object, so flicking between characters does not rebuild what was already built. */
+const deckCache = new WeakMap<CharacterFile, Record<string, DmCard[]>>();
+function decksOf(file: CharacterFile) {
+  let d = deckCache.get(file);
+  if (!d) { d = dmDecks(file); deckCache.set(file, d); }
+  return d;
+}
+
 const SHOW_W = 150;
+/** The tightest a fan packs before it scrolls sideways instead. */
+const MIN_STEP = 40;
 
 /** One deck, fanned: the cards overlap more as the deck grows so the row never scrolls sideways. */
 function DeckRow({ title, cards }: { title: string; cards: DmCard[] }) {
   const [rowW, setRowW] = useState(0);
-  const step = cards.length > 1 ? Math.min(SHOW_W - 30, Math.max(18, (rowW - SHOW_W) / (cards.length - 1))) : 0;
+  const step = cards.length > 1 ? Math.min(SHOW_W - 30, Math.max(MIN_STEP, (rowW - SHOW_W) / (cards.length - 1))) : 0;
+  const fanW = SHOW_W + Math.max(0, cards.length - 1) * step + 12;
+  const scrolls = rowW > 0 && fanW > rowW;
   return (
     <View style={{ gap: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 12 }}>
@@ -75,7 +88,10 @@ function DeckRow({ title, cards }: { title: string; cards: DmCard[] }) {
             <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>Empty</Text>
           </ChamferBox>
         ) : rowW > 0 ? (
-          cards.map((c, i) => <FannedCard key={c.id} card={c} left={i * step} index={i} />)
+          // A deck too long to fan in the width scrolls sideways rather than running off the pane.
+          <ScrollView horizontal scrollEnabled={scrolls} showsHorizontalScrollIndicator={scrolls} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} contentContainerStyle={{ width: Math.max(fanW, rowW) }}>
+            {cards.map((c, i) => <FannedCard key={c.id} card={c} left={i * step} index={i} />)}
+          </ScrollView>
         ) : null}
       </View>
     </View>
@@ -93,25 +109,33 @@ const FannedCard = memo(function FannedCard({ card, left, index }: { card: DmCar
     const t = setTimeout(() => { deal.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) }); }, Math.min(index, 14) * 28);
     return () => clearTimeout(t);
   }, [deal, index, reduced]);
-  const style = useAnimatedStyle(() => ({
-    opacity: deal.value,
-    transform: [{ translateY: (1 - deal.value) * 18 - lift.value * 18 }, { scale: 1 + lift.value * 0.06 }],
-  }));
+  const dealStyle = useAnimatedStyle(() => ({ opacity: deal.value, transform: [{ translateY: (1 - deal.value) * 18 }] }));
+  const liftStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -lift.value * 18 }, { scale: 1 + lift.value * 0.06 }] }));
   const k = SHOW_W / CW;
   return (
     <Animated.View
-      style={[{ position: 'absolute', left, top: 20, width: SHOW_W, height: SHOW_W * 1.4, zIndex: hover ? 100 : index }, style]}>
+      style={[{ position: 'absolute', left, top: 20, width: SHOW_W, height: SHOW_W * 1.4, zIndex: hover ? 100 : index }, dealStyle]}>
+      {/* The hit area stays where the card rests; only the art lifts, so a pointer near the edge never loses it. */}
       <Pressable
+        focusable={false}
         onHoverIn={() => { setHover(true); lift.value = reduced ? 1 : withTiming(1, { duration: 150, easing: Easing.out(Easing.cubic) }); }}
         onHoverOut={() => { setHover(false); lift.value = reduced ? 0 : withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) }); }}
         accessibilityLabel={card.label}
-        style={{ width: SHOW_W, height: SHOW_W * 1.4, borderRadius: 6, overflow: 'hidden', backgroundColor: Rune.ink }}>
-        {card.source || card.thumb ? (
-          <ArtImage source={(card.thumb ?? card.source) as number} fit="cover" />
-        ) : (
-          <View pointerEvents="none" style={{ width: CW, height: CH, transform: [{ scale: k }], transformOrigin: [0, 0, 0] }}>{card.node}</View>
-        )}
+        style={{ width: SHOW_W, height: SHOW_W * 1.4 }}>
+        <Animated.View style={[{ width: SHOW_W, height: SHOW_W * 1.4, borderRadius: 6, overflow: 'hidden', backgroundColor: Rune.ink }, liftStyle]}>
+          {card.source || card.thumb ? (
+            <ArtImage source={(card.thumb ?? card.source) as number} fit="cover" />
+          ) : (
+            // A preview, not a card in play: its own controls (Gold's steppers) are out of reach and out of the Tab order.
+            <View ref={inertRef} pointerEvents="none" style={{ width: CW, height: CH, transform: [{ scale: k }], transformOrigin: [0, 0, 0] }}>{card.node}</View>
+          )}
+        </Animated.View>
       </Pressable>
     </Animated.View>
   );
 });
+
+/** Marks a preview's subtree inert (web): nothing inside it can take focus or input. */
+function inertRef(el: RNView | null) {
+  (el as unknown as HTMLElement | null)?.setAttribute?.('inert', '');
+}

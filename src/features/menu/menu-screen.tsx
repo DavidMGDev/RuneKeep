@@ -1,6 +1,6 @@
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Polygon, Polyline, Rect, Stop } from 'react-native-svg';
 
@@ -383,7 +383,9 @@ function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, updateD
   const thumbW = Math.round((thumbH * 188) / 263);
   const fade = Math.round(Math.min(260, W * 0.18));
   return (
-    <View style={{ flex: 1, backgroundColor: Rune.ink }}>
+    <View style={{ flex: 1 }}>
+      {/* Scrolls when the window is too short for everything (an update banner at 1100x640), instead of clipping it. */}
+    <ScrollView style={{ flex: 1, backgroundColor: Rune.ink }} contentContainerStyle={{ minHeight: H }} showsVerticalScrollIndicator={false}>
       <View style={{ height: (H - bandH) * 0.48, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: Math.round(H * 0.04) }}>
         <Text style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold, letterSpacing: 8, textTransform: 'uppercase' }}>Daggerheart companion</Text>
         <Text style={{ color: Rune.ivory, fontSize: Math.round(Math.min(84, H * 0.085)), fontFamily: Display.black, letterSpacing: 4, textTransform: 'uppercase', marginTop: 6 }}>RuneKeep</Text>
@@ -404,7 +406,7 @@ function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, updateD
           <Rect x={W - fade} y={0} width={fade} height={bandH} fill="url(#rkFadeR)" />
         </Svg>
       </View>
-      <View style={{ flex: 1, alignItems: 'center', paddingTop: Math.round(H * 0.035), gap: 18 }}>
+      <View style={{ flex: 1, alignItems: 'center', paddingTop: Math.round(H * 0.035), paddingBottom: 24, gap: 18 }}>
         <View style={{ flexDirection: 'row', gap: 28 }}>
           <View style={{ width: 380 }}><MenuAction label="Characters" sub="Your roster" glyph="characters" delayIndex={0} onPress={onCharacters} /></View>
           <View style={{ width: 380 }}><MenuAction label="Cards" sub="Archive and homebrew" glyph="cards" delayIndex={1} onPress={onCards} /></View>
@@ -416,7 +418,8 @@ function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, updateD
         <View style={{ width: 788 }}><UpdateBanner onDialog={onUpdateDialog} /></View>
         <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 1.6, textTransform: 'uppercase' }}>Created by Koy and David</Text>
       </View>
-      {updateDialog}
+    </ScrollView>
+    {updateDialog}
     </View>
   );
 }

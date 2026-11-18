@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {  Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
@@ -133,24 +133,39 @@ export function RosterScreen() {
   const openSheet = useCallback((id: string) => { router.push({ pathname: '/sheet', params: { id } }); }, [router]);
   // Keys (desktop): Up and Down walk the visible list, Enter opens the selected sheet. Off while a dialog or field is up.
   const keys = useRef({ order: [] as string[], selected: null as string | null, modal: false });
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!desktop || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       const k = keys.current;
-      if (k.modal || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+      if (k.modal || e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      // A field, or any control that owns its own Enter (a button, link, tab), keeps the key.
+      if (t && (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName) || /^(button|link|tab|checkbox|menuitem)$/.test(t.getAttribute?.('role') ?? ''))) return;
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && k.order.length) {
         e.preventDefault();
         const at = k.selected ? k.order.indexOf(k.selected) : -1;
         const next = e.key === 'ArrowDown' ? Math.min(k.order.length - 1, at + 1) : Math.max(0, at - 1);
-        if (k.order[next] && k.order[next] !== k.selected) { playSfx('buttonTap'); setSelectedId(k.order[next]); }
-      } else if (e.key === 'Enter' && k.selected && (e.target as HTMLElement)?.getAttribute?.('role') !== 'button') {
+        if (k.order[next] && k.order[next] !== k.selected) { playSfx('buttonTap'); setSelectedId(k.order[next]); scrollToRef.current(k.order[next]); }
+      } else if (e.key === 'Enter' && k.selected) {
         playSfx('selectCharacter');
         openSheet(k.selected);
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [desktop, openSheet]);
+  }, [desktop, openSheet]));
+  const listRef = useRef<SectionList<CharacterFile, Section>>(null);
+  const scrollToRef = useRef<(id: string) => void>(() => {});
+  // While a dialog is up on desktop, the list and dossier behind it are inert: Tab cannot wander under the scrim.
+  const bodyRef = useRef<View>(null);
+  const modalOpen = !!(actionsFor || confirmDelete || collision || importError || movingChar || folderActions || newFolder || renamingChar || renamingFolder || pickerExps);
+  useLayoutEffect(() => {
+    const el = bodyRef.current as unknown as HTMLElement | null;
+    if (!desktop || !el?.setAttribute) return;
+    if (modalOpen) el.setAttribute('inert', ''); else el.removeAttribute('inert');
+    return () => el.removeAttribute('inert');
+  }, [desktop, modalOpen]);
+
 
   const onNewCharacter = useCallback(() => {
     playSfx('buttonTap');
@@ -221,7 +236,6 @@ export function RosterScreen() {
   }, [reload, files, applyUpdate]);
 
   if (!files) return <LoadingScreen label="Summoning the roster" />;
-  const selected = desktop ? files.find((f) => f.id === selectedId) ?? files[0] ?? null : null;
 
   // Group characters by folder assignment; unknown/removed folder ids fall back to Ungrouped.
   const folderIds = new Set(index.folders.map((f) => f.id));
@@ -237,8 +251,17 @@ export function RosterScreen() {
   if (ungrouped.length || sections.length) sections.push({ key: '__ungrouped', folder: null, all: ungrouped, data: ungroupedShut ? [] : ungrouped });
 
   // v0.23.0: persisted, so a roster you tidied stays tidy when you come back.
+  const visibleIds = sections.flatMap((s) => s.data.map((f) => f.id));
+  const selectedVisible = selectedId && visibleIds.includes(selectedId) ? selectedId : visibleIds[0] ?? null;
+  const selected = desktop && selectedVisible ? files.find((f) => f.id === selectedVisible) ?? null : null;
+  scrollToRef.current = (id: string) => {
+    for (let si = 0; si < sections.length; si++) {
+      const ii = sections[si].data.findIndex((f) => f.id === id);
+      if (ii >= 0) { listRef.current?.scrollToLocation({ sectionIndex: si, itemIndex: ii, viewPosition: 0.5, animated: true }); return; }
+    }
+  };
   keys.current = {
-    order: sections.flatMap((s) => s.data.map((f) => f.id)),
+    order: visibleIds,
     selected: selected?.id ?? null,
     modal: !!(actionsFor || confirmDelete || collision || importError || movingChar || folderActions || newFolder || renamingChar || renamingFolder || pickerExps),
   };
@@ -287,9 +310,11 @@ export function RosterScreen() {
           <RuneButton label="Import a character" kind="ghost" height={42} onPress={onImport} />
         </View>
       ) : (
-        <View style={desktop ? { flex: 1, flexDirection: 'row', gap: 0 } : { flex: 1 }}>
+        <View ref={bodyRef} style={desktop ? { flex: 1, flexDirection: 'row', gap: 0 } : { flex: 1 }}>
         <View style={desktop ? { width: 380, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)' } : { flex: 1 }}>
           <SectionList
+            ref={listRef}
+            onScrollToIndexFailed={() => {}}
             sections={sections}
             keyExtractor={(f) => f.id}
             contentContainerStyle={{ paddingTop: 4, paddingBottom: 16 }}
