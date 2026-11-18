@@ -1,6 +1,6 @@
 import { forwardRef, memo, type ReactNode, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, MouseButton } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -190,6 +190,10 @@ const FlipCard = memo(function FlipCard({ faces, index, dir, fullRes, animate, o
 });
 
 interface SlotProps {
+  /** Px between the centre card and its neighbour. */
+  spacing: number;
+  /** Cards shown each side of the centre (2 on a phone). */
+  side: number;
   zoom: number;
   index: number;
   item: StraightItem;
@@ -217,14 +221,17 @@ interface SlotProps {
   crossTrait?: 1 | 2;
 }
 
-const Slot = memo(function Slot({ zoom, index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
+const Slot = memo(function Slot({ zoom, spacing, side, index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
   const slotStageScale = useStageScale();
   const coordScale = Platform.OS === 'web' ? slotStageScale : 1;
   const style = useAnimatedStyle(() => {
     const g = grind.value;
     const d = index - pos.value;
     const ad = Math.abs(d);
-    let x = d * SPACING * zoom * (1 - GRIND_TIGHTEN_L * g);
+    // With more cards showing (desktop), each step out is a little shorter than the last, so the outer cards
+    // sit compact rather than drifting apart as they shrink.
+    const run = side > 2 ? ad - 0.07 * ad * Math.max(0, ad - 1) : ad;
+    let x = Math.sign(d) * run * spacing * (1 - GRIND_TIGHTEN_L * g);
     // v0.26.0: shrink to fit a short rail.
     //
     // The card is a fixed 322dp tall and sits at REST_FRAC down the rail, so on a short viewport its
@@ -234,10 +241,10 @@ const Slot = memo(function Slot({ zoom, index, item, count, width, pos, grind, f
     // below that it stops being readable and something else has gone wrong.
     // Desktop (v0.45.0) zooms the resting card; the rail still caps it, so it never outgrows the space it has.
     const fit = railH.value > 0 ? Math.min(zoom, Math.max(0.5, railH.value / (FORGED_H * CARD_SCALE / REST_FRAC / 2))) : zoom;
-    let scale = CARD_SCALE * fit * (1 - Math.min(ad, 3.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
+    let scale = CARD_SCALE * fit * (1 - Math.min(ad, side + 1.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
     let y = 0;
     // visibility window: solid then a quick fade band; widens while grinding
-    const cut = 2.9 + 2.6 * g;
+    const cut = side + 0.9 + 2.6 * g;
     let opacity = Math.min(1, Math.max(0, (cut - ad) / 0.45));
     let z = Math.round(100 - ad * 10);
     const f = fs.value;
@@ -373,8 +380,15 @@ export const StraightCarousel = forwardRef<
     zoom?: number;
     /** v0.45.0: extra room above the fullscreen card, for a carousel whose box starts below a header (desktop). */
     fsTopOffset?: number;
+    /** v0.45.0 desktop: px between the centre card and its neighbour, and how many cards show each side. */
+    spread?: { spacing: number; side: number };
+    /** v0.45.0 desktop: the mouse wheel steps the deck, a right-button drag grinds it like the gear, and a
+     *  focused multi-page card shows arrows to page it. */
+    pointer?: boolean;
   }
->(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0, zoom = 1, fsTopOffset = 0 }, ref) {
+>(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0, zoom = 1, fsTopOffset = 0, spread, pointer = false }, ref) {
+  const spacing = spread?.spacing ?? SPACING * zoom;
+  const side = spread?.side ?? 2;
   const count = items.length;
   /**
    * v0.27.3: the deck, read through a ref so the GESTURES never re-identify.
@@ -509,6 +523,69 @@ export const StraightCarousel = forwardRef<
     flipBusy.current = false;
   }, []);
 
+  /**
+   * Move `n` cards along the deck (v0.29.0, keyboard; v0.45.0 the wheel too).
+   *
+   * The aim is held in a shared value rather than re-read from the live position, for the same reason the
+   * sheet's does: mid-spring the deck sits BETWEEN detents, so rounding it gives back the card being left,
+   * and a quick second press then advances one card instead of two.
+   */
+  const stepBy = useCallback((n: number) => {
+    if (!count || !n) return;
+    if (fsOpen) closeFs();
+    const base = keyAim.value >= 0 ? keyAim.value : Math.round(pos.value);
+    const next = clampIdx(base + n, count);
+    if (next === base) return;
+    cancelAnimation(pos);
+    keyAim.value = next;
+    pos.value = withSpring(next, SNAP_SPRING, () => {
+      'worklet';
+      // Whoever still owns the aim clears it. Not gated on finishing: a drag that interrupts a
+      // keyboard step must drop the aim too, or the next press measures from a phantom.
+      if (keyAim.value === next) keyAim.value = -1;
+    });
+    playSfx('carouselScroll');
+  }, [count, fsOpen, closeFs, keyAim, pos]);
+
+  // Desktop pointer (v0.45.0): the wheel steps the deck (or pages a focused multi-page card), and a right-button
+  // press marks the next drag as a grind. Both on the DOM node, the wheel non-passive so the page does not scroll.
+  const rootRef = useRef<View>(null);
+  const rightDown = useSharedValue(false);
+  const wheelRef = useRef({ stepBy, flip, fsOpen });
+  wheelRef.current = { stepBy, flip, fsOpen };
+  useEffect(() => {
+    const el = rootRef.current as unknown as HTMLElement | null;
+    if (!pointer || Platform.OS !== 'web' || !el?.addEventListener) return;
+    let acc = 0;
+    let last = 0;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const now = performance.now();
+      if (now - last > 220) acc = 0; // a new gesture starts fresh
+      last = now;
+      acc += Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (Math.abs(acc) < 60) return;
+      const dir = acc > 0 ? 1 : -1;
+      acc = 0;
+      const w = wheelRef.current;
+      if (w.fsOpen) w.flip(dir);
+      else w.stepBy(dir);
+    };
+    const onDown = (e: PointerEvent) => { rightDown.value = e.button === 2; };
+    const onUp = () => { rightDown.value = false; };
+    const onMenu = (e: MouseEvent) => e.preventDefault();
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointerup', onUp);
+    el.addEventListener('contextmenu', onMenu);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('pointerup', onUp);
+      el.removeEventListener('contextmenu', onMenu);
+    };
+  }, [pointer, rightDown]);
+
   // Device-back / parent close hook (#108): consume the back press when a card is focused.
   useImperativeHandle(
     ref,
@@ -532,22 +609,7 @@ export const StraightCarousel = forwardRef<
        * reason the sheet's does: mid-spring the deck sits BETWEEN detents, so rounding it gives back
        * the card being left, and a quick second press then advances one card instead of two.
        */
-      stepBy: (n: number) => {
-        if (!count || !n) return;
-        if (fsOpen) closeFs();
-        const base = keyAim.value >= 0 ? keyAim.value : Math.round(pos.value);
-        const next = clampIdx(base + n, count);
-        if (next === base) return;
-        cancelAnimation(pos);
-        keyAim.value = next;
-        pos.value = withSpring(next, SNAP_SPRING, () => {
-          'worklet';
-          // Whoever still owns the aim clears it. Not gated on finishing: a drag that interrupts a
-          // keyboard step must drop the aim too, or the next press measures from a phantom.
-          if (keyAim.value === next) keyAim.value = -1;
-        });
-        playSfx('carouselScroll');
-      },
+      stepBy,
       /** Open the CENTRED card full screen. No-op when one already is. */
       focusCentre: () => {
         if (fsOpen || !count) return;
@@ -558,7 +620,7 @@ export const StraightCarousel = forwardRef<
       /** Whether a card is currently full screen, so a caller can pick the right key meaning. */
       isFullscreen: () => fsOpen,
     }),
-    [fsOpen, closeFs, pos, count, keyAim, focusIdx, fs, setFsOpenJS],
+    [fsOpen, closeFs, pos, count, stepBy, focusIdx, fs, setFsOpenJS],
   );
 
   const onTapCard = useCallback(
@@ -593,6 +655,7 @@ export const StraightCarousel = forwardRef<
     () =>
       Gesture.Pan()
         .minDistance(2)
+        .mouseButton(pointer ? MouseButton.LEFT | MouseButton.RIGHT : MouseButton.LEFT)
         .onBegin((e) => {
           cancelAnimation(pos);
           startPos.value = pos.value;
@@ -602,7 +665,8 @@ export const StraightCarousel = forwardRef<
           // panels, which mount this carousel with no reserved band.
           // The gear is INERT while a card is focused (#104: fullscreen taps were grinding it).
           const padY = e.y / panCoordScale;
-          padTouch.value = fs.value < 0.5 && railHSV.value > 0 && padY > railHSV.value - GEAR_PAD_ABOVE && padY < railHSV.value + GEAR_PAD_BELOW;
+          // Desktop: a right-button drag anywhere grinds, as a touch on the gear does.
+          padTouch.value = fs.value < 0.5 && (rightDown.value || (railHSV.value > 0 && padY > railHSV.value - GEAR_PAD_ABOVE && padY < railHSV.value + GEAR_PAD_BELOW));
           // Self-heal (v0.27.3): a grind that is still wound up as a NEW touch begins away from the
           // gear pad is left over from a gesture that never finalized. Left alone it freezes index
           // publication for good. Nothing legitimately holds it up across touches, so unwind it.
@@ -629,7 +693,7 @@ export const StraightCarousel = forwardRef<
               }
             }
           }
-          const ratio = padTouch.value ? gearRatio : SPACING * zoom;
+          const ratio = padTouch.value ? gearRatio : spacing;
           const raw = startPos.value - e.translationX / ratio;
           const max = count - 1;
           pos.value = raw < 0 ? raw * OVERSCROLL_RESIST : raw > max ? max + (raw - max) * OVERSCROLL_RESIST : raw;
@@ -655,7 +719,7 @@ export const StraightCarousel = forwardRef<
             if (e.translationY > 60 || e.velocityY > 600) runOnJS(closeFs)();
             return;
           }
-          const ratio = padTouch.value ? gearRatio : SPACING * zoom;
+          const ratio = padTouch.value ? gearRatio : spacing;
           const v = Math.max(-MAX_FLING_VEL * 4, Math.min(MAX_FLING_VEL * 4, -e.velocityX / ratio));
           pos.value = withSpring(clampIdx(Math.round(pos.value + v * FLING_TIME), count), { ...SNAP_SPRING, velocity: v });
           if (padTouch.value) grind.value = withTiming(0, { duration: 220 });
@@ -682,7 +746,7 @@ export const StraightCarousel = forwardRef<
           if (grind.value !== 0) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, railHSV, panCoordScale, flip, zoom],
+    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, railHSV, panCoordScale, flip, spacing, rightDown, pointer],
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
@@ -694,6 +758,7 @@ export const StraightCarousel = forwardRef<
 
   return (
     <View
+      ref={rootRef}
       style={{ flex: 1 }}
       onLayout={(e) => {
         setWidth(e.nativeEvent.layout.width);
@@ -738,12 +803,17 @@ export const StraightCarousel = forwardRef<
             {fsOpen ? (
               <Pressable style={{ position: 'absolute', top: -480, bottom: -160, left: -60, right: -60, zIndex: 201 }} onPress={closeFs} accessibilityRole="button" accessibilityLabel="Close card" />
             ) : null}
+            {pointer && fsOpen && (items[center]?.faces?.length ?? 0) > 1 ? (
+              <PageArrows width={width} railTop={railTopWin.value} insetTop={insets.top + fsTopOffset} screenH={screenH} onFlip={flip} />
+            ) : null}
             {width > 0
               ? items.map((item, i) =>
                   Math.abs(i - winCentre) > WIN_HALF ? null : (
                   <Slot
                     key={item.id}
                     zoom={zoom}
+                    spacing={spacing}
+                    side={side}
                     index={i}
                     item={item}
                     count={count}
@@ -758,7 +828,7 @@ export const StraightCarousel = forwardRef<
                     screenH={screenH}
                     selected={selectedIds.includes(item.id)}
                     crossTrait={crossOuts?.[item.id]}
-                    withImage={Math.abs(i - center) <= IMG_HALF}
+                    withImage={Math.abs(i - center) <= Math.max(IMG_HALF, side)}
                     focused={fsOpen && i === center}
                     isCenter={i === center}
                     faceIndex={faceIdx}
@@ -775,3 +845,28 @@ export const StraightCarousel = forwardRef<
     </View>
   );
 });
+
+/**
+ * Desktop (v0.45.0): arrows either side of a focused multi-page card (a class card and its feature pages), so
+ * paging is a click rather than a swipe. Placed from the same numbers the focused card's own position uses.
+ */
+function PageArrows({ width, railTop, insetTop, screenH, onFlip }: { width: number; railTop: number; insetTop: number; screenH: number; onFlip: (d: number) => void }) {
+  const fsScale = Math.min((width - 24) / FORGED_W, (screenH - insetTop - FS_TOP_PAD - FS_BOTTOM_RESERVE) / FORGED_H);
+  const cardW = FORGED_W * fsScale;
+  const centreY = insetTop + FS_TOP_PAD + (FORGED_H * fsScale) / 2 - railTop;
+  const arrow = (dir: -1 | 1) => (
+    <Pressable
+      onPress={() => onFlip(dir)}
+      accessibilityRole="button"
+      accessibilityLabel={dir < 0 ? 'Previous page' : 'Next page'}
+      style={{ position: 'absolute', top: centreY - 30, left: dir < 0 ? Math.max(4, width / 2 - cardW / 2 - 70) : undefined, right: dir > 0 ? Math.max(4, width / 2 - cardW / 2 - 70) : undefined, width: 52, height: 60, zIndex: 400, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(14,17,22,0.9)', borderWidth: 1.4, borderColor: Rune.goldEdge, borderRadius: 8 }}>
+      <Text style={{ color: Rune.goldBright, fontSize: 30, lineHeight: 34, fontFamily: Body.bold }}>{dir < 0 ? '\u2039' : '\u203A'}</Text>
+    </Pressable>
+  );
+  return (
+    <>
+      {arrow(-1)}
+      {arrow(1)}
+    </>
+  );
+}

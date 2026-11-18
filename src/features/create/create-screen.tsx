@@ -17,7 +17,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { type ClassName, CLASSES, classColor, classInfo, isVoidClass } from '@/constants/identity';
-import { Body, Rune } from '@/constants/theme';
+import { Body, Display, Rune } from '@/constants/theme';
 import { CATALOG, cardById } from '@/data/catalog';
 import { effectsForCardId } from '@/features/cards/card-effects';
 import { type TraitKey } from '@/features/character-sheet/character';
@@ -482,8 +482,14 @@ export function CreateScreen() {
   const screenFront = useScreenFocus();
   const { width: screenW } = useLayout();
   // Desktop: the side columns give way on a narrow window, and the deck grows into whatever the middle has.
-  const sideW = Math.round(Math.min(CREATE_SIDE_W, Math.max(220, screenW * 0.19)));
-  const carouselZoom = desktop ? Math.max(1, Math.min(1.6, (screenW - DESKTOP_PAGE_PAD * 2 - sideW * 2 - CREATE_GAP * 2) / 370)) : 1;
+  const sideW = Math.round(Math.min(CREATE_SIDE_W, Math.max(230, screenW * 0.19)));
+  const heroW = Math.round(Math.min(CREATE_HERO_W, Math.max(190, screenW * 0.14)));
+  const middleW = screenW - DESKTOP_PAGE_PAD * 2 - sideW - heroW - CREATE_GAP * 2;
+  // The deck grows into the middle (the rail height still caps it) and shows four cards each side, the outer
+  // ones packed closer, so nine are in view.
+  const carouselZoom = desktop ? Math.max(1, Math.min(2, middleW / 330)) : 1;
+  const cardW = 230 * 0.7 * carouselZoom;
+  const deckSpread = desktop ? { spacing: Math.max(70, Math.min(150 * carouselZoom, (middleW / 2 - cardW * 0.32) / 3.16)), side: 4 } : undefined;
   const deckList = useMemo(
     () =>
       decksFor(characterizing, transformationsOn, customStepList)
@@ -2094,7 +2100,7 @@ export function CreateScreen() {
               lines up with the bottom of the (now portrait-oriented) frame (#135). */}
           <View style={{ flex: 1, justifyContent: 'space-between' }}>
             <View style={{ gap: 6 }}>
-              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: 48, justifyContent: 'center', paddingHorizontal: 13 }}>
+              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: desktop ? 58 : 48, justifyContent: 'center', paddingHorizontal: 13 }}>
                 <TextInput
                   value={draft.name}
                   onChangeText={(name) => { unskip('name'); set({ name }); }}
@@ -2103,7 +2109,7 @@ export function CreateScreen() {
                   placeholderTextColor={Rune.muted}
                   selectionColor={Rune.goldBright}
                   maxLength={40}
-                  style={{ color: Rune.sheet, fontSize: 16, fontFamily: Body.semibold, letterSpacing: 0.4, padding: 0 }}
+                  style={desktop ? { color: Rune.ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', padding: 0 } : { color: Rune.sheet, fontSize: 16, fontFamily: Body.semibold, letterSpacing: 0.4, padding: 0 }}
                   accessibilityLabel="Character name"
                 />
               </ChamferBox>
@@ -2251,6 +2257,8 @@ export function CreateScreen() {
                 crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
                 reserveBottom={CONTROLS_BAND}
                 zoom={carouselZoom}
+                spread={deckSpread}
+                pointer={desktop}
                 // Desktop: the middle column (which clips) starts under the page header, so the fullscreen card does too.
                 fsTopOffset={desktop ? 44 : 0}
                 // v0.36.1 (owner): the LEFT of the two middles. With two cards `floor(n/2)` opened on
@@ -2318,8 +2326,9 @@ export function CreateScreen() {
         <RuneButton
           label={forging ? 'Forging' : 'Forge'}
           kind={complete ? 'primary' : 'ghost'}
-          height={26}
-          dense
+          height={desktop ? 40 : 26}
+          dense={!desktop}
+          style={desktop ? { minWidth: 150 } : undefined}
           disabled={forging}
           onPress={() => {
             if (forging) return;
@@ -2346,7 +2355,7 @@ export function CreateScreen() {
           // middle, the hero coming together on the right. The side columns are equal, so the select controls
           // (drawn across the screen's bottom) stay centred under the middle.
           <View style={{ flex: 1, flexDirection: 'row', gap: CREATE_GAP }}>
-            <ScrollView style={{ width: sideW, flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+            <ScrollView style={{ width: sideW, flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 24, paddingHorizontal: 14 }} showsVerticalScrollIndicator={false}>
               {detailsEl}
               {dividerEl}
               {progressEl}
@@ -2359,9 +2368,9 @@ export function CreateScreen() {
             <View style={{ flex: 1, overflow: 'hidden' }}>{contentEl}</View>
             {authoring ? (
               // A campaign's rules have no hero to show; the column stays, so the controls stay centred.
-              <View style={{ width: sideW }} />
+              <View style={{ width: heroW }} />
             ) : (
-              <HeroColumn width={sideW} rows={heroRows} onJump={(k) => { if (!locked(k)) switchDeck(k); }} />
+              <HeroColumn width={heroW} rows={heroRows} onJump={(k) => { if (!locked(k)) switchDeck(k); }} />
             )}
           </View>
         ) : (
@@ -2404,7 +2413,7 @@ export function CreateScreen() {
       {isCarouselDeck(deck) ? (
         // Weapons sits its cluster lower (the filter toggles push its carousel down, so the cards
         // reach further into this band) — the buttons must never overlap the carousel (owner).
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, bottom: 14, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
+        <Animated.View style={[{ position: 'absolute', left: desktop ? DESKTOP_PAGE_PAD + sideW + CREATE_GAP : 0, right: desktop ? DESKTOP_PAGE_PAD + heroW + CREATE_GAP : 0, bottom: 14, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           {(() => {
             /**
              * REMOVE, not SELECT (v0.42.4, owner).
@@ -2641,7 +2650,9 @@ export function CreateScreen() {
 }
 
 /** Desktop creation (v0.45.0): the step and hero columns' width, and the gutter between the three columns. */
-const CREATE_SIDE_W = 290;
+const CREATE_SIDE_W = 300;
+/** The Your hero column: a summary, so narrower than the steps. */
+const CREATE_HERO_W = 230;
 const CREATE_GAP = 28;
 
 const TRAIT_SHORT: Record<string, string> = { agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge' };

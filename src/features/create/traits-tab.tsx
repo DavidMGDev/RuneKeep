@@ -1,3 +1,4 @@
+import { useDesktopPage } from '@/hooks/use-desktop';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
@@ -40,6 +41,7 @@ function useSpellcastWarnings(spellcastLabel: string | null, spellcastMisplaced:
 }
 
 export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partial<Record<TraitKey, number>>; onTraits: (t: Partial<Record<TraitKey, number>>) => void; spellcastTrait?: TraitKey | null }) {
+  const tap = useDesktopPage() ? 'Click' : 'Tap';
   // v0.25.0: the armed chip is identified by its POSITION in the pool, not by its value. The pool
   // holds two +1s and two 0s, so keying on the value meant tapping the second +1 armed "the +1", and
   // `pool.indexOf(1)` then lit the FIRST one. It worked, but it lit up the wrong chip, which reads as
@@ -121,13 +123,13 @@ export function TraitsTab({ traits, onTraits, spellcastTrait }: { traits: Partia
         )}
       </View>
       <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, textAlign: 'center', marginTop: 2 }}>
-        {armed !== null ? `Tap a trait to place ${formatModifier(armed)}` : pool.length ? 'Tap a modifier, then a trait, tap a trait to clear it' : `${assignedCount}/6 set`}
+        {armed !== null ? `${tap} a trait to place ${formatModifier(armed)}` : pool.length ? `${tap} a modifier, then a trait. ${tap} a trait to clear it.` : `${assignedCount}/6 set`}
       </Text>
       <View style={{ alignItems: 'center', marginTop: 8, marginBottom: 14 }}>
         <RuneButton label="Random" kind="ghost" dense height={30} muteSfx onPress={randomize} accessibilityLabel="Random traits" />
       </View>
       {/* the banners — the sheet's own art */}
-      <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'center', columnGap: 14, rowGap: 6 }}>
+      <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignContent: 'center', columnGap: 14, rowGap: 6, maxWidth: 3 * 92 + 2 * 14, alignSelf: 'center' }}>
         {TRAIT_ORDER.map((t) => {
           const v = traits[t.key];
           return (
