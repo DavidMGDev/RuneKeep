@@ -17,7 +17,7 @@ import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DesktopPortal } from '@/components/desktop-portal';
 import { endLeave, isLeavingSpares, leaveThroughSpares } from '@/hooks/use-back-guard';
-import { useDesktop } from '@/hooks/use-desktop';
+import { DesktopContext, useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, type CustomCardDef, numberInputFor, toSheetCharacter } from '@/lib/character-file';
@@ -3016,6 +3016,9 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const bottomInset = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
   if (boardOpen)
     return (
+      // The board replaces the sheet, so its dialogs stay inside it on desktop too (not beside it, live over a
+      // board that has no idea they are open): no desktop context below this point.
+      <DesktopContext.Provider value={null}>
       <MoodboardScreen
         items={moodboard}
         usePortrait={!!file?.moodboardAsPortrait}
@@ -3026,6 +3029,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
         onBackground={(color) => mutateFile({ moodboardColor: color })}
         onClose={closeBoard}
       />
+      </DesktopContext.Provider>
     );
   return (
     <AccentProvider>
