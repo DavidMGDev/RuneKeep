@@ -69,9 +69,36 @@ export function PopupDialog({
   const desktopPage = useDesktopPage();
   const cancelRef = useRef(onCancel);
   cancelRef.current = onCancel;
+  const rootRef = useRef<View>(null);
+  // Desktop pages: focus moves into the dialog, Tab cycles inside it, and focus returns where it was on close.
+  useEffect(() => {
+    if (!desktopPage || typeof document === 'undefined') return;
+    const root = rootRef.current as unknown as HTMLElement | null;
+    if (!root?.querySelectorAll) return;
+    const before = document.activeElement as HTMLElement | null;
+    const focusables = () => Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')).filter((el) => !el.closest('[inert]'));
+    // Open on the safe choice: Cancel, or whatever this dialog calls it.
+    const list0 = focusables().filter((el) => el.getAttribute('aria-label') !== 'Dismiss');
+    const first = list0.find((el) => el.textContent?.trim().toLowerCase() === cancelLabel.toLowerCase()) ?? list0[0];
+    first?.focus();
+    const onTab = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || escStack[escStack.length - 1] !== mine.current) return;
+      const list = focusables();
+      if (!list.length) return;
+      const at = list.indexOf(document.activeElement as HTMLElement);
+      const next = at < 0 ? 0 : e.shiftKey ? (at - 1 + list.length) % list.length : (at + 1) % list.length;
+      e.preventDefault();
+      list[next].focus();
+    };
+    document.addEventListener('keydown', onTab);
+    return () => { document.removeEventListener('keydown', onTab); if (before?.isConnected) before.focus(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- focus moves in once, when the dialog opens
+  }, [desktopPage]);
+  const mine = useRef<symbol | null>(null);
   useEffect(() => {
     if (!desktopPage || typeof document === 'undefined') return;
     const me = Symbol('dialog');
+    mine.current = me;
     escStack.push(me);
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || escStack[escStack.length - 1] !== me) return;
@@ -83,11 +110,11 @@ export function PopupDialog({
   }, [desktopPage]);
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={onCancel}>
-    <View style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
+    <View ref={rootRef} style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Dismiss" />
       <DimScreen opacity={0.82} />
       {/* tap-absorb wrapper (#3): a near-miss inside the panel never falls through to the scrim */}
-      <Pressable onPress={() => {}} style={{ width: scaled(320, scale), maxWidth: '92%' }}>
+      <Pressable onPress={() => {}} focusable={false} {...({ tabIndex: -1 } as object)} style={{ width: scaled(320, scale), maxWidth: '92%' }}>
         <ChamferBox
           chamfer={14}
           fill={dm ? 'rgba(16,17,19,0.985)' : 'rgba(12,15,20,0.985)'}

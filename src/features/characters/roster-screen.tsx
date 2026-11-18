@@ -39,6 +39,7 @@ function CharacterRow({ file, onOpen, onLongPress, selected }: { file: Character
   const [hover, setHover] = useState(false);
   return (
     <Pressable
+      nativeID={`roster-row-${file.id}`}
       onPress={onOpen}
       onHoverIn={() => setHover(true)}
       onHoverOut={() => setHover(false)}
@@ -139,14 +140,22 @@ export function RosterScreen() {
       const k = keys.current;
       if (k.modal || e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
-      // A field, or any control that owns its own Enter (a button, link, tab), keeps the key.
-      if (t && (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName) || /^(button|link|tab|checkbox|menuitem)$/.test(t.getAttribute?.('role') ?? ''))) return;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      // A character row is the list itself: arrows walk it from there. Any other control keeps its own keys.
+      const onRow = !!t?.id?.startsWith('roster-row-');
+      if (t && t !== document.body && !onRow && (/^(BUTTON|A)$/.test(t.tagName) || /^(button|link|tab|checkbox|menuitem)$/.test(t.getAttribute?.('role') ?? ''))) return;
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && k.order.length) {
         e.preventDefault();
         const at = k.selected ? k.order.indexOf(k.selected) : -1;
         const next = e.key === 'ArrowDown' ? Math.min(k.order.length - 1, at + 1) : Math.max(0, at - 1);
-        if (k.order[next] && k.order[next] !== k.selected) { playSfx('buttonTap'); setSelectedId(k.order[next]); scrollToRef.current(k.order[next]); }
-      } else if (e.key === 'Enter' && k.selected) {
+        if (k.order[next] && k.order[next] !== k.selected) {
+          playSfx('buttonTap');
+          setSelectedId(k.order[next]);
+          scrollToRef.current(k.order[next]);
+          // Focus follows the selection, so Enter on the focused row opens the character the dossier shows.
+          if (onRow) requestAnimationFrame(() => document.getElementById(`roster-row-${k.order[next]}`)?.focus());
+        }
+      } else if (e.key === 'Enter' && k.selected && !onRow) {
         playSfx('selectCharacter');
         openSheet(k.selected);
       }
@@ -257,7 +266,7 @@ export function RosterScreen() {
   scrollToRef.current = (id: string) => {
     for (let si = 0; si < sections.length; si++) {
       const ii = sections[si].data.findIndex((f) => f.id === id);
-      if (ii >= 0) { listRef.current?.scrollToLocation({ sectionIndex: si, itemIndex: ii, viewPosition: 0.5, animated: true }); return; }
+      if (ii >= 0) { listRef.current?.scrollToLocation({ sectionIndex: si, itemIndex: ii + 1, viewPosition: 0.5, animated: true }); return; }
     }
   };
   keys.current = {
@@ -273,6 +282,7 @@ export function RosterScreen() {
 
   return (
     <AppScreen
+      inertHeader={desktop && modalOpen}
       title="Characters"
       onBack={() => router.back()}
       headerRight={
@@ -284,6 +294,7 @@ export function RosterScreen() {
           </Svg>
         </Pressable>
       }>
+      <View ref={bodyRef} style={{ flex: 1 }}>
       {files.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
           <Pressable onPress={onNewCharacter} accessibilityRole="button" accessibilityLabel="Create your first character">
@@ -310,11 +321,11 @@ export function RosterScreen() {
           <RuneButton label="Import a character" kind="ghost" height={42} onPress={onImport} />
         </View>
       ) : (
-        <View ref={bodyRef} style={desktop ? { flex: 1, flexDirection: 'row', gap: 0 } : { flex: 1 }}>
+        <View style={desktop ? { flex: 1, flexDirection: 'row', gap: 0 } : { flex: 1 }}>
         <View style={desktop ? { width: 380, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)' } : { flex: 1 }}>
           <SectionList
             ref={listRef}
-            onScrollToIndexFailed={() => {}}
+            onScrollToIndexFailed={() => { const id = keys.current.selected; if (id) setTimeout(() => scrollToRef.current(id), 120); }}
             sections={sections}
             keyExtractor={(f) => f.id}
             contentContainerStyle={{ paddingTop: 4, paddingBottom: 16 }}
@@ -366,6 +377,7 @@ export function RosterScreen() {
         ) : null}
         </View>
       )}
+      </View>
 
       {actionsFor ? (
         <PopupDialog

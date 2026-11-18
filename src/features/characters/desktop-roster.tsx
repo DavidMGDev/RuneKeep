@@ -118,6 +118,7 @@ const FannedCard = memo(function FannedCard({ card, left, index }: { card: DmCar
       {/* The hit area stays where the card rests; only the art lifts, so a pointer near the edge never loses it. */}
       <Pressable
         focusable={false}
+        {...({ tabIndex: -1 } as object)}
         onHoverIn={() => { setHover(true); lift.value = reduced ? 1 : withTiming(1, { duration: 150, easing: Easing.out(Easing.cubic) }); }}
         onHoverOut={() => { setHover(false); lift.value = reduced ? 0 : withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) }); }}
         accessibilityLabel={card.label}

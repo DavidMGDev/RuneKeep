@@ -1,5 +1,5 @@
 import { useDesktopPage } from '@/hooks/use-desktop';
-import { type ReactNode } from 'react';
+import { type ReactNode, useLayoutEffect, useRef } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Polyline } from 'react-native-svg';
@@ -22,6 +22,8 @@ export function useScreenInsets() {
 }
 
 interface AppScreenProps {
+  /** Web: the header leaves the Tab order and stops taking input (a dialog of the screen's own is up). */
+  inertHeader?: boolean;
   /** Screen heading, drawn inside the frame's top band. Omit for fully custom headers (menu). */
   title?: string;
   onBack?: () => void;
@@ -48,7 +50,7 @@ interface AppScreenProps {
  * within it. Plain flex (dp), NOT DesignStage — these screens scroll and adapt (DESIGN.md).
  * The sheet keeps its own ornamental border; everything else lives in this frame.
  */
-export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, children }: AppScreenProps) {
+export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
   // v0.24.1: what the tablet margins copy. Every AppScreen paints ink to its left and right edges.
   useScreenEdge(Rune.ink);
@@ -57,6 +59,12 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
   const { scale, maxContent } = useLayout();
   // Desktop pages (v0.45.0): the frame art is stretched across a whole window there, so content keeps further in.
   const desktopPage = useDesktopPage();
+  const headerRef = useRef<View>(null);
+  useLayoutEffect(() => {
+    const el = headerRef.current as unknown as HTMLElement | null;
+    if (!el?.setAttribute) return;
+    if (inertHeader) el.setAttribute('inert', ''); else el.removeAttribute('inert');
+  }, [inertHeader]);
   return (
     // height/width 100% + overflow hidden belt-and-braces: on web the router wrapper sizes to
     // content — tall content collapsed the flex chain (menu) and a wide min-content child pushed
@@ -78,7 +86,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
             // v0.24.0: the frame art is drawn OVER the content, and its top band dips to ~2.7% of the
             // frame height (~24dp), which was clipping the top of titles like "Making a hero" and
             // "Card Archive". 22dp of margin clears the band with room to spare at any frame height.
-            <View style={{ height: scaled(36, scale), marginTop: 22, marginBottom: 8, justifyContent: 'center' }}>
+            <View ref={headerRef} style={{ height: scaled(36, scale), marginTop: 22, marginBottom: 8, justifyContent: 'center' }}>
               {/* v0.22.0: the title sits BETWEEN the two 44dp corner slots rather than being clamped to
                   a flat 55% of the full width. The old clamp was measured against the whole header, so
                   a title at exactly 55% could print under a wide right-hand control — and 207dp only
