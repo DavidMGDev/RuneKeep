@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
 import { Rune } from '@/constants/theme';
+import { useDesktop } from '@/hooks/use-desktop';
 import { box } from '@/lib/design';
 import { ArtImage } from '@/components/art-image';
 import { Art } from '../art';
@@ -10,6 +11,10 @@ import { useCarousel } from '../carousel-context';
 
 // v0.11.1: grayscale twin of the gold border, crossfaded in for the Edit Mode desaturation (item 2).
 const BORDER_GRAY = require('../../../../assets/art/longborder-gray.webp');
+// v0.44.0 desktop: the left half is the right half mirrored through the top diamond. The phone's left edge
+// steps around the hand and dice notch, which no longer line up once the sheet sits in a desktop port.
+const BORDER_DESKTOP = require('../../../../assets/art/longborder-mirrored.webp');
+const BORDER_DESKTOP_GRAY = require('../../../../assets/art/longborder-mirrored-gray.webp');
 
 /** The parchment sheet behind everything (rounded so the gold frame's corners read). */
 export function SheetBackground() {
@@ -33,11 +38,12 @@ export function SheetFrame() {
   const dim = useAnimatedStyle(() => ({ opacity: 1 - fullscreenProgress.value * 0.82 }));
   // v0.11.1 item 2: the gold border fades to its desaturated (light-gray) twin while editing.
   const gray = useAnimatedStyle(() => ({ opacity: desat.value }));
+  const desktop = !!useDesktop();
   return (
     <Animated.View style={[StyleSheet.absoluteFill, dim]} pointerEvents="none">
-      <ArtImage source={Art.longBorder} fit="fill" style={StyleSheet.absoluteFill} />
+      <ArtImage source={desktop ? BORDER_DESKTOP : Art.longBorder} fit="fill" style={StyleSheet.absoluteFill} />
       <Animated.View style={[StyleSheet.absoluteFill, gray]} pointerEvents="none">
-        <Image source={BORDER_GRAY} style={StyleSheet.absoluteFill} contentFit="fill" cachePolicy="memory-disk" transition={0} />
+        <Image source={desktop ? BORDER_DESKTOP_GRAY : BORDER_GRAY} style={StyleSheet.absoluteFill} contentFit="fill" cachePolicy="memory-disk" transition={0} />
       </Animated.View>
     </Animated.View>
   );

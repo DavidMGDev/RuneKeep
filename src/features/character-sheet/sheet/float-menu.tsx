@@ -1,3 +1,4 @@
+import { useDesktop } from '@/hooks/use-desktop';
 import { createContext, memo, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { type GestureResponderEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -235,6 +236,7 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
  *  measured on-screen width gives the DesignStage scale (screen-px drag ÷ scale = design px). */
 export function FloatMenuTrigger() {
   const { category } = useCarousel();
+  const desktop = useDesktop();
   const { scale, fingerX, fingerY, highlight, dragging, openingSV, openSV, movedSV, openMenu, closeMenu, pinMenu, select } = useFloatMenu();
   const ref = useRef<View>(null);
 
@@ -282,6 +284,15 @@ export function FloatMenuTrigger() {
     [scale, fingerX, fingerY, highlight, dragging, openingSV, openSV, movedSV, openMenu, closeMenu, pinMenu, select],
   );
 
+  // Desktop (v0.44.0): Rest, Level Up, State and Dice have their own buttons and decks have the rail, so the
+  // diamond only shows which deck is in hand. No radial menu, and it does not cycle decks.
+  if (desktop) {
+    return (
+      <View style={[box(60, 223, 52, 52), { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none" accessibilityLabel={`Deck in hand: ${category}`}>
+        <DeckToggleIcon category={category} />
+      </View>
+    );
+  }
   return (
     <GestureDetector gesture={gesture}>
       <View

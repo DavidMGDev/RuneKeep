@@ -48,6 +48,8 @@ export interface Frame {
   scale: number;
   /** Physical x of the viewport's left edge. Non-zero only when the frame is centred in margins. */
   offsetX: number;
+  /** Desktop port (v0.44.0) only: window pixels above the viewport. Tablets are full height, so absent there. */
+  offsetY?: number;
 }
 
 /** Set by `PhoneFrame`. Absent on phones, where the viewport IS the window. */
@@ -93,9 +95,9 @@ export function windowToFrameX(x: number, frame: Frame): number {
   return (x - frame.offsetX) / frame.scale;
 }
 
-/** The vertical twin. The frame is always full-height, so this is scale only. */
+/** The vertical twin. Tablet frames are full height; the desktop port sits `offsetY` down. */
 export function windowToFrameY(y: number, frame: Frame): number {
-  return y / frame.scale;
+  return (y - (frame.offsetY ?? 0)) / frame.scale;
 }
 
 /** Scale a fixed dp value for the current layout. A no-op now; kept so call sites read unchanged. */

@@ -1,8 +1,10 @@
-import { type ReactNode, useMemo, useRef } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { Platform, StatusBar as RNStatusBar, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePathname } from 'expo-router';
 
 import { Rune } from '@/constants/theme';
+import { type Desktop, DesktopContext, isDesktopWindow } from '@/hooks/use-desktop';
 import { DESIGN_H, DESIGN_W, FrameContext, TABLET_MIN_SW } from '@/hooks/use-layout';
 import { useDimLevel, useEdgeColor } from '@/lib/screen-dim';
 
@@ -73,6 +75,20 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     return { width: DESIGN_W, height: height / scale, scale, offsetX: Math.max(0, (width - DESIGN_W * scale) / 2) };
   }, [width, height, scaleH]);
 
+  // Desktop web (v0.44.0): only the character sheet has a desktop layout so far; every other route keeps
+  // the tablet frame until it gets one.
+  const pathname = usePathname();
+  const [tableHost, setTableHost] = useState<HTMLElement | null>(null);
+  const [sideHost, setSideHost] = useState<HTMLElement | null>(null);
+  const desktopSheet = isDesktopWindow(width, height) && pathname === '/sheet';
+  const desktop = useMemo<Desktop | null>(() => {
+    if (!desktopSheet) return null;
+    const pad = DESKTOP_PORT_PAD;
+    const scale = (scaleH - pad * 2) / DESIGN_H;
+    return { port: { left: pad, top: pad, width: DESIGN_W * scale, height: DESIGN_H * scale, scale }, tableHost, sideHost };
+  }, [desktopSheet, scaleH, tableHost, sideHost]);
+
+  if (desktop) return <DesktopFrame desktop={desktop} onTableHost={setTableHost} onSideHost={setSideHost}>{children}</DesktopFrame>;
   if (!isTablet) return <>{children}</>;
 
   const shownW = frame.width * frame.scale;
@@ -113,6 +129,35 @@ function MarginStrip({ side, width, topBar, bottomBar, dim }: { side: 'left' | '
       <View style={{ position: 'absolute', left: 0, right: 0, top: 0, height: topBar, backgroundColor: Rune.ink }} />
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: bottomBar, backgroundColor: Rune.ink }} />
       {dim > 0 ? <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: `rgba(6,8,13,${dim})` }} /> : null}
+    </View>
+  );
+}
+
+const DESKTOP_PORT_PAD = 14;
+/** How wide the side slot is that panels open into, in window pixels. A panel is laid out for a phone. */
+const SIDE_W = 440;
+
+/**
+ * The desktop sheet (v0.44.0): the phone viewport pinned left at its design size, an empty host to its right
+ * for the card table, and a side slot hugging the port that panels and dialogs portal into. The hosts are
+ * plain DOM nodes; the sheet fills them with `createPortal`, so what it puts there keeps its React context.
+ * The refs are the parent's state setters on purpose: a fresh arrow each render would set null, then the
+ * node, then re-render forever.
+ */
+function DesktopFrame({ desktop, onTableHost, onSideHost, children }: { desktop: Desktop; onTableHost: (el: HTMLElement | null) => void; onSideHost: (el: HTMLElement | null) => void; children: ReactNode }) {
+  const { port } = desktop;
+  const frame = useMemo(() => ({ width: DESIGN_W, height: DESIGN_H, scale: port.scale, offsetX: port.left, offsetY: port.top }), [port.scale, port.left, port.top]);
+  return (
+    <View style={{ flex: 1, backgroundColor: Rune.ink, overflow: 'hidden' }}>
+      <View ref={onTableHost as never} style={{ position: 'absolute', left: port.left + port.width, top: 0, right: 0, bottom: 0 }} />
+      <View style={{ position: 'absolute', left: port.left, top: port.top, width: port.width, height: port.height, overflow: 'hidden' }}>
+        <View style={{ width: DESIGN_W, height: DESIGN_H, transform: [{ scale: port.scale }], transformOrigin: [0, 0, 0] }}>
+          <FrameContext.Provider value={frame}>
+            <DesktopContext.Provider value={desktop}>{children}</DesktopContext.Provider>
+          </FrameContext.Provider>
+        </View>
+      </View>
+      <View ref={onSideHost as never} pointerEvents="box-none" style={{ position: 'absolute', left: port.left + port.width + 10, top: port.top, bottom: port.top, width: SIDE_W, zIndex: 50 }} />
     </View>
   );
 }

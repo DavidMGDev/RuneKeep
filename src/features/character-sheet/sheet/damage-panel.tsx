@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -127,7 +128,9 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
   // tap-catcher (#258r2) absorbs every touch so the character sheet can't be reached through the panel
   // (an outside tap cancels). The centered panel sits directly above it — NO box-none, which leaked
   // (matches the OverlayShell pattern).
+  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
+    <DesktopPortal to="side">
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
       {/* #258r3: a near-invisible backgroundColor + collapsable={false} make this a real, OCCLUDING
           native view so gesture-handler's hit-test stops here instead of passing through to the hearts
@@ -197,5 +200,6 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
         </ChamferBox>
       </Animated.View>
     </View>
+    </DesktopPortal>
   );
 }

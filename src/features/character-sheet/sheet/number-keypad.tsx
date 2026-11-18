@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -76,7 +77,9 @@ export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial
 
   // No own dark scrim (#250): the shared SheetDim already darkens the screen; this sits ABOVE it
   // (zIndex 10001) so the keypad is never hidden behind a dim. Transparent tap-catcher closes it.
+  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
+    <DesktopPortal to="side">
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
       {/* #258r3: occluding bg so GH's hit-test can't reach the sheet's stat tracks underneath.
           v0.36.3 (owner): in DM MODE it is a real scrim. The sheet has its own `SheetDim` behind this,
@@ -116,5 +119,6 @@ export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial
       </Animated.View>
       </View>
     </View>
+    </DesktopPortal>
   );
 }

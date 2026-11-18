@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { type ReactNode, useEffect } from 'react';
 import { Pressable, Text, View } from 'react-native';
 /**
@@ -87,7 +88,9 @@ export function OverlayShell({
   };
   const scrimStyle = useAnimatedStyle(() => ({ opacity: p.value }));
   const boxStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 18 }, { scale: 0.95 + 0.05 * p.value }] }));
+  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
+    <DesktopPortal to="side">
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
       {/* Transparent tap-catcher only (#239 item 9): the shared SheetDim darkens the screen now, so a
           per-shell dark scrim would double-dim and pop on open/close. This still closes on outside tap. */}
@@ -142,5 +145,6 @@ export function OverlayShell({
       </ChamferBox>
       </Animated.View>
     </View>
+    </DesktopPortal>
   );
 }

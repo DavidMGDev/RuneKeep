@@ -15,6 +15,7 @@ import { useLayout } from '@/hooks/use-layout';
 import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
+import { useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
 import { type CharacterFile, type CustomCardDef, numberInputFor, toSheetCharacter } from '@/lib/character-file';
@@ -102,6 +103,7 @@ import { ownImage } from '@/lib/owned-image';
 import { compactHistory, emptyHistory, type CharacterHistory, readHistory, record, recoverableCards, type RecordIntent, restoreCard, rewind as rewindHistory, stripHistory } from '@/lib/character-history';
 import { saveCharacter } from '@/lib/character-store';
 import { DamagePanel } from './damage-panel';
+import { DesktopTable } from './desktop-table';
 import { FloatMenuOverlay, FloatMenuProvider, FloatMenuTrigger, FloatPlaceholder, useFloatMenu, type PlaceholderKind } from './float-menu';
 import { type CardDraft, randomCardColor } from '@/components/card-editor';
 import { DimScreen, useScreenDim, useScreenEdge } from '@/lib/screen-dim';
@@ -249,6 +251,34 @@ function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active 
       <SheetText left={left - 12} top={top + h + 2} width={w + 24} height={12} color={BRONZE} size={8} family={Body.bold} align="center" uppercase numberOfLines={1}>
         {label}
       </SheetText>
+    </>
+  );
+}
+
+/**
+ * Desktop only (v0.44.0): the sheet's own actions, in the band the card hand leaves empty when the cards move to
+ * the desktop table. Same badge as Add Card / Add Gear / Favorites, same glyphs as the radial menu they replace
+ * on this layout. Each one opens exactly what its radial wedge or the dice notch opens on a phone.
+ */
+function DesktopActions({ onOpen, onDice, diceUp }: { onOpen: (k: PlaceholderKind) => void; onDice: () => void; diceUp: boolean }) {
+  const g = (d: React.ReactNode) => (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke={BRONZE} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">{d}</Svg>
+  );
+  const items: { label: string; glyph: React.ReactNode; press: () => void; active?: boolean }[] = [
+    { label: 'Rest', glyph: g(<Path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5Z" />), press: () => onOpen('rest') },
+    { label: 'Level Up', glyph: g(<><Polyline points="5,12 12,5 19,12" /><Polyline points="5,18 12,11 19,18" /></>), press: () => onOpen('level') },
+    { label: 'State', glyph: g(<><Path d="M5 7H19M5 12H19M5 17H19" /><Circle cx={9} cy={7} r={1.6} fill={BRONZE} /><Circle cx={15} cy={12} r={1.6} fill={BRONZE} /><Circle cx={11} cy={17} r={1.6} fill={BRONZE} /></>), press: () => onOpen('modifiers') },
+    { label: 'Dice', glyph: g(<><Path d="M12 3 L20 7.5 L12 12 L4 7.5 Z" /><Path d="M4 7.5 L12 12 L12 21 L4 16.5 Z" /><Path d="M20 7.5 L12 12 L12 21 L20 16.5 Z" /></>), press: onDice, active: diceUp },
+  ];
+  const PITCH = 90, LEFT = 53, TOP = 772;
+  return (
+    <>
+      {items.map((it, i) => (
+        <OctaBadge key={it.label} left={LEFT + i * PITCH} top={TOP} w={48} h={48} glyph={it.glyph} label={it.label} onPress={it.press} active={it.active} a11y={it.label} />
+      ))}
+      {items.slice(1).map((it, i) => (
+        <GoldRuleV key={it.label} left={LEFT + (i + 1) * PITCH - 21} top={TOP + 8} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      ))}
     </>
   );
 }
@@ -1502,6 +1532,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [deckFile, character.gold, mutateFile, expJobs, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
+  // v0.44.0: on the desktop sheet the hand moves to the desktop table and panels open beside the port.
+  const desktop = useDesktop();
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; ids: string[] } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
@@ -3006,6 +3038,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
               {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} /> : null}
               <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={rollTrait} />
+              {desktop ? <DesktopActions onOpen={setFloatKind} onDice={toggleDice} diceUp={diceUp} /> : null}
               <ExpandVeil />
               <EditHud file={file ?? undefined} />
               {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the
@@ -3020,8 +3053,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   Cards management, and New Card (incl. the catalog reached from it) all cover the sheet. */}
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
-              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
-              {floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
+              {desktop ? (
+                <DesktopTable onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
+              ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
+              {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
               )}
               {/* radial float menu (#161): dim + connector + fanned options, above the carousel */}

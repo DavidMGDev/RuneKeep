@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
@@ -1100,7 +1101,9 @@ export function CardEditor({
     };
   });
 
+  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
+    <DesktopPortal to="side">
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
       {/* v0.39.0: the group dialogs the effects field raises are drawn HERE, at the editor's root,
           for the same reason the effect picker already is: written inside the scrolling fields
@@ -1351,5 +1354,6 @@ export function CardEditor({
       ) : null}
       </OverlayHost>
     </View>
+    </DesktopPortal>
   );
 }

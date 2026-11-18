@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -354,7 +355,9 @@ export function LevelUpPanel({
     );
   }
 
+  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
+    <DesktopPortal to="side">
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
       {/* opaque catching backdrop (#258): NO pointerEvents="none" — it must absorb every tap so nothing
           ever falls through to the character sheet / carousel underneath. Button-only close. */}
@@ -613,5 +616,6 @@ export function LevelUpPanel({
         />
       ) : null}
     </View>
+    </DesktopPortal>
   );
 }
