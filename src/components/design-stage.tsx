@@ -11,6 +11,11 @@ import { computeStageScale, type StageFit } from '@/lib/stage-scale';
  * match the finger. Default 1 for trees rendered outside any stage.
  */
 const StageScaleContext = createContext(1);
+/** Resets the stage scale for a subtree drawn outside any stage (v0.44.0: the desktop side slot is unscaled). */
+export function StageScaleReset({ children }: { children: ReactNode }) {
+  return <StageScaleContext.Provider value={1}>{children}</StageScaleContext.Provider>;
+}
+
 export function useStageScale(): number {
   return useContext(StageScaleContext);
 }

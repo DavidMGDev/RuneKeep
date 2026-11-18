@@ -76,20 +76,24 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   }, [width, height, scaleH]);
 
   // Desktop web (v0.44.0): only the character sheet has a desktop layout so far; every other route keeps
-  // the tablet frame until it gets one.
+  // the tablet frame until it gets one. The mode is chosen from the keyboard-free height, so a soft keyboard
+  // shrinking the window can never flip the layout under an open text field.
   const pathname = usePathname();
   const [tableHost, setTableHost] = useState<HTMLElement | null>(null);
   const [sideHost, setSideHost] = useState<HTMLElement | null>(null);
-  const desktopSheet = isDesktopWindow(width, height) && pathname === '/sheet';
+  const desktopSheet = isDesktopWindow(width, scaleH) && pathname === '/sheet';
   const desktop = useMemo<Desktop | null>(() => {
     if (!desktopSheet) return null;
     const pad = DESKTOP_PORT_PAD;
     const scale = (scaleH - pad * 2) / DESIGN_H;
-    return { port: { left: pad, top: pad, width: DESIGN_W * scale, height: DESIGN_H * scale, scale }, tableHost, sideHost };
-  }, [desktopSheet, scaleH, tableHost, sideHost]);
+    const port = { left: pad, top: pad, width: DESIGN_W * scale, height: DESIGN_H * scale, scale };
+    const side = { left: port.left + port.width + 10, top: port.top, width: SIDE_W, height: port.height };
+    const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };
+    return { port, side, table, tableHost, sideHost };
+  }, [desktopSheet, scaleH, width, height, tableHost, sideHost]);
+  const portFrame = useMemo(() => (desktop ? { width: DESIGN_W, height: DESIGN_H, scale: desktop.port.scale, offsetX: desktop.port.left, offsetY: desktop.port.top } : frame), [desktop, frame]);
 
-  if (desktop) return <DesktopFrame desktop={desktop} onTableHost={setTableHost} onSideHost={setSideHost}>{children}</DesktopFrame>;
-  if (!isTablet) return <>{children}</>;
+  if (!desktop && !isTablet) return <>{children}</>;
 
   const shownW = frame.width * frame.scale;
   const margin = frame.offsetX;
@@ -99,20 +103,34 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
   const topBar = Platform.OS === 'android' && detected < 24 ? 32 : detected;
   const bottomBar = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
+  const vp = desktop ? { left: desktop.port.left, top: desktop.port.top, width: desktop.port.width, height: desktop.port.height } : { left: margin, top: 0, width: shownW, height };
 
+  /**
+   * Tablet and desktop share ONE tree (v0.44.0): crossing the desktop breakpoint restyles these views instead of
+   * swapping wrappers, so the router and the sheet beneath it never remount and an open draft or panel survives
+   * a window resize. On a tablet the two desktop hosts are simply hidden.
+   *
+   * The desktop hosts are plain DOM nodes; the sheet fills them with `createPortal`, so what it puts there keeps
+   * its React context. Their refs are the state setters on purpose: a fresh arrow each render would set null,
+   * then the node, then re-render forever.
+   */
   return (
-    <View style={{ flex: 1, backgroundColor: edge, alignItems: 'center', overflow: 'hidden' }}>
-      <View style={{ width: shownW, height, overflow: 'hidden' }}>
-        <View style={{ width: frame.width, height: frame.height, transform: [{ scale: frame.scale }], transformOrigin: [0, 0, 0] }}>
-          <FrameContext.Provider value={frame}>{children}</FrameContext.Provider>
+    <View style={{ flex: 1, backgroundColor: desktop ? Rune.ink : edge, overflow: 'hidden' }}>
+      <View ref={setTableHost as never} style={desktop ? { position: 'absolute', left: vp.left + vp.width, top: 0, right: 0, bottom: 0 } : { display: 'none' }} />
+      <View style={{ position: 'absolute', left: vp.left, top: vp.top, width: vp.width, height: vp.height, overflow: 'hidden' }}>
+        <View style={{ width: portFrame.width, height: portFrame.height, transform: [{ scale: portFrame.scale }], transformOrigin: [0, 0, 0] }}>
+          <FrameContext.Provider value={portFrame}>
+            <DesktopContext.Provider value={desktop}>{children}</DesktopContext.Provider>
+          </FrameContext.Provider>
         </View>
       </View>
-      {margin > 0 ? (
+      {!desktop && margin > 0 ? (
         <>
           <MarginStrip side="left" width={margin} topBar={topBar} bottomBar={bottomBar} dim={dim} />
           <MarginStrip side="right" width={margin} topBar={topBar} bottomBar={bottomBar} dim={dim} />
         </>
       ) : null}
+      <View ref={setSideHost as never} pointerEvents="box-none" style={desktop ? { position: 'absolute', left: desktop.side.left, top: desktop.side.top, width: desktop.side.width, height: desktop.side.height, zIndex: 50 } : { display: 'none' }} />
     </View>
   );
 }
@@ -136,28 +154,3 @@ function MarginStrip({ side, width, topBar, bottomBar, dim }: { side: 'left' | '
 const DESKTOP_PORT_PAD = 14;
 /** How wide the side slot is that panels open into, in window pixels. A panel is laid out for a phone. */
 const SIDE_W = 440;
-
-/**
- * The desktop sheet (v0.44.0): the phone viewport pinned left at its design size, an empty host to its right
- * for the card table, and a side slot hugging the port that panels and dialogs portal into. The hosts are
- * plain DOM nodes; the sheet fills them with `createPortal`, so what it puts there keeps its React context.
- * The refs are the parent's state setters on purpose: a fresh arrow each render would set null, then the
- * node, then re-render forever.
- */
-function DesktopFrame({ desktop, onTableHost, onSideHost, children }: { desktop: Desktop; onTableHost: (el: HTMLElement | null) => void; onSideHost: (el: HTMLElement | null) => void; children: ReactNode }) {
-  const { port } = desktop;
-  const frame = useMemo(() => ({ width: DESIGN_W, height: DESIGN_H, scale: port.scale, offsetX: port.left, offsetY: port.top }), [port.scale, port.left, port.top]);
-  return (
-    <View style={{ flex: 1, backgroundColor: Rune.ink, overflow: 'hidden' }}>
-      <View ref={onTableHost as never} style={{ position: 'absolute', left: port.left + port.width, top: 0, right: 0, bottom: 0 }} />
-      <View style={{ position: 'absolute', left: port.left, top: port.top, width: port.width, height: port.height, overflow: 'hidden' }}>
-        <View style={{ width: DESIGN_W, height: DESIGN_H, transform: [{ scale: port.scale }], transformOrigin: [0, 0, 0] }}>
-          <FrameContext.Provider value={frame}>
-            <DesktopContext.Provider value={desktop}>{children}</DesktopContext.Provider>
-          </FrameContext.Provider>
-        </View>
-      </View>
-      <View ref={onSideHost as never} pointerEvents="box-none" style={{ position: 'absolute', left: port.left + port.width + 10, top: port.top, bottom: port.top, width: SIDE_W, zIndex: 50 }} />
-    </View>
-  );
-}

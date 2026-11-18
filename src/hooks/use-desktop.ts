@@ -30,6 +30,10 @@ export interface DesktopPort {
 
 export interface Desktop {
   port: DesktopPort;
+  /** The side slot panels open into, window pixels. Drawn at scale 1, unlike the port. */
+  side: { left: number; top: number; width: number; height: number };
+  /** Everything right of the port, where the card table draws; window pixels. */
+  table: { left: number; top: number; width: number; height: number };
   /** DOM node the desktop card table portals into (everything right of the port). */
   tableHost: HTMLElement | null;
   /** DOM node panels and dialogs portal into (a slot hugging the port's right edge). */

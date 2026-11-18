@@ -636,6 +636,8 @@ interface BackGuardState {
   onCloseDamage: () => void;
   onCloseFloat: () => void;
   onLeave: () => void;
+  /** v0.44.0 desktop: lets the card table consume a back press (returning its focused card) before leaving. */
+  desktopBackRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 /**
@@ -670,6 +672,7 @@ function SheetBackGuard(props: BackGuardState) {
         if (editingRef.current) { exitEdit(true); return true; }
         if (machineState.value === 'fullscreen') { closeFullscreen(); return true; }
         if (machineState.value === 'expanded') { collapse(); return true; }
+        if (p.desktopBackRef?.current?.()) return true;
         p.onLeave(); // nothing open → confirm before leaving (never an accidental exit)
         return true;
       };
@@ -698,9 +701,22 @@ function SheetBackGuard(props: BackGuardState) {
         window.addEventListener('popstate', onPop);
         popGuard = () => window.removeEventListener('popstate', onPop);
       }
+      // Desktop (v0.44.0): Esc closes whatever panel is on top, in the same order the back button does.
+      // With nothing open it does nothing here; the card table uses it to return its focused card.
+      let escGuard: (() => void) | undefined;
+      if (Platform.OS === 'web' && typeof document !== 'undefined' && ref.current.desktopBackRef) {
+        const onEsc = (e: KeyboardEvent) => {
+          const p = ref.current;
+          if (e.key !== 'Escape') return;
+          if (p.leaveConfirm || p.editCardId || p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
+        };
+        document.addEventListener('keydown', onEsc);
+        escGuard = () => document.removeEventListener('keydown', onEsc);
+      }
       return () => {
         sub.remove();
         popGuard?.();
+        escGuard?.();
       };
     }, [machineState, closeFullscreen, collapse, closeMenu, exitEdit]),
   );
@@ -1534,6 +1550,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
   // v0.44.0: on the desktop sheet the hand moves to the desktop table and panels open beside the port.
   const desktop = useDesktop();
+  const desktopBackRef = useRef<(() => boolean) | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; ids: string[] } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
@@ -2543,6 +2560,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * ACQUIRED one. Both expand into their own pages; neither writes a card.
    */
   const [expandingClass, setExpandingClass] = useState<{ cat: CardCategory; id: string } | null>(null);
+  // v0.44.0 desktop: everything that should hold the port and the card table still while it is open.
+  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq);
   const doExpandClass = useCallback((cat: CardCategory, id: string) => {
     setExpandingClass(null);
     const f = fileRef.current;
@@ -2966,6 +2985,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           onCloseDamage={() => setDamageOpen(false)}
           onCloseFloat={() => { setFloatKind(null); setNewCardCat(null); }}
           onLeave={() => setLeaveConfirm(true)}
+          desktopBackRef={desktop ? desktopBackRef : undefined}
         />
         {/* v0.13.2 (#359): always-on NFC card receiving. Inside the providers so it can read carousel
             `editing`; suppressed only while a focused interface is open (never by card view state). */}
@@ -3055,7 +3075,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <DesktopTable onEditCard={setEditCardId} editableIds={editableIds} overlay={anyOverlay} />
+                <DesktopTable onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
@@ -3154,6 +3174,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 CONTAINER it smears whenever the container's aspect differs, which on a phone it
                 barely does and on a tablet it very much does. Pinning it to the stage box keeps it
                 at the aspect it was drawn for. */}
+            {/* Desktop: a panel beside the port holds the sheet still, as covering it does on a phone. */}
+            {desktop && desktopModal ? <View style={[StyleSheet.absoluteFill, { zIndex: 9990 }]} /> : null}
             <View style={[frameRect ?? StyleSheet.absoluteFill, { position: 'absolute' }]} pointerEvents="none">
               <SheetFrame />
             </View>

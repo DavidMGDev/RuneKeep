@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -53,7 +53,7 @@ interface Target {
   z: number;
 }
 
-export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean }) {
+export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onManage, onExit }: { onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
   const ctx = useCarousel();
@@ -81,24 +81,25 @@ export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard:
   const focusW = Math.round(Math.min(390, (tableH - handZone - 150) / 1.4));
 
   const hand = useMemo(() => deck.filter((c) => c.id !== focusId), [deck, focusId]);
+  // Base targets only; hover is applied inside each card, so moving the pointer re-renders one card, not the hand.
+  // The fan's depth and tilt are capped so a big hand still keeps every card's top edge on screen to point at.
   const targets = useMemo(() => {
     const t: Record<string, Target> = {};
     const n = hand.length, mid = (n - 1) / 2;
     const step = n > 1 ? Math.min(handW * 0.8, (areaW - handW - 120) / (n - 1)) : 0;
     hand.forEach((c, i) => {
       const o = i - mid;
-      const lift = c.id === hoverId ? 1 : 0;
       t[c.id] = {
         x: cx + o * step,
-        y: tableH + handW * 1.4 * (HAND_SINK - 0.5) + Math.abs(o) ** 1.6 * 3.6 - lift * 74,
-        w: handW * (lift ? 1.16 : 1),
-        r: lift ? 0 : o * 3.4,
-        z: lift ? 200 : 10 + i,
+        y: tableH + handW * 1.4 * (HAND_SINK - 0.5) + Math.min(Math.abs(o) ** 1.6 * 3.6, 46),
+        w: handW,
+        r: Math.max(-12, Math.min(12, o * 3.4)),
+        z: 10 + i,
       };
     });
     if (focusId) t[focusId] = { x: cx, y: 36 + (focusW * 1.4) / 2, w: focusW, r: 0, z: 300 };
     return t;
-  }, [hand, hoverId, focusId, cx, areaW, handW, tableH, focusW]);
+  }, [hand, focusId, cx, areaW, handW, tableH, focusW]);
 
   const focus = useCallback((id: string) => {
     if (id === focusId) return;
@@ -112,6 +113,22 @@ export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard:
     setFocusId(null);
   }, [focusId]);
 
+  const focusRef = useRef(focusId);
+  focusRef.current = focusId;
+  const onCardPress = useCallback((id: string, live: boolean) => {
+    if (id !== focusRef.current) focus(id);
+    else if (!live) release();
+  }, [focus, release]);
+  const onCardHover = useCallback((id: string, on: boolean) => {
+    if (id === focusRef.current) return;
+    setHoverId((h) => (on ? id : h === id ? null : h));
+  }, []);
+  // Back (browser button or Alt+Left) returns the focused card before the sheet offers to leave.
+  useEffect(() => {
+    backRef.current = () => { if (!focusRef.current) return false; release(); return true; };
+    return () => { backRef.current = null; };
+  }, [backRef, release]);
+
   // Keys (web): A/D or arrows walk the deck through the focus slot, Q/E or 1-9 change deck, Space equips,
   // Esc returns the focused card. Off while a panel is open or a field has focus.
   const keyState = { deck, focusId, overlay, menu, ring: ctx.ring };
@@ -124,11 +141,12 @@ export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard:
       if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
       const key = e.key.toLowerCase();
       const ids = k.deck.map((c) => c.id), at = k.focusId ? ids.indexOf(k.focusId) : -1;
-      if (key === 'escape') { if (k.menu) setMenu(null); else release(); return; }
+      if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } else release(); return; }
       if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + 1) % ids.length]); return; }
       if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at <= 0 ? ids.length - 1 : at - 1]); return; }
-      if (key === 'q' || key === 'e') { playSfx('transitionStart'); ctx.cycleCategory(key === 'q' ? -1 : 1); return; }
-      if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) { playSfx('transitionStart'); ctx.setCategory(c); } return; }
+      // The provider plays the deck-switch sound itself.
+      if (key === 'q' || key === 'e') { ctx.cycleCategory(key === 'q' ? -1 : 1); return; }
+      if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) ctx.setCategory(c); return; }
       if (key === ' ' && k.focusId) { e.preventDefault(); ctx.toggleCard(k.focusId); }
     };
     document.addEventListener('keydown', onKey);
@@ -157,7 +175,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard:
     <DesktopPortal to="table">
       <View style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, overflow: 'hidden' }}>
         <TableGear category={category} cx={cx} tableH={tableH} handW={handW} reduced={reduced} />
-        <DeckRail top={port ? port.top + 200 * port.scale : 120} />
+        <DeckRail top={port ? port.top + 200 * port.scale : 120} maxH={tableH - (port ? port.top + 200 * port.scale : 120) - 24} onManage={onManage} onExit={onExit} />
         {deck.length === 0 ? (
           <Text style={{ position: 'absolute', left: areaL, width: areaW, top: tableH * 0.42, textAlign: 'center', color: Rune.muted, fontFamily: Body.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</Text>
         ) : null}
@@ -169,13 +187,14 @@ export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard:
             key={item.id}
             item={item}
             target={targets[item.id]}
+            hovered={item.id === hoverId}
             focused={item.id === focusId}
-            page={pages[item.id] ?? 0}
+            page={Math.min(pages[item.id] ?? 0, Math.max(0, (item.faces?.length ?? 1) - 1))}
             enabled={ctx.enabledIds.has(item.ref ?? item.id)}
             tone={cornerTone(item.ref ?? item.id, ctx.cardStates)}
             reduced={reduced}
-            onPress={() => (item.id === focusId ? (item.interactive || item.live ? undefined : release()) : focus(item.id))}
-            onHover={(on) => { if (item.id !== focusId) setHoverId((h) => (on ? item.id : h === item.id ? null : h)); }}
+            onPress={onCardPress}
+            onHover={onCardHover}
           />
         ))}
         {focused ? (
@@ -189,6 +208,8 @@ export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard:
             onRelease={release}
           />
         ) : null}
+        {/* A panel is open in the side slot: the table waits, as the sheet does behind a phone panel. */}
+        {overlay ? <View style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, zIndex: 800, backgroundColor: 'rgba(6,8,13,0.45)' }} /> : null}
         {menu ? <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onFocus={() => focus(menu.id)} onClose={() => setMenu(null)} /> : null}
       </View>
     </DesktopPortal>
@@ -234,8 +255,10 @@ function MenuRow({ label, danger, onPress }: { label: string; danger?: boolean; 
 }
 
 /** One card, one element. It never remounts while its deck is up; only its target moves. */
-const DeskCard = memo(function DeskCard({ item, target, focused, page, enabled, tone, reduced, onPress, onHover }: { item: CardItem; target: Target | undefined; focused: boolean; page: number; enabled: boolean; tone: CornerTone; reduced: boolean; onPress: () => void; onHover: (on: boolean) => void }) {
-  const t = target ?? { x: 0, y: 2000, w: 1, r: 0, z: 0 };
+const DeskCard = memo(function DeskCard({ item, target, hovered, focused, page, enabled, tone, reduced, onPress, onHover }: { item: CardItem; target: Target | undefined; hovered: boolean; focused: boolean; page: number; enabled: boolean; tone: CornerTone; reduced: boolean; onPress: (id: string, live: boolean) => void; onHover: (id: string, on: boolean) => void }) {
+  const base = target ?? { x: 0, y: 2000, w: 1, r: 0, z: 0 };
+  const lift = hovered && !focused;
+  const t = lift ? { x: base.x, y: base.y - 74, w: base.w * 1.16, r: 0, z: 200 } : base;
   const x = useSharedValue(t.x);
   const y = useSharedValue(t.y + 260); // the first deal rises from below the table
   const s = useSharedValue(t.w / CW);
@@ -254,28 +277,35 @@ const DeskCard = memo(function DeskCard({ item, target, focused, page, enabled, 
   return (
     <Animated.View {...({ dataSet: { cardId: item.id } } as object)} style={[{ position: 'absolute', left: 0, top: 0, width: CW, height: CH, zIndex: t.z }, style]}>
       <Pressable
-        onPress={onPress}
-        onHoverIn={() => onHover(true)}
-        onHoverOut={() => onHover(false)}
+        onPress={() => onPress(item.id, !!(item.live && !face))}
+        onHoverIn={() => onHover(item.id, true)}
+        onHoverOut={() => onHover(item.id, false)}
         accessibilityRole="button"
-        accessibilityLabel={focused ? 'Focused card. Click to return it to your hand' : 'Bring this card into focus'}
+        accessibilityLabel={!focused ? 'Bring this card into focus' : item.live && !face ? 'Focused card' : 'Focused card. Click to return it to your hand'}
         style={{ width: CW, height: CH, cursor: 'pointer' } as never}>
-        {item.live ? (
+        {/* Faces win over a live body, as in the phone hand: a class card carries both on web. */}
+        {face ? (
+          face.custom ?? <Layered item={{ id: `${item.id}#${page}`, source: face.source!, thumb: face.thumb! }} full={focused} />
+        ) : item.live ? (
           <View style={{ width: CW, height: CH }} pointerEvents={focused && item.interactive ? 'auto' : 'none'}>{item.live}</View>
-        ) : face ? (
-          face.custom ?? (focused ? <Card item={{ id: `${item.id}#${page}`, source: face.source!, thumb: face.thumb! }} width={CW} height={CH} /> : <CardThumb item={{ id: `${item.id}#${page}`, source: face.source!, thumb: face.thumb! }} />)
-        ) : focused ? (
-          <Card item={item} width={CW} height={CH} />
         ) : (
-          <View style={{ width: CW, height: CH, shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } }}>
-            <CardThumb item={item} />
-          </View>
+          <Layered item={item} full={focused} />
         )}
         {enabled ? <EnabledCorner width={CW} height={CH} tone={tone} /> : null}
       </Pressable>
     </Animated.View>
   );
 });
+
+/** The thumb always, the full art over it once focused: no blank frame while the full image decodes mid-flight. */
+function Layered({ item, full }: { item: { id: string; source: CardItem['source']; thumb: CardItem['thumb'] }; full: boolean }) {
+  return (
+    <View style={{ width: CW, height: CH, shadowColor: '#000', shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } }}>
+      <CardThumb item={item as CardItem} />
+      {full ? <View style={{ position: 'absolute', left: 0, top: 0, width: CW, height: CH }}><Card item={item as CardItem} width={CW} height={CH} /></View> : null}
+    </View>
+  );
+}
 
 /** The controls under the focused card: the phone's focused-card row, plus what a hold or a page swipe does there. */
 function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease }: { item: CardItem; top: number; cx: number; page: number; onPage: (p: number) => void; onEdit?: () => void; onRelease: () => void }) {
@@ -327,7 +357,7 @@ function DeskButton({ label, glyph, onPress, active }: { label: string; glyph?: 
 }
 
 /** Decks as chips beside the port. One red marker slides between them; nothing blinks on and off. */
-function DeckRail({ top }: { top: number }) {
+function DeckRail({ top, maxH, onManage, onExit }: { top: number; maxH: number; onManage: () => void; onExit: () => void }) {
   const ctx = useCarousel();
   const { ring, category, categoryMeta } = ctx;
   const decks: CardCategory[] = useMemo(() => [...ring.filter((c) => c !== FAVORITES_CATEGORY), FAVORITES_CATEGORY], [ring]);
@@ -336,14 +366,16 @@ function DeckRail({ top }: { top: number }) {
   const markY = useSharedValue(index * (CHIP + GAP));
   useEffect(() => { markY.value = withTiming(index * (CHIP + GAP) + (decks[index] === FAVORITES_CATEGORY ? 10 : 0), { duration: 340, easing: EASE }); }, [index, decks, markY]);
   const markStyle = useAnimatedStyle(() => ({ transform: [{ translateY: markY.value }] }));
+  // One dispatch per pick; the provider plays the switch sound. Leaving Favorites goes straight to the deck picked
+  // (setCategory ends the detour) instead of animating back to where Favorites was opened from first.
   const pick = (c: CardCategory) => {
     if (c === category) return;
-    playSfx('transitionStart');
-    if (c === FAVORITES_CATEGORY || category === FAVORITES_CATEGORY) ctx.openFavorites();
-    if (c !== FAVORITES_CATEGORY) ctx.setCategory(c);
+    if (c === FAVORITES_CATEGORY) ctx.openFavorites();
+    else ctx.setCategory(c);
   };
   return (
-    <View style={{ position: 'absolute', left: 14, top, width: RAIL_W - 28 }}>
+    <View style={{ position: 'absolute', left: 14, top, width: RAIL_W - 28, maxHeight: maxH }}>
+      <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingRight: 8 }}>
       <Animated.View style={[{ position: 'absolute', left: 6, right: -6, top: 0, height: CHIP }, markStyle]} pointerEvents="none">
         <ChamferBox chamfer={10} fill={Rune.red} style={{ flex: 1 }}>
           <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: Rune.goldBright }} />
@@ -354,7 +386,21 @@ function DeckRail({ top }: { top: number }) {
           <CategoryGlyph category={c} meta={categoryMeta[c]} />
         </DeckChip>
       ))}
+      </ScrollView>
+      <View style={{ marginTop: 18, gap: 6 }}>
+        <RailLink label="Manage cards" onPress={onManage} />
+        <RailLink label="Back to characters" onPress={onExit} />
+      </View>
     </View>
+  );
+}
+
+function RailLink({ label, onPress }: { label: string; onPress: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <Pressable onPress={() => { playSfx('buttonTap'); onPress(); }} onHoverIn={() => setHover(true)} onHoverOut={() => setHover(false)} accessibilityRole="button" accessibilityLabel={label} style={{ paddingVertical: 6, paddingLeft: 10 }}>
+      <Text style={{ color: hover ? Rune.ivory : Rune.muted, fontFamily: Body.bold, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+    </Pressable>
   );
 }
 
