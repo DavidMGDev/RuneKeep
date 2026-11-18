@@ -1,4 +1,4 @@
-import { type ReactNode, useLayoutEffect, useMemo } from 'react';
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { createPortal } from 'react-dom';
 
@@ -24,7 +24,7 @@ export function DesktopPortal({ to, children }: { to: 'table' | 'side'; children
   }, [desktop, to]);
   const host = desktop ? (to === 'table' ? desktop.tableHost : desktop.sideHost) : null;
   if (!desktop || !frame) return <>{children}</>;
-  if (to === 'side' && host) return createPortal(<SideLayer host={host} frame={frame}>{children}</SideLayer>, host);
+  if (to === 'side' && host) return createPortal(<SideLayer frame={frame}>{children}</SideLayer>, host);
   // The host mounts one frame after the port; render nothing rather than in the wrong place meanwhile.
   return host
     ? createPortal(
@@ -37,23 +37,44 @@ export function DesktopPortal({ to, children }: { to: 'table' | 'side'; children
 }
 
 /**
- * One layer in the side slot. Layers stack in the order they open, so the newest is the dialog the player just
- * raised (Export over Card Management, the restore picker over Trash). Only that one takes input; every layer
- * under it is inert until it closes, which is what a phone's full-screen stacking gives for free.
+ * The side slot's layers (v0.44.0). Each portal registers when it mounts and gets the next number; that number
+ * is its z-index, and only the highest-numbered layer takes input (the rest are `inert`). So the dialog the
+ * player opened last is on top and live, whatever order React placed the DOM nodes in, and a layer that
+ * remounts counts as newly opened. This is the stacking a phone's full-screen overlays get for free.
  */
-function SideLayer({ host, frame, children }: { host: HTMLElement; frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; children: ReactNode }) {
+let seq = 0;
+const layers = new Map<number, HTMLElement>();
+function syncLayers() {
+  const top = Math.max(-1, ...layers.keys());
+  layers.forEach((el, n) => (n === top ? el.removeAttribute('inert') : el.setAttribute('inert', '')));
+}
+
+/**
+ * Closes the topmost side layer through its own close control, when more than one layer is open (a dialog on
+ * top of a panel). Dialogs that keep their state locally (New Category, Move, Delete inside Card Management)
+ * have no closer the sheet knows about, but every one of them carries a Close or Cancel control. Returns true
+ * when it closed something, so Escape and Back stop there instead of closing the panel underneath.
+ */
+export function closeTopSideLayer(): boolean {
+  if (layers.size < 2) return false;
+  const top = layers.get(Math.max(...layers.keys()));
+  const closer = top?.querySelector('[aria-label="Cancel"],[aria-label="Close"]') as HTMLElement | null;
+  if (!closer) return false;
+  closer.click();
+  return true;
+}
+
+function SideLayer({ frame, children }: { frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; children: ReactNode }) {
+  const [order] = useState(() => ++seq);
+  const ref = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
-    const sync = () => {
-      const layers = Array.from(host.children) as HTMLElement[];
-      layers.forEach((el, i) => (i === layers.length - 1 ? el.removeAttribute('inert') : el.setAttribute('inert', '')));
-    };
-    sync();
-    const obs = new MutationObserver(sync);
-    obs.observe(host, { childList: true });
-    return () => { obs.disconnect(); queueMicrotask(sync); };
-  }, [host]);
+    if (!ref.current) return;
+    layers.set(order, ref.current);
+    syncLayers();
+    return () => { layers.delete(order); syncLayers(); };
+  }, [order]);
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View ref={ref as never} style={[StyleSheet.absoluteFill, { zIndex: order }]} pointerEvents="box-none">
       <FrameContext.Provider value={frame}>
         <StageScaleReset>{children}</StageScaleReset>
       </FrameContext.Provider>

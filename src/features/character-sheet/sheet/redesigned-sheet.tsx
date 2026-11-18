@@ -15,6 +15,7 @@ import { useLayout } from '@/hooks/use-layout';
 import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
+import { closeTopSideLayer } from '@/components/desktop-portal';
 import { useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -664,6 +665,9 @@ function SheetBackGuard(props: BackGuardState) {
         const p = ref.current;
         // Close the topmost overlay first (most-recently-opened wins), THEN carousel states, THEN leave.
         if (p.leaveConfirm) { p.onCloseLeave(); return true; }
+        // Desktop: the same layer order Escape uses, so Back never closes a panel out from under its dialog.
+        if (p.closeMinorRef?.current?.()) return true;
+        if (p.desktopBackRef && closeTopSideLayer()) return true;
         if (p.editCardId) { p.onCloseEdit(); return true; }
         if (p.cardInfoId) { p.onCloseCardInfo(); return true; }
         if (p.damageOpen) { p.onCloseDamage(); return true; }
@@ -717,6 +721,7 @@ function SheetBackGuard(props: BackGuardState) {
           if (p.leaveConfirm) { p.onCloseLeave(); return; }
           // Dialogs that open ON TOP of a panel (Export over Card Management, a keypad over a card) go first.
           if (p.closeMinorRef?.current?.()) return;
+          if (closeTopSideLayer()) return;
           if (p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
         };
         document.addEventListener('keydown', onEsc);
@@ -2571,7 +2576,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    */
   const [expandingClass, setExpandingClass] = useState<{ cat: CardCategory; id: string } | null>(null);
   // v0.44.0 desktop: everything that should hold the port and the card table still while it is open.
-  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait);
+  const [presetModal, setPresetModal] = useState(false);
+  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait || presetModal);
   useEffect(() => {
     closeMinorRef.current = () => {
       if (nfcSend) { setNfcSend(null); return true; }
@@ -3088,7 +3094,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                   vitals fading out behind them and the cards still ride over everything. */}
               <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
               {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
-              {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} /> : null}
+              {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} onOpenChange={setPresetModal} /> : null}
               <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={rollTrait} />
               {desktop ? <DesktopActions onOpen={setFloatKind} onDice={toggleDice} diceUp={diceUp} /> : null}
               <ExpandVeil />

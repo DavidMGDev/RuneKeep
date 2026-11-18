@@ -11,7 +11,7 @@
  *
  * Everything about what a preset IS lives in `lib/dice-presets`; this is the surface.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import Svg, { Line } from 'react-native-svg';
@@ -384,7 +384,7 @@ function PresetEditor({ title, initial, dice, cardVars, onSave, onDelete, onUpda
 
 // ------------------------------------------------------------------------------------- the panel
 
-export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay }: {
+export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay, onOpenChange }: {
   /** v0.42.3: the character's numeric card elements, so a preset can carry "+ Combo Die". */
   cardVars?: FunctionVar[];
   presets: (DicePreset | null)[];
@@ -398,9 +398,14 @@ export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay }
   trayDice: () => DieType[];
   onWrite: (slot: number, preset: DicePreset | null) => void;
   onPlay: (preset: DicePreset) => void;
+  /** v0.44.0 desktop: told when a preset dialog opens or closes, so the sheet can hold the table still. */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [editing, setEditing] = useState<{ slot: number; existing: DicePreset | null; dice: DieType[] } | null>(null);
   const [empty, setEmpty] = useState(false);
+  // v0.44.0 desktop: the sheet holds the card table still while a preset dialog is open.
+  useEffect(() => { onOpenChange?.(!!editing || empty); }, [editing, empty, onOpenChange]);
+  useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
 
   const tap = useCallback((slot: number) => {
     playSfx('buttonTap');
