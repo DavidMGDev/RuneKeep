@@ -80,6 +80,7 @@ export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, bac
   const endFocus = useRef(ctx.endCardFocus);
   endFocus.current = ctx.endCardFocus;
   useEffect(() => { endFocus.current(); setFocusId(null); setHoverId(null); setMenu(null); }, [category]);
+  useEffect(() => () => endFocus.current(), []); // leaving the desktop layout ends a streak too
   useEffect(() => { if (focusId && !deck.some((c) => c.id === focusId)) { endFocus.current(); setFocusId(null); } }, [deck, focusId]);
 
   const port = desktop?.port;

@@ -656,7 +656,7 @@ interface BackGuardState {
  * subscribes once (no churn from inline closers).
  */
 function SheetBackGuard(props: BackGuardState) {
-  const { machineState, closeFullscreen, collapse, editing, exitEdit, fullscreenProgress, expandProgress } = useCarousel();
+  const { machineState, closeFullscreen, collapse, editing, exitEdit, fullscreenProgress, expandProgress, cardMenuOpen, cardMenuHighlight } = useCarousel();
   const { open: menuOpen, closeMenu } = useFloatMenu();
   const desktopLayers = useDesktop()?.layers ?? null;
   const layersRef = useRef(desktopLayers);
@@ -674,6 +674,9 @@ function SheetBackGuard(props: BackGuardState) {
     if (!isDesktop) return;
     if (menuOpenRef.current) closeMenu();
     if (editingRef.current) exitEdit(true);
+    // The card wheel too: a hold cut off by the resize never finalises, and the wheel would come back on narrowing.
+    cardMenuOpen.value = 0;
+    cardMenuHighlight.value = -1;
     machineState.value = 'compact';
     fullscreenProgress.value = 0;
     expandProgress.value = 0;
