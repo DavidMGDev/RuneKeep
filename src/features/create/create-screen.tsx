@@ -1905,6 +1905,7 @@ export function CreateScreen() {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return; // a dialog on top already answered this key
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName;
       const intent = intentFor(

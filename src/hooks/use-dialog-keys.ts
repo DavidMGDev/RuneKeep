@@ -31,7 +31,8 @@ export function useDialogKeys(rootRef: RefObject<unknown>, { enabled, onEscape, 
     const want = labelRef.current?.toLowerCase();
     (list0.find((el) => !!want && el.textContent?.trim().toLowerCase() === want) ?? list0[0])?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      // An IME is composing (Escape cancels its candidate list, not the dialog), or someone already handled it.
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       const top = [...stack].reverse().find((d) => live(d.root));
       if (top?.id !== me.id) return;
       if (e.key === 'Escape' && escRef.current) { e.preventDefault(); escRef.current(); return; }
