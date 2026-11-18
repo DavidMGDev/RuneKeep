@@ -47,8 +47,9 @@ export function DesignStage({
   fit = 'contain',
   clip = true,
   style,
+  nativeID,
   children,
-}: DesignStageProps) {
+}: DesignStageProps & { nativeID?: string }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   // v0.24.0: on a tablet the whole app is already magnified by PhoneFrame, and onLayout reports
   // LAYOUT dp, which does not see that. Gesture translations do. So the scale published to
@@ -77,7 +78,7 @@ export function DesignStage({
   const fade = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   return (
-    <View style={[{ flex: 1, overflow: clip ? 'hidden' : 'visible' }, style]} onLayout={onLayout}>
+    <View nativeID={nativeID} style={[{ flex: 1, overflow: clip ? 'hidden' : 'visible' }, style]} onLayout={onLayout}>
       {ready && (
         <Animated.View
           style={[

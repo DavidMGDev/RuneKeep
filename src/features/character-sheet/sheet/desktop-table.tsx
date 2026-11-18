@@ -1,7 +1,7 @@
 // The vector gears: drawn this large, the 600 px rasters the phone uses would be upscaled more than twice over.
 import GearFront from '../../../../assets/art/gears/U2-Outspike.svg';
 import GearBack from '../../../../assets/art/gears/U3-InnerSymbols.svg';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -127,10 +127,11 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   // A panel opening (from the sheet or the rail) closes the card menu, and the whole table goes inert behind it:
   // no clicks, no Tab stops, as the sheet is behind a phone panel.
   useEffect(() => { if (overlay) setMenu(null); }, [overlay]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = desktop?.tableHost;
     if (!host) return;
     if (overlay) host.setAttribute('inert', ''); else host.removeAttribute('inert');
+    return () => host.removeAttribute('inert');
   }, [overlay, desktop?.tableHost]);
   // Back (browser button or Alt+Left) returns the focused card before the sheet offers to leave.
   useEffect(() => {
@@ -158,8 +159,20 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
       if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) ctx.setCategory(c); return; }
       if (key === ' ' && k.focusId) { e.preventDefault(); ctx.toggleCard(k.focusId); }
     };
+    // Capture phase: a Tab-focused card button would otherwise take Space (as a press) before this sees it.
+    // Space equips the focused card; on a card that is not in focus yet, Space brings it in, like Enter.
+    const onSpace = (e: KeyboardEvent) => {
+      if (e.key !== ' ' || keyRef.current.overlay) return;
+      const card = (e.target as HTMLElement)?.closest?.('[data-card-id]') as HTMLElement | null;
+      if (!card) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const id = card.dataset.cardId!;
+      if (id === keyRef.current.focusId) ctx.toggleCard(id); else focus(id);
+    };
+    document.addEventListener('keydown', onSpace, true);
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onSpace, true); document.removeEventListener('keydown', onKey); };
   }, [desktop, focus, release, ctx]);
   // Right-click a card: the phone's hold wheel, as a menu at the pointer.
   const tableHost = desktop?.tableHost ?? null;
@@ -219,7 +232,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
         ) : null}
         {/* A panel is open in the side slot: the table waits, as the sheet does behind a phone panel. */}
         {overlay ? <View style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, zIndex: 800, backgroundColor: 'rgba(6,8,13,0.45)' }} /> : null}
-        {menu ? <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onFocus={() => focus(menu.id)} onClose={() => setMenu(null)} /> : null}
+        {menu && !overlay ? <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onFocus={() => focus(menu.id)} onClose={() => setMenu(null)} /> : null}
       </View>
     </DesktopPortal>
   );
@@ -297,8 +310,6 @@ const DeskCard = memo(function DeskCard({ item, target, hovered, focused, page, 
         onPress={() => onPress(item.id, !!(item.live && !face))}
         onHoverIn={() => onHover(item.id, true)}
         onHoverOut={() => onHover(item.id, false)}
-        // Not a Tab stop: the table owns the keys (A/D, Space, Esc), so a focused button cannot swallow Space.
-        focusable={false}
         accessibilityRole="button"
         accessibilityLabel={!focused ? 'Bring this card into focus' : item.live && !face ? 'Focused card' : 'Focused card. Click to return it to your hand'}
         style={{ width: CW, height: CH, cursor: 'pointer' } as never}>

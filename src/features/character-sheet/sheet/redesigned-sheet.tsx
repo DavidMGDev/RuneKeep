@@ -714,8 +714,10 @@ function SheetBackGuard(props: BackGuardState) {
           // work behind their Cancel, which Escape must never bypass.
           if (/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
           if (p.editCardId || p.floatKind === 'custom') return;
+          if (p.leaveConfirm) { p.onCloseLeave(); return; }
+          // Dialogs that open ON TOP of a panel (Export over Card Management, a keypad over a card) go first.
           if (p.closeMinorRef?.current?.()) return;
-          if (p.leaveConfirm || p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
+          if (p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
         };
         document.addEventListener('keydown', onEsc);
         escGuard = () => document.removeEventListener('keydown', onEsc);
@@ -2570,12 +2572,24 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [expandingClass, setExpandingClass] = useState<{ cat: CardCategory; id: string } | null>(null);
   // v0.44.0 desktop: everything that should hold the port and the card table still while it is open.
   const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait);
-  closeMinorRef.current = () => {
-    if (numberCardId) { setNumberCardId(null); return true; }
-    if (deleteReq) { setDeleteReq(null); return true; }
-    if (moveReq) { setMoveReq(null); return true; }
-    return false;
-  };
+  useEffect(() => {
+    closeMinorRef.current = () => {
+      if (nfcSend) { setNfcSend(null); return true; }
+      if (numberCardId) { setNumberCardId(null); return true; }
+      if (deleteReq) { setDeleteReq(null); return true; }
+      if (moveReq) { setMoveReq(null); return true; }
+      return false;
+    };
+  }, [nfcSend, numberCardId, deleteReq, moveReq]);
+  // Behind a desktop panel the sheet's own controls go inert (no clicks, no Tab stops). Overlays that still draw
+  // over the port are siblings of the stage, so they stay usable.
+  useEffect(() => {
+    if (!desktop || typeof document === 'undefined') return;
+    const stage = document.getElementById('rk-sheet-stage');
+    if (!stage) return;
+    if (desktopModal) stage.setAttribute('inert', ''); else stage.removeAttribute('inert');
+    return () => stage.removeAttribute('inert');
+  }, [desktop, desktopModal]);
   const doExpandClass = useCallback((cat: CardCategory, id: string) => {
     setExpandingClass(null);
     const f = fileRef.current;
@@ -3065,6 +3079,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               designWidth={SHEET_DESIGN_WIDTH}
               designHeight={SHEET_DESIGN_HEIGHT}
               clip={false}
+              nativeID="rk-sheet-stage"
               style={{ marginTop: 18 }}>
               <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenBoard={onOpenBoard} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} diceUp={diceUp} />
               {/* v0.39.0: the dice tray sits between the sheet and the traits, so its panels cover the
