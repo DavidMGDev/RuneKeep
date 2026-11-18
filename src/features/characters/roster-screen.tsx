@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {  Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
@@ -26,17 +26,22 @@ import { NameDialog } from '@/features/dm/dm-ui';
 import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picker';
 import { Portrait } from '@/components/portrait';
 import { DimScreen } from '@/lib/screen-dim';
+import { useDesktopPage } from '@/hooks/use-desktop';
+import { RosterDossier } from './desktop-roster';
 
 /** v0.36.1: the shared chamfered portrait, so the roster matches every other list in the app. */
 function PortraitWell({ uri, tint }: { uri: string | null; tint: string }) {
   return <Portrait uri={uri} size={58} chamfer={8} tint={tint} fill={Rune.ink} />;
 }
 
-function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOpen: () => void; onLongPress: () => void }) {
+function CharacterRow({ file, onOpen, onLongPress, selected }: { file: CharacterFile; onOpen: () => void; onLongPress: () => void; selected?: boolean }) {
   const tint = classColor(file.className);
+  const [hover, setHover] = useState(false);
   return (
     <Pressable
       onPress={onOpen}
+      onHoverIn={() => setHover(true)}
+      onHoverOut={() => setHover(false)}
       onLongPress={onLongPress}
       delayLongPress={380}
       accessibilityRole="button"
@@ -44,9 +49,9 @@ function CharacterRow({ file, onOpen, onLongPress }: { file: CharacterFile; onOp
       {({ pressed }) => (
         <ChamferBox
           chamfer={12}
-          fill={pressed ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.9)'}
-          stroke="rgba(218,162,73,0.5)"
-          strokeWidth={1.3}
+          fill={pressed || hover ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.9)'}
+          stroke={selected ? Rune.red : hover ? Rune.goldBright : 'rgba(218,162,73,0.5)'}
+          strokeWidth={selected ? 1.8 : 1.3}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
           <PortraitWell uri={file.portraitUri} tint={tint.bright} />
           <View style={{ flex: 1 }}>
@@ -122,6 +127,30 @@ export function RosterScreen() {
   const [renamingChar, setRenamingChar] = useState<CharacterFile | null>(null);
   const [newFolder, setNewFolder] = useState(false);
   const [pickerExps, setPickerExps] = useState<Expansion[] | null>(null);
+  // Desktop (v0.45.0): the roster is a list beside a dossier, so a click SELECTS and the dossier opens the sheet.
+  const desktop = useDesktopPage();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const openSheet = useCallback((id: string) => { router.push({ pathname: '/sheet', params: { id } }); }, [router]);
+  // Keys (desktop): Up and Down walk the visible list, Enter opens the selected sheet. Off while a dialog or field is up.
+  const keys = useRef({ order: [] as string[], selected: null as string | null, modal: false });
+  useEffect(() => {
+    if (!desktop || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      const k = keys.current;
+      if (k.modal || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && k.order.length) {
+        e.preventDefault();
+        const at = k.selected ? k.order.indexOf(k.selected) : -1;
+        const next = e.key === 'ArrowDown' ? Math.min(k.order.length - 1, at + 1) : Math.max(0, at - 1);
+        if (k.order[next] && k.order[next] !== k.selected) { playSfx('buttonTap'); setSelectedId(k.order[next]); }
+      } else if (e.key === 'Enter' && k.selected && (e.target as HTMLElement)?.getAttribute?.('role') !== 'button') {
+        playSfx('selectCharacter');
+        openSheet(k.selected);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [desktop, openSheet]);
 
   const onNewCharacter = useCallback(() => {
     playSfx('buttonTap');
@@ -192,6 +221,7 @@ export function RosterScreen() {
   }, [reload, files, applyUpdate]);
 
   if (!files) return <LoadingScreen label="Summoning the roster" />;
+  const selected = desktop ? files.find((f) => f.id === selectedId) ?? files[0] ?? null : null;
 
   // Group characters by folder assignment; unknown/removed folder ids fall back to Ungrouped.
   const folderIds = new Set(index.folders.map((f) => f.id));
@@ -207,6 +237,12 @@ export function RosterScreen() {
   if (ungrouped.length || sections.length) sections.push({ key: '__ungrouped', folder: null, all: ungrouped, data: ungroupedShut ? [] : ungrouped });
 
   // v0.23.0: persisted, so a roster you tidied stays tidy when you come back.
+  keys.current = {
+    order: sections.flatMap((s) => s.data.map((f) => f.id)),
+    selected: selected?.id ?? null,
+    modal: !!(actionsFor || confirmDelete || collision || importError || movingChar || folderActions || newFolder || renamingChar || renamingFolder || pickerExps),
+  };
+
   const toggle = (key: string) => {
     const next = !collapsed.has(key);
     setIndex((cur) => { const n = setCollapsedIn(cur, key, next); void saveFolders(n); return n; });
@@ -251,7 +287,8 @@ export function RosterScreen() {
           <RuneButton label="Import a character" kind="ghost" height={42} onPress={onImport} />
         </View>
       ) : (
-        <>
+        <View style={desktop ? { flex: 1, flexDirection: 'row', gap: 0 } : { flex: 1 }}>
+        <View style={desktop ? { width: 380, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)' } : { flex: 1 }}>
           <SectionList
             sections={sections}
             keyExtractor={(f) => f.id}
@@ -274,7 +311,16 @@ export function RosterScreen() {
             }}
             renderItem={({ item }) => (
               <View style={{ marginBottom: 12 }}>
-                <CharacterRow file={item} onOpen={() => router.push({ pathname: '/sheet', params: { id: item.id } })} onLongPress={() => { playSfx('floatMenuOpen'); setActionsFor(item); }} />
+                <CharacterRow
+                  file={item}
+                  selected={desktop && selected?.id === item.id}
+                  onOpen={() => {
+                    if (!desktop || selected?.id === item.id) { openSheet(item.id); return; }
+                    playSfx('buttonTap');
+                    setSelectedId(item.id);
+                  }}
+                  onLongPress={() => { playSfx('floatMenuOpen'); setActionsFor(item); }}
+                />
               </View>
             )}
           />
@@ -282,7 +328,18 @@ export function RosterScreen() {
             <RuneButton label="Import" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
             <RuneButton label="New character" kind="primary" height={46} style={{ flex: 2 }} onPress={onNewCharacter} />
           </View>
-        </>
+        </View>
+        {desktop && selected ? (
+          <RosterDossier
+            file={selected}
+            onOpen={() => { playSfx('selectCharacter'); openSheet(selected.id); }}
+            onShare={() => void exportCharacter(selected)}
+            onRename={() => setRenamingChar(selected)}
+            onMove={() => setMovingChar(selected)}
+            onDelete={() => setConfirmDelete(selected)}
+          />
+        ) : null}
+        </View>
       )}
 
       {actionsFor ? (

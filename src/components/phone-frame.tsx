@@ -5,7 +5,7 @@ import { usePathname } from 'expo-router';
 
 import { Rune } from '@/constants/theme';
 import { createSideLayers } from '@/components/desktop-portal';
-import { type Desktop, DESKTOP_TABLE_MIN_W, DesktopContext, isDesktopWindow } from '@/hooks/use-desktop';
+import { type Desktop, DESKTOP_TABLE_MIN_W, DesktopContext, DesktopPageContext, isDesktopWindow } from '@/hooks/use-desktop';
 import { DESIGN_H, DESIGN_W, FrameContext, TABLET_MIN_SW } from '@/hooks/use-layout';
 import { useDimLevel, useEdgeColor } from '@/lib/screen-dim';
 
@@ -83,7 +83,10 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const [tableHost, setTableHost] = useState<HTMLElement | null>(null);
   const [sideHost, setSideHost] = useState<HTMLElement | null>(null);
   const [layers] = useState(createSideLayers);
-  const desktopSheet = isDesktopWindow(width, scaleH) && pathname === '/sheet';
+  const desktopWindow = isDesktopWindow(width, scaleH);
+  const desktopSheet = desktopWindow && pathname === '/sheet';
+  // v0.45.0: full-page desktop screens are drawn at the window's own size, unscaled.
+  const desktopPage = desktopWindow && DESKTOP_PAGES.has(pathname);
   const desktop = useMemo<Desktop | null>(() => {
     if (!desktopSheet) return null;
     const pad = DESKTOP_PORT_PAD;
@@ -94,9 +97,17 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };
     return { port, side, table, layers, tableHost, sideHost };
   }, [desktopSheet, scaleH, width, height, layers, tableHost, sideHost]);
-  const portFrame = useMemo(() => (desktop ? { width: DESIGN_W, height: DESIGN_H, scale: desktop.port.scale, offsetX: desktop.port.left, offsetY: desktop.port.top } : frame), [desktop, frame]);
+  const portFrame = useMemo(
+    () =>
+      desktop
+        ? { width: DESIGN_W, height: DESIGN_H, scale: desktop.port.scale, offsetX: desktop.port.left, offsetY: desktop.port.top }
+        : desktopPage
+          ? { width, height, scale: 1, offsetX: 0, offsetY: 0 }
+          : frame,
+    [desktop, desktopPage, frame, width, height],
+  );
 
-  if (!desktop && !isTablet) return <>{children}</>;
+  if (!desktop && !desktopPage && !isTablet) return <>{children}</>;
 
   const shownW = frame.width * frame.scale;
   const margin = frame.offsetX;
@@ -106,7 +117,11 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const detected = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0);
   const topBar = Platform.OS === 'android' && detected < 24 ? 32 : detected;
   const bottomBar = Platform.OS === 'android' && insets.bottom < 16 ? 48 : insets.bottom;
-  const vp = desktop ? { left: desktop.port.left, top: desktop.port.top, width: desktop.port.width, height: desktop.port.height } : { left: margin, top: 0, width: shownW, height };
+  const vp = desktop
+    ? { left: desktop.port.left, top: desktop.port.top, width: desktop.port.width, height: desktop.port.height }
+    : desktopPage
+      ? { left: 0, top: 0, width, height }
+      : { left: margin, top: 0, width: shownW, height };
 
   /**
    * Tablet and desktop share ONE tree (v0.44.0): crossing the desktop breakpoint restyles these views instead of
@@ -118,16 +133,18 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
    * then the node, then re-render forever.
    */
   return (
-    <View style={{ flex: 1, backgroundColor: desktop ? Rune.ink : edge, overflow: 'hidden' }}>
+    <View style={{ flex: 1, backgroundColor: desktop || desktopPage ? Rune.ink : edge, overflow: 'hidden' }}>
       <View ref={setTableHost as never} style={desktop ? { position: 'absolute', left: vp.left + vp.width, top: 0, right: 0, bottom: 0 } : { display: 'none' }} />
       <View style={{ position: 'absolute', left: vp.left, top: vp.top, width: vp.width, height: vp.height, overflow: 'hidden' }}>
         <View style={{ width: portFrame.width, height: portFrame.height, transform: [{ scale: portFrame.scale }], transformOrigin: [0, 0, 0] }}>
           <FrameContext.Provider value={portFrame}>
-            <DesktopContext.Provider value={desktop}>{children}</DesktopContext.Provider>
+            <DesktopPageContext.Provider value={desktopPage}>
+              <DesktopContext.Provider value={desktop}>{children}</DesktopContext.Provider>
+            </DesktopPageContext.Provider>
           </FrameContext.Provider>
         </View>
       </View>
-      {!desktop && margin > 0 ? (
+      {!desktop && !desktopPage && margin > 0 ? (
         <>
           <MarginStrip side="left" width={margin} topBar={topBar} bottomBar={bottomBar} dim={dim} />
           <MarginStrip side="right" width={margin} topBar={topBar} bottomBar={bottomBar} dim={dim} />
@@ -155,5 +172,7 @@ function MarginStrip({ side, width, topBar, bottomBar, dim }: { side: 'left' | '
 }
 
 const DESKTOP_PORT_PAD = 14;
+/** Routes with a full-page desktop layout (v0.45.0). A route joins when its screen reads `useDesktopPage()`. */
+const DESKTOP_PAGES = new Set(['/', '/characters']);
 /** How wide the side slot is that panels open into, in window pixels. A panel is laid out for a phone. */
 const SIDE_W = 440;

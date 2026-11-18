@@ -18,6 +18,14 @@ export const DESKTOP_MIN_H = 640;
 /** Width the card table always keeps right of the port: the deck rail, a focused card and the hand's fan. */
 export const DESKTOP_TABLE_MIN_W = 640;
 
+/**
+ * Full-page desktop screens (v0.45.0): the main menu, the roster, the archive and creation lay themselves out
+ * across the whole window instead of in the phone frame. PhoneFrame sets this for the routes that have a desktop
+ * layout; a screen reads it to pick that layout. False everywhere else, so a screen without one is unchanged.
+ */
+export const DesktopPageContext = createContext(false);
+export const useDesktopPage = () => useContext(DesktopPageContext);
+
 export function isDesktopWindow(width: number, height: number): boolean {
   // No aspect rule: a tall window keeps the desktop layout, and the port gives up height instead (see PhoneFrame).
   return Platform.OS === 'web' && width >= DESKTOP_MIN_W && height >= DESKTOP_MIN_H;

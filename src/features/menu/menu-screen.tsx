@@ -2,7 +2,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { Polygon, Polyline } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Polygon, Polyline, Rect, Stop } from 'react-native-svg';
 
 import { ArtImage } from '@/components/art-image';
 import { AppScreen } from '@/components/app-screen';
@@ -16,21 +16,22 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { showToast } from '@/components/toast';
 import { resetTours, shouldShow } from '@/lib/onboarding-store';
 import { useLayout } from '@/hooks/use-layout';
+import { useDesktopPage } from '@/hooks/use-desktop';
 import { playSfx, preloadSfx , sfxDiagnostics } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
 
 const THUMB_W = 76;
-const THUMB_H = Math.round(THUMB_W * (263 / 188));
 
 /**
  * One ambient row of LOD thumbs drifting sideways forever. Pure transform animation on a single
  * row container (no per-card work), thumbs only (~9KB each) — decorative cost ≈ one full card.
  */
-function DriftRow({ y, cards, duration, reverse, opacity }: { y: number; cards: { thumb: number; id: string }[]; duration: number; reverse?: boolean; opacity: number }) {
+function DriftRow({ y, cards, duration, reverse, opacity, thumbW = THUMB_W }: { y: number; cards: { thumb: number; id: string }[]; duration: number; reverse?: boolean; opacity: number; thumbW?: number }) {
   const { width: screenW } = useLayout();
-  const gap = 14;
-  const span = cards.length * (THUMB_W + gap);
+  const thumbH = Math.round(thumbW * (263 / 188));
+  const gap = thumbW === THUMB_W ? 14 : Math.round(thumbW * 0.18);
+  const span = cards.length * (thumbW + gap);
   const x = useSharedValue(0);
   const reduced = useReducedMotion();
   useEffect(() => {
@@ -51,10 +52,10 @@ function DriftRow({ y, cards, duration, reverse, opacity }: { y: number; cards: 
   const copies = Math.max(2, Math.ceil(screenW / span) + 1);
   const strip = Array.from({ length: copies }, () => cards).flat();
   return (
-    <View style={{ position: 'absolute', left: 0, right: 0, top: y, height: THUMB_H, opacity }} pointerEvents="none">
+    <View style={{ position: 'absolute', left: 0, right: 0, top: y, height: thumbH, opacity }} pointerEvents="none">
       <Animated.View style={[{ flexDirection: 'row', gap, position: 'absolute', left: 0 }, style]}>
         {strip.map((c, i) => (
-          <View key={`${c.id}-${i}`} style={{ width: THUMB_W, height: THUMB_H, transform: [{ rotate: i % 2 ? '2.5deg' : '-2deg' }] }}>
+          <View key={`${c.id}-${i}`} style={{ width: thumbW, height: thumbH, transform: [{ rotate: i % 2 ? '2.5deg' : '-2deg' }] }}>
             <ArtImage source={c.thumb} fit="contain" />
           </View>
         ))}
@@ -67,16 +68,18 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, locked }: { label:
   // Web (the verify pipeline) renders the settled state directly — the entrance is native-only.
   const enter = useSharedValue(Platform.OS === 'web' ? 1 : 0);
   const press = useSharedValue(1);
+  const lift = useSharedValue(0);
+  const [hover, setHover] = useState(false);
   const reduced = useReducedMotion();
   useEffect(() => {
     enter.value = reduced ? 1 : withSpring(1, { damping: 18, stiffness: 90, mass: 0.9 });
   }, [enter, reduced]);
   const style = useAnimatedStyle(() => ({
     opacity: enter.value * (locked ? 0.42 : 1),
-    transform: [{ translateY: (1 - enter.value) * (26 + delayIndex * 14) }, { scale: press.value }],
+    transform: [{ translateY: (1 - enter.value) * (26 + delayIndex * 14) - lift.value * 4 }, { scale: press.value }],
   }));
   // DM Mode (PRD #2): the same chrome drained of gold into the desaturated Golden-Gear-Edit palette.
-  const edge = Rune.goldEdge;
+  const edge = hover ? Rune.goldBright : Rune.goldEdge;
   const bright = Rune.goldBright;
   const accent = Rune.red;
   const ivory = Rune.ivory;
@@ -85,6 +88,9 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, locked }: { label:
     <Animated.View style={style}>
       <Pressable
         onPress={onPress}
+        // A pointer resting on the gate lifts it and lights its edge (desktop; touch never hovers).
+        onHoverIn={() => { setHover(true); lift.value = reduced ? 1 : withTiming(1, { duration: 160, easing: Easing.out(Easing.cubic) }); }}
+        onHoverOut={() => { setHover(false); lift.value = reduced ? 0 : withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) }); }}
         onPressIn={() => {
           press.value = withSpring(0.97, { damping: 22, stiffness: 320, mass: 0.6 });
         }}
@@ -208,6 +214,7 @@ export function MenuScreen() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const { height: screenH } = useLayout();
+  const desktop = useDesktopPage();
   const driftY = (f: number) => Math.round(screenH * f);
   const [muted, setMuted] = useState(false);
   useEffect(() => {
@@ -253,6 +260,20 @@ export function MenuScreen() {
   }, []);
 
   if (!ready) return <LoadingScreen label="Stoking the forge" />;
+
+  if (desktop) {
+    return (
+      <DesktopMenu
+        rows={rows}
+        muted={muted}
+        onToggleMute={toggleMute}
+        onCharacters={() => { playSfx('selectCharacter'); router.push('/characters'); }}
+        onCards={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }}
+        updateDialog={updateDialog}
+        onUpdateDialog={setUpdateDialog}
+      />
+    );
+  }
 
   return (
     <AppScreen overlay={updateDialog}>
@@ -323,5 +344,79 @@ export function MenuScreen() {
         </View>
       </View>
     </AppScreen>
+  );
+}
+
+/** The "?" control on the desktop menu: tips back on; hold for the build. Same as the phone's. */
+function TipsButton() {
+  return (
+    <Pressable
+      onPress={() => { playSfx('buttonTap'); resetTours(); showToast('Tips are back on. They will appear as you go.'); }}
+      onLongPress={() => { playSfx('buttonTap'); showToast(`RuneKeep ${appVersion() ?? 'unknown'} ${Platform.OS === 'web' ? 'in your browser' : 'for Android'}`); }}
+      accessibilityRole="button"
+      accessibilityLabel="Show tips again, hold for the version">
+      <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke={Rune.goldEdge} strokeWidth={1.3} style={{ width: 44, height: 38, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: Rune.goldText, fontSize: 15, fontFamily: Display.black }}>?</Text>
+      </ChamferBox>
+    </Pressable>
+  );
+}
+
+/**
+ * The menu on a desktop window (v0.45.0). The same gate, laid out for the width: the title on top, the card
+ * library drifting through a wide band across the middle (bigger thumbs, both edges fading into the ink), and
+ * the two destinations side by side below it. Campaigns stay on the phone; the desktop app is for play.
+ */
+function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, updateDialog, onUpdateDialog }: {
+  rows: { thumb: number; id: string }[][];
+  muted: boolean;
+  onToggleMute: () => void;
+  onCharacters: () => void;
+  onCards: () => void;
+  updateDialog: React.ReactNode;
+  onUpdateDialog: (node: React.ReactNode) => void;
+}) {
+  const { width: W, height: H } = useLayout();
+  const bandH = Math.round(H * 0.3);
+  const rowGap = Math.round(bandH * 0.06);
+  const thumbH = (bandH - rowGap) / 2;
+  const thumbW = Math.round((thumbH * 188) / 263);
+  const fade = Math.round(Math.min(260, W * 0.18));
+  return (
+    <View style={{ flex: 1, backgroundColor: Rune.ink }}>
+      <View style={{ height: (H - bandH) * 0.48, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: Math.round(H * 0.04) }}>
+        <Text style={{ color: Rune.goldText, fontSize: 13, fontFamily: Body.bold, letterSpacing: 8, textTransform: 'uppercase' }}>Daggerheart companion</Text>
+        <Text style={{ color: Rune.ivory, fontSize: Math.round(Math.min(84, H * 0.085)), fontFamily: Display.black, letterSpacing: 4, textTransform: 'uppercase', marginTop: 6 }}>RuneKeep</Text>
+        <Svg width={300} height={16} viewBox="0 0 300 16">
+          <Polyline points="0,8 126,8 150,1 174,15 198,8 300,8" fill="none" stroke={Rune.goldEdge} strokeWidth={1.4} strokeLinejoin="miter" />
+        </Svg>
+      </View>
+      {/* the library, drifting: two rows going opposite ways, fading out at both window edges */}
+      <View style={{ height: bandH }} pointerEvents="none">
+        <DriftRow y={0} cards={[...rows[0], ...rows[2]]} duration={140000} opacity={0.42} thumbW={thumbW} />
+        <DriftRow y={thumbH + rowGap} cards={rows[1]} duration={170000} reverse opacity={0.3} thumbW={thumbW} />
+        <Svg width={W} height={bandH} style={StyleSheet.absoluteFill}>
+          <Defs>
+            <LinearGradient id="rkFadeL" x1="0" y1="0" x2="1" y2="0"><Stop offset="0" stopColor={Rune.ink} stopOpacity={1} /><Stop offset="1" stopColor={Rune.ink} stopOpacity={0} /></LinearGradient>
+            <LinearGradient id="rkFadeR" x1="0" y1="0" x2="1" y2="0"><Stop offset="0" stopColor={Rune.ink} stopOpacity={0} /><Stop offset="1" stopColor={Rune.ink} stopOpacity={1} /></LinearGradient>
+          </Defs>
+          <Rect x={0} y={0} width={fade} height={bandH} fill="url(#rkFadeL)" />
+          <Rect x={W - fade} y={0} width={fade} height={bandH} fill="url(#rkFadeR)" />
+        </Svg>
+      </View>
+      <View style={{ flex: 1, alignItems: 'center', paddingTop: Math.round(H * 0.035), gap: 18 }}>
+        <View style={{ flexDirection: 'row', gap: 28 }}>
+          <View style={{ width: 380 }}><MenuAction label="Characters" sub="Your roster" glyph="characters" delayIndex={0} onPress={onCharacters} /></View>
+          <View style={{ width: 380 }}><MenuAction label="Cards" sub="Archive and homebrew" glyph="cards" delayIndex={1} onPress={onCards} /></View>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <MuteToggle muted={muted} onToggle={onToggleMute} />
+          <TipsButton />
+        </View>
+        <View style={{ width: 788 }}><UpdateBanner onDialog={onUpdateDialog} /></View>
+        <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 1.6, textTransform: 'uppercase' }}>Created by Koy and David</Text>
+      </View>
+      {updateDialog}
+    </View>
   );
 }
