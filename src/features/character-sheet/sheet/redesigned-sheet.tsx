@@ -3,6 +3,7 @@
 // helpers were extracted to sheet-utils.ts; splitting the orchestrator further fragments cohesion and
 // risks animation regressions needing on-device verification (see SPEC.md). A deliberate exception.
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { coachTarget } from '@/components/coach-tour';
 import { AppState, BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useDerivedValue, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
@@ -275,6 +276,10 @@ function DesktopActions({ onOpen, onDice, diceUp }: { onOpen: (k: PlaceholderKin
   const PITCH = 90, LEFT = 53, TOP = 772;
   return (
     <>
+      {/* Where the desktop tips point (CoachTour): the badges, the vitals and the portrait. */}
+      <View pointerEvents="none" {...coachTarget('sheet-actions')} style={box(LEFT - 14, TOP - 8, 3 * PITCH + 48 + 28, 64)} />
+      <View pointerEvents="none" {...coachTarget('sheet-vitals')} style={box(14, 322, 384, 186)} />
+      <View pointerEvents="none" {...coachTarget('sheet-portrait')} style={box(21, 12, 150, 282)} />
       {items.map((it, i) => (
         <OctaBadge key={it.label} left={LEFT + i * PITCH} top={TOP} w={48} h={48} glyph={it.glyph} label={it.label} onPress={it.press} active={it.active} a11y={it.label} />
       ))}

@@ -1,5 +1,6 @@
 // The vector gears: drawn this large, the 600 px rasters the phone uses would be upscaled more than twice over.
 import GearFront from '../../../../assets/art/gears/U2-Outspike.svg';
+import { coachTarget } from '@/components/coach-tour';
 import GearBack from '../../../../assets/art/gears/U3-InnerSymbols.svg';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -268,7 +269,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
 
   return (
     <DesktopPortal to="table">
-      <View style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, overflow: 'hidden' }}>
+      <View {...coachTarget('sheet-table')} style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, overflow: 'hidden' }}>
         <TableGear category={category} cx={cx} tableH={tableH} handW={handW} reduced={reduced} />
         <DeckRail top={railTop} maxH={railMaxH} onManage={onManage} onSort={canReorder ? () => { playSfx('floatMenuOpen'); setSorting(true); } : undefined} onExit={onExit} />
         {sorting ? (
@@ -520,7 +521,7 @@ function DeckRail({ top, maxH, onManage, onSort, onExit }: { top: number; maxH: 
     else ctx.setCategory(c);
   };
   return (
-    <View style={{ position: 'absolute', left: 14, top, width: RAIL_W - 28, maxHeight: maxH }}>
+    <View {...coachTarget('sheet-decks')} style={{ position: 'absolute', left: 14, top, width: RAIL_W - 28, maxHeight: maxH }}>
       <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingRight: 8 }}>
       <Animated.View style={[{ position: 'absolute', left: 6, right: -6, top: 0, height: CHIP }, markStyle]} pointerEvents="none">
         <ChamferBox chamfer={10} fill={Rune.red} style={{ flex: 1 }}>

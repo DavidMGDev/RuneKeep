@@ -34,14 +34,16 @@ import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
 import { featurePages, spellcastTraitForSubclass } from '@/data/class-data';
-import { ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
+import { FORGED_W, ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
 import { lootById } from '@/data/loot-data';
 import { armorById, PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
 import { CLASS_INVENTORY, isConsumableName, itemOptionId, itemTitle } from '@/data/class-inventory-data';
 import { itemColor } from '@/data/item-colors';
 
 import { useForgedSnapshots } from './components/forged-snapshots';
-import { StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
+import { ForgeFlames } from './components/forge-flames';
+import { CoachTour, coachTarget, type CoachStep } from '@/components/coach-tour';
+import { fanHalfWidth, StraightCarousel, type StraightCarouselHandle, type StraightFace, type StraightItem } from './components/straight-carousel';
 import { type DeckKey, type Draft, isCardDeck, isCarouselDeck, nextMixSlot } from './create-types';
 import { cardsOfType, customSteps, isCustomStep, stepTypeId, typeLabelsFrom } from '@/lib/content-types';
 import { withResolvedPlaque } from '@/lib/card-plaque';
@@ -481,17 +483,18 @@ export function CreateScreen() {
   /** The steps those packs ask the creator to ask (v0.43.0). */
   const customStepList = useMemo(() => customSteps(pickedCards), [pickedCards]);
   const desktop = useDesktopPage();
+  /** Desktop: the name's size, stepping down as it gets longer so up to 40 letters stay in view. */
+  const nameSize = draft.name.length <= 14 ? 16 : draft.name.length <= 26 ? 13 : 11;
   const screenFront = useScreenFocus();
   const { width: screenW } = useLayout();
   // Desktop: the side columns give way on a narrow window, and the deck grows into whatever the middle has.
   const sideW = Math.round(Math.min(CREATE_SIDE_W, Math.max(230, screenW * 0.19)));
   const heroW = Math.round(Math.min(CREATE_HERO_W, Math.max(190, screenW * 0.14)));
   const middleW = screenW - DESKTOP_PAGE_PAD * 2 - sideW - heroW - CREATE_GAP * 2;
-  // The deck grows into the middle (the rail height still caps it) and shows four cards each side, the outer
-  // ones packed closer, so nine are in view.
-  const carouselZoom = desktop ? Math.max(1, Math.min(2, middleW / 330)) : 1;
-  const cardW = 230 * 0.7 * carouselZoom;
-  const deckSpread = desktop ? { spacing: Math.max(70, Math.min(150 * carouselZoom, (middleW / 2 - cardW * 0.32) / 3.16)), side: 4 } : undefined;
+  // The deck fans four cards each side (nine in view): the neighbours stand clear of the centre card, the outer
+  // ones pack in. It is sized to keep DECK_PAD clear of both side columns, and never past DECK_MAX_ZOOM.
+  const carouselZoom = desktop ? Math.max(0.8, Math.min(DECK_MAX_ZOOM, (middleW / 2 - DECK_PAD) / fanHalfWidth(1, 4, DECK_SHOW))) : 1;
+  const deckSpread = desktop ? { spacing: FORGED_W * 0.7 * carouselZoom, side: 4, show: DECK_SHOW } : undefined;
   const deckList = useMemo(
     () =>
       decksFor(characterizing, transformationsOn, customStepList)
@@ -1387,10 +1390,11 @@ export function CreateScreen() {
     // back(), which keeps the creator mounted with everything the player has already chosen; sending
     // them forward to a fresh copy instead would re-ask which expansions they wanted.
     // The creation tour explains making a hero, which is not what a DM came here to do.
-    if (authoring || !shouldShow('creation')) return;
+    // Desktop teaches with tips on the page itself (CoachTour below), not a tour page over it.
+    if (authoring || desktop || !shouldShow('creation')) return;
     const t = setTimeout(() => router.push('/onboarding?tour=creation' as Href), 0);
     return () => clearTimeout(t);
-  }, [router, authoring]);
+  }, [router, authoring, desktop]);
 
   useEffect(() => {
     if (resumeChecked) return;
@@ -2104,16 +2108,21 @@ export function CreateScreen() {
               lines up with the bottom of the (now portrait-oriented) frame (#135). */}
           <View style={{ flex: 1, justifyContent: 'space-between' }}>
             <View style={{ gap: 6 }}>
-              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: desktop ? 58 : 48, justifyContent: 'center', paddingHorizontal: 13 }}>
+              <ChamferBox chamfer={8} fill="rgba(14,17,22,0.9)" stroke="rgba(218,162,73,0.5)" strokeWidth={1.2} style={{ height: desktop ? 62 : 48, justifyContent: 'center', paddingHorizontal: 13 }}>
                 <TextInput
+                  // Desktop: a long name wraps onto more lines in the same box, the type stepping down as it grows,
+                  // so the whole name always shows.
+                  multiline={desktop}
+                  numberOfLines={desktop ? 3 : 1}
+                  blurOnSubmit
                   value={draft.name}
-                  onChangeText={(name) => { unskip('name'); set({ name }); }}
+                  onChangeText={(name) => { unskip('name'); set({ name: name.replace(/\n/g, '') }); }}
                   ref={nameRef}
                   placeholder="Name"
                   placeholderTextColor={Rune.muted}
                   selectionColor={Rune.goldBright}
                   maxLength={40}
-                  style={desktop ? { color: Rune.ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', padding: 0 } : { color: Rune.sheet, fontSize: 16, fontFamily: Body.semibold, letterSpacing: 0.4, padding: 0 }}
+                  style={desktop ? { color: Rune.ivory, fontSize: nameSize, lineHeight: Math.round(nameSize * 1.25), maxHeight: 50, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase', padding: 0, ...({ resize: 'none' } as object) } : { color: Rune.sheet, fontSize: 16, fontFamily: Body.semibold, letterSpacing: 0.4, padding: 0 }}
                   accessibilityLabel="Character name"
                 />
               </ChamferBox>
@@ -2252,7 +2261,7 @@ export function CreateScreen() {
             );
           })() : null}
           {isCarouselDeck(deck) && items.length > 0 ? (
-            <Animated.View style={[{ flex: 1 }, modeFadeStyle]}>
+            <Animated.View {...coachTarget('create-deck')} style={[{ flex: 1 }, modeFadeStyle]}>
               <StraightCarousel
                 ref={carouselRef}
                 key={deck + (deck === 'weapons' ? `${weaponKind}-${weaponSlot}` : deck === 'inventory' ? String(invChoice) : deck === 'subclass' || deck === 'domains' ? (draft.className ?? '') : '')}
@@ -2311,6 +2320,7 @@ export function CreateScreen() {
   return (
     <AppScreen
       dm={authoring}
+      sideAnchor={desktop ? sideW : 0}
       // Leaving by the menu takes the creator off the stack, so Back can never return to a discarded draft.
       navReplace
       // The desktop header's menu asks the same question Back does before leaving a hero part-made.
@@ -2335,6 +2345,15 @@ export function CreateScreen() {
           // v0.42.3: Done, not Forge. Nothing is being built; the rules are already saved.
           <RuneButton dm label="Done" kind="primary" height={26} dense onPress={() => router.back()} accessibilityLabel="Finish setting the campaign rules" />
         ) : (
+        // A complete hero sets the Forge alight, so it is clear the hero can be made now.
+        <View {...coachTarget('create-forge')}>
+        <ForgeFlames
+          active={complete && !forging}
+          height={desktop ? 40 : 26}
+          label="Forge"
+          minWidth={desktop ? 150 : undefined}
+          accessibilityLabel="Create character"
+          onPress={() => void (characterizing ? forgeCharacterized() : forge()).catch(() => showToast('Could not forge this character. Nothing was changed.', 'error'))}>
         <RuneButton
           label={forging ? 'Forging' : 'Forge'}
           kind={complete ? 'primary' : 'ghost'}
@@ -2350,6 +2369,8 @@ export function CreateScreen() {
           }}
           accessibilityLabel={complete ? 'Create character' : `Create character, still needs ${missingLabel ?? 'more'}`}
         />
+        </ForgeFlames>
+        </View>
         )
       }>
       <Animated.View style={[{ flex: 1 }, entryStyle]}>
@@ -2367,7 +2388,7 @@ export function CreateScreen() {
           // middle, the hero coming together on the right. The side columns are equal, so the select controls
           // (drawn across the screen's bottom) stay centred under the middle.
           <View style={{ flex: 1, flexDirection: 'row', gap: CREATE_GAP }}>
-            <ScrollView style={{ width: sideW, flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 24, paddingHorizontal: 14 }} showsVerticalScrollIndicator={false}>
+            <ScrollView {...coachTarget('create-steps')} style={{ width: sideW, flexGrow: 0 }} contentContainerStyle={{ gap: 8, paddingBottom: 24, paddingHorizontal: 14 }} showsVerticalScrollIndicator={false}>
               {detailsEl}
               {dividerEl}
               {progressEl}
@@ -2377,12 +2398,13 @@ export function CreateScreen() {
                 ))}
               </View>
             </ScrollView>
-            <View style={{ flex: 1, overflow: 'hidden' }}>{contentEl}</View>
+            {/* A pop-up opens in the sidebar over this column; the deck left showing beside it fades back. */}
+            <View style={{ flex: 1, overflow: 'hidden', opacity: pickerOpen || leaveConfirm || !!resumeOffer || skipMenu ? 0.12 : 1 }}>{contentEl}</View>
             {authoring ? (
               // A campaign's rules have no hero to show; the column stays, so the controls stay centred.
               <View style={{ width: heroW }} />
             ) : (
-              <HeroColumn width={heroW} rows={heroRows} onJump={(k) => { if (!locked(k)) switchDeck(k); }} />
+              <View {...coachTarget('create-hero')} style={{ flexDirection: 'row' }}><HeroColumn width={heroW} rows={heroRows} onJump={(k) => { if (!locked(k)) switchDeck(k); }} /></View>
             )}
           </View>
         ) : (
@@ -2425,7 +2447,7 @@ export function CreateScreen() {
       {isCarouselDeck(deck) ? (
         // Weapons sits its cluster lower (the filter toggles push its carousel down, so the cards
         // reach further into this band) — the buttons must never overlap the carousel (owner).
-        <Animated.View style={[{ position: 'absolute', left: desktop ? DESKTOP_PAGE_PAD + sideW + CREATE_GAP : 0, right: desktop ? DESKTOP_PAGE_PAD + heroW + CREATE_GAP : 0, bottom: 14, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
+        <Animated.View {...coachTarget('create-select')} style={[{ position: 'absolute', left: desktop ? DESKTOP_PAGE_PAD + sideW + CREATE_GAP : 0, right: desktop ? DESKTOP_PAGE_PAD + heroW + CREATE_GAP : 0, bottom: 14, zIndex: 600, alignItems: 'center', gap: 6 }, fadeStyle]} pointerEvents="box-none">
           {(() => {
             /**
              * REMOVE, not SELECT (v0.42.4, owner).
@@ -2583,6 +2605,11 @@ export function CreateScreen() {
         </PopupDialog>
       ) : null}
 
+      {/* Desktop: the first-time tips, once nothing else is asking for attention. */}
+      {desktop && !authoring ? (
+        <CoachTour id="creation" steps={CREATE_TIPS} active={!leaveConfirm && !resumeOffer && !pickerOpen && !loaderUp && !skipMenu && !croppingPortrait && editingExperience === null && !expAdvanced} />
+      ) : null}
+
       {skipMenu ? (
         <SkipMenu
           rows={skipRows}
@@ -2666,6 +2693,18 @@ const CREATE_SIDE_W = 300;
 /** The Your hero column: a summary, so narrower than the steps. */
 const CREATE_HERO_W = 230;
 const CREATE_GAP = 28;
+/** The desktop creator's first-time tips, each pointing at the control it explains. */
+const CREATE_TIPS: CoachStep[] = [
+  { target: 'create-steps', title: 'Your steps', body: 'Work down this list. Each step turns gold when it is done, and you can go back to any of them. Nothing is locked in until you forge.' },
+  { target: 'create-deck', title: 'Pick from the deck', body: 'Scroll the wheel or drag to move through the cards. Hold the right button and drag to race through a long deck. Click the middle card to read it at full size.' },
+  { target: 'create-select', title: 'Take the middle card', body: 'This button always names the card in the middle and picks it. Random picks one for you.' },
+  { target: 'create-hero', title: 'Your hero', body: 'Everything you choose gathers here. Click a line to jump back to that step.' },
+  { target: 'create-forge', title: 'Forge', body: 'When every step is gold the Forge catches fire. Press it to make your hero.' },
+];
+/** Desktop deck: the biggest it grows, its clearance from the side columns, and how much of each outer card shows. */
+const DECK_MAX_ZOOM = 1.45;
+const DECK_PAD = 36;
+const DECK_SHOW = 0.3;
 
 const TRAIT_SHORT: Record<string, string> = { agility: 'Agility', strength: 'Strength', finesse: 'Finesse', instinct: 'Instinct', presence: 'Presence', knowledge: 'Knowledge' };
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
@@ -2701,6 +2740,11 @@ function heroRowFor(key: DeckKey, label: string, d: Draft, done: boolean, isLock
     thumbs = thumbsOf(ids);
     const names = namesOf(ids);
     if (names.length) text = names.join(', ');
+  }
+  // A mixed ancestry says so and names both halves, so it never reads as the first card alone.
+  if (key === 'ancestry' && d.mixedAncestry) {
+    const halves = [d.mixedAncestry.first, d.mixedAncestry.second].map((id) => (id ? (cardById(id)?.label ?? ctx.libTitle(id) ?? 'Homebrew card') : 'second not chosen'));
+    text = `Mixed ancestry: ${halves.join(' and ')}`;
   }
   if (key === 'inventory' && d.inventoryLibIds.length) text = [text, ...d.inventoryLibIds.map((id) => ctx.libTitle(id) ?? 'Homebrew item')].filter(Boolean).join(', ');
   if (!thumbs.length && !text && done && d.skipped?.includes(key)) text = 'Skipped';

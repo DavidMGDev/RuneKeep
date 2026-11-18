@@ -21,6 +21,7 @@ import { useScreenDim } from '@/lib/screen-dim';
 
 import { TRAIT_ORDER } from '../character';
 import type { DomainCardInfo } from './domain-card-info';
+import { useDesktop } from '@/hooks/use-desktop';
 
 type StepKey = 'summary' | 'domain' | 'exp' | 'advance' | 'companion';
 
@@ -162,6 +163,8 @@ export function LevelUpPanel({
   const removeCompanion = (key: string) => setCompanionTakes((t) => { const i = t.lastIndexOf(key); if (i < 0) return t; playSfx('cardDeselect'); return t.filter((_, j) => j !== i); });
   const companionDone = companionTakes.length === companionPicks;
   const carRef = useRef<StraightCarouselHandle>(null);
+  // Desktop sheet: the wheel and a right-drag move the deck, and its edges fade, as in character creation.
+  const desktopSheet = !!useDesktop();
 
   // The new tier Experience the player is writing now (#211): predict the id applyLevelUp will give
   // it so the '+1 to two Experiences' advancement can target it, and count it toward availability.
@@ -410,7 +413,7 @@ export function LevelUpPanel({
                 {items.length === 0 ? (
                   <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 8 }}>No new domain cards available at this level.</Text>
                 ) : (
-                  <StraightCarousel ref={carRef} items={items} selectedIds={selectedDomains} onIndexChange={setCenterIdx} />
+                  <StraightCarousel ref={carRef} items={items} selectedIds={selectedDomains} onIndexChange={setCenterIdx} pointer={desktopSheet} />
                 )}
               </View>
               {items.length > 0 ? (

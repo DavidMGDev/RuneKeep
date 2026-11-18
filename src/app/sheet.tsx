@@ -4,6 +4,8 @@ import { View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { PopupDialog } from '@/components/popup-dialog';
+import { CoachTour, type CoachStep } from '@/components/coach-tour';
+import { useDesktop } from '@/hooks/use-desktop';
 import { Rune } from '@/constants/theme';
 import { LoadingScreen } from '@/components/loading-screen';
 import { RedesignedSheet } from '@/features/character-sheet/sheet/redesigned-sheet';
@@ -14,10 +16,20 @@ import { withClassCards } from '@/lib/played-class';
 import { shouldShow } from '@/lib/onboarding-store';
 import { playSfx } from '@/lib/sfx';
 
+/** The desktop sheet's first-time tips, each pointing at the part it explains. */
+const SHEET_TIPS: CoachStep[] = [
+  { target: 'sheet-table', title: 'Your table', body: 'Your cards sit here, the hand along the bottom. Click a card to bring it into focus and read it; its controls sit under it. Right click any card for everything else it can do.' },
+  { target: 'sheet-decks', title: 'Decks', body: 'Switch decks here, or press Q and E. Manage cards and Sort this deck sit underneath.' },
+  { target: 'sheet-vitals', title: 'Hit Points and Stress', body: 'Each row is split down the middle: one side clears, the other marks. Hold for the full effect, or double click when things move fast. Hope and Armor work the same way.' },
+  { target: 'sheet-actions', title: 'Rest, level up, state and dice', body: 'Each opens its panel beside the sheet. Esc closes whichever panel is on top.' },
+  { target: 'sheet-portrait', title: 'Your portrait', body: 'Click to add a picture. Double click to open this character\'s moodboard, which opens locked: hold the lock for a second before you move anything.' },
+];
+
 /** The play surface. With an id, loads that CharacterFile; without one, the sample character. */
 export default function Sheet() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const router = useRouter();
+  const desktop = !!useDesktop();
   const [state, setState] = useState<{ loaded: boolean; file: CharacterFile | null }>({ loaded: !id, file: null });
 
   useEffect(() => {
@@ -56,7 +68,8 @@ export default function Sheet() {
   // broken.
   const tourPushed = useRef(false);
   useEffect(() => {
-    if (!state.loaded || !state.file || tourPushed.current) return;
+    // Desktop teaches with tips on the sheet itself (CoachTour below), not a tour page over it.
+    if (!state.loaded || !state.file || tourPushed.current || desktop) return;
     // The sheet's id has to travel with the return address, or dismissing the tour would come back
     // to a sheet with no character.
     // Deferred for the same reason as the creator's tour: two history entries in one tick collapse
@@ -66,7 +79,7 @@ export default function Sheet() {
       if (shouldShow('sheet')) router.push('/onboarding?tour=sheet' as Href);
     }, 0);
     return () => clearTimeout(t);
-  }, [state.loaded, state.file, router]);
+  }, [state.loaded, state.file, router, desktop]);
 
   /**
    * Cover the hand-back from the tour (v0.29.0).
@@ -106,6 +119,7 @@ export default function Sheet() {
   return (
     <View style={{ flex: 1 }}>
       <RedesignedSheet characterFile={state.file ?? undefined} />
+      {desktop ? <CoachTour id="sheet" steps={SHEET_TIPS} active /> : null}
       {/* Above everything, untouchable, and transparent except for the moment after the tour hands
           back. See `cover` above. */}
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: Rune.ink, zIndex: 100000 }, coverStyle]} />

@@ -30,6 +30,7 @@ import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
 
 import { FullScreenPanel } from './full-screen-panel';
 import { NumberKeypad } from './number-keypad';
+import { useDesktop } from '@/hooks/use-desktop';
 
 // #252: character cards (domain/ancestry/community/subclass/class) browsed as the creation carousel
 // (card ART, no names); weapons/armor stay a list. v0.14.0: Loot + Consumables are back as list tabs —
@@ -146,6 +147,8 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, itemsOnly, onAdd
   const [domain, setDomain] = useState<string>(DOMAINS[0]); // v0.13.2: string, not the catalog union — custom expansions add their own domain names
   const [centerIdx, setCenterIdx] = useState(0);
   const carRef = useRef<StraightCarouselHandle>(null);
+  // Desktop sheet: the wheel and a right-drag move the deck, and its edges fade, as in character creation.
+  const desktopSheet = !!useDesktop();
   /**
    * v0.28.0: adding a card CLOSES the catalogue, unless you are shopping.
    *
@@ -452,7 +455,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, itemsOnly, onAdd
               <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, textAlign: 'center', marginTop: 24 }}>Nothing here yet. Try another tab, or author a custom card below.</Text>
             )
           ) : (
-            <StraightCarousel key={`${cat}-${domain}`} ref={carRef} items={items} selectedIds={[...acquiredIds]} onIndexChange={setCenterIdx} />
+            <StraightCarousel key={`${cat}-${domain}`} pointer={desktopSheet} ref={carRef} items={items} selectedIds={[...acquiredIds]} onIndexChange={setCenterIdx} />
           )}
         </View>
       ) : (

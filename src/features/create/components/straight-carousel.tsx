@@ -98,6 +98,37 @@ const CARD_SCALE = 0.70; // resting center card (#108: a touch smaller so it cle
  */
 const REST_FRAC = 0.43;
 const SIDE_FALLOFF = 0.085; // per-step shrink
+/** Desktop: wheel pixels per card. */
+const WHEEL_PX = 50;
+/** Desktop: how much of the deck's width, at each side, fades out (percent). */
+const EDGE_FADE = 17;
+/** Desktop fan: the share of a neighbour the centre card may cover (the user: at most 5%). */
+const FAN_NEAR_OVERLAP = 0.04;
+
+/**
+ * Desktop fan (v0.45.0): how far from the centre a card `ad` steps out sits, for a centre card `w0` wide.
+ * The neighbours stand almost clear of the centre so they can be read; from there each card shows `show` of
+ * itself past the one inside it, so the outer cards pack in towards the centre. Fractions interpolate.
+ */
+export function fanX(ad: number, side: number, show: number, w0: number): number {
+  'worklet';
+  const w = (k: number) => w0 * (1 - Math.min(k, side + 1.4) * SIDE_FALLOFF);
+  const k = Math.floor(ad);
+  let x = 0;
+  let next = 0;
+  for (let i = 1; i <= k + 1; i++) {
+    const step = i === 1 ? w(0) / 2 + w(1) / 2 - FAN_NEAR_OVERLAP * w(1) : w(i - 1) / 2 + show * w(i) - w(i) / 2;
+    if (i <= k) x += step;
+    else next = step;
+  }
+  return x + next * (ad - k);
+}
+
+/** The half-width a fanned deck at `zoom` needs, to the outer edge of its last card. */
+export function fanHalfWidth(zoom: number, side: number, show: number): number {
+  const w0 = FORGED_W * CARD_SCALE * zoom;
+  return fanX(side, side, show, w0) + (w0 * (1 - side * SIDE_FALLOFF)) / 2;
+}
 const GRIND_TIGHTEN_L = 0.52; // straight-line grind: tighter…
 const GRIND_SHRINK_L = 0.45; // …and smaller, never curved
 const GEAR_SWIPE_L = 200; // grind: this many px sweep the whole deck
@@ -194,6 +225,8 @@ interface SlotProps {
   spacing: number;
   /** Cards shown each side of the centre (2 on a phone). */
   side: number;
+  /** Desktop fan: how much of each outer card shows past the one inside it; absent on a phone. */
+  show?: number;
   zoom: number;
   index: number;
   item: StraightItem;
@@ -221,7 +254,7 @@ interface SlotProps {
   crossTrait?: 1 | 2;
 }
 
-const Slot = memo(function Slot({ zoom, spacing, side, index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
+const Slot = memo(function Slot({ zoom, spacing, side, show, index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
   const slotStageScale = useStageScale();
   const coordScale = Platform.OS === 'web' ? slotStageScale : 1;
   const style = useAnimatedStyle(() => {
@@ -230,8 +263,6 @@ const Slot = memo(function Slot({ zoom, spacing, side, index, item, count, width
     const ad = Math.abs(d);
     // With more cards showing (desktop), each step out is a little shorter than the last, so the outer cards
     // sit compact rather than drifting apart as they shrink.
-    const run = side > 2 ? ad - 0.07 * ad * Math.max(0, ad - 1) : ad;
-    let x = Math.sign(d) * run * spacing * (1 - GRIND_TIGHTEN_L * g);
     // v0.26.0: shrink to fit a short rail.
     //
     // The card is a fixed 322dp tall and sits at REST_FRAC down the rail, so on a short viewport its
@@ -241,10 +272,13 @@ const Slot = memo(function Slot({ zoom, spacing, side, index, item, count, width
     // below that it stops being readable and something else has gone wrong.
     // Desktop (v0.45.0) zooms the resting card; the rail still caps it, so it never outgrows the space it has.
     const fit = railH.value > 0 ? Math.min(zoom, Math.max(0.5, railH.value / (FORGED_H * CARD_SCALE / REST_FRAC / 2))) : zoom;
+    const run = show !== undefined ? fanX(ad, side, show, FORGED_W * CARD_SCALE * fit) : ad * spacing;
+    let x = Math.sign(d) * run * (1 - GRIND_TIGHTEN_L * g);
     let scale = CARD_SCALE * fit * (1 - Math.min(ad, side + 1.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
     let y = 0;
     // visibility window: solid then a quick fade band; widens while grinding
-    const cut = side + 0.9 + 2.6 * g;
+    // The desktop fan keeps one more card each side, which the deck's edge fade dissolves.
+    const cut = side + 0.9 + (show !== undefined ? 1.2 : 0) + 2.6 * g;
     let opacity = Math.min(1, Math.max(0, (cut - ad) / 0.45));
     let z = Math.round(100 - ad * 10);
     const f = fs.value;
@@ -381,7 +415,7 @@ export const StraightCarousel = forwardRef<
     /** v0.45.0: extra room above the fullscreen card, for a carousel whose box starts below a header (desktop). */
     fsTopOffset?: number;
     /** v0.45.0 desktop: px between the centre card and its neighbour, and how many cards show each side. */
-    spread?: { spacing: number; side: number };
+    spread?: { spacing: number; side: number; show?: number };
     /** v0.45.0 desktop: the mouse wheel steps the deck, a right-button drag grinds it like the gear, and a
      *  focused multi-page card shows arrows to page it. */
     pointer?: boolean;
@@ -530,7 +564,7 @@ export const StraightCarousel = forwardRef<
    * sheet's does: mid-spring the deck sits BETWEEN detents, so rounding it gives back the card being left,
    * and a quick second press then advances one card instead of two.
    */
-  const stepBy = useCallback((n: number) => {
+  const stepBy = useCallback((n: number, quick = false) => {
     if (!count || !n) return;
     if (fsOpen) closeFs();
     const base = keyAim.value >= 0 ? keyAim.value : Math.round(pos.value);
@@ -538,13 +572,15 @@ export const StraightCarousel = forwardRef<
     if (next === base) return;
     cancelAnimation(pos);
     keyAim.value = next;
-    pos.value = withSpring(next, SNAP_SPRING, () => {
+    const done = () => {
       'worklet';
       // Whoever still owns the aim clears it. Not gated on finishing: a drag that interrupts a
       // keyboard step must drop the aim too, or the next press measures from a phantom.
       if (keyAim.value === next) keyAim.value = -1;
-    });
-    playSfx('carouselScroll');
+    };
+    // The wheel glides on a short ease-out (a spring per notch felt sluggish); keys keep the snap spring.
+    // No sound here: `onCenter` pips once for every card the deck passes.
+    pos.value = quick ? withTiming(next, { duration: 170, easing: Easing.out(Easing.cubic) }, done) : withSpring(next, SNAP_SPRING, done);
   }, [count, fsOpen, closeFs, keyAim, pos]);
 
   // Desktop pointer (v0.45.0): the wheel steps the deck (or pages a focused multi-page card), and a right-button
@@ -567,12 +603,19 @@ export const StraightCarousel = forwardRef<
       // Lines and pages (a notched mouse wheel in some browsers) count as the pixels they stand for.
       const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? el.clientHeight || 600 : 1;
       acc += (Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * unit;
-      if (Math.abs(acc) < 60) return;
-      const dir = acc > 0 ? 1 : -1;
-      acc = 0;
       const w = wheelRef.current;
-      if (w.fsOpen) w.flip(dir);
-      else w.stepBy(dir);
+      if (w.fsOpen) {
+        // A focused card turns one page per notch.
+        if (Math.abs(acc) < 60) return;
+        w.flip(acc > 0 ? 1 : -1);
+        acc = 0;
+        return;
+      }
+      // The deck: a card per WHEEL_PX, so one notch (about 100 px) moves two and a fast spin runs through many.
+      const n = Math.trunc(acc / WHEEL_PX);
+      if (!n) return;
+      acc -= n * WHEEL_PX;
+      w.stepBy(n, true);
     };
     const onDown = (e: PointerEvent) => { rightDown.value = e.button === 2; };
     const onUp = () => { rightDown.value = false; };
@@ -590,6 +633,16 @@ export const StraightCarousel = forwardRef<
       el.removeEventListener('contextmenu', onMenu);
     };
   }, [pointer, rightDown]);
+
+  // Desktop: the deck fades out at its left and right edges instead of cutting cards off at the border. Lifted
+  // while a card is focused, so the focused card is never dimmed at its sides.
+  useEffect(() => {
+    const el = rootRef.current as unknown as HTMLElement | null;
+    if (!pointer || Platform.OS !== 'web' || !el?.style) return;
+    const mask = fsOpen ? '' : `linear-gradient(to right, transparent 0, rgba(0,0,0,0.35) ${EDGE_FADE / 2}%, #000 ${EDGE_FADE}%, #000 ${100 - EDGE_FADE}%, rgba(0,0,0,0.35) ${100 - EDGE_FADE / 2}%, transparent 100%)`;
+    el.style.setProperty('mask-image', mask);
+    el.style.setProperty('-webkit-mask-image', mask);
+  }, [pointer, fsOpen]);
 
   // Device-back / parent close hook (#108): consume the back press when a card is focused.
   useImperativeHandle(
@@ -826,6 +879,7 @@ export const StraightCarousel = forwardRef<
                     zoom={zoom}
                     spacing={spacing}
                     side={side}
+                    show={spread?.show}
                     index={i}
                     item={item}
                     count={count}
