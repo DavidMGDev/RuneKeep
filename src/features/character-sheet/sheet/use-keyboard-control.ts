@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
 import { intentFor, type KeyContext } from '@/lib/keybinds';
+import { useScreenFocus } from '@/hooks/use-screen-focus';
 
 import { useCarousel } from '../carousel-context';
 
@@ -23,10 +24,12 @@ export function useKeyboardControl({ overlay, onConfirm, onDismiss }: {
 }) {
   const { stepBy, openCardAt, closeFullscreen, collapse, centerIndex, focusIndex, machineState, editing, enterEdit, exitEdit, toggleCard, toggleRaise, decks, category, cycleCategory } = useCarousel();
 
+  const front = useScreenFocus();
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
 
     const onKey = (e: KeyboardEvent) => {
+      if (!front()) return; // the sheet is covered (a tour on top): its keys are not ours
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       const ctx: KeyContext = {
@@ -97,5 +100,5 @@ export function useKeyboardControl({ overlay, onConfirm, onDismiss }: {
 
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [overlay, onConfirm, onDismiss, stepBy, openCardAt, closeFullscreen, collapse, centerIndex, focusIndex, machineState, editing, enterEdit, exitEdit, toggleCard, toggleRaise, decks, category, cycleCategory]);
+  }, [overlay, onConfirm, onDismiss, stepBy, openCardAt, closeFullscreen, collapse, centerIndex, focusIndex, machineState, editing, enterEdit, exitEdit, toggleCard, toggleRaise, decks, category, cycleCategory, front]);
 }

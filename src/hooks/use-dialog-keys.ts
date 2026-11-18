@@ -1,7 +1,9 @@
 import { type RefObject, useEffect, useRef } from 'react';
 
+import { useScreenFocus } from './use-screen-focus';
+
 /** Open dialogs that hold the keyboard, in open order. The newest one that is not inert answers. */
-const stack: { id: symbol; root: HTMLElement }[] = [];
+const stack: { id: symbol; root: HTMLElement; front: () => boolean }[] = [];
 const live = (root: HTMLElement) => !root.closest('[inert]');
 
 /**
@@ -17,11 +19,13 @@ export function useDialogKeys(rootRef: RefObject<unknown>, { enabled, onEscape, 
   escRef.current = onEscape;
   const labelRef = useRef(initialLabel);
   labelRef.current = initialLabel;
+  // A dialog on a covered screen (a tour pushed over it) never answers.
+  const front = useScreenFocus();
   useEffect(() => {
     if (!enabled || typeof document === 'undefined') return;
     const root = rootRef.current as HTMLElement | null;
     if (!root?.querySelectorAll) return;
-    const me = { id: Symbol('dialog'), root };
+    const me = { id: Symbol('dialog'), root, front };
     stack.push(me);
     const before = document.activeElement as HTMLElement | null;
     const focusables = () =>
@@ -33,7 +37,7 @@ export function useDialogKeys(rootRef: RefObject<unknown>, { enabled, onEscape, 
     const onKey = (e: KeyboardEvent) => {
       // An IME is composing (Escape cancels its candidate list, not the dialog), or someone already handled it.
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
-      const top = [...stack].reverse().find((d) => live(d.root));
+      const top = [...stack].reverse().find((d) => live(d.root) && d.front());
       if (top?.id !== me.id) return;
       if (e.key === 'Escape' && escRef.current) { e.preventDefault(); escRef.current(); return; }
       if (e.key !== 'Tab') return;
@@ -51,5 +55,5 @@ export function useDialogKeys(rootRef: RefObject<unknown>, { enabled, onEscape, 
       // A frame later: whatever made the opener inert while this was up (the sheet's modal state) clears first.
       requestAnimationFrame(() => { if (before?.isConnected) before.focus(); });
     };
-  }, [enabled, rootRef]);
+  }, [enabled, rootRef, front]);
 }

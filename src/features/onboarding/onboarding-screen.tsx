@@ -6,6 +6,7 @@ import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming
 import { AppScreen } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { useDesktopPage } from '@/hooks/use-desktop';
+import { useScreenFocus } from '@/hooks/use-screen-focus';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { finishTour, saveTourStep, type TourId, tourStep } from '@/lib/onboarding-store';
@@ -213,7 +214,7 @@ const DESKTOP_SHEET: Page[] = [
   },
   {
     title: 'Equip and act',
-    body: 'Under the focused card are its controls: Equip, Modifiers, and whatever else that card does. Space equips too.\n\nRight click any card for its menu: favourite it, move it to another deck, share it, or delete it.',
+    body: 'Under the focused card are its controls: Equip, Modifiers, and whatever else that card does. Space equips too.\n\nRight click any card for its menu: favourite it, move it to another deck, export it, or delete it.',
     render: () => <WelcomeDemo />,
   },
   {
@@ -223,14 +224,14 @@ const DESKTOP_SHEET: Page[] = [
   },
   {
     title: 'Decks and panels',
-    body: 'The decks are listed beside the table: click one, or press Q and E. Manage cards and Sort this deck sit underneath.\n\nRest, Level Up, State and Dice open their panels next to the sheet. Esc closes whichever is on top.',
+    body: 'The decks are listed beside the table: click one, or press Q and E. Manage cards and Sort this deck sit underneath.\n\nRest, Level Up and State open their panels next to the sheet, and Dice brings out the dice tray on the sheet itself. Esc closes whichever panel is on top.',
     render: () => <WelcomeDemo />,
   },
   DESKTOP_KEYS_PAGE,
   {
     title: 'Double click your portrait',
     body: 'Two clicks on your portrait open this character’s moodboard: a blank canvas that belongs to them, for faces, places, armour, anything you have collected.\n\nIt opens locked, so hold the lock for a second before you move anything.',
-    render: () => <WheelDemo />,
+    render: () => <WelcomeDemo />,
   },
 ];
 
@@ -335,12 +336,13 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value, transform: [{ translateY: (1 - fade.value) * 10 }] }));
 
   // Desktop keys: the arrows page through, Enter is Next, Escape skips.
+  const front = useScreenFocus();
   const keys = useRef({ next, go, finish, safeStep });
   keys.current = { next, go, finish, safeStep };
   useEffect(() => {
     if (!desktop || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || !front()) return;
       const k = keys.current;
       if (e.key === 'ArrowRight') { e.preventDefault(); k.next(); }
       else if (e.key === 'ArrowLeft' && k.safeStep > 0) { e.preventDefault(); k.go(k.safeStep - 1); }
@@ -349,7 +351,7 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [desktop]);
+  }, [desktop, front]);
 
   const nextLabel = last ? 'Got it' : blocked ? 'Try it first' : onInstallPage ? 'Not now' : 'Next';
   if (desktop) {

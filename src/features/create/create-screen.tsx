@@ -68,6 +68,7 @@ import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
 import { DeckStepRow, DeckTab, HeroColumn, type HeroRow, SectionDivider, Segmented } from './create-ui';
 import { useDesktopPage } from '@/hooks/use-desktop';
+import { useScreenFocus } from '@/hooks/use-screen-focus';
 import { useLayout } from '@/hooks/use-layout';
 import { ExperiencesTab } from './experiences-tab';
 import { QuickCardFlow } from '@/features/character-sheet/sheet/quick-card-flow';
@@ -478,6 +479,7 @@ export function CreateScreen() {
   /** The steps those packs ask the creator to ask (v0.43.0). */
   const customStepList = useMemo(() => customSteps(pickedCards), [pickedCards]);
   const desktop = useDesktopPage();
+  const screenFront = useScreenFocus();
   const { width: screenW } = useLayout();
   // Desktop: the side columns give way on a narrow window, and the deck grows into whatever the middle has.
   const sideW = Math.round(Math.min(CREATE_SIDE_W, Math.max(220, screenW * 0.19)));
@@ -1905,7 +1907,8 @@ export function CreateScreen() {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return; // a dialog on top already answered this key
+      // A dialog on top already answered this key, or the creator is covered (a tour pushed over it).
+      if (e.defaultPrevented || !screenFront()) return;
       const t = e.target as HTMLElement | null;
       const tag = t?.tagName;
       const intent = intentFor(
