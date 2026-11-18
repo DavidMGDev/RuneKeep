@@ -45,6 +45,8 @@ const HAND_SINK = 0.42; // how much of a hand card hangs below the window edge
 const MOVE_MS = 380;
 /** The token board's box: the phone's width, so its drawer lays out exactly as it does there. */
 const TOKEN_BOX_W = 412;
+/** The token drawer's dice list, measured: two rows of die and label, padding and border, plus a margin. */
+const DIE_MENU_H = 140;
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
 
 function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
@@ -115,6 +117,17 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
     setHoverId(null);
     setFocusId(id);
   }, [focusId]);
+  // Reorder (the phone's Edit Mode drag): the focused card moves one place, persisted through the same path.
+  const canReorder = !!ctx.onReorderCards && category !== FAVORITES_CATEGORY && deck.length > 1;
+  const moveFocused = useCallback((dir: -1 | 1) => {
+    const ids = deck.map((c) => c.id);
+    const at = focusId ? ids.indexOf(focusId) : -1;
+    const to = at + dir;
+    if (at < 0 || to < 0 || to >= ids.length || !ctx.onReorderCards) return;
+    [ids[at], ids[to]] = [ids[to], ids[at]];
+    playSfx('cardDragEnd');
+    ctx.onReorderCards([ids[to]], category, ids);
+  }, [deck, focusId, ctx, category]);
   const release = useCallback(() => {
     if (!focusId) return;
     playSfx('cardDeselect');
@@ -154,6 +167,8 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   // Keys (web): A/D or arrows walk the deck through the focus slot, Q/E or 1-9 change deck, Space equips,
   // Esc returns the focused card. Off while a panel is open or a field has focus.
   const keyState = { deck, focusId, overlay, menu, ring: ctx.ring };
+  const moveRef = useRef<(dir: -1 | 1) => void>(() => {});
+  moveRef.current = canReorder ? moveFocused : () => {};
   const keyRef = useRef(keyState);
   keyRef.current = keyState;
   useEffect(() => {
@@ -165,6 +180,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
       const ids = k.deck.map((c) => c.id), at = k.focusId ? ids.indexOf(k.focusId) : -1;
       if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } else release(); return; }
       if (k.menu) return; // the menu owns the keys while it is open
+      if (e.shiftKey && (key === 'arrowright' || key === 'd' || key === 'arrowleft' || key === 'a')) { e.preventDefault(); moveRef.current((key === 'arrowright' || key === 'd') ? 1 : -1); return; }
       if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + 1) % ids.length]); return; }
       if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at <= 0 ? ids.length - 1 : at - 1]); return; }
       // The provider plays the deck-switch sound itself.
@@ -217,7 +233,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   // Keyed by the card's REF, so every copy (Favorites included) shares one board, as on the phone.
   const tokenKey = focused ? focused.ref ?? focused.id : null;
   // Under the WHOLE controls block: a paged card adds its page row (about 50 px) above the buttons.
-  const drawerTop = 36 + focusW * 1.4 + 18 + ((focused?.faces?.length ?? 0) > 1 ? 92 : 42) + 10;
+  const drawerTop = 36 + focusW * 1.4 + 18 + ((focused?.faces?.length ?? 0) > 1 ? 92 : 42) + (canReorder ? 26 : 0) + 10; // + the position line
   const onPlaceToken = useCallback((t: PlacedToken) => { if (tokenKey) ctx.placeToken(tokenKey, t); }, [tokenKey, ctx]);
   const onRemoveToken = useCallback((id: string) => { if (tokenKey) ctx.removeToken(tokenKey, id); }, [tokenKey, ctx]);
   const onUpdateToken = useCallback((id: string, patch: Partial<PlacedToken>) => { if (tokenKey) ctx.updateToken(tokenKey, id, patch); }, [tokenKey, ctx]);
@@ -261,6 +277,8 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
             page={pages[focused.id] ?? 0}
             onPage={(p) => setPages((m) => ({ ...m, [focused.id]: p }))}
             onEdit={editableIds.has(focused.id) ? () => onEditCard(focused.id) : undefined}
+            position={canReorder ? { at: deck.findIndex((c) => c.id === focused.id), of: deck.length } : undefined}
+            onMove={canReorder ? moveFocused : undefined}
             onRelease={release}
           />
         ) : null}
@@ -275,7 +293,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
               drawerColor={ctx.tokenColor || TOKEN_COLORS[0]}
               scale={1}
               drawerTop={drawerTop}
-              dieMenuUp={drawerTop + 60 + 6 + 110 > tableH}
+              dieMenuUp={drawerTop + 60 + 6 + DIE_MENU_H > tableH}
               onPlace={onPlaceToken}
               onRemove={onRemoveToken}
               onUpdate={onUpdateToken}
@@ -393,7 +411,7 @@ function Layered({ item, full }: { item: { id: string; source: CardItem['source'
 }
 
 /** The controls under the focused card: the phone's focused-card row, plus what a hold or a page swipe does there. */
-function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease }: { item: CardItem; top: number; cx: number; page: number; onPage: (p: number) => void; onEdit?: () => void; onRelease: () => void }) {
+function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease, position, onMove }: { item: CardItem; top: number; cx: number; page: number; onPage: (p: number) => void; onEdit?: () => void; onRelease: () => void; position?: { at: number; of: number }; onMove?: (dir: -1 | 1) => void }) {
   const ctx = useCarousel();
   const ref = item.ref ?? item.id;
   const on = ctx.enabledIds.has(ref);
@@ -420,9 +438,12 @@ function FocusControls({ item, top, cx, page, onPage, onEdit, onRelease }: { ite
           <DeskButton label="Next page" glyph="›" onPress={() => { playSfx('transitionStart'); onPage((page + 1) % faces); }} />
         </View>
       ) : null}
-      <View style={{ flexDirection: 'row', gap: 8 }}>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        {onMove && position && position.at > 0 ? <DeskButton label="Move left in the deck" glyph="←" onPress={() => onMove(-1)} /> : null}
         {shown.map((b) => <DeskButton key={b.label} label={b.label} onPress={b.onPress} active={b.active} />)}
+        {onMove && position && position.at < position.of - 1 ? <DeskButton label="Move right in the deck" glyph="→" onPress={() => onMove(1)} /> : null}
       </View>
+      {position ? <Text style={{ color: Rune.muted, fontFamily: Body.medium, fontSize: 11, letterSpacing: 0.6 }}>{`Card ${position.at + 1} of ${position.of}. Shift with A or D moves it.`}</Text> : null}
     </View>
   );
 }

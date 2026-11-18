@@ -193,7 +193,9 @@ function PortraitFrame() {
  * not zoom, which is what makes "nothing can be lost" a promise the app can keep: a centre is clamped
  * inside the canvas, and the image list can always bring something back.
  */
-export function MoodboardScreen({ items, usePortrait, background, onChange, onSetPortrait, onUsePortrait, onBackground, onClose }: {
+export function MoodboardScreen({ items, usePortrait, background, onChange, onSetPortrait, onUsePortrait, onBackground, onClose, backRef }: {
+  /** Set by the sheet, so a browser Back runs the same steps as the device key (v0.44.0). */
+  backRef?: React.MutableRefObject<(() => void) | null>;
   items: MoodboardItem[];
   /** v0.34.1: leaving the board saves a picture of it over the character's portrait. */
   usePortrait: boolean;
@@ -365,16 +367,21 @@ export function MoodboardScreen({ items, usePortrait, background, onChange, onSe
    * up and back went all the way out to the character list. It leaves the same way the X does,
    * portrait capture and all, because that is what "close and save" means here.
    */
-  useEffect(() => {
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (picking) { setPicking(false); return true; }
-      if (layers) { setLayers(false); return true; }
-      if (menu) { setMenu(null); return true; }
-      void leave();
-      return true;
-    });
-    return () => sub.remove();
+  const back = useCallback(() => {
+    if (picking) { setPicking(false); return; }
+    if (layers) { setLayers(false); return; }
+    if (menu) { setMenu(null); return; }
+    void leave();
   }, [layers, leave, menu, picking]);
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { back(); return true; });
+    return () => sub.remove();
+  }, [back]);
+  useEffect(() => {
+    if (!backRef) return;
+    backRef.current = back;
+    return () => { backRef.current = null; };
+  }, [backRef, back]);
 
   const onMenu = useCallback((id: string, x: number, y: number) => { playSfx('buttonTap'); setMenu({ id, x, y }); }, []);
   const onGrab = useCallback(() => setDragging(true), []);

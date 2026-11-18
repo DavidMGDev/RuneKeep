@@ -16,7 +16,7 @@ import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DesktopPortal } from '@/components/desktop-portal';
-import { clearSheetSpare, endLeave, isLeavingSpares, leaveThroughSpares, markSheetSpare, sheetSpareHere } from '@/hooks/use-back-guard';
+import { armSheetSpare, clearSheetSpare, endLeave, isLeavingSpares, leaveThroughSpares, onSheetSpare, poppedSheetSpare } from '@/hooks/use-back-guard';
 import { DesktopContext, useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -667,7 +667,7 @@ function SheetBackGuard(props: BackGuardState) {
   menuOpenRef.current = menuOpen;
   const editingRef = useRef(editing);
   editingRef.current = editing;
-  useEffect(() => { endLeave(); if (!sheetSpareHere()) clearSheetSpare(); }, []);
+  useEffect(() => { endLeave(); if (!onSheetSpare()) clearSheetSpare(); }, []);
   useFocusEffect(
     useCallback(() => {
       const onBack = () => {
@@ -711,19 +711,12 @@ function SheetBackGuard(props: BackGuardState) {
         // The spare carries the router's own entry (its `id`) with our flag on top. A spare WITHOUT the id made
         // React Navigation treat the Back as a deep link and reset the root, remounting the sheet and dropping
         // whatever was open (a half-written card included). One spare at a time: never stack a second.
-        // Whether one is armed is tracked beside the flag (see `setSheetSpare`): the router can strip the flag.
-        const arm = () => {
-          const st = window.history.state as { rkSheet?: boolean } | null;
-          if (st?.rkSheet) { markSheetSpare(); return; }
-          if (sheetSpareHere()) return;
-          window.history.pushState({ ...(st ?? {}), rkSheet: true }, '');
-          markSheetSpare();
-        };
+        const arm = armSheetSpare;
         arm();
         const onPop = () => {
           if (isLeavingSpares()) return; // a confirmed leave stepping off the spare: not a Back to answer
-          clearSheetSpare(); // this Back consumed it
-          onBack();
+          // Only a Back off our spare is a Back to answer; a jump through the history menu just re-arms.
+          if (poppedSheetSpare()) { clearSheetSpare(); onBack(); }
           // Re-arm. The entry we just consumed has to be replaced or the next back leaves for real.
           arm();
         };
@@ -2814,11 +2807,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const moodboard = useMemo(() => readMoodboard(file?.moodboard), [file?.moodboard]);
   const onMoodboard = useCallback((next: MoodboardItem[]) => mutateFile({ moodboard: next }), [mutateFile]);
   const onOpenBoard = useCallback(() => setBoardOpen(true), []);
+  const boardBackRef = useRef<(() => void) | null>(null);
   // The moodboard replaces the sheet and with it the sheet's Back guard. While it is up, browser Back closes it
   // (as the hardware key does), and the spare that Back consumed stops being tracked; the guard re-arms on return.
   useEffect(() => {
     if (!boardOpen || Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const onPop = () => { if (isLeavingSpares()) return; clearSheetSpare(); setBoardOpen(false); };
+    const onPop = () => {
+      if (isLeavingSpares() || !poppedSheetSpare()) return;
+      clearSheetSpare();
+      boardBackRef.current?.();
+      armSheetSpare(); // the board may stay open (it closed a picker): keep the next Back caught
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, [boardOpen]);
@@ -3033,6 +3032,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       // board that has no idea they are open): no desktop context below this point.
       <DesktopContext.Provider value={null}>
       <MoodboardScreen
+        backRef={boardBackRef}
         items={moodboard}
         usePortrait={!!file?.moodboardAsPortrait}
         onChange={onMoodboard}
