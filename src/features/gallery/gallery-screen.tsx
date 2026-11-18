@@ -1,4 +1,4 @@
-import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -489,6 +489,7 @@ export function GalleryScreen() {
   /** Desktop: the card in the focus pane. A click focuses; the reader is one button away. */
   const [focusId, setFocusId] = useState<string | null>(null);
   const listRef = useRef<FlatList<GalleryItem>>(null);
+  const gridEl = useRef<HTMLElement | null>(null);
   // v0.13.1 (#357): hold-to-share — the NFC send panel for the held card (DMs granting cards).
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; items?: GalleryItem[] } | null>(null);
   /**
@@ -561,6 +562,8 @@ export function GalleryScreen() {
     return () => { live = false; };
   }, []);
   const cards = useMemo(() => applyFilters(filters, gated, enabledExp ?? new Set(), library, libPack), [filters, gated, enabledExp, library, libPack]);
+  /** Every card, unfiltered: picks outlive a filter change, so sharing them reads from here, not from what is on screen. */
+  const everything = useMemo(() => applyFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set(), sources: new Set(), packs: new Set() }, gated, enabledExp ?? new Set(), library, libPack), [gated, enabledExp, library, libPack]);
   /** The kinds installed packs have invented, as filter chips of their own (v0.43.0). */
   const typeKinds = useMemo(() => contentTypes(library).map((t) => ({ key: typeKindKey(t.id), label: t.title.trim() })), [library]);
   const toggle = useCallback(<T,>(set: Set<T>, v: T): Set<T> => {
@@ -577,7 +580,7 @@ export function GalleryScreen() {
   // Desktop (v0.45.0): a filter sidebar, the grid, and a focus pane; the grid keeps at least four columns.
   const paneW = Math.round(Math.min(420, Math.max(340, width * 0.24)));
   const colGap = desktop ? 14 : 10;
-  const gridW = desktop ? width - 36 - DESK_SIDE_W - paneW - DESK_GAP * 2 : Math.min(width, maxContent);
+  const gridW = desktop ? width - 68 - DESK_SIDE_W - paneW - DESK_GAP * 2 : Math.min(width, maxContent);
   const cols = desktop ? Math.max(4, Math.floor((gridW + colGap) / (176 + colGap))) : gridColumns(gridW, isTablet);
   const cellW = desktop ? Math.floor((gridW - (cols - 1) * colGap) / cols) : Math.floor((gridW - 36 - (cols - 1) * 10) / cols);
   const cellH = Math.round(cellW * 1.4);
@@ -662,8 +665,8 @@ export function GalleryScreen() {
   const onHoldGroup = useCallback((item: GalleryItem) => {
     focusHaptic();
     const ids = selected.has(item.id) ? selected : new Set([item.id]);
-    shareItems(cards.filter((c) => ids.has(c.id)));
-  }, [selected, cards, shareItems]);
+    shareItems(everything.filter((c) => ids.has(c.id)));
+  }, [selected, everything, shareItems]);
 
   const openCard = useCallback((item: GalleryItem) => {
     if (!selecting && desktop) { playSfx('cardSelect'); setFocusId(item.id); return; }
@@ -676,13 +679,16 @@ export function GalleryScreen() {
   // Keys (desktop): arrows walk the grid, Escape closes the reader. Off while a share or print panel is up.
   const keys = useRef({ cards, cols, focusedId, reading: !!reading, busy: false });
   keys.current = { cards, cols, focusedId, reading: !!reading, busy: !!nfcSend || printJob.busy };
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!desktop || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       const k = keys.current;
-      if (k.busy || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+      if (k.busy || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
       if (e.key === 'Escape' && k.reading) { setReading(null); return; }
       if (k.reading) return;
+      // Arrows belong to the grid: from the sidebar (a chip, Select cards) they scroll it as usual.
+      const t = e.target as HTMLElement | null;
+      if (t && t !== document.body && !gridEl.current?.contains(t)) return;
       const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' ? k.cols : e.key === 'ArrowUp' ? -k.cols : 0;
       if (!step || !k.cards.length) return;
       e.preventDefault();
@@ -695,7 +701,7 @@ export function GalleryScreen() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [desktop]);
+  }, [desktop]));
   const renderCard = useCallback(
     ({ item }: { item: GalleryItem }) => (
       <GalleryCell item={item} cellW={cellW} cellH={cellH} selecting={selecting} selected={selected.has(item.id)} focused={desktop && !selecting && item.id === focusedId} onOpen={openCard} onHold={selecting ? onHoldGroup : undefined} />
@@ -793,12 +799,12 @@ export function GalleryScreen() {
             <View style={{ gap: 8, marginTop: 4 }}>
               <RuneButton label={selecting ? 'Stop selecting' : 'Select cards'} kind="secondary" dense height={36} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
               {selecting && selected.size ? (
-                <RuneButton label={`Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(cards.filter((c) => selected.has(c.id)))} />
+                <RuneButton label={`Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(everything.filter((c) => selected.has(c.id)))} />
               ) : null}
               {selecting ? <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 16 }}>Click cards to pick them, then share the set.</Text> : null}
             </View>
           </ScrollView>
-          <View style={{ width: gridW }}>
+          <View ref={(v) => { gridEl.current = v as unknown as HTMLElement | null; }} style={{ width: gridW }}>
             <FlatList
               ref={listRef}
               key={`cols-${cols}`}
@@ -809,8 +815,8 @@ export function GalleryScreen() {
               contentContainerStyle={{ gap: 12, paddingBottom: 28, paddingTop: 6 }}
               showsVerticalScrollIndicator={false}
               windowSize={5}
-              initialNumToRender={cols * 4}
-              maxToRenderPerBatch={cols * 2}
+              initialNumToRender={4}
+              maxToRenderPerBatch={2}
               updateCellsBatchingPeriod={50}
               getItemLayout={getRowLayout}
               onScrollToIndexFailed={() => {}}
@@ -965,10 +971,13 @@ function kindLine(item: GalleryItem): string {
  */
 function ArchiveFocus({ item, width, onShare, onPrint, onOpen }: { item: GalleryItem | null; width: number; onShare?: () => void; onPrint?: () => void; onOpen?: () => void }) {
   const { height } = useLayout();
-  const [page, setPage] = useState(0);
+  const [pageState, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [item?.id]);
   const w = Math.round(Math.min(width - 24, (height - 330) / 1.4));
   const h = w * 1.4;
+  // The page may belong to the PREVIOUS card for one render (the reset is an effect), so it is clamped here.
+  const pageCount = item?.type === 'class' ? 1 + featurePages(item.def.key).length : 1;
+  const page = Math.min(pageState, pageCount - 1);
   if (!item) {
     return (
       <View style={{ width, alignItems: 'center', justifyContent: 'center' }}>

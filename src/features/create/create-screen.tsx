@@ -2247,6 +2247,8 @@ export function CreateScreen() {
                 crossOuts={deck === 'ancestry' ? ancestryCrossOuts : undefined}
                 reserveBottom={CONTROLS_BAND}
                 zoom={carouselZoom}
+                // Desktop: the middle column (which clips) starts under the page header, so the fullscreen card does too.
+                fsTopOffset={desktop ? 44 : 0}
                 // v0.36.1 (owner): the LEFT of the two middles. With two cards `floor(n/2)` opened on
                 // the last one, so the deck arrived already scrolled to the end, which reads as a
                 // mistake. `floor((n-1)/2)` is the true middle for odd counts and the left one for even.
@@ -2285,7 +2287,10 @@ export function CreateScreen() {
         </View>
     </>
   );
-  const heroRows: HeroRow[] = desktop ? deckList.map((d) => heroRowFor(d.key, d.label, draft, !d.stub && stepDone(d.key, draft), locked(d.key))) : [];
+  const libTitle = (id: string) => pickedCards.find((c) => c.id === id)?.title?.trim() || undefined;
+  const heroRows: HeroRow[] = desktop && !authoring
+    ? deckList.map((d) => heroRowFor(d.key, d.label, draft, !d.stub && stepDone(d.key, draft), locked(d.key), { libTitle, carried: carry.length - carryOff.size, carryTotal: carry.length }))
+    : [];
 
   return (
     <AppScreen
@@ -2348,7 +2353,12 @@ export function CreateScreen() {
               </View>
             </ScrollView>
             <View style={{ flex: 1, overflow: 'hidden' }}>{contentEl}</View>
-            <HeroColumn width={sideW} rows={heroRows} onJump={(k) => { if (!locked(k)) switchDeck(k); }} />
+            {authoring ? (
+              // A campaign's rules have no hero to show; the column stays, so the controls stay centred.
+              <View style={{ width: sideW }} />
+            ) : (
+              <HeroColumn width={sideW} rows={heroRows} onJump={(k) => { if (!locked(k)) switchDeck(k); }} />
+            )}
           </View>
         ) : (
           <>
@@ -2628,28 +2638,38 @@ const TRAIT_SHORT: Record<string, string> = { agility: 'Agility', strength: 'Str
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
 /** What one step holds so far, for the desktop hero column: catalog cards as thumbs, everything else as words. */
-function heroRowFor(key: DeckKey, label: string, d: Draft, done: boolean, isLocked: boolean): HeroRow {
+function heroRowFor(key: DeckKey, label: string, d: Draft, done: boolean, isLocked: boolean, ctx: { libTitle: (id: string) => string | undefined; carried: number; carryTotal: number }): HeroRow {
   const thumbsOf = (ids: (string | null | undefined)[]) => ids.map((id) => (id ? cardById(id)?.thumb : undefined)).filter((t): t is number => typeof t === 'number');
+  // A homebrew pick has no bundled thumb; it is named instead.
+  const namesOf = (ids: (string | null | undefined)[]) => ids.filter((id): id is string => !!id && !cardById(id)).map((id) => ctx.libTitle(id) ?? 'Homebrew card');
   let thumbs: number[] = [];
   let text = '';
+  let ids: (string | null | undefined)[] = [];
   switch (key) {
-    case 'class': text = d.className ? (CLASS_CARDS.find((c) => c.key === d.className)?.title ?? d.className) : ''; break;
-    case 'subclass': thumbs = thumbsOf([d.subclassCardId]); break;
-    case 'ancestry': thumbs = d.mixedAncestry ? thumbsOf([d.mixedAncestry.first, d.mixedAncestry.second]) : thumbsOf([d.ancestryCardId]); break;
-    case 'community': thumbs = thumbsOf([d.communityCardId]); break;
-    case 'domains': thumbs = thumbsOf(d.domainCardIds); break;
-    case 'transformation': thumbs = thumbsOf([d.transformationCardId]); break;
+    case 'class': text = d.customClassId ? (ctx.libTitle(d.customClassId) ?? 'Homebrew class') : d.className ? (CLASS_CARDS.find((c) => c.key === d.className)?.title ?? d.className) : ''; break;
+    case 'carry': text = ctx.carryTotal ? `Carrying ${ctx.carried} of ${ctx.carryTotal}` : ''; break;
+    case 'subclass': ids = [d.subclassCardId]; break;
+    case 'ancestry': ids = d.mixedAncestry ? [d.mixedAncestry.first, d.mixedAncestry.second] : [d.ancestryCardId]; break;
+    case 'community': ids = [d.communityCardId]; break;
+    case 'domains': ids = d.domainCardIds; break;
+    case 'transformation': ids = [d.transformationCardId]; break;
     case 'traits': text = Object.entries(d.traits).filter(([, v]) => typeof v === 'number').map(([k, v]) => `${TRAIT_SHORT[k] ?? k} ${signed(v as number)}`).join(', '); break;
     case 'experiences': text = d.experiences.map((e) => e.title).filter(Boolean).join(', '); break;
     case 'weapons': text = d.weaponsSkipped ? 'None' : [d.weaponPrimaryId, d.weaponSecondaryId].map((id) => (id ? weaponById(id)?.name : null)).filter(Boolean).join(', '); break;
     case 'armor': text = d.armorSkipped ? 'None' : d.armorId ? (armorById(d.armorId)?.name ?? '') : ''; break;
-    case 'inventory': text = d.inventoryItemIds.map((id) => lootById(id)?.name ?? id).join(', ') || (d.inventoryLibIds.length ? `${d.inventoryLibIds.length} homebrew` : ''); break;
+    case 'inventory': text = d.inventoryItemIds.map((id) => lootById(id)?.name ?? id).join(', '); break;
     case 'level': text = d.level ? `Level ${d.level}` : ''; break;
     default: {
       // A custom step holds the picks filed under its type.
-      if (isCustomStep(key)) thumbs = thumbsOf(d.customPicks?.[stepTypeId(key)] ?? []);
+      if (isCustomStep(key)) ids = d.customPicks?.[stepTypeId(key)] ?? [];
     }
   }
+  if (ids.length) {
+    thumbs = thumbsOf(ids);
+    const names = namesOf(ids);
+    if (names.length) text = names.join(', ');
+  }
+  if (key === 'inventory' && d.inventoryLibIds.length) text = [text, ...d.inventoryLibIds.map((id) => ctx.libTitle(id) ?? 'Homebrew item')].filter(Boolean).join(', ');
   if (!thumbs.length && !text && done && d.skipped?.includes(key)) text = 'Skipped';
   return { key, label, done, locked: isLocked, thumbs, text };
 }

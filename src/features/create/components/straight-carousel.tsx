@@ -371,8 +371,10 @@ export const StraightCarousel = forwardRef<
     reserveBottom?: number;
     /** v0.45.0: how much bigger the resting cards and their spacing are (a desktop window has the room). 1 = phone. */
     zoom?: number;
+    /** v0.45.0: extra room above the fullscreen card, for a carousel whose box starts below a header (desktop). */
+    fsTopOffset?: number;
   }
->(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0, zoom = 1 }, ref) {
+>(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0, zoom = 1, fsTopOffset = 0 }, ref) {
   const count = items.length;
   /**
    * v0.27.3: the deck, read through a ref so the GESTURES never re-identify.
@@ -680,7 +682,7 @@ export const StraightCarousel = forwardRef<
           if (grind.value !== 0) grind.value = withTiming(0, { duration: 220 });
           padTouch.value = false;
         }),
-    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, railHSV, panCoordScale, flip],
+    [count, gearRatio, pos, grind, fs, startPos, padTouch, scrolled, gearPrevTX, gearDirX, gearPipIdx, closeFs, heightSV, railHSV, panCoordScale, flip, zoom],
   );
 
   const veil = useAnimatedStyle(() => ({ opacity: fs.value * 0.86 }));
@@ -752,7 +754,7 @@ export const StraightCarousel = forwardRef<
                     focusIdx={focusIdx}
                     railH={railHSV}
                     railTopWin={railTopWin}
-                    insetTop={insets.top}
+                    insetTop={insets.top + fsTopOffset}
                     screenH={screenH}
                     selected={selectedIds.includes(item.id)}
                     crossTrait={crossOuts?.[item.id]}
