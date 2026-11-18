@@ -5,7 +5,7 @@ import { usePathname } from 'expo-router';
 
 import { Rune } from '@/constants/theme';
 import { createSideLayers } from '@/components/desktop-portal';
-import { type Desktop, DesktopContext, isDesktopWindow } from '@/hooks/use-desktop';
+import { type Desktop, DESKTOP_TABLE_MIN_W, DesktopContext, isDesktopWindow } from '@/hooks/use-desktop';
 import { DESIGN_H, DESIGN_W, FrameContext, TABLET_MIN_SW } from '@/hooks/use-layout';
 import { useDimLevel, useEdgeColor } from '@/lib/screen-dim';
 
@@ -87,7 +87,8 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const desktop = useMemo<Desktop | null>(() => {
     if (!desktopSheet) return null;
     const pad = DESKTOP_PORT_PAD;
-    const scale = (scaleH - pad * 2) / DESIGN_H;
+    // Height-fit, but never so wide that the table loses its minimum (a tall, narrow window).
+    const scale = Math.min((scaleH - pad * 2) / DESIGN_H, (width - DESKTOP_TABLE_MIN_W - pad) / DESIGN_W);
     const port = { left: pad, top: pad, width: DESIGN_W * scale, height: DESIGN_H * scale, scale };
     const side = { left: port.left + port.width + 10, top: port.top, width: SIDE_W, height: port.height };
     const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };

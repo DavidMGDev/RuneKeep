@@ -3,7 +3,7 @@ import GearFront from '../../../../assets/art/gears/U2-Outspike.svg';
 import GearBack from '../../../../assets/art/gears/U3-InnerSymbols.svg';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { DesktopPortal } from '@/components/desktop-portal';
@@ -15,6 +15,9 @@ import type { CardCategory, CardItem } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { Card, CardThumb } from '../components/card';
 import { type CornerTone, EnabledCorner } from '../components/enabled-corner';
+import { TokenBoard } from '../components/card-token-board';
+import type { PlacedToken } from '../components/card-tokens';
+import { TOKEN_COLORS } from '../components/card-tokens-data';
 import { CategoryGlyph } from './deck-toggle-icon';
 
 /**
@@ -38,6 +41,8 @@ const RAIL_W = 206;
 const NO_CARDS: CardItem[] = [];
 const HAND_SINK = 0.42; // how much of a hand card hangs below the window edge
 const MOVE_MS = 380;
+/** The token board's box: the phone's width, so its drawer lays out exactly as it does there. */
+const TOKEN_BOX_W = 412;
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
 
 function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
@@ -200,6 +205,19 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
 
   if (!desktop) return null;
   const focused = focusId ? deck.find((c) => c.id === focusId) ?? null : null;
+  // Tokens arrive once the focused card has SETTLED in the slot, as the phone's board waits for the fullscreen card.
+  const [tokensFor, setTokensFor] = useState<string | null>(null);
+  useEffect(() => {
+    setTokensFor(null);
+    if (!focusId) return;
+    const t = setTimeout(() => setTokensFor(focusId), reduced ? 0 : MOVE_MS);
+    return () => clearTimeout(t);
+  }, [focusId, reduced]);
+  // Keyed by the card's REF, so every copy (Favorites included) shares one board, as on the phone.
+  const tokenKey = focused ? focused.ref ?? focused.id : null;
+  const onPlaceToken = useCallback((t: PlacedToken) => { if (tokenKey) ctx.placeToken(tokenKey, t); }, [tokenKey, ctx]);
+  const onRemoveToken = useCallback((id: string) => { if (tokenKey) ctx.removeToken(tokenKey, id); }, [tokenKey, ctx]);
+  const onUpdateToken = useCallback((id: string, patch: Partial<PlacedToken>) => { if (tokenKey) ctx.updateToken(tokenKey, id, patch); }, [tokenKey, ctx]);
 
   return (
     <DesktopPortal to="table">
@@ -237,6 +255,24 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
             onEdit={editableIds.has(focused.id) ? () => onEditCard(focused.id) : undefined}
             onRelease={release}
           />
+        ) : null}
+        {focused && tokenKey && tokensFor === focused.id ? (
+          // The phone's token board over the focused card; its drawer sits under the focus controls, clear of the art.
+          <Animated.View pointerEvents="box-none" entering={reduced ? undefined : FadeIn.duration(200)} style={{ position: 'absolute', left: cx - TOKEN_BOX_W / 2, top: 0, width: TOKEN_BOX_W, height: tableH, zIndex: 700 }}>
+            <TokenBoard
+              cardRect={{ left: (TOKEN_BOX_W - focusW) / 2, top: 36, width: focusW, height: focusW * 1.4 }}
+              width={TOKEN_BOX_W}
+              height={tableH}
+              tokens={ctx.cardTokens[tokenKey] ?? ctx.cardTokens[focused.id] ?? []}
+              drawerColor={ctx.tokenColor || TOKEN_COLORS[0]}
+              scale={1}
+              drawerTop={36 + focusW * 1.4 + 18 + 52}
+              onPlace={onPlaceToken}
+              onRemove={onRemoveToken}
+              onUpdate={onUpdateToken}
+              onSetDrawerColor={ctx.setTokenColor}
+            />
+          </Animated.View>
         ) : null}
         {/* A panel is open in the side slot: the table waits, as the sheet does behind a phone panel. */}
         {overlay ? <View style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, zIndex: 800, backgroundColor: 'rgba(6,8,13,0.45)' }} /> : null}

@@ -16,7 +16,7 @@ import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DesktopPortal } from '@/components/desktop-portal';
-import { endLeave, isLeavingSpares, leaveThroughSpares } from '@/hooks/use-back-guard';
+import { endLeave, hasSheetSpare, isLeavingSpares, leaveThroughSpares, setSheetSpare } from '@/hooks/use-back-guard';
 import { DesktopContext, useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -667,7 +667,7 @@ function SheetBackGuard(props: BackGuardState) {
   menuOpenRef.current = menuOpen;
   const editingRef = useRef(editing);
   editingRef.current = editing;
-  useEffect(() => { endLeave(); }, []);
+  useEffect(() => { endLeave(); setSheetSpare(false); }, []);
   useFocusEffect(
     useCallback(() => {
       const onBack = () => {
@@ -711,13 +711,18 @@ function SheetBackGuard(props: BackGuardState) {
         // The spare carries the router's own entry (its `id`) with our flag on top. A spare WITHOUT the id made
         // React Navigation treat the Back as a deep link and reset the root, remounting the sheet and dropping
         // whatever was open (a half-written card included). One spare at a time: never stack a second.
+        // Whether one is armed is tracked beside the flag (see `setSheetSpare`): the router can strip the flag.
         const arm = () => {
           const st = window.history.state as { rkSheet?: boolean } | null;
-          if (!st?.rkSheet) window.history.pushState({ ...(st ?? {}), rkSheet: true }, '');
+          if (st?.rkSheet) { setSheetSpare(true); return; }
+          if (hasSheetSpare()) return;
+          window.history.pushState({ ...(st ?? {}), rkSheet: true }, '');
+          setSheetSpare(true);
         };
         arm();
         const onPop = () => {
           if (isLeavingSpares()) return; // a confirmed leave stepping off the spare: not a Back to answer
+          setSheetSpare(false); // this Back consumed it
           onBack();
           // Re-arm. The entry we just consumed has to be replaced or the next back leaves for real.
           arm();

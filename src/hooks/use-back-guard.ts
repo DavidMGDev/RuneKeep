@@ -37,6 +37,13 @@ const guards = createGuardStack({
 /** True while `leaveThroughSpares` is stepping off spare entries: no guard answers those Backs. */
 let leavingSpares = false;
 export const isLeavingSpares = () => leavingSpares;
+/**
+ * Whether the sheet's spare is on the stack. Tracked here, not only by its `rkSheet` flag: the router rewrites that
+ * entry when it restores the sheet (`{ id }`, flag gone), and a leave that trusted the flag would stop one step early.
+ */
+let sheetSpare = false;
+export const setSheetSpare = (on: boolean) => { sheetSpare = on; };
+export const hasSheetSpare = () => sheetSpare;
 let leaveListener: (() => void) | null = null;
 const dropLeaveListener = () => {
   if (leaveListener) window.removeEventListener('popstate', leaveListener);
@@ -69,7 +76,8 @@ export function leaveThroughSpares(go: () => void) {
   if (!isWeb()) { go(); return; }
   leavingSpares = true;
   const st = window.history.state as { rkGuard?: boolean; rkSheet?: boolean } | null;
-  if (st?.rkGuard || st?.rkSheet) {
+  if (st?.rkGuard || st?.rkSheet || sheetSpare) {
+    sheetSpare = false;
     afterNextPop(() => leaveThroughSpares(go));
     window.history.back();
     return;
