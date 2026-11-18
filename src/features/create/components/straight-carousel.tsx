@@ -671,14 +671,18 @@ export const StraightCarousel = forwardRef<
       /** Open the CENTRED card full screen. No-op when one already is. */
       focusCentre: () => {
         if (fsOpen || !count) return;
-        focusIdx.value = clampIdx(Math.round(pos.value), count);
+        const c = clampIdx(Math.round(pos.value), count);
+        cancelAnimation(pos);
+        pos.value = c;
+        keyAim.value = -1;
+        focusIdx.value = c;
         fs.value = withSpring(1, FS_SPRING);
         setFsOpenJS(true);
       },
       /** Whether a card is currently full screen, so a caller can pick the right key meaning. */
       isFullscreen: () => fsOpen,
     }),
-    [fsOpen, closeFs, pos, count, stepBy, focusIdx, fs, setFsOpenJS],
+    [fsOpen, closeFs, pos, count, stepBy, focusIdx, fs, setFsOpenJS, keyAim],
   );
 
   const onTapCard = useCallback(
@@ -696,7 +700,10 @@ export const StraightCarousel = forwardRef<
         return;
       }
       if (Math.abs(index - pos.value) < 0.5) {
-        // open on whatever face this card was left on (no reset)
+        // open on whatever face this card was left on (no reset); a wheel glide still running stops here
+        cancelAnimation(pos);
+        pos.value = index;
+        keyAim.value = -1;
         focusIdx.value = index;
         fs.value = withSpring(1, FS_SPRING);
         setFsOpenJS(true);
@@ -704,7 +711,7 @@ export const StraightCarousel = forwardRef<
         pos.value = withSpring(clampIdx(index, count), SNAP_SPRING);
       }
     },
-    [fs, pos, focusIdx, count, closeFs, setFsOpenJS, flip],
+    [fs, pos, focusIdx, count, closeFs, setFsOpenJS, flip, keyAim],
   );
 
   // gear pad: bottom strip; grinding sweeps the whole deck across ~GEAR_SWIPE_L px, straight.

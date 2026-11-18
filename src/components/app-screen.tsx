@@ -73,6 +73,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
   // Desktop pages (v0.45.0): the frame art is stretched across a whole window there, so content keeps further in.
   const desktopPage = useDesktopPage();
   const headerRef = useRef<View>(null);
+  const contentRef = useRef<View>(null);
   // Desktop pages (v0.45.0): pop-ups open in a sidebar past the page's left column instead of dimming the screen.
   const [sideHost, setSideHost] = useState<HTMLElement | null>(null);
   const [openPanels, setOpenPanels] = useState(0);
@@ -85,6 +86,12 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
     () => (desktopPage ? { host: sideHost, layers, frame: { width: sideW, height: winH - barBottom - 14, scale: 1, offsetX: sideLeft, offsetY: barBottom } } : null),
     [desktopPage, sideHost, layers, sideW, winH, barBottom, sideLeft],
   );
+  // While the sidebar is open the page behind it is out of reach: no clicks (the catcher) and no Tab either.
+  useLayoutEffect(() => {
+    const el = contentRef.current as unknown as HTMLElement | null;
+    if (!desktopPage || !el?.setAttribute) return;
+    if (openPanels) el.setAttribute('inert', ''); else el.removeAttribute('inert');
+  }, [desktopPage, openPanels]);
   // Escape closes the sidebar's top panel (a dialog that handles Escape itself has already claimed the key).
   const front = useScreenFocus();
   useEffect(() => {
@@ -114,7 +121,7 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
             phone layout is byte-identical. This one wrapper is what makes every non-sheet screen
             read the same on a tablet: rows stop being 760dp wide for a five-character name, buttons
             stop spanning the display, and prose keeps a sane measure. */}
-        <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: desktopPage ? DESKTOP_PAGE_PAD : scaled(18, scale), paddingTop: desktopPage ? 26 : title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
+        <View ref={contentRef} style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: desktopPage ? DESKTOP_PAGE_PAD : scaled(18, scale), paddingTop: desktopPage ? 26 : title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
           {desktopPage && title ? (
             // Desktop pages (v0.45.0): a header bar instead of the phone's header under the frame's top band.
             <View onLayout={(e) => setBarBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height + 6))}>

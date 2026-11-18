@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {  Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Polygon, Polyline } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
@@ -521,6 +521,7 @@ export function RosterScreen() {
           <Pressable onPress={() => {}} accessibilityElementsHidden>
           <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke="rgba(218,162,73,0.6)" strokeWidth={1.5} style={{ width: desktop ? undefined : 312, padding: 20, gap: 8 }}>
             <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Move to folder</Text>
+            <ScrollView style={{ maxHeight: 340, flexGrow: 0 }} showsVerticalScrollIndicator={false}>
             {index.folders.map((fo) => (
               <Pressable key={fo.id} onPress={() => { const c = movingChar; setMovingChar(null); commitIndex(assign(index, c.id, fo.id)); }} accessibilityRole="button" accessibilityLabel={fo.name} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 8, backgroundColor: pressed ? 'rgba(218,162,73,0.12)' : 'transparent', borderRadius: 6 })}>
                 <View style={{ width: 11, height: 11, backgroundColor: fo.color, transform: [{ rotate: '45deg' }] }} />
@@ -528,6 +529,7 @@ export function RosterScreen() {
                 {index.assignments[movingChar.id] === fo.id ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: Rune.goldBright }} /> : null}
               </Pressable>
             ))}
+            </ScrollView>
             <View style={{ marginTop: 6, gap: 8 }}>
               <RuneButton label="Remove from folder" kind="ghost" height={40} onPress={() => { const c = movingChar; setMovingChar(null); commitIndex(assign(index, c.id, null)); }} />
               <RuneButton label="New folder" kind="secondary" height={40} onPress={() => { setMovingChar(null); setNewFolder(true); }} />

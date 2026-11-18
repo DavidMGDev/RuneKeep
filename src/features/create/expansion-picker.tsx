@@ -1,4 +1,5 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { useDialogKeys } from '@/hooks/use-dialog-keys';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -78,7 +79,7 @@ export function ExpansionPicker({ expansions, initial, onConfirm, onCancel }: { 
   // Desktop pages: a sidebar panel next to the button that opened it, with Escape and a click outside as Cancel.
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={onCancel}>
-      <PickerBody inner={
+      <PickerBody onCancel={onCancel} inner={
         <>
         <ScrollView style={{ maxHeight: 360, flexGrow: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           <PickRow name="Base Game" subtitle="Core classes, ancestries, communities & domains" checked locked onToggle={() => {}} />
@@ -96,8 +97,11 @@ export function ExpansionPicker({ expansions, initial, onConfirm, onCancel }: { 
   );
 }
 
-function PickerBody({ inner }: { inner: ReactNode }) {
+function PickerBody({ inner, onCancel }: { inner: ReactNode; onCancel?: () => void }) {
   const inSide = useInPageSide();
+  // In the sidebar: focus starts on Continue and Tab stays in the panel.
+  const rootRef = useRef<View>(null);
+  useDialogKeys(rootRef, { enabled: inSide, onEscape: onCancel, initialLabel: 'Continue' });
   const head = (
     <View style={{ gap: inSide ? 8 : 3 }}>
       <Text style={{ color: inSide ? Rune.ivory : Rune.goldText, fontSize: inSide ? 26 : 20, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: inSide ? 1.2 : 0.5 }}>Choose expansions</Text>
@@ -107,7 +111,7 @@ function PickerBody({ inner }: { inner: ReactNode }) {
   if (inSide) {
     // The sidebar is the panel: no second frame inside it, just the heading on a hairline and the list.
     return (
-      <View style={[PAGE_SIDE_BODY, { padding: 28, gap: 18 }]}>
+      <View ref={rootRef} accessibilityLabel="Choose expansions" style={[PAGE_SIDE_BODY, { padding: 28, gap: 18 }]}>
         <View style={{ paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: 'rgba(218,162,73,0.22)' }}>{head}</View>
         {inner}
       </View>

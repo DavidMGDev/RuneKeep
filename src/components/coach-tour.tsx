@@ -48,11 +48,21 @@ export function CoachTour({ id, steps, active }: { id: TourId; steps: CoachStep[
   const [open, setOpen] = useState(() => shouldShow(id));
   const [idx, setIdx] = useState(() => Math.min(steps.length - 1, Math.max(0, tourStep(id))));
   const [rect, setRect] = useState<Rect | null>(null);
+  // A panel or dialog in a side slot owns input: the tips step aside until it closes.
+  const [blocked, setBlocked] = useState(false);
   const reduced = useReducedMotion();
-  const live = open && active && Platform.OS === 'web' && typeof document !== 'undefined';
+  const live = open && active && !blocked && Platform.OS === 'web' && typeof document !== 'undefined';
   const step = steps[idx];
 
   // Follow the target: the layout settles after the page opens, and the window can change size under a tip.
+  useEffect(() => {
+    if (!open || !active || Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const check = () => setBlocked(!!document.querySelector('[data-side-layer]'));
+    check();
+    const t = setInterval(check, 300);
+    return () => clearInterval(t);
+  }, [open, active]);
+
   useEffect(() => {
     if (!live || !step) return;
     const update = () => {
@@ -78,9 +88,13 @@ export function CoachTour({ id, steps, active }: { id: TourId; steps: CoachStep[
   useEffect(() => {
     if (!live) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.isComposing) return;
+      if (e.isComposing || e.defaultPrevented) return;
       const k = e.key;
       if (k !== 'Escape' && k !== 'ArrowRight' && k !== 'ArrowLeft' && k !== 'Enter') return;
+      // Typing keeps its keys (the caret moves, Enter submits), and a focused button keeps Enter.
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      if (k === 'Enter' && t?.closest?.('button, [role="button"], a, [role="link"]')) return;
       // The tip owns these keys while it is up, so the deck under it does not move as well.
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -109,13 +123,16 @@ export function CoachTour({ id, steps, active }: { id: TourId; steps: CoachStep[
   const leftBand = useAnimatedStyle(() => ({ left: 0, width: Math.max(0, fx.value), top: fy.value, height: fh.value }));
   const rightBand = useAnimatedStyle(() => ({ left: fx.value + fw.value, right: 0, top: fy.value, height: fh.value }));
 
-  if (!live || !step || !rect) return null;
+  if (!live || !step) return null;
 
   // The note sits beside the opening on whichever side has room: right, then left, then below, then above.
+  // With its control not on screen (another step is open), it waits in the corner, so the tips can still be
+  // walked, closed or skipped.
   const vw = window.innerWidth, vh = window.innerHeight;
   const estH = 230;
   let cx: number, cy: number;
-  if (rect.x + rect.w + GAP + CALLOUT_W <= vw - 16) { cx = rect.x + rect.w + GAP; cy = rect.y; }
+  if (!rect) { cx = vw - CALLOUT_W - 24; cy = vh - estH - 24; }
+  else if (rect.x + rect.w + GAP + CALLOUT_W <= vw - 16) { cx = rect.x + rect.w + GAP; cy = rect.y; }
   else if (rect.x - GAP - CALLOUT_W >= 16) { cx = rect.x - GAP - CALLOUT_W; cy = rect.y; }
   else if (rect.y + rect.h + GAP + estH <= vh - 16) { cx = rect.x + rect.w / 2 - CALLOUT_W / 2; cy = rect.y + rect.h + GAP; }
   else { cx = rect.x + rect.w / 2 - CALLOUT_W / 2; cy = rect.y - GAP - estH; }
@@ -125,12 +142,16 @@ export function CoachTour({ id, steps, active }: { id: TourId; steps: CoachStep[
 
   return createPortal(
     <View pointerEvents="box-none" style={{ position: 'fixed' as never, left: 0, top: 0, right: 0, bottom: 0, zIndex: 20000 }}>
-      {[topBand, bottomBand, leftBand, rightBand].map((s, i) => (
-        <Animated.View key={i} pointerEvents="none" style={[{ position: 'absolute', backgroundColor: DIM }, s]} />
-      ))}
-      <Animated.View pointerEvents="none" style={[{ position: 'absolute' }, frameStyle]}>
-        <ChamferBox chamfer={10} fill="transparent" stroke={Rune.goldBright} strokeWidth={1.6} style={{ flex: 1 }} />
-      </Animated.View>
+      {rect ? (
+        <>
+          {[topBand, bottomBand, leftBand, rightBand].map((s, i) => (
+            <Animated.View key={i} pointerEvents="none" style={[{ position: 'absolute', backgroundColor: DIM }, s]} />
+          ))}
+          <Animated.View pointerEvents="none" style={[{ position: 'absolute' }, frameStyle]}>
+            <ChamferBox chamfer={10} fill="transparent" stroke={Rune.goldBright} strokeWidth={1.6} style={{ flex: 1 }} />
+          </Animated.View>
+        </>
+      ) : null}
       <Animated.View key={idx} entering={reduced ? undefined : FadeIn.duration(180)} accessibilityRole={'dialog' as never} accessibilityLabel={`Tip ${idx + 1} of ${steps.length}: ${step.title}`}
         style={{ position: 'absolute', left: cx, top: cy, width: CALLOUT_W }}>
         <ChamferBox chamfer={12} fill="rgba(12,15,20,0.985)" stroke={Rune.goldEdge} strokeWidth={1.4} style={{ paddingTop: 20, paddingHorizontal: 22, paddingBottom: 18 }}>

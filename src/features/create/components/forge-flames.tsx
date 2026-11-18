@@ -35,7 +35,7 @@ const EMBERS = [
  */
 export function ForgeFlames({ active, height, label, onPress, accessibilityLabel, minWidth, children }: { active: boolean; height: number; label: string; onPress: () => void; accessibilityLabel: string; minWidth?: number; children: ReactNode }) {
   // The web draws the whole button burning (a shader); a phone keeps the lighter drawn flames.
-  if (Platform.OS === 'web' && active) return <FireButton height={height} label={label} onPress={onPress} accessibilityLabel={accessibilityLabel} minWidth={minWidth} />;
+  if (Platform.OS === 'web' && active) return <FireButton height={height} label={label} onPress={onPress} accessibilityLabel={accessibilityLabel} minWidth={minWidth} fallback={<DrawnFlames active height={height}>{children}</DrawnFlames>} />;
   return <DrawnFlames active={active} height={height}>{children}</DrawnFlames>;
 }
 
@@ -195,8 +195,10 @@ void main() {
   gl_FragColor = vec4(col * a, a);
 }`.replace('RISE', RISE.toFixed(2));
 
-function FireButton({ height, label, onPress, accessibilityLabel, minWidth = 0 }: { height: number; label: string; onPress: () => void; accessibilityLabel: string; minWidth?: number }) {
+function FireButton({ height, label, onPress, accessibilityLabel, minWidth = 0, fallback }: { height: number; label: string; onPress: () => void; accessibilityLabel: string; minWidth?: number; fallback: ReactNode }) {
   const hostRef = useRef<View>(null);
+  // No WebGL, or the context was lost: the ordinary button with the drawn flames, never bare text.
+  const [failed, setFailed] = useState(false);
   const [w, setW] = useState(0);
   const reduced = useReducedMotion();
   const [pressed, setPressed] = useState(false);
@@ -213,13 +215,13 @@ function FireButton({ height, label, onPress, accessibilityLabel, minWidth = 0 }
     Object.assign(canvas.style, { position: 'absolute', left: `${-SPILL}px`, top: `${height + FOOT - cssH}px`, width: `${cssW}px`, height: `${cssH}px`, pointerEvents: 'none' });
     host.prepend(canvas);
     const gl = canvas.getContext('webgl', { premultipliedAlpha: true, antialias: false });
-    if (!gl) { canvas.remove(); return; }
+    if (!gl) { canvas.remove(); setFailed(true); return; }
     const shader = (type: number, src: string) => { const o = gl.createShader(type)!; gl.shaderSource(o, src); gl.compileShader(o); return o; };
     const prog = gl.createProgram()!;
     gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT));
     gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG));
     gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return; }
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); setFailed(true); return; }
     gl.useProgram(prog);
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
@@ -239,11 +241,14 @@ function FireButton({ height, label, onPress, accessibilityLabel, minWidth = 0 }
     let raf = 0;
     let last = -1;
     const loop = (ms: number) => { if (ms - last >= 32) { draw(ms); last = ms; } raf = requestAnimationFrame(loop); };
+    const onLost = () => { cancelAnimationFrame(raf); setFailed(true); };
+    canvas.addEventListener('webglcontextlost', onLost);
     if (reduced) draw(4000);
     else raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); gl.getExtension('WEBGL_lose_context')?.loseContext(); canvas.remove(); };
+    return () => { canvas.removeEventListener('webglcontextlost', onLost); cancelAnimationFrame(raf); gl.getExtension('WEBGL_lose_context')?.loseContext(); canvas.remove(); };
   }, [w, height, reduced]);
 
+  if (failed) return <>{fallback}</>;
   return (
     <Pressable
       onPress={() => { playSfx('buttonTap'); onPress(); }}

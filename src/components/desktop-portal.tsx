@@ -127,7 +127,7 @@ function SideLayer({ layers, frame, priority, onDismiss, page = false, children 
     return () => { layers.remove(r); claimed.current = 0; };
   }, [layers, claim]);
   return (
-    <View ref={ref as never} style={[StyleSheet.absoluteFill, { zIndex: rank }]} pointerEvents="box-none">
+    <View ref={ref as never} {...({ dataSet: { sideLayer: '1' } } as object)} style={[StyleSheet.absoluteFill, { zIndex: rank }]} pointerEvents="box-none">
       <ParentLayer.Provider value={claim}>
         <FrameContext.Provider value={frame}>
           {page ? (
