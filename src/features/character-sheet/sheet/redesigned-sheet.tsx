@@ -2,7 +2,7 @@
 // design (refs-to-avoid-rerender, the beastform state machine, per-frame carousel wiring). Pure
 // helpers were extracted to sheet-utils.ts; splitting the orchestrator further fragments cohesion and
 // risks animation regressions needing on-device verification (see SPEC.md). A deliberate exception.
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppState, BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Animated, { Easing, FadeIn, runOnJS, useAnimatedStyle, useDerivedValue, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
@@ -2575,15 +2575,17 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   useEffect(() => {
     closeMinorRef.current = () => {
       if (nfcSend) { setNfcSend(null); return true; }
+      if (restoreAsk) { setRestoreAsk(null); return true; }
+      if (expandingClass) { setExpandingClass(null); return true; }
       if (numberCardId) { setNumberCardId(null); return true; }
       if (deleteReq) { setDeleteReq(null); return true; }
       if (moveReq) { setMoveReq(null); return true; }
       return false;
     };
-  }, [nfcSend, numberCardId, deleteReq, moveReq]);
+  }, [nfcSend, restoreAsk, expandingClass, numberCardId, deleteReq, moveReq]);
   // Behind a desktop panel the sheet's own controls go inert (no clicks, no Tab stops). Overlays that still draw
   // over the port are siblings of the stage, so they stay usable.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!desktop || typeof document === 'undefined') return;
     const stage = document.getElementById('rk-sheet-stage');
     if (!stage) return;

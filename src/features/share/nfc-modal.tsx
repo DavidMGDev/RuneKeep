@@ -13,6 +13,7 @@
  *
  * `NfcReceiveModal` reads one tag and hands back the parsed content (unchanged, Android only).
  */
+import { DesktopPortal } from '@/components/desktop-portal';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -47,7 +48,9 @@ import { DimScreen } from '@/lib/screen-dim';
 const SHELL_Z = 10020;
 
 function Shell({ children }: { children: React.ReactNode }) {
+  // Desktop (v0.44.0): in the side slot, where the panel that raised it lives, so it stacks on top of it.
   return (
+    <DesktopPortal to="side">
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: SHELL_Z, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
       <DimScreen opacity={0.92} />
@@ -55,6 +58,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         {children}
       </ChamferBox>
     </View>
+    </DesktopPortal>
   );
 }
 

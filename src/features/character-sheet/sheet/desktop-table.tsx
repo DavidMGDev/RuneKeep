@@ -152,6 +152,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
       const key = e.key.toLowerCase();
       const ids = k.deck.map((c) => c.id), at = k.focusId ? ids.indexOf(k.focusId) : -1;
       if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } else release(); return; }
+      if (k.menu) return; // the menu owns the keys while it is open
       if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + 1) % ids.length]); return; }
       if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at <= 0 ? ids.length - 1 : at - 1]); return; }
       // The provider plays the deck-switch sound itself.
@@ -162,9 +163,11 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
     // Capture phase: a Tab-focused card button would otherwise take Space (as a press) before this sees it.
     // Space equips the focused card; on a card that is not in focus yet, Space brings it in, like Enter.
     const onSpace = (e: KeyboardEvent) => {
-      if (e.key !== ' ' || keyRef.current.overlay) return;
-      const card = (e.target as HTMLElement)?.closest?.('[data-card-id]') as HTMLElement | null;
-      if (!card) return;
+      if (e.key !== ' ' || keyRef.current.overlay || keyRef.current.menu) return;
+      // Only the card's own button: a field or stepper inside a live card (a tracker's name, a summoner's
+      // counter) keeps its Space.
+      const card = (e.target as HTMLElement)?.parentElement as HTMLElement | null;
+      if (!card?.dataset?.cardId) return;
       e.preventDefault();
       e.stopPropagation();
       const id = card.dataset.cardId!;
@@ -277,7 +280,7 @@ function CardMenu({ id, x, y, tableW, tableH, onFocus, onClose }: { id: string; 
 function MenuRow({ label, danger, onPress }: { label: string; danger?: boolean; onPress: () => void }) {
   const [hover, setHover] = useState(false);
   return (
-    <Pressable onPress={onPress} onHoverIn={() => { setHover(true); playSfx('floatMenuHighlight', { volume: 0.4 }); }} onHoverOut={() => setHover(false)} accessibilityRole="menuitem" accessibilityLabel={label}
+    <Pressable onPress={onPress} onHoverIn={() => { setHover(true); playSfx('floatMenuHighlight', { volume: 0.4 }); }} onHoverOut={() => setHover(false)} accessibilityRole="button" accessibilityLabel={label}
       style={{ height: 38, justifyContent: 'center', paddingHorizontal: 12, backgroundColor: hover ? (danger ? Rune.red : 'rgba(200,27,24,0.85)') : 'transparent' }}>
       <Text style={{ color: danger && !hover ? '#E2705A' : Rune.ivory, fontFamily: Body.bold, fontSize: 13 }}>{label}</Text>
     </Pressable>
