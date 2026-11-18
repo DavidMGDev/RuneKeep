@@ -15,7 +15,7 @@ import { FrameContext } from '@/hooks/use-layout';
  * GEOMETRY are the exception and are reset at the boundary: the hosts are drawn at the window's own pixels,
  * not inside the scaled phone port, so gestures and sizes inside them must not divide by the port's scale.
  */
-export function DesktopPortal({ to, children, priority = 'panel', onDismiss }: { to: 'table' | 'side'; children: ReactNode; /** Dialogs always rank above panels; open order breaks ties. */ priority?: 'panel' | 'dialog'; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
+export function DesktopPortal({ to, children, priority = 'panel', onDismiss }: { to: 'table' | 'side'; children: ReactNode; /** Bands, low to high: panel, dialog, share, progress; open order breaks ties within one. */ priority?: LayerPriority; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
   const desktop = useDesktop();
   const frame = useMemo(() => {
     if (!desktop) return null;
@@ -42,15 +42,16 @@ export function DesktopPortal({ to, children, priority = 'panel', onDismiss }: {
  * are `inert`). Escape and Back dismiss the top layer through the callback it registered, so what they close is
  * always what the player sees on top, and a layer with no callback (an editor guarding unsaved work) holds them.
  */
+export type LayerPriority = 'panel' | 'dialog' | 'share' | 'progress';
+const BAND: Record<LayerPriority, number> = { panel: 0, dialog: 1_000_000, share: 2_000_000, progress: 3_000_000 };
+
 export interface SideLayers {
-  next(priority: 'panel' | 'dialog'): number;
+  next(priority: LayerPriority): number;
   set(rank: number, el: HTMLElement, dismiss: () => void, hasDismiss: () => boolean): void;
   remove(rank: number): void;
   /** 'none' when no layer is open; 'dismissed' after asking the top layer to close; 'blocked' when it has no closer. */
   dismissTop(): 'none' | 'dismissed' | 'blocked';
 }
-
-const DIALOG_BAND = 1_000_000;
 
 export function createSideLayers(): SideLayers {
   let seq = 0;
@@ -60,7 +61,7 @@ export function createSideLayers(): SideLayers {
     layers.forEach((l, rank) => (rank === top ? l.el.removeAttribute('inert') : l.el.setAttribute('inert', '')));
   };
   return {
-    next: (priority) => (priority === 'dialog' ? DIALOG_BAND : 0) + ++seq,
+    next: (priority) => BAND[priority] + ++seq,
     set: (rank, el, dismiss, hasDismiss) => { layers.set(rank, { el, dismiss, hasDismiss }); sync(); },
     remove: (rank) => { layers.delete(rank); sync(); },
     dismissTop: () => {
@@ -73,17 +74,21 @@ export function createSideLayers(): SideLayers {
   };
 }
 
-function SideLayer({ layers, frame, priority, onDismiss, children }: { layers: SideLayers; frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; priority: 'panel' | 'dialog'; onDismiss?: () => void; children: ReactNode }) {
-  // Ranked once, when the layer opens; a remount is a reopening and ranks as new.
-  const [rank] = useState(() => layers.next(priority));
+function SideLayer({ layers, frame, priority, onDismiss, children }: { layers: SideLayers; frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; priority: LayerPriority; onDismiss?: () => void; children: ReactNode }) {
+  // Ranked once, when the layer COMMITS (not during render, so an abandoned render ranks nothing); a remount is
+  // a reopening and ranks as new. The layout effect re-renders before paint, so the z-index is never seen at 0.
+  const [rank, setRank] = useState(0);
   const ref = useRef<HTMLElement | null>(null);
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
   useLayoutEffect(() => {
     if (!ref.current) return;
-    layers.set(rank, ref.current, () => dismissRef.current?.(), () => !!dismissRef.current);
-    return () => layers.remove(rank);
-  }, [layers, rank]);
+    const r = layers.next(priority);
+    setRank(r);
+    layers.set(r, ref.current, () => dismissRef.current?.(), () => !!dismissRef.current);
+    return () => layers.remove(r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ranked once per mount by design
+  }, [layers]);
   return (
     <View ref={ref as never} style={[StyleSheet.absoluteFill, { zIndex: rank }]} pointerEvents="box-none">
       <FrameContext.Provider value={frame}>

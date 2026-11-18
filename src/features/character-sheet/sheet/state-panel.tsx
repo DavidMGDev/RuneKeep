@@ -308,7 +308,7 @@ function TimelineView({
   if (confirm) {
     const { entry, discards } = confirm;
     return (
-      <OverlayShell title="Rewind character?" subtitle={entry.label} onClose={() => setConfirm(null)}>
+      <OverlayShell title="Rewind character?" subtitle={entry.label} onClose={() => setConfirm(null)} priority="dialog">
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
           Your character goes back to how it was on {dayLabel(entry.at, new Date())} at {clockLabel(entry.at)}
           {entry.milestone ? ', a milestone.' : '.'}
@@ -338,7 +338,7 @@ function TimelineView({
 
   if (asking) {
     return (
-      <OverlayShell title="Compact the timeline?" subtitle={`${droppable} entr${droppable === 1 ? 'y' : 'ies'} would go`} onClose={() => setAsking(false)}>
+      <OverlayShell title="Compact the timeline?" subtitle={`${droppable} entr${droppable === 1 ? 'y' : 'ies'} would go`} onClose={() => setAsking(false)} priority="dialog">
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18 }}>
           Everything except your character&apos;s creation and each level up is thrown away, leaving the milestones you
           would actually rewind to.

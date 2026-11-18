@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -61,6 +62,7 @@ export function PopupDialog({
 }) {
   const { scale } = useLayout();
   return (
+    <DesktopPortal to="side" priority="dialog" onDismiss={onCancel}>
     <View style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Dismiss" />
       <DimScreen opacity={0.82} />
@@ -87,5 +89,6 @@ export function PopupDialog({
         </ChamferBox>
       </Pressable>
     </View>
+    </DesktopPortal>
   );
 }

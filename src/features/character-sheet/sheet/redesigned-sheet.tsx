@@ -716,18 +716,22 @@ function SheetBackGuard(props: BackGuardState) {
         const onEsc = (e: KeyboardEvent) => {
           const p = ref.current;
           if (e.key !== 'Escape') return;
-          // A field keeps its own Escape, and the card editor and New Card own theirs: they guard unsaved
-          // work behind their Cancel, which Escape must never bypass.
+          // The side slot's top layer decides, even from inside one of its fields: it closes through its own
+          // dismiss (editors ask first when there is unsaved work), or holds.
+          if (layersRef.current) {
+            const r = layersRef.current.dismissTop();
+            if (r === 'dismissed') e.stopPropagation(); // one press closes one layer, not also the table's card
+            if (r !== 'none') return;
+          }
           if (/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
-          // The side slot's top layer decides: it closes through its own dismiss, or holds (an editor).
-          if (layersRef.current && layersRef.current.dismissTop() !== 'none') return;
           if (p.editCardId || p.floatKind === 'custom') return;
           if (p.leaveConfirm) { p.onCloseLeave(); return; }
           if (p.closeMinorRef?.current?.()) return;
           if (p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
         };
-        document.addEventListener('keydown', onEsc);
-        escGuard = () => document.removeEventListener('keydown', onEsc);
+        // Capture phase: RNW's TextInput stops key events from bubbling, so a field-focused Escape never reached a bubble listener.
+        document.addEventListener('keydown', onEsc, true);
+        escGuard = () => document.removeEventListener('keydown', onEsc, true);
       }
       return () => {
         sub.remove();
@@ -2579,7 +2583,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [expandingClass, setExpandingClass] = useState<{ cat: CardCategory; id: string } | null>(null);
   // v0.44.0 desktop: everything that should hold the port and the card table still while it is open.
   const [presetModal, setPresetModal] = useState(false);
-  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait || presetModal);
+  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait || presetModal || printJob.busy);
   useEffect(() => {
     closeMinorRef.current = () => {
       if (nfcSend) { setNfcSend(null); return true; }
@@ -2595,7 +2599,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // over the port are siblings of the stage, so they stay usable.
   useLayoutEffect(() => {
     if (!desktop || typeof document === 'undefined') return;
-    const stage = document.getElementById('rk-sheet-stage');
+    // Looked up inside this frame only (the side host's parent is the frame root), never document-wide.
+    const stage = desktop.sideHost?.parentElement?.querySelector('#rk-sheet-stage') as HTMLElement | null;
     if (!stage) return;
     if (desktopModal) stage.setAttribute('inert', ''); else stage.removeAttribute('inert');
     return () => stage.removeAttribute('inert');

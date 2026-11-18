@@ -35,6 +35,7 @@ export function OverlayShell({
   width = 348,
   scroll = true,
   dismissOnScrim = true,
+  priority = 'panel',
   mute = false,
   onEndReached,
   titleAction,
@@ -62,7 +63,9 @@ export function OverlayShell({
    * row diffs two whole character snapshots to say which cards moved.
    */
   onEndReached?: () => void;
-}) {
+
+  /** Desktop side-slot band (v0.44.0): a confirmation raised from a panel is a 'dialog'. */
+  priority?: 'panel' | 'dialog';}) {
   const { scale } = useLayout();
   // The body ScrollView is capped to a real pixel height (#233): a flex-shrink ScrollView inside a
   // content-sized ChamferBox collapsed to ~nothing (it has no intrinsic main-axis height), which
@@ -90,7 +93,7 @@ export function OverlayShell({
   const boxStyle = useAnimatedStyle(() => ({ opacity: p.value, transform: [{ translateY: (1 - p.value) * 18 }, { scale: 0.95 + 0.05 * p.value }] }));
   // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
-    <DesktopPortal to="side" onDismiss={close}>
+    <DesktopPortal to="side" priority={priority} onDismiss={close}>
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
       {/* Transparent tap-catcher only (#239 item 9): the shared SheetDim darkens the screen now, so a
           per-shell dark scrim would double-dim and pop on open/close. This still closes on outside tap. */}

@@ -1023,8 +1023,9 @@ export function CardEditor({
     () => onSave({ ...draft, title: draft.title.trim(), text: sectioned ? composeSections(draft.sections) : draft.text, effects: withTypeEffects(draft.effects, draft.typeLabel ?? kindLabel) }),
     [draft, onSave, sectioned, kindLabel],
   );
+  const guardedClose = useCallback(() => { if (dirty) setLeaving(true); else onCancel(); }, [dirty, onCancel]);
   useBackGuard(
-    useCallback(() => { if (dirty) setLeaving(true); else onCancel(); }, [dirty, onCancel]),
+    guardedClose,
     // In-sheet (`scrimless`) the sheet's own browser guard is already armed and its chain closes this
     // editor; arming a second one would answer a single Back twice. Standalone, this IS the guard.
     { web: !scrimless },
@@ -1107,7 +1108,7 @@ export function CardEditor({
 
   // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
-    <DesktopPortal to="side">
+    <DesktopPortal to="side" onDismiss={guardedClose}>
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
       {/* v0.39.0: the group dialogs the effects field raises are drawn HERE, at the editor's root,
           for the same reason the effect picker already is: written inside the scrolling fields

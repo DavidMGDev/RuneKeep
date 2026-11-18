@@ -92,6 +92,8 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   // category stands, so a missing prop can never strand a finished card.
   const finish = (draft: CardDraft) => {
     if (destinations.length === 0) { onSave(draft, category); return; }
+    // The editor remounts from `handoff` when the picker is backed out of: hand it what was just written.
+    setHandoff(draft);
     setPending(draft);
   };
   if (pending) {

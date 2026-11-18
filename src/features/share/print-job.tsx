@@ -10,7 +10,7 @@
  * stop the job, because the build loop is handed a `cancelled()` it checks between cards.
  */
 import { DesktopPortal } from '@/components/desktop-portal';
-import { type ReactNode, useCallback, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -41,6 +41,7 @@ export interface PrintJob {
 export function usePrintJob(onNotice?: (text: string) => void): PrintJob {
   const [job, setJob] = useState<{ done: number; total: number; stage: 'cards' | 'sheet' } | null>(null);
   const [asking, setAsking] = useState(false);
+  useEffect(() => { if (!job) setAsking(false); }, [job]);
   const cancelled = useRef(false);
   const running = useRef(false);
 
@@ -81,7 +82,7 @@ export function usePrintJob(onNotice?: (text: string) => void): PrintJob {
 
   // Desktop (v0.44.0): a blocking dialog in the side slot. Escape and Back ask before stopping, as Android Back does.
   const node = job ? (
-    <DesktopPortal to="side" priority="dialog" onDismiss={() => setAsking((a) => !a)}>
+    <DesktopPortal to="side" priority="progress" onDismiss={() => setAsking((a) => !a)}>
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 10030, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
       <DimScreen opacity={0.92} />

@@ -50,7 +50,7 @@ const SHELL_Z = 10020;
 function Shell({ children, onClose }: { children: React.ReactNode; onClose?: () => void }) {
   // Desktop (v0.44.0): in the side slot, where the panel that raised it lives, so it stacks on top of it.
   return (
-    <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
+    <DesktopPortal to="side" priority="share" onDismiss={onClose}>
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: SHELL_Z, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
       <DimScreen opacity={0.92} />

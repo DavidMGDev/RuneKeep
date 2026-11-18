@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
@@ -127,11 +128,14 @@ export function QuickCardFlow({
   const [leaving, setLeaving] = useState(false);
   // Sheet-only, and the sheet's own browser guard already closes this flow: Android key only here.
   // See `hooks/use-back-guard`.
-  useBackGuard(useCallback(() => {
+  const guardedClose = useCallback(() => {
     if (step === 'confirm') { setStep('edit'); return; } // Back steps back through the flow first
     if (dirty) setLeaving(true);
     else onCancel();
-  }, [dirty, onCancel, step]));
+  }, [dirty, onCancel, step]);
+  // The browser's Back already reaches this through the sheet's guard (and, on desktop, the side-slot registry),
+  // so this one answers the Android key only; arming both answered a single Back twice.
+  useBackGuard(guardedClose, { web: false });
 
   // Enter on the title goes to the body; Enter on the body goes to the confirmation. `submitBehavior`
   // is what makes that true on the multiline body, where Enter would otherwise type a newline.
@@ -182,6 +186,7 @@ export function QuickCardFlow({
       : {};
 
   return (
+    <DesktopPortal to="side" onDismiss={guardedClose}>
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(8,10,15,0.985)' }} />
       <DimScreen opacity={0.985} />
@@ -323,5 +328,6 @@ export function QuickCardFlow({
         />
       ) : null}
     </View>
+    </DesktopPortal>
   );
 }

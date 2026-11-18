@@ -344,6 +344,7 @@ export function LevelUpPanel({
   // explanation if it's opened at max level.)
   if (file.level >= MAX_LEVEL) {
     return (
+      <DesktopPortal to="side" onDismiss={onClose}>
       <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, alignItems: 'center', justifyContent: 'center' }}>
         <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
         <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 20, paddingVertical: 22, gap: 14, alignItems: 'center' }}>
@@ -352,6 +353,7 @@ export function LevelUpPanel({
           <RuneButton label="Close" kind="primary" height={44} style={{ alignSelf: 'stretch' }} onPress={onClose} />
         </ChamferBox>
       </View>
+      </DesktopPortal>
     );
   }
 
