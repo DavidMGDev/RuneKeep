@@ -1593,7 +1593,9 @@ export function CreateScreen() {
       throw e;
     });
     clearDraft(); // only now: the draft has become a character and must not be offered back
-    router.replace({ pathname: '/sheet', params: { id } });
+    // A closed editor (an Experience) can leave its spare history entry on top; step off it first, or the sheet
+    // would replace the spare and leave the creator underneath for browser Back to reopen.
+    leaveThroughSpares(() => router.replace({ pathname: '/sheet', params: { id } }));
   }, [complete, draft, router, libContent, pickedCards, picked, classKit]);
 
   /**
