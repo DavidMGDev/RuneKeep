@@ -146,7 +146,9 @@ export function RosterScreen() {
       if (t && t !== document.body && !onRow && (/^(BUTTON|A)$/.test(t.tagName) || /^(button|link|tab|checkbox|menuitem)$/.test(t.getAttribute?.('role') ?? ''))) return;
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && k.order.length) {
         e.preventDefault();
-        const at = k.selected ? k.order.indexOf(k.selected) : -1;
+        // From the row that has focus, when one does: that is where the player is, whatever the dossier shows.
+        const origin = onRow && t ? t.id.slice('roster-row-'.length) : k.selected;
+        const at = origin ? k.order.indexOf(origin) : -1;
         const next = e.key === 'ArrowDown' ? Math.min(k.order.length - 1, at + 1) : Math.max(0, at - 1);
         if (k.order[next] && k.order[next] !== k.selected) {
           playSfx('buttonTap');
@@ -165,6 +167,7 @@ export function RosterScreen() {
   }, [desktop, openSheet]));
   const listRef = useRef<SectionList<CharacterFile, Section>>(null);
   const scrollToRef = useRef<(id: string) => void>(() => {});
+  const scrollRetry = useRef(0);
   // While a dialog is up on desktop, the list and dossier behind it are inert: Tab cannot wander under the scrim.
   const bodyRef = useRef<View>(null);
   const modalOpen = !!(actionsFor || confirmDelete || collision || importError || movingChar || folderActions || newFolder || renamingChar || renamingFolder || pickerExps);
@@ -264,6 +267,7 @@ export function RosterScreen() {
   const selectedVisible = selectedId && visibleIds.includes(selectedId) ? selectedId : visibleIds[0] ?? null;
   const selected = desktop && selectedVisible ? files.find((f) => f.id === selectedVisible) ?? null : null;
   scrollToRef.current = (id: string) => {
+    if (keys.current.selected !== id) scrollRetry.current = 0;
     for (let si = 0; si < sections.length; si++) {
       const ii = sections[si].data.findIndex((f) => f.id === id);
       if (ii >= 0) { listRef.current?.scrollToLocation({ sectionIndex: si, itemIndex: ii + 1, viewPosition: 0.5, animated: true }); return; }
@@ -325,7 +329,7 @@ export function RosterScreen() {
         <View style={desktop ? { width: 380, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)' } : { flex: 1 }}>
           <SectionList
             ref={listRef}
-            onScrollToIndexFailed={() => { const id = keys.current.selected; if (id) setTimeout(() => scrollToRef.current(id), 120); }}
+            onScrollToIndexFailed={() => { const id = keys.current.selected; if (id && scrollRetry.current++ < 3) setTimeout(() => scrollToRef.current(id), 120); }}
             sections={sections}
             keyExtractor={(f) => f.id}
             contentContainerStyle={{ paddingTop: 4, paddingBottom: 16 }}

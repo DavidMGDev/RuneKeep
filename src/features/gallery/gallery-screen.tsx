@@ -671,6 +671,7 @@ export function GalleryScreen() {
   const openCard = useCallback((item: GalleryItem) => {
     if (!selecting && desktop) { playSfx('cardSelect'); setFocusId(item.id); return; }
     if (!selecting) { setReading(item); return; }
+    if (item.type === 'class') { setNotice('Class cards cannot be shared'); return; }
     playSfx(selected.has(item.id) ? 'cardDeselect' : 'cardSelect');
     setSelected((s) => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
   }, [selecting, selected, desktop]);

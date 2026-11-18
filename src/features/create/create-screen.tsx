@@ -2608,24 +2608,30 @@ export function CreateScreen() {
         />
       ) : null}
 
-      {resumeOffer ? (
-        <PopupDialog
-          title="Resume your draft?"
-          body="You left a hero part-way through. Pick up where you stopped, or start a new one."
-          confirmLabel="Resume"
-          onConfirm={() => {
-            const o = resumeOffer;
-            setDraft(o.draft);
-            // v0.43.3: the packs come back with the draft, or a homebrew class in it would not resolve.
-            if (o.picked) setPicked(new Set(o.picked));
-            // A draft saved on the old Transform step lands on Class, since that step is gone.
-            if (o.deck && (characterizing || o.deck !== 'transformation')) setDeck(o.deck as DeckKey);
-            setResumeOffer(null);
-          }}
-          onCancel={() => { clearDraft(); setResumeOffer(null); }}
-          cancelLabel="Start fresh"
-        />
-      ) : null}
+      {resumeOffer ? (() => {
+        const resume = () => {
+          const o = resumeOffer;
+          setDraft(o.draft);
+          // v0.43.3: the packs come back with the draft, or a homebrew class in it would not resolve.
+          if (o.picked) setPicked(new Set(o.picked));
+          // A draft saved on the old Transform step lands on Class, since that step is gone.
+          if (o.deck && (characterizing || o.deck !== 'transformation')) setDeck(o.deck as DeckKey);
+          setResumeOffer(null);
+        };
+        return (
+          <PopupDialog
+            title="Resume your draft?"
+            body="You left a hero part-way through. Pick up where you stopped, or start a new one."
+            confirmLabel="Resume"
+            initialFocus="confirm"
+            onConfirm={resume}
+            // Only a deliberate Start fresh deletes the draft; the backdrop, Escape and Back resume it.
+            onDismiss={resume}
+            onCancel={() => { clearDraft(); setResumeOffer(null); }}
+            cancelLabel="Start fresh"
+          />
+        );
+      })() : null}
     </AppScreen>
   );
 }
@@ -2656,7 +2662,7 @@ function heroRowFor(key: DeckKey, label: string, d: Draft, done: boolean, isLock
     case 'traits': text = Object.entries(d.traits).filter(([, v]) => typeof v === 'number').map(([k, v]) => `${TRAIT_SHORT[k] ?? k} ${signed(v as number)}`).join(', '); break;
     case 'experiences': text = d.experiences.map((e) => e.title).filter(Boolean).join(', '); break;
     case 'weapons': text = d.weaponsSkipped ? 'None' : [d.weaponPrimaryId, d.weaponSecondaryId].map((id) => (id ? weaponById(id)?.name : null)).filter(Boolean).join(', '); break;
-    case 'armor': text = d.armorSkipped ? 'None' : d.armorId ? (armorById(d.armorId)?.name ?? '') : ''; break;
+    case 'armor': text = d.armorSkipped ? 'None' : d.armorId ? (armorById(d.armorId)?.name ?? ctx.libTitle(d.armorId) ?? '') : ''; break;
     case 'inventory': text = d.inventoryItemIds.map((id) => lootById(id)?.name ?? id).join(', '); break;
     case 'level': text = d.level ? `Level ${d.level}` : ''; break;
     default: {
