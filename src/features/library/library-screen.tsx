@@ -1190,7 +1190,7 @@ export function LibraryScreen() {
       if (choosingType) { setChoosingType(false); return; }
       if (metaForm) { setMetaForm(null); return; }
       if (selectedId) { setSelectedId(null); return; } // back to the hub, not out of the library
-      leaveThroughSpares(() => router.back());
+      leaveThroughSpares(() => (router.canGoBack() ? router.back() : router.replace('/')));
     }, [confirmDeleteExp, confirmDeleteCards, movingCards, reportFor, nfcSend, message, holdingExp, writingItem, askingClassFor, askingParentClass, askingClassRole, choosingType, metaForm, selectedId, router]),
     { enabled: !editingCard },
   );
@@ -2009,7 +2009,7 @@ export function LibraryScreen() {
   const officialExps = expansions.filter((e) => e.official === true);
   const customExps = expansions.filter((e) => !e.official);
   return (
-    <AppScreen dm={dm} title="Card library" onBack={() => leaveThroughSpares(() => router.back())}>
+    <AppScreen dm={dm} title="Card library" onBack={() => leaveThroughSpares(() => (router.canGoBack() ? router.back() : router.replace('/')))}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
         <Pressable onPress={() => { playSfx('enterCardViewer'); router.push('/gallery'); }} accessibilityRole="button" accessibilityLabel="Browse the card archive">
           {({ pressed }) => (

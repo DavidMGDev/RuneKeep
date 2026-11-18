@@ -26,7 +26,11 @@ const spareIsOurs = () => !!(window.history.state as { rkGuard?: boolean } | nul
  * A spare is the router's own entry (its `id`) with our flag on it. An entry WITHOUT the id makes React
  * Navigation read a Back that lands on it as a deep link and reset the root, remounting the screen.
  */
-const pushSpareEntry = () => window.history.pushState({ ...((window.history.state as object | null) ?? {}), rkGuard: true }, '');
+let pushedFor: string | undefined; // the router id the last spare copied
+const pushSpareEntry = () => {
+  pushedFor = (window.history.state as { id?: string } | null)?.id;
+  window.history.pushState({ ...((window.history.state as object | null) ?? {}), rkGuard: true }, '');
+};
 const guards = createGuardStack({
   pushSpare: () => {
     if (isWeb() && !leavingSpares) pushSpareEntry();
@@ -98,7 +102,13 @@ export function leaveThroughSpares(go: () => void) {
 const SPARE_RETRIES = [0, 120, 400];
 function ensureSpare(attempt = 0) {
   if (!isWeb() || !guards.hasWeb() || leavingSpares) return;
-  if (!spareIsOurs()) pushSpareEntry();
+  if (!spareIsOurs()) {
+    // A retry that finds our spare's id without the flag is our spare, rewritten by the router while it restored
+    // the entry: mark it again rather than pushing a second physical copy.
+    const id = (window.history.state as { id?: string } | null)?.id;
+    if (attempt > 0 && id && id === pushedFor) window.history.replaceState({ ...window.history.state, rkGuard: true }, '');
+    else pushSpareEntry();
+  }
   const next = attempt + 1;
   if (next < SPARE_RETRIES.length) setTimeout(() => ensureSpare(next), SPARE_RETRIES[next]);
 }

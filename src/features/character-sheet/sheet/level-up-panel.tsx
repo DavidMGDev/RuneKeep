@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
-import { CardEditor } from '@/components/card-editor';
+import { CardEditor, type CardDraft } from '@/components/card-editor';
 import { ChamferBox } from '@/components/chamfer-box';
 import { HoldToConfirm } from '@/components/hold-to-confirm';
 import { RuneButton } from '@/components/rune-button';
@@ -149,6 +149,9 @@ export function LevelUpPanel({
   const [expImage, setExpImage] = useState<string | null>(null);
   const [expText, setExpText] = useState('');
   const [editingExp, setEditingExp] = useState(false);
+  // The open editor's unsaved draft, held here: crossing the desktop breakpoint remounts everything inside this
+  // panel's portal, and the editor would otherwise reopen on the last SET experience.
+  const expDraft = useRef<CardDraft | null>(null);
   const [takes, setTakes] = useState<ChosenAdv[]>([]);
   // #311: companion training options chosen this level-up (a multiset of option keys, max = companionPicks).
   const [companionTakes, setCompanionTakes] = useState<string[]>([]);
@@ -605,7 +608,9 @@ export function LevelUpPanel({
           experienceMode
           scrimless
           modifier={2}
-          initial={{ title: expTitle, text: expText, imageUri: expImage, color: expColor, effects: [] }}
+          initial={expDraft.current ?? { title: expTitle, text: expText, imageUri: expImage, color: expColor, effects: [] }}
+          draftRef={expDraft}
+          unsaved={!!expDraft.current}
           saveLabel="Set experience"
           onSave={(d) => {
             setExpTitle(d.title);
@@ -613,8 +618,9 @@ export function LevelUpPanel({
             setExpImage(d.imageUri);
             setExpText(d.text);
             setEditingExp(false);
+            expDraft.current = null;
           }}
-          onCancel={() => setEditingExp(false)}
+          onCancel={() => { setEditingExp(false); expDraft.current = null; }}
         />
       ) : null}
     </View>
