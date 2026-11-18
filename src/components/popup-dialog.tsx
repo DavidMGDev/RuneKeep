@@ -1,5 +1,5 @@
 import { DesktopPortal } from '@/components/desktop-portal';
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -7,6 +7,10 @@ import { RuneButton } from '@/components/rune-button';
 import { scaled, useLayout } from '@/hooks/use-layout';
 import { DmRune, Body, Display, Rune } from '@/constants/theme';
 import { DimScreen } from '@/lib/screen-dim';
+import { useDesktopPage } from '@/hooks/use-desktop';
+
+/** Open dialogs on a desktop page, newest last: Escape cancels only the top one. */
+const escStack: symbol[] = [];
 
 /**
  * The app's confirm dialog. Used sparingly (modal-as-last-resort): destructive confirms and import
@@ -61,6 +65,22 @@ export function PopupDialog({
   children?: ReactNode;
 }) {
   const { scale } = useLayout();
+  // Desktop pages (v0.45.0): Escape is Cancel, as it is on the sheet's side slot. Only the newest dialog answers.
+  const desktopPage = useDesktopPage();
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
+  useEffect(() => {
+    if (!desktopPage || typeof document === 'undefined') return;
+    const me = Symbol('dialog');
+    escStack.push(me);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || escStack[escStack.length - 1] !== me) return;
+      e.preventDefault();
+      cancelRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); escStack.splice(escStack.indexOf(me), 1); };
+  }, [desktopPage]);
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={onCancel}>
     <View style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
