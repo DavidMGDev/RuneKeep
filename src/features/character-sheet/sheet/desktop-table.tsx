@@ -188,7 +188,7 @@ export function DesktopTable({ canInspect, onEditCard, editableIds, overlay, bac
       if (k.menu) return; // the menu owns the keys while it is open
       if (key === '[' || key === ']') { e.preventDefault(); moveRef.current(key === ']' ? 1 : -1); return; }
       const stride = e.shiftKey ? 2 : 1; // Shift moves two at a time, as the keys page teaches
-      if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + stride) % ids.length]); return; }
+      if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? 0 : (at + stride) % ids.length]); return; }
       if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? ids.length - 1 : (at - stride + ids.length * 2) % ids.length]); return; }
       // The provider plays the deck-switch sound itself.
       if (key === 'q' || key === 'e') { ctx.cycleCategory(key === 'q' ? -1 : 1); return; }

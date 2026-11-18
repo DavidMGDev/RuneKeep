@@ -656,7 +656,7 @@ interface BackGuardState {
  * subscribes once (no churn from inline closers).
  */
 function SheetBackGuard(props: BackGuardState) {
-  const { machineState, closeFullscreen, collapse, editing, exitEdit } = useCarousel();
+  const { machineState, closeFullscreen, collapse, editing, exitEdit, fullscreenProgress, expandProgress } = useCarousel();
   const { open: menuOpen, closeMenu } = useFloatMenu();
   const desktopLayers = useDesktop()?.layers ?? null;
   const layersRef = useRef(desktopLayers);
@@ -667,6 +667,18 @@ function SheetBackGuard(props: BackGuardState) {
   menuOpenRef.current = menuOpen;
   const editingRef = useRef(editing);
   editingRef.current = editing;
+  // Widening into desktop: the carousel goes off screen, so whatever it had open (Golden Gear Edit and its veil,
+  // the radial menu, a fullscreen card) is put away quietly. Desktop has no control to exit them otherwise.
+  const isDesktop = !!desktopLayers;
+  useEffect(() => {
+    if (!isDesktop) return;
+    if (menuOpenRef.current) closeMenu();
+    if (editingRef.current) exitEdit(true);
+    machineState.value = 'compact';
+    fullscreenProgress.value = 0;
+    expandProgress.value = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on entering desktop only
+  }, [isDesktop]);
   useEffect(() => { endLeave(); if (!onSheetSpare()) clearSheetSpare(); }, []);
   useFocusEffect(
     useCallback(() => {
