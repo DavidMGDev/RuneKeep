@@ -2625,7 +2625,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const [expandingClass, setExpandingClass] = useState<{ cat: CardCategory; id: string } | null>(null);
   // v0.44.0 desktop: everything that should hold the port and the card table still while it is open.
   const [presetModal, setPresetModal] = useState(false);
-  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait || presetModal || printJob.busy);
+  const [deskSortOpen, setDeskSortOpen] = useState(false);
+  const desktopModal = !!(anyOverlay || damageOpen || numberCardId || leaveConfirm || restoreAsk || nfcSend || expandingClass || deleteReq || croppingPortrait || presetModal || printJob.busy || deskSortOpen);
   useEffect(() => {
     closeMinorRef.current = () => {
       if (nfcSend) { setNfcSend(null); return true; }
@@ -3185,7 +3186,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <DesktopTable canInspect={!!file} sortFile={file ?? undefined} onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
+                <DesktopTable canInspect={!!file} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />

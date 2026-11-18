@@ -27,6 +27,7 @@ import { BASE_PICK_ID, ExpansionPicker } from '@/features/create/expansion-picke
 import { Portrait } from '@/components/portrait';
 import { DimScreen } from '@/lib/screen-dim';
 import { useDesktopPage } from '@/hooks/use-desktop';
+import { useDialogKeys } from '@/hooks/use-dialog-keys';
 import { RosterDossier } from './desktop-roster';
 
 /** v0.36.1: the shared chamfered portrait, so the roster matches every other list in the app. */
@@ -150,12 +151,11 @@ export function RosterScreen() {
         const origin = onRow && t ? t.id.slice('roster-row-'.length) : k.selected;
         const at = origin ? k.order.indexOf(origin) : -1;
         const next = e.key === 'ArrowDown' ? Math.min(k.order.length - 1, at + 1) : Math.max(0, at - 1);
-        if (k.order[next] && k.order[next] !== k.selected) {
-          playSfx('buttonTap');
-          setSelectedId(k.order[next]);
-          scrollToRef.current(k.order[next]);
-          // Focus follows the selection, so Enter on the focused row opens the character the dossier shows.
-          if (onRow) requestAnimationFrame(() => document.getElementById(`roster-row-${k.order[next]}`)?.focus());
+        const dest = k.order[next];
+        if (dest && dest !== origin) {
+          if (dest !== k.selected) { playSfx('buttonTap'); setSelectedId(dest); scrollToRef.current(dest); }
+          // Focus follows, so Enter on the focused row opens the character the dossier shows.
+          if (onRow) requestAnimationFrame(() => document.getElementById(`roster-row-${dest}`)?.focus());
         }
       } else if (e.key === 'Enter' && k.selected && !onRow) {
         playSfx('selectCharacter');
@@ -170,6 +170,8 @@ export function RosterScreen() {
   const scrollRetry = useRef(0);
   // While a dialog is up on desktop, the list and dossier behind it are inert: Tab cannot wander under the scrim.
   const bodyRef = useRef<View>(null);
+  const chooserRef = useRef<View>(null);
+  useDialogKeys(chooserRef, { enabled: desktop && !!movingChar, onEscape: () => setMovingChar(null) });
   const modalOpen = !!(actionsFor || confirmDelete || collision || importError || movingChar || folderActions || newFolder || renamingChar || renamingFolder || pickerExps);
   useLayoutEffect(() => {
     const el = bodyRef.current as unknown as HTMLElement | null;
@@ -461,7 +463,7 @@ export function RosterScreen() {
 
       {/* Move-to-folder chooser */}
       {movingChar ? (
-        <View style={[StyleSheet.absoluteFill, { zIndex: 250, alignItems: 'center', justifyContent: 'center' }]}>
+        <View ref={chooserRef} style={[StyleSheet.absoluteFill, { zIndex: 250, alignItems: 'center', justifyContent: 'center' }]}>
           <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={() => setMovingChar(null)} accessibilityRole="button" accessibilityLabel="Dismiss" />
           <DimScreen opacity={0.82} />
           <Pressable onPress={() => {}} accessibilityElementsHidden>

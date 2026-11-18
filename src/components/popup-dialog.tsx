@@ -1,5 +1,5 @@
 import { DesktopPortal } from '@/components/desktop-portal';
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -7,10 +7,8 @@ import { RuneButton } from '@/components/rune-button';
 import { scaled, useLayout } from '@/hooks/use-layout';
 import { DmRune, Body, Display, Rune } from '@/constants/theme';
 import { DimScreen } from '@/lib/screen-dim';
-import { useDesktopPage } from '@/hooks/use-desktop';
-
-/** Open dialogs on a desktop page, newest last: Escape cancels only the top one. */
-const escStack: symbol[] = [];
+import { useDesktop, useDesktopPage } from '@/hooks/use-desktop';
+import { useDialogKeys } from '@/hooks/use-dialog-keys';
 
 /**
  * The app's confirm dialog. Used sparingly (modal-as-last-resort): destructive confirms and import
@@ -74,55 +72,18 @@ export function PopupDialog({
   // Desktop pages (v0.45.0): Escape is Cancel, as it is on the sheet's side slot. Only the newest dialog answers.
   const desktopPage = useDesktopPage();
   const dismiss = onDismiss ?? onCancel;
-  const cancelRef = useRef(dismiss);
-  cancelRef.current = dismiss;
   const rootRef = useRef<View>(null);
-  // Desktop pages: focus moves into the dialog, Tab cycles inside it, and focus returns where it was on close.
-  useEffect(() => {
-    if (!desktopPage || typeof document === 'undefined') return;
-    const root = rootRef.current as unknown as HTMLElement | null;
-    if (!root?.querySelectorAll) return;
-    const before = document.activeElement as HTMLElement | null;
-    const focusables = () => Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')).filter((el) => !el.closest('[inert]'));
-    // Open on the safe choice: Cancel, or whatever this dialog calls it.
-    const list0 = focusables().filter((el) => el.getAttribute('aria-label') !== 'Dismiss');
-    const want = (initialFocus === 'confirm' ? confirmLabel : cancelLabel).toLowerCase();
-    const first = list0.find((el) => el.textContent?.trim().toLowerCase() === want) ?? list0[0];
-    first?.focus();
-    const onTab = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab' || escStack[escStack.length - 1] !== mine.current) return;
-      const list = focusables();
-      if (!list.length) return;
-      const at = list.indexOf(document.activeElement as HTMLElement);
-      const next = at < 0 ? 0 : e.shiftKey ? (at - 1 + list.length) % list.length : (at + 1) % list.length;
-      e.preventDefault();
-      list[next].focus();
-    };
-    document.addEventListener('keydown', onTab);
-    return () => { document.removeEventListener('keydown', onTab); if (before?.isConnected) before.focus(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- focus moves in once, when the dialog opens
-  }, [desktopPage]);
-  const mine = useRef<symbol | null>(null);
-  useEffect(() => {
-    if (!desktopPage || typeof document === 'undefined') return;
-    const me = Symbol('dialog');
-    mine.current = me;
-    escStack.push(me);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || escStack[escStack.length - 1] !== me) return;
-      e.preventDefault();
-      cancelRef.current();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('keydown', onKey); escStack.splice(escStack.indexOf(me), 1); };
-  }, [desktopPage]);
+  // Desktop (pages and the sheet's side slot): focus moves in on open, Tab stays inside, focus returns on close.
+  // Escape is Cancel on desktop pages; on the sheet the side slot's own Escape order already handles it.
+  const desktopSheet = !!useDesktop();
+  useDialogKeys(rootRef, { enabled: desktopPage || desktopSheet, onEscape: desktopPage ? dismiss : undefined, initialLabel: initialFocus === 'confirm' ? confirmLabel : cancelLabel });
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={dismiss}>
     <View ref={rootRef} style={[StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
       <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={dismiss} accessibilityRole="button" accessibilityLabel="Dismiss" />
       <DimScreen opacity={0.82} />
       {/* tap-absorb wrapper (#3): a near-miss inside the panel never falls through to the scrim */}
-      <Pressable onPress={() => {}} {...(desktopPage ? ({ focusable: false, tabIndex: -1 } as object) : {})} style={{ width: scaled(320, scale), maxWidth: '92%' }}>
+      <Pressable onPress={() => {}} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} style={{ width: scaled(320, scale), maxWidth: '92%' }}>
         <ChamferBox
           chamfer={14}
           fill={dm ? 'rgba(16,17,19,0.985)' : 'rgba(12,15,20,0.985)'}

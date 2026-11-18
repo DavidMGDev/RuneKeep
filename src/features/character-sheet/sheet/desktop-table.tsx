@@ -65,7 +65,7 @@ interface Target {
   z: number;
 }
 
-export function DesktopTable({ canInspect, sortFile, onEditCard, editableIds, overlay: overlayProp, backRef, onManage, onExit }: { canInspect: boolean; sortFile?: CharacterFile; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
+export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, editableIds, overlay: overlayProp, backRef, onManage, onExit }: { canInspect: boolean; sortFile?: CharacterFile; onSortOpen?: (open: boolean) => void; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
   const ctx = useCarousel();
@@ -80,6 +80,8 @@ export function DesktopTable({ canInspect, sortFile, onEditCard, editableIds, ov
   // The phone's Sort, for a whole deck: it opens in the side slot and the table waits behind it like any panel.
   const [sorting, setSorting] = useState(false);
   const overlay = overlayProp || sorting;
+  // The sheet holds its port still while Sort is open, as it does behind every other panel.
+  useEffect(() => { onSortOpen?.(sorting); }, [sorting, onSortOpen]);
 
   // A new deck starts with nothing in focus; a focused card that left the deck (moved, deleted) drops focus.
   const endFocus = useRef(ctx.endCardFocus);
@@ -97,6 +99,10 @@ export function DesktopTable({ canInspect, sortFile, onEditCard, editableIds, ov
   const handW = Math.round(Math.min(186, Math.max(136, areaW * 0.15)));
   const handZone = handW * 1.4 * (1 - HAND_SINK) + 70;
   const focusW = Math.round(Math.min(390, (tableH - handZone - 150) / 1.4));
+  const railTop = port ? port.top + 200 * port.scale : 120;
+  // A narrow table fans the hand under the rail, so the rail's scroll area ends above the hand at its most lifted.
+  const liftedHandTop = tableH - handW * 1.4 * (1 - HAND_SINK) - 84;
+  const railMaxH = Math.max(120, (areaW < 700 ? liftedHandTop : tableH - 24) - railTop);
 
   const hand = useMemo(() => deck.filter((c) => c.id !== focusId), [deck, focusId]);
   // Base targets only; hover is applied inside each card, so moving the pointer re-renders one card, not the hand.
@@ -264,7 +270,7 @@ export function DesktopTable({ canInspect, sortFile, onEditCard, editableIds, ov
     <DesktopPortal to="table">
       <View style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, overflow: 'hidden' }}>
         <TableGear category={category} cx={cx} tableH={tableH} handW={handW} reduced={reduced} />
-        <DeckRail top={port ? port.top + 200 * port.scale : 120} maxH={tableH - (port ? port.top + 200 * port.scale : 120) - 24} onManage={onManage} onSort={canReorder ? () => { playSfx('floatMenuOpen'); setSorting(true); } : undefined} onExit={onExit} />
+        <DeckRail top={railTop} maxH={railMaxH} onManage={onManage} onSort={canReorder ? () => { playSfx('floatMenuOpen'); setSorting(true); } : undefined} onExit={onExit} />
         {sorting ? (
           <DesktopPortal to="side" priority="dialog" onDismiss={() => setSorting(false)}>
             <SortPanel

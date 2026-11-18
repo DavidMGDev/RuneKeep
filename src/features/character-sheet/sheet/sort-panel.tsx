@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -11,6 +11,7 @@ import { type SortDir, type SortKey, sortWithinSelection } from '@/lib/card-sort
 import { playSfx } from '@/lib/sfx';
 
 import { useCarousel } from '../carousel-context';
+import { useDialogKeys } from '@/hooks/use-dialog-keys';
 
 const GRAY = '#C4C8D0';
 const GRAY_DIM = '#9AA0AA';
@@ -56,6 +57,9 @@ export function SortPanel({ file, onClose, ids, onApply }: {
 }) {
   const { raisedIds, decks, category, sortFnRef } = useCarousel();
   const [key, setKey] = useState<SortKey>('color');
+  // Desktop: focus moves in on open and returns to the rail on close; the side slot already owns Escape.
+  const rootRef = useRef<View>(null);
+  useDialogKeys(rootRef, { enabled: !!onApply });
 
   const deckIds = useMemo(() => (decks[category] ?? []).map((c) => c.id), [decks, category]);
   const selected = useMemo(() => ids ?? deckIds.filter((id) => raisedIds.has(id)), [ids, deckIds, raisedIds]);
@@ -76,9 +80,9 @@ export function SortPanel({ file, onClose, ids, onApply }: {
   };
 
   return (
-    <View style={[onApply ? StyleSheet.absoluteFill : box(-120, -160, 652, 1212), { zIndex: 60, alignItems: 'center', justifyContent: 'center' }]}>
+    <View ref={rootRef} style={[onApply ? StyleSheet.absoluteFill : box(-120, -160, 652, 1212), { zIndex: 60, alignItems: 'center', justifyContent: 'center' }]}>
       {/* The absorber. It has no onPress: a tap anywhere but a control does nothing at all. */}
-      <Pressable style={[onApply ? StyleSheet.absoluteFill : box(0, 0, 652, 1212), { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={() => {}} accessibilityLabel="Sort options" />
+      <Pressable style={[onApply ? StyleSheet.absoluteFill : box(0, 0, 652, 1212), { backgroundColor: 'rgba(6,8,13,0.72)' }]} onPress={() => {}} {...(onApply ? ({ focusable: false, tabIndex: -1 } as object) : {})} accessibilityLabel="Sort options" />
       <ChamferBox chamfer={14} fill={PANEL} stroke={GRAY_DIM} strokeWidth={1.4} style={{ width: 330, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: GRAY, fontSize: 17, fontFamily: Display.black, letterSpacing: 1.6, textTransform: 'uppercase' }}>{ids ? 'Sort this deck' : 'Sort Selected'}</Text>
         <Text style={{ color: GRAY_DIM, fontSize: 11.5, fontFamily: Body.regular, marginTop: 3, marginBottom: 12 }}>

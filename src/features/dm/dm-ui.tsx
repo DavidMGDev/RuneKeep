@@ -1,6 +1,8 @@
 /** Shared DM-Mode UI atoms (v0.15.0/v0.16.0): an animated tap-absorbing modal, a name-input dialog, and
  *  small chrome helpers. */
-import { type ReactNode, useState } from 'react';
+import { useDialogKeys } from '@/hooks/use-dialog-keys';
+import { useDesktopPage } from '@/hooks/use-desktop';
+import { type ReactNode, useState, useRef } from 'react';
 import { Pressable, type PressableProps, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -44,11 +46,14 @@ export function DmModal({ onClose, children, contentStyle }: { onClose: () => vo
  *  default; pass `dm={false}` for the gold roster variant. */
 export function NameDialog({ title, initial = '', placeholder, confirmLabel = 'Save', dm = true, onConfirm, onCancel }: { title: string; initial?: string; placeholder?: string; confirmLabel?: string; dm?: boolean; onConfirm: (name: string) => void; onCancel: () => void }) {
   const [value, setValue] = useState(initial);
+  const rootRef = useRef<View>(null);
+  useDialogKeys(rootRef, { enabled: useDesktopPage(), onEscape: onCancel });
   const p = dm
     ? { line: DmRune.lineStrong, inner: DmRune.line, title: DmRune.ivory, text: DmRune.text, muted: DmRune.muted }
     : { line: 'rgba(218,162,73,0.6)', inner: 'rgba(218,162,73,0.45)', title: Rune.ivory, text: Rune.sheet, muted: Rune.muted };
   return (
     <DmModal onClose={onCancel}>
+      <View ref={rootRef}>
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.98)" stroke={p.line} strokeWidth={1.5} style={{ width: 312, padding: 22 }}>
         <Text style={{ color: p.title, fontSize: DmType.panel, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>{title}</Text>
         <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={p.inner} strokeWidth={1.1} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 16 }}>
@@ -68,6 +73,7 @@ export function NameDialog({ title, initial = '', placeholder, confirmLabel = 'S
           <RuneButton label={confirmLabel} kind="secondary" height={42} dm={dm} disabled={!value.trim()} style={{ flex: 1 }} onPress={() => onConfirm(value.trim())} />
         </View>
       </ChamferBox>
+      </View>
     </DmModal>
   );
 }

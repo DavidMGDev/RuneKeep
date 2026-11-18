@@ -323,6 +323,12 @@ function toShareCard(item: Extract<GalleryItem, { type: 'card' | 'weapon' | 'arm
 }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** The picked cards, one per id: two installed packs can carry the same card, and a pick is one card. */
+function pickedFrom(items: GalleryItem[], ids: Set<string>): GalleryItem[] {
+  const seen = new Set<string>();
+  return items.filter((c) => ids.has(c.id) && !seen.has(c.id) && !!seen.add(c.id));
+}
+
 /** Fullscreen reader: full-res card over a dim veil; tap or swipe-down closes (the sheet's focus feel).
  *  v0.13.1: hold the card to share it via NFC (`onHoldShare`) — the carousel's bottom-to-top gold fill. */
 function CardReader({ card, onClose, onHoldShare }: { card: Extract<GalleryItem, { type: 'card' | 'lib' | 'weapon' | 'armor' | 'loot' }>; onClose: () => void; onHoldShare: () => void }) {
@@ -665,7 +671,7 @@ export function GalleryScreen() {
   const onHoldGroup = useCallback((item: GalleryItem) => {
     focusHaptic();
     const ids = selected.has(item.id) ? selected : new Set([item.id]);
-    shareItems(everything.filter((c) => ids.has(c.id)));
+    shareItems(pickedFrom(everything, ids));
   }, [selected, everything, shareItems]);
 
   const openCard = useCallback((item: GalleryItem) => {
@@ -800,7 +806,7 @@ export function GalleryScreen() {
             <View style={{ gap: 8, marginTop: 4 }}>
               <RuneButton label={selecting ? 'Stop selecting' : 'Select cards'} kind="secondary" dense height={36} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
               {selecting && selected.size ? (
-                <RuneButton label={`Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(everything.filter((c) => selected.has(c.id)))} />
+                <RuneButton label={`Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(pickedFrom(everything, selected))} />
               ) : null}
               {selecting ? <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 16 }}>Click cards to pick them, then share the set.</Text> : null}
             </View>
