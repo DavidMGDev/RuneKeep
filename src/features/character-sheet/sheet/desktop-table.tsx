@@ -135,7 +135,12 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   }, [overlay, desktop?.tableHost]);
   // Back (browser button or Alt+Left) returns the focused card before the sheet offers to leave.
   useEffect(() => {
-    backRef.current = () => { if (!focusRef.current) return false; release(); return true; };
+    backRef.current = () => {
+      if (keyRef.current.menu) { playSfx('floatMenuClose'); setMenu(null); return true; }
+      if (!focusRef.current) return false;
+      release();
+      return true;
+    };
     return () => { backRef.current = null; };
   }, [backRef, release]);
 

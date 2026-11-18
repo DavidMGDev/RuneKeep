@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Text } from 'react-native';
 
@@ -38,7 +38,7 @@ export type CardTarget = 'inventory' | 'arsenal' | 'both' | 'notes';
  *   than silently using the category on screen. One choke point, so both modes and both entry points
  *   behave identically.
  */
-export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acquiredIds, enabledExpansionIds, categoryOverride, customTypes = [], initialMode = 'author', experiences, quick = false, destinations = [], customCategories = [] }: { onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; onAcquireCustom?: (card: LibraryCard, category: CardCategory) => void; acquiredIds?: Set<string>; enabledExpansionIds?: string[]; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog'; experiences?: ExperienceRef[]; quick?: boolean; destinations?: CardCategory[]; customCategories?: CustomCategory[] }) {
+export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acquiredIds, enabledExpansionIds, categoryOverride, customTypes = [], initialMode = 'author', experiences, quick = false, destinations = [], customCategories = [], backRef }: { backRef?: React.MutableRefObject<(() => void) | null>; onSave: (draft: CardDraft, categoryKey: CardCategory) => void; onCancel: () => void; onAcquire?: (id: string, category: CardCategory) => void; onAcquireCustom?: (card: LibraryCard, category: CardCategory) => void; acquiredIds?: Set<string>; enabledExpansionIds?: string[]; categoryOverride?: CardCategory; customTypes?: string[]; initialMode?: 'author' | 'catalog'; experiences?: ExperienceRef[]; quick?: boolean; destinations?: CardCategory[]; customCategories?: CustomCategory[] }) {
   const { category: liveCategory } = useCarousel();
   const category = categoryOverride ?? liveCategory;
   // v0.9.8: the sheet's "Add Gear" badge opens straight in catalog mode. v0.13.2 (#359): "Add Card" now
@@ -68,6 +68,19 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
       }
     })();
   }, [onAcquireCustom]);
+  // Back, from the sheet: one step at a time, and through the open editor's own guard so a draft is never dropped.
+  const editorBack = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!backRef) return;
+    backRef.current = () => {
+      if (pending) setPending(null);
+      else if (imported) setImported(null);
+      else if (mode === 'catalog' && cameFromEditor.current) { cameFromEditor.current = false; setMode('author'); }
+      else if (mode !== 'catalog' && editorBack.current) editorBack.current();
+      else onCancel();
+    };
+    return () => { backRef.current = null; };
+  }, [backRef, pending, imported, mode, onCancel]);
   // Beastform is Druid-only and not player-authored (#242 item 5): block New Card here.
   if (category === 'wildshape') {
     return (
@@ -151,6 +164,7 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
         initial={handoff}
         onSave={finish}
         onCancel={onCancel}
+        backRef={editorBack}
         onAdvanced={(d) => { setHandoff(d); setSimple(false); }}
         onImport={onAcquireCustom ? doImport : undefined}
         // v0.31.0: the quick flow can set the type too. The DEFAULT is still "Card" (see its own
@@ -164,5 +178,7 @@ export function NewCardFlow({ onSave, onCancel, onAcquire, onAcquireCustom, acqu
   const catalogBtn = showsCatalog
     ? <RuneButton label="Add card from catalog →" kind="ghost" dense height={36} onPress={() => { cameFromEditor.current = true; setMode('catalog'); }} />
     : undefined;
-  return <CardEditor initial={handoff} kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" experiences={experiences} onSave={finish} onCancel={onCancel} />;
+  // A handed-over draft (from Quick Card or back from the destination picker) has never been saved.
+  const unsaved = !!handoff && (!!handoff.title.trim() || !!handoff.text.trim() || !!handoff.imageUri);
+  return <CardEditor backRef={editorBack} unsaved={unsaved} initial={handoff} kindLabel={defaultType} typeGroups={typeGroups} extraField={catalogBtn} scrimless saveLabel="Create card" experiences={experiences} onSave={finish} onCancel={onCancel} />;
 }

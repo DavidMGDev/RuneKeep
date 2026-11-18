@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -207,7 +208,7 @@ function HueBar({ hue, onHue }: { hue: number; onHue: (h: number) => void }) {
   );
 }
 
-export function ColorPalette({
+function ColorPaletteBody({
   title,
   current,
   onPick,
@@ -311,4 +312,9 @@ export function ColorPalette({
       </ChamferBox>
     </View>
   );
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+export function ColorPalette(p: Parameters<typeof ColorPaletteBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><ColorPaletteBody {...p} /></DesktopPortal>;
 }

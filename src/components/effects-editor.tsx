@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path, Polyline } from 'react-native-svg';
@@ -156,7 +157,7 @@ export function toEditableEffects(effects: CardEffect[]): CardEffect[] {
 
 /** #325: a full-screen chooser for a formula's VARIABLE (Level / Tier / Proficiency / a trait) — same
  *  shape as EffectPicker, so picking a starter is a tap in a list instead of cycling. Rendered at root. */
-export function FormulaVarPicker({ current, currentKey, functionVars, onPick, onClose }: {
+function FormulaVarPickerBody({ current, currentKey, functionVars, onPick, onClose }: {
   current?: EffectFormula['variable'];
   /** v0.42.3: which card element is picked, when `current` is 'function'. */
   currentKey?: string;
@@ -208,7 +209,7 @@ export function FormulaVarPicker({ current, currentKey, functionVars, onPick, on
   );
 }
 
-export function EffectPicker({ current, onPick, onClose, experiences, dm }: { current?: EffectOption; onPick: (o: EffectOption) => void; onClose: () => void; experiences?: ExperienceRef[]; dm?: boolean }) {
+function EffectPickerBody({ current, onPick, onClose, experiences, dm }: { current?: EffectOption; onPick: (o: EffectOption) => void; onClose: () => void; experiences?: ExperienceRef[]; dm?: boolean }) {
   const expOpts = experienceOptions(experiences);
   const groups = [
     ...EFFECT_GROUPS,
@@ -295,7 +296,7 @@ function Check({ on, onPress, label }: { on: boolean; onPress: () => void; label
  * Creating is DM-only, per the owner: a player can tidy what they were given, and move a modifier
  * between the groups that exist, but the organisation itself is the DM's.
  */
-function GroupPicker({ current, groups, dm, onPick, onClose }: { current?: string; groups: string[]; dm?: boolean; onPick: (g: string | null) => void; onClose: () => void }) {
+function GroupPickerBody({ current, groups, dm, onPick, onClose }: { current?: string; groups: string[]; dm?: boolean; onPick: (g: string | null) => void; onClose: () => void }) {
   const [name, setName] = useState('');
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
@@ -332,7 +333,7 @@ function GroupPicker({ current, groups, dm, onPick, onClose }: { current?: strin
  * Name a group (v0.35.2, owner). Used for both halves of the same job: a new group is ASKED for its
  * name rather than handed one, and an existing one is renamed from its header.
  */
-function GroupNameDialog({ title, initial, taken, onSave, onClose }: { title: string; initial: string; taken: string[]; onSave: (name: string) => void; onClose: () => void }) {
+function GroupNameDialogBody({ title, initial, taken, onSave, onClose }: { title: string; initial: string; taken: string[]; onSave: (name: string) => void; onClose: () => void }) {
   const [name, setName] = useState(initial);
   const clash = name.trim() !== initial && taken.includes(name.trim());
   return (
@@ -637,4 +638,24 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
       ) : null}
     </View>
   );
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+export function FormulaVarPicker(p: Parameters<typeof FormulaVarPickerBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><FormulaVarPickerBody {...p} /></DesktopPortal>;
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+export function EffectPicker(p: Parameters<typeof EffectPickerBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><EffectPickerBody {...p} /></DesktopPortal>;
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+function GroupNameDialog(p: Parameters<typeof GroupNameDialogBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><GroupNameDialogBody {...p} /></DesktopPortal>;
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+function GroupPicker(p: Parameters<typeof GroupPickerBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><GroupPickerBody {...p} /></DesktopPortal>;
 }

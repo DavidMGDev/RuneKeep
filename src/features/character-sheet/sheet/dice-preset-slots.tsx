@@ -11,6 +11,7 @@
  *
  * Everything about what a preset IS lives in `lib/dice-presets`; this is the surface.
  */
+import { DesktopPortal } from '@/components/desktop-portal';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
@@ -148,7 +149,7 @@ function Slot({ index, preset, onPress, onHold }: { index: number; preset: DiceP
 
 // ----------------------------------------------------------------------------------- the editor
 
-function IconPicker({ current, onPick, onClose }: { current?: string; onPick: (k: string | undefined) => void; onClose: () => void }) {
+function IconPickerBody({ current, onPick, onClose }: { current?: string; onPick: (k: string | undefined) => void; onClose: () => void }) {
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 10004, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
@@ -174,7 +175,7 @@ function IconPicker({ current, onPick, onClose }: { current?: string; onPick: (k
   );
 }
 
-function VariablePicker({ chosen, chosenKeys, cardVars, onPick, onPickCard, onClose }: {
+function VariablePickerBody({ chosen, chosenKeys, cardVars, onPick, onPickCard, onClose }: {
   chosen: EffectFormula['variable'][];
   /** v0.42.3: the card elements already added, by `cardId|functionId`. */
   chosenKeys: string[];
@@ -475,4 +476,14 @@ export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay, 
       ) : null}
     </>
   );
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+function IconPicker(p: Parameters<typeof IconPickerBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><IconPickerBody {...p} /></DesktopPortal>;
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+function VariablePicker(p: Parameters<typeof VariablePickerBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><VariablePickerBody {...p} /></DesktopPortal>;
 }

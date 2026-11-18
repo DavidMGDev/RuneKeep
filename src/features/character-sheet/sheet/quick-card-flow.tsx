@@ -2,7 +2,7 @@ import { DesktopPortal } from '@/components/desktop-portal';
 import * as ImagePicker from 'expo-image-picker';
 
 import { ownImage } from '@/lib/owned-image';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Keyboard, type NativeSyntheticEvent, Platform, Pressable, ScrollView, Text, TextInput, type TextInputKeyPressEventData, View } from 'react-native';
 import { useReducedMotion } from 'react-native-reanimated';
 
@@ -40,7 +40,10 @@ export function QuickCardFlow({
   onImport,
   typeGroups,
   kindLabel = 'Card',
+  backRef,
 }: {
+  /** Set by a host that owns Back (the sheet): it calls this instead of the flow arming its own browser guard. */
+  backRef?: React.MutableRefObject<(() => void) | null>;
   initial?: CardDraft;
   /** What this flow is making, for the heading and the card's own plaque. Character creation reuses
    *  it for Experiences (v0.26.0), and calling one of those a "card" would be quietly wrong. */
@@ -135,7 +138,12 @@ export function QuickCardFlow({
   }, [dirty, onCancel, step]);
   // The browser's Back already reaches this through the sheet's guard (and, on desktop, the side-slot registry),
   // so this one answers the Android key only; arming both answered a single Back twice.
-  useBackGuard(guardedClose, { web: false });
+  useBackGuard(guardedClose, { web: !backRef });
+  useEffect(() => {
+    if (!backRef) return;
+    backRef.current = guardedClose;
+    return () => { backRef.current = null; };
+  }, [backRef, guardedClose]);
 
   // Enter on the title goes to the body; Enter on the body goes to the confirmation. `submitBehavior`
   // is what makes that true on the multiline body, where Enter would otherwise type a newline.

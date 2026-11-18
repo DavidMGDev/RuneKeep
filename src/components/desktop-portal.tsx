@@ -1,4 +1,4 @@
-import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { createPortal } from 'react-dom';
 
@@ -46,7 +46,8 @@ export type LayerPriority = 'panel' | 'dialog' | 'share' | 'progress';
 const BAND: Record<LayerPriority, number> = { panel: 0, dialog: 1_000_000, share: 2_000_000, progress: 3_000_000 };
 
 export interface SideLayers {
-  next(priority: LayerPriority): number;
+  /** `floor`: the rank of the layer this one opened from; the new rank lands in its band or higher, and above it. */
+  next(priority: LayerPriority, floor?: number): number;
   set(rank: number, el: HTMLElement, dismiss: () => void, hasDismiss: () => boolean): void;
   remove(rank: number): void;
   /** 'none' when no layer is open; 'dismissed' after asking the top layer to close; 'blocked' when it has no closer. */
@@ -61,7 +62,7 @@ export function createSideLayers(): SideLayers {
     layers.forEach((l, rank) => (rank === top ? l.el.removeAttribute('inert') : l.el.setAttribute('inert', '')));
   };
   return {
-    next: (priority) => BAND[priority] + ++seq,
+    next: (priority, floor = 0) => Math.max(BAND[priority], floor - (floor % 1_000_000)) + ++seq,
     set: (rank, el, dismiss, hasDismiss) => { layers.set(rank, { el, dismiss, hasDismiss }); sync(); },
     remove: (rank) => { layers.delete(rank); sync(); },
     dismissTop: () => {
@@ -74,6 +75,9 @@ export function createSideLayers(): SideLayers {
   };
 }
 
+/** The layer a portal was written inside, so a picker opened from a panel always ranks above that panel. */
+const ParentLayer = createContext<(() => number) | null>(null);
+
 function SideLayer({ layers, frame, priority, onDismiss, children }: { layers: SideLayers; frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; priority: LayerPriority; onDismiss?: () => void; children: ReactNode }) {
   // Ranked once, when the layer COMMITS (not during render, so an abandoned render ranks nothing); a remount is
   // a reopening and ranks as new. The layout effect re-renders before paint, so the z-index is never seen at 0.
@@ -81,19 +85,28 @@ function SideLayer({ layers, frame, priority, onDismiss, children }: { layers: S
   const ref = useRef<HTMLElement | null>(null);
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
+  // Claimed lazily: a child's layout effect runs before its parent's, so when both mount in one commit the
+  // child claims the parent's rank first and still lands above it.
+  const parentClaim = useContext(ParentLayer);
+  const claimed = useRef(0);
+  const claim = useCallback(() => {
+    if (!claimed.current) claimed.current = layers.next(priority, parentClaim?.() ?? 0);
+    return claimed.current;
+  }, [layers, priority, parentClaim]);
   useLayoutEffect(() => {
     if (!ref.current) return;
-    const r = layers.next(priority);
+    const r = claim();
     setRank(r);
     layers.set(r, ref.current, () => dismissRef.current?.(), () => !!dismissRef.current);
-    return () => layers.remove(r);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ranked once per mount by design
-  }, [layers]);
+    return () => { layers.remove(r); claimed.current = 0; };
+  }, [layers, claim]);
   return (
     <View ref={ref as never} style={[StyleSheet.absoluteFill, { zIndex: rank }]} pointerEvents="box-none">
-      <FrameContext.Provider value={frame}>
-        <StageScaleReset>{children}</StageScaleReset>
-      </FrameContext.Provider>
+      <ParentLayer.Provider value={claim}>
+        <FrameContext.Provider value={frame}>
+          <StageScaleReset>{children}</StageScaleReset>
+        </FrameContext.Provider>
+      </ParentLayer.Provider>
     </View>
   );
 }

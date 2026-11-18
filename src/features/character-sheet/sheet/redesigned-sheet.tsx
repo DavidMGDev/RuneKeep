@@ -15,6 +15,7 @@ import { useLayout } from '@/hooks/use-layout';
 import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
+import { DesktopPortal } from '@/components/desktop-portal';
 import { useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -640,6 +641,8 @@ interface BackGuardState {
   desktopBackRef?: React.MutableRefObject<(() => boolean) | null>;
   /** v0.44.0 desktop: closes the small dialogs the back order does not know about (number keypad, move, delete). */
   closeMinorRef?: React.MutableRefObject<(() => boolean) | null>;
+  /** The New Card flow's own step back: destination picker to editor, editor through its unsaved-work guard. */
+  newCardBackRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 /**
@@ -673,6 +676,7 @@ function SheetBackGuard(props: BackGuardState) {
         if (p.editCardId) { p.onCloseEdit(); return true; }
         if (p.cardInfoId) { p.onCloseCardInfo(); return true; }
         if (p.damageOpen) { p.onCloseDamage(); return true; }
+        if (p.floatKind === 'custom' && p.newCardBackRef?.current) { p.newCardBackRef.current(); return true; }
         if (p.floatKind) { p.onCloseFloat(); return true; }
         if (menuOpenRef.current) { closeMenu(); return true; }
         // v0.11.2 item 5: Golden Gear Edit is ONE cohesive mode — Back exits ALL of it (dim + banner + row
@@ -700,11 +704,18 @@ function SheetBackGuard(props: BackGuardState) {
        */
       let popGuard: (() => void) | undefined;
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.history.pushState({ rkSheet: true }, '');
+        // The spare carries the router's own entry (its `id`) with our flag on top. A spare WITHOUT the id made
+        // React Navigation treat the Back as a deep link and reset the root, remounting the sheet and dropping
+        // whatever was open (a half-written card included). One spare at a time: never stack a second.
+        const arm = () => {
+          const st = window.history.state as { rkSheet?: boolean } | null;
+          if (!st?.rkSheet) window.history.pushState({ ...(st ?? {}), rkSheet: true }, '');
+        };
+        arm();
         const onPop = () => {
           onBack();
           // Re-arm. The entry we just consumed has to be replaced or the next back leaves for real.
-          window.history.pushState({ rkSheet: true }, '');
+          arm();
         };
         window.addEventListener('popstate', onPop);
         popGuard = () => window.removeEventListener('popstate', onPop);
@@ -715,7 +726,7 @@ function SheetBackGuard(props: BackGuardState) {
       if (Platform.OS === 'web' && typeof document !== 'undefined' && ref.current.desktopBackRef) {
         const onEsc = (e: KeyboardEvent) => {
           const p = ref.current;
-          if (e.key !== 'Escape') return;
+          if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return; // 229: an IME is composing (as RNW checks)
           // The side slot's top layer decides, even from inside one of its fields: it closes through its own
           // dismiss (editors ask first when there is unsaved work), or holds.
           if (layersRef.current) {
@@ -1572,6 +1583,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const desktop = useDesktop();
   const desktopBackRef = useRef<(() => boolean) | null>(null);
   const closeMinorRef = useRef<(() => boolean) | null>(null);
+  const newCardBackRef = useRef<(() => void) | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string; ids: string[] } | null>(null); // v0.10.1 NFC tap-to-share
   const [cardInfoId, setCardInfoId] = useState<string | null>(null); // per-card modifier view (#175)
   const [editCardId, setEditCardId] = useState<string | null>(null); // edit a player-authored card (#264 item 5)
@@ -3030,6 +3042,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           onLeave={() => setLeaveConfirm(true)}
           desktopBackRef={desktop ? desktopBackRef : undefined}
           closeMinorRef={desktop ? closeMinorRef : undefined}
+          newCardBackRef={newCardBackRef}
         />
         {/* v0.13.2 (#359): always-on NFC card receiving. Inside the providers so it can read carousel
             `editing`; suppressed only while a focused interface is open (never by card view state). */}
@@ -3065,6 +3078,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* v0.42.6: position an uploaded portrait before it is kept. At the editor's root, so it
                 covers the sheet rather than being laid out inside it. */}
             {croppingPortrait ? (
+              <DesktopPortal to="side" priority="dialog" onDismiss={() => setCroppingPortrait(null)}>
               <ImageCropper
                 uri={croppingPortrait}
                 aspect={148 / 222}
@@ -3072,6 +3086,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 onCancel={() => setCroppingPortrait(null)}
                 onDone={(r) => { setCroppingPortrait(null); void applyPortrait(r.uri); }}
               />
+              </DesktopPortal>
             ) : null}
           <View
             style={{ flex: 1, marginTop: topInset, marginBottom: bottomInset }}
@@ -3252,7 +3267,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               for parity with the float-menu "New Card" flow — the acquire callbacks are always passed;
               only 'gear' opens straight into the catalog. */}
           {floatKind === 'custom' ? (
-            <NewCardFlow categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} quick={newCardEntry === 'card'} destinations={moveTargets} customCategories={customCategories} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
+            <NewCardFlow backRef={newCardBackRef} categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} quick={newCardEntry === 'card'} destinations={moveTargets} customCategories={customCategories} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
             <RestPanel character={character} moveLimit={restMoveLimit(character.restMoves)} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (

@@ -479,7 +479,7 @@ function SectionsField({ sections, onChange, minRows = 1, fixedLabels, ancestryF
  * Full-screen card-TYPE picker (#246) — same shape as the modifier picker. Lists the grouped built-in
  * types plus the player's custom types; picking sets the card's middle-ribbon label.
  */
-export function TypePicker({ groups, current, onPick, onClose }: { groups: { label: string; types: string[] }[]; current?: string; onPick: (t: string) => void; onClose: () => void }) {
+function TypePickerBody({ groups, current, onPick, onClose }: { groups: { label: string; types: string[] }[]; current?: string; onPick: (t: string) => void; onClose: () => void }) {
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
@@ -761,6 +761,8 @@ export function CardEditor({
   noFullImage = false,
   overlay,
   scrimless = false,
+  backRef,
+  unsaved = false,
   sectioned = false,
   sectionsConfig,
   sectionFunctions,
@@ -805,6 +807,10 @@ export function CardEditor({
    *  already darkens the screen — keeping a second scrim caused a double-dim that popped on open/close.
    *  A transparent tap-catcher still closes on outside tap. Standalone (creation) keeps its dark scrim. */
   scrimless?: boolean;
+  /** Set by a host that owns Back (the sheet's New Card flow): it calls the editor's guarded close. */
+  backRef?: React.MutableRefObject<(() => void) | null>;
+  /** The draft was handed over and has never been saved, so leaving asks even before an edit. */
+  unsaved?: boolean;
   /** Optional extra control rendered in the fields column (#164: the inventory/arsenal target picker). */
   extraField?: ReactNode;
   /** Experience mode (#202): a long-title phrase, no description/effects; preview shows the bonus. */
@@ -1015,7 +1021,8 @@ export function CardEditor({
     draft.typeLabel !== base.current.typeLabel ||
     colorNonce > 0 ||
     JSON.stringify(draft.effects) !== JSON.stringify(base.current.effects) ||
-    authoredRows(draft.sections) !== authoredRows(base.current.sections);
+    authoredRows(draft.sections) !== authoredRows(base.current.sections) ||
+    unsaved;
   const [leaving, setLeaving] = useState(false);
   // v0.39.0: the type's own effects are re-settled on the way OUT as well as at the picker, so a card
   // saved from here agrees with its type even if it arrived from somewhere that never applied them.
@@ -1030,6 +1037,11 @@ export function CardEditor({
     // editor; arming a second one would answer a single Back twice. Standalone, this IS the guard.
     { web: !scrimless },
   );
+  useEffect(() => {
+    if (!backRef) return;
+    backRef.current = guardedClose;
+    return () => { backRef.current = null; };
+  }, [backRef, guardedClose]);
 
   // The effect-target picker is lifted to the editor ROOT (#242 item 7) so it covers the whole screen
   // instead of being clipped inside the scrolling fields column.
@@ -1361,4 +1373,9 @@ export function CardEditor({
     </View>
     </DesktopPortal>
   );
+}
+
+/** Desktop (v0.44.0): its own side-slot layer, so Escape and Back close the picker, not the editor under it. */
+export function TypePicker(p: Parameters<typeof TypePickerBody>[0]) {
+  return <DesktopPortal to="side" priority="dialog" onDismiss={p.onClose}><TypePickerBody {...p} /></DesktopPortal>;
 }
