@@ -1,4 +1,6 @@
 import { createContext, useContext } from 'react';
+
+import type { SideLayers } from '@/components/desktop-portal';
 import { Platform } from 'react-native';
 
 /**
@@ -34,6 +36,8 @@ export interface Desktop {
   side: { left: number; top: number; width: number; height: number };
   /** Everything right of the port, where the card table draws; window pixels. */
   table: { left: number; top: number; width: number; height: number };
+  /** The side slot's layer registry: stacking, inertness and Escape/Back for everything opened there. */
+  layers: SideLayers;
   /** DOM node the desktop card table portals into (everything right of the port). */
   tableHost: HTMLElement | null;
   /** DOM node panels and dialogs portal into (a slot hugging the port's right edge). */

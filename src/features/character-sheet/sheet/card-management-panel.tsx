@@ -1,3 +1,4 @@
+import { DesktopPortal } from '@/components/desktop-portal';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
@@ -502,7 +503,9 @@ const FOCUS_SCALE = 1.7;
 function CardFocus({ item, onClose }: { item: CardItem; onClose: () => void }) {
   const w = FORGED_W * FOCUS_SCALE;
   const h = FORGED_H * FOCUS_SCALE;
+  // Desktop (v0.44.0): its own dialog layer, so Escape and Back put the card down before closing the panel.
   return (
+    <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
     <Animated.View entering={FadeIn.duration(190)} exiting={FadeOut.duration(150)} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 10005, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close card" style={StyleSheet.absoluteFill}>
         <View style={{ flex: 1, backgroundColor: 'rgba(6,8,13,0.9)' }} />
@@ -515,6 +518,7 @@ function CardFocus({ item, onClose }: { item: CardItem; onClose: () => void }) {
         )}
       </View>
     </Animated.View>
+    </DesktopPortal>
   );
 }
 

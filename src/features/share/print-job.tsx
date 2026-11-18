@@ -9,6 +9,7 @@
  * So: a card-by-card count, a bar, a Cancel, and Back asks before it leaves. Cancelling really does
  * stop the job, because the build loop is handed a `cancelled()` it checks between cards.
  */
+import { DesktopPortal } from '@/components/desktop-portal';
 import { type ReactNode, useCallback, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
@@ -78,7 +79,9 @@ export function usePrintJob(onNotice?: (text: string) => void): PrintJob {
     })();
   }, [onNotice]);
 
+  // Desktop (v0.44.0): a blocking dialog in the side slot. Escape and Back ask before stopping, as Android Back does.
   const node = job ? (
+    <DesktopPortal to="side" priority="dialog" onDismiss={() => setAsking((a) => !a)}>
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 10030, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
       <DimScreen opacity={0.92} />
@@ -109,6 +112,7 @@ export function usePrintJob(onNotice?: (text: string) => void): PrintJob {
         />
       ) : null}
     </View>
+    </DesktopPortal>
   ) : null;
 
   return { run, busy: !!job, node };

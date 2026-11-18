@@ -15,7 +15,7 @@ import { FrameContext } from '@/hooks/use-layout';
  * GEOMETRY are the exception and are reset at the boundary: the hosts are drawn at the window's own pixels,
  * not inside the scaled phone port, so gestures and sizes inside them must not divide by the port's scale.
  */
-export function DesktopPortal({ to, children }: { to: 'table' | 'side'; children: ReactNode }) {
+export function DesktopPortal({ to, children, priority = 'panel', onDismiss }: { to: 'table' | 'side'; children: ReactNode; /** Dialogs always rank above panels; open order breaks ties. */ priority?: 'panel' | 'dialog'; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
   const desktop = useDesktop();
   const frame = useMemo(() => {
     if (!desktop) return null;
@@ -24,7 +24,7 @@ export function DesktopPortal({ to, children }: { to: 'table' | 'side'; children
   }, [desktop, to]);
   const host = desktop ? (to === 'table' ? desktop.tableHost : desktop.sideHost) : null;
   if (!desktop || !frame) return <>{children}</>;
-  if (to === 'side' && host) return createPortal(<SideLayer frame={frame}>{children}</SideLayer>, host);
+  if (to === 'side' && host) return createPortal(<SideLayer layers={desktop.layers} frame={frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, host);
   // The host mounts one frame after the port; render nothing rather than in the wrong place meanwhile.
   return host
     ? createPortal(
@@ -37,44 +37,55 @@ export function DesktopPortal({ to, children }: { to: 'table' | 'side'; children
 }
 
 /**
- * The side slot's layers (v0.44.0). Each portal registers when it mounts and gets the next number; that number
- * is its z-index, and only the highest-numbered layer takes input (the rest are `inert`). So the dialog the
- * player opened last is on top and live, whatever order React placed the DOM nodes in, and a layer that
- * remounts counts as newly opened. This is the stacking a phone's full-screen overlays get for free.
+ * The side slot's layers (v0.44.0), one registry per desktop frame. A layer's rank is its priority band (dialogs
+ * above panels) plus the order it opened in; that rank is its z-index AND decides which layer is live (the rest
+ * are `inert`). Escape and Back dismiss the top layer through the callback it registered, so what they close is
+ * always what the player sees on top, and a layer with no callback (an editor guarding unsaved work) holds them.
  */
-let seq = 0;
-const layers = new Map<number, HTMLElement>();
-function syncLayers() {
-  const top = Math.max(-1, ...layers.keys());
-  layers.forEach((el, n) => (n === top ? el.removeAttribute('inert') : el.setAttribute('inert', '')));
+export interface SideLayers {
+  next(priority: 'panel' | 'dialog'): number;
+  set(rank: number, el: HTMLElement, dismiss: () => void, hasDismiss: () => boolean): void;
+  remove(rank: number): void;
+  /** 'none' when no layer is open; 'dismissed' after asking the top layer to close; 'blocked' when it has no closer. */
+  dismissTop(): 'none' | 'dismissed' | 'blocked';
 }
 
-/**
- * Closes the topmost side layer through its own close control, when more than one layer is open (a dialog on
- * top of a panel). Dialogs that keep their state locally (New Category, Move, Delete inside Card Management)
- * have no closer the sheet knows about, but every one of them carries a Close or Cancel control. Returns true
- * when it closed something, so Escape and Back stop there instead of closing the panel underneath.
- */
-export function closeTopSideLayer(): boolean {
-  if (layers.size < 2) return false;
-  const top = layers.get(Math.max(...layers.keys()));
-  const closer = top?.querySelector('[aria-label="Cancel"],[aria-label="Close"]') as HTMLElement | null;
-  if (!closer) return false;
-  closer.click();
-  return true;
+const DIALOG_BAND = 1_000_000;
+
+export function createSideLayers(): SideLayers {
+  let seq = 0;
+  const layers = new Map<number, { el: HTMLElement; dismiss: () => void; hasDismiss: () => boolean }>();
+  const sync = () => {
+    const top = layers.size ? Math.max(...layers.keys()) : -1;
+    layers.forEach((l, rank) => (rank === top ? l.el.removeAttribute('inert') : l.el.setAttribute('inert', '')));
+  };
+  return {
+    next: (priority) => (priority === 'dialog' ? DIALOG_BAND : 0) + ++seq,
+    set: (rank, el, dismiss, hasDismiss) => { layers.set(rank, { el, dismiss, hasDismiss }); sync(); },
+    remove: (rank) => { layers.delete(rank); sync(); },
+    dismissTop: () => {
+      if (!layers.size) return 'none';
+      const top = layers.get(Math.max(...layers.keys()))!;
+      if (!top.hasDismiss()) return 'blocked';
+      top.dismiss();
+      return 'dismissed';
+    },
+  };
 }
 
-function SideLayer({ frame, children }: { frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; children: ReactNode }) {
-  const [order] = useState(() => ++seq);
+function SideLayer({ layers, frame, priority, onDismiss, children }: { layers: SideLayers; frame: { width: number; height: number; scale: number; offsetX: number; offsetY: number }; priority: 'panel' | 'dialog'; onDismiss?: () => void; children: ReactNode }) {
+  // Ranked once, when the layer opens; a remount is a reopening and ranks as new.
+  const [rank] = useState(() => layers.next(priority));
   const ref = useRef<HTMLElement | null>(null);
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
   useLayoutEffect(() => {
     if (!ref.current) return;
-    layers.set(order, ref.current);
-    syncLayers();
-    return () => { layers.delete(order); syncLayers(); };
-  }, [order]);
+    layers.set(rank, ref.current, () => dismissRef.current?.(), () => !!dismissRef.current);
+    return () => layers.remove(rank);
+  }, [layers, rank]);
   return (
-    <View ref={ref as never} style={[StyleSheet.absoluteFill, { zIndex: order }]} pointerEvents="box-none">
+    <View ref={ref as never} style={[StyleSheet.absoluteFill, { zIndex: rank }]} pointerEvents="box-none">
       <FrameContext.Provider value={frame}>
         <StageScaleReset>{children}</StageScaleReset>
       </FrameContext.Provider>

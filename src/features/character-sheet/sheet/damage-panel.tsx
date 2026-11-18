@@ -130,7 +130,7 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
   // (matches the OverlayShell pattern).
   // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
-    <DesktopPortal to="side">
+    <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
       {/* #258r3: a near-invisible backgroundColor + collapsable={false} make this a real, OCCLUDING
           native view so gesture-handler's hit-test stops here instead of passing through to the hearts

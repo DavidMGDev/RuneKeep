@@ -15,7 +15,6 @@ import { useLayout } from '@/hooks/use-layout';
 import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
-import { closeTopSideLayer } from '@/components/desktop-portal';
 import { useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -653,6 +652,9 @@ interface BackGuardState {
 function SheetBackGuard(props: BackGuardState) {
   const { machineState, closeFullscreen, collapse, editing, exitEdit } = useCarousel();
   const { open: menuOpen, closeMenu } = useFloatMenu();
+  const desktopLayers = useDesktop()?.layers ?? null;
+  const layersRef = useRef(desktopLayers);
+  layersRef.current = desktopLayers;
   const ref = useRef(props);
   ref.current = props;
   const menuOpenRef = useRef(menuOpen);
@@ -664,10 +666,10 @@ function SheetBackGuard(props: BackGuardState) {
       const onBack = () => {
         const p = ref.current;
         // Close the topmost overlay first (most-recently-opened wins), THEN carousel states, THEN leave.
+        // Desktop: the side slot's top layer first, through its own dismiss (or held, for an editor).
+        if (p.desktopBackRef && layersRef.current && layersRef.current.dismissTop() !== 'none') return true;
         if (p.leaveConfirm) { p.onCloseLeave(); return true; }
-        // Desktop: the same layer order Escape uses, so Back never closes a panel out from under its dialog.
         if (p.closeMinorRef?.current?.()) return true;
-        if (p.desktopBackRef && closeTopSideLayer()) return true;
         if (p.editCardId) { p.onCloseEdit(); return true; }
         if (p.cardInfoId) { p.onCloseCardInfo(); return true; }
         if (p.damageOpen) { p.onCloseDamage(); return true; }
@@ -717,11 +719,11 @@ function SheetBackGuard(props: BackGuardState) {
           // A field keeps its own Escape, and the card editor and New Card own theirs: they guard unsaved
           // work behind their Cancel, which Escape must never bypass.
           if (/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+          // The side slot's top layer decides: it closes through its own dismiss, or holds (an editor).
+          if (layersRef.current && layersRef.current.dismissTop() !== 'none') return;
           if (p.editCardId || p.floatKind === 'custom') return;
           if (p.leaveConfirm) { p.onCloseLeave(); return; }
-          // Dialogs that open ON TOP of a panel (Export over Card Management, a keypad over a card) go first.
           if (p.closeMinorRef?.current?.()) return;
-          if (closeTopSideLayer()) return;
           if (p.cardInfoId || p.damageOpen || p.floatKind || menuOpenRef.current) onBack();
         };
         document.addEventListener('keydown', onEsc);

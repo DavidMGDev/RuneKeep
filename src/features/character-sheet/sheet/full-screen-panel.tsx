@@ -41,7 +41,7 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
   useScreenDim(0.985);
   // Desktop (v0.44.0): the panel opens in the side slot beside the phone port instead of over the sheet.
   return (
-    <DesktopPortal to="side">
+    <DesktopPortal to="side" onDismiss={close}>
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
       {/* v0.39.0: anything inside this panel that asks to be an OVERLAY is drawn here, as a child of
           the full-screen view, rather than wherever it was written. A dialog written inside one of
@@ -81,7 +81,7 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
  */
 export function CenterDialog({ onClose, children, zIndex = 10003, scrimOpacity = 0.55, dismissOnScrim = true }: { onClose: () => void; children: ReactNode; zIndex?: number; scrimOpacity?: number; dismissOnScrim?: boolean }) {
   return (
-    <DesktopPortal to="side">
+    <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex }}>
       <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: scrimOpacity > 0 ? `rgba(6,8,13,${scrimOpacity})` : 'transparent' }} onPress={dismissOnScrim ? onClose : undefined} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
       {/* v0.32.0: declare the dim so the tablet frame's margins darken with it (lib/screen-dim),

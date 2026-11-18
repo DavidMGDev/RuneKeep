@@ -47,10 +47,10 @@ import { DimScreen } from '@/lib/screen-dim';
  */
 const SHELL_Z = 10020;
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, onClose }: { children: React.ReactNode; onClose?: () => void }) {
   // Desktop (v0.44.0): in the side slot, where the panel that raised it lives, so it stacks on top of it.
   return (
-    <DesktopPortal to="side">
+    <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: SHELL_Z, alignItems: 'center', justifyContent: 'center' }}>
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
       <DimScreen opacity={0.92} />
@@ -120,7 +120,7 @@ function useExport(content: RkpContent, label: string, onClose: () => void) {
 function ExportOnlyPanel({ content, label, onPdf, onClose }: { content: RkpContent; label: string; onPdf?: () => void; onClose: () => void }) {
   const doExport = useExport(content, label, onClose);
   return (
-    <Shell>
+    <Shell onClose={onClose}>
       <ExportGlyph tint={Rune.goldEdge} />
       <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' }}>Share {label}</Text>
       <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.regular, lineHeight: 19, textAlign: 'center' }}>
@@ -192,7 +192,7 @@ function NfcSendPanel({ content, label, onPdf, onClose }: { content: RkpContent;
   }, [content, onClose]);
 
   return (
-    <Shell>
+    <Shell onClose={onClose}>
       <NfcGlyph tint={state === 'sent' ? Rune.goldBright : state === 'error' ? Rune.red : Rune.goldEdge} />
       <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' }}>
         {state === 'sent' ? 'Shared!' : state === 'error' ? 'NFC error' : `Send ${label}`}
@@ -248,7 +248,7 @@ export function NfcReceiveModal({ onReceived, onClose }: { onReceived: (content:
   }, [onReceived]);
 
   return (
-    <Shell>
+    <Shell onClose={onClose}>
       <NfcGlyph tint={state === 'error' ? Rune.red : Rune.goldEdge} />
       <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' }}>
         {state === 'error' ? 'NFC error' : 'Receive by NFC'}

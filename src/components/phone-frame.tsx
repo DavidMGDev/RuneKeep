@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname } from 'expo-router';
 
 import { Rune } from '@/constants/theme';
+import { createSideLayers } from '@/components/desktop-portal';
 import { type Desktop, DesktopContext, isDesktopWindow } from '@/hooks/use-desktop';
 import { DESIGN_H, DESIGN_W, FrameContext, TABLET_MIN_SW } from '@/hooks/use-layout';
 import { useDimLevel, useEdgeColor } from '@/lib/screen-dim';
@@ -81,6 +82,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [tableHost, setTableHost] = useState<HTMLElement | null>(null);
   const [sideHost, setSideHost] = useState<HTMLElement | null>(null);
+  const [layers] = useState(createSideLayers);
   const desktopSheet = isDesktopWindow(width, scaleH) && pathname === '/sheet';
   const desktop = useMemo<Desktop | null>(() => {
     if (!desktopSheet) return null;
@@ -89,8 +91,8 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     const port = { left: pad, top: pad, width: DESIGN_W * scale, height: DESIGN_H * scale, scale };
     const side = { left: port.left + port.width + 10, top: port.top, width: SIDE_W, height: port.height };
     const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };
-    return { port, side, table, tableHost, sideHost };
-  }, [desktopSheet, scaleH, width, height, tableHost, sideHost]);
+    return { port, side, table, layers, tableHost, sideHost };
+  }, [desktopSheet, scaleH, width, height, layers, tableHost, sideHost]);
   const portFrame = useMemo(() => (desktop ? { width: DESIGN_W, height: DESIGN_H, scale: desktop.port.scale, offsetX: desktop.port.left, offsetY: desktop.port.top } : frame), [desktop, frame]);
 
   if (!desktop && !isTablet) return <>{children}</>;
