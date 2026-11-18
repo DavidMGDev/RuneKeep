@@ -705,6 +705,8 @@ export interface TokenBoardProps {
   drawerTop?: number;
   /** Open the dice list ABOVE the drawer (a host whose drawer sits low, the desktop table). */
   dieMenuUp?: boolean;
+  /** Set to a step that closes the dice list; returns false when there was nothing to close. */
+  dismissRef?: React.MutableRefObject<(() => boolean) | null>;
   /** Card actions (#293) shown in the drawer's left panel when open: edit a custom card / delete a
    *  catalog card. `canAct` is false for beastform (no panel); `editable` picks the pencil vs the trash. */
   onEditCard?: () => void;
@@ -714,12 +716,18 @@ export interface TokenBoardProps {
 }
 
 /** The reusable token surface — fills its parent; pass the focused card's `cardRect` in parent space. */
-export function TokenBoard({ cardRect, width, height, tokens, drawerColor, scale, onPlace, onRemove, onUpdate, onSetDrawerColor, drawerTop = DRAWER_TOP, dieMenuUp = false, onEditCard, onRequestDelete, canAct = false, editable = false }: TokenBoardProps) {
+export function TokenBoard({ cardRect, width, height, tokens, drawerColor, scale, onPlace, onRemove, onUpdate, onSetDrawerColor, drawerTop = DRAWER_TOP, dieMenuUp = false, dismissRef, onEditCard, onRequestDelete, canAct = false, editable = false }: TokenBoardProps) {
   const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [dieType, setDieType] = useState<DieType>('d20'); // the source die's current size (#293)
   /** v0.34.4: holding the die source drops down every die at once, so eight is not eight taps. */
   const [dieMenu, setDieMenu] = useState(false);
+  // A host that owns Escape and Back (the desktop table) closes the dice list first, before anything under it.
+  useEffect(() => {
+    if (!dismissRef) return;
+    dismissRef.current = () => { if (!dieMenu) return false; setDieMenu(false); return true; };
+    return () => { dismissRef.current = null; };
+  }, [dismissRef, dieMenu]);
   const openP = useSharedValue(0);
 
   useEffect(() => {

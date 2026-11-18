@@ -134,6 +134,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
     setFocusId(null);
   }, [focusId]);
 
+  const tokenDismiss = useRef<(() => boolean) | null>(null);
   const focusRef = useRef(focusId);
   focusRef.current = focusId;
   const onCardPress = useCallback((id: string, live: boolean) => {
@@ -157,6 +158,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   useEffect(() => {
     backRef.current = () => {
       if (keyRef.current.menu) { playSfx('floatMenuClose'); setMenu(null); return true; }
+      if (tokenDismiss.current?.()) return true;
       if (!focusRef.current) return false;
       release();
       return true;
@@ -178,7 +180,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
       if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
       const key = e.key.toLowerCase();
       const ids = k.deck.map((c) => c.id), at = k.focusId ? ids.indexOf(k.focusId) : -1;
-      if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } else release(); return; }
+      if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } else if (!tokenDismiss.current?.()) release(); return; }
       if (k.menu) return; // the menu owns the keys while it is open
       if (e.shiftKey && (key === 'arrowright' || key === 'd' || key === 'arrowleft' || key === 'a')) { e.preventDefault(); moveRef.current((key === 'arrowright' || key === 'd') ? 1 : -1); return; }
       if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + 1) % ids.length]); return; }
@@ -294,6 +296,7 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
               scale={1}
               drawerTop={drawerTop}
               dieMenuUp={drawerTop + 60 + 6 + DIE_MENU_H > tableH}
+              dismissRef={tokenDismiss}
               onPlace={onPlaceToken}
               onRemove={onRemoveToken}
               onUpdate={onUpdateToken}

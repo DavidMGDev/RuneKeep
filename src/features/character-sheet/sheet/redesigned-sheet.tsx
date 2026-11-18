@@ -16,7 +16,7 @@ import { computeStageScale } from '@/lib/stage-scale';
 import { PressableArt } from '@/components/pressable-art';
 import { Body, Display, Rune } from '@/constants/theme';
 import { DesktopPortal } from '@/components/desktop-portal';
-import { armSheetSpare, clearSheetSpare, endLeave, isLeavingSpares, leaveThroughSpares, onSheetSpare, poppedSheetSpare } from '@/hooks/use-back-guard';
+import { armSheetSpare, clearSheetSpare, endLeave, hasAppPredecessor, isLeavingSpares, leaveThroughSpares, onSheetSpare, poppedSheetSpare } from '@/hooks/use-back-guard';
 import { DesktopContext, useDesktop } from '@/hooks/use-desktop';
 import { box, SHEET_DESIGN_HEIGHT, SHEET_DESIGN_WIDTH } from '@/lib/design';
 import { type PipState, resolveHearts, resolvePips } from '@/lib/pips';
@@ -713,8 +713,11 @@ function SheetBackGuard(props: BackGuardState) {
         // whatever was open (a half-written card included). One spare at a time: never stack a second.
         const arm = armSheetSpare;
         arm();
+        const here = window.location.pathname + window.location.search;
         const onPop = () => {
           if (isLeavingSpares()) return; // a confirmed leave stepping off the spare: not a Back to answer
+          // A jump to another page (the history menu): not ours to answer, and re-arming there would cut Forward off.
+          if (window.location.pathname + window.location.search !== here) return;
           // Only a Back off our spare is a Back to answer; a jump through the history menu just re-arms.
           if (poppedSheetSpare()) { clearSheetSpare(); onBack(); }
           // Re-arm. The entry we just consumed has to be replaced or the next back leaves for real.
@@ -3046,7 +3049,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     );
   return (
     <AccentProvider>
-      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onExpandClassCard={(id, cat) => setExpandingClass({ cat, id })} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={onReorderCards} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
+      <CarouselProvider decks={carouselDecks} categoryMeta={categoryMeta} ring={ring} validRing={validRing} originIndices={originIndices} enabledIds={enabledIds} cardStates={cardStates} crossOuts={crossOuts} onToggleCard={onToggleCard} onToggleCardModifiers={onToggleCardModifiers} onExpandClassCard={(id, cat) => setExpandingClass({ cat, id })} onEditNumberInput={setNumberCardId} onShowCardInfo={setCardInfoId} onLeaveFullscreen={() => { domainOverrideRef.current = 0; }} cardTokens={cardTokens} tokenColor={file?.tokenColor} tokenDrawerX={file?.tokenDrawerX} onPlaceToken={placeToken} onRemoveToken={removeToken} onUpdateToken={updateToken} onSetTokenColor={setTokenColor} onMoveTokenDrawer={moveTokenDrawer} onReorderCards={file ? onReorderCards : undefined} onCardAction={onCardAction} nfcAvailable={nfcModulesPresent()} isCardFavorited={isCardFavoritedFn} onEmptyFavorites={() => pushNotice('Add a card to favorites!')} onEmptyOpen={() => setEmptyPanel('root')} apiRef={carouselApiRef}>
        {/* v0.29.1: the south wedge is CHARACTERS, the way out. It is not an interface, it raises the
            SAME leave confirm the back button already uses rather than adding a second prompt that
            could drift from it. */}
@@ -3447,7 +3450,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
                 // v0.29.1: cover the trip back. The roster reads its characters from disk, and on a
                 // slow device that is a beat of bright parchment giving way to nothing.
                 setLeaving(true);
-                requestAnimationFrame(() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else { router.replace('/'); endLeave(); } }));
+                requestAnimationFrame(() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else if (hasAppPredecessor()) window.history.back(); else { router.replace('/'); endLeave(); } }));
               }}
               onCancel={() => setLeaveConfirm(false)}
             />

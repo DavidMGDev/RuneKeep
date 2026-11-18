@@ -45,9 +45,22 @@ type NavEntry = { key: string; index: number };
 /** The Navigation API's current entry: a key that survives `replaceState` (the router's rewrites) and a position. */
 const navEntry = (): NavEntry | null =>
   (isWeb() ? (window as unknown as { navigation?: { currentEntry: NavEntry | null } }).navigation?.currentEntry : null) ?? null;
-let sheetSpare: NavEntry | null = null;
-const markSheetSpare = () => { const e = navEntry(); sheetSpare = e ? { key: e.key, index: e.index } : null; };
-export const clearSheetSpare = () => { sheetSpare = null; };
+type SparePair = NavEntry & { realKey?: string };
+/** Kept for the session (entry keys survive a reload), so a reload on the spare recognises it instead of stacking a second. */
+const SPARE_STORE = 'rk.sheetSpare';
+const loadSpare = (): SparePair | null => {
+  try { return isWeb() ? (JSON.parse(window.sessionStorage.getItem(SPARE_STORE) ?? 'null') as SparePair | null) : null; } catch { return null; }
+};
+const saveSpare = (p: SparePair | null) => {
+  try { if (isWeb()) { if (p) window.sessionStorage.setItem(SPARE_STORE, JSON.stringify(p)); else window.sessionStorage.removeItem(SPARE_STORE); } } catch { /* storage off: in-memory only */ }
+};
+let sheetSpare: SparePair | null = loadSpare();
+const markSheetSpare = (realKey?: string) => {
+  const e = navEntry();
+  sheetSpare = e ? { key: e.key, index: e.index, realKey: realKey ?? sheetSpare?.realKey } : null;
+  saveSpare(sheetSpare);
+};
+export const clearSheetSpare = () => { sheetSpare = null; saveSpare(null); };
 /**
  * Is the current entry the sheet's spare? By entry key where the Navigation API exists, because the spare shares
  * the router's `id` with the real entry under it and the router strips our flag when it rewrites the entry.
@@ -61,15 +74,16 @@ export function onSheetSpare(): boolean {
 /** Did the popstate that just fired step back OFF the spare (a Back), rather than jump somewhere else? */
 export function poppedSheetSpare(): boolean {
   const e = navEntry();
-  if (e && sheetSpare) return e.index === sheetSpare.index - 1;
+  if (e && sheetSpare) return e.index === sheetSpare.index - 1 && (!sheetSpare.realKey || e.key === sheetSpare.realKey);
   return true; // shortcut: without the Navigation API every pop counts as a Back off the spare, as before
 }
 /** Put the sheet's spare on top unless it already is: the router's entry, its `id` kept, plus our flag. */
 export function armSheetSpare() {
   if (!isWeb()) return;
   if (onSheetSpare()) { if (!sheetSpare) markSheetSpare(); return; }
+  const realKey = navEntry()?.key;
   window.history.pushState({ ...((window.history.state as object | null) ?? {}), rkSheet: true }, '');
-  markSheetSpare();
+  markSheetSpare(realKey);
 }
 let leaveListener: (() => void) | null = null;
 const dropLeaveListener = () => {
@@ -86,6 +100,14 @@ const afterNextPop = (fn: () => void) => {
  * A leave is over: its own pop arrived, or a screen that guards Back has armed (a leave by `router.replace`
  * never pops, so the next guarded screen ends it). Called by that screen before it arms.
  */
+/** The browser's previous entry is this app's (Navigation API), so a plain history Back stays inside it. */
+export function hasAppPredecessor(): boolean {
+  const nav = isWeb() ? (window as unknown as { navigation?: { currentEntry: NavEntry | null; entries(): { url: string | null }[] } }).navigation : undefined;
+  const at = nav?.currentEntry?.index ?? 0;
+  if (!nav || at < 1) return false;
+  try { return new URL(nav.entries()[at - 1]?.url ?? '').origin === window.location.origin; } catch { return false; }
+}
+
 export function endLeave() {
   leavingSpares = false;
   if (isWeb()) dropLeaveListener();
@@ -104,7 +126,7 @@ export function leaveThroughSpares(go: () => void) {
   leavingSpares = true;
   const st = window.history.state as { rkGuard?: boolean; rkSheet?: boolean } | null;
   if (st?.rkGuard || onSheetSpare()) {
-    if (!st?.rkGuard) sheetSpare = null;
+    if (!st?.rkGuard) clearSheetSpare();
     afterNextPop(() => leaveThroughSpares(go));
     window.history.back();
     return;
