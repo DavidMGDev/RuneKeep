@@ -3043,7 +3043,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <EditHud file={file ?? undefined} />
               {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the
                   carousel; a no-op on a phone. */}
-              <KeyboardControl overlay={anyOverlay} />
+              {/* Desktop has its own keys in the card table; this one drives the phone carousel. */}
+              {desktop ? null : <KeyboardControl overlay={anyOverlay} />}
               {/* Gears now live INSIDE the carousel (#62 D): above the veil and the fullscreen dim,
                   never above a card — and the inner gear is the grind-scroll control. */}
               {/* Unload the sheet carousel while Level-Up (#203) or the Cards panel (#227) is open —
@@ -3054,7 +3055,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <DesktopTable onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
+                <DesktopTable onEditCard={setEditCardId} editableIds={editableIds} overlay={anyOverlay} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />

@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -33,7 +33,7 @@ import { CategoryGlyph } from './deck-toggle-icon';
 const CW = 230;
 const CH = 322;
 const RAIL_W = 206;
-const HAND_SINK = 0.5; // how much of a hand card hangs below the window edge
+const HAND_SINK = 0.42; // how much of a hand card hangs below the window edge
 const MOVE_MS = 380;
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
 const GEAR = require('../../../../assets/art/gears/raster/U2.webp');
@@ -53,7 +53,7 @@ interface Target {
   z: number;
 }
 
-export function DesktopTable({ onEditCard, onDeleteCard, editableIds }: { onEditCard: (id: string) => void; onDeleteCard: (id: string) => void; editableIds: Set<string> }) {
+export function DesktopTable({ onEditCard, editableIds, overlay }: { onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
   const ctx = useCarousel();
@@ -64,10 +64,10 @@ export function DesktopTable({ onEditCard, onDeleteCard, editableIds }: { onEdit
   const [focusId, setFocusId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [pages, setPages] = useState<Record<string, number>>({});
-  void onDeleteCard;
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // A new deck starts with nothing in focus; a focused card that left the deck (moved, deleted) drops focus.
-  useEffect(() => { setFocusId(null); setHoverId(null); }, [category]);
+  useEffect(() => { setFocusId(null); setHoverId(null); setMenu(null); }, [category]);
   useEffect(() => { if (focusId && !deck.some((c) => c.id === focusId)) setFocusId(null); }, [deck, focusId]);
 
   const port = desktop?.port;
@@ -112,6 +112,44 @@ export function DesktopTable({ onEditCard, onDeleteCard, editableIds }: { onEdit
     setFocusId(null);
   }, [focusId]);
 
+  // Keys (web): A/D or arrows walk the deck through the focus slot, Q/E or 1-9 change deck, Space equips,
+  // Esc returns the focused card. Off while a panel is open or a field has focus.
+  const keyState = { deck, focusId, overlay, menu, ring: ctx.ring };
+  const keyRef = useRef(keyState);
+  keyRef.current = keyState;
+  useEffect(() => {
+    if (!desktop || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      const k = keyRef.current;
+      if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+      const key = e.key.toLowerCase();
+      const ids = k.deck.map((c) => c.id), at = k.focusId ? ids.indexOf(k.focusId) : -1;
+      if (key === 'escape') { if (k.menu) setMenu(null); else release(); return; }
+      if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[(at + 1) % ids.length]); return; }
+      if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at <= 0 ? ids.length - 1 : at - 1]); return; }
+      if (key === 'q' || key === 'e') { playSfx('transitionStart'); ctx.cycleCategory(key === 'q' ? -1 : 1); return; }
+      if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) { playSfx('transitionStart'); ctx.setCategory(c); } return; }
+      if (key === ' ' && k.focusId) { e.preventDefault(); ctx.toggleCard(k.focusId); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [desktop, focus, release, ctx]);
+  // Right-click a card: the phone's hold wheel, as a menu at the pointer.
+  const tableHost = desktop?.tableHost ?? null;
+  useEffect(() => {
+    if (!tableHost) return;
+    const onMenu = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement).closest?.('[data-card-id]') as HTMLElement | null;
+      if (!el) return;
+      e.preventDefault();
+      const r = tableHost.getBoundingClientRect();
+      playSfx('floatMenuOpen');
+      setMenu({ id: el.dataset.cardId!, x: e.clientX - r.left, y: e.clientY - r.top });
+    };
+    tableHost.addEventListener('contextmenu', onMenu);
+    return () => tableHost.removeEventListener('contextmenu', onMenu);
+  }, [tableHost]);
+
   if (!desktop) return null;
   const focused = focusId ? deck.find((c) => c.id === focusId) ?? null : null;
 
@@ -151,8 +189,47 @@ export function DesktopTable({ onEditCard, onDeleteCard, editableIds }: { onEdit
             onRelease={release}
           />
         ) : null}
+        {menu ? <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onFocus={() => focus(menu.id)} onClose={() => setMenu(null)} /> : null}
       </View>
     </DesktopPortal>
+  );
+}
+
+/** What holding a card does on the phone, at the pointer. Every row runs the same handler the wheel runs. */
+function CardMenu({ id, x, y, tableW, tableH, onFocus, onClose }: { id: string; x: number; y: number; tableW: number; tableH: number; onFocus: () => void; onClose: () => void }) {
+  const ctx = useCarousel();
+  const item = (ctx.decks[ctx.category] ?? []).find((c) => c.id === id);
+  if (!item) return null;
+  const ref = item.ref ?? item.id;
+  const fav = ctx.isFavorited(id);
+  const run = (fn: () => void) => () => { onClose(); fn(); };
+  const rows: { label: string; onPress: () => void; hidden?: boolean; danger?: boolean }[] = [
+    { label: 'Bring into focus', onPress: run(onFocus) },
+    { label: ctx.enabledIds.has(ref) ? 'Unequip' : 'Equip', onPress: run(() => ctx.toggleCard(id)), hidden: ctx.cardStates.permanent.has(ref) },
+    { label: fav ? 'Remove from Favorites' : 'Add to Favorites', onPress: run(() => ctx.cardAction(fav ? 'unfavorite' : 'favorite', [id])) },
+    { label: 'Move to deck', onPress: run(() => ctx.cardAction('move', [id])) },
+    { label: ctx.nfcAvailable ? 'Share' : 'Export', onPress: run(() => ctx.cardAction('nfc', [id])) },
+    { label: 'Delete', onPress: run(() => ctx.cardAction('delete', [id])), danger: true },
+  ];
+  const shown = rows.filter((r) => !r.hidden);
+  const W = 220, H = shown.length * 38 + 14;
+  return (
+    <>
+      <Pressable style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, zIndex: 900 }} onPress={() => { playSfx('floatMenuClose'); onClose(); }} accessibilityLabel="Close the card menu" />
+      <ChamferBox chamfer={9} fill={DmRune.panelLit} stroke={Rune.goldEdge} strokeWidth={1.4} style={{ position: 'absolute', zIndex: 901, left: Math.min(x, tableW - W - 8), top: Math.min(y, tableH - H - 8), width: W, padding: 7 }}>
+        {shown.map((r) => <MenuRow key={r.label} label={r.label} danger={r.danger} onPress={r.onPress} />)}
+      </ChamferBox>
+    </>
+  );
+}
+
+function MenuRow({ label, danger, onPress }: { label: string; danger?: boolean; onPress: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <Pressable onPress={onPress} onHoverIn={() => { setHover(true); playSfx('floatMenuHighlight', { volume: 0.4 }); }} onHoverOut={() => setHover(false)} accessibilityRole="menuitem" accessibilityLabel={label}
+      style={{ height: 38, justifyContent: 'center', paddingHorizontal: 12, backgroundColor: hover ? (danger ? Rune.red : 'rgba(200,27,24,0.85)') : 'transparent' }}>
+      <Text style={{ color: danger && !hover ? '#E2705A' : Rune.ivory, fontFamily: Body.bold, fontSize: 13 }}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -175,7 +252,7 @@ const DeskCard = memo(function DeskCard({ item, target, focused, page, enabled, 
   }));
   const face = item.faces?.[page];
   return (
-    <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: CW, height: CH, zIndex: t.z }, style]}>
+    <Animated.View {...({ dataSet: { cardId: item.id } } as object)} style={[{ position: 'absolute', left: 0, top: 0, width: CW, height: CH, zIndex: t.z }, style]}>
       <Pressable
         onPress={onPress}
         onHoverIn={() => onHover(true)}

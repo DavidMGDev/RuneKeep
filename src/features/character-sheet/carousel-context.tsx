@@ -139,6 +139,10 @@ interface CarouselContextValue {
   closeCardMenu: () => void;
   /** Fire option `index` (from the current option list) on the raised selection, then close. */
   selectCardMenu: (index: number) => void;
+  /** v0.44.0 desktop: run a card-menu action on given ids directly (right-click menu), same handler the wheel uses. */
+  cardAction: (kind: CardMenuKind, ids: string[]) => void;
+  /** v0.44.0 desktop: whether one card is in Favorites (the right-click menu labels Add or Remove). */
+  isFavorited: (id: string) => boolean;
   /** Ids of cards the player has enabled/equipped (#175) — drives the corner check + toggle state. */
   enabledIds: Set<string>;
   /** Mixed ancestry (#265): deck-card id → which trait (1 = first, 2 = second) is crossed out. Drives
@@ -448,6 +452,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
     cardMenuHighlight.value = -1;
     playSfx('floatMenuClose');
   }, [cardMenuOpen, cardMenuHighlight]);
+  const cardAction = useCallback((kind: CardMenuKind, ids: string[]) => { if (ids.length) onCardAction?.(kind, ids); }, [onCardAction]);
+  const isFavorited = useCallback((id: string) => !!isCardFavorited?.(id), [isCardFavorited]);
   const selectCardMenu = useCallback((index: number) => {
     const opts = cardMenuOptions(categoryRef.current === FAVORITES_CATEGORY, nfcAvailable);
     const opt = opts[index];
@@ -649,6 +655,8 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       openCardMenu,
       closeCardMenu,
       selectCardMenu,
+      cardAction,
+      isFavorited,
       enabledIds: enabledIds ?? emptyEnabled,
       cardStates: cardStates ?? emptyCardStates,
       crossOuts: crossOuts ?? emptyCrossOuts,
@@ -668,7 +676,7 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       setTokenColor: onSetTokenColor ?? noopColor,
       moveTokenDrawer: onMoveTokenDrawer ?? noopDrawer,
     }),
-    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, sortFnRef, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, enabledIds, emptyEnabled, cardStates, emptyCardStates, crossOuts, emptyCrossOuts, onToggleCard, onToggleCardModifiers, onExpandClassCard, onEditNumberInput, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
+    [rotation, expandProgress, fullscreenProgress, machineState, focusIndex, switching, riseProgress, gearRotation, decks, categoryMeta, emptyMeta, category, ring, setCategory, cycleCategory, emptyOpen, expand, collapse, openCardAt, closeFullscreen, openOriginCard, openFavorites, favDetour, editMode, editing, raisedIds, enterEdit, exitEdit, desat, gearFlash, toggleRaise, deselectAll, selectAll, stepBy, centerIndex, scrollToId, onReorderCards, sortFnRef, cardMenuOpen, cardMenuAnchorX, cardMenuAnchorY, cardMenuFingerX, cardMenuFingerY, cardMenuHighlight, nfcAvailable, selectionAllFavorited, openCardMenu, closeCardMenu, selectCardMenu, cardAction, isFavorited, enabledIds, emptyEnabled, cardStates, emptyCardStates, crossOuts, emptyCrossOuts, onToggleCard, onToggleCardModifiers, onExpandClassCard, onEditNumberInput, noopToggle, onShowCardInfo, noopInfo, cardTokens, emptyTokens, tokenColor, tokenDrawerX, onPlaceToken, noopPlace, onRemoveToken, noopRemoveToken, onUpdateToken, noopUpdateToken, onSetTokenColor, noopColor, onMoveTokenDrawer, noopDrawer],
   );
 
   return <CarouselContext.Provider value={value}>{children}</CarouselContext.Provider>;
