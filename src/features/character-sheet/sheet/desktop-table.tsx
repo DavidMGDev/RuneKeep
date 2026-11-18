@@ -1,7 +1,5 @@
-// The vector gears: drawn this large, the 600 px rasters the phone uses would be upscaled more than twice over.
-import GearFront from '../../../../assets/art/gears/U2-Outspike.svg';
 import { coachTarget } from '@/components/coach-tour';
-import GearBack from '../../../../assets/art/gears/U3-InnerSymbols.svg';
+import { TableMotes } from './table-motes';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -270,7 +268,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
   return (
     <DesktopPortal to="table">
       <View {...coachTarget('sheet-table')} style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, overflow: 'hidden' }}>
-        <TableGear category={category} cx={cx} tableH={tableH} handW={handW} reduced={reduced} />
+        <TableMotes />
         <DeckRail top={railTop} maxH={railMaxH} onManage={onManage} onSort={canReorder ? () => { playSfx('floatMenuOpen'); setSorting(true); } : undefined} onExit={onExit} />
         {sorting ? (
           <DesktopPortal to="side" priority="dialog" onDismiss={() => setSorting(false)}>
@@ -574,23 +572,3 @@ function DeckChip({ label, active, count, onPress, style, children }: { label: s
   );
 }
 
-/** The golden gear, as ornament: huge, faint, centred on the hand, turning a notch whenever the deck changes. */
-function TableGear({ category, cx, tableH, handW, reduced }: { category: CardCategory; cx: number; tableH: number; handW: number; reduced: boolean }) {
-  const spin = useSharedValue(0);
-  useEffect(() => { spin.value = withTiming(spin.value + 72, { duration: reduced ? 0 : 1100, easing: EASE }); }, [category, spin, reduced]);
-  const size = Math.min(tableH * 1.25, 1400);
-  const front = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value}deg` }] }));
-  const back = useAnimatedStyle(() => ({ transform: [{ rotate: `${-spin.value * 0.6}deg` }] }));
-  // Its centre sits just below the hand's top edge, so the upper arc rises behind the fanned cards.
-  const centreY = tableH - handW * 1.4 * 0.5 + size * 0.18;
-  return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }}>
-      <Animated.View style={[{ position: 'absolute', left: cx - size * 0.58, top: centreY - size * 0.58, width: size * 1.16, height: size * 1.16, opacity: 0.07 }, back]}>
-        <GearBack width="100%" height="100%" />
-      </Animated.View>
-      <Animated.View style={[{ position: 'absolute', left: cx - size / 2, top: centreY - size / 2, width: size, height: size, opacity: 0.14 }, front]}>
-        <GearFront width="100%" height="100%" />
-      </Animated.View>
-    </View>
-  );
-}

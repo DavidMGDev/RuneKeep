@@ -98,7 +98,7 @@ const CARD_SCALE = 0.70; // resting center card (#108: a touch smaller so it cle
  */
 const REST_FRAC = 0.43;
 const SIDE_FALLOFF = 0.085; // per-step shrink
-/** Desktop: wheel pixels per card. */
+/** Desktop: the wheel travel that moves one card (a notch is 100 px or more, so always exactly one). */
 const WHEEL_PX = 50;
 /** Desktop: how much of the deck's width, at each side, fades out (percent). */
 const EDGE_FADE = 17;
@@ -611,11 +611,12 @@ export const StraightCarousel = forwardRef<
         acc = 0;
         return;
       }
-      // The deck: a card per WHEEL_PX, so one notch (about 100 px) moves two and a fast spin runs through many.
-      const n = Math.trunc(acc / WHEEL_PX);
-      if (!n) return;
-      acc -= n * WHEEL_PX;
-      w.stepBy(n, true);
+      // The deck: one card per notch, however many pixels the mouse calls a notch (100, 120, three lines);
+      // a trackpad's stream of small deltas steps once every WHEEL_PX.
+      if (Math.abs(acc) < WHEEL_PX) return;
+      const dir = acc > 0 ? 1 : -1;
+      acc = 0;
+      w.stepBy(dir, true);
     };
     const onDown = (e: PointerEvent) => { rightDown.value = e.button === 2; };
     const onUp = () => { rightDown.value = false; };
