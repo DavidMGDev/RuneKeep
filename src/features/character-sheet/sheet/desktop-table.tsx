@@ -203,7 +203,6 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
     return () => tableHost.removeEventListener('contextmenu', onMenu);
   }, [tableHost]);
 
-  if (!desktop) return null;
   const focused = focusId ? deck.find((c) => c.id === focusId) ?? null : null;
   // Tokens arrive once the focused card has SETTLED in the slot, as the phone's board waits for the fullscreen card.
   const [tokensFor, setTokensFor] = useState<string | null>(null);
@@ -218,6 +217,8 @@ export function DesktopTable({ onEditCard, editableIds, overlay, backRef, onMana
   const onPlaceToken = useCallback((t: PlacedToken) => { if (tokenKey) ctx.placeToken(tokenKey, t); }, [tokenKey, ctx]);
   const onRemoveToken = useCallback((id: string) => { if (tokenKey) ctx.removeToken(tokenKey, id); }, [tokenKey, ctx]);
   const onUpdateToken = useCallback((id: string, patch: Partial<PlacedToken>) => { if (tokenKey) ctx.updateToken(tokenKey, id, patch); }, [tokenKey, ctx]);
+
+  if (!desktop) return null;
 
   return (
     <DesktopPortal to="table">
