@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { AppScreen } from '@/components/app-screen';
+import { ChamferBox } from '@/components/chamfer-box';
+import { useDesktopPage } from '@/hooks/use-desktop';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Rune } from '@/constants/theme';
 import { finishTour, saveTourStep, type TourId, tourStep } from '@/lib/onboarding-store';
@@ -169,6 +171,71 @@ const CAMPAIGNS: Page[] = [
 ];
 
 /** v0.42.6: the class-card explanation is drawn INSIDE the chooser it is about, not as a tour screen. */
+/**
+ * The desktop tours (v0.45.0). A desktop window lays the app out differently, so the pages that described
+ * phone gestures (swipes, holds, the circle controls) describe what is on the screen instead.
+ */
+const DESKTOP_KEYS: { caps: string[]; what: string }[] = [
+  { caps: ['A', 'D'], what: 'Bring the next card into focus' },
+  { caps: ['Shift', 'A', 'D'], what: 'Two cards at a time' },
+  { caps: ['[', ']'], what: 'Move the card in its deck' },
+  { caps: ['Space'], what: 'Equip or unequip' },
+  { caps: ['Q', 'E'], what: 'Change deck' },
+  { caps: ['1 to 9'], what: 'Jump to a deck' },
+  { caps: ['Esc'], what: 'Put the card back, close a panel' },
+];
+
+const DESKTOP_KEYS_PAGE: Page = {
+  title: 'You can use the keyboard',
+  body: 'On a desktop the sheet stays on the left and your cards sit on a table beside it, so most things are a click away.\n\nThe keyboard does the rest. Right click any card on the table for everything else it can do.',
+  render: () => <KeysDemo rows={DESKTOP_KEYS} />,
+};
+
+const DESKTOP_CREATION: Page[] = [
+  {
+    title: 'One step at a time',
+    body: 'The steps on the left are your checklist. Each one turns gold when it is done, and Your hero on the right shows what you have chosen so far.\n\nGo back to any step and change your mind. Nothing is locked in until you forge.',
+    render: () => <WelcomeDemo />,
+  },
+  {
+    title: 'Pick from the middle',
+    body: 'Move through the cards with the arrow keys, or drag them. Whichever one sits in the middle is the one the button picks, and the button names it.\n\nClick the card in the middle to read it at full size.',
+    render: () => <HandDemo desktop />,
+  },
+  CREATION[2],
+];
+
+const DESKTOP_SHEET: Page[] = [
+  {
+    title: 'Your table',
+    body: 'Your sheet stays on the left. Your cards sit on the table beside it, in a hand along the bottom.\n\nClick a card to bring it into focus and read it. Click it again, press Esc, or use Back to hand to put it away.',
+    render: () => <HandDemo desktop />,
+  },
+  {
+    title: 'Equip and act',
+    body: 'Under the focused card are its controls: Equip, Modifiers, and whatever else that card does. Space equips too.\n\nRight click any card for its menu: favourite it, move it to another deck, share it, or delete it.',
+    render: () => <WelcomeDemo />,
+  },
+  {
+    title: 'Hit Points, Stress, Hope, Armor',
+    body: 'Each row is split down the middle. One side clears, the other marks. Hold for the full effect, or double click when things are moving fast.\n\nThe split follows the value, so the side that clears is always the filled side.',
+    render: ({ markDid }) => <HeartsDemo onDid={markDid} />,
+  },
+  {
+    title: 'Decks and panels',
+    body: 'The decks are listed beside the table: click one, or press Q and E. Manage cards and Sort this deck sit underneath.\n\nRest, Level Up, State and Dice open their panels next to the sheet. Esc closes whichever is on top.',
+    render: () => <WelcomeDemo />,
+  },
+  DESKTOP_KEYS_PAGE,
+  {
+    title: 'Double click your portrait',
+    body: 'Two clicks on your portrait open this character’s moodboard: a blank canvas that belongs to them, for faces, places, armour, anything you have collected.\n\nIt opens locked, so hold the lock for a second before you move anything.',
+    render: () => <WheelDemo />,
+  },
+];
+
+const DESKTOP_TOURS: Partial<Record<TourId, Page[]>> = { creation: DESKTOP_CREATION, sheet: DESKTOP_SHEET };
+
 const TOURS: Record<TourId, Page[]> = { welcome: WELCOME, creation: CREATION, sheet: SHEET, campaigns: CAMPAIGNS, classcards: [], featurecards: [] };
 
 const TITLE: Record<TourId, string> = {
@@ -190,18 +257,19 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
     return endLoading;
   }, []);
   const installMode = useInstallMode();
+  const desktop = useDesktopPage();
   const [installed, setInstalled] = useState(false);
   // The install offer leads the welcome tour, and only there. It drops out the moment the app is
   // installed (the browser stops offering it, and the page has nothing left to say).
   const pages = useMemo(() => {
-    const base = TOURS[tour];
+    const base = (desktop && DESKTOP_TOURS[tour]) || TOURS[tour];
     if (tour !== 'welcome') return base;
     // The keyboard page closes the welcome tour on a desktop browser; the install offer opens it on a
     // phone. The two audiences never overlap, so neither ever sees the other's page.
-    const withKeys = isDesktopWeb() ? [...base, KEYS_PAGE] : base;
+    const withKeys = desktop ? [...base, DESKTOP_KEYS_PAGE] : isDesktopWeb() ? [...base, KEYS_PAGE] : base;
     if (installMode === 'none' || installed) return withKeys;
     return [installPage(installMode, () => setInstalled(true)), ...withKeys];
-  }, [tour, installMode, installed]);
+  }, [tour, installMode, installed, desktop]);
   const [step, setStep] = useState(() => Math.min(tourStep(tour), pages.length - 1));
   const [didSteps, setDidSteps] = useState<Set<number>>(new Set());
   const safeStep = Math.min(step, pages.length - 1);
@@ -265,6 +333,60 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
     fade.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.quad) });
   }, [safeStep, fade]);
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value, transform: [{ translateY: (1 - fade.value) * 10 }] }));
+
+  // Desktop keys: the arrows page through, Enter is Next, Escape skips.
+  const keys = useRef({ next, go, finish, safeStep });
+  keys.current = { next, go, finish, safeStep };
+  useEffect(() => {
+    if (!desktop || typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = keys.current;
+      if (e.key === 'ArrowRight') { e.preventDefault(); k.next(); }
+      else if (e.key === 'ArrowLeft' && k.safeStep > 0) { e.preventDefault(); k.go(k.safeStep - 1); }
+      else if (e.key === 'Escape') { e.preventDefault(); k.finish(); }
+      else if (e.key === 'Enter' && (e.target as HTMLElement)?.getAttribute?.('role') !== 'button') { e.preventDefault(); k.next(); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [desktop]);
+
+  const nextLabel = last ? 'Got it' : blocked ? 'Try it first' : onInstallPage ? 'Not now' : 'Next';
+  if (desktop) {
+    // Desktop (v0.45.0): one wide card in the middle of the window, the illustration beside the words.
+    return (
+      <AppScreen title={TITLE[tour]} onBack={safeStep === 0 ? undefined : () => go(safeStep - 1)}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 30 }}>
+          <ChamferBox chamfer={18} fill="rgba(14,17,22,0.94)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.4} style={{ width: 1000, maxWidth: '100%', flexDirection: 'row', gap: 44, paddingHorizontal: 44, paddingVertical: 40, minHeight: 460 }}>
+            <Animated.View style={[{ width: 440, alignItems: 'center', justifyContent: 'center' }, fadeStyle]}>
+              {/* The illustrations are drawn for a phone column; a little larger suits the wide card. */}
+              <View style={{ transform: [{ scale: 1.3 }] }}>{page.render?.({ did, markDid }) ?? null}</View>
+            </Animated.View>
+            <View style={{ flex: 1, justifyContent: 'space-between', gap: 24 }}>
+              <Animated.View style={fadeStyle}>
+                <Text style={{ color: Rune.goldBright, fontSize: 30, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{page.title}</Text>
+                <Text style={{ color: Rune.sheet, fontSize: 16, fontFamily: Body.medium, lineHeight: 25, marginTop: 16 }}>{page.body}</Text>
+              </Animated.View>
+              <View style={{ gap: 16 }}>
+                <View style={{ flexDirection: 'row', gap: 9 }}>
+                  {pages.map((_, i) => (
+                    <Pressable key={i} onPress={() => go(i)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Step ${i + 1} of ${pages.length}`}>
+                      <View style={{ width: 9, height: 9, backgroundColor: i === safeStep ? Rune.goldBright : 'rgba(218,162,73,0.3)', transform: [{ rotate: '45deg' }] }} />
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                  <RuneButton label={nextLabel} kind="primary" height={46} style={{ minWidth: 200 }} disabled={blocked} muteSfx onPress={next} />
+                  <RuneButton label="Skip" kind="ghost" height={46} style={{ minWidth: 120 }} onPress={finish} />
+                </View>
+                <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium }}>The arrow keys page through, and Esc skips.</Text>
+              </View>
+            </View>
+          </ChamferBox>
+        </View>
+      </AppScreen>
+    );
+  }
 
   return (
     <AppScreen title={TITLE[tour]} onBack={safeStep === 0 ? undefined : () => go(safeStep - 1)}>

@@ -55,8 +55,10 @@ const HAND_STEPS = [
   { state: 'open', hold: 2200, caption: 'The middle card is the one in play' },
   { state: 'focused', hold: 2400, caption: 'Tap it again to read it full screen' },
 ] as const;
+/** v0.45.0: the same three beats in a desktop's words (shared by the creation and sheet tours there). */
+const DESKTOP_CAPTIONS = ['Your cards wait in a hand', 'The middle card is the one in play', 'Click it to read it up close'];
 
-export function HandDemo() {
+export function HandDemo({ desktop = false }: { desktop?: boolean } = {}) {
   const [step, setStep] = useState(0);
   const state = HAND_STEPS[step].state;
   const t = useSharedValue(0);
@@ -87,7 +89,7 @@ export function HandDemo() {
         ))}
         <TapRing t={t} f={f} />
       </View>
-      <Prompt text={HAND_STEPS[step].caption} />
+      <Prompt text={desktop ? DESKTOP_CAPTIONS[step] : HAND_STEPS[step].caption} />
     </Stage>
   );
 }

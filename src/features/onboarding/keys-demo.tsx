@@ -32,7 +32,7 @@ function Cap({ label }: { label: string }) {
   );
 }
 
-export function KeysDemo() {
+export function KeysDemo({ rows = KEYBIND_HELP }: { rows?: { caps: string[]; what: string }[] } = {}) {
   return (
     <View style={{ alignItems: 'center', justifyContent: 'center' }}>
       <ChamferBox
@@ -41,7 +41,7 @@ export function KeysDemo() {
         stroke="rgba(218,162,73,0.4)"
         strokeWidth={1.2}
         style={{ paddingHorizontal: 14, paddingVertical: 8, width: 330 }}>
-        {KEYBIND_HELP.map((row, i) => (
+        {rows.map((row, i) => (
           <View
             key={row.what}
             style={{
@@ -51,10 +51,10 @@ export function KeysDemo() {
               gap: 5,
               // A hairline between rows, but not under the last: it is the cue that pairs a key with
               // its meaning across the gap, which is the whole problem this card had.
-              borderBottomWidth: i === KEYBIND_HELP.length - 1 ? 0 : 1,
+              borderBottomWidth: i === rows.length - 1 ? 0 : 1,
               borderBottomColor: 'rgba(218,162,73,0.13)',
             }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, width: 122 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, width: 132 }}>
               {row.caps.map((c) => (
                 <Cap key={c} label={c} />
               ))}
