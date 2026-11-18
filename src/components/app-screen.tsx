@@ -1,4 +1,5 @@
-import { useDesktopPage } from '@/hooks/use-desktop';
+import { DESKTOP_PAGE_PAD, useDesktopPage } from '@/hooks/use-desktop';
+import { DesktopTopBar } from '@/components/desktop-top-bar';
 import { type ReactNode, useLayoutEffect, useRef } from 'react';
 import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -78,8 +79,11 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
             phone layout is byte-identical. This one wrapper is what makes every non-sheet screen
             read the same on a tablet: rows stop being 760dp wide for a five-character name, buttons
             stop spanning the display, and prose keeps a sane measure. */}
-        <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: desktopPage ? 34 : scaled(18, scale), paddingTop: title ? (desktopPage ? 16 : 8) : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
-          {title ? (
+        <View style={{ flex: 1, width: '100%', maxWidth: maxContent, alignSelf: 'center', paddingHorizontal: desktopPage ? DESKTOP_PAGE_PAD : scaled(18, scale), paddingTop: desktopPage ? 26 : title ? 8 : 0, paddingBottom: 14, zIndex: contentAboveFrame ? 2 : 0 }}>
+          {desktopPage && title ? (
+            // Desktop pages (v0.45.0): a header bar instead of the phone's header under the frame's top band.
+            <DesktopTopBar ref={headerRef} title={title} onBack={onBack} right={headerRight} />
+          ) : title ? (
             // The header FOLLOWS the border's top band (owner #102): back pinned in the left
             // corner, the right control in the right corner, and a smaller CENTERED title between
             // them — nothing tall enough to clash with the frame's notches.
@@ -121,13 +125,14 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
           ) : null}
           {children}
         </View>
-        {/* Full-bleed sharp gold frame ON TOP of content (sharp 0-radius corners by design). */}
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {/* Full-bleed sharp gold frame ON TOP of content (sharp 0-radius corners by design). Not on a desktop
+            page: stretched across a window it is a phone's border on a monitor. */}
+        {desktopPage ? null : <View style={StyleSheet.absoluteFill} pointerEvents="none">
           {/* v0.42.4 (owner): ONE frame. The grey DM border went with the grey DM palette; every
               screen wears the app's own gold edge now. The `dm` prop survives everywhere else because
               it still means "this is a DM screen", it just no longer means "draw it in greys". */}
           <FullUi width="100%" height="100%" preserveAspectRatio="none" />
-        </View>
+        </View>}
       </View>
       {/* painted inset bars, same belt-and-braces as the sheet */}
       <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: top, backgroundColor: Rune.ink }} />

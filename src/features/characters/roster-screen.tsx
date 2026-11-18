@@ -96,6 +96,28 @@ function FolderHeader({ folder, count, collapsed, onToggle, onActions }: { folde
   );
 }
 
+/** Desktop (v0.45.0): an empty roster's row, shaped like a character row, that starts one. */
+function NewCharacterRow({ label, sub, onPress, quiet }: { label: string; sub: string; onPress: () => void; quiet?: boolean }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <Pressable onPress={onPress} onHoverIn={() => setHover(true)} onHoverOut={() => setHover(false)} accessibilityRole="button" accessibilityLabel={label}>
+      <ChamferBox chamfer={12} fill={hover ? 'rgba(20,24,31,0.95)' : 'rgba(14,17,22,0.9)'} stroke={quiet ? (hover ? Rune.goldBright : 'rgba(218,162,73,0.5)') : hover ? Rune.goldBright : Rune.red} strokeWidth={1.4}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
+        <ChamferBox chamfer={8} fill={Rune.ink} stroke={quiet ? 'rgba(218,162,73,0.5)' : Rune.red} strokeWidth={1.2} style={{ width: 58, height: 58, alignItems: 'center', justifyContent: 'center' }}>
+          <Svg width={24} height={24} viewBox="0 0 24 24">
+            {quiet ? <><Line x1={12} y1={4} x2={12} y2={16} stroke={Rune.goldText} strokeWidth={2} /><Polyline points="7,11 12,16 17,11" fill="none" stroke={Rune.goldText} strokeWidth={2} /><Line x1={5} y1={20} x2={19} y2={20} stroke={Rune.goldText} strokeWidth={2} /></>
+              : <><Line x1={12} y1={4} x2={12} y2={20} stroke={Rune.red} strokeWidth={2.4} /><Line x1={4} y1={12} x2={20} y2={12} stroke={Rune.red} strokeWidth={2.4} /></>}
+          </Svg>
+        </ChamferBox>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: Rune.ivory, fontSize: 15, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{label}</Text>
+          <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginTop: 4 }}>{sub}</Text>
+        </View>
+      </ChamferBox>
+    </Pressable>
+  );
+}
+
 interface Section { key: string; folder: Folder | null; all: CharacterFile[]; data: CharacterFile[] }
 
 /** The roster: saved characters as files, groupable into folders. Tap = play; hold = actions; import brings a friend's file in. */
@@ -292,6 +314,13 @@ export function RosterScreen() {
       title="Characters"
       onBack={() => router.back()}
       headerRight={
+        desktop ? (
+          <>
+            <RuneButton label="New folder" kind="ghost" height={38} onPress={() => setNewFolder(true)} />
+            <RuneButton label="Import" kind="secondary" height={38} onPress={onImport} />
+            <RuneButton label="New character" kind="primary" height={38} onPress={onNewCharacter} />
+          </>
+        ) : (
         <Pressable onPress={() => setNewFolder(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="New folder">
           <Svg width={22} height={22} viewBox="0 0 24 24">
             <Polygon points="3,6 9,6 11,9 21,9 21,19 3,19" fill="none" stroke={Rune.goldEdge} strokeWidth={1.7} strokeLinejoin="round" />
@@ -299,9 +328,22 @@ export function RosterScreen() {
             <Line x1={10} y1={14} x2={14} y2={14} stroke={Rune.goldBright} strokeWidth={1.8} strokeLinecap="round" />
           </Svg>
         </Pressable>
+        )
       }>
       <View ref={bodyRef} style={{ flex: 1 }}>
-      {files.length === 0 ? (
+      {files.length === 0 && desktop ? (
+        <View style={{ flex: 1, flexDirection: 'row' }}>
+          <View style={{ width: 380, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)', gap: 12 }}>
+            <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase', marginTop: 6 }}>No characters yet</Text>
+            <NewCharacterRow label="Create your first character" sub="Class, ancestry, cards, one step at a time" onPress={onNewCharacter} />
+            <NewCharacterRow label="Import a character" sub="A file a friend sent you" onPress={onImport} quiet />
+          </View>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 8 }}>
+            <Text style={{ color: Rune.ivory, fontSize: 22, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>Your heroes live here</Text>
+            <Text style={{ color: Rune.muted, fontSize: 14, fontFamily: Body.medium, textAlign: 'center', lineHeight: 21, maxWidth: 420 }}>Pick one on the left to see their Arsenal and Inventory, and open their sheet from here.</Text>
+          </View>
+        </View>
+      ) : files.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, paddingBottom: 60 }}>
           <Pressable onPress={onNewCharacter} accessibilityRole="button" accessibilityLabel="Create your first character">
             {({ pressed }) => (
@@ -366,10 +408,12 @@ export function RosterScreen() {
               </View>
             )}
           />
+          {desktop ? null : (
           <View style={{ flexDirection: 'row', gap: 10, paddingTop: 10, paddingBottom: 6 }}>
             <RuneButton label="Import" kind="ghost" height={46} style={{ flex: 1 }} onPress={onImport} />
             <RuneButton label="New character" kind="primary" height={46} style={{ flex: 2 }} onPress={onNewCharacter} />
           </View>
+          )}
         </View>
         {desktop && selected ? (
           <RosterDossier

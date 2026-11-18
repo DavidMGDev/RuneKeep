@@ -24,6 +24,8 @@ export const DESKTOP_TABLE_MIN_W = 640;
  * layout; a screen reads it to pick that layout. False everywhere else, so a screen without one is unchanged.
  */
 export const DesktopPageContext = createContext(false);
+/** A desktop page's inset from the window's sides, in px (the header and every layout under it). */
+export const DESKTOP_PAGE_PAD = 40;
 export const useDesktopPage = () => useContext(DesktopPageContext);
 
 export function isDesktopWindow(width: number, height: number): boolean {

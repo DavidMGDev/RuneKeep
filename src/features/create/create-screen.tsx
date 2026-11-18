@@ -67,7 +67,7 @@ import { mutedCardColor } from '@/components/card-editor';
 import { CreateLoader, DeckLoader } from './create-loaders';
 import { DeckRail } from './create-rail';
 import { DeckStepRow, DeckTab, HeroColumn, type HeroRow, SectionDivider, Segmented } from './create-ui';
-import { useDesktopPage } from '@/hooks/use-desktop';
+import { DESKTOP_PAGE_PAD, useDesktopPage } from '@/hooks/use-desktop';
 import { useScreenFocus } from '@/hooks/use-screen-focus';
 import { useLayout } from '@/hooks/use-layout';
 import { ExperiencesTab } from './experiences-tab';
@@ -483,7 +483,7 @@ export function CreateScreen() {
   const { width: screenW } = useLayout();
   // Desktop: the side columns give way on a narrow window, and the deck grows into whatever the middle has.
   const sideW = Math.round(Math.min(CREATE_SIDE_W, Math.max(220, screenW * 0.19)));
-  const carouselZoom = desktop ? Math.max(1, Math.min(1.6, (screenW - 68 - sideW * 2 - CREATE_GAP * 2) / 370)) : 1;
+  const carouselZoom = desktop ? Math.max(1, Math.min(1.6, (screenW - DESKTOP_PAGE_PAD * 2 - sideW * 2 - CREATE_GAP * 2) / 370)) : 1;
   const deckList = useMemo(
     () =>
       decksFor(characterizing, transformationsOn, customStepList)

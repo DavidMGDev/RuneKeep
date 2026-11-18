@@ -35,7 +35,7 @@ import { PrintableImage, PrintStage, type PrintStageHandle } from '@/features/cr
 import { usePrintJob } from '@/features/share/print-job';
 import { type RkpContent } from '@/lib/rkp';
 import { useScreenDim } from '@/lib/screen-dim';
-import { useDesktopPage } from '@/hooks/use-desktop';
+import { DESKTOP_PAGE_PAD, useDesktopPage } from '@/hooks/use-desktop';
 import { RuneButton } from '@/components/rune-button';
 
 // The archive browses catalog cards AND equipment. Weapons/armor have no image assets — they render
@@ -68,9 +68,8 @@ const KINDS: { key: GalleryKind; label: string }[] = [
   { key: 'loot', label: 'Loot' },
   { key: 'consumable', label: 'Consumables' },
 ];
-/** Desktop archive (v0.45.0): the filter sidebar's width and the gutter between its three columns. */
-const DESK_SIDE_W = 248;
-const DESK_GAP = 24;
+/** Desktop archive (v0.45.0): the gutter between the grid and the focus pane. */
+const DESK_GAP = 28;
 
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const TIERS = [1, 2, 3, 4];
@@ -446,9 +445,10 @@ const GalleryCell = memo(function GalleryCell({ item, cellW, cellH, selecting, s
       accessibilityState={{ selected: !!selected }}
       accessibilityLabel={selecting ? `${item.label}, ${selected ? 'selected' : 'not selected'}` : `${item.label}, open card`}
       style={{ width: cellW }}>
-      <View style={{ width: cellW, height: cellH, opacity: selecting && !selected ? 0.55 : 1, transform: [{ translateY: hover && !focused ? -4 : 0 }] }}>
+      <View style={{ width: cellW, height: cellH, opacity: selecting && !selected ? 0.55 : 1, zIndex: hover ? 5 : 0, transform: [{ scale: hover ? 1.06 : 1 }, { translateY: hover ? -4 : 0 }] }}>
         {item.type === 'card' ? (
-          <ArtImage source={item.card.thumb} fit="contain" recyclingKey={item.id} />
+          // A pointer resting on a card swaps in the full card: the thumbnail is too small to read.
+          <ArtImage source={hover ? item.card.source : item.card.thumb} fit="contain" recyclingKey={item.id} />
         ) : item.type === 'lib' ? (
           <ScaledCard width={cellW}><LibraryForgedCard card={item.lib} pack={item.pack} /></ScaledCard>
         ) : item.type === 'class' ? (
@@ -586,7 +586,7 @@ export function GalleryScreen() {
   // Desktop (v0.45.0): a filter sidebar, the grid, and a focus pane; the grid keeps at least four columns.
   const paneW = Math.round(Math.min(420, Math.max(340, width * 0.24)));
   const colGap = desktop ? 14 : 10;
-  const gridW = desktop ? width - 68 - DESK_SIDE_W - paneW - DESK_GAP * 2 : Math.min(width, maxContent);
+  const gridW = desktop ? width - DESKTOP_PAGE_PAD * 2 - paneW - DESK_GAP : Math.min(width, maxContent);
   const cols = desktop ? Math.max(4, Math.floor((gridW + colGap) / (176 + colGap))) : gridColumns(gridW, isTablet);
   const cellW = desktop ? Math.floor((gridW - (cols - 1) * colGap) / cols) : Math.floor((gridW - 36 - (cols - 1) * 10) / cols);
   const cellH = Math.round(cellW * 1.4);
@@ -781,7 +781,15 @@ export function GalleryScreen() {
       title="Card archive"
       onBack={() => router.back()}
       headerRight={
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: desktop ? 10 : 0 }}>
+          {desktop ? (
+            <>
+              <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginRight: 4 }}>{cards.length} card{cards.length === 1 ? '' : 's'}</Text>
+              {activeCount ? <RuneButton label="Clear filters" kind="ghost" height={38} onPress={() => { playSfx('buttonTap'); clearFilters(); }} /> : null}
+              {selecting && selected.size ? <RuneButton label={`Share ${selected.size} picked`} kind="primary" height={38} onPress={() => shareItems(pickedFrom(everything, selected))} /> : null}
+              <RuneButton label={selecting ? 'Done selecting' : 'Select cards'} kind="secondary" height={38} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
+            </>
+          ) : null}
           <Pressable onPress={() => { playSfx('buttonTap'); router.push('/adversary-library' as Href); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary library">
             <Svg width={20} height={20} viewBox="0 0 24 24">
               <Path d="M12 3 C7 3 4 6.6 4 11 C4 13.7 5.2 15.2 6 16.3 L6 19 H8.5 V17 H10.5 V19 H13.5 V17 H15.5 V19 H18 L18 16.3 C18.8 15.2 20 13.7 20 11 C20 6.6 17 3 12 3 Z" fill="none" stroke={Rune.goldText} strokeWidth={1.5} strokeLinejoin="round" />
@@ -792,25 +800,13 @@ export function GalleryScreen() {
         </View>
       }>
       {desktop ? (
-        <View style={{ flex: 1, flexDirection: 'row', gap: DESK_GAP }}>
-          <ScrollView style={{ width: DESK_SIDE_W, flexGrow: 0 }} contentContainerStyle={{ gap: 12, paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ flex: 1, color: Rune.muted, fontSize: 11, fontFamily: Body.medium, letterSpacing: 0.6 }}>{cards.length} card{cards.length === 1 ? '' : 's'}</Text>
-              {activeCount ? (
-                <Pressable onPress={() => { playSfx('buttonTap'); clearFilters(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear filters">
-                  <Text style={{ color: Rune.goldText, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Clear filters</Text>
-                </Pressable>
-              ) : null}
-            </View>
+        <View style={{ flex: 1 }}>
+          {/* The filters run across the top, band beside band; the cards and the focus pane sit below them. */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 30, rowGap: 12, paddingBottom: 16, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(218,162,73,0.14)' }}>
             {bands}
-            <View style={{ gap: 8, marginTop: 4 }}>
-              <RuneButton label={selecting ? 'Stop selecting' : 'Select cards'} kind="secondary" dense height={36} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
-              {selecting && selected.size ? (
-                <RuneButton label={`Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(pickedFrom(everything, selected))} />
-              ) : null}
-              {selecting ? <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.regular, lineHeight: 16 }}>Click cards to pick them, then share the set.</Text> : null}
-            </View>
-          </ScrollView>
+          </View>
+          {selecting ? <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginBottom: 10 }}>Click cards to pick them, then share the set.</Text> : null}
+        <View style={{ flex: 1, flexDirection: 'row', gap: DESK_GAP }}>
           <View ref={(v) => { gridEl.current = v as unknown as HTMLElement | null; }} style={{ width: gridW }}>
             <FlatList
               ref={listRef}
@@ -843,6 +839,7 @@ export function GalleryScreen() {
             onPrint={focused ? () => onPrintItems([focused]) : undefined}
             onOpen={focused ? () => { playSfx('cardFullscreenEnter'); setReading(focused); } : undefined}
           />
+        </View>
         </View>
       ) : (
       <>
