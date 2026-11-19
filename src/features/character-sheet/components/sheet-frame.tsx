@@ -13,8 +13,10 @@ import { useCarousel } from '../carousel-context';
 const BORDER_GRAY = require('../../../../assets/art/longborder-gray.webp');
 // v0.44.0 desktop: the left half is the right half mirrored through the top diamond. The phone's left edge
 // steps around the hand and dice notch, which no longer line up once the sheet sits in a desktop port.
-const BORDER_DESKTOP = require('../../../../assets/art/longborder-mirrored.webp');
-const BORDER_DESKTOP_GRAY = require('../../../../assets/art/longborder-mirrored-gray.webp');
+// v0.46.0 (owner): the demo's frame. Gold all the way round, the bottom edge included, and the page's own ink
+// outside the line, so the port meets the table in one colour with no darker band at its edges.
+const BORDER_DESKTOP = require('../../../../assets/art/desk-frame.webp');
+const BORDER_DESKTOP_GRAY = require('../../../../assets/art/desk-frame-gray.webp');
 
 /** The parchment sheet behind everything (rounded so the gold frame's corners read). */
 export function SheetBackground() {

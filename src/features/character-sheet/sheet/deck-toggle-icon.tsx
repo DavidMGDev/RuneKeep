@@ -30,6 +30,28 @@ export function ArsenalIcon() {
   );
 }
 
+/**
+ * The moodboard (v0.46.0, owner): two pinned pictures, the front one a peak under a sun, and a brush laid
+ * across them. Drawn like the deck icons, gold strokes over the dark fill.
+ */
+export function MoodboardIcon({ color = GOLD }: { color?: string }) {
+  return (
+    <Svg width={44} height={44} viewBox="0 0 48 48">
+      {/* the picture behind, tilted */}
+      <Rect x={9} y={9} width={22} height={18} rx={1.5} fill={FILL} stroke={color} strokeWidth={2} strokeLinejoin="round" transform="rotate(-9 20 18)" />
+      {/* the front picture: a peak under a sun */}
+      <Rect x={15} y={16} width={25} height={20} rx={1.5} fill={FILL} stroke={color} strokeWidth={2.4} strokeLinejoin="round" />
+      <Path d="M 17.5 33 L 24.5 24.5 L 29 29.5 L 31.5 27 L 37.5 33 Z" fill={color} />
+      <Circle cx={33.5} cy={21.5} r={2.4} fill={color} />
+      {/* the pin */}
+      <Polygon points="27.5,12.5 30,15.5 27.5,18.5 25,15.5" fill={color} />
+      {/* the brush, laid across the corner */}
+      <Path d="M 33 44 L 43.5 33.5" stroke={color} strokeWidth={3} strokeLinecap="round" />
+      <Path d="M 31.5 45.5 Q 29 46 29.5 43.5 Q 30 41 32.5 41.5 Z" fill={color} />
+    </Svg>
+  );
+}
+
 export function InventoryIcon() {
   return (
     <Svg width={44} height={44} viewBox="0 0 48 48">

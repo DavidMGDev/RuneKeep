@@ -11,7 +11,7 @@ import { playSfx } from '@/lib/sfx';
 import { useScreenDim } from '@/lib/screen-dim';
 
 import { useCarousel } from '../carousel-context';
-import { DeckToggleIcon } from './deck-toggle-icon';
+import { DeckToggleIcon, MoodboardIcon } from './deck-toggle-icon';
 
 /**
  * The float menu (#161/#162): the deck toggle no longer switches inv/arsenal on its own. PRESS it
@@ -234,7 +234,7 @@ export function FloatMenuProvider({ children, onOpenInterface }: { children: Rea
 
 /** The trigger: the deck-toggle icon, now wrapped in the radial-menu gesture. Always mounted, so its
  *  measured on-screen width gives the DesignStage scale (screen-px drag ÷ scale = design px). */
-export function FloatMenuTrigger() {
+export function FloatMenuTrigger({ onOpenBoard }: { onOpenBoard?: () => void }) {
   const { category } = useCarousel();
   const desktop = useDesktop();
   const { scale, fingerX, fingerY, highlight, dragging, openingSV, openSV, movedSV, openMenu, closeMenu, pinMenu, select } = useFloatMenu();
@@ -284,13 +284,21 @@ export function FloatMenuTrigger() {
     [scale, fingerX, fingerY, highlight, dragging, openingSV, openSV, movedSV, openMenu, closeMenu, pinMenu, select],
   );
 
-  // Desktop (v0.44.0): Rest, Level Up, State and Dice have their own buttons and decks have the rail, so the
-  // diamond only shows which deck is in hand. No radial menu, and it does not cycle decks.
+  // Desktop (v0.46.0, owner): Rest, Level Up, State and Dice have their own buttons and decks have the rail, so
+  // the diamond is the moodboard's door: one click opens it (the portrait's double tap does on a phone).
   if (desktop) {
     return (
-      <View style={[box(60, 223, 52, 52), { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none" accessibilityLabel={`Deck in hand: ${category}`}>
-        <DeckToggleIcon category={category} />
-      </View>
+      <Pressable
+        onPress={() => { playSfx('buttonTap'); onOpenBoard?.(); }}
+        accessibilityRole="button"
+        accessibilityLabel="Open the moodboard"
+        style={[box(60, 223, 52, 52), { alignItems: 'center', justifyContent: 'center', cursor: 'pointer' } as never]}>
+        {({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => (
+          <View style={{ transform: [{ scale: pressed ? 0.94 : hovered ? 1.12 : 1 }, { rotate: hovered ? '-6deg' : '0deg' }] }}>
+            <MoodboardIcon color={hovered ? Rune.ivory : undefined} />
+          </View>
+        )}
+      </Pressable>
     );
   }
   return (

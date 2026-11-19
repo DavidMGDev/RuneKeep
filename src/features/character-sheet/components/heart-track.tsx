@@ -5,6 +5,7 @@ import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimat
 
 import { ArtImage } from '@/components/art-image';
 import { Rune } from '@/constants/theme';
+import { useDesktop } from '@/hooks/use-desktop';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { type HeartAction, heartBoundaries, type PipState, resolveHearts } from '@/lib/pips';
@@ -273,6 +274,7 @@ export interface HeartTrackHandle {
 
 export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function HeartTrack({ left, top, width, pip, hp, slots = 6, maxHp = Infinity, accent, onHp }, ref) {
   const reduced = useReducedMotion();
+  const desktop = !!useDesktop();
   const { states } = resolveHearts(hp, slots);
   const rawBounds = heartBoundaries(hp, slots);
   // Suppress the boundary you CAN'T act on (#136): no gain zone at the HP ceiling (the phantom
@@ -401,8 +403,20 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
   // gestures. The barrier sits midway between the down-slot and the up-slot, and each zone acts
   // on whichever boundary slot lives on ITS side — so at hp 6 (up = heart #1 goldifies, down =
   // heart #6 breaks) the LEFT half goldifies and the RIGHT half breaks, per owner.
+  // Desktop (v0.46.0, owner): one click restores or spends, with the release burst at once and no charge first.
+  const onClick = useCallback(
+    (index: number, action: HeartAction) => {
+      onHp(hp + (GAINS[action] ? 1 : -1));
+      setAnims((list) => [...list, { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'fx' }]);
+      const ms = action === 'goldify' ? (STAT_SOUND_DELAY_MS.hp.goldGain ?? STAT_SOUND_DELAY_MS.hp.gain) : STAT_SOUND_DELAY_MS.hp[GAINS[action] ? 'gain' : 'lose'];
+      setTimeout(() => impact(action), ms);
+    },
+    [hp, slots, onHp, impact],
+  );
   const zoneGesture = (index: number, action: HeartAction) =>
-    Gesture.LongPress()
+    desktop
+      ? Gesture.Tap().maxDuration(1000).onEnd((_e, ok) => { if (ok) runOnJS(onClick)(index, action); })
+      : Gesture.LongPress()
       .minDuration(HOLD_MS)
       .maxDistance(32)
       .onBegin(() => runOnJS(onBegin)(index, action))
@@ -448,10 +462,10 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
       {zones.map((z, i) => (
         <GestureDetector key={`${i}-${z.index}-${z.action}`} gesture={zoneGesture(z.index, z.action)}>
           <View
-            style={box(z.from, -10, z.to - z.from, pip + 20)}
+            style={[box(z.from, -10, z.to - z.from, pip + 20), desktop ? ({ cursor: 'pointer' } as never) : null]}
             accessible
             accessibilityLabel={`${GAINS[z.action] ? 'Restore' : 'Spend'} hit point`}
-            accessibilityHint="Hold to confirm. Double tap for no animation."
+            accessibilityHint={desktop ? 'Click to confirm.' : 'Hold to confirm. Double tap for no animation.'}
           />
         </GestureDetector>
       ))}

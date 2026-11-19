@@ -88,6 +88,7 @@ export function PortraitImage({
   onTransform,
   onReplace,
   onOpenBoard,
+  clickToReplace = false,
 }: {
   uri: string;
   width: number;
@@ -97,6 +98,8 @@ export function PortraitImage({
   onReplace?: () => void;
   /** v0.34.0: a double tap opens this character's moodboard. */
   onOpenBoard?: () => void;
+  /** v0.46.0 desktop: one click opens the file picker (no hold); the moodboard has its own button there. */
+  clickToReplace?: boolean;
 }) {
   const scale = useSharedValue(transform?.scale ?? 1);
   const ox = useSharedValue(transform?.x ?? 0);
@@ -212,7 +215,20 @@ export function PortraitImage({
       fill.value = withTiming(0, { duration: 220 });
     });
 
-  const gesture = Gesture.Simultaneous(pinch, Gesture.Exclusive(doubleTap, hold, pan, tap));
+  const clickReplace = Gesture.Tap()
+    .maxDuration(1000)
+    .maxDistance(4)
+    .onTouchesDown(() => {
+      'worklet';
+      shine.value = 0;
+      shine.value = withTiming(1, { duration: 300, easing: Easing.inOut(Easing.quad) });
+    })
+    .onEnd((_e, ok) => {
+      'worklet';
+      if (ok) runOnJS(fireReplace)();
+    });
+
+  const gesture = clickToReplace ? Gesture.Simultaneous(pinch, Gesture.Exclusive(pan, clickReplace)) : Gesture.Simultaneous(pinch, Gesture.Exclusive(doubleTap, hold, pan, tap));
 
   const imgProps = useAnimatedProps(() => ({ x: ox.value, y: oy.value, width: VW * scale.value, height: VH * scale.value }));
   const fillProps = useAnimatedProps(() => ({ y: VH * (1 - fill.value), height: VH * fill.value }));

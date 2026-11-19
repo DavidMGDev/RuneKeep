@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StatusBar as RNStatusBar, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname } from 'expo-router';
@@ -97,6 +97,23 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };
     return { port, side, table, layers, tableHost, sideHost };
   }, [desktopSheet, scaleH, width, height, layers, tableHost, sideHost]);
+  // Desktop sheet (v0.46.0, owner): a press outside the side slot closes the panel on top, as Escape does, and
+  // that press does nothing else (it never also hits a heart in the port). A panel with no closer stays open.
+  useEffect(() => {
+    if (!desktopSheet || !sideHost || typeof document === 'undefined') return;
+    const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+    let release: ReturnType<typeof setTimeout> | undefined;
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 || !sideHost.querySelector('[data-side-layer]') || sideHost.contains(e.target as Node)) return;
+      if (layers.dismissTop() !== 'dismissed') return;
+      swallow(e);
+      document.addEventListener('click', swallow, { capture: true, once: true });
+      clearTimeout(release);
+      release = setTimeout(() => document.removeEventListener('click', swallow, { capture: true }), 600);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('click', swallow, { capture: true }); clearTimeout(release); };
+  }, [desktopSheet, sideHost, layers]);
   const portFrame = useMemo(
     () =>
       desktop

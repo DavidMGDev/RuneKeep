@@ -363,6 +363,7 @@ function VitalsGroup({ hidden, children }: { hidden: boolean; children: React.Re
 
 function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onOpenBoard, onAddCard, onAddGear, onFavoritesBlocked, diceUp }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onOpenBoard: () => void; onAddCard: () => void; onAddGear: () => void; onFavoritesBlocked: () => void; /** v0.39.0: the dice tray has taken the three vitals panels' places. */ diceUp: boolean }) {
   const tint = useAccentTint();
+  const deskBody = !!useDesktop();
   // v0.10.7: the hidden Favorites mirror can't take new cards — Add Card / Add Gear toast instead of
   // authoring a copy into the mirror. `category` comes from the carousel (this body is inside it).
   const { category: liveCategory } = useCarousel();
@@ -418,10 +419,10 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
             it's INTERACTIVE (drag/pinch/hold-to-replace, #155); when not, a tap-to-add Pressable. */}
         {character.portraitUri ? (
           <View style={box(0, 3, 148, 222)}>
-            <PortraitImage uri={character.portraitUri} width={148} height={222} transform={character.portraitTransform} onTransform={onPortraitTransform} onReplace={onPortraitReplace} onOpenBoard={onOpenBoard} />
+            <PortraitImage uri={character.portraitUri} width={148} height={222} transform={character.portraitTransform} onTransform={onPortraitTransform} onReplace={onPortraitReplace} onOpenBoard={deskBody ? undefined : onOpenBoard} clickToReplace={deskBody} />
           </View>
         ) : (
-          <PortraitTapButton style={StyleSheet.absoluteFill} onPress={onPortraitReplace} onOpenBoard={onOpenBoard} accessibilityLabel="Character portrait. Add a photo">
+          <PortraitTapButton style={StyleSheet.absoluteFill} onPress={onPortraitReplace} onOpenBoard={deskBody ? undefined : onOpenBoard} accessibilityLabel="Character portrait. Add a photo">
             <ArtImage source={Art.portraitPlaceholder} fit="contain" style={{ position: 'absolute', left: 41, top: 48, width: 67, height: 100 } as never} />
           </PortraitTapButton>
         )}
@@ -626,7 +627,7 @@ function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef,
       {/* The deck-toggle trigger (now opens the radial float menu, #161). Lives at the same screen
           spot the old toggle did (header group 16,12 + child 39,211 → absolute 55,223); kept here in
           the body so it paints below the carousel, with its overlay mounted above the carousel. */}
-      <FloatMenuTrigger />
+      <FloatMenuTrigger onOpenBoard={onOpenBoard} />
     </>
   );
 }

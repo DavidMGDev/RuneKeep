@@ -1,6 +1,6 @@
 import { DesktopPortal } from '@/components/desktop-portal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
@@ -10,21 +10,23 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { hpLostFromDamage } from '@/lib/damage';
 import { playRiser, playSfx, type RiserHandle } from '@/lib/sfx';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { useDesktop } from '@/hooks/use-desktop';
+import { RuneButton } from '@/components/rune-button';
 import { StepBtn } from './number-keypad';
 
 const HOLD_MS = 620;
 
 /** A flat chamfered keypad key. */
-function Key({ label, onPress, accent }: { label: string; onPress: () => void; accent?: boolean }) {
+function Key({ label, onPress, accent, height = 46, a11y }: { label: string; onPress: () => void; accent?: boolean; height?: number; a11y?: string }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} style={{ flex: 1 }}>
-      {({ pressed }) => (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={a11y ?? label} style={{ flex: 1 }}>
+      {({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => (
         <ChamferBox
           chamfer={8}
-          fill={pressed ? 'rgba(224,181,99,0.18)' : 'rgba(14,17,22,0.96)'}
-          stroke={accent ? 'rgba(200,27,24,0.7)' : 'rgba(218,162,73,0.5)'}
+          fill={pressed ? 'rgba(224,181,99,0.18)' : hovered ? '#1A1E26' : 'rgba(14,17,22,0.96)'}
+          stroke={accent ? 'rgba(200,27,24,0.7)' : hovered ? Rune.goldBright : 'rgba(218,162,73,0.5)'}
           strokeWidth={1.2}
-          style={{ height: 46, alignItems: 'center', justifyContent: 'center' }}>
+          style={{ height, alignItems: 'center', justifyContent: 'center' }}>
           <Text style={{ color: accent ? '#E2705A' : Rune.sheet, fontSize: 18, fontFamily: Display.bold }}>{label}</Text>
         </ChamferBox>
       )}
@@ -117,6 +119,7 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
     [charge, confirm, reduced, startOkRiser, stopOkRiser],
   );
 
+  const desktop = !!useDesktop();
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));
   const okStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 + charge.value * 0.12 }] }));
   // The charge now RISES from the bottom of the chamfered key (a filling meter) instead of an ugly
@@ -128,7 +131,74 @@ export function DamagePanel({ thresholds, onApply, onClose }: { thresholds: { ma
   // tap-catcher (#258r2) absorbs every touch so the character sheet can't be reached through the panel
   // (an outside tap cancels). The centered panel sits directly above it — NO box-none, which leaked
   // (matches the OverlayShell pattern).
-  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
+  // Desktop (v0.46.0, owner): a pop-up over the port, built for a keyboard. The figure is a real field (type it,
+  // Enter applies, Esc cancels), the keypad stays for the mouse, the bands show where the hit lands, and one
+  // click applies it.
+  if (desktop) {
+    const bands = [
+      { label: 'Minor', range: `1 to ${Math.max(1, thresholds.major - 1)}`, hp: 1, on: damage > 0 && hpLoss === 1 },
+      { label: 'Major', range: `${thresholds.major} to ${Math.max(thresholds.major, thresholds.severe - 1)}`, hp: 2, on: hpLoss === 2 },
+      { label: 'Severe', range: `${thresholds.severe}+`, hp: 3, on: hpLoss >= 3 },
+    ];
+    return (
+      <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.01)', cursor: 'default' } as never]} onPress={() => finish(false)} accessibilityRole="button" accessibilityLabel="Close damage panel" />
+        <Animated.View style={panelStyle}>
+          <ChamferBox chamfer={16} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 352, padding: 22, gap: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={{ flex: 1, color: Rune.ivory, fontSize: 24, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.3 }}>Take damage</Text>
+              <Pressable onPress={() => finish(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
+                {({ hovered }: { hovered?: boolean }) => <Text style={{ color: hovered ? Rune.ivory : Rune.goldText, fontSize: 18, fontFamily: Body.bold }}>{'\u2715'}</Text>}
+              </Pressable>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {bands.map((b) => (
+                <ChamferBox key={b.label} chamfer={7} fill={b.on ? '#1d0f10' : Rune.ink} stroke={b.on ? Rune.red : 'rgba(218,162,73,0.4)'} strokeWidth={1.2} style={{ flex: 1, alignItems: 'center', paddingVertical: 8, gap: 1 }}>
+                  <Text style={{ color: b.on ? Rune.ivory : Rune.muted, fontSize: 10, fontFamily: Body.bold, letterSpacing: 1.3, textTransform: 'uppercase' }}>{b.label}</Text>
+                  <Text style={{ color: b.on ? Rune.ivory : Rune.goldBright, fontSize: 15, fontFamily: Display.black }}>{b.range}</Text>
+                  <Text style={{ color: b.on ? '#F08A74' : Rune.muted, fontSize: 10, fontFamily: Body.bold }}>{`\u2212${b.hp} HP`}</Text>
+                </ChamferBox>
+              ))}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <StepBtn label={'\u2212'} onPress={() => step(-1)} disabled={damage <= 0} a11y="One less" />
+              <ChamferBox chamfer={8} fill={Rune.ink} stroke={Rune.goldEdge} strokeWidth={1.3} style={{ flex: 1, height: 64, justifyContent: 'center' }}>
+                <TextInput
+                  autoFocus
+                  value={typed}
+                  onChangeText={(t) => setTyped(t.replace(/[^0-9]/g, '').slice(0, 3))}
+                  onSubmitEditing={() => { if (damage > 0) confirm(); }}
+                  onKeyPress={(e) => { if (e.nativeEvent.key === 'Escape') finish(false); }}
+                  inputMode="numeric"
+                  placeholder="0"
+                  placeholderTextColor={Rune.muted}
+                  accessibilityLabel="Damage"
+                  style={{ color: Rune.sheet, fontSize: 40, fontFamily: Display.black, textAlign: 'center', padding: 0, outlineStyle: 'none' } as never}
+                />
+              </ChamferBox>
+              <StepBtn label="+" onPress={() => step(1)} disabled={damage >= 999} a11y="One more" />
+            </View>
+            {[
+              ['1', '2', '3'],
+              ['4', '5', '6'],
+              ['7', '8', '9'],
+            ].map((row, r) => (
+              <View key={r} style={{ flexDirection: 'row', gap: 8 }}>
+                {row.map((d) => <Key key={d} label={d} height={42} onPress={() => press(d)} />)}
+              </View>
+            ))}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Key label="CLR" height={42} onPress={clear} accent a11y="Clear" />
+              <Key label="0" height={42} onPress={() => press('0')} />
+              <Key label={'\u232B'} height={42} a11y="Delete a digit" onPress={() => { playSfx('numpadPress'); setTyped((t) => t.slice(0, -1)); }} />
+            </View>
+            <RuneButton label={damage > 0 ? `Take ${hpLoss} HP` : 'Take the hit'} kind="primary" height={46} disabled={damage <= 0} onPress={confirm} />
+            <Text style={{ color: Rune.muted, fontSize: 11, fontFamily: Body.medium, textAlign: 'center' }}>Enter applies it. Esc or a click outside cancels.</Text>
+          </ChamferBox>
+        </Animated.View>
+      </View>
+    );
+  }
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
     <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>

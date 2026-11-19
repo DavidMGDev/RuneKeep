@@ -1,10 +1,12 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
 import { type Insets, Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+
+import { useDesktop } from '@/hooks/use-desktop';
 
 interface PressableArtProps {
   children: ReactNode;
@@ -45,6 +47,10 @@ export function PressableArt({
 }: PressableArtProps) {
   const scale = useSharedValue(1);
   const config = { damping: 13, stiffness: 220, mass: 0.6, ...spring };
+  // Desktop (v0.46.0, owner): the port answers the pointer. A hovered piece grows part of the way to its press.
+  const desktop = !!useDesktop();
+  const hovered = useRef(false);
+  const rest = () => (hovered.current && !disabled ? 1 + (pressedScale - 1) * 0.45 : 1);
 
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -62,8 +68,10 @@ export function PressableArt({
         scale.value = withSpring(pressedScale, config);
       }}
       onPressOut={() => {
-        scale.value = withSpring(1, { ...config, stiffness: 180 });
-      }}>
+        scale.value = withSpring(rest(), { ...config, stiffness: 180 });
+      }}
+      onHoverIn={desktop ? () => { hovered.current = true; scale.value = withSpring(rest(), config); } : undefined}
+      onHoverOut={desktop ? () => { hovered.current = false; scale.value = withSpring(1, { ...config, stiffness: 180 }); } : undefined}>
       <Animated.View style={[{ width: '100%', height: '100%' }, animatedStyle]}>
         {children}
       </Animated.View>

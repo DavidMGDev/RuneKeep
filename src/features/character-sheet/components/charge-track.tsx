@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { Rune } from '@/constants/theme';
+import { useDesktop } from '@/hooks/use-desktop';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { box } from '@/lib/design';
 import { playRiser, playSfx, type RiserHandle, type SfxId } from '@/lib/sfx';
@@ -408,6 +409,7 @@ export interface ChargeTrackHandle {
 
 export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(function ChargeTrack({ left, top, slots, w, h, upIndex, downIndex, onUp, onDown, renderSlot, renderFilled, renderEmpty, flavor, accent, grow = 2.2, crossUpAt = 0.15, crossDownAt = 0.1, sideSlop = 12, zone, trackLabel }: ChargeTrackProps, ref) {
   const reduced = useReducedMotion();
+  const desktop = !!useDesktop();
   const [anims, setAnims] = useState<Anim[]>([]);
   const charging = useRef<Anim | null>(null);
   const lastDown = useRef({ key: '', t: 0 });
@@ -507,8 +509,22 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'out' as Phase } : a)));
   }, [stopRiser]);
 
+  // Desktop (v0.46.0, owner): one click marks or clears, with the release burst at once and no charge first.
+  const click = useCallback(
+    (index: number, dir: Dir, step: () => void) => {
+      step();
+      setAnims((list) => [...list, { id: nextId.current++, index, dir, phase: 'fx' }]);
+      setTimeout(() => impact(dir), STAT_SOUND_DELAY_MS[flavor][dir === 'up' ? 'gain' : 'lose']);
+    },
+    [flavor, impact],
+  );
+
   const gestureFor = (index: number, dir: Dir) => {
     const step = dir === 'up' ? onUp : onDown;
+    if (desktop) {
+      const clickJS = () => click(index, dir, step);
+      return Gesture.Tap().maxDuration(1000).onEnd((_e, ok) => { if (ok) runOnJS(clickJS)(); });
+    }
     // Bind the callbacks HERE, in plain JS closures: a function passed as a runOnJS ARGUMENT
     // cannot cross the worklet boundary (it arrives as a bare object → "step is not a function"
     // at the climax, #92). runOnJS may only carry primitives.
@@ -539,7 +555,7 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
             style={[box(s.x, s.y, w, h), { opacity: hidden ? 0 : 1 }]}
             accessible
             accessibilityLabel={`${trackLabel} ${i + 1}`}
-            accessibilityHint={dir && !zone ? `Hold to ${dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.` : undefined}>
+            accessibilityHint={dir && !zone ? (desktop ? `Click to ${dir === 'up' ? 'mark' : 'clear'} one.` : `Hold to ${dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.`) : undefined}>
             {renderSlot(i)}
           </View>
         );
@@ -547,11 +563,11 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
         return (
           <GestureDetector key={i} gesture={gestureFor(i, dir)}>
             <View
-              style={[box(s.x, s.y, w, h), { opacity: hidden ? 0 : 1 }]}
+              style={[box(s.x, s.y, w, h), { opacity: hidden ? 0 : 1 }, desktop ? ({ cursor: 'pointer' } as never) : null]}
               hitSlop={{ top: 10, bottom: 10, left: dir === 'down' ? sideSlop : 4, right: dir === 'up' ? sideSlop : 4 }}
               accessible
               accessibilityLabel={`${trackLabel} ${i + 1}`}
-              accessibilityHint={`Hold to ${dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.`}>
+              accessibilityHint={desktop ? `Click to ${dir === 'up' ? 'mark' : 'clear'} one.` : `Hold to ${dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.`}>
               {renderSlot(i)}
             </View>
           </GestureDetector>
@@ -579,10 +595,10 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
             return zones.map((z) => (
               <GestureDetector key={`${z.index}-${z.dir}`} gesture={gestureFor(z.index, z.dir)}>
                 <View
-                  style={box(z.from, zone.top, z.to - z.from, zone.height)}
+                  style={[box(z.from, zone.top, z.to - z.from, zone.height), desktop ? ({ cursor: 'pointer' } as never) : null]}
                   accessible
                   accessibilityLabel={`${z.dir === 'up' ? 'Add' : 'Remove'} ${trackLabel}`}
-                  accessibilityHint={`Hold to ${z.dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.`}
+                  accessibilityHint={desktop ? `Click to ${z.dir === 'up' ? 'mark' : 'clear'} one.` : `Hold to ${z.dir === 'up' ? 'mark' : 'clear'} one. Double tap for no animation.`}
                 />
               </GestureDetector>
             ));
