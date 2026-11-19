@@ -95,7 +95,7 @@ const modLabel = (mod: PresetModifier | undefined, cardVars?: FunctionVar[]): st
 
 // ------------------------------------------------------------------------------------- the slots
 
-function Slot({ index, preset, onPress, onHold }: { index: number; preset: DicePreset | null; onPress: () => void; onHold: () => void }) {
+function Slot({ index, preset, onPress, onHold, at }: { index: number; preset: DicePreset | null; onPress: () => void; onHold: () => void; /** Desktop belt: where this slot sits, instead of the sheet's three spots. */ at?: { x: number; y: number } }) {
   const label = preset ? preset.name : `Slot ${index + 1}`;
   const fit = fitText(label.toUpperCase(), { width: NAME_W, height: NAME_H, base: 8.5, lineRatio: 1.2, min: 5, charRatio: NAME_CHAR_RATIO });
   return (
@@ -105,7 +105,7 @@ function Slot({ index, preset, onPress, onHold }: { index: number; preset: DiceP
       delayLongPress={380}
       accessibilityRole="button"
       accessibilityLabel={preset ? `${preset.name}. ${diceSummary(preset.dice)}. Tap to roll, hold to edit.` : `Empty preset, slot ${index + 1}. Tap to save the dice you have out.`}
-      style={({ pressed }) => [box(SLOT_X[index], SLOT_Y, SLOT_W, SLOT_W + 3 + NAME_H), { opacity: pressed ? 0.66 : 1 }]}>
+      style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [box(at?.x ?? SLOT_X[index], at?.y ?? SLOT_Y, SLOT_W, SLOT_W + 3 + NAME_H), { opacity: pressed ? 0.66 : 1, transform: [{ scale: hovered ? 1.06 : 1 }] }]}>
       <ChamferBox
         chamfer={9}
         fill={preset ? 'rgba(218,162,73,0.14)' : 'transparent'}
@@ -385,7 +385,9 @@ function PresetEditor({ title, initial, dice, cardVars, onSave, onDelete, onUpda
 
 // ------------------------------------------------------------------------------------- the panel
 
-export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay, onOpenChange }: {
+export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay, onOpenChange, belt }: {
+  /** v0.46.0 desktop: every slot in `presets`, in one row from this point, `gap` apart. */
+  belt?: { left: number; top: number; gap: number };
   /** v0.42.3: the character's numeric card elements, so a preset can carry "+ Combo Die". */
   cardVars?: FunctionVar[];
   presets: (DicePreset | null)[];
@@ -424,9 +426,11 @@ export function DicePresetSlots({ presets, trayDice, cardVars, onWrite, onPlay, 
 
   return (
     <>
-      {[0, 1, 2].slice(0, PRESET_SLOTS).map((i) => (
-        <Slot key={i} index={i} preset={presets[i] ?? null} onPress={() => tap(i)} onHold={() => hold(i)} />
-      ))}
+      {belt
+        ? presets.map((p, i) => <Slot key={i} index={i} preset={p} onPress={() => tap(i)} onHold={() => hold(i)} at={{ x: belt.left + i * (SLOT_W + belt.gap), y: belt.top }} />)
+        : [0, 1, 2].slice(0, PRESET_SLOTS).map((i) => (
+            <Slot key={i} index={i} preset={presets[i] ?? null} onPress={() => tap(i)} onHold={() => hold(i)} />
+          ))}
 
       {/* Drawn at the sheet's root rather than here (v0.41.2, owner): a dialog written inside the
           DesignStage dims only the scaled design box, which on a phone leaves the parchment showing

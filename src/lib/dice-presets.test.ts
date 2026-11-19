@@ -44,7 +44,18 @@ describe('slots', () => {
   });
 
   it('ignores a slot that does not exist', () => {
-    expect(writeSlot(undefined, 7, { id: 'a', name: 'x', dice: [] })).toEqual([null, null, null]);
+    expect(writeSlot(undefined, 9, { id: 'a', name: 'x', dice: [] })).toEqual([null, null, null]);
+  });
+
+  it('keeps desktop slots when a phone writes one of its three', () => {
+    const p = { id: 'a', name: 'Strike', dice: ['d20' as const] };
+    const q = { id: 'b', name: 'Big', dice: ['d12' as const] };
+    const desk = writeSlot(undefined, 5, q);
+    expect(desk).toEqual([null, null, null, null, null, q]);
+    expect(slotsOf(desk)).toEqual([null, null, null]);
+    expect(slotsOf(desk, 6)[5]).toBe(q);
+    expect(writeSlot(desk, 0, p)).toEqual([p, null, null, null, null, q]);
+    expect(writeSlot(desk, 5, null)).toEqual([null, null, null]);
   });
 });
 

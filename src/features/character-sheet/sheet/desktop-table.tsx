@@ -18,6 +18,8 @@ import { TraitCrossOut } from '../components/trait-cross-out';
 import { catalogIdOf } from '@/features/cards/card-effects';
 import { CategoryGlyph } from './deck-toggle-icon';
 import { SortPanel } from './sort-panel';
+import { type DiceTrayHandle, DiceTrayPanels, type TrayLayout } from './dice-tray';
+import { DicePresetSlots } from './dice-preset-slots';
 import type { CharacterFile } from '@/lib/character-file';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
 import { type CarouselTune, DEFAULT_TUNE, StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
@@ -44,6 +46,12 @@ const HOLD_CENTS = 100;
 const HOLD_PEAK = 8;
 const TUNE_KEY = 'runekeep.deskTune';
 
+/** The dice tray on the table (v0.46.0): its state and handle live on the sheet, which the traits roll through. */
+export type DeskDice = { up: boolean; onClose: () => void; handleRef: { current: DiceTrayHandle | null } } & Omit<Parameters<typeof DicePresetSlots>[0], 'belt'>;
+/** The dice carousel's width and a preset slot's footprint (the slot is 48 wide, its name band 72). */
+const DICE_CAROUSEL_W = 380;
+const PRESET_STEP_GAP = 26;
+
 function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
   if (states.modsOff.has(ref)) return 'muted';
   if (states.permanent.has(ref)) return 'permanent';
@@ -59,7 +67,7 @@ function loadTune(): CarouselTune {
   }
 }
 
-export function DesktopTable({ sortFile, onSortOpen, overlay: overlayProp, backRef, onManage, onExit }: { canInspect: boolean; sortFile?: CharacterFile; onSortOpen?: (open: boolean) => void; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
+export function DesktopTable({ dice, sortFile, onSortOpen, overlay: overlayProp, backRef, onManage, onExit }: { dice: DeskDice; canInspect: boolean; sortFile?: CharacterFile; onSortOpen?: (open: boolean) => void; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
   const ctx = useCarousel();
@@ -88,7 +96,19 @@ export function DesktopTable({ sortFile, onSortOpen, overlay: overlayProp, backR
   const railTop = port ? port.top + 200 * port.scale : 120;
   const railMaxH = Math.max(120, tableH - 24 - railTop);
   const [panelH, setPanelH] = useState(220);
-  const deckTop = 24 + panelH + 8;
+  // Dice (v0.46.0, owner): the empty table above the cards becomes the tray, and the deck moves down under it.
+  const trayH = Math.round(tableH * 0.58);
+  const deckTop = dice.up ? trayH + 8 : 24 + panelH + 8;
+  const tray = useMemo<TrayLayout>(() => {
+    const pad = 24, top = 24, w = areaW - pad * 2;
+    return {
+      width: areaW,
+      height: trayH,
+      carousel: { left: pad, top, w: DICE_CAROUSEL_W, h: 82 },
+      pool: { left: pad, top: top + 82 + 14, w, h: trayH - (top + 82 + 14) - 58 },
+      row: { left: pad, top: trayH - 46, w, h: 40 },
+    };
+  }, [areaW, trayH]);
 
   const carRef = useRef<StraightCarouselHandle>(null);
   const items = useMemo<StraightItem[]>(() => deck.map((c) => {
@@ -151,15 +171,15 @@ export function DesktopTable({ sortFile, onSortOpen, overlay: overlayProp, backR
   // Keys (web): A/D or arrows walk the deck, Q/E or 1-9 change deck, Space equips the centred card, [ and ] move
   // it in the deck, Esc closes the menu. Off while a panel is open or a field has focus. Everything the handler
   // reads comes through a ref, so the listener is never rebuilt mid-hold.
-  const keyRef = useRef({ deck, overlay, menu, ring: ctx.ring, ctx, canReorder, category });
-  keyRef.current = { deck, overlay, menu, ring: ctx.ring, ctx, canReorder, category };
+  const keyRef = useRef({ deck, overlay, menu, ring: ctx.ring, ctx, canReorder, category, dice });
+  keyRef.current = { deck, overlay, menu, ring: ctx.ring, ctx, canReorder, category, dice };
   useEffect(() => {
     if (!desktop || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       const k = keyRef.current;
       if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
       const key = e.key.toLowerCase();
-      if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } return; }
+      if (key === 'escape') { if (k.menu) { playSfx('floatMenuClose'); setMenu(null); } else if (k.dice.up) k.dice.onClose(); return; }
       if (k.menu) return; // the menu owns the keys while it is open
       const dir = key === 'arrowright' || key === 'd' ? 1 : key === 'arrowleft' || key === 'a' ? -1 : 0;
       if (dir && k.deck.length) {
@@ -231,7 +251,15 @@ export function DesktopTable({ sortFile, onSortOpen, overlay: overlayProp, backR
             />
           </DesktopPortal>
         ) : null}
-        <TunePanel tune={tune} onChange={setTune} left={areaL + Math.max(20, (areaW - 780) / 2)} width={Math.min(780, areaW - 40)} onHeight={setPanelH} />
+        {dice.up ? (
+          <View style={{ position: 'absolute', left: areaL, top: 0, width: areaW, height: trayH, zIndex: 30 }}>
+            <DiceTrayPanels layout={tray} dm hint={'Click a die above to pick it up.\nClick a trait on the sheet to throw the duality pair with it.'} handleRef={dice.handleRef} />
+            <DicePresetSlots presets={dice.presets} trayDice={dice.trayDice} cardVars={dice.cardVars} onWrite={dice.onWrite} onPlay={dice.onPlay} onOpenChange={dice.onOpenChange}
+              belt={{ left: tray.carousel.left + DICE_CAROUSEL_W + 28, top: tray.carousel.top + 2, gap: PRESET_STEP_GAP }} />
+          </View>
+        ) : (
+          <TunePanel tune={tune} onChange={setTune} left={areaL + Math.max(20, (areaW - 780) / 2)} width={Math.min(780, areaW - 40)} onHeight={setPanelH} />
+        )}
         {deck.length === 0 ? (
           <Text style={{ position: 'absolute', left: areaL, width: areaW, top: deckTop + (tableH - deckTop) * 0.4, textAlign: 'center', color: Rune.muted, fontFamily: Body.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</Text>
         ) : (

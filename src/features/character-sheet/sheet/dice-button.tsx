@@ -143,7 +143,8 @@ const Hearts = memo(function Hearts() {
   );
 });
 
-export const DiceButtonArt = memo(function DiceButtonArt({ on }: { on: boolean }) {
+/** `empty` (v0.46.0, desktop): the rail and the fill only, no numbers and no hearts, open or shut. */
+export const DiceButtonArt = memo(function DiceButtonArt({ on, empty = false }: { on: boolean; empty?: boolean }) {
   return (
     <Svg width="100%" height="100%" viewBox={`0 0 ${DICE_PANEL.w} ${DICE_PANEL.h}`}>
       <Defs>
@@ -153,16 +154,16 @@ export const DiceButtonArt = memo(function DiceButtonArt({ on }: { on: boolean }
       </Defs>
       {/* the rail, and the fill inset inside it: the left edge is a real edge now, not a cut */}
       <Polygon points={OUTER} fill={RAIL} />
-      <Polygon points={INNER} fill={on ? RED : INK} />
+      <Polygon points={INNER} fill={on && !empty ? RED : INK} />
       {/* The clip sits on the OUTER group so it stays in the panel's own axes; the rotation is inside
           it, so the pattern turns and the mask does not. Both layers stay mounted (see the note on
           the weave): pressing the button changes opacity, it does not rebuild a subtree. */}
-      <G clipPath="url(#dicePanelFill)">
+      {empty ? null : <G clipPath="url(#dicePanelFill)">
         <G transform={`rotate(${ANGLE} ${CX} ${CY})`}>
           <G opacity={on ? 0 : 1}><Numbers /></G>
           <G opacity={on ? 1 : 0}><Hearts /></G>
         </G>
-      </G>
+      </G>}
     </Svg>
   );
 });

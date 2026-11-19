@@ -32,6 +32,7 @@ import { addDie, type DieVerdict, dieVerdicts, type Duality, dualityVerdict, has
 import { diceOf } from '@/lib/dice-presets';
 import { ChamferFrame } from './chamfer';
 import { DiceButtonArt } from './dice-button';
+import { useDesktop } from '@/hooks/use-desktop';
 
 // ---------------------------------------------------------------------------------- the geometry
 
@@ -114,7 +115,7 @@ const PANEL_LEFT = 21;
 const MIRROR_RIGHT = MIRROR_AXIS - (ARMOR_PANEL.left - MIRROR_AXIS);
 const TRAY_PANEL = { left: PANEL_LEFT, top: ARMOR_PANEL.top, w: MIRROR_RIGHT - PANEL_LEFT, h: ARMOR_PANEL.h };
 
-function DiceTrayTrigger({ on, onPress }: { on: boolean; onPress: () => void }) {
+function DiceTrayTrigger({ on, onPress, empty }: { on: boolean; onPress: () => void; empty?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
@@ -122,8 +123,8 @@ function DiceTrayTrigger({ on, onPress }: { on: boolean; onPress: () => void }) 
       accessibilityRole="button"
       accessibilityState={{ selected: on }}
       accessibilityLabel={on ? 'Close the dice tray' : 'Open the dice tray'}
-      style={({ pressed }) => [box(TRAY_PANEL.left, TRAY_PANEL.top, TRAY_PANEL.w, TRAY_PANEL.h), { opacity: pressed ? 0.72 : 1 }]}>
-      <DiceButtonArt on={on} />
+      style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [box(TRAY_PANEL.left, TRAY_PANEL.top, TRAY_PANEL.w, TRAY_PANEL.h), { opacity: pressed ? 0.72 : hovered ? 0.86 : 1 }]}>
+      <DiceButtonArt on={on} empty={empty} />
     </Pressable>
   );
 }
@@ -949,6 +950,9 @@ export function DiceTray({ up, onToggle, handleRef }: { up: boolean; onToggle: (
     fade.value = reduced ? (up ? 1 : 0) : withTiming(up ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) });
   }, [up, fade, reduced]);
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
+  // Desktop (v0.46.0, owner): the button is empty and opens the tray over the card table, not over the vitals.
+  const desktop = !!useDesktop();
+  if (desktop) return <DiceTrayTrigger on={up} onPress={onToggle} empty />;
   return (
     <>
       <DiceTrayTrigger on={up} onPress={onToggle} />

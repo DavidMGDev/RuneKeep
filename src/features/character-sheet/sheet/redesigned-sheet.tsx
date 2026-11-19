@@ -97,7 +97,7 @@ import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { DiceTray, type DiceTrayHandle } from './dice-tray';
 import { DicePresetSlots } from './dice-preset-slots';
-import { type DicePreset, modifierValue, slotsOf, writeSlot } from '@/lib/dice-presets';
+import { DESK_PRESET_SLOTS, type DicePreset, modifierValue, slotsOf, writeSlot } from '@/lib/dice-presets';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
@@ -2901,6 +2901,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * cards their variables read. Writing one goes through the same save path as everything else.
    */
   const presets = useMemo(() => slotsOf(file?.dicePresets), [file?.dicePresets]);
+  // Desktop shows every slot; a phone shows the first three of the same list.
+  const deskPresets = useMemo(() => slotsOf(file?.dicePresets, DESK_PRESET_SLOTS), [file?.dicePresets]);
   const writePreset = useCallback((slot: number, preset: DicePreset | null) => {
     // Through the ONE save choke point, like every other change to the file: `setFile` alone updates
     // the screen and never reaches the disk, so a preset saved that way was gone on the next visit.
@@ -3168,12 +3170,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               clip={false}
               nativeID="rk-sheet-stage"
               style={{ marginTop: 18 }}>
-              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenBoard={onOpenBoard} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} diceUp={diceUp} />
+              <RedesignedBody character={character} onHp={onHp} onTrack={onTrack} onInfo={onInfo} heartRef={heartRef} stressRef={stressRef} armorRef={armorRef} hopeRef={hopeRef} onPortraitTransform={onPortraitTransform} onPortraitReplace={onPortraitReplace} onOpenBoard={onOpenBoard} onAddCard={onAddCard} onAddGear={onAddGear} onFavoritesBlocked={onFavoritesBlocked} diceUp={diceUp && !desktop} />
               {/* v0.39.0: the dice tray sits between the sheet and the traits, so its panels cover the
                   vitals fading out behind them and the cards still ride over everything. */}
               <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
               {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
-              {diceUp ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} onOpenChange={setPresetModal} /> : null}
+              {diceUp && !desktop ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} onOpenChange={setPresetModal} /> : null}
               <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={rollTrait} />
               {desktop ? <DesktopActions onOpen={setFloatKind} onDice={toggleDice} diceUp={diceUp} /> : null}
               <ExpandVeil />
@@ -3192,7 +3194,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <DesktopTable canInspect={!!file} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
+                <DesktopTable dice={{ up: diceUp, onClose: toggleDice, handleRef: trayRef, presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal }} canInspect={!!file} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} onEditCard={setEditCardId} editableIds={editableIds} overlay={desktopModal} backRef={desktopBackRef} onManage={() => setFloatKind('cards')} onExit={() => setLeaveConfirm(true)} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />

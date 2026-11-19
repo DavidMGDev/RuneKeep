@@ -60,18 +60,33 @@ export interface DicePreset {
   modifier?: PresetModifier;
 }
 
-/** A slot list is always {@link PRESET_SLOTS} long, with a hole where a slot is empty. */
+/**
+ * How many slots desktop shows (v0.46.0, owner). The first {@link PRESET_SLOTS} are the ones a phone shows too;
+ * the rest only appear on desktop, but every one of them lives on the file, so a .rune export carries them all.
+ */
+export const DESK_PRESET_SLOTS = 9;
+
+/** A slot list with a hole where a slot is empty. */
 export type PresetSlots = (DicePreset | null)[];
 
-export function slotsOf(saved: PresetSlots | undefined): PresetSlots {
+/** The first `n` slots (a phone's three by default), holes filled in. */
+export function slotsOf(saved: PresetSlots | undefined, n: number = PRESET_SLOTS): PresetSlots {
   const out: PresetSlots = [];
-  for (let i = 0; i < PRESET_SLOTS; i++) out.push(saved?.[i] ?? null);
+  for (let i = 0; i < n; i++) out.push(saved?.[i] ?? null);
   return out;
 }
 
+/**
+ * Write one slot and keep EVERY other, including slots past the ones this device shows: a phone saving slot 1
+ * must never drop a preset made on desktop in slot 6. Trailing holes past the phone's three are trimmed.
+ */
 export function writeSlot(saved: PresetSlots | undefined, slot: number, preset: DicePreset | null): PresetSlots {
-  const out = slotsOf(saved);
-  if (slot >= 0 && slot < PRESET_SLOTS) out[slot] = preset;
+  const out = slotsOf(saved, Math.max(PRESET_SLOTS, saved?.length ?? 0));
+  if (slot >= 0 && slot < DESK_PRESET_SLOTS) {
+    while (out.length <= slot) out.push(null);
+    out[slot] = preset;
+  }
+  while (out.length > PRESET_SLOTS && out[out.length - 1] === null) out.pop();
   return out;
 }
 
