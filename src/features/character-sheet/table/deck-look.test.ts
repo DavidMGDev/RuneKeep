@@ -27,6 +27,23 @@ describe('deck look', () => {
     expect('bogus' in l).toBe(false);
   });
 
+  it('keeps a table saved by an older version: its layout stays, renamed settings carry over', () => {
+    const old = { ...TABLE_PRESETS[1].look, centreClick: 'take', clickPull: false, retired: 3 } as Record<string, unknown>;
+    const l = cleanLook(old);
+    expect(l.clickPull).toBe(true);
+    expect(l.centreClick).toBe('nothing');
+    for (const k of ['supX', 'supY', 'supDir', 'ctlX', 'ctlY', 'catX', 'catY', 'size', 'walls'] as const) expect(l[k]).toEqual(TABLE_PRESETS[1].look[k]);
+    // A look missing settings added since keeps everything it has and takes the defaults for the rest.
+    const partial = cleanLook({ supX: 0.31, supY: 0.42 });
+    expect([partial.supX, partial.supY, partial.ctlX]).toEqual([0.31, 0.42, DEFAULT_LOOK.ctlX]);
+  });
+
+  it('keeps pieces split off their rows, and only known ones on the table', () => {
+    const l = cleanLook({ apart: { cards: [0.4, 0.2], 'src:die': [1.4, -2], bogus: [0.1, 0.1], sort: ['x', 1] } });
+    expect(l.apart).toEqual({ cards: [0.4, 0.2], 'src:die': [1, 0] });
+    expect(cleanLook({}).apart).toEqual({});
+  });
+
   it('keeps every built-in look inside the limits', () => {
     for (const b of BUILTIN_LOOKS) expect(cleanLook(b.look)).toEqual(b.look);
   });
@@ -34,7 +51,8 @@ describe('deck look', () => {
   it('describes every setting exactly once', () => {
     const keys = LOOK_PAGES.flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.sort()).toEqual(Object.keys(DEFAULT_LOOK).sort());
+    // `apart` (pieces split off their rows) is placed on the table itself, never a control in the panel.
+    expect(keys.sort()).toEqual(Object.keys(DEFAULT_LOOK).filter((k) => k !== 'apart').sort());
   });
 
   it('places cards further out monotonically and interpolates between detents', () => {

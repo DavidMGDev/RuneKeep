@@ -14,6 +14,7 @@
  * flat, the table stands them up in 3D, from the same list.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { startFire } from '@/lib/fire-shader';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { DesktopPortal } from '@/components/desktop-portal';
@@ -39,10 +40,10 @@ import { BoardCards, maxW, MIN_W } from './board-cards';
 import { type DeckLook } from './deck-look';
 import { CardFace, DeskCarousel, type DeskCarouselHandle, type TableCard } from './desk-carousel';
 import type { Bounds } from './dice-physics';
-import { type DomatCard, DOMAT, DOMAT_COOLDOWN_MS, drawDomat } from './domat';
+import { type DomatCard, DOMAT, DOMAT_START, type DomatStock, domatStock, drawDomat, takeDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
-import { type CardPose, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
+import { type CardPose, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
 import { DomatCardView, type Fx, FX_CSS, FxLayer, shake, Shards } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
@@ -105,15 +106,23 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const deck = decks[category] ?? NO_CARDS;
 
   // ---------------------------------------------------------------- settings and layout
-  const [look, setLookState] = useState<DeckLook>(loadLook);
+  const [look, setLookState] = useState<DeckLook>(() => loadLook(characterId));
   const lookRef = useRef(look);
   lookRef.current = look;
   const lookSave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setLook = useCallback((l: DeckLook) => {
     setLookState(l);
     if (lookSave.current) clearTimeout(lookSave.current);
-    lookSave.current = setTimeout(() => saveLook(l), 250);
-  }, []);
+    lookSave.current = setTimeout(() => saveLook(l, characterId), 250);
+  }, [characterId]);
+  // Another character: their own table (a change still waiting to be saved goes to the one it was made for).
+  const lookFor = useRef(characterId);
+  useEffect(() => {
+    if (lookFor.current === characterId) return;
+    if (lookSave.current) { clearTimeout(lookSave.current); saveLook(lookRef.current, lookFor.current); }
+    lookFor.current = characterId;
+    setLookState(loadLook(characterId));
+  }, [characterId]);
   const port = desktop?.port;
   const tableW = Math.max(200, winW - (port ? port.left + port.width : 0));
   const tableH = Math.max(200, winH);
@@ -145,15 +154,18 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     };
     const along = (n: number, gap: number) => ((n - 1) * gap) / 2 + 40;
     const ctl = look.ctlDir === 'row' ? keepOut(look.ctlX * tableW, look.ctlY * tableH, along(3, 94), 44) : keepOut(look.ctlX * tableW, look.ctlY * tableH, 44, along(3, 104));
-    const sup = look.supDir === 'row' ? keepOut(look.supX * tableW, look.supY * tableH, along(4, 70), 40) : keepOut(look.supX * tableW, look.supY * tableH, 54, along(4, 90));
+    const sup = look.supDir === 'row' ? keepOut(look.supX * tableW, look.supY * tableH, SUPPLY_HALF.row, 40) : keepOut(look.supX * tableW, look.supY * tableH, 64, SUPPLY_HALF.column);
     const cat = keepOut(look.catX * tableW, look.catY * tableH, 56, 56);
-    return { ctl: { ...ctl, dir: look.ctlDir, k: look.ctlSize }, sup: { ...sup, dir: look.supDir }, cat };
-  }, [look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
+    // Pieces split off their rows sit where they were put, kept on the table and out of the hand's own area.
+    const apart: Record<string, { x: number; y: number }> = {};
+    for (const [k, [fx, fy]] of Object.entries(look.apart)) apart[k] = keepOut(fx * tableW, fy * tableH, 40, 40);
+    return { ctl: { ...ctl, dir: look.ctlDir, k: look.ctlSize }, sup: { ...sup, dir: look.supDir }, cat, apart };
+  }, [look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, look.apart, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
 
 
   // ---------------------------------------------------------------- the hand
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string } | null>(null);
-  const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: { key: string; label: string } } | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: { key: string; label: string; own?: boolean } } | null>(null);
   const [sorting, setSorting] = useState(false);
   const [settings, setSettings] = useState(false);
   /**
@@ -161,12 +173,14 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * the deck die above them (owner, v0.47.7: right click no longer has them).
    */
   const [peek, setPeek] = useState(false);
+  /** The testing list of every Many Things card is open. */
+  const [picking, setPicking] = useState(false);
   const peeking = peek && look.controls === 'hidden' && !settings;
   const peekPlaces = useMemo<Places>(() => {
     // One column down the left, clear of the corner buttons: the supply, then the deck die, then the control dice.
     const x = pad + 112;
     const top = Math.max(pad + 40, (openTop + openBottom) / 2 - 380);
-    return { ...places, sup: { x, y: top + 135, dir: 'column' }, cat: { x, y: top + 400 }, ctl: { x, y: top + 620, dir: 'column', k: places.ctl.k } };
+    return { ...places, apart: undefined, sup: { x, y: top + 135, dir: 'column' }, cat: { x, y: top + 400 }, ctl: { x, y: top + 620, dir: 'column', k: places.ctl.k } };
   }, [places, openTop, openBottom, pad]);
   const overlay = overlayProp || sorting;
   useEffect(() => { onSortOpen?.(sorting); }, [sorting, onSortOpen]);
@@ -274,22 +288,18 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   };
 
   // A copy in the hand: it follows the pointer until it is put down on the table (or back on the hand).
-  const [copy, setCopy] = useState<{ card: TableCard; x: number; y: number; w: number; settled: boolean } | null>(null);
+  /** Where it came from (the card as drawn in the hand) and where the pointer was; it moves itself from there. */
+  const [copy, setCopy] = useState<{ card: TableCard; x: number; y: number; w: number; px: number; py: number } | null>(null);
   const takeCopy = useCallback((card: TableCard, rect: DOMRect, p: { x: number; y: number }) => {
     const root = tableRef.current?.getBoundingClientRect();
     if (!root) return;
     playSfx('cardDragStart');
-    setCopy({ card, x: rect.left - root.left + rect.width / 2, y: rect.top - root.top + rect.height / 2, w: rect.width, settled: false });
-    requestAnimationFrame(() => requestAnimationFrame(() => setCopy((h) => (h ? { ...h, x: p.x - root.left, y: p.y - root.top, w: HAND_W, settled: true } : h))));
+    setCopy({ card, x: rect.left - root.left + rect.width / 2, y: rect.top - root.top + rect.height / 2, w: rect.width, px: p.x - root.left, py: p.y - root.top });
   }, []);
   useEffect(() => {
     if (!copy) return;
     const root = tableRef.current;
     if (!root) return;
-    const move = (e: PointerEvent) => {
-      const r = root.getBoundingClientRect();
-      setCopy((h) => (h && h.settled ? { ...h, x: e.clientX - r.left, y: e.clientY - r.top } : h));
-    };
     const down = (e: PointerEvent) => {
       e.stopPropagation();
       e.preventDefault();
@@ -307,12 +317,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       }
       setCopy(null);
     };
-    window.addEventListener('pointermove', move);
     window.addEventListener('pointerdown', down, true);
-    return () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerdown', down, true);
-    };
+    return () => window.removeEventListener('pointerdown', down, true);
   }, [copy?.card, setCopies, overHand]); // eslint-disable-line react-hooks/exhaustive-deps
   const copiesRef = useRef(copies);
   copiesRef.current = copies;
@@ -384,6 +390,12 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * dropped there is anchored to that card.
    */
   const cardAt = useCallback((clientX: number, clientY: number): { ref: string; uid?: string; x: number; y: number } | null => {
+    // The card lit in the hand is drawn lifted and zoomed off its slot: a drop lands where it is drawn.
+    const lit = carRef.current?.hoveredFace();
+    const lr = lit?.face.getBoundingClientRect();
+    if (lit && lr && clientX >= lr.left && clientX <= lr.right && clientY >= lr.top && clientY <= lr.bottom && lit.el.dataset.cardId) {
+      return { ref: refOf(lit.el.dataset.cardId), x: (clientX - lr.left) / lr.width, y: (clientY - lr.top) / lr.height };
+    }
     const el = document.elementsFromPoint(clientX, clientY).find((n) => (n as HTMLElement).dataset?.boardCard || (n as HTMLElement).dataset?.slot) as HTMLElement | undefined;
     if (!el) return null;
     const r = el.getBoundingClientRect();
@@ -569,7 +581,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const selTypes = selectedTypes(selection);
 
   // ---------------------------------------------------------------- the Deck of Many Things
-  const [drawn, setDrawn] = useState<{ uid: string; card: DomatCard; x: number; y: number; from: { x: number; y: number }; snap: Map<string, { x: number; y: number }> }[]>([]);
+  const [drawn, setDrawn] = useState<{ uid: string; card: DomatCard; x: number; y: number; from: { x: number; y: number }; snap: Map<string, { x: number; y: number }>; held?: boolean }[]>([]);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const [fx, setFx] = useState<Fx[]>([]);
   const [shattering, setShattering] = useState<{ uid: string; card: TableCard; cx: number; cy: number; w: number; rot: number }[]>([]);
@@ -581,24 +593,30 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setTimeout(() => setFx((l) => l.filter((x) => x.id !== id)), f.ms + 60);
   }, []);
   /**
-   * One card a minute (owner, v0.47.6): every card shakes the whole table, so the deck waits between draws. When
-   * the last draw was is kept per character, so a reload does not reset it.
+   * The deck's stock (owner, v0.47.11): a card grows every 200 seconds, up to ten, and each draw takes one. Kept per
+   * character, so a reload neither refills nor empties it.
    */
-  const domatKey = `runekeep.table.domat.${characterId}`;
-  const [lastDraw, setLastDraw] = useState<number>(() => { try { return Number(localStorage.getItem(domatKey)) || 0; } catch { return 0; } });
+  const domatKey = `runekeep.table.domat2.${characterId}`;
+  const [stockSaved, setStockSaved] = useState<DomatStock>(() => {
+    try { const s = JSON.parse(localStorage.getItem(domatKey) ?? 'null') as DomatStock | null; if (s) return s; } catch { /* broken: start afresh */ }
+    return { stock: DOMAT_START, since: Date.now() };
+  });
   const [, tickClock] = useState(0);
-  const domatWait = Math.max(0, Math.ceil((lastDraw + DOMAT_COOLDOWN_MS - Date.now()) / 1000));
+  const stockNow = domatStock(stockSaved, Date.now());
+  const domatWait = stockNow.next === null ? 0 : Math.ceil(stockNow.next / 1000);
   useEffect(() => {
     if (!domatWait) return;
     const t = setInterval(() => tickClock((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [domatWait > 0]); // eslint-disable-line react-hooks/exhaustive-deps
-  const drawCard = useCallback((from: { x: number; y: number }) => {
-    // Development only: `__rkNextDomat = 'comet'` in the console picks the next card (and skips the wait), to check
-    // each effect.
-    const forced = __DEV__ ? DOMAT.find((c) => c.id === (globalThis as { __rkNextDomat?: string }).__rkNextDomat) : undefined;
-    if (!forced && Date.now() < lastDraw + DOMAT_COOLDOWN_MS) {
-      // Not yet: the deck shudders, and its label shows how long is left.
+  /** Draw a card: thrown out beside the deck, or (`held`) straight into the hand at that point. `pick` skips the stock. */
+  const drawCard = useCallback((from: { x: number; y: number }, opts?: { held?: { x: number; y: number }; pick?: DomatCard }) => {
+    // Development only: `__rkNextDomat = 'comet'` in the console picks the next card, to check each effect.
+    const forced = opts?.pick ?? (__DEV__ ? DOMAT.find((c) => c.id === (globalThis as { __rkNextDomat?: string }).__rkNextDomat) : undefined);
+    const now = Date.now();
+    const after = forced ? null : takeDomat(stockSaved, now);
+    if (!forced && !after) {
+      // None in stock: the deck shudders, and its label shows how long until the next.
       playSfx('cardDisable', { volume: 0.5 });
       const eng = diceRef.current?.engine();
       eng?.jitter(DOMAT_KEY, 0.45);
@@ -607,20 +625,24 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     }
     const card = forced ?? drawDomat(gone);
     if (!card) { playSfx('cardDisable', { volume: 0.5 }); return; }
-    const now = Date.now();
-    setLastDraw(now);
-    try { localStorage.setItem(domatKey, String(now)); } catch { /* private window */ }
+    if (after) {
+      setStockSaved(after);
+      try { localStorage.setItem(domatKey, JSON.stringify(after)); } catch { /* private window */ }
+    }
     if (card.once) setGone((g) => new Set([...g, card.id]));
     playSfx('cardFullscreenEnter', { volume: 0.7 });
+    addFx({ kind: 'rune', x: from.x, y: from.y, r: 90, ms: 900, tint: card.tint });
+    addFx({ kind: 'spark', x: from.x, y: from.y, r: 80, ms: 600, tint: '#fff3d6' });
     // Where everything lay when it was drawn: the Fates card puts it all back.
     const eng = diceRef.current?.engine();
     const snap = new Map<string, { x: number; y: number }>();
     for (const k of eng?.keys() ?? []) { const s = eng!.state(k); if (s && !k.startsWith('tok:')) snap.set(k, { x: s.x, y: s.y }); }
+    if (opts?.held) { setDrawn((d) => [...d, { uid: uidOf(), card, x: opts.held!.x, y: opts.held!.y, from: opts.held!, snap, held: true }]); return; }
     const ang = Math.random() * Math.PI * 2;
     const x = Math.min(tableW - pad - 70, Math.max(pad + 70, from.x + Math.cos(ang) * 130));
     const y = Math.min(tableH - pad - 90, Math.max(pad + 90, from.y + Math.abs(Math.sin(ang)) * 120 + 40));
     setDrawn((d) => [...d, { uid: uidOf(), card, x, y, from, snap }]);
-  }, [gone, tableW, tableH, pad, lastDraw, domatKey]);
+  }, [gone, tableW, tableH, pad, stockSaved, domatKey, addFx]);
 
   /** A card breaking into shards (a copy goes; a laid-out hand card comes back a moment later). */
   const breakCard = useCallback((b: BoardCard) => {
@@ -862,6 +884,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (!d) return;
     setDrawn((l) => l.filter((c) => c.uid !== uid));
     addFx({ kind: 'consume', x, y, r: 120, ms: 520, tint: d.card.tint });
+    addFx({ kind: 'rune', x, y, r: 150, ms: 1100, tint: d.card.tint });
     playSfx('cardDragEnd', { volume: 0.7 });
     setTimeout(() => runEffect(d, x, y), 300);
   }, [addFx, runEffect]);
@@ -890,7 +913,23 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     lastHit.current = now;
     shake(tableRef.current, Math.min(1.3, (speed - 2400) / 4500));
   }, []);
-  /** A physical card moved: drawn there straight away; kept once it stops. */
+  /**
+   * A charged throw broke loose pieces (owner, v0.47.11): they are gone, with a flash where the first went and a
+   * jolt of the table; a burning throw's is brighter and longer (the engine holds the table still a beat as well).
+   */
+  const onBreak = useCallback((keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => {
+    const bases = new Set(keys.map(baseOf));
+    setLoose(looseRef.current.filter((t) => !bases.has(t.key)));
+    // A burning throw's first break bursts for a second where it happened; every other break is a small spark.
+    if (first) {
+      addFx({ kind: 'fire', x: at.x, y: at.y, r: 95, ms: 1000 });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 140, ms: 1000, tint: '#ffd27a' });
+      shake(tableRef.current, 0.9);
+    } else {
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: fire ? 70 : 55, ms: 450, tint: fire ? '#ffb070' : '#fff1d0' });
+      shake(tableRef.current, fire ? 0.3 : 0.2);
+    }
+  }, [setLoose, addFx]);
   /**
    * A physical card moved: drawn there straight away, and kept (from where physics says it is, never read back from
    * the page) once it stops. Until then `livePoses` is where it is drawn from, so nothing re-renders it back to where
@@ -1085,15 +1124,16 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             {deck.length === 0 ? (
               <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</div>
             ) : (
-              <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} />
+              <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} />
             )}
           </div>
         )}
 
         {/* Cards drawn from the Deck of Many Things, waiting to be used. */}
         {drawn.map((d) => (
-          <DomatCardView key={d.uid} card={d.card} x={d.x} y={d.y} from={d.from}
+          <DomatCardView key={d.uid} card={d.card} x={d.x} y={d.y} from={d.from} held={d.held}
             onMove={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y } : c)))}
+            onPlace={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y, held: false } : c)))}
             onPlay={(x, y) => playDrawn(d.uid, x, y)}
             onRemove={() => { playSfx('cardDeselect', { volume: 0.6 }); setDrawn((l) => l.filter((c) => c.uid !== d.uid)); if (d.card.once) setGone((g) => { const n = new Set(g); n.delete(d.card.id); return n; }); }} />
         ))}
@@ -1129,8 +1169,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           cards={cardPoses}
           onCardsMoved={onCardsMoved}
           supply={supply}
-          domat={look.tokenTray || peeking ? { left: DOMAT.length - gone.size, wait: domatWait } : null}
-          onDomatDraw={drawCard}
+          domat={look.tokenTray || peeking ? { stock: stockNow.stock, wait: domatWait } : null}
+          onDomatDraw={(from, held) => drawCard(from, held ? { held } : undefined)}
           loose={loose}
           onSpawn={(key, token, x, y) => setLoose([...looseRef.current, { key, token, x, y }])}
           onSupplyStep={(key, dir) => {
@@ -1158,10 +1198,23 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onReady={onReady}
           onSelect={setSelection}
           onHardHit={onHardHit}
+          onBreak={onBreak}
+          onDragPiece={(x, y) => carRef.current?.hoverAt(x, y)}
           onTidied={() => setLoose([])}
           editing={settings}
           onMoveGroup={(g: PlaceGroup, x, y) => setLook({ ...lookRef.current, [`${g}X`]: Math.min(1, Math.max(0, x / tableW)), [`${g}Y`]: Math.min(1, Math.max(0, y / tableH)) } as DeckLook)}
           onFlipGroup={(g) => setLook({ ...lookRef.current, [`${g}Dir`]: lookRef.current[`${g}Dir`] === 'row' ? 'column' : 'row' } as DeckLook)}
+          onSplitGroup={(_g, at) => {
+            const apart = { ...lookRef.current.apart };
+            for (const [k, p] of Object.entries(at)) apart[k] = [Math.min(1, Math.max(0, p.x / tableW)), Math.min(1, Math.max(0, p.y / tableH))];
+            setLook({ ...lookRef.current, apart });
+          }}
+          onJoinGroup={(g) => {
+            const apart = { ...lookRef.current.apart };
+            for (const k of g === 'ctl' ? ['cards', 'state', 'sort'] : ['src:mat', 'src:color', 'src:die', 'src:domat']) delete apart[k];
+            setLook({ ...lookRef.current, apart });
+          }}
+          onMovePiece={(k, x, y) => setLook({ ...lookRef.current, apart: { ...lookRef.current.apart, [k]: [Math.min(1, Math.max(0, x / tableW)), Math.min(1, Math.max(0, y / tableH))] } })}
           inert={overlay || settings}
         />
         <FxLayer fx={fx} />
@@ -1169,8 +1222,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         {/* What can be done with the pieces selected. */}
         {selection.length ? (
           <SelectionBar x={(play.left + play.right) / 2} y={openTop + 12} count={new Set(selection.map(baseOf)).size} types={selTypes}
-            onRoll={() => {
-              void diceRef.current?.rollPieces(selection).then((landed) => {
+            onRoll={(power, burning) => {
+              void diceRef.current?.rollPieces(selection, power, burning).then((landed) => {
                 if (!landed.length) return;
                 rollSound(landed);
                 setResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: null, mod: 0 });
@@ -1200,10 +1253,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           <CornerButton glyph="tidy" label="Put away loose tokens and dice" count={looseCount} onPress={tidyAll} disabled={!looseCount && !diceRef.current?.hasRoll()} />
           <CornerButton glyph="reset" label="Return supply and control dice to place" onPress={() => { diceRef.current?.resetHome(); setGone(new Set()); }} />
           <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { playSfx(settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />
+          {/* Testing only for now (owner, v0.47.11): draw any card of the Deck of Many Things, stock or not. */}
+          <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { playSfx(picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />
         </div>
+        {picking ? (
+          <DomatPicker left={pad + 62} bottom={pad + 10} onClose={() => setPicking(false)} onPick={(c) => {
+            setPicking(false);
+            const s = diceRef.current?.engine()?.state(DOMAT_KEY);
+            drawCard(s ? { x: s.x, y: s.y } : { x: tableW / 2, y: tableH / 2 }, { pick: c });
+          }} />
+        ) : null}
         {settings ? (
           <div style={{ position: 'absolute', left: '50%', bottom: pad + 14, transform: 'translateX(-50%)', zIndex: 1255, pointerEvents: 'none', padding: '7px 14px', background: 'rgba(11,14,19,0.92)', border: `1px solid ${T.goldSoft}`, color: T.goldText, fontFamily: T.bold, fontSize: 13, whiteSpace: 'nowrap' }}>
-            Drag a framed row to move it. The arrows beside its name stand it on end.
+            Drag a framed row to move it. The arrows beside its name stand it on end; the link splits it into pieces you place one by one.
           </div>
         ) : null}
         {settings && !spread ? (
@@ -1212,14 +1274,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
 
         {/* The copy in your hand. */}
-        {copy ? (
-          <div style={{ position: 'absolute', left: copy.x - copy.w / 2, top: copy.y - (copy.w * FORGED_H) / FORGED_W / 2, width: copy.w, height: (copy.w * FORGED_H) / FORGED_W, pointerEvents: 'none', zIndex: 70, transform: 'rotate(-3deg)', boxShadow: '0 26px 50px rgba(0,0,0,0.65)', transition: copy.settled ? `width 220ms ${T.ease}, height 220ms ${T.ease}` : 'none' }}>
-            <div style={{ position: 'relative', width: FORGED_W, height: FORGED_H, transform: `scale(${copy.w / FORGED_W})`, transformOrigin: '0 0', transition: `transform 220ms ${T.ease}` }}>
-              <CardFace card={copy.card} hiRes />
-              {copy.card.overlay ? <div style={{ position: 'absolute', inset: 0 }}>{copy.card.overlay}</div> : null}
-            </div>
-          </div>
-        ) : null}
+        {copy ? <CarriedCard key={copy.card.id} copy={copy} tableRef={tableRef} /> : null}
 
         {sorting ? (
           <DesktopPortal to="side" priority="dialog" onDismiss={() => setSorting(false)}>
@@ -1229,13 +1284,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         {overlay ? <div style={{ position: 'absolute', inset: 0, zIndex: 800, background: 'rgba(6,8,13,0.45)' }} /> : null}
         {tableMenu && !overlay ? (
           <TableMenu x={tableMenu.x} y={tableMenu.y} tableW={tableW} tableH={tableH} onClose={() => setTableMenu(null)}
-            presets={presets}
+            presets={presets} noRolls={!!tableMenu.piece?.own}
             onRollPreset={(p) => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.presets.onPlay(p); }}
             onRollPair={() => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.handleRef.current?.rollDuality('Hope and Fear', 0); }}
             onDeletePreset={(slot) => { dice.presets.onWrite(slot, null); playSfx('tokenRemove', { volume: 0.6 }); }}
             rows={[
-              ...(tableMenu.piece ? [{ label: tableMenu.piece.label, onPress: () => diceRef.current?.rollPiece(tableMenu.piece!.key) }] : []),
-              { label: 'Choose a deck', gap: !!tableMenu.piece, onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
+              ...(tableMenu.piece ? [{ label: tableMenu.piece.label, onPress: () => {
+                const k = tableMenu.piece!.key;
+                if (!tableMenu.piece!.own) { diceRef.current?.rollPiece(k); return; }
+                if (k === 'cat') { diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }); return; }
+                const a = actions.find((x) => x.key === k);
+                if (a && !a.disabled) a.onPress();
+              } }] : []),
+              { label: 'Choose a deck', gap: !!tableMenu.piece, hidden: tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
               { label: 'Put away loose tokens and dice', onPress: tidyAll, gap: true },
               { label: 'Return supply and control dice to place', onPress: () => { diceRef.current?.resetHome(); setGone(new Set()); } },
               { label: 'Clear the whole table', onPress: clearAll, danger: true },
@@ -1264,7 +1325,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             throwIt={menu.board || spread ? undefined : () => throwCopy(menu.id)} />
         ) : null}
       </div>
-      {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} box={port} onAccept={() => { playSfx('buttonTap'); setResult(null); }} /> : null}
+      {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { playSfx('buttonTap'); setResult(null); }} /> : null}
       {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { playSfx('panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={port} /> : null}
     </DesktopPortal>
   );
@@ -1323,7 +1384,7 @@ function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyp
 }
 
 /** What can be done with selected pieces: roll the dice among them, keep them as a preset, put them back. */
-function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, onClear }: { x: number; y: number; count: number; types: DieType[]; onRoll: () => void; canSave: boolean; onSave: (name: string) => void; onPutBack: () => void; onClear: () => void }) {
+function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, onClear }: { x: number; y: number; count: number; types: DieType[]; onRoll: (power: number, burning: boolean) => void; canSave: boolean; onSave: (name: string) => void; onPutBack: () => void; onClear: () => void }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   const save = () => { const n = name.trim(); if (!n) return; onSave(n); setNaming(false); setName(''); };
@@ -1341,7 +1402,7 @@ function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, 
           </>
         ) : (
           <>
-            <TButton label="Roll" primary h={32} disabled={!types.length} onPress={onRoll} />
+            <ChargeRoll disabled={!types.length} onRoll={onRoll} />
             <TButton label="Save as preset" h={32} disabled={!types.length || !canSave} title={canSave ? 'Keep these dice as a preset in the table menu' : 'Every preset slot is full: delete one from the table menu'} onPress={() => setNaming(true)} />
             <TButton label="Put back" h={32} onPress={onPutBack} />
           </>
@@ -1349,6 +1410,127 @@ function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, 
         <TButton title="Clear the selection" h={32} onPress={onClear} icon={<Glyph d={DIE_GLYPHS.close} size={14} />} />
       </Chamfer>
     </div>
+  );
+}
+
+/**
+ * The selection's Roll (owner, v0.47.11): a click rolls the dice where they lie; held, the button shakes harder and
+ * harder and the dice fly that much harder; held on through it, it catches fire and the dice go out burning, breaking
+ * every loose piece in their way.
+ */
+function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: number, burning: boolean) => void }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const st = useRef<{ t: number; raf: number; power: number; lit: boolean; fire: HTMLDivElement | null; stop: (() => void) | null } | null>(null);
+  /** A pointer press already rolled: the click that follows it does nothing (a key press still rolls). */
+  const rolledByPointer = useRef(false);
+  const end = () => {
+    const s = st.current;
+    if (!s) return null;
+    st.current = null;
+    cancelAnimationFrame(s.raf);
+    s.stop?.();
+    s.fire?.remove();
+    if (wrap.current) wrap.current.style.transform = '';
+    return s;
+  };
+  useEffect(() => () => { end(); }, []);
+  const down = (e: React.PointerEvent) => {
+    if (disabled || e.button !== 0) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* gone */ }
+    const s = { t: performance.now(), raf: 0, power: 0, lit: false, fire: null as HTMLDivElement | null, stop: null as (() => void) | null };
+    st.current = s;
+    const tick = () => {
+      // Still for a moment, then it builds: full at 1, and at 2 it catches fire.
+      s.power = Math.max(0, Math.min(2, (performance.now() - s.t - 220) / 1100));
+      const j = Math.min(1, s.power) * 2.4 + (s.lit ? 1.4 : 0);
+      if (wrap.current) wrap.current.style.transform = j > 0 ? `translate(${((Math.random() - 0.5) * j).toFixed(2)}px, ${((Math.random() - 0.5) * j).toFixed(2)}px)` : '';
+      if (!s.lit && s.power >= 2 && wrap.current) {
+        s.lit = true;
+        // The bar clips what is inside it, so the flames sit over the page where the button is.
+        const r = wrap.current.getBoundingClientRect();
+        const host = document.createElement('div');
+        Object.assign(host.style, { position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, pointerEvents: 'none', zIndex: '1241' });
+        document.body.appendChild(host);
+        s.fire = host;
+        s.stop = startFire(host, { width: r.width, height: r.height, rise: 1.8, spill: 20, foot: 8, chamfer: 7, body: false });
+        playSfx('gainGoldenHp', { volume: 0.6, cents: 900 });
+      }
+      s.raf = requestAnimationFrame(tick);
+    };
+    s.raf = requestAnimationFrame(tick);
+  };
+  const up = () => {
+    const s = end();
+    if (!s) return;
+    rolledByPointer.current = true;
+    onRoll(Math.min(1, s.power), s.lit);
+  };
+  return (
+    <div ref={wrap} onPointerDown={down} onPointerUp={up} onPointerCancel={() => { end(); }} title="Roll. Hold to roll harder; hold on and it catches fire">
+      <TButton label="Roll" primary h={32} disabled={disabled} onPress={() => { if (rolledByPointer.current) { rolledByPointer.current = false; return; } onRoll(0, false); }} />
+    </div>
+  );
+}
+
+/**
+ * A copy of a hand card in your hand (owner, v0.47.11: it jumped and jittered on the way). It leaves from the card as
+ * drawn (lit: lifted and zoomed), eases down to hand size and trails the pointer smoothly. It moves itself, frame by
+ * frame, so the table never re-renders as the pointer moves.
+ */
+function CarriedCard({ copy, tableRef }: { copy: { card: TableCard; x: number; y: number; w: number; px: number; py: number }; tableRef: React.RefObject<HTMLDivElement | null> }) {
+  const el = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = tableRef.current;
+    if (!root) return;
+    let tx = copy.px, ty = copy.py, x = copy.x, y = copy.y;
+    const t0 = performance.now();
+    let last = t0, raf = 0;
+    const move = (e: PointerEvent) => { const r = root.getBoundingClientRect(); tx = e.clientX - r.left; ty = e.clientY - r.top; };
+    const step = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      // It trails the pointer a touch: smooth, never a jump.
+      const k = 1 - Math.exp(-dt * 20);
+      x += (tx - x) * k;
+      y += (ty - y) * k;
+      const p = Math.min(1, (now - t0) / 260);
+      const e = 1 - Math.pow(1 - p, 3);
+      const w = copy.w + (HAND_W - copy.w) * e;
+      if (el.current) el.current.style.transform = `translate3d(${(x - FORGED_W / 2).toFixed(2)}px, ${(y - FORGED_H / 2).toFixed(2)}px, 0) rotate(${(-3 * e).toFixed(2)}deg) scale(${(w / FORGED_W).toFixed(4)})`;
+      raf = requestAnimationFrame(step);
+    };
+    step(t0);
+    window.addEventListener('pointermove', move);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('pointermove', move); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div ref={el} style={{ position: 'absolute', left: 0, top: 0, width: FORGED_W, height: FORGED_H, pointerEvents: 'none', zIndex: 70, transformOrigin: '50% 50%', willChange: 'transform', boxShadow: '0 26px 50px rgba(0,0,0,0.65)' }}>
+      <CardFace card={copy.card} hiRes />
+      {copy.card.overlay ? <div style={{ position: 'absolute', inset: 0 }}>{copy.card.overlay}</div> : null}
+    </div>
+  );
+}
+
+/** Every card of the Deck of Many Things in a list, to draw any one (testing). */
+function DomatPicker({ left, bottom, onPick, onClose }: { left: number; bottom: number; onPick: (c: DomatCard) => void; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { box.current?.focus(); }, []);
+  return (
+    <>
+      <div data-ui="" onPointerDown={(e) => { e.stopPropagation(); onClose(); }} style={{ position: 'absolute', inset: 0, zIndex: 1261 }} />
+      <div data-ui="" ref={box} role="listbox" aria-label="Deck of Many Things cards" tabIndex={-1} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}
+        style={{ position: 'absolute', left, bottom, zIndex: 1262, width: 290, maxHeight: 420, overflowY: 'auto', outline: 'none', background: 'rgba(11,14,19,0.98)', border: `1px solid ${T.goldSoft}` }} className="rk-scroll">
+        <div style={{ padding: '9px 12px 6px', color: T.muted, fontFamily: T.medium, fontSize: 12.5 }}>Testing: draws the card, stock or not.</div>
+        {DOMAT.map((c) => (
+          <div key={c.id} role="option" aria-selected={false} onClick={() => onPick(c)}
+            onPointerEnter={(e) => { e.currentTarget.style.background = T.panelLit; }} onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            style={{ cursor: 'pointer', padding: '7px 12px', display: 'flex', gap: 9, alignItems: 'baseline', borderLeft: `3px solid ${c.tint}` }}>
+            <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 13.5, whiteSpace: 'nowrap' }}>{c.name}</span>
+            <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.table}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -1387,7 +1569,7 @@ function MenuShell({ x, y, tableW, tableH, rows, onClose, head, side }: { x: num
  * The table's right-click menu (owner, v0.47.3): Roll dice first, opening a panel of the presets beside it (each
  * with a delete that asks first), then every control, whether the dice are showing or not.
  */
-function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, ...rest }: { x: number; y: number; tableW: number; tableH: number; onClose: () => void; rows: Row[]; presets: (DicePreset | null)[]; onRollPreset: (p: DicePreset) => void; onRollPair: () => void; onDeletePreset: (slot: number) => void }) {
+function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, noRolls, ...rest }: { x: number; y: number; tableW: number; tableH: number; onClose: () => void; rows: Row[]; noRolls?: boolean; presets: (DicePreset | null)[]; onRollPreset: (p: DicePreset) => void; onRollPair: () => void; onDeletePreset: (slot: number) => void }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<number | null>(null);
   const [hover, setHover] = useState(false);
@@ -1400,7 +1582,7 @@ function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, ..
     </button>
   );
   return (
-    <MenuShell {...rest} rows={rows.filter((r) => !r.hidden)} head={head} side={open ? ({ left, W }) => (
+    <MenuShell {...rest} rows={rows.filter((r) => !r.hidden)} head={noRolls ? undefined : head} side={open && !noRolls ? ({ left, W }) => (
       <div role="menu" aria-label="Dice presets" style={{ position: 'absolute', top: 0, ...(left + W + 310 > rest.tableW ? { right: W + 4 } : { left: W + 4 }), width: 306 }}>
         <Chamfer c={9} fill={T.panelLit} line={T.gold} width={1.3} inner={{ padding: 7, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <MenuRow label="Hope and Fear" onPress={() => { rest.onClose(); onRollPair(); }} />

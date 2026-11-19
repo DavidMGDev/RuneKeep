@@ -30,6 +30,10 @@ export interface DeskCarouselHandle {
   stepBy: (n: number) => void;
   centerIndex: () => number;
   scrollTo: (i: number) => void;
+  /** A piece carried over the hand (owner, v0.47.11): light the card under the point, or none (null). */
+  hoverAt: (clientX: number | null, clientY?: number) => void;
+  /** The card lit now, as it is drawn (lifted and zoomed), for a drop onto it. */
+  hoveredFace: () => { el: HTMLElement; face: HTMLElement } | null;
 }
 
 /** A card's face, at thumbnail or full resolution. */
@@ -44,7 +48,7 @@ export function CardFace({ card, hiRes, face = 0 }: { card: TableCard; hiRes: bo
   );
 }
 
-const Slot = memo(function Slot({ card, index, hiRes, hovered, look, register }: { card: TableCard; index: number; hiRes: boolean; hovered: boolean; look: DeckLook; register: (i: number, el: HTMLElement | null, veil: HTMLElement | null) => void }) {
+const Slot = memo(function Slot({ card, index, hiRes, hovered, taken, look, register }: { card: TableCard; index: number; hiRes: boolean; hovered: boolean; /** A copy of it is in your hand: it dims. */ taken: boolean; look: DeckLook; register: (i: number, el: HTMLElement | null, veil: HTMLElement | null) => void }) {
   const outer = useRef<HTMLDivElement>(null);
   const veil = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -63,6 +67,7 @@ const Slot = memo(function Slot({ card, index, hiRes, hovered, look, register }:
         <CardFace card={card} hiRes={hiRes} />
         {card.overlay ? <View style={StyleSheet.absoluteFill}>{card.overlay}</View> : null}
         <div ref={veil} style={{ position: 'absolute', inset: 0, background: '#06080d', opacity: 0 }} />
+        <div style={{ position: 'absolute', inset: 0, background: '#06080d', opacity: taken ? 0.45 : 0, transition: 'opacity 200ms' }} />
       </div>
     </div>
   );
@@ -72,17 +77,21 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   cards: TableCard[];
   look: DeckLook;
   initialIndex: number;
+  /** The card a copy of which is in your hand: it dims, and no card lights up while you carry it. */
+  takenId?: string;
   /** Each time a new card reaches the centre. */
   onCentre: (i: number) => void;
   /** The centre card was clicked: where it is on screen and where the pointer is. */
   onCentreClick: (card: TableCard, rect: DOMRect, pointer: { x: number; y: number }) => void;
-}>(function DeskCarousel({ cards, look, initialIndex, onCentre, onCentreClick }, ref) {
+}>(function DeskCarousel({ cards, look, initialIndex, onCentre, onCentreClick, takenId }, ref) {
   const count = cards.length;
   const root = useRef<HTMLDivElement>(null);
   const size = useRef({ w: 0, h: 0 });
   const [box, setBox] = useState({ w: 0, h: 0 });
   const st = useRef({ pos: initialIndex, target: initialIndex, vel: 0, dragging: false, aim: -1 });
   const els = useRef(new Map<number, { el: HTMLElement; veil: HTMLElement | null; last: string }>());
+  /** The two end marks: before the first card and after the last. */
+  const dots = useRef<(HTMLDivElement | null)[]>([null, null]);
   const lookRef = useRef(look);
   lookRef.current = look;
   const countRef = useRef(count);
@@ -91,6 +100,11 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   const [center, setCenter] = useState(() => Math.min(count - 1, Math.max(0, initialIndex)));
   const centerRef = useRef(center);
   const [hover, setHover] = useState(-1);
+  const hoverRef = useRef(hover);
+  hoverRef.current = hover;
+  const takenRef = useRef(takenId);
+  takenRef.current = takenId;
+  useEffect(() => { if (takenId) setHover(-1); }, [takenId]);
   const cbs = useRef({ onCentre, onCentreClick });
   cbs.current = { onCentre, onCentreClick };
 
@@ -120,6 +134,47 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     const reach = visibleReach(l);
     const band = (l.edgeWidth / 100) * W;
     const since = performance.now() - born.current;
+    /** Where a card this far from the middle goes: its centre, size and how visible it is. */
+    const at = (d: number) => {
+      const ad = Math.abs(d);
+      const sg = d < 0 ? -1 : 1;
+      const k = pastSpot(ad, l);
+      const out = Math.max(0, ad - reach);
+      let scale = lookScale(ad, l) * base;
+      const x = sg * lookX(ad, l, fitW);
+      const t = reach > 0 ? Math.min(1, ad / reach) : 1;
+      let y = cy - FORGED_H / 2 + k * l.drop + l.arc * t * t - l.lift * Math.max(0, 1 - k);
+      let opacity = 1;
+      if (out > 0) {
+        if (l.exit === 'fade') opacity *= 1 - out;
+        else if (l.exit === 'shrink') scale *= Math.max(0, 1 - out);
+        else if (l.exit === 'sink') { y += out * H * 0.7; opacity *= 1 - out * 0.6; }
+        else opacity = out < 0.5 ? opacity : 0;
+      }
+      return { cx: W / 2 + x, cy: y + FORGED_H / 2, scale, opacity: out >= 1 ? 0 : opacity };
+    };
+    // The end marks (owner, v0.47.11): on the path as if one more card lay there, about 20px past the end card's edge.
+    const mark = (el: HTMLDivElement | null, dEnd: number, dir: -1 | 1, show: boolean) => {
+      if (!el) return;
+      if (!show) { el.style.visibility = 'hidden'; return; }
+      const a = at(dEnd), b = at(dEnd + dir);
+      const dist = Math.hypot(b.cx - a.cx, b.cy - a.cy) || 1;
+      const f = Math.min(1.6, ((FORGED_W / 2) * a.scale + 20) / dist);
+      const x = a.cx + (b.cx - a.cx) * f, y = a.cy + (b.cy - a.cy) * f;
+      el.style.visibility = a.opacity > 0.05 ? 'visible' : 'hidden';
+      el.style.opacity = String(Math.min(1, a.opacity));
+      el.style.transform = `translate(${(x - 3.5).toFixed(1)}px, ${(y - 3.5).toFixed(1)}px)`;
+    };
+    if (l.loop) {
+      // An endless deck has one seam: halfway between the last card and the first.
+      const d0 = cardOffset(0, s.pos, n, true), dl = cardOffset(n - 1, s.pos, n, true);
+      const seam = Math.abs(d0 - dl) > 1.5 ? null : d0;
+      mark(dots.current[0], seam ?? 0, -1, l.endDots && seam !== null && n > 1);
+      mark(dots.current[1], 0, 1, false);
+    } else {
+      mark(dots.current[0], -s.pos, -1, l.endDots);
+      mark(dots.current[1], n - 1 - s.pos, 1, l.endDots);
+    }
     for (const [i, rec] of els.current) {
       const d = cardOffset(i, s.pos, n, l.loop);
       const ad = Math.abs(d);
@@ -242,6 +297,21 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       // Round a looping deck the short way.
       goTo(lookRef.current.loop ? s.target + cardOffset(i, s.target, n, true) : i);
     },
+    hoverAt: (x, y = 0) => {
+      if (x === null) { if (hoverRef.current !== -1) setHover(-1); return; }
+      const inside = (el: Element) => { const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
+      // The lit card keeps the light while the point is anywhere on it as drawn (it is lifted off its slot).
+      const cur = els.current.get(hoverRef.current)?.el.firstElementChild;
+      if (cur && inside(cur)) return;
+      const hit = document.elementsFromPoint(x, y).find((n) => (n as HTMLElement).dataset?.slot !== undefined && root.current?.contains(n)) as HTMLElement | undefined;
+      const i = hit ? Number(hit.dataset.slot) : -1;
+      if (i !== hoverRef.current) setHover(i);
+    },
+    hoveredFace: () => {
+      const e = els.current.get(hoverRef.current)?.el;
+      const face = e?.firstElementChild as HTMLElement | null | undefined;
+      return e && face ? { el: e, face } : null;
+    },
    
   }), [goTo]);
 
@@ -327,7 +397,9 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       // Click to take (owner, v0.47.8): any card comes straight out; otherwise only the settled centre card acts.
       if (lookRef.current.clickPull || (i === centerRef.current && Math.abs(s.target - s.pos) < 0.3)) {
         const card = cardsRef.current[i];
-        if (card) cbs.current.onCentreClick(card, hit.getBoundingClientRect(), { x: e.clientX, y: e.clientY });
+        // From the card as it is drawn (lifted and zoomed when lit), so the copy leaves from right there.
+        const face = (hit.firstElementChild as HTMLElement | null) ?? hit;
+        if (card) cbs.current.onCentreClick(card, face.getBoundingClientRect(), { x: e.clientX, y: e.clientY });
         return;
       }
       const n = countRef.current;
@@ -335,7 +407,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     };
     const onCancel = () => { if (down?.moved) { st.current.dragging = false; goTo(Math.round(st.current.pos)); } down = null; el.style.cursor = ''; };
     const onOver = (e: PointerEvent) => {
-      if (down?.moved) return;
+      if (down?.moved || takenRef.current) return;
       const hit = (e.target as HTMLElement).closest?.('[data-slot]') as HTMLElement | null;
       setHover(hit ? Number(hit.dataset.slot) : -1);
     };
@@ -414,11 +486,15 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       {look.glow > 0 ? (
         <div style={{ position: 'absolute', pointerEvents: 'none', left: box.w / 2 - glowW / 2, top: glowTop, width: glowW, height: glowH, opacity: look.glow, background: 'radial-gradient(closest-side, rgba(224,181,99,0.55), rgba(200,146,58,0.18) 55%, transparent 96%)' }} />
       ) : null}
+      {[0, 1].map((k) => (
+        <div key={`end${k}`} ref={(el) => { dots.current[k] = el; }} aria-hidden="true"
+          style={{ position: 'absolute', left: 0, top: 0, width: 7, height: 7, borderRadius: '50%', background: '#E0B563', boxShadow: '0 0 8px rgba(224,181,99,0.65)', pointerEvents: 'none', visibility: 'hidden', zIndex: 2000 }} />
+      ))}
       {mounted.map((i) => {
         const card = cards[i];
         if (!card) return null;
         const off = Math.abs(cardOffset(i, center, count, look.loop));
-        return <Slot key={card.id} card={card} index={i} hiRes={off <= hiReach || hover === i} hovered={hover === i} look={look} register={register} />;
+        return <Slot key={card.id} card={card} index={i} hiRes={off <= hiReach || hover === i} hovered={!takenId && hover === i} taken={card.id === takenId} look={look} register={register} />;
       })}
     </div>
   );

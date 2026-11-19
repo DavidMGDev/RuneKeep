@@ -175,6 +175,13 @@ function downloadTable(look: DeckLook, name: string): void {
 
 const sameLook = (a: DeckLook, b: DeckLook) => JSON.stringify(a) === JSON.stringify(b);
 
+/** `name`, or `name 2`, `name 3`... whichever is not taken yet. */
+function uniqueName(name: string, list: SavedLook[]): string {
+  const base = name.slice(0, 36);
+  if (!list.some((s) => s.name === base)) return base;
+  for (let i = 2; ; i++) if (!list.some((s) => s.name === `${base} ${i}`)) return `${base} ${i}`;
+}
+
 function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: { look: DeckLook; onChange: (l: DeckLook) => void; onClearTable: () => void; boardCount: number; pieceCount: number }) {
   const [saved, setSaved] = useState<SavedLook[]>(loadSavedLooks);
   const [name, setName] = useState('');
@@ -203,12 +210,22 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
       setNote({ text: 'This browser would not copy it. Select the code below and copy it yourself.', bad: true });
     }
   };
+  /** A table brought in by code or file is used and kept in Your tables under its name (owner, v0.47.11). */
   const apply = (got: { name: string; look: DeckLook } | null, bad: string) => {
     if (!got) { setNote({ text: bad, bad: true }); playSfx('cardDisable', { volume: 0.5 }); return; }
     onChange(got.look);
-    if (got.name) setName(got.name);
-    setNote({ text: `Applied${got.name ? ` ${got.name}` : ''}. Save it below to keep it.` });
+    const have = saved.find((s) => sameLook(s.look, got.look));
+    const n = have?.name ?? uniqueName(got.name.trim() || 'Shared table', saved);
+    if (!have) store([{ name: n, look: got.look }, ...saved].slice(0, 24));
+    setNote({ text: `Using ${n}. It is in Your tables below.` });
     playSfx('cardSelect', { volume: 0.6 });
+  };
+  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
+  const rename = () => {
+    if (!renaming) return;
+    const to = renaming.to.trim();
+    if (to && to !== renaming.from) store(saved.map((s) => (s.name === renaming.from ? { ...s, name: uniqueName(to, saved.filter((x) => x.name !== renaming.from)) } : s)));
+    setRenaming(null);
   };
   const use = () => {
     apply(readTableFile(code), 'That is not a table code. Codes start with RK1: and come from Copy code.');
@@ -255,9 +272,16 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
       <div style={block}>
         <SectionTitle>Your tables</SectionTitle>
         {saved.length === 0 ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>Nothing saved yet. Name what you have now to keep it.</span> : null}
-        {saved.map((s) => (
+        {saved.map((s) => renaming?.from === s.name ? (
+          <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+            <Field value={renaming.to} onChange={(v) => setRenaming({ from: s.name, to: v })} placeholder="A new name" onEnter={rename} max={40} />
+            <TButton label="Rename" h={34} disabled={!renaming.to.trim()} onPress={rename} />
+            <TButton title="Keep the old name" h={34} onPress={() => setRenaming(null)} icon={<Glyph d='<path d="M6 6l12 12M18 6 6 18"/>' size={13} color={T.muted} />} />
+          </div>
+        ) : (
           <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <div style={{ flex: 1 }}><LookRow name={s.name} active={sameLook(look, s.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(s.look); }} /></div>
+            <TButton title={`Rename ${s.name}`} h={34} onPress={() => { playSfx('buttonTap', { volume: 0.5 }); setRenaming({ from: s.name, to: s.name }); }} icon={<Glyph d='<path d="M4 20h4L19 9l-4-4L4 16v4Z"/>' size={13} color={T.muted} />} />
             <TButton title={`Download ${s.name} as a file`} h={34} onPress={() => { playSfx('buttonTap'); downloadTable(s.look, s.name); }} icon={<Glyph d='<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/>' size={14} color={T.muted} />} />
             <TButton title={`Delete ${s.name}`} h={34} onPress={() => { playSfx('tokenRemove', { volume: 0.6 }); store(saved.filter((x) => x.name !== s.name)); }} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={13} color={T.muted} />} />
           </div>

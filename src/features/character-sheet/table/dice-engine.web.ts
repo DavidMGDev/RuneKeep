@@ -48,6 +48,8 @@ export interface DieSpec {
   restFaces?: number[];
   /** Never moves: the token supply. */
   fixed?: boolean;
+  /** A loose token or die: a charged throw can break it. */
+  breakable?: boolean;
   /** A piece of the supply: fresh copies pass through it. */
   spawner?: boolean;
   /** Moves only by hopping upright, never tumbling (the control dice, when the look says so). */
@@ -70,13 +72,21 @@ export interface DiceEngine {
   keys(): string[];
   /** Where a die is, and the face on top when it is at rest. */
   state(key: string): { x: number; y: number; top: number; asleep: boolean } | null;
+  /** Where a piece is drawn (lifted pieces sit higher on the screen) and how big, px; null when it is gone. */
+  screen(key: string): { x: number; y: number; size: number } | null;
   hit(x: number, y: number): string | null;
   grab(key: string, x: number, y: number): void;
   drag(x: number, y: number): void;
   /** Let go: the die flies on with the hand's speed (px/s returned). */
   release(): number;
   /** Throw with a velocity; it slides and tumbles and lands where physics puts it. */
-  toss(key: string, vx: number, vy: number, boost?: { gen: number; power: number }): void;
+  toss(key: string, vx: number, vy: number, boost?: { gen: number; power: number }, breaker?: { left: number; fire: boolean }): void;
+  /** A piece just let go flies on this many times faster, pushing harder and breaking what it hits (a swung throw). */
+  empower(key: string, mult: number, boost?: { gen: number; power: number }, breaker?: { left: number; fire: boolean }): void;
+  /** While `key` is held, `partner` follows right beside it (the Hope and Fear pair); null lets it go. */
+  tether(key: string, partner: string | null): void;
+  /** Loose pieces broken by a charged throw: which, where the first was, and whether it was burning. */
+  onBreak(cb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => void): void;
   /** Spin where it lies and land on whatever face comes up (right click). */
   rollInPlace(key: string): void;
   /** Show `face` on top straight away, without moving (the category die following the deck). */
@@ -294,9 +304,12 @@ function materials(finish: Finish, body: string, edge: string, map: THREE.Textur
   const e = new THREE.Color(edge);
   switch (finish) {
     case 'resin':
+      // No transmission (v0.47.11): one see-through die made three.js draw the whole table twice a frame and rebuild its
+      // shaders on both passes, and putting a hundred pieces away crawled. At table size the see-through barely showed;
+      // a slightly darker body, a deep clearcoat and a faint glow of its own colour read the same.
       return {
-        face: new THREE.MeshPhysicalMaterial({ map, roughness: 0.22, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.18, transmission: 0.28, thickness: 0.8, ior: 1.5, attenuationColor: c, attenuationDistance: 1.2 }),
-        edge: new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.16, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.12, transmission: 0.35, thickness: 0.6, ior: 1.5, attenuationColor: c }),
+        face: new THREE.MeshPhysicalMaterial({ map, color: new THREE.Color(0.86, 0.86, 0.86), roughness: 0.2, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.14, emissive: c, emissiveIntensity: 0.07 }),
+        edge: new THREE.MeshPhysicalMaterial({ color: c.clone().multiplyScalar(0.84), roughness: 0.14, metalness: 0, clearcoat: 0.85, clearcoatRoughness: 0.1, emissive: c, emissiveIntensity: 0.08 }),
       };
     case 'stone':
       return { face: new THREE.MeshStandardMaterial({ map, roughness: 0.86, metalness: 0 }), edge: new THREE.MeshStandardMaterial({ color: c.clone().multiplyScalar(1.15), roughness: 0.9, metalness: 0 }) };
@@ -329,6 +342,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  if (typeof __DEV__ !== 'undefined' && __DEV__) (globalThis as { __rkThree?: unknown }).__rkThree = { renderer, get scene() { return scene; } };
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
@@ -367,7 +381,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { d: Die; dx: number; dy: number } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -382,6 +396,11 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let hovered: string | null = null;
   let held: { die: Die; ox: number; oy: number; samples: { x: number; y: number; t: number }[] } | null = null;
   let impactCb: (i: Impact) => void = () => {};
+  let breakCb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => void = () => {};
+  const broke: Impact[] = [];
+  /** Burning throws that have had their impact frame already. */
+  const brokeOnce = new Set<string>();
+  let freezeUntil = 0;
   let restCb: (keys: string[]) => void = () => {};
 
   function resize(w: number, h: number) {
@@ -473,10 +492,28 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     let steps = 0;
     while (acc >= STEP && steps++ < 12) {
       placeAnchored();
-      for (const hit of step(bodies, bounds, STEP, Math.random, obstacles, world)) impactCb(hit);
+      if (now < freezeUntil) { acc = 0; break; }
+      for (const hit of step(bodies, bounds, STEP, Math.random, obstacles, world)) {
+        if (hit.kind === 'break') { broke.push(hit); continue; }
+        impactCb(hit);
+      }
       acc -= STEP;
     }
+    if (broke.length) {
+      const first = broke[0];
+      const at = dice.get(first.key)?.body ?? { x: 0, y: 0 };
+      const point = { x: at.x, y: at.y };
+      const burning = broke.some((h) => h.fire);
+      // The first piece a burning throw breaks stops the whole table for a beat: an impact frame.
+      const opening = burning && !brokeOnce.has(first.by ?? '');
+      if (opening) { brokeOnce.add(first.by ?? ''); freezeUntil = now + 110; }
+      const keys = broke.map((h) => h.key);
+      broke.length = 0;
+      for (const k of keys) engine.shatter(k);
+      breakCb(keys, point, burning, opening);
+    }
     placeAnchored();
+    followTether();
     // Physical cards: report where they went, and which have stopped (to keep).
     const movedCards: { key: string; x: number; y: number; rot: number }[] = [];
     const restedCards: string[] = [];
@@ -523,31 +560,64 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     if (!allAsleep(bodies) || easing || held || shards.length || fields.length || jittering || slip.until > now) raf = requestAnimationFrame(frame);
   }
 
-  function visuals(spec: DieSpec): { group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[] } {
+  /**
+   * One look (its atlas texture and materials) per distinct look, shared by every piece wearing it (v0.47.11, owner:
+   * a table of tokens built a 640 x 512 texture per token, a hundred of them, and putting them away crawled). Counted,
+   * so a look is freed when the last piece wearing it goes.
+   */
+  const looks = new Map<string, { tex: THREE.CanvasTexture; mats: THREE.Material[]; refs: number }>();
+  const imageIds = new WeakMap<object, number>();
+  let nextImage = 0;
+  const lookKey = (spec: DieSpec) => JSON.stringify([spec.shape, spec.body, spec.edge, spec.ink, spec.finish, spec.faces.map((f) => ('text' in f ? f.text : `img${imageIds.get(f.image as object) ?? (imageIds.set(f.image as object, ++nextImage), nextImage)}:${f.plate ?? ''}:${f.halo ?? ''}`))]);
+  function visuals(spec: DieSpec): { group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; look: string } {
     const model = modelOf(spec.shape);
-    const canvasEl = document.createElement('canvas');
-    paintAtlas(canvasEl, spec, model, opts.font);
-    const tex = new THREE.CanvasTexture(canvasEl);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.flipY = false;
-    tex.anisotropy = Math.min(8, maxAniso);
-    const m = materials(spec.finish, spec.body, spec.edge, tex);
+    const look = lookKey(spec);
+    let shared = looks.get(look);
+    if (!shared) {
+      const canvasEl = document.createElement('canvas');
+      paintAtlas(canvasEl, spec, model, opts.font);
+      const tex = new THREE.CanvasTexture(canvasEl);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = false;
+      tex.anisotropy = Math.min(8, maxAniso);
+      const mm = materials(spec.finish, spec.body, spec.edge, tex);
+      shared = { tex, mats: [mm.face, mm.edge], refs: 0 };
+      looks.set(look, shared);
+    }
+    shared.refs++;
+    const tex = shared.tex;
+    const m = { face: shared.mats[0], edge: shared.mats[1] };
     const group = new THREE.Group();
     const parts: [THREE.BufferGeometry | null, THREE.Material][] = [[model.face, m.face], [model.edge, m.edge]];
     for (const [geo, mat] of parts) {
       if (!geo) continue;
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.castShadow = true;
+      // A token lies flat and its shadow is a sliver: not worth a shadow pass per token.
+      mesh.castShadow = spec.shape !== 'chip';
       group.add(mesh);
     }
     scene.add(group);
-    return { group, tex, mats: [m.face, m.edge] };
+    return { group, tex, mats: [m.face, m.edge], look };
   }
 
   function dropVisuals(d: Die) {
     scene.remove(d.group);
-    d.tex.dispose();
-    for (const m of d.mats) m.dispose();
+    const shared = looks.get(d.look);
+    if (!shared || --shared.refs > 0) return;
+    looks.delete(d.look);
+    shared.tex.dispose();
+    for (const m of shared.mats) m.dispose();
+  }
+
+  /** The held piece's partner glides to its side (Hope and Fear are pulled and rolled together, owner v0.47.11). */
+  function followTether() {
+    const t = held?.die.tether;
+    if (!held || !t) return;
+    const hb = held.die.body, pb = t.d.body;
+    const tx = Math.min(bounds.right - pb.r, Math.max(bounds.left + pb.r, hb.x + t.dx)), ty = Math.min(bounds.bottom - pb.r, Math.max(bounds.top + pb.r, hb.y + t.dy));
+    pb.x += (tx - pb.x) * 0.35;
+    pb.y += (ty - pb.y) * 0.35;
+    wake();
   }
 
   /** Pieces tied to a card sit where the card says, before every step: physics never moves them. */
@@ -642,6 +712,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.group = v.group;
         prev.tex = v.tex;
         prev.mats = v.mats;
+        prev.look = v.look;
         prev.spec = spec;
         if (!sameShape) {
           const model = modelOf(spec.shape);
@@ -653,6 +724,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.body.restFaces = spec.restFaces;
         prev.body.fixed = spec.fixed;
         prev.body.spawner = spec.spawner;
+        prev.body.breakable = spec.breakable;
         prev.body.hopper = spec.hopper;
         wake();
         return;
@@ -666,6 +738,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       body.restFaces = spec.restFaces;
       body.fixed = spec.fixed;
       body.spawner = spec.spawner;
+      body.breakable = spec.breakable;
       body.hopper = spec.hopper;
       body.fresh = o?.fresh;
       // A fresh copy clears room for the next one: a weak push that keeps the spot by the supply free (owner).
@@ -674,7 +747,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
       }
-      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0 };
+      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0, tether: null };
       dice.set(spec.key, d);
       order.push(d);
       wake();
@@ -694,6 +767,10 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     state(key) {
       const d = dice.get(key);
       return d ? { x: d.body.x, y: d.body.y, top: d.body.top, asleep: d.body.asleep } : null;
+    },
+    screen(key) {
+      const d = dice.get(key);
+      return d && d.vanish !== 'flying' ? { x: d.body.x, y: d.body.y - d.body.z * 0.4, size: d.spec.size * d.scale } : null;
     },
     hit(x, y) {
       // The top-most of whatever is under the point; a die's whole footprint counts.
@@ -737,6 +814,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         b.q = [q.x, q.y, q.z, q.w];
       }
       for (const hit of moveHeld(order.map((d) => d.body), b, nx, ny, vx, vy, bounds, obstacles)) impactCb(hit);
+      followTether();
       wake();
     },
     release() {
@@ -752,6 +830,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const speed = Math.min(sp, cap);
       const b = die.body;
       b.held = false;
+      // The partner goes with it, thrown the same way, then each rolls on its own.
+      if (die.tether) {
+        const pb = die.tether.d.body;
+        pb.held = false;
+        launch(pb, vx * (0.92 + Math.random() * 0.12), vy * (0.92 + Math.random() * 0.12), 0, [(Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * 8]);
+        die.tether = null;
+      }
       // Let go off its card, an anchored piece is loose until the table decides where it belongs.
       if (die.anchor) { die.anchor = null; b.fixed = false; b.ghost = false; }
       const r = b.r;
@@ -759,14 +844,42 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       wake();
       return speed;
     },
-    toss(key, vx, vy, boost) {
+    toss(key, vx, vy, boost, breaker) {
       const d = dice.get(key);
       if (!d) return;
+      if (d.tether) { d.tether.d.body.held = false; d.tether = null; }
       d.jitter = 0;
       const sp = Math.hypot(vx, vy);
       const k = 0.012 * sp + 8;
       launch(d.body, vx, vy, 0, [(Math.random() - 0.5) * 2 * k, (Math.random() - 0.5) * 2 * k, (Math.random() - 0.5) * k]);
       if (boost) d.body.boost = boost;
+      if (breaker) d.body.breaker = { ...breaker };
+      wake();
+    },
+    empower(key, mult, boost, breaker) {
+      const d = dice.get(key);
+      if (!d) return;
+      d.body.vx *= mult;
+      d.body.vy *= mult;
+      d.body.w = [d.body.w[0] * mult, d.body.w[1] * mult, d.body.w[2]];
+      if (boost) d.body.boost = boost;
+      if (breaker) d.body.breaker = { ...breaker };
+      d.body.asleep = false;
+      wake();
+    },
+    tether(key, partner) {
+      const d = dice.get(key);
+      if (!d) return;
+      if (d.tether) d.tether.d.body.held = false;
+      const p = partner ? dice.get(partner) : undefined;
+      if (!p) { d.tether = null; return; }
+      // Beside it on the side it already was, close enough to touch.
+      const side = p.body.x >= d.body.x ? 1 : -1;
+      d.tether = { d: p, dx: side * (d.body.r + p.body.r + 4), dy: 0 };
+      p.body.held = true;
+      p.body.asleep = false;
+      p.body.settle = undefined;
+      p.body.home = undefined;
       wake();
     },
     rollInPlace(key) {
@@ -808,6 +921,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       setTimeout(() => {
         if (dice.get(key) !== d) return;
         d.vanish = 'flying';
+        for (const c of d.group.children) (c as THREE.Mesh).castShadow = false;
         const r = () => (Math.random() < 0.5 ? -1 : 1) * (14 + Math.random() * 10);
         sendHome(d.body, x, y, undefined, 0.5 + Math.random() * 0.12, [r(), r(), r() * 0.5]);
         wake();
@@ -987,6 +1101,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       wake();
     },
     onImpact(cb) { impactCb = cb; },
+    onBreak(cb) { breakCb = cb; },
     onRest(cb) { restCb = cb; },
     dispose() {
       if (raf) cancelAnimationFrame(raf);

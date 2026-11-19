@@ -22,8 +22,18 @@ function write(key: string, value: unknown): void {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window: forget it */ }
 }
 
-export const loadLook = (): DeckLook => cleanLook(read(LOOK, {}));
-export const saveLook = (l: DeckLook): void => write(LOOK, l);
+/**
+ * Each character keeps the table they last played at (owner, v0.47.11). One with none yet starts from the table last
+ * used by anyone, which is also kept, so a new character sits down at a familiar table.
+ */
+export const loadLook = (characterId?: string): DeckLook => {
+  const own = characterId ? read<unknown>(LOOK + '.' + characterId, null) : null;
+  return cleanLook(own ?? read(LOOK, {}));
+};
+export const saveLook = (l: DeckLook, characterId?: string): void => {
+  if (characterId) write(LOOK + '.' + characterId, l);
+  write(LOOK, l);
+};
 
 export interface SavedLook { name: string; look: DeckLook }
 export const loadSavedLooks = (): SavedLook[] =>

@@ -137,3 +137,19 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   dropdown with a real screenshot of each (`public/table/presets`); ready-made hands head the Hand tab. Desktop's
   catalogue is a full-window page like Level Up (`desktop-catalog.tsx`): categories left, a card grid, the picked card
   large on the right. The Forge button's flames rise from its chamfered outline, never over its corners.
+- v0.47.11: pieces share one texture and set of materials per look, flat tokens cast no shadow, and resin dice lost
+  their transmission (it drew the whole table twice a frame); a clearcoat and a faint glow of their own colour read
+  the same. Putting a hundred pieces away runs at a steady 60 fps. Fire is `piece-fire.ts`: one canvas over the table,
+  a noise flame wrapping each burning piece, burning at a level, so a held piece smoulders early in its charge, is
+  alight by 1.3 (let go then and it goes burning) and goes off by itself at 2. Swung round fast while held, a piece
+  shakes and catches fire too, and flies on harder when let go. A charged throw breaks loose pieces (two at most
+  unlit; burning, it passes through pieces and breaks all it meets till it slows, with a 110 ms impact frame and a
+  burst on the first); a hit never leaves its target faster than 85% of the striker, so energy always runs down.
+  Hope and Fear (any pair) are lifted together and thrown together. The supply spaces each slot by what sits in it.
+  The selection's Roll charges and burns when held. Roll results are a banner across the top of the table that
+  closes itself. The hand has a gold dot past each end (a setting, on by default). A taken card leaves from the card
+  as drawn, trails the pointer, and its original dims. Rows of control dice or supply split into pieces placed one by
+  one (the link on a row's frame while settings are open) and join back. Tables are kept per character; imported
+  ones land in Your tables. The Deck of Many Things keeps a stock (one card per 200 s, ten at most) shown under it
+  with the wait; a drag off it pulls a card into the hand; a carried card shakes, and calms after three seconds held
+  still, to be set down without striking.

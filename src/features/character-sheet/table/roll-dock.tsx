@@ -21,35 +21,70 @@ export function rollSound(landed: PoolDie[]): void {
   );
 }
 
+/** How long a result stays up on its own, unless the pointer rests on it. */
+const STAY_MS = 7000;
+
 /**
- * What the throw came to, as a pop-up on the sheet's port (owner, v0.47.1): never under the dice, and it stays until
- * you accept it. A die rolled again with a right click updates it in place. Enter or Escape accepts too.
+ * What the throw came to, as a banner across the top of the table (owner, v0.47.11: the old card on the port looked
+ * poor). It closes itself after a while, sooner with its X, Enter or Escape; resting the pointer on it holds it open.
+ * A die rolled again with a right click updates it in place.
  */
 export function RollPopup({ result, box, onAccept }: { result: RollResult; box: { left: number; top: number; width: number; height: number }; onAccept: () => void }) {
   const [shown, setShown] = useState(false);
-  const ok = useRef<HTMLButtonElement>(null);
-  useEffect(() => { const id = requestAnimationFrame(() => setShown(true)); ok.current?.focus({ preventScroll: true }); return () => cancelAnimationFrame(id); }, []);
+  const [held, setHeld] = useState(false);
+  const close = useRef<HTMLButtonElement>(null);
+  const done = useRef(onAccept);
+  done.current = onAccept;
+  useEffect(() => { const id = requestAnimationFrame(() => setShown(true)); close.current?.focus({ preventScroll: true }); return () => cancelAnimationFrame(id); }, []);
+  // The clock runs only while nobody is reading it; each new result starts it again (the parent keys it by result).
+  const left = useRef(STAY_MS);
+  useEffect(() => {
+    if (held) return;
+    const start = performance.now();
+    const t = setTimeout(() => done.current(), left.current);
+    return () => { clearTimeout(t); left.current = Math.max(800, left.current - (performance.now() - start)); };
+  }, [held]);
   const crit = result.verdict === 'critical';
   const color = crit || result.verdict === 'hope' ? T.goldBright : result.verdict === 'fear' ? '#C9A6F0' : T.ivory;
   const word = crit ? 'Critical success' : result.verdict === 'hope' ? 'With Hope' : result.verdict === 'fear' ? 'With Fear' : 'Total';
-  const parts = result.dice.filter((d) => d.value != null).map((d) => `${d.side === 'hope' ? 'Hope' : d.side === 'fear' ? 'Fear' : d.type} ${d.value}`);
-  if (result.mod) parts.push(`${result.label ? `${result.label} ` : ''}${result.mod > 0 ? '+' : ''}${result.mod}`);
-  const W = Math.min(300, box.width - 48);
+  const dice = result.dice.filter((d) => d.value != null);
+  const W = Math.min(560, box.width - 32);
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <div role="dialog" aria-label={`Rolled ${result.total}, ${word}`} aria-live="polite"
+    <div role="status" aria-live="polite" aria-label={`Rolled ${result.total}, ${word}`}
+      onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
       onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onAccept(); } }}
-      style={{ position: 'fixed', left: box.left + (box.width - W) / 2, top: box.top + box.height * 0.34, width: W, zIndex: 1150, transform: `translateY(${shown ? 0 : 12}px) scale(${shown ? 1 : 0.94})`, opacity: shown ? 1 : 0, transition: `transform 260ms ${T.ease}, opacity 180ms`, filter: 'drop-shadow(0 18px 30px rgba(0,0,0,0.6))' }}>
-      <Chamfer c={14} fill="rgba(11,14,19,0.97)" line={crit ? T.goldBright : result.verdict === 'fear' ? 'rgba(201,166,240,0.6)' : T.gold} width={1.4} inner={{ padding: '16px 18px 14px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-        <div style={{ color, fontFamily: T.bold, fontSize: 12.5, letterSpacing: 2, textTransform: 'uppercase' }}>{word}</div>
-        <div style={{ color, fontFamily: T.display, fontSize: 64, lineHeight: '66px', textShadow: crit ? '0 0 24px rgba(224,181,99,0.6)' : 'none' }}>{result.total}</div>
-        <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px', marginBottom: 8 }}>{parts.join(' · ')}</div>
-        <button ref={ok} type="button" onClick={onAccept} className="rk-ok" style={{ all: 'unset', cursor: 'pointer', alignSelf: 'stretch' }}>
-          <Chamfer c={7} line={T.red} fill={T.red} style={{ height: 36 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 12.5, letterSpacing: 1.2, textTransform: 'uppercase' }}>OK</span>
-          </Chamfer>
+      style={{ position: 'fixed', left: box.left + (box.width - W) / 2, top: box.top + 14, width: W, zIndex: 1150, transform: `translateY(${shown ? 0 : -18}px)`, opacity: shown ? 1 : 0, transition: `transform 300ms ${T.ease}, opacity 180ms`, filter: 'drop-shadow(0 14px 26px rgba(0,0,0,0.55))' }}>
+      <Chamfer c={10} fill="rgba(11,14,19,0.97)" line={crit ? T.goldBright : result.verdict === 'fear' ? 'rgba(201,166,240,0.6)' : T.gold} width={1.3} inner={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 16, padding: '10px 10px 12px 18px', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 92 }}>
+          <div style={{ color, fontFamily: T.bold, fontSize: 12, letterSpacing: 1.6, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{word}</div>
+          <div style={{ color, fontFamily: T.display, fontSize: 46, lineHeight: '48px', textShadow: crit ? '0 0 22px rgba(224,181,99,0.6)' : 'none' }}>{result.total}</div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 5, alignContent: 'center' }}>
+          {dice.map((d) => {
+            const c = d.side === 'hope' ? T.goldBright : d.side === 'fear' ? '#C9A6F0' : T.goldText;
+            return (
+              <Chamfer key={d.id} c={5} fill="rgba(24,28,36,0.95)" line={d.side ? c : 'rgba(218,162,73,0.35)'} width={1} inner={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '4px 9px' }}>
+                <span style={{ color: T.muted, fontFamily: T.bold, fontSize: 11.5 }}>{d.side === 'hope' ? 'Hope' : d.side === 'fear' ? 'Fear' : d.type}</span>
+                <span style={{ color: c, fontFamily: T.bold, fontSize: 16 }}>{d.value}</span>
+              </Chamfer>
+            );
+          })}
+          {result.mod ? (
+            <Chamfer c={5} fill="rgba(24,28,36,0.95)" line="rgba(218,162,73,0.35)" width={1} inner={{ display: 'flex', alignItems: 'baseline', gap: 6, padding: '4px 9px' }}>
+              <span style={{ color: T.muted, fontFamily: T.bold, fontSize: 11.5 }}>{result.label ?? 'Modifier'}</span>
+              <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 16 }}>{result.mod > 0 ? '+' : ''}{result.mod}</span>
+            </Chamfer>
+          ) : null}
+        </div>
+        <button ref={close} type="button" aria-label="Close" title="Close" onClick={onAccept} className="rk-ok"
+          style={{ all: 'unset', cursor: 'pointer', alignSelf: 'flex-start', width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.muted }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2l10 10M12 2 2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
         </button>
+        {/* How long it has left: a hairline running out along the bottom, stopped while the pointer rests on it. */}
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, background: color, opacity: 0.55, transformOrigin: 'left', animation: `rk-roll-left ${STAY_MS}ms linear forwards`, animationPlayState: held ? 'paused' : 'running' }} />
       </Chamfer>
+      <style>{'@keyframes rk-roll-left { from { transform: scaleX(1); } to { transform: scaleX(0); } }'}</style>
     </div>,
     document.body,
   );

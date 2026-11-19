@@ -57,8 +57,32 @@ const EFFECTS: Record<string, { effect: DomatEffect; table: string; tint: string
 
 export const DOMAT: DomatCard[] = (CARDS as { id: string; name: string; text: string }[]).map((c) => ({ ...c, ...(EFFECTS[c.id] ?? EFFECTS.star) }));
 
-/** How long the deck waits between draws (owner, v0.47.6): each card shakes the whole table. */
-export const DOMAT_COOLDOWN_MS = 60_000;
+/**
+ * The deck keeps a stock (owner, v0.47.11): a new card grows every 200 seconds, up to ten waiting, and each draw takes
+ * one. A new table starts with one.
+ */
+export const DOMAT_REFILL_MS = 200_000;
+export const DOMAT_MAX = 10;
+export const DOMAT_START = 1;
+export interface DomatStock { stock: number; /** When the card now growing started. */ since: number }
+
+/** The stock as it stands now, and how long (ms) until the next card (null when it is full). */
+export function domatStock(s: DomatStock, now: number): DomatStock & { next: number | null } {
+  let stock = Math.min(DOMAT_MAX, Math.max(0, Math.floor(Number.isFinite(s.stock) ? s.stock : DOMAT_START)));
+  let since = Number.isFinite(s.since) ? Math.min(now, s.since) : now;
+  if (stock < DOMAT_MAX) {
+    const grown = Math.floor((now - since) / DOMAT_REFILL_MS);
+    stock = Math.min(DOMAT_MAX, stock + grown);
+    since += grown * DOMAT_REFILL_MS;
+  }
+  return stock >= DOMAT_MAX ? { stock, since: now, next: null } : { stock, since, next: since + DOMAT_REFILL_MS - now };
+}
+
+/** One card out of the stock, or null when it is empty. Taken from a full deck, the next one starts growing now. */
+export function takeDomat(s: DomatStock, now: number): DomatStock | null {
+  const c = domatStock(s, now);
+  return c.stock > 0 ? { stock: c.stock - 1, since: c.since } : null;
+}
 
 /** A drawn card's size on the table: smaller than a hand card. */
 export const DOMAT_W = 104;

@@ -70,6 +70,15 @@ export interface Body {
    */
   boost?: { gen: number; power: number; soft?: boolean };
   /**
+   * A charged throw (v0.47.11, owner): fast enough, it breaks the loose pieces it hits, up to `left` of them. On fire
+   * it breaks whatever loose piece it passes through and touches nothing else, until it slows down.
+   */
+  breaker?: { left: number; fire: boolean };
+  /** A loose token or die: a charged throw can break it. */
+  breakable?: boolean;
+  /** Broken this step: gone from the table as soon as the step ends. */
+  broken?: boolean;
+  /**
    * A card made physical (v0.47.3, owner): a w x h box turned by `a` (radians, clockwise on screen) that slides,
    * spins (`va`, rad/s) and is knocked about, but never tumbles. `r` is its half diagonal, for the broad check.
    */
@@ -86,7 +95,10 @@ export interface Bounds { left: number; top: number; right: number; bottom: numb
 /** Something on the table dice cannot pass through (a panel lying on the felt). */
 export type Obstacle = Bounds;
 
-export interface Impact { key: string; speed: number; kind: 'table' | 'rail' | 'die' }
+export interface Impact { key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break'; /** For a break: what broke it, and whether it was burning. */ by?: string; fire?: boolean }
+
+/** How fast (px/s, against the piece) a charged throw must hit a loose piece to break it. */
+export const BREAK_SPEED = 1700;
 
 /**
  * A force over part of the table for a while (the Deck of Many Things): a push out from a point (negative pulls
@@ -302,7 +314,9 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
   const hits: Impact[] = [];
   for (const b of bodies) {
     // A fixed piece (the supply, an anchored token) only ever turns over where it lies.
-    if (b.asleep || b.held || (b.fixed && !b.settle) || (b.ghost && !b.settle && !b.home)) continue;
+    if (b.asleep || b.held || b.broken || (b.fixed && !b.settle) || (b.ghost && !b.settle && !b.home)) continue;
+    // Slowed down, a charged throw is an ordinary piece again (and a burning one stops passing through things).
+    if (b.breaker && Math.hypot(b.vx, b.vy) < (b.breaker.fire ? 650 : 900)) b.breaker = undefined;
     if (b.box) { boxStep(b, bounds, dt, hits, world, obstacles); continue; }
     if (b.home) {
       const h = b.home;
@@ -506,21 +520,25 @@ function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
 }
 
 /** The extra push one body passes to the one it hit (`n` points from src to tgt), and the generation after it. */
-function passBoost(src: Body, tgt: Body, nx: number, ny: number, jimp: number): void {
+function passBoost(src: Body, tgt: Body, nx: number, ny: number, jimp: number, pre: number): void {
   const bo = src.boost;
   if (!bo || bo.gen <= 0 || tgt.held || tgt.fixed || (tgt.spawner && bo.soft)) return;
   const k = jimp * bo.power * (bo.gen / 5);
   tgt.vx += nx * k;
   tgt.vy += ny * k;
+  // Energy only ever runs down the chain (owner, v0.47.11: tokens kept each other moving forever): the struck piece
+  // leaves no faster than most of what hit it, and each generation passes on less.
+  const cap = Math.min(7000, pre * 0.85);
   const sp = Math.hypot(tgt.vx, tgt.vy);
-  if (sp > 7000) { tgt.vx *= 7000 / sp; tgt.vy *= 7000 / sp; }
+  if (sp > cap && sp > 0) { tgt.vx *= cap / sp; tgt.vy *= cap / sp; }
   tgt.asleep = false;
   tgt.settle = undefined;
-  if (bo.gen > 1 && (tgt.boost?.gen ?? 0) < bo.gen - 1) tgt.boost = { gen: bo.gen - 1, power: bo.power, soft: bo.soft };
+  if (bo.gen > 1 && (tgt.boost?.gen ?? 0) < bo.gen - 1) tgt.boost = { gen: bo.gen - 1, power: bo.power * 0.7, soft: bo.soft };
 }
 
 function beginSettle(b: Body): void {
   b.boost = undefined;
+  b.breaker = undefined;
   const face = b.force ?? topFace(b.q, b.faces, b.restFaces);
   b.top = face;
   b.force = undefined;
@@ -536,7 +554,28 @@ function collide(bodies: Body[], hits: Impact[]): void {
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const a = bodies[i], b = bodies[j];
-      if (a.home || b.home || a.ghost || b.ghost) continue;
+      if (a.home || b.home || a.ghost || b.ghost || a.broken || b.broken) continue;
+      // A charged throw breaks the loose piece it hits hard enough (burning, whatever it touches), and goes on.
+      // Pieces thrown together (a charged roll of the selection) never break one another.
+      const brk = (s: Body, o: Body) => !!s.breaker && s.breaker.left > 0 && !!o.breakable && !o.held && !o.breaker;
+      if (brk(a, b) || brk(b, a)) {
+        const s = brk(a, b) ? a : b, o = s === a ? b : a;
+        if (Math.hypot(b.x - a.x, b.y - a.y) < a.r + b.r) {
+          const rel = Math.hypot(s.vx - o.vx, s.vy - o.vy);
+          if (s.breaker!.fire || rel > BREAK_SPEED) {
+            o.broken = true;
+            s.breaker!.left--;
+            hits.push({ key: o.key, speed: rel, kind: 'break', by: s.key, fire: s.breaker!.fire });
+            // Breaking costs a little speed: more for a plain throw than for a burning one.
+            const keep = s.breaker!.fire ? 0.93 : 0.78;
+            s.vx *= keep;
+            s.vy *= keep;
+            continue;
+          }
+        }
+      }
+      // Burning, it passes through every other piece.
+      if (a.breaker?.fire || b.breaker?.fire) continue;
       // A fresh copy passes through the supply it came out of (owner, v0.47.4), for as long as it overlaps it.
       if ((a.fresh && b.spawner) || (b.fresh && a.spawner)) {
         if (Math.hypot(b.x - a.x, b.y - a.y) < a.r + b.r + 4) nearSpawner.add(a.fresh ? a : b);
@@ -566,12 +605,13 @@ function collide(bodies: Body[], hits: Impact[]): void {
       b.y += ny * overlap * (ib / (ia + ib));
       const rel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
       if (rel < 0) {
+        const pre = Math.max(Math.hypot(a.vx, a.vy), Math.hypot(b.vx, b.vy));
         const jimp = (-(1 + DIE_BOUNCE) * rel) / (ia + ib);
         if (ia) { a.vx -= jimp * nx; a.vy -= jimp * ny; }
         if (ib) { b.vx += jimp * nx; b.vy += jimp * ny; }
         // The stronger of the two pushes the other the harder.
-        if ((a.boost?.gen ?? 0) >= (b.boost?.gen ?? 0)) passBoost(a, b, nx, ny, jimp);
-        else passBoost(b, a, -nx, -ny, jimp);
+        if ((a.boost?.gen ?? 0) >= (b.boost?.gen ?? 0)) passBoost(a, b, nx, ny, jimp, pre);
+        else passBoost(b, a, -nx, -ny, jimp, pre);
         if (-rel > 60) hits.push({ key: a.held ? b.key : a.key, speed: -rel, kind: 'die' });
       }
       for (const [body, other] of [[a, b], [b, a]] as const) {

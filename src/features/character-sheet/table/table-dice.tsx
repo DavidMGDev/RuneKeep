@@ -25,11 +25,11 @@ import type { PoolDie } from '@/lib/dice-pool';
 import { playSfx, playSynth } from '@/lib/sfx';
 import type { CardCategory } from '../card-data';
 import { CategoryGlyph } from '../sheet/deck-toggle-icon';
+import { createFireLayer, type FireLayer } from './piece-fire';
 import type { DiceEngine, DieSpec, Finish, Shape, Walls } from './dice-engine';
 import type { Bounds, Impact, Obstacle } from './dice-physics';
 import { loadDicePlaces, saveDicePlaces } from './table-store';
 import { Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from './table-ui';
-import { startFire } from '@/lib/fire-shader';
 
 export type ActionKey = 'cards' | 'state' | 'sort';
 export interface TableAction { key: ActionKey; label: string; onPress: () => void; disabled?: boolean }
@@ -60,14 +60,14 @@ export interface TokenPiece {
 export interface CardPose { key: string; x: number; y: number; w: number; h: number; rot: number; phys: boolean }
 
 /** Where each row of pieces lives (px, the centre of the row). */
-export interface Places { ctl: { x: number; y: number; dir: 'row' | 'column'; /** The control dice's size (spacing grows with it). */ k?: number }; sup: { x: number; y: number; dir: 'row' | 'column' }; cat: { x: number; y: number } }
+export interface Places { ctl: { x: number; y: number; dir: 'row' | 'column'; /** The control dice's size (spacing grows with it). */ k?: number }; sup: { x: number; y: number; dir: 'row' | 'column' }; cat: { x: number; y: number }; /** Pieces split off their row, each where it was put (px). */ apart?: Record<string, { x: number; y: number }> }
 export type PlaceGroup = 'ctl' | 'sup' | 'cat';
 
 export interface TableDiceHandle {
   /** Throw these dice from (x, y); resolves with the faces that came to rest on top. */
   roll: (dice: PoolDie[], from: { x: number; y: number }) => Promise<PoolDie[]>;
   /** Roll the dice among these pieces where they lie (tokens are left alone); resolves with what they show. */
-  rollPieces: (keys: string[]) => Promise<PoolDie[]>;
+  rollPieces: (keys: string[], power?: number, burning?: boolean) => Promise<PoolDie[]>;
   clearRoll: () => void;
   /** Send every control die and the supply home. */
   resetHome: () => void;
@@ -94,8 +94,14 @@ const GLYPH: Record<ActionKey, GlyphKey> = { cards: 'cards', state: 'state', sor
 const ROLL_SIZE: Record<string, number> = { d4: 62, d6: 54, d8: 58, d10: 58, d12: 62, d20: 68, d100: 56, duality: 64 };
 const TOKEN_DIE_SIZE = 46;
 const FACES_OF: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };
-/** Space between pieces in a row; a row on end needs more (each piece has its label under it). */
-const SUPPLY_GAP = { row: 70, column: 90 };
+/**
+ * Room each supply piece takes, centre to centre, in a row and in a column (each has its label under it). The die's
+ * slot fits the widest it can be, Hope and Fear side by side, so the row never shifts as the wheel turns it (owner,
+ * v0.47.11: it sat on top of its neighbours).
+ */
+const slotOf = (key: string, dir: 'row' | 'column') => (key === 'src:die' ? (dir === 'row' ? 128 : 96) : key === DOMAT_KEY ? (dir === 'row' ? 86 : 100) : dir === 'row' ? 72 : 90);
+/** Half the length of a full supply row (all four), for keeping it on the table. */
+export const SUPPLY_HALF = { row: (72 * 2 + 128 + 86) / 2, column: (90 * 2 + 96 + 100) / 2 };
 const CTL_GAP = { row: 94, column: 104 };
 export const DOMAT_KEY = 'src:domat';
 const baseOf = (key: string) => key.replace(/:(h|f|t|u)$/, '');
@@ -127,8 +133,9 @@ export function ctlHome(p: Places, i: number, n = ACTIONS.length): { x: number; 
   return p.ctl.dir === 'row' ? { x: p.ctl.x + o, y: p.ctl.y } : { x: p.ctl.x, y: p.ctl.y + o };
 }
 /** Each supply piece's home, the same way. */
-export function supHome(p: Places, i: number, n: number): { x: number; y: number } {
-  const o = (i - (n - 1) / 2) * SUPPLY_GAP[p.sup.dir];
+export function supHome(p: Places, i: number, keys: string[]): { x: number; y: number } {
+  const slots = keys.map((k) => slotOf(k, p.sup.dir));
+  const o = slots.slice(0, i).reduce((a, b) => a + b, 0) + slots[i] / 2 - slots.reduce((a, b) => a + b, 0) / 2;
   return p.sup.dir === 'row' ? { x: p.sup.x + o, y: p.sup.y } : { x: p.sup.x, y: p.sup.y + o };
 }
 
@@ -202,8 +209,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onCardsMoved: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void;
   supply: SupplyPiece[];
   /** The Deck of Many Things in the supply: cards left, and seconds until it can be drawn from again (null: not on the table). */
-  domat: { left: number; wait: number } | null;
-  onDomatDraw: (from: { x: number; y: number }) => void;
+  /** The Deck of Many Things: cards in stock, and seconds until the next grows (0 when full). */
+  domat: { stock: number; wait: number } | null;
+  /** Draw from the Deck of Many Things (`held`: pulled off it by a drag, into the hand at that point). */
+  onDomatDraw: (from: { x: number; y: number }, held?: { x: number; y: number }) => void;
   loose: LoosePiece[];
   /** A copy was thrown out of the supply (or a token popped off a card in the hand). */
   onSpawn: (key: string, token: TokenInfo, x: number, y: number) => void;
@@ -221,17 +230,26 @@ export const TableDice = forwardRef<TableDiceHandle, {
   /** A token drawn on a card in the hand was pressed: take it off that card and say what it was. */
   onPopToken: (ref: string, id: string) => TokenInfo | null;
   /** Right click on the table (and on a piece: what can be done to it, here rolling a die). */
-  onTableMenu: (clientX: number, clientY: number, piece?: { key: string; label: string }) => void;
+  onTableMenu: (clientX: number, clientY: number, piece?: { key: string; label: string; /** A control die: the row is its own action, and the menu has no rolls. */ own?: boolean }) => void;
   /** The marquee picked these pieces (empty: nothing selected). */
   onSelect: (keys: string[]) => void;
   /** Something hit a wall hard (px/s): shake the table. */
   onHardHit: (speed: number) => void;
+  /** A charged throw broke these loose pieces (the first where `at` is); they are gone from the table. */
+  onBreak?: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => void;
+  /** A piece is being carried over this point (screen px), or put down (null): the hand lights the card under it. */
+  onDragPiece?: (clientX: number | null, clientY?: number) => void;
   /** Every loose piece went back into the supply. */
   onTidied: () => void;
   /** Settings are open: everything goes home and each row can be dragged somewhere else. */
   editing: boolean;
   onMoveGroup: (g: PlaceGroup, x: number, y: number) => void;
   onFlipGroup: (g: 'ctl' | 'sup') => void;
+  /** Split a row into pieces placed on their own (from where each lies now, px), or join them back into it. */
+  onSplitGroup: (g: 'ctl' | 'sup', at: Record<string, { x: number; y: number }>) => void;
+  onJoinGroup: (g: 'ctl' | 'sup') => void;
+  /** A piece split off its row, dragged somewhere else (px). */
+  onMovePiece: (key: string, x: number, y: number) => void;
   /** A panel is open: the pieces stay where they are and take no clicks. */
   inert: boolean;
   /** The deck menu's New category. */
@@ -247,7 +265,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const [ring, setRing] = useState<{ x: number; y: number } | null>(null);
   const [marquee, setMarquee] = useState<Bounds | null>(null);
   /** Pieces on fire: held twice as long as the full shake, until they come to rest. */
+  /** Pieces ablaze (thrown burning, or caught in the hand): they burn until they come to rest. */
   const [burning, setBurning] = useState<string[]>([]);
+  const fireRef = useRef<FireLayer | null>(null);
   const [btnBox, setBtnBox] = useState({ w: 0, h: 0 });
   const labels = useRef(new Map<string, HTMLElement>());
   const glyphHost = useRef<HTMLDivElement>(null);
@@ -279,9 +299,20 @@ export const TableDice = forwardRef<TableDiceHandle, {
       .then((e) => {
         if (dead) { e.dispose(); return; }
         eng = e;
+        if (__DEV__) (globalThis as { __rkEngine?: DiceEngine }).__rkEngine = e;
         e.onImpact((hit: Impact) => {
           void import('./dice-engine').then((m) => m.knock(playSynth, hit));
           if (hit.kind === 'rail' && hit.speed > 2400) live.current.onHardHit(hit.speed);
+        });
+        e.onBreak((keys, at, burning, first) => {
+          // A pair breaks whole; a broken die no longer holds up a roll waiting for it to land.
+          const all = [...new Set(keys.flatMap((k) => e.keys().filter((x) => baseOf(x) === baseOf(k))).concat(keys))];
+          for (const k of all) { if (e.has(k)) e.shatter(k); rolled.current.delete(k); rolling.current.delete(k); }
+          const p = pending.current;
+          if (p) { for (const k of all) p.keys.delete(k); if (p.keys.size === 0) { pending.current = null; p.done(); } }
+          setBurning((b) => (b.some((k) => all.includes(k)) ? b.filter((k) => !all.includes(k)) : b));
+          playSfx('loseArmor', { volume: burning ? 0.75 : 0.55, cents: Math.round(Math.random() * 400 - 200) });
+          live.current.onBreak?.(all, at, burning, first);
         });
         setEngine(e);
       })
@@ -290,6 +321,21 @@ export const TableDice = forwardRef<TableDiceHandle, {
   }, []);
 
   useEffect(() => { engine?.resize(width, height); }, [engine, width, height]);
+  // The fire over the table (one canvas for every burning piece).
+  useEffect(() => {
+    if (!engine || !host) return;
+    const f = createFireLayer(host, (k) => engine.screen(k));
+    fireRef.current = f;
+    return () => { f?.dispose(); fireRef.current = null; };
+  }, [engine, host]);
+  const lit = useRef(new Set<string>());
+  useEffect(() => {
+    const f = fireRef.current;
+    if (!f) return;
+    for (const k of burning) f.set(k, 1);
+    for (const k of lit.current) if (!burning.includes(k)) f.set(k, 0);
+    lit.current = new Set(burning);
+  }, [burning]);
   const boundsKey = JSON.stringify(bounds);
   useEffect(() => { engine?.setBounds(bounds); }, [engine, boundsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const obstacleKey = JSON.stringify(obstacles);
@@ -307,13 +353,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const clamp = (h: { x: number; y: number }) => ({ x: Math.min(b.right - 34, Math.max(b.left + 34, h.x)), y: Math.min(b.bottom - 34, Math.max(b.top + 34, h.y)) });
     if (key === CAT) return clamp(p.cat);
     const ai = ACTIONS.indexOf(key as ActionKey);
-    if (ai >= 0) return clamp(ctlHome(p, ai));
+    if (ai >= 0) return clamp(p.apart?.[key] ?? ctlHome(p, ai));
     const base = baseOf(key);
     const sup = [...live.current.supply.map((s) => s.key), ...(live.current.domat ? [DOMAT_KEY] : [])];
     const si = sup.indexOf(base);
     if (si >= 0) {
-      const h = supHome(p, si, sup.length);
-      const off = key.endsWith(':h') || key.endsWith(':t') ? -TOKEN_DIE_SIZE * 0.3 : key.endsWith(':f') || key.endsWith(':u') ? TOKEN_DIE_SIZE * 0.3 : 0;
+      const h = p.apart?.[base] ?? supHome(p, si, sup);
+      // A pair stands side by side, as far apart as a spawned pair (tokenSpecs' dx).
+      const off = key.endsWith(':h') || key.endsWith(':t') ? -TOKEN_DIE_SIZE * 0.55 : key.endsWith(':f') || key.endsWith(':u') ? TOKEN_DIE_SIZE * 0.55 : 0;
       return clamp(p.sup.dir === 'row' ? { x: h.x + off, y: h.y } : { x: h.x + off, y: h.y });
     }
     return null;
@@ -602,11 +649,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
     }
   }, [partsOf]);
   /** Fling a piece (and its partner) off in a random direction at this speed. */
-  const fling = useCallback((key: string, speed: number, boost?: { gen: number; power: number }, aim?: number) => {
+  const fling = useCallback((key: string, speed: number, boost?: { gen: number; power: number }, aim?: number, breaker?: { left: number; fire: boolean }) => {
     const e = engineRef.current;
     if (!e) return;
     const ang = aim ?? Math.random() * Math.PI * 2;
-    for (const k of partsOf(key)) e.toss(k, Math.cos(ang + (Math.random() - 0.5) * 0.2) * speed, Math.sin(ang + (Math.random() - 0.5) * 0.2) * speed, boost);
+    for (const k of partsOf(key)) e.toss(k, Math.cos(ang + (Math.random() - 0.5) * 0.2) * speed, Math.sin(ang + (Math.random() - 0.5) * 0.2) * speed, boost, breaker);
     if (key.startsWith('free:')) watchLoose(key);
   }, [partsOf, watchLoose]);
 
@@ -659,11 +706,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
   }, [numberFinish]);
 
   /** What the table menu offers for a piece right-clicked: rolling it, when it is a die. */
-  const pieceMenu = useCallback((key: string): { key: string; label: string } | undefined => {
-    // Hopping control dice never roll: they turn only when the deck changes.
-    const hop = live.current.ctlMotion === 'hop';
-    if (key === CAT) return hop ? undefined : { key, label: 'Roll the deck die' };
-    if (ACTIONS.includes(key as ActionKey)) return hop ? undefined : { key, label: 'Roll this die' };
+  const pieceMenu = useCallback((key: string): { key: string; label: string; own?: boolean } | undefined => {
+    // A control die offers only what it does (owner, v0.47.11), never a roll.
+    if (key === CAT) return { key, label: 'Choose a deck', own: true };
+    const own: Record<ActionKey, string> = { cards: 'Open cards menu', state: 'Open state menu', sort: 'Sort the deck' };
+    if (ACTIONS.includes(key as ActionKey)) return { key, label: own[key as ActionKey], own: true };
     if (key.startsWith('roll:')) return { key, label: 'Roll this die' };
     const base = baseOf(key);
     if (key.startsWith('free:') && live.current.loose.find((l) => l.key === base)?.token.kind === 'die') return { key, label: 'Roll this die' };
@@ -676,7 +723,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
   inertRef.current = inert;
   useEffect(() => {
     if (!host || !engine) return;
-    let press: { key: string; x: number; y: number; t: number; moved: boolean; id: number; spawned: boolean; charge: number; /** Not lifted yet (a control die waits for a drag). */ deferred?: { x: number; y: number } } | null = null;
+    let press: {
+      key: string; x: number; y: number; t: number; moved: boolean; id: number; spawned: boolean; charge: number;
+      /** Not lifted yet (a control die waits for a drag). */ deferred?: { x: number; y: number };
+      /** Swung round fast while held (owner, v0.47.11): it shakes, then catches fire, and throws far harder. */ swing: number;
+      /** How fast the hand moves (px/s, smoothed), and when it last moved. */ hand: number; last: { x: number; y: number; t: number }; lit: boolean;
+    } | null = null;
     /** The right button held on a spawner: copies come out faster and faster until it is let go. */
     let spawning: { id: number; timer?: ReturnType<typeof setTimeout> } | null = null;
     let chargeRaf = 0;
@@ -710,28 +762,82 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const card = live.current.tokens.find((t) => t.key === baseOf(k))?.card;
       return !!card && live.current.cards.some((c) => c.key === card && c.phys);
     };
+    /** Shake a piece and its partner together. */
+    const shakeAll = (key: string, v: number) => { for (const k of partsOf(key)) engine.jitter(k, v); };
+    /** How far a held piece has caught (0 none, 1 ablaze), for it and its partner. */
+    const heat = (key: string, v: number) => { for (const k of partsOf(key)) fireRef.current?.set(k, v); };
+    /** Lift a piece; the other of a pair comes along beside it (owner, v0.47.11: Hope and Fear are pulled together). */
+    const lift = (key: string, x: number, y: number) => {
+      engine.grab(key, x, y);
+      const mate = partsOf(key).find((k) => k !== key) ?? (key.startsWith('roll:') ? pairOf(key) : undefined);
+      if (mate) engine.tether(key, mate);
+    };
+    /** A rolled die's partner (the Hope die's Fear die), by the pool die they share. */
+    const pairOf = (key: string) => {
+      const d = rolled.current.get(key);
+      if (!d?.pairId) return undefined;
+      for (const [k, o] of rolled.current) if (k !== key && o.pairId === d.pairId && engine.has(k)) return k;
+      return undefined;
+    };
     const fire = (pr: { key: string }, power: number, burning = false) => {
-      engine.jitter(pr.key, 0);
+      shakeAll(pr.key, 0);
       engine.release();
       playSfx(power > 0.6 ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.3 + power * 0.45, cents: Math.round(power * 600 + (burning ? 500 : 0)) });
       // Launched pieces push harder, and what they hit pushes on, five generations deep; a burning one far harder.
       if (burning) {
         setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
-        fling(pr.key, 9600, { gen: 5, power: 6 });
+        // On fire it passes through what it meets and breaks every loose piece on the way, till it slows.
+        fling(pr.key, 9600, { gen: 5, power: 6 }, undefined, { left: 99, fire: true });
         live.current.onHardHit(6000);
         return;
       }
-      fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power });
+      // Without fire a throw breaks two loose pieces at most.
+      fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power }, undefined, power > 0.3 ? { left: 2, fire: false } : undefined);
     };
+    /** Swing speeds (px/s): below SLOW the swing runs down; the faster above it, the faster it builds. */
+    const SWING_SLOW = 900, SWING_FULL = 2600, SWING_MS = 1100;
+    /** The swing builds and decays; at 2 the piece catches fire in the hand. Called every frame while it is held. */
+    const swingTick = (pr: NonNullable<typeof press>, dt: number) => {
+      const now = performance.now();
+      if (now - pr.last.t > 90) pr.hand *= Math.pow(0.5, dt / 60);
+      const rate = Math.min(1.6, Math.max(0, (pr.hand - SWING_SLOW) / (SWING_FULL - SWING_SLOW)));
+      if (!pr.lit) pr.swing = rate > 0 ? Math.min(2, pr.swing + (dt / SWING_MS) * rate) : Math.max(0, pr.swing - dt / 900);
+      shakeAll(pr.key, pr.lit ? 1 : Math.min(1, pr.swing));
+      // The fire shows as the swing builds, well before it is fully alight (owner, v0.47.11).
+      if (!pr.lit) heat(pr.key, (pr.swing - 0.35) / 1.65);
+      if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit };
+      if (!pr.lit && pr.swing >= 2) {
+        pr.lit = true;
+        setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
+        playSfx('gainGoldenHp', { volume: 0.6, cents: 900 });
+      }
+    };
+    let lastTick = 0;
     const tick = () => {
       chargeRaf = 0;
       const pr = press;
-      if (!pr || pr.moved || !chargeable(pr.key)) return;
+      if (!pr || !chargeable(pr.key)) return;
+      const now = performance.now();
+      const dt = Math.min(50, now - (lastTick || now));
+      lastTick = now;
+      if (pr.moved) {
+        if (!pr.deferred) swingTick(pr, dt);
+        chargeRaf = requestAnimationFrame(tick);
+        return;
+      }
       const held = performance.now() - pr.t - CHARGE_DELAY;
       if (held > 0) {
         // Up to the full shake, then held on through it: at twice that it catches fire and goes off by itself.
         pr.charge = Math.min(2, held / CHARGE_MS);
-        engine.jitter(pr.key, Math.min(1, pr.charge));
+        shakeAll(pr.key, Math.min(1, pr.charge));
+        // It smoulders from early in the shake and is alight by 1.3; let go then and it goes burning. At 2 it goes off
+        // by itself (owner, v0.47.11: the fire has to show well before the launch).
+        if (!pr.lit) heat(pr.key, (pr.charge - 0.3) / 1.0);
+        if (!pr.lit && pr.charge >= 1.3) {
+          pr.lit = true;
+          setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
+          playSfx('gainGoldenHp', { volume: 0.5, cents: 900 });
+        }
         if (pr.charge >= 2) { press = null; host.style.cursor = 'grab'; fire(pr, 1, true); return; }
       }
       chargeRaf = requestAnimationFrame(tick);
@@ -779,8 +885,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
           e.preventDefault();
           try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
           const k = spawn(info, p.x, p.y);
-          press = { key: k, x: e.clientX, y: e.clientY, t: performance.now(), moved: true, id: e.pointerId, spawned: true, charge: 0 };
-          engine.grab(k, p.x, p.y);
+          press = { key: k, x: e.clientX, y: e.clientY, t: performance.now(), moved: true, id: e.pointerId, spawned: true, charge: 0, swing: 0, hand: 0, last: { x: e.clientX, y: e.clientY, t: performance.now() }, lit: false };
+          lift(k, p.x, p.y);
+          lastTick = 0;
+          chargeRaf = requestAnimationFrame(tick);
           host.style.cursor = 'grabbing';
           playSfx('placeToken', { volume: 0.6, cents: 300 });
           return;
@@ -809,11 +917,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       // A control die is not picked up by a click (owner, v0.47.10: clicks nudged it): only a drag lifts it.
       const isControl = grabbed === CAT || ACTIONS.includes(grabbed as ActionKey);
-      press = { key: grabbed, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, id: e.pointerId, spawned, charge: 0, deferred: isControl ? p : undefined };
-      if (!isControl) engine.grab(grabbed, p.x, p.y);
+      press = { key: grabbed, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, id: e.pointerId, spawned, charge: 0, deferred: isControl ? p : undefined, swing: 0, hand: 0, last: { x: e.clientX, y: e.clientY, t: performance.now() }, lit: false };
+      // The Deck of Many Things never moves like a piece (owner, v0.47.11): a click draws, a drag pulls a card out.
+      if (grabbed === DOMAT_KEY) press.deferred = p;
+      else if (!isControl) lift(grabbed, p.x, p.y);
+      lastTick = 0;
       host.style.cursor = 'grabbing';
       playSfx('placeToken', { volume: 0.35, cents: 300 });
-      if (chargeable(grabbed)) chargeRaf = requestAnimationFrame(tick);
+      if (chargeable(grabbed) && !chargeRaf) chargeRaf = requestAnimationFrame(tick);
     };
     const onMove = (e: PointerEvent) => {
       const p = local(e);
@@ -823,13 +934,33 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return;
       }
       if (press && e.pointerId === press.id) {
+        if (press.key === DOMAT_KEY) {
+          if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) {
+            const at = engine.state(DOMAT_KEY);
+            press = null;
+            host.style.cursor = '';
+            if (at) live.current.onDomatDraw({ x: at.x, y: at.y }, p);
+          }
+          return;
+        }
         if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) {
           // Moved: an ordinary drag after all, and any shaking stops.
           press.moved = true;
-          if (press.charge > 0) { press.charge = 0; engine.jitter(press.key, 0); }
+          if (press.charge > 0) { press.charge = 0; shakeAll(press.key, 0); }
           if (press.deferred) { engine.grab(press.key, press.deferred.x, press.deferred.y); press.deferred = undefined; }
         }
         if (!press.deferred) engine.drag(p.x, p.y);
+        if (press.moved) {
+          // How fast the hand swings it, smoothed over the last few moves.
+          const now = performance.now(), dt = now - press.last.t;
+          if (dt > 0) {
+            const inst = (Math.hypot(e.clientX - press.last.x, e.clientY - press.last.y) / dt) * 1000;
+            const k = Math.min(1, dt / 50);
+            press.hand += (inst - press.hand) * k;
+            press.last = { x: e.clientX, y: e.clientY, t: now };
+          }
+          live.current.onDragPiece?.(e.clientX, e.clientY);
+        }
         return;
       }
       if (spawning || inertRef.current) return;
@@ -864,10 +995,29 @@ export const TableDice = forwardRef<TableDiceHandle, {
       press = null;
       if (chargeRaf) { cancelAnimationFrame(chargeRaf); chargeRaf = 0; }
       host.style.cursor = 'grab';
-      // Let go while shaking: it launches with what it has built up.
-      if (pr.charge > 0 && !pr.moved) { fire(pr, Math.min(1, pr.charge)); return; }
-      if (pr.moved && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) { engine.release(); return; }
+      if (pr.moved) live.current.onDragPiece?.(null);
+      // Let go while shaking: it launches with what it has built up (burning, once it caught).
+      if (pr.charge > 0 && !pr.moved) { if (!pr.lit) heat(pr.key, 0); fire(pr, Math.min(1, pr.charge), pr.lit); return; }
+      if (!pr.lit) heat(pr.key, 0);
+      if (pr.swing > 0 || pr.lit) shakeAll(pr.key, 0);
+      if (pr.moved && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) {
+        engine.release();
+        if (pr.lit) setBurning((b) => b.filter((k) => !partsOf(pr.key).includes(k)));
+        return;
+      }
       const speed = pr.deferred ? 0 : engine.release();
+      // Let go mid-swing: it flies on the way it was swung, far harder than a throw from still.
+      if (pr.moved && (pr.lit || pr.swing > 0.25)) {
+        const want = pr.lit ? Math.max(11500, speed * 2.8) : speed * (1 + pr.swing * 0.75);
+        const boost = { gen: 5, power: pr.lit ? 7 : 1 + 2.5 * pr.swing };
+        const breaker = pr.lit ? { left: 99, fire: true } : { left: 2, fire: false };
+        if (speed < 250) fling(pr.key, Math.max(want, pr.lit ? 11500 : 1400), boost, undefined, breaker);
+        else for (const k of partsOf(pr.key)) engine.empower(k, want / speed, boost, breaker);
+        playSfx(pr.lit ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.5 + Math.min(1, pr.swing) * 0.3, cents: pr.lit ? 1100 : Math.round(pr.swing * 400) });
+        if (pr.lit) live.current.onHardHit(7000);
+        if (pr.key.startsWith('free:')) watchLoose(pr.key);
+        return;
+      }
       if (pr.deferred) engine.flash(pr.key);
       if (pr.key.startsWith('free:')) watchLoose(pr.key);
       if (pr.spawned && !pr.moved) {
@@ -943,7 +1093,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (next) live.current.onPickDeck(next.key);
         return;
       }
-      live.current.onSupplyStep(baseOf(key!), dir);
+      const base = baseOf(key!);
+      live.current.onSupplyStep(base, base === 'src:die' ? (-dir as 1 | -1) : dir);
     };
     host.addEventListener('pointerdown', onDown, true);
     host.addEventListener('pointermove', onMove);
@@ -997,7 +1148,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       playSfx('gearScroll1', { volume: 0.35 });
       return waitFor(keys, () => thrown.map(({ die, keys: ks }) => ({ ...die, value: valueOf(die, ks.map((k) => engine.state(k)?.top ?? 0)) })));
     },
-    rollPieces: (keys) => {
+    rollPieces: (keys, power, burning) => {
       if (!engine) return Promise.resolve([]);
       const groups = new Map<string, string[]>();
       for (const k of keys) {
@@ -1008,12 +1159,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       const all = [...new Set([...groups.values()].flat())];
       if (!all.length) return Promise.resolve([]);
+      // Held before letting go (owner, v0.47.11): the harder the charge, the harder they fly; burning, they break things.
+      const pw = Math.max(0, Math.min(1, power ?? 0));
       for (const k of all) {
         const ang = Math.random() * Math.PI * 2;
-        const sp = 380 + Math.random() * 320;
-        engine.toss(k, Math.cos(ang) * sp, Math.sin(ang) * sp);
+        const sp = burning ? 7000 + Math.random() * 2600 : (380 + Math.random() * 320) * (1 + pw * 7);
+        engine.toss(k, Math.cos(ang) * sp, Math.sin(ang) * sp, pw > 0.2 || burning ? { gen: 4, power: burning ? 5 : 1 + 2 * pw } : undefined, burning ? { left: 99, fire: true } : pw > 0.3 ? { left: 2, fire: false } : undefined);
       }
-      playSfx('gearScroll1', { volume: 0.35 });
+      if (burning) { setBurning((b) => [...new Set([...b, ...all])]); live.current.onHardHit(6000); }
+      playSfx(burning ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.35 + pw * 0.3, cents: burning ? 900 : Math.round(pw * 500) });
       return waitFor(all, () => {
         const out: PoolDie[] = [];
         for (const [base, parts] of groups) {
@@ -1048,6 +1202,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
     },
     tidy: () => {
       if (!engine) return;
+      // Nothing goes back into the supply still burning (owner, v0.47.11).
+      setBurning([]);
+      fireRef.current?.clear();
       const sup = live.current.supply;
       const toKey = (base: string): string => {
         const t = live.current.loose.find((l) => l.key === base)?.token;
@@ -1120,7 +1277,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const ready = !!engine && !!glyphs;
 
   // The row handles while settings are open: drag one to move its row, flip it to stand it on end.
-  const groups: { g: PlaceGroup; box: Bounds; label: string }[] = [];
+  const groups: { g: PlaceGroup; box: Bounds; label: string; piece?: string; chain?: 'split' | 'join' }[] = [];
+  const ctlApart = ACTIONS.some((k) => places.apart?.[k]);
+  const supKeys = [...props.supply.map((t) => t.key), ...(props.domat ? [DOMAT_KEY] : [])];
+  const supApart = supKeys.some((k) => places.apart?.[k]);
+  /** A frame round one piece split off its row. */
+  const pieceBox = (key: string, r: number, label: string, g: PlaceGroup) => {
+    const h = homeOf(key);
+    if (h) groups.push({ g, piece: key, chain: 'join', box: { left: h.x - r, right: h.x + r, top: h.y - r, bottom: h.y + r + 8 }, label });
+  };
   if (editing) {
     const sn = props.supply.length + (props.domat ? 1 : 0);
     const half = (n: number, gap: number) => ((n - 1) * gap) / 2 + 40;
@@ -1129,21 +1294,27 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const l = Math.min(bounds.right - btnBox.w - 6, Math.max(bounds.left + 6, places.ctl.x - btnBox.w / 2));
       const t = Math.min(bounds.bottom - btnBox.h - 6, Math.max(bounds.top + 6, places.ctl.y - btnBox.h / 2));
       groups.push({ g: 'ctl', box: { left: l - 8, right: l + btnBox.w + 8, top: t - 8, bottom: t + btnBox.h + 8 }, label: 'Controls' });
+    } else if (controls !== 'hidden' && ctlApart) {
+      for (const a of actions) pieceBox(a.key, (ACTION_SIZE * props.ctlSize) / 2 + 12, a.label, 'ctl');
+      groups.push({ g: 'cat', box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
     } else if (controls !== 'hidden') {
       const hw = places.ctl.dir === 'row' ? half(ACTIONS.length, CTL_GAP.row) : 44, hh = places.ctl.dir === 'row' ? 50 : half(ACTIONS.length, CTL_GAP.column);
-      groups.push({ g: 'ctl', box: { left: places.ctl.x - hw, right: places.ctl.x + hw, top: places.ctl.y - hh, bottom: places.ctl.y + hh }, label: 'Control dice' });
+      groups.push({ g: 'ctl', chain: 'split', box: { left: places.ctl.x - hw, right: places.ctl.x + hw, top: places.ctl.y - hh, bottom: places.ctl.y + hh }, label: 'Control dice' });
       groups.push({ g: 'cat', box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
     }
-    if (sn) {
-      const hw = places.sup.dir === 'row' ? half(sn, SUPPLY_GAP.row) : 54, hh = places.sup.dir === 'row' ? 54 : half(sn, SUPPLY_GAP.column);
-      groups.push({ g: 'sup', box: { left: places.sup.x - hw, right: places.sup.x + hw, top: places.sup.y - hh, bottom: places.sup.y + hh }, label: 'Supply' });
+    if (sn && supApart) {
+      for (const k of supKeys) pieceBox(k, k === 'src:die' ? 62 : 40, props.supply.find((t) => t.key === k)?.label ?? 'Many Things', 'sup');
+    } else if (sn) {
+      const keys = supKeys;
+      const len = keys.reduce((a, k) => a + slotOf(k, places.sup.dir), 0) / 2 + 6;
+      const hw = places.sup.dir === 'row' ? len : 64, hh = places.sup.dir === 'row' ? 54 : len;
+      groups.push({ g: 'sup', chain: 'split', box: { left: places.sup.x - hw, right: places.sup.x + hw, top: places.sup.y - hh, bottom: places.sup.y + hh }, label: 'Supply' });
     }
   }
 
   return (
     <>
       <canvas ref={canvas} style={{ position: 'absolute', left: 0, top: 0, width, height, pointerEvents: 'none', zIndex: 20 }} />
-      {engine ? burning.map((k) => <Burn key={k} pieceKey={k} engine={engine} size={k === CAT ? 90 * props.catSize : ACTIONS.includes(k as ActionKey) ? ACTION_SIZE * props.ctlSize : 48} />) : null}
       {marquee ? <div style={{ position: 'absolute', left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top, border: '1px solid rgba(224,181,99,0.8)', background: 'rgba(224,181,99,0.08)', zIndex: 22, pointerEvents: 'none' }} /> : null}
       {/* Labels under the control dice; each is also that die's keyboard handle (Tab, then Enter). */}
       {ready && showDice ? actions.map((a) => (
@@ -1159,7 +1330,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
         <div key={t.key} ref={setLabel(t.token.kind === 'die' && t.token.dieType === 'duality' ? `${t.key}:h` : t.token.kind === 'die' && t.token.dieType === 'd100' ? `${t.key}:t` : t.key)} style={{ ...labelStyle, fontSize: 10.5, letterSpacing: 0.9, color: hoverKey && baseOf(hoverKey) === t.key ? T.ivory : T.muted, textTransform: t.token.kind === 'die' ? 'none' : 'uppercase' }}>{t.label}</div>
       )) : null}
       {/* Small, so it never crowds the row (owner, v0.47.8); the minute's wait shows while there is one. */}
-      {ready && props.domat ? <div ref={setLabel(DOMAT_KEY)} style={{ ...labelStyle, fontSize: 8.5, letterSpacing: 0.6, color: hoverKey === DOMAT_KEY ? T.ivory : T.muted }}>MANY THINGS{props.domat.wait ? <span style={{ marginLeft: 4 }}>{`${Math.floor(props.domat.wait / 60)}:${String(props.domat.wait % 60).padStart(2, '0')}`}</span> : null}</div> : null}
+      {/* Its name is gone (owner, v0.47.11): the cards in stock, and how long until the next. */}
+      {ready && props.domat ? (
+        <div ref={setLabel(DOMAT_KEY)} aria-label={`Deck of Many Things: ${props.domat.stock} in stock${props.domat.wait ? `, next in ${props.domat.wait} seconds` : ''}`}
+          style={{ ...labelStyle, fontSize: 10.5, letterSpacing: 0.6, color: hoverKey === DOMAT_KEY ? T.ivory : T.muted, fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ color: props.domat.stock ? T.goldText : T.muted }}>{props.domat.stock}</span>
+          {props.domat.wait ? <span style={{ marginLeft: 6 }}>{`${Math.floor(props.domat.wait / 60)}:${String(props.domat.wait % 60).padStart(2, '0')}`}</span> : null}
+        </div>
+      ) : null}
       {/* Plain buttons instead of dice (or when there is no WebGL), so nothing is lost. */}
       {controls === 'buttons' || (failed && controls === 'dice') ? (
         <div data-ui="" ref={(el) => { if (el && (el.offsetWidth !== btnBox.w || el.offsetHeight !== btnBox.h)) setBtnBox({ w: el.offsetWidth, h: el.offsetHeight }); }} style={{ position: 'absolute', left: Math.min(bounds.right - btnBox.w - 6, Math.max(bounds.left + 6, places.ctl.x - btnBox.w / 2)), top: Math.min(bounds.bottom - btnBox.h - 6, Math.max(bounds.top + 6, places.ctl.y - btnBox.h / 2)), display: 'flex', flexDirection: places.ctl.dir === 'row' ? 'row' : 'column', gap: 8, zIndex: 21 }}>
@@ -1167,7 +1345,18 @@ export const TableDice = forwardRef<TableDiceHandle, {
           {actions.map((a) => <TButton key={a.key} label={a.label} onPress={a.onPress} disabled={a.disabled} />)}
         </div>
       ) : null}
-      {groups.map((g) => <GroupHandle key={g.g} {...g} dir={g.g === 'ctl' ? places.ctl.dir : g.g === 'sup' ? places.sup.dir : undefined} onMove={(x, y) => props.onMoveGroup(g.g, x, y)} onFlip={g.g === 'cat' ? undefined : () => props.onFlipGroup(g.g as 'ctl' | 'sup')} />)}
+      {groups.map((g) => (
+        <GroupHandle key={g.piece ?? g.g} box={g.box} label={g.label} dir={g.piece ? undefined : g.g === 'ctl' ? places.ctl.dir : g.g === 'sup' ? places.sup.dir : undefined}
+          onMove={(x, y) => (g.piece ? props.onMovePiece(g.piece, x, y) : props.onMoveGroup(g.g, x, y))}
+          onFlip={g.g === 'cat' || g.piece ? undefined : () => props.onFlipGroup(g.g as 'ctl' | 'sup')}
+          chain={g.chain}
+          onChain={g.chain === 'split' ? () => {
+            // Split where they lie now, so nothing moves until it is dragged.
+            const at: Record<string, { x: number; y: number }> = {};
+            for (const k of g.g === 'ctl' ? ACTIONS : supKeys) { const h = homeOf(k); if (h) at[k] = h; }
+            props.onSplitGroup(g.g as 'ctl' | 'sup', at);
+          } : g.chain === 'join' ? () => props.onJoinGroup(g.g as 'ctl' | 'sup') : undefined} />
+      ))}
       {/* The decks' glyphs, drawn once off-screen to be read back as pictures for the die. */}
       <div ref={glyphHost} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 1, height: 1, overflow: 'hidden' }}>
         {decks.map((d) => <div key={d.key} data-deck={d.key} style={{ width: 48, height: 48 }}><CategoryGlyph category={d.key} meta={d.meta} /></div>)}
@@ -1181,27 +1370,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   );
 });
 
-/** The fire on a piece held past twice its full shake: the Forge button's own flames, following it until it rests. */
-function Burn({ pieceKey, engine, size }: { pieceKey: string; engine: DiceEngine; size: number }) {
-  const outer = useRef<HTMLDivElement>(null);
-  const inner = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const host = inner.current;
-    if (!host || !outer.current) return;
-    const el = outer.current;
-    engine.follow(pieceKey, el, true);
-    const stop = startFire(host, { width: size * 0.95, height: size * 0.95, rise: 2.2, spill: 22, foot: 8, chamfer: size * 0.13, body: false });
-    return () => { stop?.(); engine.follow(pieceKey, el, false); };
-  }, [pieceKey, engine, size]);
-  return (
-    <div ref={outer} aria-hidden="true" style={{ position: 'absolute', left: 0, top: 0, zIndex: 21, pointerEvents: 'none', willChange: 'transform' }}>
-      <div ref={inner} style={{ position: 'absolute', left: (-size * 0.95) / 2, top: (-size * 0.95) / 2, width: size * 0.95, height: size * 0.95 }} />
-    </div>
-  );
-}
-
 /** A dashed frame round a row while settings are open: drag it to move the row, the arrows stand it on end. */
-function GroupHandle({ box, label, dir, onMove, onFlip }: { box: Bounds; label: string; dir?: 'row' | 'column'; onMove: (x: number, y: number) => void; onFlip?: () => void }) {
+function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain }: { box: Bounds; label: string; dir?: 'row' | 'column'; onMove: (x: number, y: number) => void; onFlip?: () => void; /** Split the row into pieces, or join a piece's row back up. */ chain?: 'split' | 'join'; onChain?: () => void }) {
   const [hover, setHover] = useState(false);
   const start = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -1226,6 +1396,16 @@ function GroupHandle({ box, label, dir, onMove, onFlip }: { box: Bounds; label: 
             <span style={{ display: 'flex', transform: dir === 'row' ? 'rotate(90deg)' : 'none' }}><Glyph d='<path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"/>' size={14} /></span>
           </button>
         ) : null}
+        {/* Split a row into pieces placed one by one, or join a piece back into its row (owner, v0.47.11). */}
+        {chain && onChain && (hover || chain === 'join') ? (
+          <button type="button" title={chain === 'split' ? 'Split the row: place each piece on its own' : 'Join these back into their row'} aria-label={chain === 'split' ? `Split the ${label}` : `Join ${label} back into its row`}
+            onPointerDown={(e) => e.stopPropagation()} onClick={() => { playSfx('cardSelect', { volume: 0.5 }); onChain(); }}
+            style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 2, background: T.panel, border: `1px solid ${T.goldSoft}` }}>
+            <Glyph d={chain === 'split'
+              ? '<path d="M9 15l-1.5 1.5a3.5 3.5 0 0 1-5-5L4 10"/><path d="M15 9l1.5-1.5a3.5 3.5 0 0 1 5 5L20 14"/><path d="M8 3v2.5M3 8h2.5M16 21v-2.5M21 16h-2.5"/>'
+              : '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'} size={14} />
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -1243,6 +1423,9 @@ function shapeOf(t: DieType): Shape {
 
 /** The engine dice one pool die is thrown as: one, or two for a percentile (tens and units). */
 function rollSpecs(d: PoolDie, finish: Finish): DieSpec[] {
+  return dieSpecs(d, finish).map((s) => ({ ...s, breakable: true }));
+}
+function dieSpecs(d: PoolDie, finish: Finish): DieSpec[] {
   const base = `roll:${d.id}`;
   if (d.type === 'd100') {
     const c = numberColours(finish, 'd100');
@@ -1272,6 +1455,11 @@ export function rolledToken(d: PoolDie): TokenInfo {
 
 /** A token as engine pieces: a chip, one die, or a pair side by side (Hope and Fear; a percentile's tens and units). */
 function tokenSpecs(t: TokenPiece, finish: Finish): { spec: DieSpec; face?: number; dx: number }[] {
+  const specs = pieceSpecs(t, finish);
+  // A loose piece can be broken by a charged throw; a spawner or a card's token never.
+  return t.key.startsWith('free:') ? specs.map((s) => ({ ...s, spec: { ...s.spec, breakable: true } })) : specs;
+}
+function pieceSpecs(t: TokenPiece, finish: Finish): { spec: DieSpec; face?: number; dx: number }[] {
   if (t.kind === 'chip') {
     return [{ spec: { key: t.key, shape: 'chip', size: 40 * t.scale, body: t.color ?? '#9A6B3C', edge: t.color ?? '#9A6B3C', ink: '#000', faces: [{ text: '' }], finish: 'stone' }, dx: 0 }];
   }
@@ -1390,7 +1578,8 @@ function DeckArrows({ engine, size, onStep }: { engine: DiceEngine; size: number
   }, [engine]);
   const k = size / 84;
   const s = Math.round(16 * k);
-  const off = size * 0.6 + 4;
+  // Just clear of the die's edge (owner, v0.47.11: they sat too far out).
+  const off = size * 0.45 + 1;
   const Arrow = ({ dir }: { dir: 1 | -1 }) => (
     <button type="button" data-ui="" aria-label={dir > 0 ? 'Next deck' : 'Previous deck'} onClick={() => { playSfx('carouselScroll', { volume: 0.5 }); onStep(dir); }}
       style={{ all: 'unset', position: 'absolute', left: dir > 0 ? off : -off - s, top: -s / 2 - size * 0.05, width: s, height: s, cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.75, transition: 'opacity 140ms, transform 140ms' }}

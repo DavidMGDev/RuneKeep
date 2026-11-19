@@ -267,3 +267,43 @@ describe('a hop into the hand area (v0.47.7)', () => {
     expect(b.y).toBeLessThanOrEqual(300 - 25 + 0.5);
   });
 });
+
+describe('charged throws break loose pieces (v0.47.11)', () => {
+  const row = (n: number) => Array.from({ length: n }, (_, i) => { const b = makeBody(`t${i}`, 260 + i * 60, 250, 20, CUBE); b.breakable = true; return b; });
+  const broken = (bodies: Body[], hits: string[]) => { let n = 0; while (n++ < 3000 && !allAsleep(bodies)) for (const h of step(bodies, { left: 0, top: 0, right: 3000, bottom: 500 })) if (h.kind === 'break') hits.push(h.key); return hits; };
+
+  it('a plain charged throw breaks two at most, then bounces off the rest', () => {
+    const pieces = row(5);
+    const shot = makeBody('shot', 100, 250, 20, CUBE);
+    launch(shot, 6000, 0, 0, [0, 0, 0]);
+    shot.breaker = { left: 2, fire: false };
+    const hits = broken([shot, ...pieces], []);
+    expect(hits.length).toBe(2);
+  });
+
+  it('a slow throw breaks nothing', () => {
+    const pieces = row(2);
+    const shot = makeBody('shot', 100, 250, 20, CUBE);
+    launch(shot, 900, 0, 0, [0, 0, 0]);
+    shot.breaker = { left: 2, fire: false };
+    expect(broken([shot, ...pieces], []).length).toBe(0);
+  });
+
+  it('a burning throw passes through and breaks a whole line', () => {
+    const pieces = row(6);
+    const shot = makeBody('shot', 100, 250, 20, CUBE);
+    launch(shot, 7000, 0, 0, [0, 0, 0]);
+    shot.breaker = { left: 99, fire: true };
+    expect(broken([shot, ...pieces], []).length).toBe(6);
+  });
+
+  it('a boosted hit never sets a crowd moving forever', () => {
+    const crowd = Array.from({ length: 24 }, (_, i) => makeBody(`c${i}`, 200 + (i % 6) * 48, 150 + Math.floor(i / 6) * 48, 20, CUBE));
+    const shot = makeBody('shot', 60, 220, 20, CUBE);
+    launch(shot, 5000, 300, 0, [0, 0, 0]);
+    shot.boost = { gen: 5, power: 3.5 };
+    let n = 0;
+    while (!allAsleep([shot, ...crowd]) && n++ < 20000) step([shot, ...crowd], BOUNDS);
+    expect(allAsleep([shot, ...crowd])).toBe(true);
+  });
+});

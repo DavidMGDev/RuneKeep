@@ -76,6 +76,8 @@ export interface DeckLook {
   flick: number;
   /** The deck wraps round: after the last card comes the first. */
   loop: boolean;
+  /** A small gold dot just past the first and the last card, so the ends of the hand show (owner, v0.47.11). */
+  endDots: boolean;
   /** Px a card rises under the pointer. */
   hoverLift: number;
   /** How much a card grows under the pointer. */
@@ -127,15 +129,24 @@ export interface DeckLook {
   catY: number;
   /** The hand's centre, dragged there while settings are open (share of the table); below 0 it follows `areaPos`. */
   areaY: number;
+  /**
+   * Pieces split off their row and placed one by one (owner, v0.47.11), by key ('cards', 'state', 'sort', 'src:mat',
+   * 'src:color', 'src:die', 'src:domat'), as shares of the table. A row with none here lies as a row.
+   */
+  apart: Record<string, [number, number]>;
 }
+
+/** What can be split off a row: the control dice and the supply. */
+export const APART_KEYS = ['cards', 'state', 'sort', 'src:mat', 'src:color', 'src:die', 'src:domat'] as const;
 
 export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
-  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, hoverLift: 10, hoverZoom: 1.04, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
+  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, hoverLift: 10, hoverZoom: 1.04, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
+  apart: {},
 };
 
 type NumKey = { [K in keyof DeckLook]: DeckLook[K] extends number ? K : never }[keyof DeckLook];
@@ -224,6 +235,7 @@ export const LOOK_PAGES: LookPage[] = [
           { kind: 'range', key: 'snap', label: 'Settle speed', help: 'How quickly the hand comes to rest on a card.', min: 0.2, max: 3, step: 0.05 },
           { kind: 'range', key: 'flick', label: 'Flick', help: 'How far it keeps going after a quick drag.', min: 0, max: 3, step: 0.05 },
           { kind: 'toggle', key: 'loop', label: 'Endless deck', help: 'After the last card comes the first again.' },
+          { kind: 'toggle', key: 'endDots', label: 'Mark the ends', help: 'A small gold dot just past the first and the last card, so you can tell where the hand ends. On an endless deck it marks where the last card meets the first.' },
         ],
       },
       {
@@ -285,7 +297,7 @@ export const LOOK_PAGES: LookPage[] = [
 ];
 
 /** The settings that say where the pieces live: a table preset sets them, Reset layout puts them back. */
-export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY', 'areaY'] as const;
+export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY', 'areaY', 'apart'] as const;
 
 /** Settings that shape the hand; a ready-made look changes only these, never your table. */
 export const HAND_KEYS: (keyof DeckLook)[] = LOOK_PAGES.filter((p) => p.id === 'hand').flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
@@ -428,8 +440,19 @@ export function randomTables(n: number, seed: number): DeckLook[] {
  * A look made safe to use: every field present, numbers inside the panel's limits, choices from the list.
  * Anything missing or wrong falls back to the default, so an old save or a hand-edited code still loads.
  */
+/**
+ * Saved tables outlive the app's updates (owner, v0.47.11: a redeploy must never break a saved layout). Anything a
+ * later version renamed or folded into another setting is carried over here before the look is checked; whatever is
+ * still unknown falls back to its default one setting at a time, never the whole table.
+ */
+function migrateLook(src: Record<string, unknown>): Record<string, unknown> {
+  // v0.47.8: 'Take a copy' on the centre card became the Click a card to take it switch.
+  if (src.centreClick === 'take') { src.clickPull = true; src.centreClick = 'nothing'; }
+  return src;
+}
+
 export function cleanLook(raw: unknown): DeckLook {
-  const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const src = migrateLook(raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : {});
   const out: DeckLook = { ...DEFAULT_LOOK };
   for (const c of ALL_CONTROLS) {
     const v = src[c.key];
@@ -441,6 +464,16 @@ export function cleanLook(raw: unknown): DeckLook {
       (out as unknown as Record<string, boolean>)[c.key] = v;
     }
   }
+  // Pieces placed on their own: only known pieces, at places on the table.
+  const apart: Record<string, [number, number]> = {};
+  const a = src.apart;
+  if (a && typeof a === 'object') {
+    for (const k of APART_KEYS) {
+      const v = (a as Record<string, unknown>)[k];
+      if (Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && Number.isFinite(n))) apart[k] = [Math.min(1, Math.max(0, v[0])), Math.min(1, Math.max(0, v[1]))];
+    }
+  }
+  out.apart = apart;
   return out;
 }
 
@@ -453,7 +486,7 @@ const T = (look: Partial<DeckLook>): DeckLook => cleanLook({ ...DEFAULT_LOOK, ..
 export const TABLE_PRESETS: TablePreset[] = [
   {
     id: 'story', name: 'Storyteller', who: 'One card at a time and nothing in the way. Controls stay a right click off, the felt is open for the scene.',
-    look: T({ size: 260, side: 2, shrink: 0.2, dim: 0.3, blur: 1.4, glow: 0.55, edge: 'fade', edgeWidth: 26, lift: 10, hoverLift: 4, hoverZoom: 1.02, switchFx: 'fade',
+    look: T({ size: 260, side: 2, shrink: 0.2, dim: 0.3, blur: 1.4, glow: 0.55, edge: 'fade', edgeWidth: 26, lift: 10, hoverLift: 4, hoverZoom: 1.02, switchFx: 'fade', endDots: false,
       areaMode: 'free', areaPos: 'bottom', areaSize: 46, divider: 'none', walls: 'none', controls: 'hidden', tokenTray: false, numberDice: 'stone', controlDice: 'ivory', catX: 0.06, catY: 0.26 }),
   },
   {
