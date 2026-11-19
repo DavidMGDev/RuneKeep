@@ -323,6 +323,8 @@ export function ForgedCard({
   const theme = plaqueTheme ?? getPlaqueTheme(kindLabel, classKey);
   // v0.36: the title is sized here, from the text, into a band that never changes height.
   const titleFit = fitTitle(title, BODY_TEXT_W, BODY_TITLE_H, 17);
+  // An Experience's phrase fills the band above its bonus pill (16 px in from each side, 16 above, 58 below).
+  const expFit = fitText(experience ? title : '', { width: FORGED_W - 32, height: FORGED_H - ART_H - 74, base: 23, lineRatio: 26 / 23, min: 23 * 0.42, charRatio: 0.58 });
   void multilineTitle; // the band is fixed now, so a long title shrinks instead of taking rows.
   return (
     // No frame border (owner: borders mark SELECTION only) — the parchment edge is the card edge.
@@ -369,11 +371,14 @@ export function ForgedCard({
         // +N pill is anchored at a constant height regardless of how many lines the title takes.
         <View style={{ flex: 1 }}>
           <View style={{ position: 'absolute', top: 16, left: 16, right: 16, bottom: 58, alignItems: 'center', justifyContent: 'center' }}>
+            {/* The phrase is sized by arithmetic first (v0.46.0): a browser ignores adjustsFontSizeToFit, so on the
+                web a long Experience stayed at 23 and was cut off while the phone app shrank it. Native still
+                shrinks a shade further if the real face runs wider than the estimate. */}
             <CardText
               numberOfLines={7}
               adjustsFontSizeToFit
               minimumFontScale={0.42}
-              style={{ color: Rune.inkText, fontSize: 23, lineHeight: 26, fontFamily: Display.bold, letterSpacing: 0.2, textAlign: 'center' }}>
+              style={{ color: Rune.inkText, fontSize: expFit.fontSize, lineHeight: expFit.lineHeight, fontFamily: Display.bold, letterSpacing: 0.2, textAlign: 'center' }}>
               {title}
             </CardText>
           </View>
