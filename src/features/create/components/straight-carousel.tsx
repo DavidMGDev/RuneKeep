@@ -131,54 +131,6 @@ export function fanHalfWidth(zoom: number, side: number, show: number): number {
   const w0 = FORGED_W * CARD_SCALE * zoom;
   return fanX(side, side, show, w0) + (w0 * (1 - side * SIDE_FALLOFF)) / 2;
 }
-/**
- * The desktop sheet's deck, tuned live by the owner with sliders (v0.46.0). Every number is about what happens
- * to a card as it steps away from the centre group.
- */
-export interface CarouselTune {
-  /** The centre card's width, px. */
-  size: number;
-  /** How many cards count as the centre, 1 to 5: all full size, none faded. */
-  centre: number;
-  /** The gap between neighbours, as a share of a card's width (negative overlaps them). */
-  spacing: number;
-  /** Cards shown each side of the centre group. */
-  side: number;
-  /** Each step past the centre group: how much smaller, how much darker, how far lower (px), and how much
-   *  tighter the outer cards pack. */
-  shrink: number;
-  dim: number;
-  drop: number;
-  pack: number;
-  /** How much of the width, at each side, fades out (percent). */
-  fade: number;
-}
-
-export const DEFAULT_TUNE: CarouselTune = { size: 210, centre: 1, spacing: 0.04, side: 4, shrink: 0.085, dim: 0.12, drop: 0, pack: 0.35, fade: 17 };
-
-/** Steps a card `k` stands past the centre group (0 inside it). */
-function pastCentre(k: number, t: CarouselTune): number {
-  'worklet';
-  return Math.max(0, k - (t.centre - 1) / 2);
-}
-function tuneScale(k: number, t: CarouselTune): number {
-  'worklet';
-  return Math.max(0.15, 1 - pastCentre(k, t) * t.shrink);
-}
-/** How far from the centre a card `ad` steps out sits, for a centre card `w0` wide. Fractions interpolate. */
-export function tuneX(ad: number, t: CarouselTune, w0: number): number {
-  'worklet';
-  const k = Math.floor(ad);
-  let x = 0;
-  let next = 0;
-  for (let i = 1; i <= k + 1; i++) {
-    const step = ((tuneScale(i - 1, t) + tuneScale(i, t)) / 2) * w0 * (1 + t.spacing) * Math.max(0.1, 1 - t.pack * pastCentre(i - 1, t));
-    if (i <= k) x += step;
-    else next = step;
-  }
-  return x + next * (ad - k);
-}
-
 const GRIND_TIGHTEN_L = 0.52; // straight-line grind: tighter…
 const GRIND_SHRINK_L = 0.45; // …and smaller, never curved
 const GEAR_SWIPE_L = 200; // grind: this many px sweep the whole deck
@@ -302,11 +254,9 @@ interface SlotProps {
   onTap: (index: number, x: number) => void;
   /** Mixed ancestry (#265): which trait (1|2) is struck through on this card, if any. */
   crossTrait?: 1 | 2;
-  /** The desktop sheet's slider-tuned layout; when set it replaces the spacing and the fan. */
-  tune?: CarouselTune;
 }
 
-const Slot = memo(function Slot({ zoom, spacing, side, show, index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait, tune }: SlotProps) {
+const Slot = memo(function Slot({ zoom, spacing, side, show, index, item, count, width, pos, grind, fs, focusIdx, railH, railTopWin, insetTop, screenH, selected, withImage, focused, isCenter, faceIndex, flipDir, onFlipSettle, onTap, crossTrait }: SlotProps) {
   const slotStageScale = useStageScale();
   const coordScale = Platform.OS === 'web' ? slotStageScale : 1;
   const style = useAnimatedStyle(() => {
@@ -324,13 +274,13 @@ const Slot = memo(function Slot({ zoom, spacing, side, show, index, item, count,
     // below that it stops being readable and something else has gone wrong.
     // Desktop (v0.45.0) zooms the resting card; the rail still caps it, so it never outgrows the space it has.
     const fit = railH.value > 0 ? Math.min(zoom, Math.max(0.5, railH.value / (FORGED_H * CARD_SCALE / REST_FRAC / 2))) : zoom;
-    const run = tune ? tuneX(ad, tune, FORGED_W * CARD_SCALE * fit) : show !== undefined ? fanX(ad, side, show, FORGED_W * CARD_SCALE * fit) : ad * spacing;
+    const run = show !== undefined ? fanX(ad, side, show, FORGED_W * CARD_SCALE * fit) : ad * spacing;
     let x = Math.sign(d) * run * (1 - GRIND_TIGHTEN_L * g);
-    let scale = CARD_SCALE * fit * (tune ? tuneScale(ad, tune) : 1 - Math.min(ad, side + 1.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
-    let y = tune ? pastCentre(ad, tune) * tune.drop : 0;
+    let scale = CARD_SCALE * fit * (1 - Math.min(ad, side + 1.4) * SIDE_FALLOFF) * (1 - GRIND_SHRINK_L * g);
+    let y = 0;
     // visibility window: solid then a quick fade band; widens while grinding
     // The desktop fan keeps one more card each side, which the deck's edge fade dissolves.
-    const cut = (tune ? tune.side + (tune.centre - 1) / 2 + 1.2 : side) + 0.9 + (show !== undefined ? 1.2 : 0) + 2.6 * g;
+    const cut = side + 0.9 + (show !== undefined ? 1.2 : 0) + 2.6 * g;
     let opacity = Math.min(1, Math.max(0, (cut - ad) / 0.45));
     let z = Math.round(100 - ad * 10);
     const f = fs.value;
@@ -349,9 +299,6 @@ const Slot = memo(function Slot({ zoom, spacing, side, show, index, item, count,
     }
     return { transform: [{ translateX: x }, { translateY: y }, { scale }], opacity, zIndex: z };
   });
-
-  // Tuned decks darken a card per step past the centre group (a veil, so overlapping cards never show through).
-  const dimStyle = useAnimatedStyle(() => ({ opacity: tune ? Math.min(0.85, pastCentre(Math.abs(index - pos.value), tune) * tune.dim) : 0 }));
 
   const imgFade = useAnimatedStyle(() => {
     const ad = Math.abs(index - pos.value);
@@ -417,7 +364,6 @@ const Slot = memo(function Slot({ zoom, spacing, side, show, index, item, count,
           {/* mixed-ancestry cross-out (#265): strikes the trait not taken; rides the card like `selected` */}
           {crossTrait ? <TraitCrossOut width={FORGED_W} height={FORGED_H} catalogId={item.id} crossedTrait={crossTrait} /> : null}
           {item.overlay ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>{item.overlay}</View> : null}
-          {tune ? <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: '#06080d' }, dimStyle]} /> : null}
           {/* page indicator (#110): BELOW the card, off the parchment (sibling of FlipCard so it
               never rotates). Fades in/out with focus progress — no pop on close. */}
           {isCenter && (item.faces?.length ?? 0) > 1 ? (
@@ -476,15 +422,9 @@ export const StraightCarousel = forwardRef<
     /** v0.45.0 desktop: the mouse wheel steps the deck, a right-button drag grinds it like the gear, and a
      *  focused multi-page card shows arrows to page it. */
     pointer?: boolean;
-    /** v0.46.0 desktop sheet: the slider-tuned layout (its size sets the zoom). */
-    tune?: CarouselTune;
-    /** v0.46.0: false keeps a tap from opening the centred card full screen; a tap still centres a card. */
-    focusable?: boolean;
-    /** v0.46.0: plays in place of the scroll pip each time a new card is centred. */
-    pip?: () => void;
   }
->(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0, zoom: zoomProp = 1, fsTopOffset = 0, spread, pointer = false, tune, focusable = true, pip }, ref) {
-  const zoom = tune ? tune.size / (FORGED_W * CARD_SCALE) : zoomProp;
+>(function StraightCarousel({ items, selectedIds, initialIndex = 0, onIndexChange, crossOuts, reserveBottom = 0, zoom: zoomProp = 1, fsTopOffset = 0, spread, pointer = false }, ref) {
+  const zoom = zoomProp;
   const spacing = spread?.spacing ?? SPACING * zoom;
   const side = spread?.side ?? 2;
   const count = items.length;
@@ -576,11 +516,10 @@ export const StraightCarousel = forwardRef<
     (c: number) => {
       setCenter(c);
       setFaceIdx(0); // a NEW card centered → start at its face 0 (page persists through focus/close)
-      if (pip) pip();
-      else playSfx('carouselScroll'); // #258: scroll pip, like the sheet carousel
+      playSfx('carouselScroll'); // #258: scroll pip, like the sheet carousel
       onIndexChange?.(c);
     },
-    [onIndexChange, pip],
+    [onIndexChange],
   );
   // On mount (and on each deck remount via the key) tell the parent where we START (#150: decks
   // open centered on the middle card) so the SELECT controls target it.
@@ -705,11 +644,11 @@ export const StraightCarousel = forwardRef<
   useEffect(() => {
     const el = rootRef.current as unknown as HTMLElement | null;
     if (!pointer || Platform.OS !== 'web' || !el?.style) return;
-    const f = tune ? tune.fade : EDGE_FADE;
+    const f = EDGE_FADE;
     const mask = fsOpen || f <= 0 ? '' : `linear-gradient(to right, transparent 0, rgba(0,0,0,0.35) ${f / 2}%, #000 ${f}%, #000 ${100 - f}%, rgba(0,0,0,0.35) ${100 - f / 2}%, transparent 100%)`;
     el.style.setProperty('mask-image', mask);
     el.style.setProperty('-webkit-mask-image', mask);
-  }, [pointer, fsOpen, tune]);
+  }, [pointer, fsOpen]);
 
   // Device-back / parent close hook (#108): consume the back press when a card is focused.
   useImperativeHandle(
@@ -737,7 +676,7 @@ export const StraightCarousel = forwardRef<
       stepBy,
       /** Open the CENTRED card full screen. No-op when one already is. */
       focusCentre: () => {
-        if (fsOpen || !count || !focusable) return;
+        if (fsOpen || !count) return;
         const c = clampIdx(Math.round(pos.value), count);
         cancelAnimation(pos);
         pos.value = c;
@@ -749,7 +688,7 @@ export const StraightCarousel = forwardRef<
       /** Whether a card is currently full screen, so a caller can pick the right key meaning. */
       isFullscreen: () => fsOpen,
     }),
-    [fsOpen, closeFs, pos, count, stepBy, focusIdx, fs, setFsOpenJS, keyAim, focusable],
+    [fsOpen, closeFs, pos, count, stepBy, focusIdx, fs, setFsOpenJS, keyAim],
   );
 
   const onTapCard = useCallback(
@@ -767,7 +706,6 @@ export const StraightCarousel = forwardRef<
         return;
       }
       if (Math.abs(index - pos.value) < 0.5) {
-        if (!focusable) return;
         // open on whatever face this card was left on (no reset); a wheel glide still running stops here
         cancelAnimation(pos);
         pos.value = index;
@@ -779,7 +717,7 @@ export const StraightCarousel = forwardRef<
         pos.value = withSpring(clampIdx(index, count), SNAP_SPRING);
       }
     },
-    [fs, pos, focusIdx, count, closeFs, setFsOpenJS, flip, keyAim, focusable],
+    [fs, pos, focusIdx, count, closeFs, setFsOpenJS, flip, keyAim],
   );
 
   // gear pad: bottom strip; grinding sweeps the whole deck across ~GEAR_SWIPE_L px, straight.
@@ -969,8 +907,7 @@ export const StraightCarousel = forwardRef<
                     screenH={screenH}
                     selected={selectedIds.includes(item.id)}
                     crossTrait={crossOuts?.[item.id]}
-                    tune={tune}
-                    withImage={Math.abs(i - center) <= Math.max(IMG_HALF, tune ? tune.side + (tune.centre - 1) / 2 : side)}
+                    withImage={Math.abs(i - center) <= Math.max(IMG_HALF, side)}
                     focused={fsOpen && i === center}
                     isCenter={i === center}
                     faceIndex={faceIdx}

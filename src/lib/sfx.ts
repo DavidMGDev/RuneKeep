@@ -426,6 +426,25 @@ export function setSfxMuted(m: boolean) {
   muted = m;
 }
 
+/**
+ * A sound made on the spot (v0.47.0: the play table's dice, whose clack depends on how hard they hit), routed
+ * through the same context, volume and mute as every file. `make` builds its nodes into `out`, starting at `at`.
+ */
+export function playSynth(make: (c: globalThis.AudioContext, out: globalThis.AudioNode, at: number) => void, volume = 1) {
+  const c = getCtx();
+  if (!c || muted) return;
+  try {
+    const gain = c.createGain();
+    gain.gain.value = master * PLATFORM_GAIN * volume;
+    gain.connect(c.destination);
+    // Web only: the context and its nodes are the browser's own Web Audio objects.
+    make(c as unknown as globalThis.AudioContext, gain as unknown as globalThis.AudioNode, c.currentTime);
+    setTimeout(() => { try { gain.disconnect(); } catch { /* torn down */ } }, 1500);
+  } catch {
+    /* a context mid-restart: drop the sound */
+  }
+}
+
 // random in [-1, 1)
 function jitter(): number {
   return Math.random() * 2 - 1;

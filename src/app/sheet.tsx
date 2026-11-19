@@ -18,11 +18,11 @@ import { playSfx } from '@/lib/sfx';
 
 /** The desktop sheet's first-time tips, each pointing at the part it explains. */
 const SHEET_TIPS: CoachStep[] = [
-  { target: 'sheet-table', title: 'Your table', body: 'Your cards sit here, the hand along the bottom. Click a card to bring it into focus and read it; its controls sit under it. Right click any card for everything else it can do.' },
-  { target: 'sheet-decks', title: 'Decks', body: 'Switch decks here, or press Q and E. Manage cards and Sort this deck sit underneath.' },
-  { target: 'sheet-vitals', title: 'Hit Points and Stress', body: 'Each row is split down the middle: one side clears, the other marks. Hold for the full effect, or double click when things move fast. Hope and Armor work the same way.' },
-  { target: 'sheet-actions', title: 'Rest, level up, state and dice', body: 'Each opens its panel beside the sheet. Esc closes whichever panel is on top.' },
-  { target: 'sheet-portrait', title: 'Your portrait', body: 'Click to add a picture. Double click to open this character\'s moodboard, which opens locked: hold the lock for a second before you move anything.' },
+  { target: 'sheet-table', title: 'Your table', body: 'Everything right of the sheet is a table. Your hand sits in the tray along the bottom: scroll or drag through it, click a card to bring it to the middle, and click the middle card to take a copy and lay it on the felt. Right click any card for everything else.' },
+  { target: 'sheet-decks', title: 'Dice are buttons', body: 'The big die holds your decks: click it to pick one, or press Q and E. Rest, Level up, State, Roll, Cards, Sort and Characters are dice too. Click one to use it, drag to throw it. The gear in the lower left shapes your hand.' },
+  { target: 'sheet-vitals', title: 'Hit Points and Stress', body: 'Each row is split down the middle: click one side to clear a box, the other to mark one. Hope and Armor work the same way.' },
+  { target: 'sheet-traits', title: 'Traits roll', body: 'Click a trait to throw the Hope and Fear dice with it. The total lands over the table.' },
+  { target: 'sheet-portrait', title: 'Your portrait', body: "Click to add or change the picture. The button under it opens this character's moodboard." },
 ];
 
 /** The play surface. With an id, loads that CharacterFile; without one, the sample character. */

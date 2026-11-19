@@ -79,3 +79,20 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - Chips: 20–28dp tall chamfered fills (red = active/selected, gold outline = available).
 - `CardThumb` / `Card` — the two-LOD card image pair; reuse everywhere cards render.
 - New shared pieces should land in `src/components/` when used by 2+ screens.
+
+## The desktop play table (v0.47.0)
+
+- Everything right of the desktop sheet is a table seen from above: ink felt (`public/table/felt.webp`, the app's
+  own ink with a lamp falloff, plus `weave.png` for the cloth) inside a dark wood rail with a gold inlay
+  (`rail.webp`, a CSS 9-slice). Rendered in Blender by `scripts/blender/make_table.py`, graded to the palette by
+  `grade_table.py`; the felt colour never changes.
+- The hand lives in a recessed tray along the bottom (darker, inner shadow, gold hairline lip). Only the tray takes
+  hand input; dice and laid-out cards own the felt.
+- Buttons that are not part of the sheet are dice: gilded d6s (ink body, gold bevels, gold glyph on every face,
+  a small uppercase label riding under each). The category die carries the deck icons and grows d4 to d20.
+  Models from `scripts/blender/make_dice.py` (`public/models/dice.glb`), drawn by three.js in a lazy chunk.
+- Rolled dice keep the token colours (`DIE_COLOR`, Hope gold, Fear purple). Results sit on a chamfered ink plate
+  lying under the dice: gold for Hope and criticals, lilac for Fear.
+- Panels on the table are DOM: 45° chamfers by clip path, 1.2 px gold hairlines, red for the one primary action,
+  Archivo Bold capitals for labels. No selection bars: a chosen item is filled red, a hovered one steps out whole.
+

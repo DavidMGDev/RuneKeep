@@ -64,11 +64,14 @@ export function TraitBanners({
   character,
   modifierSize = 18,
   groupTop = DEFAULT_GROUP_TOP,
+  zigzag = 0,
   onRoll,
 }: {
   character: Character;
   modifierSize?: number;
   groupTop?: number;
+  /** v0.47.0 desktop: every second banner sits this much lower, filling the band the action buttons left. */
+  zigzag?: number;
   /** Set only while the dice tray is up: a trait becomes a throw of the pair, plus this modifier. */
   onRoll?: (label: string, value: number) => void;
 }) {
@@ -78,7 +81,7 @@ export function TraitBanners({
         <TraitBanner
           key={trait.key}
           x={FIRST_X + STEP * i}
-          groupTop={groupTop}
+          groupTop={groupTop + (i % 2 ? zigzag : 0)}
           label={trait.label}
           icon={trait.icon}
           value={character.traits[trait.key]}
