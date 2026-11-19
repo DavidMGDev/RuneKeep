@@ -235,6 +235,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onSelect: (keys: string[]) => void;
   /** Something hit a wall hard (px/s): shake the table. */
   onHardHit: (speed: number) => void;
+  /** Hope and Fear came up equal: the blast went off from here (table px). */
+  onCrit?: (at: { x: number; y: number }) => void;
   /** A charged throw broke these loose pieces (the first where `at` is); they are gone from the table. */
   onBreak?: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => void;
   /** A piece is being carried over this point (screen px), or put down (null): the hand lights the card under it. */
@@ -1124,6 +1126,59 @@ export const TableDice = forwardRef<TableDiceHandle, {
     pending.current = { keys: new Set(keys), done: finish };
   }), []);
 
+  /**
+   * The dice answer their roll once they land (owner, v0.47.11, after the phone's tray): a die on its highest face
+   * washes white, swells and wobbles; a 1 flushes red and jerks; Hope's winning die glows gold and sways, Fear's glows
+   * violet and jerks. Hope and Fear equal is a critical: both blaze white and swell hard, the table stops for a beat,
+   * and a shockwave from them throws every loose piece and physical card away, sparing only the two of them.
+   */
+  const celebrate = useCallback((landed: PoolDie[]): PoolDie[] => {
+    const e = engineRef.current;
+    if (!e) return landed;
+    const keyOf = (d: PoolDie) => [d.id, `roll:${d.id}`, `${d.id}:t`, `roll:${d.id}:t`].find((k) => e.has(k));
+    const MAX: Record<string, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20, d100: 100 };
+    const shake = (k: string, v: number, ms: number) => { e.jitter(k, v); setTimeout(() => e.jitter(k, 0), ms); };
+    let i = 0;
+    const later = (fn: () => void) => { const t = i++ * 80; if (t) setTimeout(fn, t); else fn(); };
+    const pairs = new Map<string, { hope?: PoolDie; fear?: PoolDie }>();
+    for (const d of landed) {
+      if (d.side && d.pairId) { const p = pairs.get(d.pairId) ?? {}; p[d.side] = d; pairs.set(d.pairId, p); continue; }
+      const k = keyOf(d);
+      if (!k || d.value == null) continue;
+      if (d.value >= (MAX[d.type] ?? 99)) later(() => { e.wash(k, '#ffffff', 0.86, 420, 0.38); shake(k, 0.55, 375); });
+      else if (d.value <= 1) later(() => { e.wash(k, '#ff2a14', 0.75, 260, 0.15); shake(k, 1, 405); });
+    }
+    for (const { hope, fear } of pairs.values()) {
+      const hk = hope && keyOf(hope), fk = fear && keyOf(fear);
+      if (!hope || !fear || !hk || !fk || hope.value == null || fear.value == null) continue;
+      if (hope.value === fear.value) {
+        later(() => {
+          e.wash(hk, '#fff4d6', 1, 900, 0.76);
+          e.wash(fk, '#fff4d6', 1, 900, 0.76);
+          shake(hk, 0.6, 375);
+          shake(fk, 0.6, 375);
+          // A beat later: the table stops, then the blast throws everything loose away from them.
+          setTimeout(() => {
+            const a = e.state(hk), b = e.state(fk);
+            if (!a || !b) return;
+            const at = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            e.freeze(140);
+            const spare = [hk, fk, CAT, ...ACTIONS, ...e.keys().filter((k) => k.startsWith('tok:') || k.startsWith('src:'))];
+            // Spared, and held fast while the blast runs out: what it throws cannot knock them about either.
+            e.pin(spare, 1800);
+            e.impulse(at.x, at.y, Math.hypot(size.current.width, size.current.height) * 1.2, 7200, { gen: 3, power: 3 }, spare);
+            live.current.onCrit?.(at);
+          }, 260);
+        });
+      } else if (hope.value > fear.value) {
+        later(() => { e.wash(hk, '#ffc24a', 0.85, 700, 0.3); shake(hk, 0.3, 790); });
+      } else {
+        later(() => { e.wash(fk, '#a35cff', 0.9, 500, 0.15); shake(fk, 1, 405); });
+      }
+    }
+    return landed;
+  }, []);
+
   useImperativeHandle(ref, () => ({
     roll: (dice, from) => {
       if (!engine) return Promise.resolve(dice.map((d) => ({ ...d, value: 1 + Math.floor(Math.random() * (d.type === 'd100' ? 100 : d.type === 'duality' ? 12 : FACES_OF[d.type as Shape])) })));
@@ -1139,14 +1194,22 @@ export const TableDice = forwardRef<TableDiceHandle, {
           const x = Math.min(b.right - 50, Math.max(b.left + 50, from.x + (((i + j * 0.5) / Math.max(1, dice.length - 1)) - 0.5) * spread));
           engine.add(spec, x, Math.min(b.bottom - 50, Math.max(b.top + 50, from.y)), { random: true });
           rolled.current.set(spec.key, d);
-          const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
-          const sp = 650 + Math.random() * 550;
+          // Towards the middle of the open table (owner, v0.47.11: thrown up, they landed under the result at the top).
+          const cx = (b.left + b.right) / 2, cy = b.top + (b.bottom - b.top) * 0.4;
+          const dist = Math.hypot(cx - x, cy - from.y);
+          const ang = (dist > 120 ? Math.atan2(cy - from.y, cx - x) : Math.random() * Math.PI * 2) + (Math.random() - 0.5) * 0.9;
+          const sp = Math.min(1150, 420 + dist * 0.9) * (0.85 + Math.random() * 0.3);
           engine.toss(spec.key, Math.cos(ang) * sp, Math.sin(ang) * sp);
           keys.push(spec.key);
         });
       });
       playSfx('gearScroll1', { volume: 0.35 });
-      return waitFor(keys, () => thrown.map(({ die, keys: ks }) => ({ ...die, value: valueOf(die, ks.map((k) => engine.state(k)?.top ?? 0)) })));
+      return waitFor(keys, () => {
+        // Development only: `__rkRig = [6, 6]` turns the next throw's dice to those faces as they land (to see a critical).
+        const rig = __DEV__ ? (globalThis as { __rkRig?: number[] }).__rkRig : undefined;
+        if (rig) { (globalThis as { __rkRig?: number[] }).__rkRig = undefined; thrown.forEach(({ keys: ks }, i) => { if (rig[i] != null) engine.setFace(ks[0], rig[i] - 1); }); }
+        return thrown.map(({ die, keys: ks }) => ({ ...die, value: valueOf(die, ks.map((k) => engine.state(k)?.top ?? 0)) }));
+      }).then(celebrate);
     },
     rollPieces: (keys, power, burning) => {
       if (!engine) return Promise.resolve([]);
@@ -1192,7 +1255,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           }
         }
         return out;
-      });
+      }).then(celebrate);
     },
     clearRoll: () => { if (engine) clear(engine); },
     resetHome: () => {
@@ -1259,7 +1322,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         for (const s of tokenSpecs(pieceOf(t.key, t.token), 'stone')) if (s.spec.key === k) engine.add({ ...s.spec, body: '#5d625e', edge: '#7c827c', ink: '#2c302d', finish: 'stone' }, 0, 0);
       }
     },
-  }), [engine, sendHome, homeOf, partsOf, waitFor, fling, rollInPlace]);
+  }), [engine, sendHome, homeOf, partsOf, waitFor, fling, rollInPlace, celebrate]);
   const clear = (e: DiceEngine) => {
     for (const k of rolled.current.keys()) e.remove(k);
     rolled.current.clear();

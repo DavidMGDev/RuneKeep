@@ -109,7 +109,16 @@ export interface DiceEngine {
   /** The felt this slippery (1 normal, lower slides further) for `ms`. */
   slippery(scale: number, ms: number): void;
   /** A sudden push out from a point (negative pulls in), px/s at the centre fading to nothing at r. */
-  impulse(x: number, y: number, r: number, speed: number, boost?: { gen: number; power: number }): void;
+  impulse(x: number, y: number, r: number, speed: number, boost?: { gen: number; power: number }, except?: string[]): void;
+  /**
+   * A landed die answering its roll (owner, v0.47.11, after the phone's tray): its body washed with a colour that
+   * rises, holds and fades (`peak` 0 to 1), and a swell (+`swell`, e.g. 0.38) up fast and back slowly.
+   */
+  wash(key: string, color: string, peak: number, holdMs: number, swell?: number): void;
+  /** Stop the whole table for a beat (an impact frame). */
+  freeze(ms: number): void;
+  /** Hold these pieces where they lie for a while: nothing that hits them moves them (a blast that spares them). */
+  pin(keys: string[], ms: number): void;
   /**
    * The cards laid on the table. A card that is `phys` is a body (knocked about by dice, sliding, spinning); the
    * rest only carry what is anchored to them. Poses are the card's centre and its turn in degrees.
@@ -381,7 +390,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { d: Die; dx: number; dy: number } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { d: Die; dx: number; dy: number } | null; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -427,6 +436,26 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   }
 
   /** How big a piece is drawn: a touch bigger hovered or held, shrinking away as it is put away. */
+  /** Where a wash is: its glow (0 to 1), the swell on the die's size, and whether it is over. */
+  function washNow(d: Die): { glow: number; grow: number; done: boolean } {
+    const w = d.wash;
+    if (!w) return { glow: 0, grow: 1, done: false };
+    const t = performance.now() - w.t0;
+    const RISE = 240, FADE = 380;
+    const glow = w.peak * (t < RISE ? t / RISE : t < RISE + w.hold ? 1 : Math.max(0, 1 - (t - RISE - w.hold) / FADE));
+    // The swell: up in 220 ms (ease out), back in 460 ms (ease in-out), as the phone's tray does it.
+    const up = 220, down = 460;
+    const s = t < up ? 1 - Math.pow(1 - t / up, 2) : t < up + down ? 0.5 + 0.5 * Math.cos(((t - up) / down) * Math.PI) : 0;
+    return { glow, grow: 1 + w.swell * s, done: t > RISE + w.hold + FADE && t > up + down };
+  }
+  function endWash(d: Die) {
+    const w = d.wash;
+    if (!w) return;
+    d.wash = null;
+    d.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { const back = [...w.own.entries()].find(([, c]) => c === m.material)?.[0]; if (back) m.material = back; } });
+    for (const c of w.own.values()) c.dispose();
+  }
+
   function scaleOf(d: Die): number {
     if (d.vanish === 'flying') return d.body.home ? 1 - 0.9 * Math.max(0, (d.body.home.t - 0.4) / 0.6) : 0.1;
     return d.body.held ? 1.05 : hovered === d.spec.key ? 1.03 : 1;
@@ -439,13 +468,23 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     // A light touch on hover, so the die's outline never grows past itself (owner, v0.47.2).
     const target = scaleOf(d);
     d.scale += (target - d.scale) * 0.25;
-    d.group.scale.setScalar(rad * d.scale);
+    d.group.scale.setScalar(rad * d.scale * washNow(d).grow);
     const jx = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
     const jy = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
     d.group.position.set(b.x - W / 2 + jx, (H / 2 - b.y + jy) / COS, model.inR * rad + b.z + (b.held ? 6 : 0));
     d.group.quaternion.set(b.q[0], b.q[1], b.q[2], b.q[3]);
     if (d.jitter > 0.02) d.group.rotateZ((Math.random() - 0.5) * d.jitter * 0.5);
     for (const f of d.follow) f.style.transform = `translate(${(b.x + jx).toFixed(1)}px, ${(b.y + jy - b.z * 0.4).toFixed(1)}px)`;
+    if (d.wash) {
+      // The wash: the die wears its own copies of its materials while it glows, so the dice sharing its look stay dark.
+      const w = washNow(d);
+      for (const m of d.wash.own.values() as Iterable<THREE.Material & { emissive?: THREE.Color; emissiveIntensity?: number; userData: { e?: THREE.Color; ei?: number } }>) {
+        if (!m.emissive) continue;
+        m.emissive.copy(m.userData.e!).lerp(d.wash.color, w.glow);
+        m.emissiveIntensity = (m.userData.ei ?? 1) + w.glow * 0.75;
+      }
+      if (w.done) endWash(d);
+    }
     if (d.glint > 0) {
       // The glint: the die's own emissive lifted towards white, fading.
       d.glint = d.glint < 0.02 ? 0 : d.glint * 0.86;
@@ -547,7 +586,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     if (++frameNo % 30 === 1) for (const d of order) d.labelW = d.label?.offsetWidth ?? 0;
     for (const d of order) {
       sync(d);
-      if (Math.abs(d.scale - scaleOf(d)) > 0.002 || d.glint > 0) easing = true;
+      if (Math.abs(d.scale - scaleOf(d)) > 0.002 || d.glint > 0 || d.wash) easing = true;
       if (d.vanish === 'flying' && !d.body.home) gone.push(d.spec.key);
       const asleep = d.body.asleep && !d.body.held;
       if (asleep && !d.wasAsleep) rested.push(d.spec.key);
@@ -706,6 +745,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const prev = dice.get(spec.key);
       if (prev) {
         // Rebuild the look in place; the die keeps where it lies (and, for the same solid, how it lies).
+        endWash(prev);
         dropVisuals(prev);
         const v = visuals(spec);
         const sameShape = prev.spec.shape === spec.shape;
@@ -747,7 +787,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
       }
-      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0, tether: null };
+      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0, tether: null, wash: null };
       dice.set(spec.key, d);
       order.push(d);
       wake();
@@ -755,6 +795,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     remove(key) {
       const d = dice.get(key);
       if (!d) return;
+      endWash(d);
       dropVisuals(d);
       setRing(d, false);
       dice.delete(key);
@@ -968,10 +1009,11 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       for (const d of order) if (!d.body.fixed) d.body.asleep = false;
       wake();
     },
-    impulse(x, y, r, speed, boost) {
+    impulse(x, y, r, speed, boost, except) {
       const all = [...order.map((d) => d.body), ...[...cards.values()].flatMap((c) => (c.body ? [c.body] : []))];
+      const spare = new Set(except ?? []);
       for (const b of all) {
-        if (b.fixed || b.held || b.ghost) continue;
+        if (b.fixed || b.held || b.ghost || spare.has(b.key)) continue;
         const dx = b.x - x, dy = b.y - y;
         const d = Math.hypot(dx, dy);
         if (d >= r) continue;
@@ -1099,6 +1141,37 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       if (!d) return;
       d.glint = 1;
       wake();
+    },
+    wash(key, color, peak, holdMs, swell = 0) {
+      const d = dice.get(key);
+      if (!d) return;
+      endWash(d);
+      const own = new Map<THREE.Material, THREE.Material>();
+      d.group.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh) return;
+        const src = m.material as THREE.Material;
+        let c = own.get(src);
+        if (!c) {
+          c = src.clone();
+          const e = (c as THREE.Material & { emissive?: THREE.Color; emissiveIntensity?: number; userData: { e?: THREE.Color; ei?: number } });
+          const se = (src as THREE.Material & { emissive?: THREE.Color; emissiveIntensity?: number; userData: { e?: THREE.Color; ei?: number } });
+          if (e.emissive) { e.userData.e = (se.userData.e ?? se.emissive!).clone(); e.userData.ei = se.userData.ei ?? se.emissiveIntensity ?? 1; }
+          own.set(src, c);
+        }
+        m.material = c;
+      });
+      d.wash = { color: new THREE.Color(color), peak, t0: performance.now(), hold: holdMs, swell, own };
+      wake();
+    },
+    freeze(ms) {
+      freezeUntil = Math.max(freezeUntil, performance.now() + ms);
+      wake();
+    },
+    pin(keys, ms) {
+      const pinned = keys.map((k) => dice.get(k)?.body).filter((b): b is Body => !!b && !b.fixed);
+      for (const b of pinned) b.fixed = true;
+      setTimeout(() => { for (const b of pinned) b.fixed = false; wake(); }, ms);
     },
     onImpact(cb) { impactCb = cb; },
     onBreak(cb) { breakCb = cb; },

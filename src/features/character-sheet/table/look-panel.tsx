@@ -2,8 +2,8 @@
  * Table settings (v0.47.0; v0.47.1 round two; v0.47.3 owner round four). Lies exactly over the sheet's port, so the
  * whole table stays in view while you change it and nothing on the sheet can be pressed behind it.
  *
- * Four tabs. Presets comes first: share what you have (a link or a code) in one click, pick a whole table made for
- * a way of playing, save your own, or let the table surprise you. Then the Hand (how the row of cards looks),
+ * Four tabs. Presets comes first: load a preset (ready-made, your own, or someone else's code or file), keep your
+ * own, share what you have, or start over. Then the Hand (how the row of cards looks),
  * Motion (how it moves) and the Table (where the hand lies, the edge, the dice). While settings are open the rows
  * of pieces on the table can be dragged somewhere else.
  */
@@ -161,12 +161,12 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** Save a table as a .rune file to the downloads (v0.47.9, owner: files and codes, no links). */
+/** Save a preset as a .rune file to the downloads (v0.47.9, owner: files and codes, no links). */
 function downloadTable(look: DeckLook, name: string): void {
   const url = URL.createObjectURL(new Blob([tableFile(look, name)], { type: 'application/json' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${name.replace(/[^a-z0-9 _-]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || 'runekeep-table'}.rune`;
+  a.download = `${name.replace(/[^a-z0-9 _-]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || 'runekeep-preset'}.rune`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -187,6 +187,7 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [note, setNote] = useState<{ text: string; bad?: boolean } | null>(null);
+  const [shareNote, setShareNote] = useState<{ text: string; bad?: boolean } | null>(null);
   const [surprise, setSurprise] = useState(0);
   const store = (list: SavedLook[]) => { setSaved(list); saveSavedLooks(list); };
   const save = () => {
@@ -204,20 +205,20 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
     const text = encodeLook(look);
     if (await copyText(text)) {
       setShown(null);
-      setNote({ text: 'Code copied. Whoever gets it pastes it here and presses Use.' });
+      setShareNote({ text: 'Code copied. Whoever gets it pastes it under Load a preset and presses Use.' });
     } else {
       setShown(text);
-      setNote({ text: 'This browser would not copy it. Select the code below and copy it yourself.', bad: true });
+      setShareNote({ text: 'This browser would not copy it. Select the code below and copy it yourself.', bad: true });
     }
   };
-  /** A table brought in by code or file is used and kept in Your tables under its name (owner, v0.47.11). */
+  /** A preset brought in by code or file is used and kept in Your presets under its name (owner, v0.47.11). */
   const apply = (got: { name: string; look: DeckLook } | null, bad: string) => {
     if (!got) { setNote({ text: bad, bad: true }); playSfx('cardDisable', { volume: 0.5 }); return; }
     onChange(got.look);
     const have = saved.find((s) => sameLook(s.look, got.look));
-    const n = have?.name ?? uniqueName(got.name.trim() || 'Shared table', saved);
+    const n = have?.name ?? uniqueName(got.name.trim() || 'Shared preset', saved);
     if (!have) store([{ name: n, look: got.look }, ...saved].slice(0, 24));
-    setNote({ text: `Using ${n}. It is in Your tables below.` });
+    setNote({ text: `Using ${n}. It is in Your presets below.` });
     playSfx('cardSelect', { volume: 0.6 });
   };
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
@@ -228,12 +229,12 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
     setRenaming(null);
   };
   const use = () => {
-    apply(readTableFile(code), 'That is not a table code. Codes start with RK1: and come from Copy code.');
+    apply(readTableFile(code), 'That is not a preset code. Codes start with RK1: and come from Copy code.');
     if (readTableFile(code)) setCode('');
   };
   const openFile = (f: File) => {
     void f.text().then(
-      (t) => apply(readTableFile(t), 'That file is not a RuneKeep table. Tables are the .rune files made by Download file.'),
+      (t) => apply(readTableFile(t), 'That file is not a RuneKeep preset. Presets are the .rune files made by Download file.'),
       () => apply(null, 'That file could not be read.'),
     );
   };
@@ -243,35 +244,29 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
     const l = randomTables(1, seed)[0];
     if (l) { onChange(l); setSurprise((s) => s + 1); playSfx('carouselScroll', { volume: 0.8, cents: 300 }); }
   };
+  const sub = { color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' } as const;
   return (
     <>
+      {/* Loading comes first (owner, v0.47.11): the preview, the list of every preset, a code or a file. */}
       <div style={block}>
-        <SectionTitle>Share this table</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Everything you have set: hand, motion, table and where the pieces live. A code fits in a chat; a file keeps the table exactly, even after RuneKeep updates.</span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <TButton label="Copy code" primary wide h={34} onPress={() => void copyCode()} />
-          <TButton label="Download file" wide h={34} title="Save this table as a .rune file" onPress={() => { playSfx('buttonTap'); downloadTable(look, name.trim() || 'RuneKeep table'); setNote({ text: 'Saved to your downloads as a .rune file. Send it to whoever should have this table.' }); }} />
-        </div>
-        {shown ? <textarea readOnly value={shown} aria-label="The table's code" onFocus={(e) => e.currentTarget.select()} rows={3} style={{ resize: 'none', background: T.panel, color: T.ivory, border: `1px solid ${T.goldSoft}`, fontFamily: T.medium, fontSize: 12, padding: 8, wordBreak: 'break-all' }} /> : null}
+        <SectionTitle>Load a preset</SectionTitle>
+        <span style={sub}>A preset sets everything: the hand, how it moves, the table and where every piece lives.</span>
+        <PresetPicker look={look} saved={saved} onPick={(l) => { playSfx('cardSelect', { volume: 0.6 }); onChange(l); }} />
+        <TButton label="Surprise me" h={34} title="A new preset drawn at random" onPress={shuffle} />
+        <div style={{ height: 1, background: 'rgba(218,162,73,0.14)', margin: '6px 0 2px' }} />
+        <span style={sub}>From someone else: paste their code, or open their .rune file.</span>
         <div style={{ display: 'flex', gap: 6 }}>
           <Field value={code} onChange={(v) => { setCode(v); setNote(null); }} placeholder="Paste a code (RK1:...)" onEnter={use} max={6000} />
           <TButton label="Use" h={34} disabled={!code.trim()} onPress={use} />
         </div>
-        <TButton label="Open a file" h={34} title="Load a table from a .rune file" onPress={() => fileInput.current?.click()} />
-        <input ref={fileInput} type="file" accept=".rune,.json,.txt" aria-label="Open a table file" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ''; }} />
+        <TButton label="Open a file" h={34} title="Load a preset from a .rune file" onPress={() => fileInput.current?.click()} />
+        <input ref={fileInput} type="file" accept=".rune,.json,.txt" aria-label="Open a preset file" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ''; }} />
         {note ? <span role="status" style={{ color: note.bad ? '#E2705A' : T.goldText, fontFamily: T.medium, fontSize: 13, lineHeight: '18px', wordBreak: 'break-all' }}>{note.text}</span> : null}
       </div>
 
       <div style={block}>
-        <SectionTitle>Tables</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Each one is a way of playing: it sets the whole table, the hand and where every piece lives.</span>
-        <TablePicker look={look} onPick={(l) => { playSfx('cardSelect', { volume: 0.6 }); onChange(l); }} />
-        <TButton label="Surprise me" h={34} title="A new table drawn at random" onPress={shuffle} />
-      </div>
-
-      <div style={block}>
-        <SectionTitle>Your tables</SectionTitle>
-        {saved.length === 0 ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>Nothing saved yet. Name what you have now to keep it.</span> : null}
+        <SectionTitle>Your presets</SectionTitle>
+        {saved.length === 0 ? <span style={sub}>Nothing saved yet. Name what you have now to keep it.</span> : null}
         {saved.map((s) => renaming?.from === s.name ? (
           <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <Field value={renaming.to} onChange={(v) => setRenaming({ from: s.name, to: v })} placeholder="A new name" onEnter={rename} max={40} />
@@ -287,14 +282,25 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
           </div>
         ))}
         <div style={{ display: 'flex', gap: 6 }}>
-          <Field value={name} onChange={setName} placeholder="Name this table" onEnter={save} max={40} />
+          <Field value={name} onChange={setName} placeholder="Name what you have now" onEnter={save} max={40} />
           <TButton label="Save" h={34} disabled={!name.trim()} onPress={save} />
         </div>
       </div>
 
+      <div style={block}>
+        <SectionTitle>Share this preset</SectionTitle>
+        <span style={sub}>Everything you have set now. A code fits in a chat; a file keeps it exactly, even after RuneKeep updates.</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <TButton label="Copy code" wide h={34} onPress={() => void copyCode()} />
+          <TButton label="Download file" wide h={34} title="Save this preset as a .rune file" onPress={() => { playSfx('buttonTap'); downloadTable(look, name.trim() || 'RuneKeep preset'); setShareNote({ text: 'Saved to your downloads as a .rune file. Send it to whoever should have this preset.' }); }} />
+        </div>
+        {shown ? <textarea readOnly value={shown} aria-label="The preset's code" onFocus={(e) => e.currentTarget.select()} rows={3} style={{ resize: 'none', background: T.panel, color: T.ivory, border: `1px solid ${T.goldSoft}`, fontFamily: T.medium, fontSize: 12, padding: 8, wordBreak: 'break-all' }} /> : null}
+        {shareNote ? <span role="status" style={{ color: shareNote.bad ? '#E2705A' : T.goldText, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>{shareNote.text}</span> : null}
+      </div>
+
       <div style={{ ...block, borderBottom: 'none' }}>
         <SectionTitle>Start over</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>
+        <span style={sub}>
           {boardCount || pieceCount ? `On the table: ${[boardCount ? `${boardCount} card${boardCount === 1 ? '' : 's'}` : '', pieceCount ? `${pieceCount} loose piece${pieceCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')}. Clearing puts it all away; your decks keep every card.` : 'The table is clear.'}
         </span>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -307,56 +313,84 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
   );
 }
 
-/** Every ready-made table: the six made for a way of playing, then the four drawn at random. */
+/** Every ready-made preset: the six made for a way of playing, then the four drawn at random. */
 const ALL_TABLES = [...TABLE_PRESETS.map((t) => ({ ...t, wild: false })), ...WILD_TABLES.map((t) => ({ ...t, wild: true }))];
 
+type PresetEntry = { id: string; name: string; who: string; look: DeckLook; kind: 'made' | 'wild' | 'yours' };
+
 /**
- * The ready-made tables as a dropdown (owner, v0.47.10: "a dropdown instead of a gallery"), with a picture of the
- * table under it: a real screenshot of it laid out, of whichever one is lit in the list, else the one in use.
+ * Every preset in one list (owner, v0.47.11): made for a way of playing, drawn at random, and your own. The preview
+ * stays above the list and the list opens over what is below it, so both show at once: pointing at an entry shows it.
+ * Ready-made presets show a real screenshot; your own show their name, as nothing has photographed them.
  */
-function TablePicker({ look, onPick }: { look: DeckLook; onPick: (l: DeckLook) => void }) {
+function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLook[]; onPick: (l: DeckLook) => void }) {
+  const entries: PresetEntry[] = [
+    ...ALL_TABLES.map((t) => ({ id: t.id, name: t.name, who: t.wild ? 'Drawn at random and kept because it worked.' : t.who, look: t.look, kind: (t.wild ? 'wild' : 'made') as PresetEntry['kind'] })),
+    ...saved.map((s, i) => ({ id: `yours${i}`, name: s.name, who: 'Saved by you.', look: s.look, kind: 'yours' as const })),
+  ];
   const [open, setOpen] = useState(false);
-  const current = ALL_TABLES.find((t) => sameLook(look, t.look));
-  const [lit, setLit] = useState(Math.max(0, ALL_TABLES.findIndex((t) => t.id === current?.id)));
+  const current = entries.find((t) => sameLook(look, t.look));
+  const [lit, setLit] = useState(Math.max(0, entries.findIndex((t) => t.id === current?.id)));
   const list = useRef<HTMLDivElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   useEffect(() => { if (open) list.current?.focus(); }, [open]);
-  const shown = open ? ALL_TABLES[lit] : current;
-  const pick = (i: number) => { const t = ALL_TABLES[i]; if (!t) return; setOpen(false); onPick(t.look); };
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [open]);
+  const shown = open ? entries[lit] : current;
+  const pick = (i: number) => { const t = entries[i]; if (!t) return; setOpen(false); onPick(t.look); };
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); }
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setLit((l) => (l + (e.key === 'ArrowDown' ? 1 : -1) + ALL_TABLES.length) % ALL_TABLES.length); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setLit((l) => (l + (e.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length); }
     else if (e.key === 'Enter') { e.preventDefault(); pick(lit); }
   };
+  const heading = (t: string) => <div style={{ padding: '10px 12px 4px', color: T.muted, fontFamily: T.bold, fontSize: 11.5, letterSpacing: 1, textTransform: 'uppercase' }}>{t}</div>;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => { playSfx(open ? 'floatMenuClose' : 'floatMenuOpen', { volume: 0.6 }); setOpen((o) => !o); }} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
-        <div style={{ clipPath: chamferClip(6), background: open ? T.goldBright : 'rgba(218,162,73,0.45)', padding: 1.2 }}>
-          <div style={{ clipPath: chamferClip(5.5), background: T.panel, height: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ flex: 1, color: current ? T.ivory : T.muted, fontFamily: T.bold, fontSize: 14.5 }}>{current ? current.name : 'Your own table'}</span>
-            <span style={{ display: 'flex', transform: `rotate(${open ? 180 : 0}deg)`, transition: `transform 200ms ${T.ease}` }}><Glyph d='<path d="M6 9l6 6 6-6"/>' size={16} /></span>
+    <div ref={wrap} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* The preview: the entry pointed at in the list, else the preset in use. */}
+      <figure style={{ margin: 0, position: 'relative', width: '100%', aspectRatio: '1182 / 900', border: `1px solid ${open ? T.goldBright : T.goldSoft}`, background: T.ink, overflow: 'hidden', transition: 'border-color 160ms' }}>
+        {shown && shown.kind !== 'yours' ? (
+          <img src={`/table/presets/${shown.id}.webp`} alt={`The ${shown.name} preset laid out`} draggable={false} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 18, textAlign: 'center', background: 'radial-gradient(circle at 50% 45%, rgba(218,162,73,0.12), transparent 70%)' }}>
+            <span style={{ color: T.ivory, fontFamily: T.display, fontSize: 22, letterSpacing: 1 }}>{shown ? shown.name : 'Your own'}</span>
+            <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>{shown ? 'Saved by you. No picture of it yet.' : 'Not saved as a preset yet. Name it under Your presets to keep it.'}</span>
           </div>
-        </div>
-      </button>
-      {open ? (
-        <div ref={list} role="listbox" aria-label="Ready-made tables" tabIndex={-1} onKeyDown={onKey} style={{ outline: 'none', border: `1px solid ${T.goldSoft}`, background: 'rgba(11,14,19,0.98)', maxHeight: 330, overflowY: 'auto' }} className="rk-scroll">
-          {ALL_TABLES.map((t, i) => (
-            <div key={t.id}>
-              {i === TABLE_PRESETS.length ? <div style={{ padding: '10px 12px 4px', color: T.muted, fontFamily: T.bold, fontSize: 11.5, letterSpacing: 1, textTransform: 'uppercase' }}>Drawn at random</div> : null}
-              <div role="option" aria-selected={current?.id === t.id} onPointerEnter={() => setLit(i)} onClick={() => pick(i)}
-                style={{ cursor: 'pointer', padding: '9px 12px', background: lit === i ? T.panelLit : 'transparent', borderLeft: `3px solid ${current?.id === t.id ? T.red : lit === i ? T.goldBright : 'transparent'}` }}>
-                <div style={{ color: lit === i ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 14 }}>{t.name}</div>
-                {t.who && !t.wild ? <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px', marginTop: 2 }}>{t.who}</div> : null}
-              </div>
+        )}
+        {shown ? (
+          <figcaption style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '22px 12px 9px', background: 'linear-gradient(transparent, rgba(6,8,13,0.92) 45%)' }}>
+            <div style={{ color: T.ivory, fontFamily: T.bold, fontSize: 14.5 }}>{shown.name}</div>
+            {shown.kind === 'made' ? <div style={{ color: 'rgba(253,252,247,0.72)', fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px', marginTop: 2 }}>{shown.who}</div> : null}
+          </figcaption>
+        ) : null}
+      </figure>
+      <div style={{ position: 'relative' }}>
+        <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => { playSfx(open ? 'floatMenuClose' : 'floatMenuOpen', { volume: 0.6 }); setOpen((o) => !o); }} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%' }}>
+          <div style={{ clipPath: chamferClip(6), background: open ? T.goldBright : 'rgba(218,162,73,0.45)', padding: 1.2 }}>
+            <div style={{ clipPath: chamferClip(5.5), background: T.panel, height: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ flex: 1, color: current ? T.ivory : T.muted, fontFamily: T.bold, fontSize: 14.5 }}>{current ? current.name : 'Choose a preset'}</span>
+              <span style={{ display: 'flex', transform: `rotate(${open ? 180 : 0}deg)`, transition: `transform 200ms ${T.ease}` }}><Glyph d='<path d="M6 9l6 6 6-6"/>' size={16} /></span>
             </div>
-          ))}
-        </div>
-      ) : null}
-      {shown ? (
-        <figure style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <img src={`/table/presets/${shown.id}.webp`} alt={`The ${shown.name} table laid out`} draggable={false} style={{ width: '100%', aspectRatio: '1182 / 900', objectFit: 'cover', display: 'block', border: `1px solid ${T.goldSoft}`, background: T.ink }} />
-          {!open && shown.who && !shown.wild ? <figcaption style={{ color: T.muted, fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px' }}>{shown.who}</figcaption> : null}
-        </figure>
-      ) : null}
+          </div>
+        </button>
+        {open ? (
+          <div ref={list} role="listbox" aria-label="Presets" tabIndex={-1} onKeyDown={onKey} className="rk-scroll"
+            style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, zIndex: 20, outline: 'none', border: `1px solid ${T.goldSoft}`, background: 'rgba(11,14,19,0.99)', maxHeight: 340, overflowY: 'auto', boxShadow: '0 18px 36px rgba(0,0,0,0.6)' }}>
+            {entries.map((t, i) => (
+              <div key={t.id}>
+                {i === 0 ? heading('Made for a way of playing') : t.kind !== entries[i - 1].kind ? heading(t.kind === 'wild' ? 'Drawn at random' : 'Your presets') : null}
+                <div role="option" aria-selected={current?.id === t.id} onPointerEnter={() => setLit(i)} onClick={() => pick(i)}
+                  style={{ cursor: 'pointer', padding: '9px 12px', background: lit === i ? T.panelLit : 'transparent', borderLeft: `3px solid ${current?.id === t.id ? T.red : lit === i ? T.goldBright : 'transparent'}` }}>
+                  <div style={{ color: lit === i ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 14 }}>{t.name}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

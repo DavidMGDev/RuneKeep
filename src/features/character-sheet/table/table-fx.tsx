@@ -13,8 +13,8 @@ import { CardFace, type TableCard } from './desk-carousel';
 import { type DomatCard, domatArt, DOMAT_H, DOMAT_W } from './domat';
 import { T } from './table-ui';
 
-export type FxKind = 'ring' | 'flash' | 'vortex' | 'implode' | 'fire' | 'spark' | 'smoke' | 'stone' | 'claw' | 'consume' | 'rune';
-export interface Fx { id: number; kind: FxKind; x: number; y: number; r: number; ms: number; tint?: string }
+export type FxKind = 'ring' | 'flash' | 'vortex' | 'implode' | 'fire' | 'spark' | 'smoke' | 'stone' | 'claw' | 'consume' | 'rune' | 'word';
+export interface Fx { id: number; kind: FxKind; x: number; y: number; r: number; ms: number; tint?: string; /** What a 'word' says. */ label?: string }
 
 const reduced = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -80,6 +80,13 @@ function FxOne({ f }: { f: Fx }) {
           ))}
           <path d="M50 24 L57 43 L76 50 L57 57 L50 76 L43 57 L24 50 L43 43 Z" fill="none" stroke="#fff3d6" strokeWidth="0.8" />
         </svg>
+      );
+    case 'word':
+      // A word slammed onto the table (a critical): huge, gold, shaken in, then lifting away.
+      return (
+        <div style={{ position: 'absolute', left: f.x, top: f.y, transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
+          <div style={{ color: '#FFF1C8', fontFamily: T.display, fontSize: f.r, letterSpacing: f.r * 0.08, whiteSpace: 'nowrap', textShadow: `0 0 18px ${tint}, 0 0 46px ${tint}, 0 4px 0 #6b4410`, animation: `rk-word ${f.ms}ms cubic-bezier(0.22,1,0.36,1) forwards` }}>{f.label}</div>
+        </div>
       );
     case 'consume':
       return <div style={{ ...box, borderRadius: '50%', background: `radial-gradient(circle, #fff 0%, ${tint} 25%, ${tint}55 45%, transparent 70%)`, animation: `rk-burst ${f.ms}ms ease-out forwards`, mixBlendMode: 'screen' }} />;
@@ -250,6 +257,7 @@ export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace,
 /** The keyframes the effects use; added once with the table's own CSS. */
 export const FX_CSS = `
 @keyframes rk-flash { 0% { opacity: 0.95; } 100% { opacity: 0; } }
+@keyframes rk-word { 0% { transform: scale(2.6); opacity: 0; } 14% { transform: scale(0.94); opacity: 1; } 22% { transform: scale(1.06) rotate(-1.5deg); } 30% { transform: scale(1) rotate(1deg); } 70% { transform: scale(1.02); opacity: 1; } 100% { transform: translateY(-40px) scale(1.12); opacity: 0; } }
 @keyframes rk-rune { 0% { transform: scale(0.25) rotate(-80deg); opacity: 0; } 18% { opacity: 1; } 70% { opacity: 0.9; } 100% { transform: scale(1) rotate(110deg); opacity: 0; } }
 @keyframes rk-ring { 0% { transform: scale(0.05); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes rk-burst { 0% { transform: scale(0.1); opacity: 1; } 60% { opacity: 0.8; } 100% { transform: scale(1.1); opacity: 0; } }

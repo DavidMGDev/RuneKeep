@@ -917,6 +917,23 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * A charged throw broke loose pieces (owner, v0.47.11): they are gone, with a flash where the first went and a
    * jolt of the table; a burning throw's is brighter and longer (the engine holds the table still a beat as well).
    */
+  /**
+   * Hope and Fear came up equal (owner, v0.47.11: "a good satisfying very obvious crit"): the dice have already blazed
+   * and the blast has thrown every loose piece and physical card away from them. The table flashes gold, a shockwave
+   * runs out, runes turn, sparks fly, CRITICAL slams down over them and the table shakes hard.
+   */
+  const onCrit = useCallback((at: { x: number; y: number }) => {
+    const diag = Math.hypot(tableW, tableH);
+    addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 900, tint: '#F9D68D' });
+    addFx({ kind: 'ring', x: at.x, y: at.y, r: diag * 0.75, ms: 900, tint: '#FFE3A0' });
+    addFx({ kind: 'ring', x: at.x, y: at.y, r: diag * 0.4, ms: 700, tint: '#ffffff' });
+    addFx({ kind: 'rune', x: at.x, y: at.y, r: 190, ms: 1500, tint: '#F9D68D' });
+    addFx({ kind: 'spark', x: at.x, y: at.y, r: 260, ms: 900, tint: '#FFF1C8' });
+    addFx({ kind: 'consume', x: at.x, y: at.y, r: 150, ms: 700, tint: '#F2C66A' });
+    addFx({ kind: 'word', x: Math.min(tableW - 220, Math.max(220, at.x)), y: Math.min(tableH - 120, Math.max(190, at.y)), r: 64, ms: 1700, tint: '#E0A830', label: 'CRITICAL' });
+    shake(tableRef.current, 1.6);
+    playSfx('levelUpComplete', { volume: 0.8 });
+  }, [addFx, tableW, tableH]);
   const onBreak = useCallback((keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => {
     const bases = new Set(keys.map(baseOf));
     setLoose(looseRef.current.filter((t) => !bases.has(t.key)));
@@ -952,7 +969,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const next = boardRef.current.map((b) => {
       const p = livePoses.get(b.uid);
       if (!p || !done.includes(b.uid)) return b;
-      return { ...b, fx: p.x / tableW, fy: p.y / tableH, rot: Math.round((((p.rot % 360) + 360) % 360) * 10) / 10 };
+      // The angle as it lies, never wrapped (owner, v0.47.11: -10 written back as 350 made the card's transition spin it
+      // the whole way round when it came to rest).
+      return { ...b, fx: p.x / tableW, fy: p.y / tableH, rot: Math.round(p.rot * 10) / 10 };
     });
     for (const uid of done) livePoses.delete(uid);
     setBoard(next);
@@ -1089,7 +1108,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               feltH={tableH}
               hidden={new Set(shattering.map((s) => s.uid))}
               live={livePoses}
-              onChange={(next) => setBoard(next.map((b) => { const p = livePoses.get(b.uid); return p ? { ...b, rot: Math.round((((p.rot % 360) + 360) % 360) * 10) / 10 } : b; }))}
+              onChange={(next) => setBoard(next.map((b) => { const p = livePoses.get(b.uid); return p ? { ...b, rot: Math.round(p.rot * 10) / 10 } : b; }))}
               onReturn={(uid) => { if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
               onLift={(b) => {
                 const { w, h } = sizeOf(b);
@@ -1199,6 +1218,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onSelect={setSelection}
           onHardHit={onHardHit}
           onBreak={onBreak}
+          onCrit={onCrit}
           onDragPiece={(x, y) => carRef.current?.hoverAt(x, y)}
           onTidied={() => setLoose([])}
           editing={settings}

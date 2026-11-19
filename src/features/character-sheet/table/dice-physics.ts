@@ -274,7 +274,8 @@ function boxStep(b: Body, bounds: Bounds, dt: number, hits: Impact[], world: Wor
     b.vx -= (b.vx / sp) * dec;
     b.vy -= (b.vy / sp) * dec;
   }
-  b.va = (b.va ?? 0) * Math.max(0, 1 - BOX_SPIN_DAMP * fr * dt);
+  // Spin dies with the slide: a card never keeps turning in place once it has stopped moving.
+  b.va = (b.va ?? 0) * Math.max(0, 1 - (BOX_SPIN_DAMP + (sp < 80 ? 14 : 0)) * fr * dt);
   b.x += b.vx * dt;
   b.y += b.vy * dt;
   b.a = (b.a ?? 0) + b.va * dt;

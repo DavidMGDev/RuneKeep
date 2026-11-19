@@ -153,3 +153,14 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   ones land in Your tables. The Deck of Many Things keeps a stock (one card per 200 s, ten at most) shown under it
   with the wait; a drag off it pulls a card into the hand; a carried card shakes, and calms after three seconds held
   still, to be set down without striking.
+- v0.47.12: landed dice answer their roll as the phone's tray does, in 3D (`engine.wash`): a highest face washes
+  white, swells 38% and wobbles; a 1 flushes red and jerks; Hope's winner glows gold and sways, Fear's glows violet
+  and jerks. Hope equal to Fear is a critical: both dice blaze and swell 76%, the table stops 140 ms, and a blast
+  throws every loose piece and physical card away while the two dice, the supply and the control dice are pinned;
+  the table flashes gold, a shockwave and a rune circle run out, CRITICAL slams down and the table shakes. The result
+  is a tight plaque at the top: Hope and Fear either side of the total (winner larger and lit), other dice as
+  octagon badges in their colours, the total counting up and popping (harder high, smaller low, red under a 1).
+  Table rolls are thrown towards the middle so they never land under it. The Presets tab loads first (preview above
+  a list that opens over what is below, ready-made and your own together, then a code or a file), then your
+  presets, then sharing, then start over. A physical card keeps its angle as it comes to rest (it used to be
+  wrapped into 0 to 360, and its transition spun it round).
