@@ -48,6 +48,9 @@ const TOKEN_BOX_W = 412;
 /** The token drawer's dice list, measured: two rows of die and label, padding and border, plus a margin. */
 const DIE_MENU_H = 140;
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
+/** A held arrow's pitch climbs this many cents a card for HOLD_PEAK cards, then comes back down. */
+const HOLD_CENTS = 70;
+const HOLD_PEAK = 6;
 
 function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
   if (states.modsOff.has(ref)) return 'muted';
@@ -126,10 +129,10 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
     return t;
   }, [hand, focusId, cx, areaL, areaW, handW, handTop, focusTop, focusW]);
 
-  const focus = useCallback((id: string) => {
+  const focus = useCallback((id: string, cents = 0) => {
     if (id === focusId) return;
     // The same sound whether a card is picked from the hand or stepped to with the keys (owner).
-    playSfx('cardFullscreenEnter');
+    playSfx('cardFullscreenEnter', { cents });
     if (focusId) ctx.endCardFocus(); // a different card takes the slot: the override streak ends, as on the phone
     setHoverId(null);
     setFocusId(id);
@@ -193,6 +196,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
   keyRef.current = keyState;
   useEffect(() => {
     if (!desktop || typeof document === 'undefined') return;
+    let held = 0; // cards stepped through by one held arrow
     const onKey = (e: KeyboardEvent) => {
       const k = keyRef.current;
       if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
@@ -202,8 +206,11 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
       if (k.menu) return; // the menu owns the keys while it is open
       if (key === '[' || key === ']') { e.preventDefault(); moveRef.current(key === ']' ? 1 : -1); return; }
       const stride = e.shiftKey ? 2 : 1; // Shift moves two at a time, as the keys page teaches
-      if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? 0 : (at + stride) % ids.length]); return; }
-      if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? ids.length - 1 : (at - stride + ids.length * 2) % ids.length]); return; }
+      // Holding an arrow walks the deck with the pitch rising a step a card, then falling back, and round again.
+      held = e.repeat ? held + 1 : 0;
+      const cents = HOLD_CENTS * (HOLD_PEAK - Math.abs(HOLD_PEAK - (held % (HOLD_PEAK * 2))));
+      if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? 0 : (at + stride) % ids.length], cents); return; }
+      if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? ids.length - 1 : (at - stride + ids.length * 2) % ids.length], cents); return; }
       // The provider plays the deck-switch sound itself.
       if (key === 'q' || key === 'e') { ctx.cycleCategory(key === 'q' ? -1 : 1); return; }
       if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) ctx.setCategory(c); return; }
