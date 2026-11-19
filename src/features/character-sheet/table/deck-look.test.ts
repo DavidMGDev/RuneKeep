@@ -1,4 +1,4 @@
-import { BUILTIN_LOOKS, cardOffset, cleanLook, decodeLook, DEFAULT_LOOK, encodeLook, lookScale, lookX, LOOK_PAGES, randomTables, TABLE_PRESETS, tableScore } from './deck-look';
+import { BUILTIN_LOOKS, readTableFile, tableFile, cardOffset, cleanLook, decodeLook, DEFAULT_LOOK, encodeLook, lookScale, lookX, LOOK_PAGES, randomTables, TABLE_PRESETS, tableScore } from './deck-look';
 
 describe('deck look', () => {
   it('round-trips a look through a share code', () => {
@@ -70,5 +70,23 @@ describe('deck look', () => {
     expect(a).toHaveLength(4);
     for (const l of a) expect(tableScore(l)).toBeGreaterThanOrEqual(0.99);
     expect(randomTables(4, 2026)).toEqual(a);
+  });
+
+  it('reads a code wherever it sits in what was pasted, in any case, with quotes, breaks and a full stop around it', () => {
+    const look = TABLE_PRESETS[1].look;
+    const code = encodeLook(look);
+    const messy = `Here: "${code.slice(0, 20)}
+${code.slice(20).replace(/^RK1/, '')}".`;
+    expect(decodeLook(messy)).toEqual(look);
+    expect(decodeLook(`  ${code.replace('RK1:', 'rk1:')}  `)).toEqual(look);
+  });
+
+  it('saves a table as a file and reads it back whole, name and all, and is never a character file', () => {
+    const look = TABLE_PRESETS[4].look;
+    const file = tableFile(look, 'Our table');
+    expect(readTableFile(file)).toEqual({ name: 'Our table', look });
+    expect(readTableFile(JSON.stringify({ schemaVersion: 1, name: 'A character' }))).toBeNull();
+    expect(readTableFile(`notes
+${encodeLook(look)}`)?.look).toEqual(look);
   });
 });

@@ -36,7 +36,7 @@ import type { DiceTrayHandle } from '../sheet/dice-tray';
 import type { DicePresetSlots } from '../sheet/dice-preset-slots';
 import { SortPanel } from '../sheet/sort-panel';
 import { BoardCards, maxW, MIN_W } from './board-cards';
-import { type DeckLook, decodeLook } from './deck-look';
+import { type DeckLook } from './deck-look';
 import { CardFace, DeskCarousel, type DeskCarouselHandle, type TableCard } from './desk-carousel';
 import type { Bounds } from './dice-physics';
 import { type DomatCard, DOMAT, DOMAT_COOLDOWN_MS, drawDomat } from './domat';
@@ -917,19 +917,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setBoard(next);
   }, [tableW, tableH, setBoard, livePoses]);
 
-  // ---------------------------------------------------------------- shared tables (a link with #table=RK1:...)
-  const [offer, setOffer] = useState<DeckLook | null>(null);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const m = /[#&]table=([^&]+)/.exec(window.location.hash);
-    if (!m) return;
-    const l = decodeLook(decodeURIComponent(m[1]));
-    if (l) setOffer(l);
-  }, []);
-  const clearOffer = () => {
-    setOffer(null);
-    try { window.history.replaceState(null, '', window.location.pathname + window.location.search); } catch { /* fine */ }
-  };
 
   // ---------------------------------------------------------------- panels, back, keys
   useEffect(() => { if (overlay) { setMenu(null); setCopy(null); setTableMenu(null); } }, [overlay]);
@@ -1218,16 +1205,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           <HandGrip hand={hand} onMove={(cy) => setLook({ ...lookRef.current, areaY: Math.min(1, Math.max(0, cy / tableH)) })} />
         ) : null}
 
-        {/* A table someone shared by link. */}
-        {offer ? (
-          <div data-ui="" role="dialog" aria-label="A shared table" style={{ position: 'absolute', left: '50%', top: pad + 14, transform: 'translateX(-50%)', zIndex: 1270 }}>
-            <Chamfer c={10} fill="rgba(11,14,19,0.97)" line={T.gold} inner={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 14 }}>Someone shared a table with you.</span>
-              <TButton label="Use it" primary h={32} onPress={() => { setLook(offer); clearOffer(); playSfx('cardSelect'); }} />
-              <TButton label="Not now" h={32} onPress={clearOffer} />
-            </Chamfer>
-          </div>
-        ) : null}
 
         {/* The copy in your hand. */}
         {copy ? (

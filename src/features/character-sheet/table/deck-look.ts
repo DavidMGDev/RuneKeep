@@ -498,15 +498,41 @@ export function encodeLook(look: DeckLook): string {
 
 /** A pasted code back into a look, or null when it is not one. Tolerates spaces and line breaks around it. */
 export function decodeLook(code: string): DeckLook | null {
-  const s = code.trim().replace(/\s+/g, '');
-  if (!s.startsWith(CODE_PREFIX)) return null;
+  // Forgiving (owner, v0.47.9: codes "didn't work"): the code is found wherever it sits in what was pasted, whatever
+  // case its prefix came out in, and quotes, spaces, line breaks or a full stop picked up on the way are ignored.
+  const m = /rk1:\s*([A-Za-z0-9_\-\s]+)/i.exec(code);
+  if (!m) return null;
+  const body = m[1].replace(/[^A-Za-z0-9_-]/g, '');
+  if (!body) return null;
   try {
-    const parsed = JSON.parse(fromBase64Url(s.slice(CODE_PREFIX.length)));
+    const parsed = JSON.parse(fromBase64Url(body));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     return cleanLook({ ...DEFAULT_LOOK, ...parsed });
   } catch {
     return null;
   }
+}
+
+/**
+ * A table as a file to hand someone (v0.47.9, owner: "a .rune file built for sharing the template of the table"):
+ * the WHOLE look, not only what differs from today's defaults, so a later release changing a default cannot change a
+ * table someone saved. Marked as a table, so it is never mistaken for a character's .rune file.
+ */
+export const TABLE_FILE_KIND = 'runekeep-table';
+export function tableFile(look: DeckLook, name: string): string {
+  return JSON.stringify({ kind: TABLE_FILE_KIND, version: 1, name: name.slice(0, 40), look }, null, 2);
+}
+
+/** A table file (or a pasted code, or a file holding one) back into a name and a look; null when it is not one. */
+export function readTableFile(text: string): { name: string; look: DeckLook } | null {
+  try {
+    const f = JSON.parse(text) as { kind?: unknown; name?: unknown; look?: unknown };
+    if (f && typeof f === 'object' && f.kind === TABLE_FILE_KIND && f.look && typeof f.look === 'object') {
+      return { name: typeof f.name === 'string' ? f.name.slice(0, 40) : '', look: cleanLook(f.look) };
+    }
+  } catch { /* not JSON: it may hold a code */ }
+  const look = decodeLook(text);
+  return look ? { name: '', look } : null;
 }
 
 function toBase64Url(text: string): string {

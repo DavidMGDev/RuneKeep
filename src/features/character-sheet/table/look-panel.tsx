@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { playSfx } from '@/lib/sfx';
-import { BUILTIN_LOOKS, type DeckLook, decodeLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, TABLE_PRESETS, wearsHand, withHand } from './deck-look';
+import { BUILTIN_LOOKS, type DeckLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, readTableFile, TABLE_PRESETS, tableFile, wearsHand, withHand } from './deck-look';
 import { loadSavedLooks, type SavedLook, saveSavedLooks } from './table-store';
 import { chamferClip, Glyph, T, TButton } from './table-ui';
 
@@ -140,10 +140,37 @@ function SectionTitle({ children }: { children: string }) {
   return <span style={{ color: T.goldText, fontFamily: T.bold, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase' }}>{children}</span>;
 }
 
-/** A link that opens RuneKeep with this table offered to whoever follows it. */
-function shareLink(look: DeckLook): string {
-  const here = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}${window.location.search}` : '';
-  return `${here}#table=${encodeURIComponent(encodeLook(look))}`;
+/** Put text on the clipboard: the browser's clipboard, else the old copy command. False when neither worked. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); return true; }
+  } catch { /* blocked: try the old way */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Save a table as a .rune file to the downloads (v0.47.9, owner: files and codes, no links). */
+function downloadTable(look: DeckLook, name: string): void {
+  const url = URL.createObjectURL(new Blob([tableFile(look, name)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name.replace(/[^a-z0-9 _-]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || 'runekeep-table'}.rune`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 const sameLook = (a: DeckLook, b: DeckLook) => JSON.stringify(a) === JSON.stringify(b);
@@ -162,22 +189,36 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
     setName('');
     playSfx('cardSelect', { volume: 0.6 });
   };
-  const copy = (text: string, what: string) => {
-    void navigator.clipboard?.writeText(text).then(
-      () => setNote({ text: `${what} copied. Send it to whoever should have this table.` }),
-      () => setNote({ text }),
-    );
+  /** The code, shown to copy by hand when the browser would not let it be copied. */
+  const [shown, setShown] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const copyCode = async () => {
     playSfx('buttonTap');
+    const text = encodeLook(look);
+    if (await copyText(text)) {
+      setShown(null);
+      setNote({ text: 'Code copied. Whoever gets it pastes it here and presses Use.' });
+    } else {
+      setShown(text);
+      setNote({ text: 'This browser would not copy it. Select the code below and copy it yourself.', bad: true });
+    }
+  };
+  const apply = (got: { name: string; look: DeckLook } | null, bad: string) => {
+    if (!got) { setNote({ text: bad, bad: true }); playSfx('cardDisable', { volume: 0.5 }); return; }
+    onChange(got.look);
+    if (got.name) setName(got.name);
+    setNote({ text: `Applied${got.name ? ` ${got.name}` : ''}. Save it below to keep it.` });
+    playSfx('cardSelect', { volume: 0.6 });
   };
   const use = () => {
-    // A link or a bare code: both carry the same RK1 code.
-    const m = /table=([^&\s]+)/.exec(code);
-    const l = decodeLook(m ? decodeURIComponent(m[1]) : code);
-    if (!l) { setNote({ text: 'That is not a table. Paste a link or a code that came from Copy link or Copy code.', bad: true }); playSfx('cardDisable', { volume: 0.5 }); return; }
-    onChange(l);
-    setCode('');
-    setNote({ text: 'Applied. Save it below to keep it.' });
-    playSfx('cardSelect', { volume: 0.6 });
+    apply(readTableFile(code), 'That is not a table code. Codes start with RK1: and come from Copy code.');
+    if (readTableFile(code)) setCode('');
+  };
+  const openFile = (f: File) => {
+    void f.text().then(
+      (t) => apply(readTableFile(t), 'That file is not a RuneKeep table. Tables are the .rune files made by Download file.'),
+      () => apply(null, 'That file could not be read.'),
+    );
   };
   const block = { display: 'flex', flexDirection: 'column', gap: 9, padding: '16px 0 14px', borderBottom: '1px solid rgba(218,162,73,0.14)' } as const;
   const shuffle = () => {
@@ -189,15 +230,18 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
     <>
       <div style={block}>
         <SectionTitle>Share this table</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Everything you have set, hand, motion, table and where the pieces live. A link opens it for them; a code fits in a chat.</span>
+        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Everything you have set: hand, motion, table and where the pieces live. A code fits in a chat; a file keeps the table exactly, even after RuneKeep updates.</span>
         <div style={{ display: 'flex', gap: 6 }}>
-          <TButton label="Copy link" primary wide h={34} onPress={() => copy(shareLink(look), 'Link')} />
-          <TButton label="Copy code" wide h={34} onPress={() => copy(encodeLook(look), 'Code')} />
+          <TButton label="Copy code" primary wide h={34} onPress={() => void copyCode()} />
+          <TButton label="Download file" wide h={34} title="Save this table as a .rune file" onPress={() => { playSfx('buttonTap'); downloadTable(look, name.trim() || 'RuneKeep table'); setNote({ text: 'Saved to your downloads as a .rune file. Send it to whoever should have this table.' }); }} />
         </div>
+        {shown ? <textarea readOnly value={shown} aria-label="The table's code" onFocus={(e) => e.currentTarget.select()} rows={3} style={{ resize: 'none', background: T.panel, color: T.ivory, border: `1px solid ${T.goldSoft}`, fontFamily: T.medium, fontSize: 12, padding: 8, wordBreak: 'break-all' }} /> : null}
         <div style={{ display: 'flex', gap: 6 }}>
-          <Field value={code} onChange={(v) => { setCode(v); setNote(null); }} placeholder="Paste a link or a code" onEnter={use} max={3000} />
+          <Field value={code} onChange={(v) => { setCode(v); setNote(null); }} placeholder="Paste a code (RK1:...)" onEnter={use} max={6000} />
           <TButton label="Use" h={34} disabled={!code.trim()} onPress={use} />
         </div>
+        <TButton label="Open a file" h={34} title="Load a table from a .rune file" onPress={() => fileInput.current?.click()} />
+        <input ref={fileInput} type="file" accept=".rune,.json,.txt" aria-label="Open a table file" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ''; }} />
         {note ? <span role="status" style={{ color: note.bad ? '#E2705A' : T.goldText, fontFamily: T.medium, fontSize: 13, lineHeight: '18px', wordBreak: 'break-all' }}>{note.text}</span> : null}
       </div>
 
@@ -224,7 +268,7 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
         {saved.map((s) => (
           <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <div style={{ flex: 1 }}><LookRow name={s.name} active={sameLook(look, s.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(s.look); }} /></div>
-            <TButton title={`Copy a link to ${s.name}`} h={34} onPress={() => copy(shareLink(s.look), 'Link')} icon={<Glyph d='<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>' size={14} color={T.muted} />} />
+            <TButton title={`Download ${s.name} as a file`} h={34} onPress={() => { playSfx('buttonTap'); downloadTable(s.look, s.name); }} icon={<Glyph d='<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/>' size={14} color={T.muted} />} />
             <TButton title={`Delete ${s.name}`} h={34} onPress={() => { playSfx('tokenRemove', { volume: 0.6 }); store(saved.filter((x) => x.name !== s.name)); }} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={13} color={T.muted} />} />
           </div>
         ))}

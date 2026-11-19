@@ -116,8 +116,9 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - Layout is part of the look (`ctlX/ctlY/ctlDir`, `supX/supY/supDir`, `catX/catY`, `handMode`): while settings are
   open every row goes home and can be dragged or stood on end. Six whole tables made for ways of playing
   (Storyteller, Dice goblin, Tactician, Archivist, Showman, Duelist) and four drawn by `randomTables` and kept,
-  scored by `tableScore` (rows on the table, out of the hand, clear of each other). Share is a link (`#table=RK1:`)
-  or a code, first on the Presets tab.
+  scored by `tableScore` (rows on the table, out of the hand, clear of each other). Share is a code (`RK1:`, read
+  forgivingly wherever it sits in what was pasted) or a .rune table file (`tableFile`, the whole look, marked
+  `runekeep-table` so it is never taken for a character), first on the Presets tab. No links (v0.47.9, owner).
 - v0.47.7: control dice can hop instead of roll (`ctlMotion`, on in Tactician and Showman): thrown or knocked they
   jump upright to where they would have slid and only turn when the deck changes; every hop carries on from its height
   when redirected, so dragging rows in settings never stutters. While settings are open the hand has a grip to drag it
