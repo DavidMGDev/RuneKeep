@@ -358,11 +358,16 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   // ---------------------------------------------------------------- the supply and the loose pieces
   const [supplyDie, setSupplyDie] = useState<DieType>('d6');
   const [material, setMaterial] = useState<(typeof MATERIALS)[number]>('wood');
+  // The colour token's colour lives here while the wheel turns, and reaches the sheet only once it stops: every
+  // write to the sheet re-renders all of it, which is what made scrolling the supply lag (owner, v0.47.4).
+  const [supColor, setSupColor] = useState(() => ctx.tokenColor || TOKEN_COLORS[0]);
+  useEffect(() => { if (ctx.tokenColor) setSupColor(ctx.tokenColor); }, [ctx.tokenColor]);
+  const colorSave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supply = useMemo<SupplyPiece[]>(() => (look.tokenTray ? [
     { key: 'src:mat', token: { kind: material }, label: material },
-    { key: 'src:color', token: { kind: 'color', color: ctx.tokenColor || TOKEN_COLORS[0] }, label: 'Colour' },
+    { key: 'src:color', token: { kind: 'color', color: supColor }, label: 'Colour' },
     { key: 'src:die', token: { kind: 'die', dieType: supplyDie, dieValue: 1, dieValue2: supplyDie === 'duality' ? 1 : undefined }, label: supplyDie === 'duality' ? 'Hope & Fear' : supplyDie },
-  ] : []), [look.tokenTray, ctx.tokenColor, supplyDie, material]);
+  ] : []), [look.tokenTray, supColor, supplyDie, material]);
   const looseKey = `runekeep.table.loose.${characterId}`;
   const [loose, setLooseState] = useState<LoosePiece[]>(() => { try { return JSON.parse(localStorage.getItem(looseKey) ?? '[]') as LoosePiece[]; } catch { return []; } });
   const looseRef = useRef(loose);
@@ -737,14 +742,24 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     }
   }, [tableW, tableH, play.left, play.right, play.top, play.bottom, addFx, breakCard, setLoose]);
 
+  const drawnRef = useRef(drawn);
+  drawnRef.current = drawn;
   const playDrawn = useCallback((uid: string, x: number, y: number) => {
-    const d = drawn.find((c) => c.uid === uid);
+    const d = drawnRef.current.find((c) => c.uid === uid);
     if (!d) return;
     setDrawn((l) => l.filter((c) => c.uid !== uid));
     addFx({ kind: 'consume', x, y, r: 120, ms: 520, tint: d.card.tint });
     playSfx('cardDragEnd', { volume: 0.7 });
     setTimeout(() => runEffect(d, x, y), 300);
-  }, [drawn, addFx, runEffect]);
+  }, [addFx, runEffect]);
+  /** Right click on a drawn card (owner, v0.47.4): it is dealt to somewhere at random on the table and used there. */
+  const dealDrawn = useCallback((uid: string) => {
+    const x = play.left + 120 + Math.random() * Math.max(10, play.right - play.left - 240);
+    const y = openTop + 100 + Math.random() * Math.max(10, openBottom - openTop - 200);
+    playSfx('cardDragStart', { volume: 0.7 });
+    setDrawn((l) => l.map((c) => (c.uid === uid ? { ...c, x, y } : c)));
+    setTimeout(() => playDrawn(uid, x, y), 560);
+  }, [play.left, play.right, openTop, openBottom, playDrawn]);
 
   // ---------------------------------------------------------------- dice and controls
   const canReorder = !!ctx.onReorderCards && category !== FAVORITES_CATEGORY && deck.length > 1 && !spread;
@@ -771,26 +786,33 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     shake(tableRef.current, Math.min(1.3, (speed - 2400) / 4500));
   }, []);
   /** A physical card moved: drawn there straight away; kept once it stops. */
+  /**
+   * A physical card moved: drawn there straight away, and kept (from where physics says it is, never read back from
+   * the page) once it stops. Until then `livePoses` is where it is drawn from, so nothing re-renders it back to where
+   * it last stopped (owner, v0.47.4: grabbing one snapped it upright).
+   */
+  const livePoses = useRef(new Map<string, { x: number; y: number; rot: number }>()).current;
   const onCardsMoved = useCallback((moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => {
     for (const m of moved) {
-      const el = tableRef.current?.querySelector(`[data-board-card="${CSS.escape(m.key.slice(5))}"]`) as HTMLElement | null;
+      const uid = m.key.slice(5);
+      livePoses.set(uid, { x: m.x, y: m.y, rot: m.rot });
+      const el = tableRef.current?.querySelector(`[data-board-card="${CSS.escape(uid)}"]`) as HTMLElement | null;
       if (!el) continue;
       el.style.left = `${m.x - el.offsetWidth / 2}px`;
       el.style.top = `${m.y - el.offsetHeight / 2}px`;
       el.style.transform = `rotate(${m.rot.toFixed(2)}deg)`;
       el.dataset.rot = m.rot.toFixed(2);
     }
-    if (!rested.length) return;
-    const eng = diceRef.current?.engine();
+    const done = rested.map((k) => k.slice(5)).filter((uid) => livePoses.has(uid));
+    if (!done.length) return;
     const next = boardRef.current.map((b) => {
-      if (!rested.includes(`card:${b.uid}`)) return b;
-      const el = tableRef.current?.querySelector(`[data-board-card="${CSS.escape(b.uid)}"]`) as HTMLElement | null;
-      if (!el || !eng) return b;
-      const r = el.getBoundingClientRect(), root = tableRef.current!.getBoundingClientRect();
-      return { ...b, fx: (r.left + r.width / 2 - root.left) / tableW, fy: (r.top + r.height / 2 - root.top) / tableH, rot: Math.round(((Number(el.dataset.rot) % 360) + 360) % 360) };
+      const p = livePoses.get(b.uid);
+      if (!p || !done.includes(b.uid)) return b;
+      return { ...b, fx: p.x / tableW, fy: p.y / tableH, rot: Math.round((((p.rot % 360) + 360) % 360) * 10) / 10 };
     });
+    for (const uid of done) livePoses.delete(uid);
     setBoard(next);
-  }, [tableW, tableH, setBoard]);
+  }, [tableW, tableH, setBoard, livePoses]);
 
   // ---------------------------------------------------------------- shared tables (a link with #table=RK1:...)
   const [offer, setOffer] = useState<DeckLook | null>(null);
@@ -935,7 +957,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               feltW={tableW}
               feltH={tableH}
               hidden={new Set(shattering.map((s) => s.uid))}
-              onChange={setBoard}
+              live={livePoses}
+              onChange={(next) => setBoard(next.map((b) => { const p = livePoses.get(b.uid); return p ? { ...b, rot: Math.round((((p.rot % 360) + 360) % 360) * 10) / 10 } : b; }))}
               onReturn={(uid) => { if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
               onLift={(b) => {
                 const { w, h } = sizeOf(b);
@@ -979,7 +1002,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           <DomatCardView key={d.uid} card={d.card} x={d.x} y={d.y} from={d.from}
             onMove={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y } : c)))}
             onPlay={(x, y) => playDrawn(d.uid, x, y)}
-            onReturn={() => { playSfx('cardDeselect', { volume: 0.6 }); setDrawn((l) => l.filter((c) => c.uid !== d.uid)); if (d.card.once) setGone((g) => { const n = new Set(g); n.delete(d.card.id); return n; }); }} />
+            onDeal={() => dealDrawn(d.uid)} />
         ))}
 
         {showHint ? (
@@ -1015,8 +1038,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onSpawn={(key, token, x, y) => setLoose([...looseRef.current, { key, token, x, y }])}
           onSupplyStep={(key, dir) => {
             if (key === 'src:color') {
-              const c = ctx.tokenColor || TOKEN_COLORS[0];
-              ctx.setTokenColor(TOKEN_COLORS[(TOKEN_COLORS.indexOf(c) + dir + TOKEN_COLORS.length) % TOKEN_COLORS.length]);
+              const next = TOKEN_COLORS[(Math.max(0, TOKEN_COLORS.indexOf(supColor)) + dir + TOKEN_COLORS.length) % TOKEN_COLORS.length];
+              setSupColor(next);
+              if (colorSave.current) clearTimeout(colorSave.current);
+              colorSave.current = setTimeout(() => ctx.setTokenColor(next), 600);
               playSfx('tokenCopyColor', { volume: 0.5 });
             } else if (key === 'src:die') {
               setSupplyDie((d) => (dir > 0 ? nextDieType(d) : DIE_TYPES[(DIE_TYPES.indexOf(d) - 1 + DIE_TYPES.length) % DIE_TYPES.length]));
@@ -1073,8 +1098,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {/* Reset, tidy and settings, in the lower left corner: buttons always win over the pieces under them. */}
         <div data-ui="" style={{ position: 'absolute', left: pad + 10, bottom: pad + 10, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 1260 }}>
-          <CornerButton glyph="tidy" label="Put every loose token and die back" onPress={tidyAll} disabled={!looseCount && !diceRef.current?.hasRoll()} />
-          <CornerButton glyph="reset" label="Send the dice and the supply home" onPress={() => { diceRef.current?.resetHome(); setGone(new Set()); }} />
+          <CornerButton glyph="tidy" label="Put loose pieces back" count={looseCount} onPress={tidyAll} disabled={!looseCount && !diceRef.current?.hasRoll()} />
+          <CornerButton glyph="reset" label="Send the dice and supply home" onPress={() => { diceRef.current?.resetHome(); setGone(new Set()); }} />
           <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { playSfx(settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />
         </div>
         {settings ? (
@@ -1148,16 +1173,23 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   );
 }
 
-function CornerButton({ glyph, label, onPress, active, disabled }: { glyph: 'settings' | 'reset' | 'tidy'; label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
+/** A corner button: its name slides out beside it on hover (owner, v0.47.4: the icons alone were unclear). */
+function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
   const [hover, setHover] = useState(false);
   const lit = hover && !disabled;
   return (
-    <button type="button" title={label} aria-label={label} aria-pressed={active} disabled={disabled} onClick={onPress} onPointerDown={(e) => e.stopPropagation()} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} style={{ all: 'unset', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.45 : 1 }}>
-      <Chamfer c={9} line={active ? T.red : lit ? T.goldBright : T.goldSoft} fill={active ? 'rgba(200,27,24,0.28)' : lit ? T.panelLit : 'rgba(11,14,19,0.9)'} style={{ width: 40, height: 40 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ display: 'flex', transform: lit ? `rotate(${glyph === 'settings' ? 60 : glyph === 'reset' ? -40 : 0}deg) scale(${glyph === 'tidy' ? 0.86 : 1})` : 'none', transition: `transform 280ms ${T.ease}` }}>
-          <Glyph d={DIE_GLYPHS[glyph]} size={19} color={active || lit ? T.ivory : T.goldText} />
-        </span>
-      </Chamfer>
+    <button type="button" aria-label={count ? `${label} (${count})` : label} aria-pressed={active} disabled={disabled} onClick={onPress} onPointerDown={(e) => e.stopPropagation()} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)} style={{ all: 'unset', cursor: disabled ? 'default' : 'pointer', position: 'relative', display: 'block' }}>
+      <div style={{ opacity: disabled ? 0.45 : 1 }}>
+        <Chamfer c={9} line={active ? T.red : lit ? T.goldBright : T.goldSoft} fill={active ? 'rgba(200,27,24,0.28)' : lit ? T.panelLit : 'rgba(11,14,19,0.9)'} style={{ width: 40, height: 40 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ display: 'flex', transform: lit ? (glyph === 'tidy' ? 'translateY(1.5px)' : `rotate(${glyph === 'settings' ? 60 : -40}deg)`) : 'none', transition: `transform 280ms ${T.ease}` }}>
+            <Glyph d={DIE_GLYPHS[glyph]} size={19} color={active || lit ? T.ivory : T.goldText} />
+          </span>
+        </Chamfer>
+      </div>
+      {count ? <span style={{ position: 'absolute', right: -6, top: -6, minWidth: 18, height: 18, padding: '0 4px', boxSizing: 'border-box', background: T.red, color: T.ivory, fontFamily: T.bold, fontSize: 11, lineHeight: '18px', textAlign: 'center', clipPath: 'polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px)', pointerEvents: 'none' }}>{count > 99 ? '99+' : count}</span> : null}
+      <span style={{ position: 'absolute', left: 50, top: '50%', transform: `translate(${hover ? 0 : -6}px, -50%)`, opacity: hover ? 1 : 0, transition: `opacity 140ms, transform 200ms ${T.ease}`, pointerEvents: 'none', whiteSpace: 'nowrap', padding: '6px 10px', background: 'rgba(11,14,19,0.96)', border: `1px solid ${T.goldSoft}`, color: disabled ? T.muted : T.ivory, fontFamily: T.bold, fontSize: 12.5, letterSpacing: 0.4 }}>
+        {disabled && glyph === 'tidy' ? 'Nothing loose to put back' : label}
+      </span>
     </button>
   );
 }

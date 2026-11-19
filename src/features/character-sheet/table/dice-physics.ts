@@ -53,7 +53,11 @@ export interface Body {
   /** The closing turn onto a face. */
   settle?: { from: Quat; to: Quat; t: number; ms: number };
   /** Flying home (reset): an arc from where it was to where it lives. */
-  home?: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number };
+  home?: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number; spin?: Vec3 };
+  /** A piece of the supply: copies thrown out of it pass through it (and the rest of the supply) while fresh. */
+  spawner?: boolean;
+  /** A copy just out of the supply: it passes through every spawner until it is clear of them all. */
+  fresh?: boolean;
   /**
    * A card made physical (v0.47.3, owner): a w x h box turned by `a` (radians, clockwise on screen) that slides,
    * spins (`va`, rad/s) and is knocked about, but never tumbles. `r` is its half diagonal, for the broad check.
@@ -287,7 +291,7 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
   const hits: Impact[] = [];
   for (const b of bodies) {
     // A fixed piece (the supply, an anchored token) only ever turns over where it lies.
-    if (b.asleep || b.held || (b.fixed && !b.settle) || (b.ghost && !b.settle)) continue;
+    if (b.asleep || b.held || (b.fixed && !b.settle) || (b.ghost && !b.settle && !b.home)) continue;
     if (b.box) { boxStep(b, bounds, dt, hits, world, obstacles); continue; }
     if (b.home) {
       const h = b.home;
@@ -295,8 +299,13 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
       const e = 1 - Math.pow(1 - h.t, 3);
       b.x = h.fx + (h.tx - h.fx) * e;
       b.y = h.fy + (h.ty - h.fy) * e;
-      b.z = Math.sin(Math.PI * h.t) * b.r * 1.6;
-      b.q = qSlerp(b.q, restOn(b.q, b.faces[b.force ?? b.top], b.upright), Math.min(1, dt * 10));
+      b.z = Math.sin(Math.PI * h.t) * b.r * (h.spin ? 3.2 : 1.6);
+      if (h.spin) {
+        // Put away: it tumbles all the way in instead of landing on a face.
+        const [sx, sy, sz] = h.spin;
+        const wl = Math.hypot(sx, sy, sz) || 1, half = (wl * dt) / 2, k = Math.sin(half) / wl;
+        b.q = qNorm(qMul([sx * k, sy * k, sz * k, Math.cos(half)], b.q));
+      } else b.q = qSlerp(b.q, restOn(b.q, b.faces[b.force ?? b.top], b.upright), Math.min(1, dt * 10));
       if (h.t >= 1) { b.home = undefined; b.z = 0; b.vx = b.vy = b.vz = 0; b.w = [0, 0, 0]; beginSettle(b); }
       continue;
     }
@@ -474,10 +483,16 @@ function beginSettle(b: Body): void {
 
 /** Dice push each other apart and trade momentum. Always: nothing on the table is above anything else. */
 function collide(bodies: Body[], hits: Impact[]): void {
+  const nearSpawner = new Set<Body>();
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const a = bodies[i], b = bodies[j];
       if (a.home || b.home || a.ghost || b.ghost) continue;
+      // A fresh copy passes through the supply it came out of (owner, v0.47.4), for as long as it overlaps it.
+      if ((a.fresh && b.spawner) || (b.fresh && a.spawner)) {
+        if (Math.hypot(b.x - a.x, b.y - a.y) < a.r + b.r + 4) nearSpawner.add(a.fresh ? a : b);
+        continue;
+      }
       if (a.box || b.box) {
         if (Math.hypot(b.x - a.x, b.y - a.y) >= a.r + b.r) continue;
         if (a.box && b.box) boxBox(a, b, hits);
@@ -515,6 +530,7 @@ function collide(bodies: Body[], hits: Impact[]): void {
       }
     }
   }
+  for (const b of bodies) if (b.fresh && !nearSpawner.has(b)) b.fresh = false;
 }
 
 /**
@@ -555,12 +571,12 @@ export function snapFace(b: Body, face: number, ms = 120): void {
 export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => (b.asleep || (b.fixed && !b.settle)) && !b.held);
 
 /** Send a body home in an arc, landing on `face` (or the one on top now). */
-export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5): void {
+export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5, spin?: Vec3): void {
   b.asleep = false;
   b.held = false;
   b.settle = undefined;
   b.vx = b.vy = b.vz = 0;
   b.w = [0, 0, 0];
   if (face !== undefined) b.force = face;
-  b.home = { fx: b.x, fy: b.y, tx: x, ty: y, t: 0, dur };
+  b.home = { fx: b.x, fy: b.y, tx: x, ty: y, t: 0, dur, spin };
 }

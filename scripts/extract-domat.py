@@ -3,8 +3,7 @@
 Usage: python scripts/extract-domat.py <Rulebooklet-PNP.pdf>
 
 Writes src/features/character-sheet/table/domat-cards.json (names and rules text, which is SRD 5.1
-open game content) and public/domat/<id>.webp (the card art, which is the publisher's product
-identity: it stays out of git, see .gitignore, so only a local build shows it).
+open game content) and public/domat/<id>.webp (the card art).
 Cards sit two to a page (left and right) on pages 4 to 14: the art is the 872/909 x 672 image at the
 top of each half, the name is one of the two lines of the title block, the text is the block under it.
 """

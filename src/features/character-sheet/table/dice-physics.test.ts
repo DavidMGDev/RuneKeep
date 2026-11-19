@@ -158,3 +158,27 @@ describe('physical cards (v0.47.3)', () => {
     expect(Math.hypot(d.x - 400, d.y - 150)).toBeGreaterThan(10);
   });
 });
+
+describe('the supply and putting away (v0.47.4)', () => {
+  it('a fresh copy passes through the spawners until it is clear, then collides like anything else', () => {
+    const src = makeBody('src', 100, 100, 20, CUBE);
+    src.spawner = true;
+    const copy = makeBody('copy', 100, 100, 20, CUBE);
+    copy.fresh = true;
+    launch(copy, 900, 0, 0, [0, 0, 0]);
+    run([src, copy], seeded(8));
+    expect(src.x).toBe(100);
+    expect(src.y).toBe(100);
+    expect(copy.fresh).toBe(false);
+  });
+
+  it('a ghost flying home touches nothing and lands where it was sent', () => {
+    const g = makeBody('g', 600, 300, 20, CUBE);
+    g.ghost = true;
+    const d = makeBody('d', 200, 300, 20, CUBE);
+    sendHome(g, 200, 300, undefined, 0.4, [10, 4, 2]);
+    run([g, d], seeded(9));
+    expect(d.x).toBe(200);
+    expect(g.x).toBeCloseTo(200, 3);
+  });
+});

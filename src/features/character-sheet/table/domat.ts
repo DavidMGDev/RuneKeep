@@ -7,8 +7,8 @@
  * as the deck's own rules say; Reset puts them back.
  *
  * The cards' names and rules text come from the booklet (SRD 5.1 open game content) via scripts/extract-domat.py.
- * The art is the publisher's and is not shipped: a local build that ran the script shows it from /domat/<id>.webp,
- * everywhere else a card is drawn from its name and sigil.
+ * The art comes from the same booklet, at /domat/<id>.webp (shipped at the owner's call, v0.47.4); a card whose art
+ * fails to load is drawn from its name and colour.
  */
 import CARDS from './domat-cards.json';
 
@@ -67,5 +67,5 @@ export function drawDomat(gone: Set<string>, rand: () => number = Math.random): 
   return left.length ? left[Math.floor(rand() * left.length)] : null;
 }
 
-/** Where a local build keeps the art (gitignored, see scripts/extract-domat.py). */
+/** Where the art is served from (public/domat, made by scripts/extract-domat.py). */
 export const domatArt = (id: string) => `/domat/${id}.webp`;

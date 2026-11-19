@@ -93,5 +93,3 @@ RuneKeep-web-*.zip
 # Claude Code memory notes stay local
 .claude/memory/
 
-# Deck of Many Things art: the publisher's product identity, extracted locally by scripts/extract-domat.py
-public/domat/

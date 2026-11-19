@@ -19,7 +19,7 @@ export const DEFAULT_W = 170;
 /** The biggest a card may grow: most of the felt's height, and never past 460 px wide. */
 export const maxW = (feltH: number) => Math.max(MIN_W, Math.min(460, (feltH * 0.94 * FORGED_W) / FORGED_H));
 
-export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, overTray, onMenu, onLift, onCarry, onSettle, onDragTo, hidden }: {
+export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, overTray, onMenu, onLift, onCarry, onSettle, onDragTo, hidden, live }: {
   cards: BoardCard[];
   lookup: (id: string) => TableCard | undefined;
   feltW: number;
@@ -38,6 +38,8 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   onDragTo: (uid: string, x: number, y: number, rot: number, end?: boolean) => void;
   /** Cards not drawn (breaking into shards right now). */
   hidden?: Set<string>;
+  /** Where physical cards really are while physics moves them (px, degrees): drawn from here until they stop. */
+  live?: Map<string, { x: number; y: number; rot: number }>;
 }) {
   const [front, setFront] = useState<string[]>([]);
   const [returning, setReturning] = useState<string | null>(null);
@@ -60,7 +62,8 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
             onLift={() => onLift(c)}
             onCarry={onCarry}
             onSettle={onSettle}
-            onDragTo={(x, y, end) => onDragTo(c.uid, x, y, c.rot ?? 0, end)}
+            live={live}
+            onDragTo={(x, y, rot, end) => onDragTo(c.uid, x, y, rot, end)}
             onMove={(fx, fy, over) => { setReturning(over ? c.uid : null); onChange(cards.map((x) => (x.uid === c.uid ? { ...x, fx, fy } : x))); }}
             onDrop={(over) => { setReturning(null); if (over) onReturn(c.uid); }}
             onResize={(w) => onChange(cards.map((x) => (x.uid === c.uid ? { ...x, w } : x)))}
@@ -75,20 +78,22 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   );
 }
 
-const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, overTray, onMenu }: {
-  entry: BoardCard; card: TableCard; feltW: number; feltH: number; returning: boolean;
-  onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onDragTo: (x: number, y: number, end?: boolean) => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
+const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, overTray, onMenu }: {
+  entry: BoardCard; card: TableCard; feltW: number; feltH: number; returning: boolean; live?: Map<string, { x: number; y: number; rot: number }>;
+  onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onDragTo: (x: number, y: number, rot: number, end?: boolean) => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
   onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [drag, setDrag] = useState<'move' | 'size' | 'turn' | null>(null);
-  const rot = entry.rot ?? 0;
+  // A physical card is drawn where physics has it, so a re-render never snaps it back to where it last stopped.
+  const lp = live?.get(entry.uid);
+  const rot = lp ? lp.rot : entry.rot ?? 0;
   const [born, setBorn] = useState(false);
   useEffect(() => { const id = requestAnimationFrame(() => setBorn(true)); return () => cancelAnimationFrame(id); }, []);
   const w = Math.min(maxW(feltH), Math.max(MIN_W, entry.w));
   const h = (w * FORGED_H) / FORGED_W;
-  const cx = entry.fx * feltW;
-  const cy = entry.fy * feltH;
+  const cx = lp ? lp.x : entry.fx * feltW;
+  const cy = lp ? lp.y : entry.fy * feltH;
   const ref = useRef<HTMLDivElement>(null);
   const pages = card.faces?.length ?? 0;
 
@@ -143,7 +148,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
     // Resizing measures from the card's centre, so pulling the grip outwards grows it and inwards shrinks it.
     const startD = Math.hypot(e.clientX - (felt.left + cx), e.clientY - (felt.top + cy));
     let moved = false;
-    let last = { fx: entry.fx, fy: entry.fy };
+    let last = { fx: cx / feltW, fy: cy / feltH };
     if (mode === 'move') playSfx('cardDragStart', { volume: 0.6 });
     const move = (m: PointerEvent) => {
       if (!moved && Math.hypot(m.clientX - sx, m.clientY - sy) < 4) return;
@@ -158,7 +163,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       const nextF = { fx: nx / feltW, fy: Math.min(1.4, Math.max(0.03, ny / feltH)) };
       onCarry((nextF.fx - last.fx) * feltW, (nextF.fy - last.fy) * feltH);
       last = nextF;
-      onDragTo(nextF.fx * feltW, nextF.fy * feltH);
+      onDragTo(nextF.fx * feltW, nextF.fy * feltH, rot);
       onMove(last.fx, last.fy, overTray(m.clientX, m.clientY));
     };
     const up = (u: PointerEvent) => {
@@ -168,7 +173,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       setDrag(null);
       if (mode === 'size' && !moved) { playSfx('cardDragEnd', { volume: 0.5 }); onResize(DEFAULT_W); return; }
       if (mode === 'move') {
-        if (moved) { onSettle(); onDragTo(last.fx * feltW, last.fy * feltH, true); }
+        if (moved) { onSettle(); onDragTo(last.fx * feltW, last.fy * feltH, rot, true); }
         if (!moved) { if (pages > 1) { playSfx('gearScroll2', { volume: 0.5 }); onTurn(); } return; }
         const over = overTray(u.clientX, u.clientY);
         playSfx(over ? 'tokenRemove' : 'cardDragEnd', { volume: 0.7 });

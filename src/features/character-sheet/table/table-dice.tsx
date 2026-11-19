@@ -472,24 +472,30 @@ export const TableDice = forwardRef<TableDiceHandle, {
   // ---------------------------------------------------------------- the supply and the Deck of Many Things
   const backArt = useMemo(() => (typeof document === 'undefined' ? null : deckBack()), []);
   const supplyKey = props.supply.map((t) => `${t.key}:${t.token.kind}:${t.token.color ?? ''}:${t.token.dieType ?? ''}`).join('|') + (props.domat ? '|domat' : '');
+  /** What each supply piece was last built as: the wheel rebuilds only the one that changed (owner: it lagged). */
+  const built = useRef(new Map<string, string>());
   useEffect(() => {
     if (!engine) return;
     const want = new Set<string>();
     props.supply.forEach((t) => {
       for (const sp of tokenSpecs(pieceOf(t.key, t.token), numberFinish)) {
         want.add(sp.spec.key);
+        const sig = `${t.token.kind}:${t.token.color ?? ''}:${t.token.dieType ?? ''}:${numberFinish}`;
         const fresh = !engine.has(sp.spec.key);
+        if (!fresh && built.current.get(sp.spec.key) === sig) continue;
+        built.current.set(sp.spec.key, sig);
         const at = fresh ? placeOf(sp.spec.key) : { x: 0, y: 0 };
-        engine.add(sp.spec, at.x, at.y, { face: sp.face });
+        engine.add({ ...sp.spec, spawner: true }, at.x, at.y, { face: sp.face });
       }
     });
     if (props.domat && backArt) {
       want.add(DOMAT_KEY);
-      const fresh = !engine.has(DOMAT_KEY);
-      const at = fresh ? placeOf(DOMAT_KEY) : { x: 0, y: 0 };
-      engine.add({ key: DOMAT_KEY, shape: 'deck', size: 74, body: '#1c1026', edge: '#d9c9a3', ink: '#000', faces: [{ image: backArt }], finish: 'stone' }, at.x, at.y);
+      if (!engine.has(DOMAT_KEY)) {
+        const at = placeOf(DOMAT_KEY);
+        engine.add({ key: DOMAT_KEY, shape: 'deck', size: 74, body: '#1c1026', edge: '#d9c9a3', ink: '#000', faces: [{ image: backArt }], finish: 'stone', spawner: true }, at.x, at.y);
+      }
     }
-    for (const k of engine.keys()) if (k.startsWith('src:') && !want.has(k)) engine.remove(k);
+    for (const k of engine.keys()) if (k.startsWith('src:') && !want.has(k)) { engine.remove(k); built.current.delete(k); }
   }, [engine, supplyKey, numberFinish, backArt]); // eslint-disable-line react-hooks/exhaustive-deps
   // Loose tokens: added where they were left, removed when they go onto a card or back to the supply.
   const looseKey = props.loose.map((t) => `${t.key}:${t.token.kind}:${t.token.dieType ?? ''}:${t.token.color ?? ''}`).join('|');
@@ -532,7 +538,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const spawn = useCallback((token: TokenInfo, x: number, y: number) => {
     const e = engineRef.current!;
     const nk = `free:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    for (const sp of tokenSpecs(pieceOf(nk, token), live.current.numberFinish)) e.add(sp.spec, x + sp.dx, y, { face: sp.face, pop: true });
+    for (const sp of tokenSpecs(pieceOf(nk, token), live.current.numberFinish)) e.add(sp.spec, x + sp.dx, y, { face: sp.face, pop: true, fresh: true });
     live.current.onSpawn(nk, token, x, y);
     return token.dieType === 'duality' && token.kind === 'die' ? `${nk}:h` : token.dieType === 'd100' && token.kind === 'die' ? `${nk}:t` : nk;
   }, []);
@@ -929,12 +935,16 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (!t) return 'src:die';
         return t.kind === 'die' ? 'src:die' : t.kind === 'color' ? 'src:color' : 'src:mat';
       };
+      // Owner (v0.47.4): each piece goes in a beat after the last, arcs and tumbles to its spawner's home, touches
+      // nothing on the way and shrinks away there. The spawners go home at the same time.
       const keys = engine.keys().filter((k) => k.startsWith('free:') || k.startsWith('roll:'));
-      for (const k of keys) {
+      const STAGGER = 45;
+      keys.forEach((k, i) => {
         const target = k.startsWith('roll:') ? 'src:die' : toKey(baseOf(k));
-        const h = engine.state(sup.some((s) => s.key === target) ? target : 'src:die') ?? homeOf(target) ?? { x: 60, y: 60 };
-        engine.home(k, h.x, h.y);
-      }
+        const h = homeOf(sup.some((s) => s.key === target) ? target : 'src:die') ?? { x: 60, y: 60 };
+        engine.vanish(k, h.x, h.y, i * STAGGER);
+        if (i % 2 === 0 && i < 24) setTimeout(() => playSfx('placeToken', { volume: 0.3, cents: 300 + i * 40 }), i * STAGGER + 420);
+      });
       sendHome();
       playSfx('gearScroll2', { volume: 0.5 });
       setTimeout(() => {
@@ -943,7 +953,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         selection.current = [];
         live.current.onSelect([]);
         live.current.onTidied();
-      }, 700);
+      }, keys.length * STAGGER + 800);
     },
     openDecks: (at) => { playSfx('floatMenuOpen'); setRing(at); },
     hasRoll: () => rolled.current.size > 0,

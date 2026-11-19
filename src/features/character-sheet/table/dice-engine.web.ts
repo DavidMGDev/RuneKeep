@@ -48,6 +48,8 @@ export interface DieSpec {
   restFaces?: number[];
   /** Never moves: the token supply. */
   fixed?: boolean;
+  /** A piece of the supply: fresh copies pass through it. */
+  spawner?: boolean;
 }
 
 export interface DiceEngine {
@@ -58,7 +60,9 @@ export interface DiceEngine {
   /** Draw the table's edge as 3D rails (stone, brass) or not at all. */
   setWalls(kind: Walls, rect: Bounds, thickness: number): void;
   /** Put a die on the table (or rebuild the one with this key in place: its art, colours, finish or size). */
-  add(spec: DieSpec, x: number, y: number, opts?: { random?: boolean; face?: number; pop?: boolean }): void;
+  add(spec: DieSpec, x: number, y: number, opts?: { random?: boolean; face?: number; pop?: boolean; fresh?: boolean }): void;
+  /** Put a piece away: after `delay` ms it arcs and tumbles to (x, y), touching nothing, shrinks and is gone. */
+  vanish(key: string, x: number, y: number, delay: number): void;
   remove(key: string): void;
   has(key: string): boolean;
   keys(): string[];
@@ -355,7 +359,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -395,12 +399,18 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     wake();
   }
 
+  /** How big a piece is drawn: a touch bigger hovered or held, shrinking away as it is put away. */
+  function scaleOf(d: Die): number {
+    if (d.vanish === 'flying') return d.body.home ? 1 - 0.9 * Math.max(0, (d.body.home.t - 0.4) / 0.6) : 0.1;
+    return d.body.held ? 1.05 : hovered === d.spec.key ? 1.03 : 1;
+  }
+
   function sync(d: Die) {
     const b = d.body;
     const model = modelOf(d.spec.shape);
     const rad = d.spec.size / 2;
     // A light touch on hover, so the die's outline never grows past itself (owner, v0.47.2).
-    const target = d.body.held ? 1.05 : hovered === d.spec.key ? 1.03 : 1;
+    const target = scaleOf(d);
     d.scale += (target - d.scale) * 0.25;
     d.group.scale.setScalar(rad * d.scale);
     const jx = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
@@ -476,17 +486,20 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     }
     let easing = false;
     const rested: string[] = [];
+    const gone: string[] = [];
     // Label widths are read in one pass, before any label moves, so measuring never forces a layout per die.
     if (++frameNo % 30 === 1) for (const d of order) d.labelW = d.label?.offsetWidth ?? 0;
     for (const d of order) {
       sync(d);
-      if (Math.abs(d.scale - (d.body.held ? 1.05 : hovered === d.spec.key ? 1.03 : 1)) > 0.002) easing = true;
+      if (Math.abs(d.scale - scaleOf(d)) > 0.002) easing = true;
+      if (d.vanish === 'flying' && !d.body.home) gone.push(d.spec.key);
       const asleep = d.body.asleep && !d.body.held;
       if (asleep && !d.wasAsleep) rested.push(d.spec.key);
       d.wasAsleep = asleep;
     }
+    for (const k of gone) engine.remove(k);
     renderer.render(scene, camera);
-    if (rested.length) restCb(rested);
+    if (rested.length) restCb(rested.filter((k) => dice.has(k)));
     const jittering = order.some((d) => d.jitter > 0);
     if (!allAsleep(bodies) || easing || held || shards.length || fields.length || jittering || slip.until > now) raf = requestAnimationFrame(frame);
   }
@@ -608,6 +621,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.body.flat = spec.shape === 'chip' || spec.shape === 'deck';
         prev.body.restFaces = spec.restFaces;
         prev.body.fixed = spec.fixed;
+        prev.body.spawner = spec.spawner;
         wake();
         return;
       }
@@ -619,11 +633,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       body.flat = spec.shape === 'chip' || spec.shape === 'deck';
       body.restFaces = spec.restFaces;
       body.fixed = spec.fixed;
+      body.spawner = spec.spawner;
+      body.fresh = o?.fresh;
       if (face !== undefined && model.faces[face]) {
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
       }
-      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null };
+      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null };
       dice.set(spec.key, d);
       order.push(d);
       wake();
@@ -745,6 +761,21 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       }
       wake();
     },
+    vanish(key, x, y, delay) {
+      const d = dice.get(key);
+      if (!d || d.vanish) return;
+      d.vanish = 'waiting';
+      d.body.ghost = true;
+      d.body.held = false;
+      d.anchor = null;
+      setTimeout(() => {
+        if (dice.get(key) !== d) return;
+        d.vanish = 'flying';
+        const r = () => (Math.random() < 0.5 ? -1 : 1) * (14 + Math.random() * 10);
+        sendHome(d.body, x, y, undefined, 0.5 + Math.random() * 0.12, [r(), r(), r() * 0.5]);
+        wake();
+      }, delay);
+    },
     select(keys) {
       const want = new Set(keys);
       for (const d of order) setRing(d, want.has(d.spec.key));
@@ -819,6 +850,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
           } else if (body.asleep && !body.held) {
             body.x = c.x; body.y = c.y; body.a = a;
           }
+          if (body.box && (body.box.w !== c.w || body.box.h !== c.h)) body.asleep = false;
           body.box = { w: c.w, h: c.h };
           body.r = Math.hypot(c.w, c.h) / 2;
           cards.set(c.key, { x: body.x, y: body.y, w: c.w, h: c.h, a: body.a ?? 0, body, was: prev?.was ?? true, samples: prev?.samples ?? [] });
