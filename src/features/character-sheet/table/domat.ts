@@ -57,6 +57,9 @@ const EFFECTS: Record<string, { effect: DomatEffect; table: string; tint: string
 
 export const DOMAT: DomatCard[] = (CARDS as { id: string; name: string; text: string }[]).map((c) => ({ ...c, ...(EFFECTS[c.id] ?? EFFECTS.star) }));
 
+/** How long the deck waits between draws (owner, v0.47.6): each card shakes the whole table. */
+export const DOMAT_COOLDOWN_MS = 60_000;
+
 /** A drawn card's size on the table: smaller than a hand card. */
 export const DOMAT_W = 104;
 export const DOMAT_H = 150;

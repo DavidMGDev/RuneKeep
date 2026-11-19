@@ -97,7 +97,7 @@ export interface DiceEngine {
   /** The felt this slippery (1 normal, lower slides further) for `ms`. */
   slippery(scale: number, ms: number): void;
   /** A sudden push out from a point (negative pulls in), px/s at the centre fading to nothing at r. */
-  impulse(x: number, y: number, r: number, speed: number): void;
+  impulse(x: number, y: number, r: number, speed: number, boost?: { gen: number; power: number }): void;
   /**
    * The cards laid on the table. A card that is `phys` is a body (knocked about by dice, sliding, spinning); the
    * rest only carry what is anchored to them. Poses are the card's centre and its turn in degrees.
@@ -561,7 +561,19 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
 
   const engine: DiceEngine = {
     resize,
-    setBounds(b) { bounds = b; wake(); },
+    setBounds(b) {
+      bounds = b;
+      // Walls that grew (another table preset) must not leave anything resting inside them: wake it and pull it in.
+      for (const d of order) {
+        const bd = d.body;
+        if (bd.held || bd.fixed) continue;
+        const r = bd.box ? Math.min(bd.box.w, bd.box.h) / 2 : bd.r;
+        const nx = Math.min(b.right - r, Math.max(b.left + r, bd.x)), ny = Math.min(b.bottom - r, Math.max(b.top + r, bd.y));
+        if (nx !== bd.x || ny !== bd.y) { bd.x = nx; bd.y = ny; bd.asleep = false; bd.settle = undefined; }
+      }
+      for (const c of cards.values()) if (c.body) c.body.asleep = false;
+      wake();
+    },
     setObstacles(o) {
       obstacles = o;
       // A die already lying where an area now is gets pushed off it.
@@ -636,7 +648,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       body.spawner = spec.spawner;
       body.fresh = o?.fresh;
       // A fresh copy clears room for the next one: a weak push that keeps the spot by the supply free (owner).
-      if (o?.fresh) body.boost = { gen: 3, power: 1.6 };
+      if (o?.fresh) body.boost = { gen: 3, power: 1.6, soft: true };
       if (face !== undefined && model.faces[face]) {
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
@@ -821,7 +833,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       for (const d of order) if (!d.body.fixed) d.body.asleep = false;
       wake();
     },
-    impulse(x, y, r, speed) {
+    impulse(x, y, r, speed, boost) {
       const all = [...order.map((d) => d.body), ...[...cards.values()].flatMap((c) => (c.body ? [c.body] : []))];
       for (const b of all) {
         if (b.fixed || b.held || b.ghost) continue;
@@ -834,6 +846,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         if (b.box) { b.asleep = false; b.vx += nx * k; b.vy += ny * k; b.va = (b.va ?? 0) + (Math.random() - 0.5) * k * 0.01; continue; }
         const spin = 0.012 * Math.abs(k) + 8;
         launch(b, b.vx + nx * k, b.vy + ny * k, 0, [(Math.random() - 0.5) * 2 * spin, (Math.random() - 0.5) * 2 * spin, (Math.random() - 0.5) * spin]);
+        if (boost) b.boost = boost;
       }
       wake();
     },

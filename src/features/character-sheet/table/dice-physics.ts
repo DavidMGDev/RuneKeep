@@ -63,7 +63,7 @@ export interface Body {
    * carries the push on one generation weaker, down to nothing after `gen`. A launched piece starts at 5, a fresh
    * copy weaker; it lasts until the piece settles.
    */
-  boost?: { gen: number; power: number };
+  boost?: { gen: number; power: number; soft?: boolean };
   /**
    * A card made physical (v0.47.3, owner): a w x h box turned by `a` (radians, clockwise on screen) that slides,
    * spins (`va`, rad/s) and is knocked about, but never tumbles. `r` is its half diagonal, for the broad check.
@@ -481,7 +481,7 @@ function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
 /** The extra push one body passes to the one it hit (`n` points from src to tgt), and the generation after it. */
 function passBoost(src: Body, tgt: Body, nx: number, ny: number, jimp: number): void {
   const bo = src.boost;
-  if (!bo || bo.gen <= 0 || tgt.held || tgt.fixed) return;
+  if (!bo || bo.gen <= 0 || tgt.held || tgt.fixed || (tgt.spawner && bo.soft)) return;
   const k = jimp * bo.power * (bo.gen / 5);
   tgt.vx += nx * k;
   tgt.vy += ny * k;
@@ -489,7 +489,7 @@ function passBoost(src: Body, tgt: Body, nx: number, ny: number, jimp: number): 
   if (sp > 7000) { tgt.vx *= 7000 / sp; tgt.vy *= 7000 / sp; }
   tgt.asleep = false;
   tgt.settle = undefined;
-  if (bo.gen > 1 && (tgt.boost?.gen ?? 0) < bo.gen - 1) tgt.boost = { gen: bo.gen - 1, power: bo.power };
+  if (bo.gen > 1 && (tgt.boost?.gen ?? 0) < bo.gen - 1) tgt.boost = { gen: bo.gen - 1, power: bo.power, soft: bo.soft };
 }
 
 function beginSettle(b: Body): void {
@@ -529,8 +529,9 @@ function collide(bodies: Body[], hits: Impact[]): void {
       const d = Math.sqrt(d2);
       const nx = dx / d, ny = dy / d;
       const overlap = min - d;
-      // A held die is an immovable hand; a sleeping one wakes when pushed.
-      const ia = a.held || a.fixed ? 0 : 1, ib = b.held || b.fixed ? 0 : 1;
+      // A held die is an immovable hand; a sleeping one wakes when pushed. A spawner never gives way to the stream of
+      // copies coming out of the supply (a soft push, and whatever it passed on to).
+      const ia = a.held || a.fixed || (a.spawner && b.boost?.soft) ? 0 : 1, ib = b.held || b.fixed || (b.spawner && a.boost?.soft) ? 0 : 1;
       if (ia + ib === 0) continue;
       a.x -= nx * overlap * (ia / (ia + ib));
       a.y -= ny * overlap * (ia / (ia + ib));

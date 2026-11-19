@@ -39,10 +39,10 @@ import { BoardCards, maxW, MIN_W } from './board-cards';
 import { type DeckLook, decodeLook } from './deck-look';
 import { CardFace, DeskCarousel, type DeskCarouselHandle, type TableCard } from './desk-carousel';
 import type { Bounds } from './dice-physics';
-import { type DomatCard, DOMAT, drawDomat } from './domat';
+import { type DomatCard, DOMAT, DOMAT_COOLDOWN_MS, drawDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
-import { type CardPose, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
+import { type CardPose, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
 import { DomatCardView, type Fx, FX_CSS, FxLayer, shake, Shards } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
@@ -533,11 +533,36 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setFx((l) => [...l, { ...f, id }]);
     setTimeout(() => setFx((l) => l.filter((x) => x.id !== id)), f.ms + 60);
   }, []);
+  /**
+   * One card a minute (owner, v0.47.6): every card shakes the whole table, so the deck waits between draws. When
+   * the last draw was is kept per character, so a reload does not reset it.
+   */
+  const domatKey = `runekeep.table.domat.${characterId}`;
+  const [lastDraw, setLastDraw] = useState<number>(() => { try { return Number(localStorage.getItem(domatKey)) || 0; } catch { return 0; } });
+  const [, tickClock] = useState(0);
+  const domatWait = Math.max(0, Math.ceil((lastDraw + DOMAT_COOLDOWN_MS - Date.now()) / 1000));
+  useEffect(() => {
+    if (!domatWait) return;
+    const t = setInterval(() => tickClock((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [domatWait > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const drawCard = useCallback((from: { x: number; y: number }) => {
-    // Development only: `__rkNextDomat = 'comet'` in the console picks the next card, to check each effect.
+    // Development only: `__rkNextDomat = 'comet'` in the console picks the next card (and skips the wait), to check
+    // each effect.
     const forced = __DEV__ ? DOMAT.find((c) => c.id === (globalThis as { __rkNextDomat?: string }).__rkNextDomat) : undefined;
+    if (!forced && Date.now() < lastDraw + DOMAT_COOLDOWN_MS) {
+      // Not yet: the deck shudders, and its label shows how long is left.
+      playSfx('cardDisable', { volume: 0.5 });
+      const eng = diceRef.current?.engine();
+      eng?.jitter(DOMAT_KEY, 0.45);
+      setTimeout(() => eng?.jitter(DOMAT_KEY, 0), 320);
+      return;
+    }
     const card = forced ?? drawDomat(gone);
     if (!card) { playSfx('cardDisable', { volume: 0.5 }); return; }
+    const now = Date.now();
+    setLastDraw(now);
+    try { localStorage.setItem(domatKey, String(now)); } catch { /* private window */ }
     if (card.once) setGone((g) => new Set([...g, card.id]));
     playSfx('cardFullscreenEnter', { volume: 0.7 });
     // Where everything lay when it was drawn: the Fates card puts it all back.
@@ -548,7 +573,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const x = Math.min(tableW - pad - 70, Math.max(pad + 70, from.x + Math.cos(ang) * 130));
     const y = Math.min(tableH - pad - 90, Math.max(pad + 90, from.y + Math.abs(Math.sin(ang)) * 120 + 40));
     setDrawn((d) => [...d, { uid: uidOf(), card, x, y, from, snap }]);
-  }, [gone, tableW, tableH, pad]);
+  }, [gone, tableW, tableH, pad, lastDraw, domatKey]);
 
   /** A card breaking into shards (a copy goes; a laid-out hand card comes back a moment later). */
   const breakCard = useCallback((b: BoardCard) => {
@@ -559,6 +584,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (lookRef.current.handMode !== 'spread') setCopies(copiesRef.current.filter((c) => c.uid !== b.uid));
   }, [lookup, tableW, tableH, setCopies]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * A Deck of Many Things card plays out (v0.47.6, owner: "much more globally impactful", one draw a minute). Every
+   * card reaches the whole table, and its pushes carry on through what they hit, five generations deep, the way a
+   * launched piece's do.
+   */
   const runEffect = useCallback((d: { card: DomatCard; snap: Map<string, { x: number; y: number }> }, x: number, y: number) => {
     const eng = diceRef.current?.engine();
     const h = diceRef.current;
@@ -566,6 +596,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const { card } = d;
     const tint = card.tint;
     const diag = Math.hypot(tableW, tableH);
+    const mx = (play.left + play.right) / 2, my = (play.top + play.bottom) / 2;
+    const CHAIN = { gen: 5, power: 2.5 };
     const movable = () => eng.keys().filter((k) => !k.startsWith('tok:'));
     const looseKeys = () => eng.keys().filter((k) => k.startsWith('free:') || k.startsWith('roll:'));
     const near = (keys: string[], r: number) => keys.filter((k) => { const s = eng.state(k); return s && Math.hypot(s.x - x, s.y - y) < r; });
@@ -578,167 +610,193 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const shatterKeys = (keys: string[]) => { for (const k of keys) eng.shatter(k); dropLoose(keys); };
     const cardsNear = (r: number) => boardRef.current.filter((b) => Math.hypot(b.fx * tableW - x, b.fy * tableH - y) < r);
     const jolt = (p: number) => shake(tableRef.current, p);
+    const fling = (keys: string[], lo: number, hi: number) => {
+      for (const k of keys) { const a = Math.random() * Math.PI * 2, s = lo + Math.random() * (hi - lo); eng.toss(k, Math.cos(a) * s, Math.sin(a) * s, CHAIN); }
+    };
     switch (card.effect) {
       case 'gust':
-        addFx({ kind: 'flash', x, y, r: 0, ms: 700, tint });
-        addFx({ kind: 'ring', x, y, r: diag * 0.7, ms: 900, tint: '#fff6d0' });
-        eng.impulse(x, y, diag, 3600);
-        jolt(1.2);
-        playSfx('gainGoldenHp', { volume: 0.7, cents: -300 });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 1100, tint });
+        addFx({ kind: 'ring', x, y, r: diag, ms: 1100, tint: '#fff6d0' });
+        addFx({ kind: 'ring', x, y, r: diag * 0.6, ms: 800, tint });
+        eng.impulse(x, y, diag * 1.2, 7000, CHAIN);
+        jolt(1.6);
+        playSfx('gainGoldenHp', { volume: 0.9, cents: -300 });
         break;
       case 'star':
-        addFx({ kind: 'spark', x, y, r: 300, ms: 800, tint });
-        addFx({ kind: 'ring', x, y, r: 280, ms: 700, tint });
-        eng.impulse(x, y, 560, 2400);
-        jolt(0.4);
-        playSfx('gainHope', { volume: 0.7 });
+        addFx({ kind: 'spark', x, y, r: 520, ms: 1100, tint });
+        addFx({ kind: 'ring', x, y, r: diag * 0.8, ms: 1000, tint });
+        eng.impulse(x, y, diag, 5200, CHAIN);
+        jolt(1);
+        playSfx('gainHope', { volume: 0.9 });
         break;
       case 'flames': {
-        addFx({ kind: 'fire', x, y, r: 260, ms: 900 });
-        addFx({ kind: 'ring', x, y, r: 320, ms: 700, tint: '#ff7a3c' });
-        eng.impulse(x, y, 480, 2800);
-        const burnt = cardsNear(320).map((b) => b.uid);
+        addFx({ kind: 'fire', x, y, r: 520, ms: 1300 });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 700, tint: '#ff7a3c' });
+        addFx({ kind: 'ring', x, y, r: diag * 0.8, ms: 1000, tint: '#ff7a3c' });
+        eng.impulse(x, y, diag, 5600, CHAIN);
+        // Every card on the table is scorched for a while.
+        const burnt = boardRef.current.map((b) => b.uid);
         setScorched((s) => new Set([...s, ...burnt]));
-        setTimeout(() => setScorched((s) => { const n = new Set(s); for (const u of burnt) n.delete(u); return n; }), 9000);
-        jolt(0.7);
-        playSfx('loseHope', { volume: 0.7, cents: -400 });
+        setTimeout(() => setScorched((s) => { const n = new Set(s); for (const u of burnt) n.delete(u); return n; }), 15000);
+        jolt(1.2);
+        playSfx('loseHope', { volume: 0.9, cents: -400 });
         break;
       }
       case 'comet':
-        addFx({ kind: 'fire', x, y, r: 180, ms: 700 });
-        addFx({ kind: 'ring', x, y, r: 520, ms: 900, tint });
-        shatterKeys(near(looseKeys(), 150));
-        for (const b of cardsNear(170)) breakCard(b);
-        eng.impulse(x, y, 760, 4400);
-        jolt(1.5);
-        playSfx('cardDisable', { volume: 0.9, cents: -700 });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 900, tint: '#ffb070' });
+        addFx({ kind: 'fire', x, y, r: 360, ms: 1000 });
+        addFx({ kind: 'ring', x, y, r: diag, ms: 1200, tint });
+        shatterKeys(near(looseKeys(), 300));
+        for (const b of cardsNear(340)) breakCard(b);
+        eng.impulse(x, y, diag * 1.2, 8000, CHAIN);
+        jolt(2);
+        playSfx('cardDisable', { volume: 1, cents: -700 });
         break;
       case 'void':
-        addFx({ kind: 'vortex', x, y, r: 300, ms: 3300, tint });
-        eng.field({ kind: 'vortex', x, y, r: 560, k: 5600 }, 3200);
-        playSfx('floatMenuOpen', { volume: 0.7, cents: -900 });
+        addFx({ kind: 'vortex', x, y, r: Math.min(700, diag * 0.45), ms: 5000, tint });
+        eng.field({ kind: 'vortex', x, y, r: diag, k: 11000 }, 4800);
+        playSfx('floatMenuOpen', { volume: 0.9, cents: -900 });
         setTimeout(() => {
-          const swallowed = near(looseKeys(), 110);
+          // Everything loose that reached the middle is gone.
+          const swallowed = near(looseKeys(), 200);
           for (const k of swallowed) eng.remove(k);
           dropLoose(swallowed);
-          addFx({ kind: 'implode', x, y, r: 90, ms: 500, tint });
-        }, 3200);
+          addFx({ kind: 'implode', x, y, r: 200, ms: 700, tint });
+          jolt(0.8);
+        }, 4800);
         break;
       case 'blackhole':
-        addFx({ kind: 'implode', x, y, r: 380, ms: 1500, tint: '#5b4a7a' });
-        eng.field({ kind: 'radial', x, y, r: 820, k: -9000 }, 1400);
-        playSfx('floatMenuOpen', { volume: 0.8, cents: -1200 });
+        addFx({ kind: 'implode', x, y, r: 700, ms: 1900, tint: '#5b4a7a' });
+        eng.field({ kind: 'radial', x, y, r: diag * 1.2, k: -16000 }, 1800);
+        playSfx('floatMenuOpen', { volume: 0.9, cents: -1200 });
         setTimeout(() => {
-          eng.impulse(x, y, 900, 4300);
-          addFx({ kind: 'ring', x, y, r: 600, ms: 800, tint: '#ffffff' });
-          shake(tableRef.current, 1.2);
-          playSfx('gainGoldenHp', { volume: 0.7, cents: -900 });
-        }, 1450);
+          eng.impulse(x, y, diag * 1.2, 8000, CHAIN);
+          addFx({ kind: 'flash', x, y, r: 0, ms: 800, tint: '#ffffff' });
+          addFx({ kind: 'ring', x, y, r: diag, ms: 1100, tint: '#ffffff' });
+          shake(tableRef.current, 2);
+          playSfx('gainGoldenHp', { volume: 0.9, cents: -900 });
+        }, 1850);
         break;
       case 'cage':
-        addFx({ kind: 'implode', x, y, r: 240, ms: 1700, tint });
-        eng.field({ kind: 'radial', x, y, r: 440, k: -6400 }, 1600);
-        playSfx('cardDragEnd', { volume: 0.8, cents: -600 });
+        addFx({ kind: 'implode', x, y, r: 520, ms: 2600, tint });
+        eng.field({ kind: 'radial', x, y, r: diag * 1.2, k: -11000 }, 2500);
+        jolt(0.6);
+        playSfx('cardDragEnd', { volume: 0.9, cents: -600 });
         break;
       case 'scatter':
-        for (const k of movable()) { const a = Math.random() * Math.PI * 2, s = 1300 + Math.random() * 1500; eng.toss(k, Math.cos(a) * s, Math.sin(a) * s); }
-        addFx({ kind: 'spark', x, y, r: 200, ms: 600, tint });
-        jolt(0.6);
-        playSfx('carouselScroll', { volume: 0.8, cents: 500 });
+        fling(movable(), 2600, 5200);
+        addFx({ kind: 'spark', x, y, r: 360, ms: 900, tint });
+        addFx({ kind: 'ring', x, y, r: diag * 0.7, ms: 900, tint });
+        jolt(1.2);
+        playSfx('carouselScroll', { volume: 0.9, cents: 500 });
         break;
       case 'dance':
-        for (let i = 0; i < 7; i++) setTimeout(() => {
-          for (const k of movable()) { const a = Math.random() * Math.PI * 2, s = 260 + Math.random() * 260; eng.toss(k, Math.cos(a) * s, Math.sin(a) * s); }
-          addFx({ kind: 'spark', x: x + (Math.random() - 0.5) * 200, y: y + (Math.random() - 0.5) * 200, r: 90, ms: 500, tint });
-          playSfx('placeToken', { volume: 0.4, cents: 200 + i * 120 });
-        }, i * 260);
+        for (let i = 0; i < 12; i++) setTimeout(() => {
+          for (const k of movable()) { const a = Math.random() * Math.PI * 2, s = 500 + Math.random() * 600; eng.toss(k, Math.cos(a) * s, Math.sin(a) * s); }
+          addFx({ kind: 'spark', x: mx + (Math.random() - 0.5) * tableW * 0.8, y: my + (Math.random() - 0.5) * tableH * 0.8, r: 160, ms: 600, tint });
+          if (i % 3 === 0) jolt(0.4);
+          playSfx('placeToken', { volume: 0.5, cents: 200 + i * 100 });
+        }, i * 300);
         break;
       case 'moon':
-        addFx({ kind: 'ring', x, y, r: diag * 0.5, ms: 1600, tint });
-        eng.slippery(0.05, 6500);
-        eng.impulse(x, y, diag, 520);
-        playSfx('gainHope', { volume: 0.6, cents: -500 });
+        addFx({ kind: 'ring', x, y, r: diag, ms: 2200, tint });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 1600, tint: '#a8b8f0' });
+        eng.slippery(0.02, 14000);
+        eng.impulse(x, y, diag * 1.2, 1800);
+        playSfx('gainHope', { volume: 0.8, cents: -500 });
         break;
       case 'mirror':
-        for (const k of looseKeys()) { const s = eng.state(k); if (s) eng.home(k, clampX(2 * x - s.x), s.y); }
-        addFx({ kind: 'ring', x, y, r: 200, ms: 700, tint });
-        playSfx('cardFullscreenEnter', { volume: 0.6 });
+        // Everything that can move swaps to its mirror image across the card.
+        for (const k of movable()) { const s = eng.state(k); if (s) eng.home(k, clampX(2 * x - s.x), clampY(2 * y - s.y)); }
+        addFx({ kind: 'ring', x, y, r: diag * 0.6, ms: 900, tint });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
+        playSfx('cardFullscreenEnter', { volume: 0.8 });
         break;
       case 'scramble': {
-        const keys = looseKeys().filter((k) => !k.endsWith(':f') && !k.endsWith(':u'));
+        const keys = movable().filter((k) => !k.endsWith(':f') && !k.endsWith(':u'));
         const spots = keys.map((k) => eng.state(k)!).sort(() => Math.random() - 0.5);
         keys.forEach((k, i) => { const s = spots[i]; if (s) eng.home(k, s.x, s.y); });
-        addFx({ kind: 'smoke', x, y, r: 160, ms: 700 });
-        playSfx('carouselScroll', { volume: 0.7 });
+        addFx({ kind: 'smoke', x, y, r: 420, ms: 1000 });
+        playSfx('carouselScroll', { volume: 0.8 });
         break;
       }
       case 'throne': {
-        const keys = looseKeys();
-        const R = 70 + keys.length * 7;
+        const keys = movable();
+        const R = 90 + keys.length * 6;
         keys.forEach((k, i) => { const a = (i / Math.max(1, keys.length)) * Math.PI * 2 - Math.PI / 2; eng.home(k, clampX(x + Math.cos(a) * R), clampY(y + Math.sin(a) * R)); });
-        addFx({ kind: 'ring', x, y, r: R + 40, ms: 900, tint });
-        playSfx('gainGoldenHp', { volume: 0.5 });
+        addFx({ kind: 'ring', x, y, r: R + 60, ms: 1100, tint });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
+        playSfx('gainGoldenHp', { volume: 0.7 });
         break;
       }
       case 'tidy':
-        addFx({ kind: 'ring', x, y, r: 260, ms: 700, tint });
+        addFx({ kind: 'ring', x, y, r: diag * 0.6, ms: 900, tint });
         h.tidy();
+        h.resetHome();
         break;
       case 'rewind':
-        addFx({ kind: 'vortex', x, y, r: 200, ms: 900, tint });
+        addFx({ kind: 'vortex', x, y, r: 420, ms: 1300, tint });
         for (const [k, p] of d.snap) if (eng.has(k)) eng.home(k, p.x, p.y);
-        playSfx('gearScroll2', { volume: 0.7, cents: -300 });
+        playSfx('gearScroll2', { volume: 0.8, cents: -300 });
         break;
       case 'steal': {
-        const keys = looseKeys().filter((k) => !k.endsWith(':f') && !k.endsWith(':u')).sort(() => Math.random() - 0.5).slice(0, 3);
+        const keys = movable().filter((k) => !k.endsWith(':f') && !k.endsWith(':u')).sort(() => Math.random() - 0.5).slice(0, 10);
         for (const k of keys) {
           const s = eng.state(k);
-          if (s) addFx({ kind: 'smoke', x: s.x, y: s.y, r: 70, ms: 700 });
+          if (s) addFx({ kind: 'smoke', x: s.x, y: s.y, r: 90, ms: 800 });
           eng.home(k, clampX(play.left + Math.random() * (play.right - play.left)), clampY(play.top + Math.random() * (play.bottom - play.top)));
         }
-        addFx({ kind: 'smoke', x, y, r: 120, ms: 700 });
-        playSfx('cardDeselect', { volume: 0.7 });
+        addFx({ kind: 'smoke', x, y, r: 220, ms: 900 });
+        playSfx('cardDeselect', { volume: 0.8 });
         break;
       }
       case 'charge': {
+        // A charge across the whole table, through the card's row.
         const dir = x < tableW / 2 ? 1 : -1;
-        for (let i = 0; i < 8; i++) setTimeout(() => {
-          const cx = x + dir * i * 120;
-          eng.impulse(cx, y, 210, 2600);
-          addFx({ kind: 'ring', x: cx, y, r: 120, ms: 420, tint });
-        }, i * 80);
-        jolt(0.5);
-        playSfx('cardDragEnd', { volume: 0.9, cents: -200 });
+        const steps = Math.ceil(tableW / 110);
+        for (let i = 0; i < steps; i++) setTimeout(() => {
+          const cx = x + dir * i * 110;
+          eng.impulse(cx, y, 320, 4600, CHAIN);
+          addFx({ kind: 'ring', x: cx, y, r: 180, ms: 480, tint });
+          if (i % 3 === 0) jolt(0.5);
+        }, i * 55);
+        playSfx('cardDragEnd', { volume: 1, cents: -200 });
         break;
       }
       case 'gems': {
-        const add: LoosePiece[] = Array.from({ length: 10 }, (_, i) => ({ key: `free:${newTokenId()}${i}`, token: { kind: 'color' as const, color: TOKEN_COLORS[i % TOKEN_COLORS.length] }, x, y }));
+        const add: LoosePiece[] = Array.from({ length: 30 }, (_, i) => ({ key: `free:${newTokenId()}${i}`, token: { kind: 'color' as const, color: TOKEN_COLORS[i % TOKEN_COLORS.length] }, x, y }));
         setLoose([...looseRef.current, ...add]);
-        setTimeout(() => { for (const p of add) { const a = Math.random() * Math.PI * 2, s = 500 + Math.random() * 900; eng.toss(p.key, Math.cos(a) * s, Math.sin(a) * s); } }, 60);
-        addFx({ kind: 'spark', x, y, r: 160, ms: 700, tint });
-        playSfx('gainGoldenHp', { volume: 0.6, cents: 500 });
+        setTimeout(() => { for (const p of add) { const a = Math.random() * Math.PI * 2, s = 900 + Math.random() * 1600; eng.toss(p.key, Math.cos(a) * s, Math.sin(a) * s, CHAIN); } }, 60);
+        addFx({ kind: 'spark', x, y, r: 360, ms: 1000, tint });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
+        jolt(0.8);
+        playSfx('gainGoldenHp', { volume: 0.8, cents: 500 });
         break;
       }
       case 'petrify':
-        for (const k of near(eng.keys().filter((kk) => kk.startsWith('free:')), 320)) h.petrify(k);
-        addFx({ kind: 'stone', x, y, r: 320, ms: 900 });
-        playSfx('cardDisable', { volume: 0.6, cents: -500 });
+        for (const k of eng.keys().filter((kk) => kk.startsWith('free:'))) h.petrify(k);
+        addFx({ kind: 'stone', x, y, r: diag, ms: 1400 });
+        jolt(0.5);
+        playSfx('cardDisable', { volume: 0.8, cents: -500 });
         break;
       case 'talons':
-        addFx({ kind: 'claw', x, y, r: 160, ms: 900, tint });
-        shatterKeys(near(looseKeys(), 320));
-        jolt(0.5);
-        playSfx('tokenRemove', { volume: 0.9, cents: -300 });
+        addFx({ kind: 'claw', x, y, r: 320, ms: 1100, tint });
+        shatterKeys(near(looseKeys(), 560));
+        eng.impulse(x, y, diag, 3200, CHAIN);
+        jolt(1);
+        playSfx('tokenRemove', { volume: 1, cents: -300 });
         break;
       case 'ruin':
-        addFx({ kind: 'ring', x, y, r: 360, ms: 800, tint });
-        for (const b of cardsNear(360)) breakCard(b);
-        eng.impulse(x, y, 420, 1800);
-        jolt(0.8);
-        playSfx('cardDisable', { volume: 0.8, cents: -600 });
+        addFx({ kind: 'ring', x, y, r: diag, ms: 1200, tint });
+        addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
+        for (const b of cardsNear(Math.max(700, diag * 0.5))) breakCard(b);
+        eng.impulse(x, y, diag, 4200, CHAIN);
+        jolt(1.4);
+        playSfx('cardDisable', { volume: 1, cents: -600 });
         break;
       case 'vizier': {
-        addFx({ kind: 'spark', x, y, r: 220, ms: 800, tint });
+        addFx({ kind: 'spark', x, y, r: 420, ms: 1000, tint });
+        addFx({ kind: 'ring', x, y, r: diag * 0.7, ms: 1000, tint });
         const keys = eng.keys().filter((k) => k.startsWith('roll:') || (k.startsWith('free:') && looseRef.current.find((l) => l.key === baseOf(k))?.token.kind === 'die'));
         void h.rollPieces(keys).then((landed) => {
           if (!landed.length) return;
@@ -760,14 +818,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     playSfx('cardDragEnd', { volume: 0.7 });
     setTimeout(() => runEffect(d, x, y), 300);
   }, [addFx, runEffect]);
-  /** Right click on a drawn card (owner, v0.47.4): it is dealt to somewhere at random on the table and used there. */
-  const dealDrawn = useCallback((uid: string) => {
-    const x = play.left + 120 + Math.random() * Math.max(10, play.right - play.left - 240);
-    const y = openTop + 100 + Math.random() * Math.max(10, openBottom - openTop - 200);
-    playSfx('cardDragStart', { volume: 0.7 });
-    setDrawn((l) => l.map((c) => (c.uid === uid ? { ...c, x, y } : c)));
-    setTimeout(() => playDrawn(uid, x, y), 560);
-  }, [play.left, play.right, openTop, openBottom, playDrawn]);
 
   // ---------------------------------------------------------------- dice and controls
   const canReorder = !!ctx.onReorderCards && category !== FAVORITES_CATEGORY && deck.length > 1 && !spread;
@@ -1010,7 +1060,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           <DomatCardView key={d.uid} card={d.card} x={d.x} y={d.y} from={d.from}
             onMove={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y } : c)))}
             onPlay={(x, y) => playDrawn(d.uid, x, y)}
-            onDeal={() => dealDrawn(d.uid)} />
+            onRemove={() => { playSfx('cardDeselect', { volume: 0.6 }); setDrawn((l) => l.filter((c) => c.uid !== d.uid)); if (d.card.once) setGone((g) => { const n = new Set(g); n.delete(d.card.id); return n; }); }} />
         ))}
 
         {showHint ? (
@@ -1040,7 +1090,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           cards={cardPoses}
           onCardsMoved={onCardsMoved}
           supply={supply}
-          domat={look.tokenTray ? { left: DOMAT.length - gone.size } : null}
+          domat={look.tokenTray ? { left: DOMAT.length - gone.size, wait: domatWait } : null}
           onDomatDraw={drawCard}
           loose={loose}
           onSpawn={(key, token, x, y) => setLoose([...looseRef.current, { key, token, x, y }])}
@@ -1153,7 +1203,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             rows={[
               ...(tableMenu.piece ? [{ label: tableMenu.piece.label, onPress: () => diceRef.current?.rollPiece(tableMenu.piece!.key) }] : []),
               { label: 'Choose a deck', gap: !!tableMenu.piece, onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
-              { label: 'Draw a Many Things card', onPress: () => drawCard({ x: tableMenu.x, y: tableMenu.y }), hidden: !look.tokenTray },
               { label: 'State', onPress: () => onOpen('modifiers'), gap: true },
               { label: 'Cards', onPress: () => onOpen('cards') },
               { label: 'Sort this deck', onPress: openSort, hidden: !canReorder },

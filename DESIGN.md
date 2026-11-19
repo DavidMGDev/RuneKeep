@@ -109,9 +109,10 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - Drag on the empty felt to select; the selection bar (top centre) rolls the dice in it, saves them as a preset or
   puts them back. Presets live in the table menu under Roll dice, each with a delete that asks first.
 - The Deck of Many Things: 22 cards (names and SRD text from the booklet via `scripts/extract-domat.py`; the art is
-  gitignored and only shows in a local build). A drawn card waits on the table; let go after a drag it is consumed
-  and its effect plays from there (push, pull, whirl, shatter, ice, gems, rewind...). Effects are DOM light over
-  the felt plus engine fields and impulses; hard hits shake the table.
+  shipped from v0.47.4). The deck is the size of the die spawner and gives one card a minute (its label counts down).
+  A drawn card waits on the table; let go after a drag it is consumed and its effect reaches the whole table from
+  there (push, pull, whirl, shatter, ice, gems, rewind...), its pushes chained five generations deep; a right click
+  gets rid of it. Effects are DOM light over the felt plus engine fields and impulses; hard hits shake the table.
 - Layout is part of the look (`ctlX/ctlY/ctlDir`, `supX/supY/supDir`, `catX/catY`, `handMode`): while settings are
   open every row goes home and can be dragged or stood on end. Six whole tables made for ways of playing
   (Storyteller, Dice goblin, Tactician, Archivist, Showman, Duelist) and four drawn by `randomTables` and kept,

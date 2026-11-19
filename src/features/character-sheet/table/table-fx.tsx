@@ -121,12 +121,11 @@ function makeShards() {
 
 /**
  * A card drawn from the Deck of Many Things, lying on the table: it flies out of the deck, waits, and when it is
- * dragged and let go it is consumed where it lands. Hover shows what it will do; a right click deals it to a random
- * place and uses it there.
+ * dragged and let go it is consumed where it lands. Hover shows what it will do; a right click gets rid of it.
  */
-export function DomatCardView({ card, x, y, from, onMove, onPlay, onDeal }: {
+export function DomatCardView({ card, x, y, from, onMove, onPlay, onRemove }: {
   card: DomatCard; x: number; y: number; from: { x: number; y: number };
-  onMove: (x: number, y: number) => void; onPlay: (x: number, y: number) => void; onDeal: () => void;
+  onMove: (x: number, y: number) => void; onPlay: (x: number, y: number) => void; onRemove: () => void;
 }) {
   const [born, setBorn] = useState(false);
   const [hover, setHover] = useState(false);
@@ -158,8 +157,8 @@ export function DomatCardView({ card, x, y, from, onMove, onPlay, onDeal }: {
   const tx = born ? x : from.x, ty = born ? y : from.y;
   return (
     <div data-domat={card.id} onPointerDown={start} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onDeal(); }}
-      role="img" aria-label={`${card.name}. ${card.table} Drag it and let go to use it; right click to deal it somewhere at random.`}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+      role="img" aria-label={`${card.name}. ${card.table} Drag it and let go to use it; right click to get rid of it.`}
       style={{
         position: 'absolute', left: tx - DOMAT_W / 2, top: ty - DOMAT_H / 2, width: DOMAT_W, height: DOMAT_H, zIndex: drag ? 19 : 15, cursor: drag ? 'grabbing' : 'grab', touchAction: 'none',
         transform: born ? `rotate(${drag ? -4 : 2}deg) scale(${drag ? 1.08 : 1})` : 'rotate(-30deg) scale(0.35)',
@@ -178,7 +177,7 @@ export function DomatCardView({ card, x, y, from, onMove, onPlay, onDeal }: {
         <div style={{ position: 'absolute', left: '50%', bottom: '100%', marginBottom: 10, transform: 'translateX(-50%)', width: 230, padding: '10px 12px', background: 'rgba(11,14,19,0.97)', border: `1px solid ${T.goldSoft}`, pointerEvents: 'none', zIndex: 30 }}>
           <div style={{ color: T.goldText, fontFamily: T.bold, fontSize: 12.5, letterSpacing: 1, textTransform: 'uppercase' }}>{card.name}</div>
           <div style={{ color: T.ivory, fontFamily: T.medium, fontSize: 13, lineHeight: '18px', marginTop: 4 }}>{card.table}</div>
-          <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, lineHeight: '16px', marginTop: 6 }}>Drag it where it should strike and let go. Right click to deal it somewhere at random.</div>
+          <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, lineHeight: '16px', marginTop: 6 }}>Drag it where it should strike and let go. Right click to get rid of it.</div>
         </div>
       ) : null}
     </div>

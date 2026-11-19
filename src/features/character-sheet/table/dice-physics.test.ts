@@ -208,3 +208,22 @@ describe('launched pieces push harder, for five generations (v0.47.5)', () => {
     expect(b.boost).toBeUndefined();
   });
 });
+
+describe('the supply stays put under a stream of copies (v0.47.6)', () => {
+  it('a piece carrying the soft spawning push never moves a spawner, a launched one still does', () => {
+    const src = makeBody('src', 300, 250, 20, CUBE);
+    src.spawner = true;
+    const soft = makeBody('a', 200, 250, 20, CUBE);
+    launch(soft, 1500, 0, 0, [0, 0, 0]);
+    soft.boost = { gen: 2, power: 1.6, soft: true };
+    run([src, soft], seeded(12));
+    expect(src.x).toBe(300);
+    const src2 = makeBody('src2', 300, 250, 20, CUBE);
+    src2.spawner = true;
+    const hard = makeBody('b', 200, 250, 20, CUBE);
+    launch(hard, 1500, 0, 0, [0, 0, 0]);
+    hard.boost = { gen: 5, power: 3 };
+    run([src2, hard], seeded(13));
+    expect(src2.x).toBeGreaterThan(300);
+  });
+});

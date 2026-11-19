@@ -195,8 +195,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   /** Physical cards moved (to draw them there) or came to rest (to keep where). */
   onCardsMoved: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void;
   supply: SupplyPiece[];
-  /** The Deck of Many Things in the supply, and how many cards are left in it (null: not on the table). */
-  domat: { left: number } | null;
+  /** The Deck of Many Things in the supply: cards left, and seconds until it can be drawn from again (null: not on the table). */
+  domat: { left: number; wait: number } | null;
   onDomatDraw: (from: { x: number; y: number }) => void;
   loose: LoosePiece[];
   /** A copy was thrown out of the supply (or a token popped off a card in the hand). */
@@ -313,7 +313,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const pl = loadDicePlaces()[key];
     const b = boundsRef.current;
     const { width: W, height: H } = size.current;
-    if (pl && Number.isFinite(pl.fx) && Number.isFinite(pl.fy) && !live.current.editing) return { x: Math.min(b.right - 30, Math.max(b.left + 30, pl.fx * W)), y: Math.min(b.bottom - 30, Math.max(b.top + 30, pl.fy * H)) };
+    if (pl && Number.isFinite(pl.fx) && Number.isFinite(pl.fy) && !live.current.editing) {
+      const at = { x: Math.min(b.right - 30, Math.max(b.left + 30, pl.fx * W)), y: Math.min(b.bottom - 30, Math.max(b.top + 30, pl.fy * H)) };
+      // Where it was left is now inside the hand's own area (the layout changed since): it goes home instead.
+      if (!live.current.obstacles.some((o) => at.x > o.left && at.x < o.right && at.y > o.top && at.y < o.bottom)) return at;
+    }
     return homeOf(key) ?? { x: W / 2, y: H / 2 };
   }, [homeOf]);
   const homeKeys = useCallback(() => {
@@ -332,6 +336,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
   // Settings open: everything goes home. And while they are open, a row moved goes with its handle.
   const placesKey = JSON.stringify(places);
   useEffect(() => { if (editing) sendHome(); }, [editing, placesKey, engine]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The layout itself changed (another table preset): every row goes to where the new layout keeps it, instead of
+  // the pieces staying where the last layout left them.
+  const lastPlaces = useRef(placesKey);
+  useEffect(() => {
+    if (lastPlaces.current === placesKey) return;
+    lastPlaces.current = placesKey;
+    if (!editing) sendHome();
+  }, [placesKey, engine]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rests: a roll resolves, a right-click roll acts, and where the home pieces lie is remembered.
   useEffect(() => {
@@ -496,7 +508,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       want.add(DOMAT_KEY);
       if (!engine.has(DOMAT_KEY)) {
         const at = placeOf(DOMAT_KEY);
-        engine.add({ key: DOMAT_KEY, shape: 'deck', size: 74, body: '#1c1026', edge: '#d9c9a3', ink: '#000', faces: [{ image: backArt }], finish: 'stone', spawner: true }, at.x, at.y);
+        engine.add({ key: DOMAT_KEY, shape: 'deck', size: 50, body: '#1c1026', edge: '#d9c9a3', ink: '#000', faces: [{ image: backArt }], finish: 'stone', spawner: true }, at.x, at.y);
       }
     }
     for (const k of engine.keys()) if (k.startsWith('src:') && !want.has(k)) { engine.remove(k); built.current.delete(k); }
@@ -652,7 +664,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     if (!host || !engine) return;
     let press: { key: string; x: number; y: number; t: number; moved: boolean; id: number; spawned: boolean; charge: number } | null = null;
     /** The right button held on a spawner: copies come out faster and faster until it is let go. */
-    let spawning: { id: number; timer: ReturnType<typeof setTimeout> } | null = null;
+    let spawning: { id: number; timer?: ReturnType<typeof setTimeout> } | null = null;
     let chargeRaf = 0;
     let box: { x: number; y: number; id: number } | null = null;
     let menuUntil = 0;
@@ -673,7 +685,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         const st = engine.state(k);
         if (!st) continue;
         const d = Math.hypot(st.x - x, st.y - y);
-        if (d < (k === DOMAT_KEY ? 54 : 44) && d < bd) { best = k; bd = d; }
+        if (d < 44 && d < bd) { best = k; bd = d; }
       }
       return best;
     };
@@ -722,10 +734,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
         e.preventDefault();
         menuUntil = performance.now() + 60000;
         spawnOne(sk);
-        let delay = sk === DOMAT_KEY ? 420 : 300;
+        // The deck gives one card a minute: holding it gives nothing more.
+        if (sk === DOMAT_KEY) { spawning = { id: e.pointerId }; return; }
+        let delay = 300;
         const again = () => {
           spawnOne(sk);
-          delay = Math.max(sk === DOMAT_KEY ? 220 : 35, delay * 0.8);
+          delay = Math.max(35, delay * 0.8);
           if (spawning) spawning.timer = setTimeout(again, delay);
         };
         spawning = { id: e.pointerId, timer: setTimeout(again, delay) };
@@ -1112,7 +1126,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       {ready ? props.supply.map((t) => (
         <div key={t.key} ref={setLabel(t.token.kind === 'die' && t.token.dieType === 'duality' ? `${t.key}:h` : t.token.kind === 'die' && t.token.dieType === 'd100' ? `${t.key}:t` : t.key)} style={{ ...labelStyle, fontSize: 10.5, letterSpacing: 0.9, color: hoverKey && baseOf(hoverKey) === t.key ? T.ivory : T.muted, textTransform: t.token.kind === 'die' ? 'none' : 'uppercase' }}>{t.label}</div>
       )) : null}
-      {ready && props.domat ? <div ref={setLabel(DOMAT_KEY)} style={{ ...labelStyle, fontSize: 10.5, letterSpacing: 0.9, color: hoverKey === DOMAT_KEY ? T.ivory : T.muted }}>MANY THINGS <span style={{ color: T.goldText }}>{props.domat.left}</span></div> : null}
+      {ready && props.domat ? <div ref={setLabel(DOMAT_KEY)} style={{ ...labelStyle, fontSize: 10.5, letterSpacing: 0.9, color: hoverKey === DOMAT_KEY ? T.ivory : T.muted }}>MANY THINGS <span style={{ color: props.domat.wait ? T.muted : T.goldText }}>{props.domat.wait ? `${Math.floor(props.domat.wait / 60)}:${String(props.domat.wait % 60).padStart(2, '0')}` : props.domat.left}</span></div> : null}
       {/* Plain buttons instead of dice (or when there is no WebGL), so nothing is lost. */}
       {controls === 'buttons' || (failed && controls === 'dice') ? (
         <div data-ui="" ref={(el) => { if (el && (el.offsetWidth !== btnBox.w || el.offsetHeight !== btnBox.h)) setBtnBox({ w: el.offsetWidth, h: el.offsetHeight }); }} style={{ position: 'absolute', left: Math.min(bounds.right - btnBox.w - 6, Math.max(bounds.left + 6, places.ctl.x - btnBox.w / 2)), top: Math.min(bounds.bottom - btnBox.h - 6, Math.max(bounds.top + 6, places.ctl.y - btnBox.h / 2)), display: 'flex', flexDirection: places.ctl.dir === 'row' ? 'row' : 'column', gap: 8, zIndex: 21 }}>
