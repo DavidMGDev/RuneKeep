@@ -42,6 +42,10 @@ export interface Body {
   top: number;
   /** Settle with the face's art upright on screen (icons), not merely flat (numbers). */
   upright: boolean;
+  /** Only these faces may end up on top (a control die with its icon on two faces). */
+  restFaces?: number[];
+  /** A token chip: slides, never tumbles. */
+  flat?: boolean;
   /** Land on this face instead of the nearest one (the category die turning to the deck picked). */
   force?: number;
   /** The closing turn onto a face. */
@@ -56,8 +60,6 @@ export type Obstacle = Bounds;
 
 export interface Impact { key: string; speed: number; kind: 'table' | 'rail' | 'die' }
 
-const G = 2800; // px/s², down into the table
-const TABLE_BOUNCE = 0.32;
 const RAIL_BOUNCE = 0.5;
 const DIE_BOUNCE = 0.42;
 const FRICTION = 980; // px/s² of slowdown while sliding on the felt
@@ -128,10 +130,11 @@ export function qRandom(rand: () => number = Math.random): Quat {
 const UP: Vec3 = [0, 0, 1];
 
 /** The face pointing most nearly up for orientation q. */
-export function topFace(q: Quat, faces: DieFace[]): number {
-  let best = 0;
+export function topFace(q: Quat, faces: DieFace[], allowed?: number[]): number {
+  let best = allowed?.[0] ?? 0;
   let bz = -Infinity;
   faces.forEach((f, i) => {
+    if (allowed && !allowed.includes(i)) return;
     const z = qRotate(q, f.n)[2];
     if (z > bz) { bz = z; best = i; }
   });
@@ -169,8 +172,26 @@ export function launch(b: Body, vx: number, vy: number, vz: number, spin: Vec3):
   b.w = [...spin];
 }
 
-/** Advance the world by one fixed step. Returns the impacts that happened, for sound. */
+/**
+ * Advance the world by one fixed step, split into as many sub-steps as the fastest die needs so that no die moves
+ * more than 40% of the smallest radius at a time (v0.47.1, owner: a hard throw flew straight through other dice).
+ * Returns the impacts that happened, for sound.
+ */
 export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: () => number = Math.random, obstacles: Obstacle[] = []): Impact[] {
+  let fast = 0;
+  let small = Infinity;
+  for (const b of bodies) {
+    small = Math.min(small, b.r);
+    if (!b.asleep && !b.held) fast = Math.max(fast, Math.hypot(b.vx, b.vy));
+  }
+  const n = Math.min(16, Math.max(1, Math.ceil((fast * dt) / (Math.max(4, small) * 0.4))));
+  const hits: Impact[] = [];
+  for (let i = 0; i < n; i++) hits.push(...subStep(bodies, bounds, dt / n, obstacles));
+  void rand;
+  return hits;
+}
+
+function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle[]): Impact[] {
   const hits: Impact[] = [];
   for (const b of bodies) {
     if (b.asleep || b.held) continue;
@@ -202,26 +223,10 @@ export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: ()
       }
       continue;
     }
-    // Height: gravity, and a bounce off the felt.
-    if (b.z > 0 || b.vz > 0) {
-      b.vz -= G * dt;
-      b.z += b.vz * dt;
-      if (b.z <= 0) {
-        b.z = 0;
-        const impact = -b.vz;
-        if (impact > 90) {
-          hits.push({ key: b.key, speed: impact, kind: 'table' });
-          b.vz = impact * TABLE_BOUNCE;
-          // A landing knocks the tumble about a little.
-          const k = impact * 0.012;
-          b.w = [b.w[0] + (rand() - 0.5) * k, b.w[1] + (rand() - 0.5) * k, b.w[2] + (rand() - 0.5) * k * 0.5];
-        } else {
-          b.vz = 0;
-        }
-      }
-    }
-    const grounded = b.z <= 0 && b.vz === 0;
-    if (grounded) {
+    // No height (v0.47.1, owner): a die never leaves the felt, so it can never pass over another one.
+    b.z = 0;
+    b.vz = 0;
+    {
       // Sliding friction and the roll taking hold of the spin.
       const sp = Math.hypot(b.vx, b.vy);
       if (sp > 0) {
@@ -232,6 +237,7 @@ export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: ()
       const rx = b.vy / b.r, ry = b.vx / b.r; // Z × v / r, with v = (vx, -vy) in the right-handed frame
       const g = Math.min(1, ROLL_GRIP * dt);
       b.w = [b.w[0] + (rx - b.w[0]) * g, b.w[1] + (ry - b.w[1]) * g, b.w[2] * Math.max(0, 1 - SPIN_DAMP * dt)];
+      if (b.flat) b.w = [0, 0, b.w[2] * 0.9];
     }
     b.x += b.vx * dt;
     b.y += b.vy * dt;
@@ -249,7 +255,7 @@ export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: ()
     if (b.y < bounds.top + b.r) { b.y = bounds.top + b.r; if (b.vy < 0) { hits.push({ key: b.key, speed: -b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] -= b.vx * 0.004; } }
     if (b.y > bounds.bottom - b.r) { b.y = bounds.bottom - b.r; if (b.vy > 0) { hits.push({ key: b.key, speed: b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] += b.vx * 0.004; } }
     for (const o of obstacles) pushOut(b, o, hits);
-    if (grounded && Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
+    if (Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
   }
   collide(bodies, hits);
   return hits;
@@ -284,7 +290,7 @@ function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
 }
 
 function beginSettle(b: Body): void {
-  const face = b.force ?? topFace(b.q, b.faces);
+  const face = b.force ?? topFace(b.q, b.faces, b.restFaces);
   b.top = face;
   b.force = undefined;
   const to = restOn(b.q, b.faces[face], b.upright);
@@ -293,13 +299,12 @@ function beginSettle(b: Body): void {
   b.settle = { from: b.q, to, t: 0, ms: SETTLE_MS + 420 * (2 * Math.acos(dot)) / Math.PI };
 }
 
-/** Dice push each other apart and trade momentum, unless one is high in the air over the other. */
+/** Dice push each other apart and trade momentum. Always: nothing on the table is above anything else. */
 function collide(bodies: Body[], hits: Impact[]): void {
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const a = bodies[i], b = bodies[j];
       if (a.home || b.home) continue;
-      if (Math.abs(a.z - b.z) > Math.min(a.r, b.r)) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const min = a.r + b.r;
       const d2 = dx * dx + dy * dy;
@@ -330,6 +335,40 @@ function collide(bodies: Body[], hits: Impact[]): void {
       }
     }
   }
+}
+
+/**
+ * Move a held die to (x, y) in steps no longer than 40% of its radius, colliding at each one, and give it the hand's
+ * velocity so whatever it hits is knocked away with that speed (v0.47.1, owner: a fast swing passed through dice).
+ */
+export function moveHeld(bodies: Body[], held: Body, x: number, y: number, vx: number, vy: number, bounds: Bounds, obstacles: Obstacle[] = []): Impact[] {
+  const hits: Impact[] = [];
+  const dx = x - held.x, dy = y - held.y;
+  const n = Math.min(40, Math.max(1, Math.ceil(Math.hypot(dx, dy) / (held.r * 0.4))));
+  held.vx = vx;
+  held.vy = vy;
+  for (let i = 1; i <= n; i++) {
+    held.x += dx / n;
+    held.y += dy / n;
+    collide(bodies, hits);
+    for (const b of bodies) {
+      if (b === held || b.asleep) continue;
+      b.x = Math.min(bounds.right - b.r, Math.max(bounds.left + b.r, b.x));
+      b.y = Math.min(bounds.bottom - b.r, Math.max(bounds.top + b.r, b.y));
+      for (const o of obstacles) pushOut(b, o, hits);
+    }
+  }
+  return hits;
+}
+
+/** Turn a die to show `face` on top, quickly, without moving it (the category die following the deck). */
+export function snapFace(b: Body, face: number, ms = 120): void {
+  b.top = face;
+  b.force = undefined;
+  b.asleep = false;
+  b.vx = b.vy = 0;
+  b.w = [0, 0, 0];
+  b.settle = { from: b.q, to: restOn(b.q, b.faces[face], b.upright), t: 0, ms };
 }
 
 /** Every body at rest (nothing moving, nothing turning, nothing flying home). */

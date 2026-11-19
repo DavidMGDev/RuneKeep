@@ -32,7 +32,7 @@ describe('deck look', () => {
   });
 
   it('describes every setting exactly once', () => {
-    const keys = LOOK_PAGES.flatMap((p) => p.controls.map((c) => c.key));
+    const keys = LOOK_PAGES.flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys.sort()).toEqual(Object.keys(DEFAULT_LOOK).sort());
   });

@@ -80,19 +80,16 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - `CardThumb` / `Card` — the two-LOD card image pair; reuse everywhere cards render.
 - New shared pieces should land in `src/components/` when used by 2+ screens.
 
-## The desktop play table (v0.47.0)
+## The desktop play table (v0.47.0, reworked v0.47.1)
 
-- Everything right of the desktop sheet is a table seen from above: ink felt (`public/table/felt.webp`, the app's
-  own ink with a lamp falloff, plus `weave.png` for the cloth) inside a dark wood rail with a gold inlay
-  (`rail.webp`, a CSS 9-slice). Rendered in Blender by `scripts/blender/make_table.py`, graded to the palette by
-  `grade_table.py`; the felt colour never changes.
-- The hand lives in a recessed tray along the bottom (darker, inner shadow, gold hairline lip). Only the tray takes
-  hand input; dice and laid-out cards own the felt.
-- Buttons that are not part of the sheet are dice: gilded d6s (ink body, gold bevels, gold glyph on every face,
-  a small uppercase label riding under each). The category die carries the deck icons and grows d4 to d20.
-  Models from `scripts/blender/make_dice.py` (`public/models/dice.glb`), drawn by three.js in a lazy chunk.
-- Rolled dice keep the token colours (`DIE_COLOR`, Hope gold, Fear purple). Results sit on a chamfered ink plate
-  lying under the dice: gold for Hope and criticals, lilac for Fear.
+- Everything right of the desktop sheet is one table seen from above: ink felt (`public/table/felt.webp` plus
+  `weave.png`, rendered in Blender by `scripts/blender/make_table.py`, graded by `grade_table.py`). The felt colour
+  never changes. No drawer: the hand lies on the same felt, marked off by a faint hairline, a soft shade or nothing.
+- The table's edge is a setting: a gold hairline, a 3D stone wall, a 3D brass rail, or nothing drawn.
+- Dice are seen through an orthographic camera tipped 0.5 rad: no perspective skew anywhere, but tops and fronts
+  both read. Sharp bevels (Blender, `make_dice.py`). Finishes: resin, stone, metal for rolled dice; obsidian,
+  gilded, ivory for control dice. Control dice carry their glyph on two opposite faces and always rest on one.
+- Control dice: Roll, State, Cards, Sort and the deck die (a d6 at least). Characters, Rest and Level up live on the
+  port under the traits. A roll's result is a pop-up on the port, accepted with OK, never under the dice.
 - Panels on the table are DOM: 45° chamfers by clip path, 1.2 px gold hairlines, red for the one primary action,
-  Archivo Bold capitals for labels. No selection bars: a chosen item is filled red, a hovered one steps out whole.
-
+  Archivo Bold capitals for labels. No selection bars: a chosen item is filled red, a hovered one is lit whole.

@@ -36,10 +36,10 @@ export const loadDicePlaces = (): DicePlaces => read<DicePlaces>(DICE, {});
 export const saveDicePlaces = (p: DicePlaces): void => write(DICE, p);
 
 /** A card laid on the felt: which card, where its centre is (shares of the felt) and how wide it is (px). */
-export interface BoardCard { uid: string; id: string; fx: number; fy: number; w: number; face?: number }
+export interface BoardCard { uid: string; id: string; fx: number; fy: number; w: number; face?: number; /** Degrees, clockwise. */ rot?: number }
 export const loadBoard = (characterId: string): BoardCard[] =>
   read<unknown[]>(BOARD + characterId, []).flatMap((c) => {
     const b = c as BoardCard;
-    return b && typeof b.id === 'string' && Number.isFinite(b.fx) && Number.isFinite(b.fy) && Number.isFinite(b.w) ? [{ uid: String(b.uid ?? Math.random()), id: b.id, fx: b.fx, fy: b.fy, w: b.w, face: b.face }] : [];
+    return b && typeof b.id === 'string' && Number.isFinite(b.fx) && Number.isFinite(b.fy) && Number.isFinite(b.w) ? [{ uid: String(b.uid ?? Math.random()), id: b.id, fx: b.fx, fy: b.fy, w: b.w, face: b.face, rot: Number.isFinite(b.rot) ? b.rot : 0 }] : [];
   });
 export const saveBoard = (characterId: string, cards: BoardCard[]): void => write(BOARD + characterId, cards);

@@ -1,4 +1,4 @@
-import { allAsleep, type Body, type DieFace, launch, makeBody, qRandom, qRotate, restOn, sendHome, step } from './dice-physics';
+import { allAsleep, type Body, type DieFace, launch, makeBody, moveHeld, qRandom, qRotate, restOn, sendHome, step } from './dice-physics';
 
 // A cube's faces in the model frame.
 const CUBE: DieFace[] = [
@@ -69,5 +69,29 @@ describe('dice physics', () => {
     expect(a.x).toBeCloseTo(100, 0);
     expect(a.y).toBeCloseTo(100, 0);
     expect(a.top).toBe(4);
+  });
+});
+
+describe('dice physics, no tunnelling (v0.47.1)', () => {
+  it('a die thrown very hard still hits the die in its way', () => {
+    const rand = seeded(5);
+    const a = makeBody('a', 60, 250, 24, CUBE);
+    const b = makeBody('b', 400, 250, 24, CUBE);
+    launch(a, 9000, 0, 600, [0, 0, 0]);
+    step([a, b], BOUNDS, undefined, rand);
+    step([a, b], BOUNDS, undefined, rand);
+    run([a, b], rand);
+    expect(b.x).toBeGreaterThan(430);
+    expect(a.z).toBe(0);
+  });
+
+  it('a die swung fast in the hand knocks another away instead of skipping it', () => {
+    const a = makeBody('a', 100, 250, 24, CUBE);
+    const b = makeBody('b', 300, 250, 24, CUBE);
+    a.held = true;
+    a.asleep = false;
+    moveHeld([a, b], a, 600, 250, 6000, 0, BOUNDS);
+    expect(b.x).toBeGreaterThan(600);
+    expect(b.vx).toBeGreaterThan(1000);
   });
 });

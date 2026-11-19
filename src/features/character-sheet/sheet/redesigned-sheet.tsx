@@ -259,15 +259,33 @@ function OctaBadge({ left, top, w, h, icon, glyph, label, onPress, a11y, active 
 }
 
 /**
- * Desktop only: where the first-visit tips point on the sheet (CoachTour). The actions that used to live here
- * (Rest, Level up, State, Dice) are dice on the play table since v0.47.0.
+ * Desktop only (v0.47.1, owner): Characters, Rest and Level up under the traits, left to right, in the band the
+ * phone gives its hand. The table's own controls (roll, state, cards, sort, the decks) live on the table. Same
+ * badge as Add Card / Add Gear / Favorites; each opens exactly what its radial wedge opens on a phone.
  */
-function DesktopCoachTargets() {
+function DesktopPortActions({ onOpen, onExit }: { onOpen: (k: PlaceholderKind) => void; onExit: () => void }) {
+  const g = (d: React.ReactNode) => (
+    <Svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke={BRONZE} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">{d}</Svg>
+  );
+  const items: { label: string; glyph: React.ReactNode; press: () => void }[] = [
+    { label: 'Characters', glyph: g(<><Path d="M13.5 4H19v16h-5.5" /><Path d="M9.5 8 5.5 12l4 4M5.5 12H15" /></>), press: onExit },
+    { label: 'Rest', glyph: g(<Path d="M20 14.5A8 8 0 1 1 9.5 4 6.2 6.2 0 0 0 20 14.5Z" />), press: () => onOpen('rest') },
+    { label: 'Level Up', glyph: g(<><Polyline points="5,12 12,5 19,12" /><Polyline points="5,18 12,11 19,18" /></>), press: () => onOpen('level') },
+  ];
+  const PITCH = 116, TOP = 772, LEFT = (SHEET_DESIGN_WIDTH - 48 - 2 * PITCH) / 2;
   return (
     <>
+      {/* Where the desktop tips point (CoachTour). */}
+      <View pointerEvents="none" {...coachTarget('sheet-actions')} style={box(LEFT - 20, TOP - 8, 2 * PITCH + 48 + 40, 64)} />
       <View pointerEvents="none" {...coachTarget('sheet-vitals')} style={box(14, 322, 384, 186)} />
       <View pointerEvents="none" {...coachTarget('sheet-portrait')} style={box(21, 12, 150, 282)} />
-      <View pointerEvents="none" {...coachTarget('sheet-traits')} style={box(20, 600, 372, 240)} />
+      <View pointerEvents="none" {...coachTarget('sheet-traits')} style={box(20, 606, 372, 140)} />
+      {items.map((it, i) => (
+        <OctaBadge key={it.label} left={LEFT + i * PITCH} top={TOP} w={48} h={48} glyph={it.glyph} label={it.label} onPress={it.press} a11y={it.label} />
+      ))}
+      {items.slice(1).map((it, i) => (
+        <GoldRuleV key={it.label} left={LEFT + (i + 1) * PITCH - 34} top={TOP + 8} height={32} color="rgba(200,146,58,0.5)" thickness={1.6} />
+      ))}
     </>
   );
 }
@@ -3158,10 +3176,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               <DiceTray up={diceUp} onToggle={toggleDice} handleRef={trayRef} />
               {/* The presets sit in the Evasion panel while the tray is up, over the faded contents. */}
               {diceUp && !desktop ? <DicePresetSlots presets={presets} trayDice={trayDice} cardVars={presetCardVars} onWrite={writePreset} onPlay={playPreset} onOpenChange={setPresetModal} /> : null}
-              {/* Desktop (v0.47.0): Rest, Level up, State and Dice became dice on the table, so the traits zigzag
-                  down into the band they left. */}
-              <TraitBanners character={character} modifierSize={22} groupTop={desktop ? 606 : 614} zigzag={desktop ? 104 : 0} onRoll={rollTrait} />
-              {desktop ? <DesktopCoachTargets /> : null}
+              <TraitBanners character={character} modifierSize={22} groupTop={614} onRoll={rollTrait} />
+              {desktop ? <DesktopPortActions onOpen={setFloatKind} onExit={() => setLeaveConfirm(true)} /> : null}
               <ExpandVeil />
               <EditHud file={file ?? undefined} />
               {/* v0.26.0: keyboard control, web only. Inside the provider because it drives the
@@ -3178,7 +3194,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <PlayTable characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={setFloatKind} onExit={() => setLeaveConfirm(true)} />
+                <PlayTable characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={setFloatKind} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />

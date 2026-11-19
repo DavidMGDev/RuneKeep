@@ -22,7 +22,7 @@ import bpy
 from mathutils import Vector
 
 COLS, ROWS = 5, 4
-BEVEL = 0.075
+BEVEL = 0.028  # v0.47.1: a cut edge, like polished resin, not a soft toy bevel
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 OUT = argv[0] if argv else 'dice.glb'
@@ -172,7 +172,7 @@ def build(name, verts, faces):
         face.material_index = 0
     bm.normal_update()
 
-    res = bmesh.ops.bevel(bm, geom=list(bm.edges) + list(bm.verts), offset=BEVEL, offset_type='OFFSET', segments=3, profile=0.5, affect='EDGES', clamp_overlap=True)
+    res = bmesh.ops.bevel(bm, geom=list(bm.edges) + list(bm.verts), offset=BEVEL, offset_type='OFFSET', segments=2, profile=0.5, affect='EDGES', clamp_overlap=True)
     bevel_faces = set(res['faces'])
     uv = bm.loops.layers.uv.new('UVMap')
     cell = 1.0

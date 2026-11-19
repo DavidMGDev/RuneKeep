@@ -87,7 +87,10 @@ export const DIE_GLYPHS = {
   cards: '<rect x="8" y="3.5" width="11" height="15" rx="1.2"/><path d="M5 7.5v11.6c0 .8.6 1.4 1.4 1.4H15"/>',
   sort: '<path d="M8 4v16M4.6 7.4 8 4l3.4 3.4M16 20V4M12.6 16.6 16 20l3.4-3.4"/>',
   exit: '<path d="M13.5 4H19v16h-5.5"/><path d="M9.5 8 5.5 12l4 4M5.5 12H15"/>',
-  settings: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3 5.5 5.5"/>',
+  rotate: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 4.2v4.6h-4.6"/>',
+  token: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.5"/>',
+  // A toothed cog (v0.47.1, owner: the old sun-like mark read as a light and dark switch).
+  settings: '<path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/><path d="M19.4 13.4a7.6 7.6 0 0 0 0-2.8l2-1.5-2-3.5-2.4 1a7.4 7.4 0 0 0-2.4-1.4L14.2 2.6h-4.4l-.4 2.6A7.4 7.4 0 0 0 7 6.6l-2.4-1-2 3.5 2 1.5a7.6 7.6 0 0 0 0 2.8l-2 1.5 2 3.5 2.4-1a7.4 7.4 0 0 0 2.4 1.4l.4 2.6h4.4l.4-2.6a7.4 7.4 0 0 0 2.4-1.4l2.4 1 2-3.5Z"/>',
   reset: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.2 4.2v4.6h4.6"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
 } as const;
@@ -106,4 +109,19 @@ export function svgImage(markup: string): Promise<HTMLImageElement> {
     img.onerror = reject;
     img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
   });
+}
+
+/**
+ * An icon in one colour: whatever it was drawn in, every pixel it covers becomes `color` (keeping its alpha). Lets
+ * the gold deck glyphs sit dark on a gilded or ivory die.
+ */
+export function tinted(img: CanvasImageSource, color: string, size = 160): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  g.drawImage(img, 0, 0, size, size);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = color;
+  g.fillRect(0, 0, size, size);
+  return c;
 }

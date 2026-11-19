@@ -4,7 +4,7 @@
  */
 import type { DiceEngine } from './dice-engine.web';
 
-export type { DiceEngine, DieSpec, FaceArt, Shape } from './dice-engine.web';
+export type { DiceEngine, DieSpec, FaceArt, Finish, Shape, Walls } from './dice-engine.web';
 
 export const FACE_COUNT = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 } as const;
 

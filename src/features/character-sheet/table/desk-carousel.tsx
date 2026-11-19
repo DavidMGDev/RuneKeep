@@ -104,6 +104,9 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   // ------------------------------------------------------------------ the frame loop
   const raf = useRef(0);
   const lastT = useRef(0);
+  /** When this deck arrived: its cards play the look's deck-switch entrance from here (owner, v0.47.1). */
+  const born = useRef(performance.now());
+  const INTRO_MS = 300;
   const draw = useCallback(() => {
     const l = lookRef.current;
     const n = countRef.current;
@@ -115,6 +118,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     const cy = cardH / 2 + 14 + l.rowY * Math.max(0, H - cardH - 28);
     const reach = visibleReach(l);
     const band = (l.edgeWidth / 100) * W;
+    const since = performance.now() - born.current;
     for (const [i, rec] of els.current) {
       const d = cardOffset(i, s.pos, n, l.loop);
       const ad = Math.abs(d);
@@ -122,15 +126,24 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const k = pastSpot(ad, l);
       const out = Math.max(0, ad - reach); // past the last place: leaving
       let scale = lookScale(ad, l) * base;
-      const x = sg * lookX(ad, l, l.size);
+      let x = sg * lookX(ad, l, l.size);
+      // The entrance: a slide in from the right, cards dealt out from the middle, or a fade.
+      let enter = 1;
+      if (l.switchFx !== 'none' && since < INTRO_MS + 600) {
+        const t0 = l.switchFx === 'deal' ? Math.min(1, Math.max(0, (since - ad * 45) / INTRO_MS)) : Math.min(1, since / INTRO_MS);
+        const e0 = 1 - Math.pow(1 - t0, 3);
+        if (l.switchFx === 'slide') { x += (1 - e0) * W * 0.22; enter = 0.25 + 0.75 * e0; }
+        else if (l.switchFx === 'deal') { x *= e0; scale *= 0.72 + 0.28 * e0; enter = e0; }
+        else enter = e0;
+      }
       const t = reach > 0 ? Math.min(1, ad / reach) : 1;
       let y = cy - FORGED_H / 2 + k * l.drop + l.arc * t * t - l.lift * Math.max(0, 1 - k);
-      let opacity = 1;
+      let opacity = enter;
       if (out > 0) {
-        if (l.exit === 'fade') opacity = 1 - out;
+        if (l.exit === 'fade') opacity *= 1 - out;
         else if (l.exit === 'shrink') scale *= Math.max(0, 1 - out);
-        else if (l.exit === 'sink') { y += out * H * 0.7; opacity = 1 - out * 0.6; }
-        else opacity = out < 0.5 ? 1 : 0;
+        else if (l.exit === 'sink') { y += out * H * 0.7; opacity *= 1 - out * 0.6; }
+        else opacity = out < 0.5 ? opacity : 0;
       }
       const hidden = out >= 1 || opacity <= 0.01 || scale <= 0.005;
       const rotZ = sg * l.tilt * ad;
@@ -193,7 +206,8 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       }
     }
     draw();
-    if (s.dragging || s.pos !== s.target || s.vel !== 0) raf.current = requestAnimationFrame(tick);
+    const entering = l.switchFx !== 'none' && performance.now() - born.current < INTRO_MS + 600;
+    if (s.dragging || s.pos !== s.target || s.vel !== 0 || entering) raf.current = requestAnimationFrame(tick);
   }, [draw]);
 
   const kick = useCallback(() => {
@@ -261,7 +275,17 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       down = { x: e.clientX, y: e.clientY, pos: s.pos, id: e.pointerId, samples: [{ x: e.clientX, t: e.timeStamp }], moved: false };
     };
     const onMove = (e: PointerEvent) => {
-      if (!down || e.pointerId !== down.id) return;
+      const mode = lookRef.current.scroll;
+      if (mode === 'follow' && !down) {
+        // The hand follows the pointer across its width: the left edge is the first card, the right the last.
+        const r = el.getBoundingClientRect();
+        const n = countRef.current;
+        const f = Math.min(1, Math.max(0, (e.clientX - r.left - r.width * 0.08) / (r.width * 0.84)));
+        st.current.aim = -1;
+        goTo(f * (n - 1));
+        return;
+      }
+      if (!down || e.pointerId !== down.id || mode !== 'drag') return;
       const dx = e.clientX - down.x;
       if (!down.moved && Math.abs(dx) < 5 && Math.abs(e.clientY - down.y) < 5) return;
       if (!down.moved) {
@@ -313,7 +337,10 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const hit = (e.target as HTMLElement).closest?.('[data-slot]') as HTMLElement | null;
       setHover(hit ? Number(hit.dataset.slot) : -1);
     };
-    const onLeave = () => setHover(-1);
+    const onLeave = () => {
+      setHover(-1);
+      if (lookRef.current.scroll === 'follow' && !lookRef.current.loop) goTo(Math.round(st.current.target));
+    };
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);

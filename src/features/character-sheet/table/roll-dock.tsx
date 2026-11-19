@@ -7,6 +7,7 @@
  * Same rules and sounds as the phone's tray (lib/dice-pool decides the verdict); only the dice are new.
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { View } from 'react-native';
 
 import { DIE_COLOR, type DieType, FEAR_PURPLE, HOPE_GOLD } from '../components/card-tokens-data';
@@ -25,17 +26,17 @@ const nextId = () => `td-${++seq}`;
 
 export interface RollResult { total: number; verdict: 'hope' | 'fear' | 'critical' | null; dice: PoolDie[]; label: string | null; mod: number }
 
-export function RollDock({ left, width, bottom, dice, handleRef, presets, onClose, onResult, onHeight }: {
+export function RollDock({ left, bottom, dice, handleRef, presets, onClose, onResult, onHeight }: {
+  /** The bar's centre, px from the table's left. */
   left: number;
-  width: number;
   bottom: number;
   dice: React.RefObject<TableDiceHandle | null>;
   handleRef: { current: DiceTrayHandle | null };
   presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'>;
   onClose: () => void;
   onResult: (r: RollResult | null) => void;
-  /** The bar's height, so the dice can bounce off it. */
-  onHeight: (h: number) => void;
+  /** The bar's size, so the dice can bounce off it. */
+  onHeight: (size: { w: number; h: number }) => void;
 }) {
   const [pool, setPool] = useState<PoolDie[]>([]);
   const [mod, setMod] = useState<{ label: string | null; value: number }>({ label: null, value: 0 });
@@ -47,9 +48,9 @@ export function RollDock({ left, width, bottom, dice, handleRef, presets, onClos
   useEffect(() => {
     const el = dockRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => onHeight(el.offsetHeight));
+    const ro = new ResizeObserver(() => onHeight({ w: el.offsetWidth, h: el.offsetHeight }));
     ro.observe(el);
-    return () => { ro.disconnect(); onHeight(0); };
+    return () => { ro.disconnect(); onHeight({ w: 0, h: 0 }); };
   }, [onHeight]);
 
   const throwPool = useCallback(async (list: PoolDie[], m: { label: string | null; value: number }) => {
@@ -100,7 +101,6 @@ export function RollDock({ left, width, bottom, dice, handleRef, presets, onClos
   const add = (t: DieType | 'duality') => {
     if (poolRef.current.length >= MAX_DICE) { playSfx('cardDisable', { volume: 0.5 }); return; }
     playSfx('placeToken', { cents: 140, volume: 0.7 });
-    onResult(null);
     setPool((p) => addDie(p.map((d) => ({ ...d, value: null })), t, () => nextId()));
   };
   const remove = (id: string) => { playSfx('tokenRemove', { volume: 0.6 }); setPool((p) => removeDie(p, id)); };
@@ -119,61 +119,50 @@ export function RollDock({ left, width, bottom, dice, handleRef, presets, onClos
   }
 
   const SLOT_GAP = 20;
+  const [presetsOpen, setPresetsOpen] = useState(false);
   return (
-    <div ref={dockRef} style={{ position: 'absolute', left, width, bottom, zIndex: 30 }} onPointerDown={(e) => e.stopPropagation()}>
-      <Chamfer c={12} fill="rgba(11,14,19,0.95)" line={T.goldSoft} inner={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 14 }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 5, flexShrink: 0 }} role="group" aria-label="Add a die">
-            {ADD.map((t) => <AddDie key={t} type={t} onPress={() => add(t)} />)}
-            <AddDie type="duality" onPress={() => add('duality')} />
-          </div>
-          <Divider />
-          <div style={{ flex: 1, minWidth: 150, display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }} aria-label="Dice to roll">
-            {groups.length === 0 ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '17px' }}>Pick dice, or click a trait on the sheet.</span> : null}
-            {groups.map((g) => (
-              <button key={g.key} type="button" onClick={() => remove(g.ids[g.ids.length - 1])} title={`Remove a ${g.label}`} style={{ all: 'unset', cursor: 'pointer' }}>
-                <div style={{ clipPath: chamferClip(6), background: 'rgba(218,162,73,0.3)', padding: 1 }}>
-                  <div style={{ clipPath: chamferClip(5.6), background: T.panelLit, height: 30, display: 'flex', alignItems: 'center', gap: 7, padding: '0 10px' }}>
-                    <span style={{ width: 9, height: 9, transform: 'rotate(45deg)', background: g.key === 'duality' ? `linear-gradient(90deg, ${HOPE_GOLD} 50%, ${FEAR_PURPLE} 50%)` : g.color }} />
-                    <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 12, letterSpacing: 0.6, whiteSpace: 'nowrap' }}>{g.ids.length > 1 ? `${g.ids.length} × ` : ''}{g.label}</span>
-                    <Glyph d='<path d="M7 7l10 10M17 7 7 17"/>' size={12} color={T.muted} />
-                  </div>
+    <div ref={dockRef} style={{ position: 'absolute', left, bottom, transform: 'translateX(-50%)', zIndex: 30 }} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+      {presetsOpen ? (
+        // The presets open above the bar on demand, so the bar itself stays one slim row (owner, v0.47.1).
+        <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8 }}>
+          <Chamfer c={10} fill="rgba(11,14,19,0.96)" line={T.goldSoft} inner={{ padding: '10px 14px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <View style={{ position: 'relative', height: 68, width: 9 * (48 + SLOT_GAP) - SLOT_GAP }}>
+              <DicePresetSlots {...presets} belt={{ left: 0, top: 0, gap: SLOT_GAP }} />
+            </View>
+            <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 11.5, textAlign: 'center' }}>Click a preset to roll it. Hold one to save or edit it.</span>
+          </Chamfer>
+        </div>
+      ) : null}
+      <Chamfer c={10} fill="rgba(11,14,19,0.95)" line={T.goldSoft} inner={{ padding: '6px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 4 }} role="group" aria-label="Add a die">
+          {ADD.map((t) => <AddDie key={t} type={t} onPress={() => add(t)} />)}
+          <AddDie type="duality" onPress={() => add('duality')} />
+        </div>
+        <Divider />
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center', minWidth: 96, maxWidth: 230, overflow: 'hidden' }} aria-label="Dice to roll">
+          {groups.length === 0 ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, whiteSpace: 'nowrap' }}>No dice yet</span> : null}
+          {groups.map((g) => (
+            <button key={g.key} type="button" onClick={() => remove(g.ids[g.ids.length - 1])} title={`Remove a ${g.label}`} aria-label={`Remove a ${g.label}`} style={{ all: 'unset', cursor: 'pointer', flexShrink: 0 }}>
+              <div style={{ clipPath: chamferClip(5), background: 'rgba(218,162,73,0.3)', padding: 1 }}>
+                <div style={{ clipPath: chamferClip(4.6), background: T.panelLit, height: 26, display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px' }}>
+                  <span style={{ width: 8, height: 8, transform: 'rotate(45deg)', background: g.key === 'duality' ? `linear-gradient(90deg, ${HOPE_GOLD} 50%, ${FEAR_PURPLE} 50%)` : g.color }} />
+                  <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 11.5, whiteSpace: 'nowrap' }}>{g.ids.length > 1 ? `${g.ids.length}×` : ''}{g.key === 'duality' ? 'H&F' : g.label}</span>
                 </div>
-              </button>
-            ))}
-          </div>
-        </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ width: 64, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3 }} title="Click a preset to roll it. Hold one to save or edit it.">
-                <span style={{ color: T.goldText, fontFamily: T.bold, fontSize: 11, letterSpacing: 1.1, textTransform: 'uppercase' }}>Presets</span>
-                <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 11, lineHeight: '14px' }}>Click to roll, hold to edit</span>
               </div>
-              {/* The sheet's preset slots (play on click, hold to edit), laid out as a belt. */}
-              <View style={{ position: 'relative', height: 68, flex: 1, minWidth: 0, overflow: 'hidden' }}>
-                <DicePresetSlots {...presets} belt={{ left: 0, top: 0, gap: SLOT_GAP }} />
-              </View>
-            </div>
-          </div>
-          <Divider />
-          {/* The modifier over the throw: what the roll adds, then the roll itself. */}
-          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'stretch', gap: 10, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} role="group" aria-label="Modifier">
-            <TButton title="Lower the modifier" onPress={() => bump(-1)} icon={<Glyph d='<path d="M6 12h12"/>' size={14} />} />
-            <button type="button" onClick={() => { playSfx('numpadPress', { volume: 0.5 }); setMod({ label: null, value: 0 }); }} title="Reset the modifier" style={{ all: 'unset', cursor: 'pointer', minWidth: 54, textAlign: 'center' }}>
-              <div style={{ color: mod.value ? T.ivory : T.muted, fontFamily: T.display, fontSize: 18, lineHeight: '20px' }}>{mod.value > 0 ? '+' : ''}{mod.value}</div>
-              <div style={{ color: T.muted, fontFamily: T.bold, fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis' }}>{mod.label ?? 'Modifier'}</div>
             </button>
-            <TButton title="Raise the modifier" onPress={() => bump(1)} icon={<Glyph d='<path d="M6 12h12M12 6v12"/>' size={14} />} />
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <TButton label={rolling ? 'Rolling' : 'Roll'} primary h={40} disabled={!pool.length || rolling} onPress={() => void throwPool(pool, mod)} />
-          <TButton label="Clear" h={40} disabled={!pool.length || rolling} onPress={clear} />
-          <TButton title="Close the dice bar" h={40} onPress={onClose} icon={<Glyph d='<path d="M6 6l12 12M18 6 6 18"/>' size={16} />} />
-          </div>
-          </div>
+          ))}
         </div>
+        <Divider />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }} role="group" aria-label="Modifier">
+          <TButton title="Lower the modifier" h={30} onPress={() => bump(-1)} icon={<Glyph d='<path d="M6 12h12"/>' size={13} />} />
+          <button type="button" onClick={() => { playSfx('numpadPress', { volume: 0.5 }); setMod({ label: null, value: 0 }); }} title={mod.label ? `${mod.label}. Click to reset` : 'Modifier. Click to reset'} aria-label="Reset the modifier" style={{ all: 'unset', cursor: 'pointer', minWidth: 38, textAlign: 'center', color: mod.value ? T.ivory : T.muted, fontFamily: T.display, fontSize: 16 }}>{mod.value > 0 ? '+' : ''}{mod.value}</button>
+          <TButton title="Raise the modifier" h={30} onPress={() => bump(1)} icon={<Glyph d='<path d="M6 12h12M12 6v12"/>' size={13} />} />
+        </div>
+        <Divider />
+        <TButton label="Presets" h={34} active={presetsOpen} onPress={() => { playSfx(presetsOpen ? 'floatMenuClose' : 'floatMenuOpen'); setPresetsOpen((o) => !o); }} />
+        <TButton label={rolling ? 'Rolling' : 'Roll'} primary h={34} disabled={!pool.length || rolling} onPress={() => void throwPool(pool, mod)} />
+        <TButton title="Clear the dice" h={34} disabled={!pool.length || rolling} onPress={clear} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={14} />} />
+        <TButton title="Close the dice bar" h={34} onPress={onClose} icon={<Glyph d='<path d="M6 6l12 12M18 6 6 18"/>' size={14} />} />
       </Chamfer>
     </div>
   );
@@ -183,45 +172,60 @@ function Divider() {
   return <span style={{ width: 1, alignSelf: 'stretch', background: 'rgba(218,162,73,0.22)' }} />;
 }
 
-/** A die to add: its shape's colour as a small cut gem, and its name. */
+/** A die to add: its colour as a small cut gem over its name. */
 function AddDie({ type, onPress }: { type: DieType | 'duality'; onPress: () => void }) {
   const [hover, setHover] = useState(false);
   const pair = type === 'duality';
+  const label = pair ? 'Add the Hope and Fear dice' : `Add a ${type}`;
   return (
-    <button type="button" onClick={onPress} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} title={pair ? 'Add the Hope and Fear dice' : `Add a ${type}`} aria-label={pair ? 'Add the Hope and Fear dice' : `Add a ${type}`} style={{ all: 'unset', cursor: 'pointer' }}>
-      <div style={{ clipPath: chamferClip(7), background: hover ? T.goldBright : 'rgba(218,162,73,0.36)', padding: 1.2, transform: hover ? 'translateY(-2px)' : 'none', transition: `transform 140ms ${T.ease}` }}>
-        <div style={{ clipPath: chamferClip(6.5), background: hover ? T.panelLit : T.ink, width: pair ? 88 : 42, height: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+    <button type="button" onClick={onPress} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} title={label} aria-label={label} style={{ all: 'unset', cursor: 'pointer' }}>
+      <div style={{ clipPath: chamferClip(6), background: hover ? T.goldBright : 'rgba(218,162,73,0.32)', padding: 1 }}>
+        <div style={{ clipPath: chamferClip(5.6), background: hover ? T.panelLit : T.ink, width: pair ? 44 : 34, height: 34, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
           {pair ? (
-            <div style={{ display: 'flex', gap: 4 }}>
-              <span style={{ width: 13, height: 13, transform: 'rotate(45deg)', background: HOPE_GOLD }} />
-              <span style={{ width: 13, height: 13, transform: 'rotate(45deg)', background: FEAR_PURPLE, outline: '1px solid #7b5aa0' }} />
+            <div style={{ display: 'flex', gap: 3 }}>
+              <span style={{ width: 9, height: 9, transform: 'rotate(45deg)', background: HOPE_GOLD }} />
+              <span style={{ width: 9, height: 9, transform: 'rotate(45deg)', background: FEAR_PURPLE, outline: '1px solid #7b5aa0' }} />
             </div>
           ) : (
-            <span style={{ width: 13, height: 13, transform: 'rotate(45deg)', background: DIE_COLOR[type] }} />
+            <span style={{ width: 9, height: 9, transform: 'rotate(45deg)', background: DIE_COLOR[type] }} />
           )}
-          <span style={{ color: hover ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 11, letterSpacing: 0.6 }}>{pair ? 'Hope & Fear' : type}</span>
+          <span style={{ color: hover ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 10, letterSpacing: 0.3 }}>{pair ? 'H&F' : type}</span>
         </div>
       </div>
     </button>
   );
 }
 
-/** The total over the table once the dice are down: big, coloured by the verdict, gone on the next change. */
-export function RollReadout({ result, x, y }: { result: RollResult; x: number; y: number }) {
+/**
+ * What the throw came to, as a pop-up on the sheet's port (owner, v0.47.1): never under the dice, and it stays until
+ * you accept it. A die rolled again with a right click updates it in place. Enter or Escape accepts too.
+ */
+export function RollPopup({ result, box, onAccept }: { result: RollResult; box: { left: number; top: number; width: number; height: number }; onAccept: () => void }) {
   const [shown, setShown] = useState(false);
-  useEffect(() => { const id = requestAnimationFrame(() => setShown(true)); return () => cancelAnimationFrame(id); }, []);
+  const ok = useRef<HTMLButtonElement>(null);
+  useEffect(() => { const id = requestAnimationFrame(() => setShown(true)); ok.current?.focus({ preventScroll: true }); return () => cancelAnimationFrame(id); }, []);
   const crit = result.verdict === 'critical';
   const color = crit || result.verdict === 'hope' ? T.goldBright : result.verdict === 'fear' ? '#C9A6F0' : T.ivory;
-  const word = crit ? 'Critical success' : result.verdict === 'hope' ? 'With Hope' : result.verdict === 'fear' ? 'With Fear' : null;
+  const word = crit ? 'Critical success' : result.verdict === 'hope' ? 'With Hope' : result.verdict === 'fear' ? 'With Fear' : 'Total';
   const parts = result.dice.filter((d) => d.value != null).map((d) => `${d.side === 'hope' ? 'Hope' : d.side === 'fear' ? 'Fear' : d.type} ${d.value}`);
   if (result.mod) parts.push(`${result.label ? `${result.label} ` : ''}${result.mod > 0 ? '+' : ''}${result.mod}`);
-  return (
-    <div aria-live="polite" style={{ position: 'absolute', left: x, top: y, transform: `translate(-50%, 0) scale(${shown ? 1 : 0.7})`, opacity: shown ? 1 : 0, transition: `transform 320ms ${T.ease}, opacity 200ms`, zIndex: 15, pointerEvents: 'none' }}>
-      <Chamfer c={12} fill="rgba(9,11,16,0.88)" line={crit ? T.goldBright : result.verdict === 'fear' ? 'rgba(201,166,240,0.55)' : T.goldSoft} inner={{ padding: '10px 26px 12px', textAlign: 'center', minWidth: 150 }}>
-        <div style={{ color, fontFamily: T.display, fontSize: 60, lineHeight: '62px', textShadow: crit ? '0 0 26px rgba(224,181,99,0.65)' : 'none' }}>{result.total}</div>
-        {word ? <div style={{ color, fontFamily: T.bold, fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', marginTop: 2 }}>{word}</div> : null}
-        <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, marginTop: 5, whiteSpace: 'nowrap' }}>{parts.join(' · ')}</div>
+  const W = Math.min(300, box.width - 48);
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div role="dialog" aria-label={`Rolled ${result.total}, ${word}`} aria-live="polite"
+      onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onAccept(); } }}
+      style={{ position: 'fixed', left: box.left + (box.width - W) / 2, top: box.top + box.height * 0.34, width: W, zIndex: 1150, transform: `translateY(${shown ? 0 : 12}px) scale(${shown ? 1 : 0.94})`, opacity: shown ? 1 : 0, transition: `transform 260ms ${T.ease}, opacity 180ms`, filter: 'drop-shadow(0 18px 30px rgba(0,0,0,0.6))' }}>
+      <Chamfer c={14} fill="rgba(11,14,19,0.97)" line={crit ? T.goldBright : result.verdict === 'fear' ? 'rgba(201,166,240,0.6)' : T.gold} width={1.4} inner={{ padding: '16px 18px 14px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+        <div style={{ color, fontFamily: T.bold, fontSize: 12.5, letterSpacing: 2, textTransform: 'uppercase' }}>{word}</div>
+        <div style={{ color, fontFamily: T.display, fontSize: 64, lineHeight: '66px', textShadow: crit ? '0 0 24px rgba(224,181,99,0.6)' : 'none' }}>{result.total}</div>
+        <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px', marginBottom: 8 }}>{parts.join(' · ')}</div>
+        <button ref={ok} type="button" onClick={onAccept} className="rk-ok" style={{ all: 'unset', cursor: 'pointer', alignSelf: 'stretch' }}>
+          <Chamfer c={7} line={T.red} fill={T.red} style={{ height: 36 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 12.5, letterSpacing: 1.2, textTransform: 'uppercase' }}>OK</span>
+          </Chamfer>
+        </button>
       </Chamfer>
-    </div>
+    </div>,
+    document.body,
   );
 }
