@@ -48,9 +48,13 @@ const TOKEN_BOX_W = 412;
 /** The token drawer's dice list, measured: two rows of die and label, padding and border, plus a margin. */
 const DIE_MENU_H = 140;
 const EASE = Easing.bezier(0.16, 1, 0.3, 1);
-/** A held arrow's pitch climbs this many cents a card for HOLD_PEAK cards, then comes back down. */
-const HOLD_CENTS = 70;
-const HOLD_PEAK = 6;
+/**
+ * A held arrow steps one card every HOLD_STEP_MS, its pitch climbing HOLD_CENTS a card for HOLD_PEAK cards, then
+ * coming back down, and round again. Paced so the pick sounds never pile into a crackle.
+ */
+const HOLD_STEP_MS = 160;
+const HOLD_CENTS = 100;
+const HOLD_PEAK = 8;
 
 function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
   if (states.modsOff.has(ref)) return 'muted';
@@ -196,7 +200,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
   keyRef.current = keyState;
   useEffect(() => {
     if (!desktop || typeof document === 'undefined') return;
-    let held = 0; // cards stepped through by one held arrow
+    let held = 0, lastStep = 0; // cards stepped through by one held arrow, and when the last step went
     const onKey = (e: KeyboardEvent) => {
       const k = keyRef.current;
       if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
@@ -207,7 +211,9 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
       if (key === '[' || key === ']') { e.preventDefault(); moveRef.current(key === ']' ? 1 : -1); return; }
       const stride = e.shiftKey ? 2 : 1; // Shift moves two at a time, as the keys page teaches
       // Holding an arrow walks the deck with the pitch rising a step a card, then falling back, and round again.
-      held = e.repeat ? held + 1 : 0;
+      const arrow = (key === 'arrowright' || key === 'd' || key === 'arrowleft' || key === 'a') && ids.length > 0;
+      if (arrow && e.repeat && e.timeStamp - lastStep < HOLD_STEP_MS) { e.preventDefault(); return; } // a held key repeats far faster than a card can settle
+      if (arrow) { lastStep = e.timeStamp; held = e.repeat ? held + 1 : 0; }
       const cents = HOLD_CENTS * (HOLD_PEAK - Math.abs(HOLD_PEAK - (held % (HOLD_PEAK * 2))));
       if ((key === 'arrowright' || key === 'd') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? 0 : (at + stride) % ids.length], cents); return; }
       if ((key === 'arrowleft' || key === 'a') && ids.length) { e.preventDefault(); focus(ids[at < 0 ? ids.length - 1 : (at - stride + ids.length * 2) % ids.length], cents); return; }
@@ -540,9 +546,7 @@ function DeckRail({ top, maxH, onManage, onSort, onExit }: { top: number; maxH: 
     <View {...coachTarget('sheet-decks')} style={{ position: 'absolute', left: 14, top, width: RAIL_W - 28, maxHeight: maxH }}>
       <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingRight: 8 }}>
       <Animated.View style={[{ position: 'absolute', left: 6, right: -6, top: 0, height: CHIP }, markStyle]} pointerEvents="none">
-        <ChamferBox chamfer={10} fill={Rune.red} style={{ flex: 1 }}>
-          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: Rune.goldBright }} />
-        </ChamferBox>
+        <ChamferBox chamfer={10} fill={Rune.red} style={{ flex: 1 }} />
       </Animated.View>
       {decks.map((c, i) => (
         <DeckChip key={c} label={categoryMeta[c]?.label ?? c} active={c === category} count={ctx.decks[c]?.length ?? 0} onPress={() => pick(c)} style={{ marginTop: i === 0 ? 0 : c === FAVORITES_CATEGORY ? GAP + 10 : GAP }}>
