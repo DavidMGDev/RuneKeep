@@ -24,7 +24,7 @@ import { playSfx } from '@/lib/sfx';
 import type { CardCategory, CardItem } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { BakedTokenLayer, type PlacedToken } from '../components/card-tokens';
-import { kindScale, tokenFill } from '../components/card-tokens-data';
+import { kindScale, nextDieType, TOKEN_COLORS, tokenFill } from '../components/card-tokens-data';
 import { type CornerTone, EnabledCorner } from '../components/enabled-corner';
 import { TraitCrossOut } from '../components/trait-cross-out';
 import type { DiceTrayHandle } from '../sheet/dice-tray';
@@ -36,10 +36,9 @@ import { CardFace, DeskCarousel, type DeskCarouselHandle, type TableCard } from 
 import type { Bounds } from './dice-physics';
 import { LookPanel } from './look-panel';
 import { RollDock, RollPopup, type RollResult } from './roll-dock';
-import { type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenPiece } from './table-dice';
+import { type LoosePiece, type SupplyPiece, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
 import { type BoardCard, loadBoard, loadLook, saveBoard, saveLook } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T } from './table-ui';
-import { type NewToken, TokenTray } from './token-tray';
 
 /** The dice bar's state and the sheet's handle to it (the traits roll through it). */
 export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> };
@@ -162,7 +161,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const tableRef = useRef<HTMLDivElement>(null);
   const [tableEl, setTableEl] = useState<HTMLDivElement | null>(null);
   const handRef = useRef<HTMLDivElement>(null);
-  const trayRef = useRef<HTMLDivElement>(null);
   /** Over the hand: a card dropped there goes back. */
   const overHand = useCallback((x: number, y: number) => {
     const r = handRef.current?.getBoundingClientRect();
@@ -253,17 +251,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const b = boardRef.current.find((x) => x.uid === uid);
     return b ? { ref: refOf(b.id), id } : null;
   };
-  const [trayLit, setTrayLit] = useState(false);
-  /** A token from the tray, stuck to the card under the pointer: one on the table, or the centre of the hand. */
-  const placeToken = useCallback((clientX: number, clientY: number, t: NewToken) => {
+  /**
+   * The card under a point and where on it the point is: a laid card (its turn undone) or one in the hand. A token
+   * dropped there sticks to that card.
+   */
+  const cardAt = useCallback((clientX: number, clientY: number): { ref: string; uid?: string; x: number; y: number } | null => {
     const el = document.elementsFromPoint(clientX, clientY).find((n) => (n as HTMLElement).dataset?.boardCard || (n as HTMLElement).dataset?.slot) as HTMLElement | undefined;
-    if (!el) return false;
+    if (!el) return null;
     const r = el.getBoundingClientRect();
     let id: string | undefined;
     let x: number, y: number;
     if (el.dataset.boardCard) {
       const b = boardRef.current.find((c) => c.uid === el.dataset.boardCard);
-      if (!b) return false;
+      if (!b) return null;
       id = b.id;
       // Undo the card's turn to find where on the card the point is.
       const a = (-(b.rot ?? 0) * Math.PI) / 180;
@@ -276,10 +276,74 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       x = (clientX - r.left) / r.width;
       y = (clientY - r.top) / r.height;
     }
-    if (!id || x < 0 || x > 1 || y < 0 || y > 1) return false;
-    ctx.placeToken(refOf(id), { id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, ...t, x, y } as PlacedToken);
-    return true;
-  }, [ctx, refOf]);
+    if (!id || x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { ref: refOf(id), uid: el.dataset.boardCard, x, y };
+  }, [refOf]);
+
+  // ---------------------------------------------------------------- tokens: the supply and the loose ones
+  const [supplyDie, setSupplyDie] = useState<TokenInfo['dieType']>('d6');
+  const supply = useMemo<SupplyPiece[]>(() => (look.tokenTray ? [
+    { key: 'src:wood', token: { kind: 'wood' }, label: 'Wood' },
+    { key: 'src:bone', token: { kind: 'bone' }, label: 'Bone' },
+    { key: 'src:iron', token: { kind: 'iron' }, label: 'Iron' },
+    { key: 'src:color', token: { kind: 'color', color: ctx.tokenColor || TOKEN_COLORS[0] }, label: 'Colour' },
+    { key: 'src:die', token: { kind: 'die', dieType: supplyDie, dieValue: 1, dieValue2: supplyDie === 'duality' ? 1 : undefined }, label: supplyDie === 'duality' ? 'Hope & Fear' : supplyDie ?? 'd6' },
+  ] : []), [look.tokenTray, ctx.tokenColor, supplyDie]);
+  const looseKey = `runekeep.table.loose.${characterId}`;
+  const [loose, setLooseState] = useState<LoosePiece[]>(() => { try { return JSON.parse(localStorage.getItem(looseKey) ?? '[]') as LoosePiece[]; } catch { return []; } });
+  const looseRef = useRef(loose);
+  looseRef.current = loose;
+  const setLoose = useCallback((next: LoosePiece[]) => {
+    setLooseState(next);
+    try { localStorage.setItem(looseKey, JSON.stringify(next)); } catch { /* private window */ }
+  }, [looseKey]);
+  const newTokenId = () => `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  /**
+   * A token let go somewhere (owner, v0.47.2): on a card it sticks to that card (moving there if it was on another);
+   * on the Tokens die it is put away; anywhere else a card's token comes loose and a loose one stays where it lies.
+   */
+  const dropToken = useCallback((key: string, clientX: number, clientY: number, overTokens: boolean): boolean => {
+    const base = key.replace(/:(h|f|t|u)$/, '');
+    const isLoose = base.startsWith('free:');
+    let info: TokenInfo | undefined;
+    let from: { ref: string; id: string; uid: string } | null = null;
+    if (isLoose) info = looseRef.current.find((t) => t.key === base)?.token;
+    else {
+      const [, uid, id] = base.split(':');
+      const b = boardRef.current.find((x) => x.uid === uid);
+      if (!b) return false;
+      const ref = refOf(b.id);
+      const t = (ctx.cardTokens[ref] ?? []).find((x) => x.id === id);
+      if (!t) return false;
+      info = { kind: t.kind, color: t.color, dieType: t.dieType, dieValue: t.dieValue, dieValue2: t.dieValue2 };
+      from = { ref, id, uid };
+    }
+    if (!info) return false;
+    if (overTokens) {
+      playSfx('tokenRemove');
+      if (isLoose) setLoose(looseRef.current.filter((t) => t.key !== base));
+      else if (from) ctx.removeToken(from.ref, from.id);
+      return true;
+    }
+    const target = cardAt(clientX, clientY);
+    if (target) {
+      if (from && target.uid === from.uid) { ctx.updateToken(from.ref, from.id, { x: target.x, y: target.y }); return true; }
+      if (from) ctx.removeToken(from.ref, from.id);
+      if (isLoose) setLoose(looseRef.current.filter((t) => t.key !== base));
+      ctx.placeToken(target.ref, { id: newTokenId(), ...info, x: target.x, y: target.y } as PlacedToken);
+      playSfx('placeToken');
+      return true;
+    }
+    if (from) {
+      // Off its card: it comes loose where it was let go.
+      const p = local(clientX, clientY);
+      ctx.removeToken(from.ref, from.id);
+      setLoose([...looseRef.current, { key: `free:${newTokenId()}`, token: info, x: p.x, y: p.y }]);
+      playSfx('cardDragEnd', { volume: 0.5 });
+      return true;
+    }
+    return false;
+  }, [cardAt, ctx, refOf, setLoose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------- dice
   const diceRef = useRef<TableDiceHandle>(null);
@@ -289,10 +353,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const openSort = useCallback(() => { playSfx('floatMenuOpen'); setSorting(true); }, []);
   const actions = useMemo<TableAction[]>(() => [
     { key: 'roll', label: 'Roll', onPress: () => dice.onToggle() },
-    { key: 'state', label: 'State', onPress: () => { playSfx('panelOpen'); onOpen('modifiers'); } },
+    { key: 'tokens', label: 'Tokens', onPress: () => { playSfx(look.tokenTray ? 'panelClose' : 'panelOpen'); setLook({ ...look, tokenTray: !look.tokenTray }); } },
     { key: 'cards', label: 'Cards', onPress: () => { playSfx('panelOpen'); onOpen('cards'); } },
+    { key: 'state', label: 'State', onPress: () => { playSfx('panelOpen'); onOpen('modifiers'); } },
     { key: 'sort', label: 'Sort deck', onPress: openSort, disabled: !canReorder },
-  ], [dice, onOpen, canReorder, openSort]);
+  ], [dice, onOpen, canReorder, openSort, look, setLook]);
   const tableDecks = useMemo<TableDeck[]>(() => {
     const keys: CardCategory[] = [...ctx.ring.filter((c) => c !== FAVORITES_CATEGORY), FAVORITES_CATEGORY];
     return keys.map((k) => ({ key: k, label: ctx.categoryMeta[k]?.label ?? k, count: ctx.decks[k]?.length ?? 0, meta: ctx.categoryMeta[k] }));
@@ -438,6 +503,12 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               feltH={tableH}
               onChange={setBoard}
               onReturn={(uid) => setBoard(boardRef.current.filter((b) => b.uid !== uid))}
+              onLift={(b) => {
+                const w = Math.min(maxW(tableH), Math.max(MIN_W, b.w));
+                diceRef.current?.carry(b ? { cx: b.fx * tableW, cy: b.fy * tableH, w, h: (w * FORGED_H) / FORGED_W, rot: b.rot ?? 0 } : null);
+              }}
+              onCarry={(dx, dy) => diceRef.current?.carryBy(dx, dy)}
+              onSettle={() => diceRef.current?.carry(null)}
               overTray={overHand}
               onMenu={(uid, x, y) => {
                 const b = boardRef.current.find((c) => c.uid === uid);
@@ -483,28 +554,24 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           controlFinish={look.controlDice}
           numberFinish={look.numberDice}
           tokens={pieces}
+          supply={supply}
+          loose={loose}
+          onSpawn={(key, token, x, y) => setLoose([...looseRef.current, { key, token, x, y }])}
+          onSupplyAlt={(key) => {
+            if (key === 'src:color') { const c = ctx.tokenColor || TOKEN_COLORS[0]; ctx.setTokenColor(TOKEN_COLORS[(TOKEN_COLORS.indexOf(c) + 1) % TOKEN_COLORS.length]); playSfx('tokenCopyColor', { volume: 0.6 }); }
+            else if (key === 'src:die') { setSupplyDie((d) => nextDieType(d ?? 'd6')); playSfx('placeToken', { volume: 0.5, cents: 200 }); }
+          }}
+          onLooseRest={(key, x, y) => setLoose(looseRef.current.map((t) => (t.key === key ? { ...t, x, y } : t)))}
+          onLooseRolled={(key, value, value2) => setLoose(looseRef.current.map((t) => (t.key === key ? { ...t, token: { ...t.token, dieValue: value, dieValue2: value2 ?? t.token.dieValue2 } } : t)))}
           onTokenRolled={(key, value, value2) => { const t = tokenOf(key); if (t) ctx.updateToken(t.ref, t.id, value2 === undefined ? { dieValue: value } : { dieValue: value, dieValue2: value2 }); }}
           onRerolled={reroll}
-          onDropPiece={(key, x, y) => {
-            setTrayLit(false);
-            const r = trayRef.current?.getBoundingClientRect();
-            if (!key.startsWith('tok:') || !r || !(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)) return false;
-            const t = tokenOf(key.replace(/:(h|f|t|u)$/, ''));
-            if (t) { playSfx('tokenRemove'); ctx.removeToken(t.ref, t.id); }
-            return true;
-          }}
-          onDragPiece={(_key, x, y) => {
-            const r = trayRef.current?.getBoundingClientRect();
-            setTrayLit(!!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
-          }}
+          onDropPiece={dropToken}
+          onDragPiece={() => {}}
           onTableMenu={(x, y) => { const p = local(x, y); playSfx('floatMenuOpen'); setTableMenu(p); }}
           inert={overlay || settings}
         />
         {dice.up ? (
           <RollDock left={dockX} bottom={dockBottom} dice={diceRef} handleRef={dice.handleRef} presets={dice.presets} onClose={dice.onToggle} onResult={setResult} onHeight={setDockSize} />
-        ) : null}
-        {look.tokenTray ? (
-          <TokenTray ref={trayRef} right={pad + 10} top={Math.max(openTop + 12, (openTop + openBottom) / 2 - 150)} color={ctx.tokenColor} onColor={ctx.setTokenColor} place={placeToken} lit={trayLit} />
         ) : null}
 
         {/* Settings and Send home, in the lower left corner. */}
@@ -516,8 +583,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         {/* The copy in your hand. */}
         {copy ? (
           <div style={{ position: 'absolute', left: copy.x - copy.w / 2, top: copy.y - (copy.w * FORGED_H) / FORGED_W / 2, width: copy.w, height: (copy.w * FORGED_H) / FORGED_W, pointerEvents: 'none', zIndex: 70, transform: 'rotate(-3deg)', boxShadow: '0 26px 50px rgba(0,0,0,0.65)', transition: copy.settled ? `width 220ms ${T.ease}, height 220ms ${T.ease}` : 'none' }}>
-            <div style={{ width: FORGED_W, height: FORGED_H, transform: `scale(${copy.w / FORGED_W})`, transformOrigin: '0 0', transition: `transform 220ms ${T.ease}` }}>
+            <div style={{ position: 'relative', width: FORGED_W, height: FORGED_H, transform: `scale(${copy.w / FORGED_W})`, transformOrigin: '0 0', transition: `transform 220ms ${T.ease}` }}>
               <CardFace card={copy.card} hiRes />
+              {copy.card.overlay ? <div style={{ position: 'absolute', inset: 0 }}>{copy.card.overlay}</div> : null}
             </div>
           </div>
         ) : null}

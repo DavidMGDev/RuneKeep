@@ -225,11 +225,11 @@ export const LOOK_PAGES: LookPage[] = [
       {
         title: 'Dice',
         controls: [
-          { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck, roll, state, cards and sort controls as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
+          { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck, roll, tokens, cards, state and sort controls as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
           { kind: 'choice', key: 'controlDice', label: 'Control dice', help: 'How the control dice are made.', options: opts(['obsidian', 'Obsidian'], ['gilded', 'Gilded'], ['ivory', 'Ivory']) },
           { kind: 'choice', key: 'numberDice', label: 'Rolling dice', help: 'How the dice you roll are made.', options: opts(['resin', 'Resin'], ['stone', 'Stone'], ['metal', 'Metal']) },
           { kind: 'choice', key: 'walls', label: 'Table edge', help: 'What the dice bounce off at the edge. Every choice stops them; Nothing just isn\'t drawn.', options: opts(['line', 'Hairline'], ['stone', 'Stone wall'], ['brass', 'Brass rail'], ['none', 'Nothing']) },
-          { kind: 'toggle', key: 'tokenTray', label: 'Token tray', help: 'Tokens and token dice to drag onto the cards on the table.' },
+          { kind: 'toggle', key: 'tokenTray', label: 'Token supply', help: 'Tokens and a token die lying ready on the table. Click one to throw out a copy; the Tokens die shows and hides them too.' },
         ],
       },
     ],

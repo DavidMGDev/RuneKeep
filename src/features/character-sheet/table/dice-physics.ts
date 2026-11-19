@@ -44,6 +44,8 @@ export interface Body {
   upright: boolean;
   /** Only these faces may end up on top (a control die with its icon on two faces). */
   restFaces?: number[];
+  /** Never moves (the token supply): others bounce off it like a held die. */
+  fixed?: boolean;
   /** A token chip: slides, never tumbles. */
   flat?: boolean;
   /** Land on this face instead of the nearest one (the category die turning to the deck picked). */
@@ -194,7 +196,7 @@ export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: ()
 function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle[]): Impact[] {
   const hits: Impact[] = [];
   for (const b of bodies) {
-    if (b.asleep || b.held) continue;
+    if (b.asleep || b.held || b.fixed) continue;
     if (b.home) {
       const h = b.home;
       h.t = Math.min(1, h.t + dt / h.dur);
@@ -313,7 +315,7 @@ function collide(bodies: Body[], hits: Impact[]): void {
       const nx = dx / d, ny = dy / d;
       const overlap = min - d;
       // A held die is an immovable hand; a sleeping one wakes when pushed.
-      const ia = a.held ? 0 : 1, ib = b.held ? 0 : 1;
+      const ia = a.held || a.fixed ? 0 : 1, ib = b.held || b.fixed ? 0 : 1;
       if (ia + ib === 0) continue;
       a.x -= nx * overlap * (ia / (ia + ib));
       a.y -= ny * overlap * (ia / (ia + ib));
@@ -327,7 +329,7 @@ function collide(bodies: Body[], hits: Impact[]): void {
         if (-rel > 60) hits.push({ key: a.held ? b.key : a.key, speed: -rel, kind: 'die' });
       }
       for (const [body, other] of [[a, b], [b, a]] as const) {
-        if (body.held || !(body.asleep || body.settle)) continue;
+        if (body.held || body.fixed || !(body.asleep || body.settle)) continue;
         if (Math.hypot(body.vx, body.vy) > 4 || Math.hypot(other.vx, other.vy) > 30) {
           body.asleep = false;
           body.settle = undefined;
@@ -372,7 +374,7 @@ export function snapFace(b: Body, face: number, ms = 120): void {
 }
 
 /** Every body at rest (nothing moving, nothing turning, nothing flying home). */
-export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => b.asleep && !b.held);
+export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => (b.asleep || b.fixed) && !b.held);
 
 /** Send a body home in an arc, landing on `face` (or the one on top now). */
 export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5): void {

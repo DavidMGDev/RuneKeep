@@ -14,7 +14,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
 import { Display } from '@/constants/theme';
-import { DIE_COLOR, DIE_INK, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK } from '../components/card-tokens-data';
+import { DIE_COLOR, DIE_INK, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK, kindScale, tokenFill, type TokenKind } from '../components/card-tokens-data';
 import type { PoolDie } from '@/lib/dice-pool';
 import { playSfx, playSynth } from '@/lib/sfx';
 import type { CardCategory } from '../card-data';
@@ -24,9 +24,16 @@ import type { Bounds, Impact, Obstacle } from './dice-physics';
 import { loadDicePlaces, saveDicePlaces } from './table-store';
 import { Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from './table-ui';
 
-export type ActionKey = 'roll' | 'state' | 'cards' | 'sort';
+export type ActionKey = 'roll' | 'tokens' | 'cards' | 'state' | 'sort';
 export interface TableAction { key: ActionKey; label: string; onPress: () => void; disabled?: boolean }
 export interface TableDeck { key: CardCategory; label: string; count: number; meta?: { icon?: string; builtin: boolean } }
+
+/** What a token is: a sewing-button token (wood, bone, iron, a colour) or a token die and its value. */
+export interface TokenInfo { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number; dieValue2?: number }
+/** A token lying loose on the table (not stuck to a card). */
+export interface LoosePiece { key: string; token: TokenInfo; x: number; y: number }
+/** One token of the supply: always on the table, a click throws out a copy. */
+export interface SupplyPiece { key: string; token: TokenInfo; label: string }
 
 /** A token from a card on the table, as a piece: where it sits on its card now, and what it is. */
 export interface TokenPiece {
@@ -49,12 +56,15 @@ export interface TableDiceHandle {
   /** Open the deck picker at a point (the table's right-click menu). */
   openDecks: (at: { x: number; y: number }) => void;
   hasRoll: () => boolean;
+  /** A laid card was lifted: carry what lies on it (null when it is let go). */
+  carry: (card: { cx: number; cy: number; w: number; h: number; rot: number } | null) => void;
+  carryBy: (dx: number, dy: number) => void;
 }
 
 const CAT = 'cat';
 const ACTION_SIZE = 58;
-const ACTIONS: ActionKey[] = ['roll', 'state', 'cards', 'sort'];
-const GLYPH: Record<ActionKey, GlyphKey> = { roll: 'roll', state: 'state', cards: 'cards', sort: 'sort' };
+const ACTIONS: ActionKey[] = ['roll', 'tokens', 'cards', 'state', 'sort'];
+const GLYPH: Record<ActionKey, GlyphKey> = { roll: 'roll', tokens: 'token', cards: 'cards', state: 'state', sort: 'sort' };
 const ROLL_SIZE: Record<string, number> = { d4: 62, d6: 54, d8: 58, d10: 58, d12: 62, d20: 68, d100: 56, duality: 64 };
 const TOKEN_DIE_SIZE = 46;
 const FACES_OF: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };
@@ -83,8 +93,18 @@ function numberColours(finish: Finish, type: DieType, side?: 'hope' | 'fear'): {
 /** Where each control die lives, in the open part of the table: the decks low on the left, clear of the corner buttons. */
 function homes(b: Bounds): Record<string, { x: number; y: number }> {
   const out: Record<string, { x: number; y: number }> = { [CAT]: { x: b.left + 128, y: b.bottom - 74 } };
-  ACTIONS.forEach((k, i) => { out[k] = { x: b.left + 52 + i * 96, y: b.top + 54 }; });
+  ACTIONS.forEach((k, i) => { out[k] = { x: b.left + 52 + i * 94, y: b.top + 54 }; });
   return out;
+}
+
+/** Where the token supply lies: a row under the control dice. */
+function supplyHome(b: Bounds, i: number): { x: number; y: number } {
+  return { x: b.left + 44 + i * 62, y: b.top + 150 };
+}
+
+/** A token as the piece description the engine specs are built from. */
+function pieceOf(key: string, t: TokenInfo, home: { x: number; y: number }): TokenPiece {
+  return { key, home, kind: t.kind === 'die' ? 'die' : 'chip', dieType: t.dieType, value: t.dieValue, value2: t.dieValue2, color: tokenFill(t), scale: kindScale(t.kind) };
 }
 
 export const TableDice = forwardRef<TableDiceHandle, {
@@ -105,12 +125,21 @@ export const TableDice = forwardRef<TableDiceHandle, {
   controlFinish: 'obsidian' | 'gilded' | 'ivory';
   numberFinish: 'resin' | 'stone' | 'metal';
   tokens: TokenPiece[];
+  supply: SupplyPiece[];
+  loose: LoosePiece[];
+  /** A copy was thrown out of the supply. */
+  onSpawn: (key: string, token: TokenInfo, x: number, y: number) => void;
+  /** A right click on a supply token (the next colour, the next die size). */
+  onSupplyAlt: (key: string) => void;
+  /** A loose token came to rest here (to remember it), or a loose die was rolled to these values. */
+  onLooseRest: (key: string, x: number, y: number) => void;
+  onLooseRolled: (key: string, value: number, value2?: number) => void;
   /** A token die came to rest after a right-click roll: its new values. */
   onTokenRolled: (key: string, value: number, value2?: number) => void;
   /** A die from the last roll was rolled again: its new value. */
   onRerolled: (poolId: string, value: number) => void;
   /** A held piece was let go over this point (screen px); return true when that drop is handled (and it is removed). */
-  onDropPiece: (key: string, clientX: number, clientY: number) => boolean;
+  onDropPiece: (key: string, clientX: number, clientY: number, overTokens: boolean) => boolean;
   /** A piece is being dragged over this point (screen px). */
   onDragPiece: (key: string, clientX: number, clientY: number) => void;
   /** Right click on the table where there is no die. */
@@ -191,6 +220,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
       for (const k of keys) {
         const act = rolling.current.get(k);
         if (act) { rolling.current.delete(k); act(); }
+      }
+      for (const k of keys) {
+        if (!k.startsWith('free:')) continue;
+        const st = engine.state(k);
+        if (st) live.current.onLooseRest(k.replace(/:(h|f|t|u)$/, ''), st.x, st.y);
       }
       const places = loadDicePlaces();
       let changed = false;
@@ -274,7 +308,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const shape = catShape(decks.length);
     const spec: DieSpec = {
       key: CAT, shape, size: shape === 'd20' ? 112 : shape === 'd12' ? 100 : shape === 'd8' ? 94 : 84, body: style.body, edge: style.edge, ink: style.ink, finish: controlFinish, upright: true,
-      faces: deckFace.faces.map((d) => (d && deckArt.get(d.key) ? { image: tinted(deckArt.get(d.key)!, style.ink) } : { text: '' })),
+      faces: deckFace.faces.map((d) => (d && deckArt.get(d.key) ? { image: deckArt.get(d.key)!, plate: controlFinish === 'obsidian' ? undefined : '#15191F' } : { text: '' })),
     };
     const fresh = !engine.has(CAT);
     const at = placeOf(CAT);
@@ -309,6 +343,36 @@ export const TableDice = forwardRef<TableDiceHandle, {
     for (const [k, d] of rolled.current) for (const s of rollSpecs(d, numberFinish)) if (s.key === k && engine.has(k)) engine.add(s, 0, 0);
   }, [engine, numberFinish]);
 
+  // The token supply: fixed pieces in a row; a changed colour or die size rebuilds that one in place.
+  const supplyKey = props.supply.map((t) => `${t.key}:${t.token.color ?? ''}:${t.token.dieType ?? ''}`).join('|');
+  useEffect(() => {
+    if (!engine) return;
+    const want = new Set<string>();
+    props.supply.forEach((t, i) => {
+      const at = supplyHome(homeRef.current, i);
+      for (const sp of tokenSpecs(pieceOf(t.key, t.token, at), numberFinish)) {
+        want.add(sp.spec.key);
+        engine.add({ ...sp.spec, fixed: true }, at.x + sp.dx * 0.5, at.y, { face: sp.face });
+      }
+    });
+    for (const k of engine.keys()) if (k.startsWith('src:') && !want.has(k)) engine.remove(k);
+  }, [engine, supplyKey, numberFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Loose tokens: added where they were left, removed when they go onto a card or back to the supply.
+  const looseKey = props.loose.map((t) => `${t.key}:${t.token.kind}:${t.token.dieType ?? ''}:${t.token.color ?? ''}`).join('|');
+  useEffect(() => {
+    if (!engine) return;
+    const want = new Set<string>();
+    for (const t of props.loose) {
+      for (const sp of tokenSpecs(pieceOf(t.key, t.token, { x: t.x, y: t.y }), numberFinish)) {
+        want.add(sp.spec.key);
+        if (!engine.has(sp.spec.key)) engine.add(sp.spec, t.x + sp.dx, t.y, { face: sp.face, pop: true });
+      }
+    }
+    for (const k of engine.keys()) if (k.startsWith('free:') && !want.has(k)) engine.remove(k);
+  }, [engine, looseKey, numberFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Pieces a lifted card is carrying. */
+  const carried = useRef<string[]>([]);
+
   // Labels ride under their dice. One stable ref callback per die, so a re-render never detaches a label.
   const labelRefs = useRef(new Map<string, (el: HTMLElement | null) => void>());
   const engineRef = useRef(engine);
@@ -327,7 +391,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
   useEffect(() => {
     if (!engine) return;
     for (const [k, el] of labels.current) engine.label(k, el);
-  }, [engine, glyphs, deckArt, showDice, controlFinish]);
+  }, [engine, glyphs, deckArt, showDice, controlFinish, supplyKey]);
 
   // ---------------------------------------------------------------- right click: roll it where it lies
   const rollInPlace = useCallback((key: string) => {
@@ -344,9 +408,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
       });
       return;
     }
-    if (key.startsWith('tok:')) {
+    if (key.startsWith('src:')) { live.current.onSupplyAlt(key.replace(/:(h|f|t|u)$/, '')); return; }
+    if (key.startsWith('tok:') || key.startsWith('free:')) {
       const base = key.replace(/:(h|f|t|u)$/, '');
-      const piece = p.tokens.find((t) => t.key === base);
+      const loose = p.loose.find((t) => t.key === base);
+      const piece = loose ? pieceOf(loose.key, loose.token, { x: 0, y: 0 }) : p.tokens.find((t) => t.key === base);
+      if (piece?.kind === 'chip') { playSfx('placeToken', { volume: 0.4 }); return; }
       if (!piece || piece.kind !== 'die') return;
       const parts = tokenSpecs(piece, numberFinish).map((s) => s.spec.key);
       for (const k of parts) if (k !== key) e.rollInPlace(k);
@@ -355,9 +422,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
         rolling.current.set(k, () => {
           if (--left > 0) return;
           const tops = parts.map((x) => e.state(x)?.top ?? 0);
-          if (piece.dieType === 'duality') live.current.onTokenRolled(base, tops[0] + 1, tops[1] + 1);
-          else if (piece.dieType === 'd100') { const v = tops[0] * 10 + tops[1]; live.current.onTokenRolled(base, v === 0 ? 100 : v); }
-          else live.current.onTokenRolled(base, tops[0] + 1);
+          const done = loose ? live.current.onLooseRolled : live.current.onTokenRolled;
+          if (piece.dieType === 'duality') done(base, tops[0] + 1, tops[1] + 1);
+          else if (piece.dieType === 'd100') { const v = tops[0] * 10 + tops[1]; done(base, v === 0 ? 100 : v); }
+          else done(base, tops[0] + 1);
         });
       }
       return;
@@ -382,7 +450,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
   inertRef.current = inert;
   useEffect(() => {
     if (!host || !engine) return;
-    let press: { key: string; x: number; y: number; t: number; moved: boolean; id: number } | null = null;
+    let press: { key: string; x: number; y: number; t: number; moved: boolean; id: number; spawned: boolean } | null = null;
     let swallowMenu = false;
     const local = (e: { clientX: number; clientY: number }) => {
       const r = host.getBoundingClientRect();
@@ -398,8 +466,22 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (e.button === 2) { swallowMenu = true; rollInPlace(key); return; }
       if (e.button !== 0) return;
       try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
-      press = { key, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, id: e.pointerId };
-      engine.grab(key, p.x, p.y);
+      let grabbed = key;
+      let spawned = false;
+      if (key.startsWith('src:')) {
+        const base = key.replace(/:(h|f|t|u)$/, '');
+        const src = live.current.supply.find((t) => t.key === base);
+        const at = engine.state(key);
+        if (!src || !at) return;
+        const nk = `free:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        for (const sp of tokenSpecs(pieceOf(nk, src.token, at), live.current.numberFinish)) engine.add(sp.spec, at.x + sp.dx, at.y, { face: sp.face, pop: true });
+        live.current.onSpawn(nk, src.token, at.x, at.y);
+        grabbed = live.current.supply.find((t) => t.key === base)?.token.dieType === 'duality' ? `${nk}:h` : src.token.dieType === 'd100' ? `${nk}:t` : nk;
+        spawned = true;
+        playSfx('placeToken', { volume: 0.6, cents: 200 });
+      }
+      press = { key: grabbed, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, id: e.pointerId, spawned };
+      engine.grab(grabbed, p.x, p.y);
       host.style.cursor = 'grabbing';
       playSfx('placeToken', { volume: 0.35, cents: 300 });
     };
@@ -408,7 +490,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (press && e.pointerId === press.id) {
         if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5) press.moved = true;
         engine.drag(p.x, p.y);
-        if (press.key.startsWith('tok:')) live.current.onDragPiece(press.key, e.clientX, e.clientY);
+        if (press.key.startsWith('tok:') || press.key.startsWith('free:')) live.current.onDragPiece(press.key, e.clientX, e.clientY);
         return;
       }
       if (inertRef.current) return;
@@ -422,8 +504,17 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const pr = press;
       press = null;
       host.style.cursor = 'grab';
-      if (pr.moved && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) { engine.release(); return; }
+      const td = engine.state('tokens');
+      const lp = local(e);
+      const overTokens = !!td && Math.hypot(td.x - lp.x, td.y - lp.y) < ACTION_SIZE * 0.75;
+      if (pr.moved && live.current.onDropPiece(pr.key, e.clientX, e.clientY, overTokens)) { engine.release(); return; }
       const speed = engine.release();
+      if (pr.spawned && !pr.moved) {
+        // A click on the supply throws the copy out across the table.
+        const ang = Math.PI / 2 + (Math.random() - 0.5) * 1.4;
+        engine.toss(pr.key, Math.cos(ang) * 620, Math.sin(ang) * 620);
+        return;
+      }
       if (!pr.moved && performance.now() - pr.t < 450) {
         if (pr.key === CAT) {
           const s = engine.state(CAT);
@@ -522,6 +613,19 @@ export const TableDice = forwardRef<TableDiceHandle, {
     },
     openDecks: (at) => { playSfx('floatMenuOpen'); setRing(at); },
     hasRoll: () => rolled.current.size > 0,
+    carry: (card) => {
+      if (!engine || !card) { carried.current = []; return; }
+      const a = (-card.rot * Math.PI) / 180;
+      carried.current = engine.keys().filter((k) => {
+        if (k.startsWith('src:')) return false;
+        const st = engine.state(k);
+        if (!st) return false;
+        const dx = st.x - card.cx, dy = st.y - card.cy;
+        const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+        return Math.abs(lx) <= card.w / 2 && Math.abs(ly) <= card.h / 2;
+      });
+    },
+    carryBy: (dx, dy) => { if (engine && carried.current.length) engine.nudge(carried.current, dx, dy); },
   }), [engine, deckFace]);
   const clear = (e: DiceEngine) => {
     for (const k of rolled.current.keys()) e.remove(k);
@@ -543,6 +647,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
           onClick={() => { const s = engine?.state(CAT); playSfx('floatMenuOpen'); setRing(s ? { x: s.x, y: s.y } : { x: 74, y: height - 88 }); }}
           style={{ ...labelStyle, color: hoverKey === CAT ? T.ivory : T.goldText }}>{currentDeck?.label ?? ''}<span style={{ color: T.muted, marginLeft: 6 }}>{currentDeck?.count ?? ''}</span></button>
       ) : null}
+      {ready ? props.supply.map((t) => (
+        <div key={t.key} ref={setLabel(t.key)} style={{ ...labelStyle, fontSize: 9.5, letterSpacing: 0.8, color: T.muted, textTransform: t.token.kind === 'die' ? 'none' : 'uppercase' }}>{t.label}</div>
+      )) : null}
       {/* Plain buttons instead of dice (or when there is no WebGL), so nothing is lost. */}
       {controls === 'buttons' || (failed && controls === 'dice') ? (
         <div style={{ position: 'absolute', left: bounds.left + 12, top: bounds.top + 12, display: 'flex', gap: 8, flexWrap: 'wrap', zIndex: 21 }}>
@@ -596,7 +703,7 @@ function valueOf(d: PoolDie, tops: number[]): number {
 /** A token as engine pieces: a chip, one die, or a pair side by side (Hope and Fear; a percentile's tens and units). */
 function tokenSpecs(t: TokenPiece, finish: Finish): { spec: DieSpec; face?: number; dx: number }[] {
   if (t.kind === 'chip') {
-    return [{ spec: { key: t.key, shape: 'chip', size: 34 * t.scale, body: t.color ?? '#9A6B3C', edge: t.color ?? '#9A6B3C', ink: '#000', faces: [{ text: '' }], finish: 'stone' }, dx: 0 }];
+    return [{ spec: { key: t.key, shape: 'chip', size: 40 * t.scale, body: t.color ?? '#9A6B3C', edge: t.color ?? '#9A6B3C', ink: '#000', faces: [{ text: '' }], finish: 'stone' }, dx: 0 }];
   }
   const type = t.dieType ?? 'd6';
   const size = TOKEN_DIE_SIZE;

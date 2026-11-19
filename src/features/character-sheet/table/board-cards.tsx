@@ -14,10 +14,12 @@ import type { BoardCard } from './table-store';
 import { T } from './table-ui';
 
 export const MIN_W = 96;
+/** A laid card's size until it is resized; a click on the size grip comes back to it. */
+export const DEFAULT_W = 170;
 /** The biggest a card may grow: most of the felt's height, and never past 460 px wide. */
 export const maxW = (feltH: number) => Math.max(MIN_W, Math.min(460, (feltH * 0.94 * FORGED_W) / FORGED_H));
 
-export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, overTray, onMenu }: {
+export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, overTray, onMenu, onLift, onCarry, onSettle }: {
   cards: BoardCard[];
   lookup: (id: string) => TableCard | undefined;
   feltW: number;
@@ -28,6 +30,10 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   /** Whether a client point is over the card tray (to light it while a card is dragged there). */
   overTray: (x: number, y: number) => boolean;
   onMenu: (uid: string, x: number, y: number) => void;
+  /** A card started moving (carry what lies on it), moved by (dx, dy) px, and was let go. */
+  onLift: (card: BoardCard) => void;
+  onCarry: (dx: number, dy: number) => void;
+  onSettle: () => void;
 }) {
   const [front, setFront] = useState<string[]>([]);
   const [returning, setReturning] = useState<string | null>(null);
@@ -47,6 +53,9 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
             feltH={feltH}
             returning={returning === c.uid}
             onGrab={() => raise(c.uid)}
+            onLift={() => onLift(c)}
+            onCarry={onCarry}
+            onSettle={onSettle}
             onMove={(fx, fy, over) => { setReturning(over ? c.uid : null); onChange(cards.map((x) => (x.uid === c.uid ? { ...x, fx, fy } : x))); }}
             onDrop={(over) => { setReturning(null); if (over) onReturn(c.uid); }}
             onResize={(w) => onChange(cards.map((x) => (x.uid === c.uid ? { ...x, w } : x)))}
@@ -61,9 +70,9 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   );
 }
 
-const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGrab, onMove, onDrop, onResize, onRotate, onTurn, overTray, onMenu }: {
+const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGrab, onLift, onCarry, onSettle, onMove, onDrop, onResize, onRotate, onTurn, overTray, onMenu }: {
   entry: BoardCard; card: TableCard; feltW: number; feltH: number; returning: boolean;
-  onGrab: () => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
+  onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
   onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
 }) {
   const [hover, setHover] = useState(false);
@@ -107,7 +116,8 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       setDrag(null);
-      if (!moved) { playSfx('cardDragEnd', { volume: 0.5 }); onRotate((Math.round(rot / 90) * 90 + 90) % 360); }
+      // A click puts the card back upright (owner, v0.47.2); a drag turns it.
+      if (!moved) { playSfx('cardDragEnd', { volume: 0.5 }); onRotate(0); }
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -132,7 +142,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
     if (mode === 'move') playSfx('cardDragStart', { volume: 0.6 });
     const move = (m: PointerEvent) => {
       if (!moved && Math.hypot(m.clientX - sx, m.clientY - sy) < 4) return;
-      if (!moved) { moved = true; setDrag(mode); }
+      if (!moved) { moved = true; setDrag(mode); if (mode === 'move') onLift(); }
       if (mode === 'size') {
         const d = Math.hypot(m.clientX - (felt.left + cx), m.clientY - (felt.top + cy));
         onResize(Math.round(Math.min(maxW(feltH), Math.max(MIN_W, startW * (d / Math.max(1, startD))))));
@@ -140,7 +150,9 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       }
       const nx = Math.min(feltW - 20, Math.max(20, m.clientX - felt.left + ox));
       const ny = m.clientY - felt.top + oy;
-      last = { fx: nx / feltW, fy: Math.min(1.4, Math.max(0.03, ny / feltH)) };
+      const nextF = { fx: nx / feltW, fy: Math.min(1.4, Math.max(0.03, ny / feltH)) };
+      onCarry((nextF.fx - last.fx) * feltW, (nextF.fy - last.fy) * feltH);
+      last = nextF;
       onMove(last.fx, last.fy, overTray(m.clientX, m.clientY));
     };
     const up = (u: PointerEvent) => {
@@ -148,7 +160,9 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       setDrag(null);
+      if (mode === 'size' && !moved) { playSfx('cardDragEnd', { volume: 0.5 }); onResize(DEFAULT_W); return; }
       if (mode === 'move') {
+        if (moved) onSettle();
         if (!moved) { if (pages > 1) { playSfx('gearScroll2', { volume: 0.5 }); onTurn(); } return; }
         const over = overTray(u.clientX, u.clientY);
         playSfx(over ? 'tokenRemove' : 'cardDragEnd', { volume: 0.7 });
@@ -194,7 +208,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       {/* The rotate grip: click for a quarter turn, drag to turn freely. */}
       <div
         onPointerDown={turnStart}
-        title="Click to turn, drag to rotate"
+        title="Drag to rotate, click to stand it upright"
         style={{ position: 'absolute', left: -11, top: -11, width: 24, height: 24, cursor: 'grab', opacity: hover || drag === 'turn' ? 1 : 0, transition: 'opacity 140ms', touchAction: 'none' }}>
         <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
           <polygon points="12,1 23,12 12,23 1,12" fill={T.panel} stroke={T.gold} strokeWidth="1.4" />
@@ -204,7 +218,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       {/* The size grip: pull out to grow, in to shrink. */}
       <div
         onPointerDown={(e) => start(e, 'size')}
-        title="Drag to resize"
+        title="Drag to resize, click for the normal size"
         style={{ position: 'absolute', right: -11, bottom: -11, width: 24, height: 24, cursor: 'nwse-resize', opacity: hover || drag === 'size' ? 1 : 0, transition: 'opacity 140ms', touchAction: 'none' }}>
         <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
           <polygon points="12,1 23,12 12,23 1,12" fill={T.panel} stroke={T.gold} strokeWidth="1.4" />

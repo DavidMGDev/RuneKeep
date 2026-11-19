@@ -25,8 +25,11 @@ export const FACE_COUNT: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10,
 export type Finish = 'resin' | 'stone' | 'metal' | 'obsidian' | 'gilded' | 'ivory';
 export type Walls = 'none' | 'line' | 'stone' | 'brass';
 
-/** What one face shows: a number (or any short text) or a picture. Fewer than the die has repeat round. */
-export type FaceArt = { text: string } | { image: CanvasImageSource };
+/**
+ * What one face shows: a number (or any short text) or a picture, optionally on a round plate of that colour (a
+ * gold deck icon on a gilded die sits on a dark medallion). Fewer than the die has repeat round.
+ */
+export type FaceArt = { text: string } | { image: CanvasImageSource; plate?: string };
 
 export interface DieSpec {
   key: string;
@@ -43,6 +46,8 @@ export interface DieSpec {
   upright?: boolean;
   /** Only these faces may come to rest on top. */
   restFaces?: number[];
+  /** Never moves: the token supply. */
+  fixed?: boolean;
 }
 
 export interface DiceEngine {
@@ -72,6 +77,8 @@ export interface DiceEngine {
   setFace(key: string, face: number): void;
   /** Fly to (x, y) and land on `face`. */
   home(key: string, x: number, y: number, face?: number): void;
+  /** Shift these pieces by (dx, dy) where they lie (a laid card carrying what is on it). */
+  nudge(keys: string[], dx: number, dy: number): void;
   hover(key: string | null): void;
   /** A DOM label that rides under a die. */
   label(key: string, el: HTMLElement | null): void;
@@ -93,7 +100,7 @@ const CHIP_H = 0.26;
  * reads the same in the middle and at the edge, but tipped enough that a die shows its front as well as its top.
  * Table y is stretched by 1 / cos(TILT) in the scene so a point on the felt still lands on its own screen px.
  */
-const TILT = 0.5;
+const TILT = 0.32; // v0.47.2 (owner): higher, a little less isometric, so lower edges read
 const COS = Math.cos(TILT);
 
 let models: Promise<Record<Shape, ShapeModel>> | null = null;
@@ -125,7 +132,7 @@ function loadModels(url: string): Promise<Record<Shape, ShapeModel>> {
 
 /** The chip: a short cylinder lying flat, its top face mapped whole onto the first atlas cell. */
 function chipModel(): ShapeModel {
-  const g = new THREE.CylinderGeometry(1, 1, CHIP_H, 48, 1);
+  const g = new THREE.CylinderGeometry(1, 0.92, CHIP_H, 48, 1);
   g.rotateX(Math.PI / 2);
   // Map the top cap into cell 0 so a chip can carry a mark like a die face does; the rest is plain body.
   const pos = g.getAttribute('position');
@@ -166,9 +173,48 @@ function paintAtlas(canvas: HTMLCanvasElement, spec: DieSpec, model: ShapeModel,
       if ((art.text === '6' || art.text === '9') && n >= 9) g.fillRect(cx - size * 0.24, cy + size * 0.5, size * 0.48, Math.max(2, size * 0.07));
     } else {
       const s = r * 1.62;
+      if (art.plate) {
+        g.fillStyle = art.plate;
+        g.beginPath();
+        g.arc(cx, cy, r * 0.98, 0, Math.PI * 2);
+        g.fill();
+      }
       g.drawImage(art.image, cx - s / 2, cy - s / 2, s, s);
     }
   }
+  if (spec.shape === 'chip') paintButton(g, spec.body);
+}
+
+/** The phone's token, as the chip's top: a darker rim, a face lit from the upper left, four stitch holes. */
+function paintButton(g: CanvasRenderingContext2D, fill: string): void {
+  const cx = CELL / 2, cy = CELL / 2, R = CELL * 0.46;
+  g.fillStyle = shade(fill, -0.32);
+  g.beginPath();
+  g.arc(cx, cy, R, 0, Math.PI * 2);
+  g.fill();
+  const grad = g.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.05, cx, cy, R * 0.95);
+  grad.addColorStop(0, shade(fill, 0.45));
+  grad.addColorStop(0.6, fill);
+  grad.addColorStop(1, shade(fill, -0.18));
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(cx, cy, R * 0.86, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = shade(fill, -0.55);
+  const off = R * 0.25, hole = R * 0.13;
+  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    g.beginPath();
+    g.arc(cx + dx * off, cy + dy * off, hole, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+/** A hex colour lightened (amt > 0) or darkened (amt < 0) by a share. */
+function shade(hex: string, amt: number): string {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h.slice(0, 6), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => Math.round(amt >= 0 ? c + (255 - c) * amt : c * (1 + amt)));
+  return `rgb(${ch[0]},${ch[1]},${ch[2]})`;
 }
 
 /**
@@ -287,7 +333,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     const b = d.body;
     const model = modelOf(d.spec.shape);
     const rad = d.spec.size / 2;
-    const target = hovered === d.spec.key || d.body.held ? 1.08 : 1;
+    // A light touch on hover, so the die's outline never grows past itself (owner, v0.47.2).
+    const target = d.body.held ? 1.05 : hovered === d.spec.key ? 1.03 : 1;
     d.scale += (target - d.scale) * 0.25;
     d.group.scale.setScalar(rad * d.scale);
     d.group.position.set(b.x - W / 2, (H / 2 - b.y) / COS, model.inR * rad + b.z + (b.held ? 6 : 0));
@@ -327,7 +374,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     if (++frameNo % 30 === 1) for (const d of order) d.labelW = d.label?.offsetWidth ?? 0;
     for (const d of order) {
       sync(d);
-      if (Math.abs(d.scale - (hovered === d.spec.key || d.body.held ? 1.08 : 1)) > 0.002) easing = true;
+      if (Math.abs(d.scale - (d.body.held ? 1.05 : hovered === d.spec.key ? 1.03 : 1)) > 0.002) easing = true;
       const asleep = d.body.asleep && !d.body.held;
       if (asleep && !d.wasAsleep) rested.push(d.spec.key);
       d.wasAsleep = asleep;
@@ -425,6 +472,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.body.upright = !!spec.upright;
         prev.body.flat = spec.shape === 'chip';
         prev.body.restFaces = spec.restFaces;
+        prev.body.fixed = spec.fixed;
         wake();
         return;
       }
@@ -435,6 +483,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const body = makeBody(spec.key, x, y, (spec.size / 2) * (spec.shape === 'chip' ? 1 : 0.86), model.faces, { upright: spec.upright, q: q0 });
       body.flat = spec.shape === 'chip';
       body.restFaces = spec.restFaces;
+      body.fixed = spec.fixed;
       if (face !== undefined && model.faces[face]) {
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
@@ -546,6 +595,15 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const d = dice.get(key);
       if (!d) return;
       sendHome(d.body, x, y, face, 0.42 + Math.min(0.4, Math.hypot(d.body.x - x, d.body.y - y) / 2400));
+      wake();
+    },
+    nudge(keys, dx, dy) {
+      for (const k of keys) {
+        const d = dice.get(k);
+        if (!d) continue;
+        d.body.x = Math.min(bounds.right - d.body.r, Math.max(bounds.left + d.body.r, d.body.x + dx));
+        d.body.y = Math.min(bounds.bottom - d.body.r, Math.max(bounds.top + d.body.r, d.body.y + dy));
+      }
       wake();
     },
     hover(key) {

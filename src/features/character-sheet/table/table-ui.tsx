@@ -88,7 +88,8 @@ export const DIE_GLYPHS = {
   sort: '<path d="M8 4v16M4.6 7.4 8 4l3.4 3.4M16 20V4M12.6 16.6 16 20l3.4-3.4"/>',
   exit: '<path d="M13.5 4H19v16h-5.5"/><path d="M9.5 8 5.5 12l4 4M5.5 12H15"/>',
   rotate: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 4.2v4.6h-4.6"/>',
-  token: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3.5"/>',
+  // The phone's token: a sewing button, rim and four holes.
+  token: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="6"/><circle cx="10.2" cy="10.2" r="1" fill="currentColor"/><circle cx="13.8" cy="10.2" r="1" fill="currentColor"/><circle cx="10.2" cy="13.8" r="1" fill="currentColor"/><circle cx="13.8" cy="13.8" r="1" fill="currentColor"/>',
   // A toothed cog (v0.47.1, owner: the old sun-like mark read as a light and dark switch).
   settings: '<path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/><path d="M19.4 13.4a7.6 7.6 0 0 0 0-2.8l2-1.5-2-3.5-2.4 1a7.4 7.4 0 0 0-2.4-1.4L14.2 2.6h-4.4l-.4 2.6A7.4 7.4 0 0 0 7 6.6l-2.4-1-2 3.5 2 1.5a7.6 7.6 0 0 0 0 2.8l-2 1.5 2 3.5 2.4-1a7.4 7.4 0 0 0 2.4 1.4l.4 2.6h4.4l.4-2.6a7.4 7.4 0 0 0 2.4-1.4l2.4 1 2-3.5Z"/>',
   reset: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.2 4.2v4.6h4.6"/>',
