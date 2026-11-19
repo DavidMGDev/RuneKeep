@@ -1,6 +1,7 @@
 import { createContext, type MutableRefObject, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelAnimation, Easing, runOnJS, type SharedValue, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
+import { useDesktop } from '@/hooks/use-desktop';
 import { playSfx } from '@/lib/sfx';
 
 import { CARD_DECKS, type CardCategory, type CardItem } from './card-data';
@@ -252,6 +253,9 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
   const gearRotation = useSharedValue(startMiddle);
   const switchFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   const switchingRef = useRef(false);
+  // Desktop (v0.46.0, owner): decks switch at once. No rise beat and no lock, so a quick second pick lands too.
+  const desktopRef = useRef(false);
+  desktopRef.current = !!useDesktop();
   const arrivalRef = useRef<ArrivalEnd>('end');
   const decksRef = useRef(decks);
   decksRef.current = decks;
@@ -318,6 +322,15 @@ export function CarouselProvider({ children, decks: decksProp, categoryMeta, rin
       const idx = pendingOpen.current;
       pendingOpen.current = null;
       if (switchFallback.current) clearTimeout(switchFallback.current);
+      if (desktopRef.current) {
+        cancelAnimation(gearRotation);
+        riseProgress.value = 1;
+        gearRotation.value = land;
+        switching.value = 0;
+        endSwitch();
+        if (idx != null) openCardAt(idx);
+        return;
+      }
       // Readiness beat, then rise the LIVE deck up + ease the gear — together.
       setTimeout(() => {
         if (idx != null) {
