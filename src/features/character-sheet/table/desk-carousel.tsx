@@ -324,7 +324,8 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const hit = (e.target as HTMLElement).closest?.('[data-slot]') as HTMLElement | null;
       if (!hit) return;
       const i = Number(hit.dataset.slot);
-      if (i === centerRef.current && Math.abs(s.target - s.pos) < 0.3) {
+      // Click to take (owner, v0.47.8): any card comes straight out; otherwise only the settled centre card acts.
+      if (lookRef.current.clickPull || (i === centerRef.current && Math.abs(s.target - s.pos) < 0.3)) {
         const card = cardsRef.current[i];
         if (card) cbs.current.onCentreClick(card, hit.getBoundingClientRect(), { x: e.clientX, y: e.clientY });
         return;

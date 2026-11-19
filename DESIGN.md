@@ -124,3 +124,6 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   up or down (`areaY`) and its cards still scroll. The centre card shrinks to fit its area (`fitSize`) and the glow
   stays inside it. With controls hidden a corner button shows them in a column on the left. A held arrow steps faster
   and faster, its scroll sound climbing two octaves. A physical card is caught where it is the moment it is pressed.
+- v0.47.8: `clickPull` (on by default): a click on any card in the hand takes a copy out to lay on the table; off, a
+  click centres it and only the card menu's Lay a copy takes one out. The card menu can also Throw on the table: a
+  physical copy flung towards the middle. The Many Things label is small and shows no count, only the minute's wait.

@@ -316,9 +316,36 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   copiesRef.current = copies;
 
   const onCentreClick = useCallback((card: TableCard, rect: DOMRect, p: { x: number; y: number }) => {
-    if (look.centreClick === 'take') takeCopy(card, rect, p);
+    if (look.clickPull) takeCopy(card, rect, p);
     else if (look.centreClick === 'equip') ctx.toggleCard(card.id);
-  }, [look.centreClick, takeCopy, ctx]);
+  }, [look.clickPull, look.centreClick, takeCopy, ctx]);
+  /**
+   * Throw on the table (owner, v0.47.8): a copy leaves the hand as a physical card, flung towards the middle of the
+   * felt, turning as it goes.
+   */
+  const throwCopy = useCallback((id: string) => {
+    const el = handRef.current?.querySelector(`[data-card-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+    const root = tableRef.current?.getBoundingClientRect();
+    if (!el || !root) return;
+    const r = el.getBoundingClientRect();
+    const w = Math.min(maxW(tableH), Math.max(MIN_W, HAND_W));
+    const h = (w * FORGED_H) / FORGED_W;
+    const x = Math.min(tableW - pad - w / 2, Math.max(pad + w / 2, r.left - root.left + r.width / 2));
+    // It starts just outside the hand's own area, on the open side.
+    const yIn = r.top - root.top + r.height / 2;
+    const y = ownArea && handPos === 'bottom' ? hand.top - h / 2 - 6 : ownArea && handPos === 'top' ? hand.bottom + h / 2 + 6 : yIn;
+    const uid = uidOf();
+    setCopies([...copiesRef.current, { uid, id, fx: x / tableW, fy: Math.min(tableH - pad - h / 2, Math.max(pad + h / 2, y)) / tableH, w, rot: Math.round((Math.random() - 0.5) * 20), phys: true }]);
+    const ang = Math.atan2((openTop + openBottom) / 2 - y, tableW / 2 - x) + (Math.random() - 0.5) * 0.9;
+    const sp = 1900 + Math.random() * 900;
+    playSfx('cardDragStart', { volume: 0.8, cents: 200 });
+    let tries = 0;
+    const go = () => {
+      if (diceRef.current?.engine()?.throwCard(`card:${uid}`, Math.cos(ang) * sp, Math.sin(ang) * sp, (Math.random() - 0.5) * 9) || ++tries > 20) return;
+      setTimeout(go, 30);
+    };
+    setTimeout(go, 30);
+  }, [tableW, tableH, pad, ownArea, handPos, hand.top, hand.bottom, openTop, openBottom, setCopies]);  
 
   // ---------------------------------------------------------------- cards and their tokens, as the engine sees them
   const sizeOf = (b: BoardCard) => {
@@ -1251,7 +1278,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               const r = tableRef.current?.getBoundingClientRect();
               const card = lookup(menu.id);
               if (el && r && card) takeCopy(card, el.getBoundingClientRect(), { x: r.left + menu.x, y: r.top + menu.y });
-            }} />
+            }}
+            throwIt={menu.board || spread ? undefined : () => throwCopy(menu.id)} />
         ) : null}
       </div>
       {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} box={port} onAccept={() => { playSfx('buttonTap'); setResult(null); }} /> : null}
@@ -1421,7 +1449,7 @@ function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, ..
  * on the table is a copy, so its menu is short: make it physical (knocked about by dice) or take it off the table.
  * In the laid-out hand a card is the card itself, so it gets the whole menu and the physics switch.
  */
-function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, spread, physical, onPhysical }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void }) {
+function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, spread, physical, onPhysical }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void }) {
   const ctx = useCarousel();
   const item = Object.values(ctx.decks).flat().find((c) => c?.id === id);
   if (!item) return null;
@@ -1432,6 +1460,7 @@ function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, spread, phy
   const mirror = ctx.category === FAVORITES_CATEGORY;
   const rows: Row[] = [
     ...(place ? [{ label: 'Lay a copy on the table', onPress: place }] : []),
+    ...(throwIt ? [{ label: 'Throw on the table', onPress: throwIt }] : []),
     ...(spread ? phys : []),
     ...(mirror
       ? [{ label: 'Remove from Favorites', onPress: () => ctx.cardAction('unfavorite', [id]) }]

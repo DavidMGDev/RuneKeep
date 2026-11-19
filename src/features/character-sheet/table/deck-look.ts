@@ -10,7 +10,7 @@
 export type EdgeEffect = 'fade' | 'blur' | 'darken' | 'grey' | 'none';
 export type ExitStyle = 'fade' | 'shrink' | 'sink' | 'cut';
 export type StackOrder = 'centre' | 'left' | 'right';
-export type CentreClick = 'take' | 'equip' | 'nothing';
+export type CentreClick = 'equip' | 'nothing';
 
 export interface DeckLook {
   // The hand: size and spacing
@@ -80,7 +80,9 @@ export interface DeckLook {
   hoverLift: number;
   /** How much a card grows under the pointer. */
   hoverZoom: number;
-  /** What a click on the centre card does. */
+  /** A plain click on any card in the hand takes a copy of it out to lay on the table (owner, v0.47.8). */
+  clickPull: boolean;
+  /** What a click on the centre card does, when clicking does not take cards out. */
   centreClick: CentreClick;
   /** How a new deck's cards arrive when you switch decks. */
   switchFx: 'none' | 'fade' | 'slide' | 'deal';
@@ -128,7 +130,7 @@ export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
-  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, hoverLift: 10, hoverZoom: 1.04, centreClick: 'take', switchFx: 'slide',
+  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, hoverLift: 10, hoverZoom: 1.04, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
 };
@@ -225,7 +227,8 @@ export const LOOK_PAGES: LookPage[] = [
         title: 'Cards',
         controls: [
           { kind: 'choice', key: 'switchFx', label: 'Changing deck', help: 'How a deck\'s cards arrive when you switch to it.', options: opts(['slide', 'Slide'], ['deal', 'Deal'], ['fade', 'Fade'], ['none', 'Instant']) },
-          { kind: 'choice', key: 'centreClick', label: 'Click the centre card', help: 'Any other card always slides to the centre first.', options: opts(['take', 'Take a copy'], ['equip', 'Equip'], ['nothing', 'Nothing']) },
+          { kind: 'toggle', key: 'clickPull', label: 'Click a card to take it', help: 'On: click any card in the hand to pull a copy out and lay it on the table. Off: a click brings a card to the middle, and right click, Lay a copy on the table, takes one out.' },
+          { kind: 'choice', key: 'centreClick', label: 'Click the centre card', help: 'When clicking does not take cards out: what a click on the middle card does. Any other card slides to the middle first.', options: opts(['nothing', 'Nothing'], ['equip', 'Equip']) },
           { kind: 'range', key: 'hoverLift', label: 'Hover lift', help: 'How far a card rises under the pointer.', min: 0, max: 60, step: 1, unit: 'px' },
           { kind: 'range', key: 'hoverZoom', label: 'Hover zoom', help: 'How much a card grows under the pointer.', min: 1, max: 1.5, step: 0.01 },
         ],

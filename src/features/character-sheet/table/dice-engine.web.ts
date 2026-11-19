@@ -108,6 +108,8 @@ export interface DiceEngine {
   /** A card being dragged by hand (a physical one is knocked by nothing while held), and let go with its speed. */
   holdCard(key: string, x: number, y: number, rot: number): void;
   releaseCard(key: string): void;
+  /** Throw a physical card (one just thrown onto the table): false while its body does not exist yet. */
+  throwCard(key: string, vx: number, vy: number, va: number): boolean;
   /** Physical cards that moved this frame, and those that came to rest (to keep). */
   onCards(cb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void): void;
   /** Tie a piece to a card at an offset from its centre (px, in the card's own frame): it never moves by physics. */
@@ -923,6 +925,17 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       }
       b.asleep = false;
       wake();
+    },
+    throwCard(key, vx, vy, va) {
+      const b = cards.get(key)?.body;
+      if (!b) return false;
+      b.held = false;
+      b.asleep = false;
+      b.vx = vx;
+      b.vy = vy;
+      b.va = va;
+      wake();
+      return true;
     },
     onCards(cb) { cardsCb = cb; },
     anchor(key, card, lx = 0, ly = 0) {
