@@ -74,7 +74,7 @@ export interface DiceEngine {
   /** Let go: the die flies on with the hand's speed (px/s returned). */
   release(): number;
   /** Throw with a velocity; it slides and tumbles and lands where physics puts it. */
-  toss(key: string, vx: number, vy: number): void;
+  toss(key: string, vx: number, vy: number, boost?: { gen: number; power: number }): void;
   /** Spin where it lies and land on whatever face comes up (right click). */
   rollInPlace(key: string): void;
   /** Show `face` on top straight away, without moving (the category die following the deck). */
@@ -635,6 +635,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       body.fixed = spec.fixed;
       body.spawner = spec.spawner;
       body.fresh = o?.fresh;
+      // A fresh copy clears room for the next one: a weak push that keeps the spot by the supply free (owner).
+      if (o?.fresh) body.boost = { gen: 3, power: 1.6 };
       if (face !== undefined && model.faces[face]) {
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
@@ -724,12 +726,14 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       wake();
       return speed;
     },
-    toss(key, vx, vy) {
+    toss(key, vx, vy, boost) {
       const d = dice.get(key);
       if (!d) return;
+      d.jitter = 0;
       const sp = Math.hypot(vx, vy);
       const k = 0.012 * sp + 8;
       launch(d.body, vx, vy, 0, [(Math.random() - 0.5) * 2 * k, (Math.random() - 0.5) * 2 * k, (Math.random() - 0.5) * k]);
+      if (boost) d.body.boost = boost;
       wake();
     },
     rollInPlace(key) {

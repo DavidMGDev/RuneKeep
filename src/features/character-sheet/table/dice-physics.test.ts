@@ -182,3 +182,29 @@ describe('the supply and putting away (v0.47.4)', () => {
     expect(g.x).toBeCloseTo(200, 3);
   });
 });
+
+describe('launched pieces push harder, for five generations (v0.47.5)', () => {
+  const line = (boost?: { gen: number; power: number }) => {
+    const bodies = [0, 1, 2, 3].map((i) => makeBody(`b${i}`, 100 + i * 44, 250, 20, CUBE));
+    launch(bodies[0], 1800, 0, 0, [0, 0, 0]);
+    bodies[0].boost = boost;
+    // Long enough for the chain of hits down the line.
+    for (let i = 0; i < 40; i++) step(bodies, { left: 0, top: 0, right: 5000, bottom: 500 });
+    return bodies;
+  };
+
+  it('a boosted piece knocks the next one faster than a plain one would, and passes the push on weaker', () => {
+    const plain = line();
+    const boosted = line({ gen: 5, power: 2 });
+    expect(boosted[1].vx + boosted[2].vx + boosted[3].vx).toBeGreaterThan(plain[1].vx + plain[2].vx + plain[3].vx);
+    expect(boosted[1].boost?.gen ?? 0).toBeLessThanOrEqual(4);
+  });
+
+  it('the push is gone once a piece settles', () => {
+    const b = makeBody('b', 100, 100, 20, CUBE);
+    b.boost = { gen: 5, power: 2 };
+    launch(b, 300, 0, 0, [0, 0, 0]);
+    run([b], seeded(11));
+    expect(b.boost).toBeUndefined();
+  });
+});

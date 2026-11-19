@@ -85,8 +85,10 @@ function TokenSpots({ cardRef, tokens }: { cardRef: string; tokens: PlacedToken[
   );
 }
 
-export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: overlayProp, backRef, onOpen }: {
+export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: overlayProp, backRef, onOpen, onReady }: {
   characterId: string;
+  /** The table has everything it needs on screen (its 3D models, the deck die's icons): the sheet's veil may lift. */
+  onReady?: () => void;
   dice: DeskDice;
   sortFile?: CharacterFile;
   onSortOpen?: (open: boolean) => void;
@@ -143,7 +145,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
   // ---------------------------------------------------------------- the hand
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string } | null>(null);
-  const [tableMenu, setTableMenu] = useState<{ x: number; y: number } | null>(null);
+  const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: { key: string; label: string } } | null>(null);
   const [sorting, setSorting] = useState(false);
   const [settings, setSettings] = useState(false);
   const overlay = overlayProp || sorting;
@@ -234,6 +236,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   spreadAtRef.current = spreadAt;
   const boardRef = useRef(board);
   boardRef.current = board;
+  /** The cards with a physical copy on the table: their tokens are locked (the hand's copy shares them). */
+  const physRefs = useRef(new Set<string>());
+  physRefs.current = new Set(board.filter((b) => b.phys).map((b) => refOf(b.id)));
 
   const tableRef = useRef<HTMLDivElement>(null);
   const [tableEl, setTableEl] = useState<HTMLDivElement | null>(null);
@@ -417,7 +422,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       else if (from) ctx.removeToken(from.ref, from.id);
       return true;
     }
-    const target = cardAt(clientX, clientY);
+    // A physical card takes no tokens and gives none up until it is ordinary again (owner, v0.47.5).
+    const hit = cardAt(clientX, clientY);
+    const target = hit && !physRefs.current.has(hit.ref) ? hit : null;
     if (target) {
       if (from && target.uid === from.uid) { ctx.updateToken(from.ref, from.id, { x: target.x, y: target.y }); return true; }
       if (from) ctx.removeToken(from.ref, from.id);
@@ -438,6 +445,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   }, [cardAt, ctx, refOf, setLoose, supply]);  
 
   const popToken = useCallback((ref: string, id: string): TokenInfo | null => {
+    if (physRefs.current.has(ref)) return null;
     const t = (ctx.cardTokens[ref] ?? []).find((x) => x.id === id);
     if (!t) return null;
     ctx.removeToken(ref, id);
@@ -1057,7 +1065,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onRerolled={reroll}
           onDropPiece={dropToken}
           onPopToken={popToken}
-          onTableMenu={(x, y) => { const p = local(x, y); playSfx('floatMenuOpen'); setTableMenu(p); }}
+          onTableMenu={(x, y, piece) => { const p = local(x, y); playSfx('floatMenuOpen'); setTableMenu({ ...p, piece }); }}
+          onReady={onReady}
           onSelect={setSelection}
           onHardHit={onHardHit}
           onTidied={() => setLoose([])}
@@ -1142,7 +1151,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             onRollPair={() => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.handleRef.current?.rollDuality('Hope and Fear', 0); }}
             onDeletePreset={(slot) => { dice.presets.onWrite(slot, null); playSfx('tokenRemove', { volume: 0.6 }); }}
             rows={[
-              { label: 'Choose a deck', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
+              ...(tableMenu.piece ? [{ label: tableMenu.piece.label, onPress: () => diceRef.current?.rollPiece(tableMenu.piece!.key) }] : []),
+              { label: 'Choose a deck', gap: !!tableMenu.piece, onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
               { label: 'Draw a Many Things card', onPress: () => drawCard({ x: tableMenu.x, y: tableMenu.y }), hidden: !look.tokenTray },
               { label: 'State', onPress: () => onOpen('modifiers'), gap: true },
               { label: 'Cards', onPress: () => onOpen('cards') },
@@ -1157,7 +1167,14 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
             spread={spread}
             physical={menu.board ? !!board.find((b) => b.uid === menu.board)?.phys : undefined}
-            onPhysical={menu.board ? () => { const uid = menu.board!; setBoard(boardRef.current.map((b) => (b.uid === uid ? { ...b, phys: !b.phys } : b))); playSfx('cardSelect', { volume: 0.6 }); } : undefined}
+            onPhysical={menu.board ? () => {
+              const uid = menu.board!;
+              // Back to an ordinary card: stood upright where it lies, so it reads (owner, v0.47.5).
+              const p = livePoses.get(uid);
+              livePoses.delete(uid);
+              setBoard(boardRef.current.map((b) => (b.uid !== uid ? b : b.phys ? { ...b, phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : { ...b, phys: true })));
+              playSfx('cardSelect', { volume: 0.6 });
+            } : undefined}
             board={menu.board && !spread ? () => setCopies(copiesRef.current.filter((b) => b.uid !== menu.board)) : undefined}
             place={menu.board || spread ? undefined : () => {
               const el = handRef.current?.querySelector(`[data-card-id="${CSS.escape(menu.id)}"]`) as HTMLElement | null;

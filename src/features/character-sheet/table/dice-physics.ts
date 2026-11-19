@@ -59,6 +59,12 @@ export interface Body {
   /** A copy just out of the supply: it passes through every spawner until it is clear of them all. */
   fresh?: boolean;
   /**
+   * Extra push (v0.47.5, owner): whatever this hits is knocked `power * gen / 5` times harder than a plain hit, and
+   * carries the push on one generation weaker, down to nothing after `gen`. A launched piece starts at 5, a fresh
+   * copy weaker; it lasts until the piece settles.
+   */
+  boost?: { gen: number; power: number };
+  /**
    * A card made physical (v0.47.3, owner): a w x h box turned by `a` (radians, clockwise on screen) that slides,
    * spins (`va`, rad/s) and is knocked about, but never tumbles. `r` is its half diagonal, for the broad check.
    */
@@ -408,7 +414,8 @@ function circleBox(c: Body, b: Body, hits: Impact[]): void {
   const rn = rx * ny - ry * nx;
   const j = (-(1 + DIE_BOUNCE) * rel) / (ic + ib + (ib ? (rn * rn) / I : 0));
   if (ic) { c.vx += j * nx * ic; c.vy += j * ny * ic; }
-  if (ib) { b.vx -= j * nx * ib; b.vy -= j * ny * ib; b.va = va - (rn * j) / I; }
+  const amp = c.boost ? 1 + c.boost.power * (c.boost.gen / 5) : 1;
+  if (ib) { b.vx -= j * nx * ib * amp; b.vy -= j * ny * ib * amp; b.va = va - (rn * j * amp) / I; }
   for (const o of [c, b]) if (!o.held && !o.fixed) { o.asleep = false; o.settle = undefined; }
   if (-rel > 60) hits.push({ key: c.key, speed: -rel, kind: 'die' });
 }
@@ -471,7 +478,22 @@ function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
   b.asleep = false;
 }
 
+/** The extra push one body passes to the one it hit (`n` points from src to tgt), and the generation after it. */
+function passBoost(src: Body, tgt: Body, nx: number, ny: number, jimp: number): void {
+  const bo = src.boost;
+  if (!bo || bo.gen <= 0 || tgt.held || tgt.fixed) return;
+  const k = jimp * bo.power * (bo.gen / 5);
+  tgt.vx += nx * k;
+  tgt.vy += ny * k;
+  const sp = Math.hypot(tgt.vx, tgt.vy);
+  if (sp > 7000) { tgt.vx *= 7000 / sp; tgt.vy *= 7000 / sp; }
+  tgt.asleep = false;
+  tgt.settle = undefined;
+  if (bo.gen > 1 && (tgt.boost?.gen ?? 0) < bo.gen - 1) tgt.boost = { gen: bo.gen - 1, power: bo.power };
+}
+
 function beginSettle(b: Body): void {
+  b.boost = undefined;
   const face = b.force ?? topFace(b.q, b.faces, b.restFaces);
   b.top = face;
   b.force = undefined;
@@ -519,6 +541,9 @@ function collide(bodies: Body[], hits: Impact[]): void {
         const jimp = (-(1 + DIE_BOUNCE) * rel) / (ia + ib);
         if (ia) { a.vx -= jimp * nx; a.vy -= jimp * ny; }
         if (ib) { b.vx += jimp * nx; b.vy += jimp * ny; }
+        // The stronger of the two pushes the other the harder.
+        if ((a.boost?.gen ?? 0) >= (b.boost?.gen ?? 0)) passBoost(a, b, nx, ny, jimp);
+        else passBoost(b, a, -nx, -ny, jimp);
         if (-rel > 60) hits.push({ key: a.held ? b.key : a.key, speed: -rel, kind: 'die' });
       }
       for (const [body, other] of [[a, b], [b, a]] as const) {

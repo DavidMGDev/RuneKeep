@@ -82,6 +82,8 @@ export interface TableDiceHandle {
   engine: () => DiceEngine | null;
   /** Rebuild a loose piece as stone (the Euryale card). */
   petrify: (key: string) => void;
+  /** Roll a die where it lies (from the table menu). */
+  rollPiece: (key: string) => void;
 }
 
 const CAT = 'cat';
@@ -212,8 +214,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onDropPiece: (key: string, clientX: number, clientY: number) => boolean;
   /** A token drawn on a card in the hand was pressed: take it off that card and say what it was. */
   onPopToken: (ref: string, id: string) => TokenInfo | null;
-  /** Right click on the table where there is no piece. */
-  onTableMenu: (clientX: number, clientY: number) => void;
+  /** Right click on the table (and on a piece: what can be done to it, here rolling a die). */
+  onTableMenu: (clientX: number, clientY: number, piece?: { key: string; label: string }) => void;
   /** The marquee picked these pieces (empty: nothing selected). */
   onSelect: (keys: string[]) => void;
   /** Something hit a wall hard (px/s): shake the table. */
@@ -226,6 +228,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onFlipGroup: (g: 'ctl' | 'sup') => void;
   /** A panel is open: the pieces stay where they are and take no clicks. */
   inert: boolean;
+  /** Everything the table draws is ready (models, icons, pieces): said once. */
+  onReady?: () => void;
 }>(function TableDice(props, ref) {
   const { host, width, height, bounds, obstacles, walls, decks, current, onPickDeck, actions, controls, controlFinish, numberFinish, tokens, inert, places, editing } = props;
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -548,6 +552,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const base = baseOf(key);
     return e ? e.keys().filter((k) => baseOf(k) === base) : [key];
   }, []);
+  /**
+   * Which way a copy leaves a spawner: towards the open middle of the table, give or take, so copies spread over the
+   * felt instead of piling against the wall behind the supply (owner, v0.47.5).
+   */
+  const outward = useCallback((x: number, y: number) => {
+    const b = boundsRef.current;
+    return Math.atan2((b.top + b.bottom) / 2 - y, (b.left + b.right) / 2 - x) + (Math.random() - 0.5) * 1.8;
+  }, []);
   /** When a flung loose die lands, it keeps what it shows. */
   const watchLoose = useCallback((key: string) => {
     const e = engineRef.current;
@@ -567,11 +579,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
     }
   }, [partsOf]);
   /** Fling a piece (and its partner) off in a random direction at this speed. */
-  const fling = useCallback((key: string, speed: number) => {
+  const fling = useCallback((key: string, speed: number, boost?: { gen: number; power: number }, aim?: number) => {
     const e = engineRef.current;
     if (!e) return;
-    const ang = Math.random() * Math.PI * 2;
-    for (const k of partsOf(key)) e.toss(k, Math.cos(ang + (Math.random() - 0.5) * 0.2) * speed, Math.sin(ang + (Math.random() - 0.5) * 0.2) * speed);
+    const ang = aim ?? Math.random() * Math.PI * 2;
+    for (const k of partsOf(key)) e.toss(k, Math.cos(ang + (Math.random() - 0.5) * 0.2) * speed, Math.sin(ang + (Math.random() - 0.5) * 0.2) * speed, boost);
     if (key.startsWith('free:')) watchLoose(key);
   }, [partsOf, watchLoose]);
 
@@ -623,14 +635,25 @@ export const TableDice = forwardRef<TableDiceHandle, {
     e.rollInPlace(key);
   }, [numberFinish]);
 
+  /** What the table menu offers for a piece right-clicked: rolling it, when it is a die. */
+  const pieceMenu = useCallback((key: string): { key: string; label: string } | undefined => {
+    if (key === CAT) return { key, label: 'Roll the deck die' };
+    if (ACTIONS.includes(key as ActionKey) || key.startsWith('roll:')) return { key, label: 'Roll this die' };
+    const base = baseOf(key);
+    if (key.startsWith('free:') && live.current.loose.find((l) => l.key === base)?.token.kind === 'die') return { key, label: 'Roll this die' };
+    if (key.startsWith('tok:') && live.current.tokens.find((t) => t.key === base)?.kind === 'die') return { key, label: 'Roll this die' };
+    return undefined;
+  }, []);
+
   // ---------------------------------------------------------------- the pointer: buttons, then pieces, then cards
   const inertRef = useRef(inert);
   inertRef.current = inert;
   useEffect(() => {
     if (!host || !engine) return;
-    let press: { key: string; x: number; y: number; t: number; moved: boolean; id: number; spawned: boolean } | null = null;
-    /** A right button held on a piece: it charges until let go. */
-    let charge: { key: string; t: number; id: number; raf: number } | null = null;
+    let press: { key: string; x: number; y: number; t: number; moved: boolean; id: number; spawned: boolean; charge: number } | null = null;
+    /** The right button held on a spawner: copies come out faster and faster until it is let go. */
+    let spawning: { id: number; timer: ReturnType<typeof setTimeout> } | null = null;
+    let chargeRaf = 0;
     let box: { x: number; y: number; id: number } | null = null;
     let menuUntil = 0;
     let thrownCat = false;
@@ -639,11 +662,78 @@ export const TableDice = forwardRef<TableDiceHandle, {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
     const onUi = (t: EventTarget | null) => !!(t as HTMLElement)?.closest?.('button, input, [role="menu"], [role="dialog"], [role="listbox"], [data-ui]');
+    /** Held still this long, a piece starts shaking; this much longer and it launches itself (owner, v0.47.5). */
+    const CHARGE_DELAY = 380, CHARGE_MS = 1300;
+    const chargeable = (k: string) => k.startsWith('free:') || k.startsWith('roll:');
+    /** The spawner under a point, with a few px to spare round each one (a right click there spawns, never a menu). */
+    const spawnerAt = (x: number, y: number): string | null => {
+      let best: string | null = null, bd = Infinity;
+      for (const k of engine.keys()) {
+        if (!k.startsWith('src:')) continue;
+        const st = engine.state(k);
+        if (!st) continue;
+        const d = Math.hypot(st.x - x, st.y - y);
+        if (d < (k === DOMAT_KEY ? 54 : 44) && d < bd) { best = k; bd = d; }
+      }
+      return best;
+    };
+    /** A token on a physical card is locked to it until the card is ordinary again (owner, v0.47.5). */
+    const locked = (k: string) => {
+      if (!k.startsWith('tok:')) return false;
+      const card = live.current.tokens.find((t) => t.key === baseOf(k))?.card;
+      return !!card && live.current.cards.some((c) => c.key === card && c.phys);
+    };
+    const fire = (pr: { key: string }, power: number) => {
+      engine.jitter(pr.key, 0);
+      engine.release();
+      playSfx(power > 0.6 ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.3 + power * 0.45, cents: Math.round(power * 600) });
+      // Launched pieces push harder, and what they hit pushes on, five generations deep.
+      fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power });
+    };
+    const tick = () => {
+      chargeRaf = 0;
+      const pr = press;
+      if (!pr || pr.moved || !chargeable(pr.key)) return;
+      const held = performance.now() - pr.t - CHARGE_DELAY;
+      if (held > 0) {
+        pr.charge = Math.min(1, held / CHARGE_MS);
+        engine.jitter(pr.key, pr.charge);
+        if (pr.charge >= 1) { press = null; host.style.cursor = 'grab'; fire(pr, 1); return; }
+      }
+      chargeRaf = requestAnimationFrame(tick);
+    };
+    const spawnOne = (key: string) => {
+      const at = engine.state(key);
+      if (!at) return;
+      if (key === DOMAT_KEY) { live.current.onDomatDraw({ x: at.x, y: at.y }); return; }
+      const src = live.current.supply.find((t) => t.key === baseOf(key));
+      if (!src) return;
+      fling(spawn(src.token, at.x, at.y), 900 + Math.random() * 500, undefined, outward(at.x, at.y));
+      playSfx('placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
+    };
     const onDown = (e: PointerEvent) => {
       if (inertRef.current || onUi(e.target)) return;
       const p = local(e);
+      if (e.button === 2) {
+        // Right button: on a spawner it spawns (held, faster and faster); anywhere else the menu opens.
+        const sk = spawnerAt(p.x, p.y);
+        if (!sk) return;
+        e.stopPropagation();
+        e.preventDefault();
+        menuUntil = performance.now() + 60000;
+        spawnOne(sk);
+        let delay = sk === DOMAT_KEY ? 420 : 300;
+        const again = () => {
+          spawnOne(sk);
+          delay = Math.max(sk === DOMAT_KEY ? 220 : 35, delay * 0.8);
+          if (spawning) spawning.timer = setTimeout(again, delay);
+        };
+        spawning = { id: e.pointerId, timer: setTimeout(again, delay) };
+        try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
+        return;
+      }
       const key = engine.hit(p.x, p.y);
-      if (!key) {
+      if (!key || locked(key)) {
         // A token drawn on a card in the hand: pop it off into the hand, already being dragged.
         const tokEl = (e.target as HTMLElement).closest?.('[data-card-token]') as HTMLElement | null;
         if (tokEl && e.button === 0) {
@@ -653,7 +743,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           e.preventDefault();
           try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
           const k = spawn(info, p.x, p.y);
-          press = { key: k, x: e.clientX, y: e.clientY, t: performance.now(), moved: true, id: e.pointerId, spawned: true };
+          press = { key: k, x: e.clientX, y: e.clientY, t: performance.now(), moved: true, id: e.pointerId, spawned: true, charge: 0 };
           engine.grab(k, p.x, p.y);
           host.style.cursor = 'grabbing';
           playSfx('placeToken', { volume: 0.6, cents: 300 });
@@ -667,27 +757,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
         }
         return;
       }
+      if (e.button !== 0) return;
       e.stopPropagation();
       e.preventDefault();
-      if (e.button === 2) {
-        menuUntil = performance.now() + 4000;
-        if (key.startsWith('free:') || (key.startsWith('src:') && key !== DOMAT_KEY)) {
-          charge = { key, t: performance.now(), id: e.pointerId, raf: 0 };
-          const tick = () => {
-            if (!charge) return;
-            const held = (performance.now() - charge.t) / 1000;
-            engine.jitter(charge.key, Math.min(1, Math.max(0, held - 0.15) / 1.6));
-            charge.raf = requestAnimationFrame(tick);
-          };
-          charge.raf = requestAnimationFrame(tick);
-          try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
-          return;
-        }
-        if (key === DOMAT_KEY) { const s = engine.state(key); if (s) live.current.onDomatDraw({ x: s.x, y: s.y }); return; }
-        rollInPlace(key);
-        return;
-      }
-      if (e.button !== 0) return;
       try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
       let grabbed = key;
       let spawned = false;
@@ -699,10 +771,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
         spawned = true;
         playSfx('placeToken', { volume: 0.6, cents: 200 });
       }
-      press = { key: grabbed, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, id: e.pointerId, spawned };
+      press = { key: grabbed, x: e.clientX, y: e.clientY, t: performance.now(), moved: false, id: e.pointerId, spawned, charge: 0 };
       engine.grab(grabbed, p.x, p.y);
       host.style.cursor = 'grabbing';
       playSfx('placeToken', { volume: 0.35, cents: 300 });
+      if (chargeable(grabbed)) chargeRaf = requestAnimationFrame(tick);
     };
     const onMove = (e: PointerEvent) => {
       const p = local(e);
@@ -712,17 +785,27 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return;
       }
       if (press && e.pointerId === press.id) {
-        if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5) press.moved = true;
+        if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 6) {
+          // Moved: an ordinary drag after all, and any shaking stops.
+          press.moved = true;
+          if (press.charge > 0) { press.charge = 0; engine.jitter(press.key, 0); }
+        }
         engine.drag(p.x, p.y);
         return;
       }
-      if (charge || inertRef.current) return;
+      if (spawning || inertRef.current) return;
       const key = engine.hit(p.x, p.y);
       engine.hover(key);
       setHoverKey(key);
       host.style.cursor = key ? 'grab' : '';
     };
     const onUp = (e: PointerEvent) => {
+      if (spawning && e.pointerId === spawning.id) {
+        clearTimeout(spawning.timer);
+        spawning = null;
+        menuUntil = performance.now() + 500;
+        return;
+      }
       if (box && e.pointerId === box.id) {
         const p = local(e);
         const r = { left: Math.min(box.x, p.x), top: Math.min(box.y, p.y), right: Math.max(box.x, p.x), bottom: Math.max(box.y, p.y) };
@@ -737,37 +820,22 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (keys.length) playSfx('cardSelect', { volume: 0.5 });
         return;
       }
-      if (charge && e.pointerId === charge.id) {
-        const c = charge;
-        charge = null;
-        cancelAnimationFrame(c.raf);
-        engine.jitter(c.key, 0);
-        const held = (performance.now() - c.t) / 1000;
-        // A tap flings softly; held, it charges up to a shot that crosses the table in a blink.
-        const power = held < 0.22 ? 0 : Math.min(1, (held - 0.15) / 1.6);
-        const speed = power === 0 ? 650 + Math.random() * 250 : 900 + Math.pow(power, 1.4) * 8600;
-        let k = c.key;
-        if (k.startsWith('src:')) {
-          const src = live.current.supply.find((t) => t.key === baseOf(k));
-          const at = engine.state(k);
-          if (!src || !at) return;
-          k = spawn(src.token, at.x, at.y);
-        }
-        playSfx(power > 0.6 ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.25 + power * 0.5, cents: Math.round(power * 600) });
-        fling(k, speed);
-        return;
-      }
       if (!press || e.pointerId !== press.id) return;
       const pr = press;
       press = null;
+      if (chargeRaf) { cancelAnimationFrame(chargeRaf); chargeRaf = 0; }
       host.style.cursor = 'grab';
+      // Let go while shaking: it launches with what it has built up.
+      if (pr.charge > 0 && !pr.moved) { fire(pr, pr.charge); return; }
       if (pr.moved && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) { engine.release(); return; }
       const speed = engine.release();
       if (pr.key.startsWith('free:')) watchLoose(pr.key);
       if (pr.spawned && !pr.moved) {
         // A click on the supply throws the copy out across the table.
-        const ang = Math.PI / 2 + (Math.random() - 0.5) * 1.4;
-        engine.toss(pr.key, Math.cos(ang) * 620, Math.sin(ang) * 620);
+        const at = engine.state(pr.key);
+        const ang = at ? outward(at.x, at.y) : Math.PI / 2;
+        const sp = 820 + Math.random() * 300;
+        engine.toss(pr.key, Math.cos(ang) * sp, Math.sin(ang) * sp);
         return;
       }
       if (!pr.moved && performance.now() - pr.t < 450) {
@@ -796,12 +864,22 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
     };
     const onLeave = () => { if (!press) { engine.hover(null); setHoverKey(null); } };
-    // A right click on a piece never opens a menu (owner); on the table, away from pieces and cards, it opens the table's.
+    /**
+     * Right click opens the table's menu (owner, v0.47.5), on a piece too (with what can be done to that piece);
+     * only the spawners keep their right click for spawning. Cards keep their own menus.
+     */
     const onMenu = (e: MouseEvent) => {
-      if (performance.now() < menuUntil) { e.preventDefault(); e.stopPropagation(); menuUntil = 0; return; }
+      if (performance.now() < menuUntil) { e.preventDefault(); e.stopPropagation(); return; }
       if (onUi(e.target)) return;
       e.preventDefault();
       if (inertRef.current) return;
+      const p = local(e);
+      const key = engine.hit(p.x, p.y);
+      if (key && !locked(key)) {
+        e.stopPropagation();
+        live.current.onTableMenu(e.clientX, e.clientY, pieceMenu(key));
+        return;
+      }
       if ((e.target as HTMLElement).closest?.('[data-card-id], [data-board-card], [data-domat]')) return;
       live.current.onTableMenu(e.clientX, e.clientY);
     };
@@ -842,9 +920,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
       host.removeEventListener('pointerleave', onLeave);
       window.removeEventListener('contextmenu', onMenu, true);
       host.removeEventListener('wheel', onWheel, { capture: true });
-      if (charge) cancelAnimationFrame(charge.raf);
+      if (chargeRaf) cancelAnimationFrame(chargeRaf);
+      if (spawning) clearTimeout(spawning.timer);
     };
-  }, [host, engine, rollInPlace, spawn, fling, partsOf, watchLoose]);
+  }, [host, engine, spawn, fling, partsOf, watchLoose, pieceMenu, outward]);
 
   // ---------------------------------------------------------------- rolls, tidying and reset
   const waitFor = useCallback((keys: string[], read: () => PoolDie[]) => new Promise<PoolDie[]>((resolve) => {
@@ -973,6 +1052,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     selected: () => selection.current.filter((k) => engine?.has(k)),
     select: (keys) => { selection.current = keys; engine?.select(keys); },
     engine: () => engine,
+    rollPiece: (key) => { if (key.startsWith('free:')) fling(key, 420 + Math.random() * 200); else rollInPlace(key); },
     petrify: (key) => {
       if (!engine) return;
       for (const k of partsOf(key)) {
@@ -982,11 +1062,19 @@ export const TableDice = forwardRef<TableDiceHandle, {
         for (const s of tokenSpecs(pieceOf(t.key, t.token), 'stone')) if (s.spec.key === k) engine.add({ ...s.spec, body: '#5d625e', edge: '#7c827c', ink: '#2c302d', finish: 'stone' }, 0, 0);
       }
     },
-  }), [engine, sendHome, homeOf, partsOf, waitFor]);
+  }), [engine, sendHome, homeOf, partsOf, waitFor, fling, rollInPlace]);
   const clear = (e: DiceEngine) => {
     for (const k of rolled.current.keys()) e.remove(k);
     rolled.current.clear();
   };
+
+  // Ready once the models are in, the control and deck icons are drawn and a frame has gone by with them.
+  const told = useRef(false);
+  useEffect(() => {
+    if (told.current || !(failed || (engine && glyphs && (deckArt || !decks.length)))) return;
+    told.current = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => live.current.onReady?.()));
+  }, [engine, glyphs, deckArt, failed, decks.length]);
 
   const currentDeck = decks.find((d) => d.key === current);
   const ready = !!engine && !!glyphs;

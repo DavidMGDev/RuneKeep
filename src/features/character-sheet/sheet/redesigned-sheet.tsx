@@ -2,6 +2,7 @@
 // design (refs-to-avoid-rerender, the beastform state machine, per-frame carousel wiring). Pure
 // helpers were extracted to sheet-utils.ts; splitting the orchestrator further fragments cohesion and
 // risks animation regressions needing on-device verification (see SPEC.md). A deliberate exception.
+import { createPortal } from 'react-dom';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { coachTarget } from '@/components/coach-tour';
 import { AppState, BackHandler, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
@@ -1164,6 +1165,16 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [minDone, sheetReady]);
   useEffect(() => {
     const t = setTimeout(() => setSheetReady(true), 7500);
+    return () => clearTimeout(t);
+  }, []);
+  /**
+   * Desktop (v0.47.5, owner): the veil covers the whole window and waits for the table too (its 3D models, the
+   * deck die's icons, the pieces), so nothing pops in on either side. A slow GPU still gets the table after 15 s.
+   */
+  const [tableReady, setTableReady] = useState(false);
+  const onTableReady = useCallback(() => setTableReady(true), []);
+  useEffect(() => {
+    const t = setTimeout(() => setTableReady(true), 15000);
     return () => clearTimeout(t);
   }, []);
 
@@ -3195,7 +3206,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <PlayTable characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={setFloatKind} />
+                <PlayTable onReady={onTableReady} characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={setFloatKind} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
@@ -3320,7 +3331,10 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {/* v0.35.1: the print job's progress, its Cancel and its back guard. */}
           {printJob.node}
           {/* entry loader (#150): covers the whole sheet while the cards forge, then fades to reveal */}
-          {loaderUp ? <RuneLoader done={sheetReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /> : null}
+          {loaderUp && !desktop ? <RuneLoader done={sheetReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /> : null}
+          {loaderUp && desktop && typeof document !== 'undefined'
+            ? createPortal(<div style={{ position: 'fixed', inset: 0, zIndex: 100000 }}><RuneLoader done={sheetReady && tableReady} onHidden={() => setLoaderUp(false)} caption="Summoning the sheet" /></div>, document.body)
+            : null}
           {/* radial-menu interfaces (#161/#164): New Card is live; Rest / Level Up / Settings still
               open a placeholder until their PRs. Above everything, like the damage keypad. */}
           {/* v0.13.2 (#359): the "Add Card" badge (entry 'card') now ALSO offers "Add card from catalog"

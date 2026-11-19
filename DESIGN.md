@@ -96,11 +96,15 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - v0.47.3 (round four): input priority is the table's buttons, then pieces, then cards. No dice bar and no Roll or
   Tokens die: the control dice are Cards, State and Sort deck (top right by default); the supply (top left) is a
   token (wheel: wood, bone, iron), a colour token (wheel: colour), a die (wheel: d4 to d20, Hope and Fear, d100)
-  and the Deck of Many Things. A click throws out a copy, a drag pulls one, a right click flings one (held, it
-  charges: the piece shakes harder and fires). Supply pieces can be knocked about; Reset sends them home, Tidy
+  and the Deck of Many Things. A click throws out a copy towards the open table, a drag pulls one, a held right
+  click on a spawner throws copies faster and faster. v0.47.5: right click anywhere else opens the table menu (on a
+  die, with Roll this die); a token or die held still shakes and launches itself, pushing what it hits harder for
+  five generations; fresh copies push a little harder too and pass through the spawners, so the supply never silts
+  up. Supply pieces can be knocked about; Reset sends them home, Tidy
   (above Reset) puts every loose piece and rolled die back.
 - Pieces dropped on a card are anchored: physics never moves them, only the card or the hand. A card can be made
-  physical (its menu): a box body knocked by dice that carries its anchored pieces. The hand draws a card's tokens
+  physical (its menu): a box body knocked by dice that carries its anchored pieces, which are locked to it (none
+  added or taken) until it is ordinary again, when it stands upright. The hand draws a card's tokens
   flat, the table stands them up in 3D, from the same list; pressing one on a hand card pops it off.
 - Drag on the empty felt to select; the selection bar (top centre) rolls the dice in it, saves them as a preset or
   puts them back. Presets live in the table menu under Roll dice, each with a delete that asks first.
