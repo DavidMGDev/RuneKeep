@@ -128,3 +128,12 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - v0.47.8: `clickPull` (on by default): a click on any card in the hand takes a copy out to lay on the table; off, a
   click centres it and only the card menu's Lay a copy takes one out. The card menu can also Throw on the table: a
   physical copy flung towards the middle. The Many Things label is small and shows no count, only the minute's wait.
+- v0.47.10: control dice charge like tokens when held, and a click no longer lifts them (only a drag does); a click
+  glints instead. Held twice as long as the full shake, a token, die or control die catches the Forge button's fire
+  (`lib/fire-shader`, shared) and goes off on its own, pushing far harder, burning until it rests. The deck die has
+  small arrows either side for the deck before and after, and its menu shows three decks at a time with marks for
+  more and a New category row (the Cards panel opens on its form). Control dice and deck die sizes are settings.
+  With controls hidden, the corner button shows the supply too, in one column with them. Ready-made tables are a
+  dropdown with a real screenshot of each (`public/table/presets`); ready-made hands head the Hand tab. Desktop's
+  catalogue is a full-window page like Level Up (`desktop-catalog.tsx`): categories left, a card grid, the picked card
+  large on the right. The Forge button's flames rise from its chamfered outline, never over its corners.

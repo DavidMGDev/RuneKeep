@@ -30,6 +30,7 @@ import { type CardEffect, TARGET_LABEL } from '@/lib/modifiers';
 
 import { FullScreenPanel } from './full-screen-panel';
 import { NumberKeypad } from './number-keypad';
+import { DesktopCatalog } from './desktop-catalog';
 import { useDesktop } from '@/hooks/use-desktop';
 
 // #252: character cards (domain/ancestry/community/subclass/class) browsed as the creation carousel
@@ -363,6 +364,67 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, itemsOnly, onAdd
   ];
   const TABS = itemsOnly ? ALL_TABS.filter((t) => ITEM_CATS.includes(t.key)) : ALL_TABS;
 
+  const padEl = rollPad ? (
+          <NumberKeypad
+      title={cat === 'consumable' ? 'Consumable by roll' : 'Loot by roll'}
+      subtitle="The number you rolled on the table."
+      extra={
+        hasTable2 ? (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {([1, 2] as const).map((t) => (
+              <Pressable key={t} onPress={() => { playSfx('buttonTap'); setRollTable(t); }} style={{ flex: 1 }} accessibilityRole="button" accessibilityState={{ selected: table === t }}>
+                <ChamferBox chamfer={6} fill={table === t ? 'rgba(200,27,24,0.22)' : 'rgba(20,24,31,0.7)'} stroke={table === t ? Rune.red : 'rgba(218,162,73,0.4)'} strokeWidth={1} style={{ height: 30, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: table === t ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{`Table ${t}`}</Text>
+                </ChamferBox>
+              </Pressable>
+            ))}
+          </View>
+        ) : undefined
+      }
+      min={1}
+      max={60}
+      onSubmit={addByRoll}
+      onClose={() => setRollPad(false)}
+    />
+  ) : null;
+  // Desktop: the full-window catalogue, laid out like Level Up (v0.47.10, owner).
+  if (desktopSheet) {
+    return (
+      <DesktopCatalog
+        tabs={TABS}
+        cat={cat}
+        onCat={(c) => { setCat(c as Cat); setCenterIdx(0); setQuery(''); }}
+        domains={domains}
+        domain={domain}
+        onDomain={setDomain}
+        tier={tier}
+        onTier={setTier}
+        source={source}
+        homebrewHere={homebrewHere}
+        onSource={setSource}
+        isCardKind={isCardKind}
+        items={items}
+        ready={recordsReady}
+        rows={shownRows.map((r) => ({ id: r.id, name: r.name, sub: r.sub, eff: effSummary(r.effects) }))}
+        query={query}
+        onQuery={setQuery}
+        acquired={acquiredIds}
+        onAddItem={(id) => {
+          const lc = records.find((c) => c.id === id);
+          if (lc) handOut(lc);
+          else onAdd(id);
+          playSfx('cardSelect');
+          if (!multi) onClose();
+        }}
+        onAddRow={(id) => { const r = shownRows.find((x) => x.id === id); if (r?.card) handOut(r.card); else onAdd(id); playSfx('cardSelect', { volume: 0.6 }); }}
+        multi={multi}
+        onMulti={() => setMulti((m) => !m)}
+        onRollPad={cat === 'loot' || cat === 'consumable' ? () => setRollPad(true) : undefined}
+        rollPad={padEl}
+        onClose={onClose}
+      />
+    );
+  }
   return (
     <FullScreenPanel
       title="Add card from catalog"
@@ -490,31 +552,7 @@ export function GearBrowser({ acquiredIds, enabledExpansionIds, itemsOnly, onAdd
         * content, and an absolutely-positioned dialog written there is positioned against the
         * content rather than the screen. See `components/overlay-host`.
         */}
-      {rollPad ? (
-        <Overlay>
-          <NumberKeypad
-            title={cat === 'consumable' ? 'Consumable by roll' : 'Loot by roll'}
-            subtitle="The number you rolled on the table."
-            extra={
-              hasTable2 ? (
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {([1, 2] as const).map((t) => (
-                    <Pressable key={t} onPress={() => { playSfx('buttonTap'); setRollTable(t); }} style={{ flex: 1 }} accessibilityRole="button" accessibilityState={{ selected: table === t }}>
-                      <ChamferBox chamfer={6} fill={table === t ? 'rgba(200,27,24,0.22)' : 'rgba(20,24,31,0.7)'} stroke={table === t ? Rune.red : 'rgba(218,162,73,0.4)'} strokeWidth={1} style={{ height: 30, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ color: table === t ? Rune.goldBright : Rune.muted, fontSize: 11, fontFamily: Body.bold }}>{`Table ${t}`}</Text>
-                      </ChamferBox>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : undefined
-            }
-            min={1}
-            max={60}
-            onSubmit={addByRoll}
-            onClose={() => setRollPad(false)}
-          />
-        </Overlay>
-      ) : null}
+      {padEl ? <Overlay>{padEl}</Overlay> : null}
     </FullScreenPanel>
   );
 }

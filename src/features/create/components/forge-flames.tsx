@@ -6,6 +6,7 @@ import Svg, { Defs, LinearGradient, Path, RadialGradient, Stop } from 'react-nat
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { startFire } from '@/lib/fire-shader';
 
 /** One tongue of flame, drawn in a 20 x 32 box, point up. */
 const TONGUE = 'M10 0 C12 6 17 11 17 19 C17 26 14 31 10 31 C6 31 3 26 3 19 C3 14 6 11 7 7 C8 10 9 11 10 13 C10 9 9 5 10 0 Z';
@@ -135,66 +136,6 @@ const RISE = 0.62; // the button sits near the top of the window; taller flames 
 const SPILL = 16;
 const FOOT = 6; // canvas below the button, so the bottom edge can smoulder too
 
-const VERT = 'attribute vec2 a; void main() { gl_Position = vec4(a, 0.0, 1.0); }';
-/**
- * Rising fractal noise shaped by the button's chamfered outline: the body burns (red to orange, never so bright
- * the label is lost), flames tear off its top edge, and a thin lick runs up its sides. The heat is cut into a few
- * hard bands on a two-pixel grid, the chunky stylised fire of a card game rather than a photograph of one.
- */
-const FRAG = `
-precision mediump float;
-uniform float t; uniform vec4 box; uniform float ch; uniform float px;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float noise(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y); }
-float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.03 + 7.1; a *= 0.5; } return v; }
-float sdChamfer(vec2 p, vec2 c, vec2 h, float k) { vec2 q = abs(p - c); vec2 d = q - h;
-  float b = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); return max(b, (q.x + q.y - (h.x + h.y - k)) * 0.7071); }
-vec3 ramp(float x) {
-  vec3 c = vec3(0.30, 0.03, 0.03);
-  c = mix(c, vec3(0.78, 0.11, 0.09), smoothstep(0.10, 0.30, x));
-  c = mix(c, vec3(0.91, 0.39, 0.12), smoothstep(0.38, 0.58, x));
-  c = mix(c, vec3(0.95, 0.66, 0.23), smoothstep(0.62, 0.80, x));
-  c = mix(c, vec3(0.99, 0.90, 0.66), smoothstep(0.84, 0.97, x));
-  return c; }
-void main() {
-  vec2 p = floor(gl_FragCoord.xy / px) * px + px * 0.5;
-  vec2 c = (box.xy + box.zw) * 0.5, h = (box.zw - box.xy) * 0.5;
-  float d = sdChamfer(p, c, h, ch);
-  vec2 uv = p / (h.y * 0.9);
-  // Domain warp: the fire sways and tears instead of scrolling as a sheet.
-  float w = fbm(vec2(uv.x * 0.9, uv.y * 0.7 - t * 0.9));
-  vec2 q = vec2(uv.x + 0.55 * (w - 0.5), uv.y);
-  float n = fbm(vec2(q.x * 1.4, q.y * 0.9 - t * 1.9));
-  float m = fbm(vec2(q.x * 2.6 + 4.0, q.y * 1.4 - t * 3.1));
-  // Tongues: each column of the top edge reaches its own, slowly changing height.
-  float tongue = fbm(vec2(q.x * 1.7, t * 0.7));
-  float heat;
-  if (d < 0.0) {
-    // The body burns: streaks of flame run up through it, darker at the foot, brighter where they leave the top.
-    float up = clamp((p.y - box.y) / (2.0 * h.y), 0.0, 1.0);
-    heat = 0.26 + 0.42 * n * (0.6 + 0.6 * up) + 0.16 * m;
-  } else {
-    float above = p.y - box.w;
-    if (above > 0.0) {
-      float reach = 2.0 * h.y * RISE * (0.2 + 1.6 * tongue * tongue);
-      // Past the button's sides the flames thin out fast, so the fire hugs the button instead of filling a box.
-      float side = max(0.0, max(box.x - p.x, p.x - box.z));
-      heat = 1.05 - above / reach - 0.55 * m * smoothstep(0.0, reach, above) + 0.2 * (n - 0.5) - side / (4.0 + 8.0 * m);
-    } else {
-      heat = (0.8 + 0.2 * m) * (1.0 - d / (3.0 + 10.0 * m));
-    }
-  }
-  heat = clamp(heat, 0.0, 1.0);
-  float band = floor(heat * 7.0) / 7.0;
-  float a = smoothstep(0.08, 0.2, band);
-  vec3 col = ramp(band);
-  float edge = 1.0 - smoothstep(0.0, 1.6 * px, abs(d));
-  col = mix(col, vec3(0.88, 0.71, 0.39), edge * 0.85);
-  a = max(a, edge);
-  gl_FragColor = vec4(col * a, a);
-}`.replace('RISE', RISE.toFixed(2));
-
 function FireButton({ height, label, onPress, accessibilityLabel, minWidth = 0, fallback }: { height: number; label: string; onPress: () => void; accessibilityLabel: string; minWidth?: number; fallback: ReactNode }) {
   const hostRef = useRef<View>(null);
   // No WebGL, or the context was lost: the ordinary button with the drawn flames, never bare text.
@@ -206,46 +147,10 @@ function FireButton({ height, label, onPress, accessibilityLabel, minWidth = 0, 
   useEffect(() => {
     const host = hostRef.current as unknown as HTMLElement | null;
     if (!host || !w) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const cssW = w + SPILL * 2;
-    const cssH = Math.round(height * (1 + RISE)) + FOOT;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
-    Object.assign(canvas.style, { position: 'absolute', left: `${-SPILL}px`, top: `${height + FOOT - cssH}px`, width: `${cssW}px`, height: `${cssH}px`, pointerEvents: 'none' });
-    host.prepend(canvas);
-    const gl = canvas.getContext('webgl', { premultipliedAlpha: true, antialias: false });
-    if (!gl) { canvas.remove(); setFailed(true); return; }
-    const shader = (type: number, src: string) => { const o = gl.createShader(type)!; gl.shaderSource(o, src); gl.compileShader(o); return o; };
-    const prog = gl.createProgram()!;
-    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT));
-    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG));
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); setFailed(true); return; }
-    gl.useProgram(prog);
-    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    const loc = gl.getAttribLocation(prog, 'a');
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    // The button's box in canvas pixels (origin bottom left): at the canvas's foot, inset by the spill.
-    const bx0 = SPILL * dpr, by0 = FOOT * dpr;
-    gl.uniform4f(gl.getUniformLocation(prog, 'box'), bx0, by0, bx0 + w * dpr, by0 + height * dpr);
-    gl.uniform1f(gl.getUniformLocation(prog, 'ch'), 10 * dpr);
-    gl.uniform1f(gl.getUniformLocation(prog, 'px'), 2 * dpr);
-    const tLoc = gl.getUniformLocation(prog, 't');
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    const draw = (ms: number) => { gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform1f(tLoc, ms / 1000); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); };
-    // About 30 frames a second: fire reads as fire at that rate, for half the work.
-    let raf = 0;
-    let last = -1;
-    const loop = (ms: number) => { if (ms - last >= 32) { draw(ms); last = ms; } raf = requestAnimationFrame(loop); };
-    const onLost = () => { cancelAnimationFrame(raf); setFailed(true); };
-    canvas.addEventListener('webglcontextlost', onLost);
-    if (reduced) draw(4000);
-    else raf = requestAnimationFrame(loop);
-    return () => { canvas.removeEventListener('webglcontextlost', onLost); cancelAnimationFrame(raf); gl.getExtension('WEBGL_lose_context')?.loseContext(); canvas.remove(); };
+    // The shared fire (lib/fire-shader), whose flames now rise from the chamfered outline, not over its corners.
+    const stop = startFire(host, { width: w, height, rise: RISE, spill: SPILL, foot: FOOT, chamfer: 10, still: reduced });
+    if (!stop) { setFailed(true); return; }
+    return stop;
   }, [w, height, reduced]);
 
   if (failed) return <>{fallback}</>;

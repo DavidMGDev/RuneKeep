@@ -1621,6 +1621,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   }, [deckFile, character.gold, mutateFile, expJobs, mcFeatJobs, featJobs, weaponJobs, armorJob, invJobs, customCardJobs, acqWeaponJobs, acqArmorJobs, acqLootJobs, acqClassJobs, notesJobs, libJobs, wildshapeFaceJobs, martialJobs, featureSources]);
   const [damageOpen, setDamageOpen] = useState(false); // damage-threshold keypad (#128, was the info card)
   const [floatKind, setFloatKind] = useState<PlaceholderKind | null>(null); // radial-menu interface (#161)
+  /** The Cards panel opens on its New category form (the desk table's deck menu asked for one). */
+  const [newCategoryAsk, setNewCategoryAsk] = useState(false);
+  const openFromTable = useCallback((p: 'modifiers' | 'cards' | 'newCategory') => {
+    setNewCategoryAsk(p === 'newCategory');
+    setFloatKind(p === 'newCategory' ? 'cards' : p);
+  }, []);
   // v0.44.0: on the desktop sheet the hand moves to the desktop table and panels open beside the port.
   const desktop = useDesktop();
   const desktopBackRef = useRef<(() => boolean) | null>(null);
@@ -3206,7 +3212,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <PlayTable onReady={onTableReady} characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={setFloatKind} />
+                <PlayTable onReady={onTableReady} characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={openFromTable} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
@@ -3348,6 +3354,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onCompact={compactTimeline} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (
             <CardManagementPanel
+              startCreate={newCategoryAsk}
               trash={trashList}
               onRestoreCard={onRestoreCard}
               onNotice={pushNotice}

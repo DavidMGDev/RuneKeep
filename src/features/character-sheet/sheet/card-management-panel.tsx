@@ -61,6 +61,8 @@ const TILE_W = 92;
 const TILE_H = Math.round((TILE_W * 7) / 5);
 
 interface Props {
+  /** Open straight on the New category form (the desk table's deck menu, v0.47.10). */
+  startCreate?: boolean;
   /** v0.22.0 card trash: authored cards that used to exist, derived from the character's history. */
   trash?: { id: string; title: string; at: string }[];
   onRestoreCard?: (id: string) => void;
@@ -235,7 +237,7 @@ export function CardManagementPanel(props: Props) {
   const companionIds = useMemo(() => new Set(Object.values(decks).flat().filter((c) => (c.ref ?? c.id).startsWith('companion')).map((c) => c.id)), [decks]);
 
   // sub-dialogs / selection
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(!!props.startCreate);
   const [editing, setEditing] = useState<CustomCategory | null>(null);
   const [confirmDelCat, setConfirmDelCat] = useState<CustomCategory | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);

@@ -49,7 +49,7 @@ import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 
 /** The sheet's dice state and its handle to the table (the traits and the presets roll through it). */
 export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> };
-export type TablePanel = 'modifiers' | 'cards';
+export type TablePanel = 'modifiers' | 'cards' | 'newCategory';
 
 const NO_CARDS: CardItem[] = [];
 /**
@@ -147,8 +147,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const ctl = look.ctlDir === 'row' ? keepOut(look.ctlX * tableW, look.ctlY * tableH, along(3, 94), 44) : keepOut(look.ctlX * tableW, look.ctlY * tableH, 44, along(3, 104));
     const sup = look.supDir === 'row' ? keepOut(look.supX * tableW, look.supY * tableH, along(4, 70), 40) : keepOut(look.supX * tableW, look.supY * tableH, 54, along(4, 90));
     const cat = keepOut(look.catX * tableW, look.catY * tableH, 56, 56);
-    return { ctl: { ...ctl, dir: look.ctlDir }, sup: { ...sup, dir: look.supDir }, cat };
-  }, [look.ctlX, look.ctlY, look.ctlDir, look.supX, look.supY, look.supDir, look.catX, look.catY, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
+    return { ctl: { ...ctl, dir: look.ctlDir, k: look.ctlSize }, sup: { ...sup, dir: look.supDir }, cat };
+  }, [look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
 
 
   // ---------------------------------------------------------------- the hand
@@ -163,8 +163,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const [peek, setPeek] = useState(false);
   const peeking = peek && look.controls === 'hidden' && !settings;
   const peekPlaces = useMemo<Places>(() => {
-    const mid = (openTop + openBottom) / 2;
-    return { ...places, ctl: { x: pad + 52, y: mid + 60, dir: 'column' }, cat: { x: pad + 64, y: mid + 60 - 104 - 120 } };
+    // One column down the left, clear of the corner buttons: the supply, then the deck die, then the control dice.
+    const x = pad + 112;
+    const top = Math.max(pad + 40, (openTop + openBottom) / 2 - 380);
+    return { ...places, sup: { x, y: top + 135, dir: 'column' }, cat: { x, y: top + 400 }, ctl: { x, y: top + 620, dir: 'column', k: places.ctl.k } };
   }, [places, openTop, openBottom, pad]);
   const overlay = overlayProp || sorting;
   useEffect(() => { onSortOpen?.(sorting); }, [sorting, onSortOpen]);
@@ -413,11 +415,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const [supColor, setSupColor] = useState(() => ctx.tokenColor || TOKEN_COLORS[0]);
   useEffect(() => { if (ctx.tokenColor) setSupColor(ctx.tokenColor); }, [ctx.tokenColor]);
   const colorSave = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const supply = useMemo<SupplyPiece[]>(() => (look.tokenTray ? [
+  const supply = useMemo<SupplyPiece[]>(() => (look.tokenTray || peeking ? [
     { key: 'src:mat', token: { kind: material }, label: material },
     { key: 'src:color', token: { kind: 'color', color: supColor }, label: 'Colour' },
     { key: 'src:die', token: { kind: 'die', dieType: supplyDie, dieValue: 1, dieValue2: supplyDie === 'duality' ? 1 : undefined }, label: supplyDie === 'duality' ? 'Hope & Fear' : supplyDie },
-  ] : []), [look.tokenTray, supColor, supplyDie, material]);
+  ] : []), [look.tokenTray, peeking, supColor, supplyDie, material]);
   const looseKey = `runekeep.table.loose.${characterId}`;
   const [loose, setLooseState] = useState<LoosePiece[]>(() => { try { return JSON.parse(localStorage.getItem(looseKey) ?? '[]') as LoosePiece[]; } catch { return []; } });
   const looseRef = useRef(loose);
@@ -1119,12 +1121,15 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           controls={peeking ? 'dice' : look.controls}
           controlFinish={look.controlDice}
           ctlMotion={look.ctlMotion}
+          ctlSize={look.ctlSize}
+          onNewCategory={() => { playSfx('panelOpen'); onOpen('newCategory'); }}
+          catSize={look.catSize}
           numberFinish={look.numberDice}
           tokens={pieces}
           cards={cardPoses}
           onCardsMoved={onCardsMoved}
           supply={supply}
-          domat={look.tokenTray ? { left: DOMAT.length - gone.size, wait: domatWait } : null}
+          domat={look.tokenTray || peeking ? { left: DOMAT.length - gone.size, wait: domatWait } : null}
           onDomatDraw={drawCard}
           loose={loose}
           onSpawn={(key, token, x, y) => setLoose([...looseRef.current, { key, token, x, y }])}

@@ -105,6 +105,9 @@ export interface DeckLook {
   controls: 'dice' | 'buttons' | 'hidden';
   /** How the control dice move: rolling and tumbling like real dice, or hopping upright from place to place. */
   ctlMotion: 'roll' | 'hop';
+  /** How big the control dice and the deck die are, against their usual size. */
+  ctlSize: number;
+  catSize: number;
   /** The token supply lying ready on the table (tokens and a token die to throw out copies of). */
   tokenTray: boolean;
   /** The hand as a carousel, or every card of the deck laid out on the table at once (v0.47.3). */
@@ -131,7 +134,7 @@ export const DEFAULT_LOOK: DeckLook = {
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
   scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, hoverLift: 10, hoverZoom: 1.04, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
-  areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', tokenTray: true,
+  areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
 };
 
@@ -254,6 +257,8 @@ export const LOOK_PAGES: LookPage[] = [
         controls: [
           { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck die and the Cards, State and Sort deck dice, as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
           { kind: 'choice', key: 'ctlMotion', label: 'Control dice move', help: 'Roll and tumble like real dice, or hop upright from place to place: thrown or knocked they jump, always showing their icon, and the deck die only turns when you change deck.', options: opts(['roll', 'Roll'], ['hop', 'Hop']) },
+          { kind: 'range', key: 'ctlSize', label: 'Control dice size', help: 'How big the Cards, State and Sort deck dice are.', min: 0.6, max: 1.8, step: 0.05, unit: 'x' },
+          { kind: 'range', key: 'catSize', label: 'Deck die size', help: 'How big the die that picks your deck is.', min: 0.6, max: 1.8, step: 0.05, unit: 'x' },
           { kind: 'choice', key: 'controlDice', label: 'Control dice', help: 'How the control dice are made.', options: opts(['obsidian', 'Obsidian'], ['gilded', 'Gilded'], ['ivory', 'Ivory']) },
           { kind: 'choice', key: 'numberDice', label: 'Rolling dice', help: 'How the dice you roll are made.', options: opts(['resin', 'Resin'], ['stone', 'Stone'], ['metal', 'Metal']) },
           { kind: 'choice', key: 'walls', label: 'Table edge', help: 'What the dice bounce off at the edge. Every choice stops them; Nothing just isn\'t drawn.', options: opts(['line', 'Hairline'], ['stone', 'Stone wall'], ['brass', 'Brass rail'], ['none', 'Nothing']) },

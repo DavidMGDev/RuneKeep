@@ -116,6 +116,10 @@ export interface DiceEngine {
   anchor(key: string, card: string | null, lx?: number, ly?: number): void;
   /** A DOM label that rides under a die. */
   label(key: string, el: HTMLElement | null): void;
+  /** Keep a DOM element at a die's centre (its fire, the deck die's arrows), or stop. */
+  follow(key: string, el: HTMLElement, on: boolean): boolean;
+  /** A brief glint of light over a die: a control die answering a click without moving (owner, v0.47.10). */
+  flash(key: string): void;
   onImpact(cb: (i: Impact) => void): void;
   /** Called with the keys of dice that have just come to rest. */
   onRest(cb: (keys: string[]) => void): void;
@@ -363,7 +367,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -422,6 +426,17 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     d.group.position.set(b.x - W / 2 + jx, (H / 2 - b.y + jy) / COS, model.inR * rad + b.z + (b.held ? 6 : 0));
     d.group.quaternion.set(b.q[0], b.q[1], b.q[2], b.q[3]);
     if (d.jitter > 0.02) d.group.rotateZ((Math.random() - 0.5) * d.jitter * 0.5);
+    for (const f of d.follow) f.style.transform = `translate(${(b.x + jx).toFixed(1)}px, ${(b.y + jy - b.z * 0.4).toFixed(1)}px)`;
+    if (d.glint > 0) {
+      // The glint: the die's own emissive lifted towards white, fading.
+      d.glint = d.glint < 0.02 ? 0 : d.glint * 0.86;
+      for (const m of d.mats as (THREE.Material & { emissive?: THREE.Color; emissiveIntensity?: number; userData: { e?: THREE.Color; ei?: number } })[]) {
+        if (!m.emissive) continue;
+        if (!m.userData.e) { m.userData.e = m.emissive.clone(); m.userData.ei = m.emissiveIntensity ?? 1; }
+        m.emissive.copy(m.userData.e).lerp(new THREE.Color(0xfff2d0), d.glint);
+        m.emissiveIntensity = (m.userData.ei ?? 1) + d.glint * 0.9;
+      }
+    }
     if (d.ring) {
       d.ring.position.set(b.x - W / 2, (H / 2 - b.y) / COS, 1);
       d.ring.scale.set(rad * 1.05, (rad * 1.05) / COS, 1);
@@ -495,7 +510,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     if (++frameNo % 30 === 1) for (const d of order) d.labelW = d.label?.offsetWidth ?? 0;
     for (const d of order) {
       sync(d);
-      if (Math.abs(d.scale - scaleOf(d)) > 0.002) easing = true;
+      if (Math.abs(d.scale - scaleOf(d)) > 0.002 || d.glint > 0) easing = true;
       if (d.vanish === 'flying' && !d.body.home) gone.push(d.spec.key);
       const asleep = d.body.asleep && !d.body.held;
       if (asleep && !d.wasAsleep) rested.push(d.spec.key);
@@ -659,7 +674,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
       }
-      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null };
+      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0 };
       dice.set(spec.key, d);
       order.push(d);
       wake();
@@ -957,6 +972,19 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       d.label = el;
       d.labelW = el?.offsetWidth ?? 0;
       if (el) sync(d);
+    },
+    follow(key, el, on) {
+      const d = dice.get(key);
+      if (!d) return false;
+      d.follow = on ? [...d.follow.filter((f) => f !== el), el] : d.follow.filter((f) => f !== el);
+      if (on) sync(d);
+      return true;
+    },
+    flash(key) {
+      const d = dice.get(key);
+      if (!d) return;
+      d.glint = 1;
+      wake();
     },
     onImpact(cb) { impactCb = cb; },
     onRest(cb) { restCb = cb; },

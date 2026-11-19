@@ -7,7 +7,7 @@
  * Motion (how it moves) and the Table (where the hand lies, the edge, the dice). While settings are open the rows
  * of pieces on the table can be dragged somewhere else.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { playSfx } from '@/lib/sfx';
@@ -53,7 +53,7 @@ export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, p
         {PAGES.map((p) => <Tab key={p.id} label={p.title} active={page === p.id} onPress={() => { if (page !== p.id) { playSfx('floatMenuHighlight', { volume: 0.5 }); setPage(p.id); } }} />)}
       </div>
       <div ref={body} className="rk-scroll" style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 28px' }}>
-        {current ? current.groups.filter((g) => !g.hidden).map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />) : <PresetsPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} pieceCount={pieceCount} />}
+        {current ? <>{page === 'hand' ? <HandLooks look={look} onChange={onChange} /> : null}{current.groups.filter((g) => !g.hidden).map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />)}</> : <PresetsPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} pieceCount={pieceCount} />}
       </div>
     </div>,
     document.body,
@@ -248,18 +248,8 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
       <div style={block}>
         <SectionTitle>Tables</SectionTitle>
         <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Each one is a way of playing: it sets the whole table, the hand and where every piece lives.</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {TABLE_PRESETS.map((p) => <TableTile key={p.id} name={p.name} who={p.who} look={p.look} active={sameLook(look, p.look)} onPress={() => { playSfx('cardSelect', { volume: 0.6 }); onChange(p.look); }} />)}
-        </div>
-      </div>
-
-      <div style={block}>
-        <SectionTitle>Wild tables</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Drawn at random until they came out right. Or roll a new one.</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {WILD_TABLES.map((p) => <TableTile key={p.id} name={p.name} who="" look={p.look} active={sameLook(look, p.look)} onPress={() => { playSfx('cardSelect', { volume: 0.6 }); onChange(p.look); }} />)}
-        </div>
-        <TButton label="Surprise me" h={34} onPress={shuffle} />
+        <TablePicker look={look} onPick={(l) => { playSfx('cardSelect', { volume: 0.6 }); onChange(l); }} />
+        <TButton label="Surprise me" h={34} title="A new table drawn at random" onPress={shuffle} />
       </div>
 
       <div style={block}>
@@ -278,14 +268,6 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
         </div>
       </div>
 
-      <div style={block}>
-        <SectionTitle>Hands only</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>These change the row of cards and nothing else.</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-          {BUILTIN_LOOKS.map((b) => <LookRow key={b.name} name={b.name} active={wearsHand(look, b.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(withHand(look, b.look)); }} />)}
-        </div>
-      </div>
-
       <div style={{ ...block, borderBottom: 'none' }}>
         <SectionTitle>Start over</SectionTitle>
         <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>
@@ -301,52 +283,70 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
   );
 }
 
+/** Every ready-made table: the six made for a way of playing, then the four drawn at random. */
+const ALL_TABLES = [...TABLE_PRESETS.map((t) => ({ ...t, wild: false })), ...WILD_TABLES.map((t) => ({ ...t, wild: true }))];
+
 /**
- * A whole table as a tile: a little map of it (the felt, where the hand lies, the rows of pieces) over its name and
- * who it is for.
+ * The ready-made tables as a dropdown (owner, v0.47.10: "a dropdown instead of a gallery"), with a picture of the
+ * table under it: a real screenshot of it laid out, of whichever one is lit in the list, else the one in use.
  */
-function TableTile({ name, who, look, active, onPress }: { name: string; who: string; look: DeckLook; active: boolean; onPress: () => void }) {
-  const [hover, setHover] = useState(false);
-  const map = useMemo(() => tableMap(look), [look]);
+function TablePicker({ look, onPick }: { look: DeckLook; onPick: (l: DeckLook) => void }) {
+  const [open, setOpen] = useState(false);
+  const current = ALL_TABLES.find((t) => sameLook(look, t.look));
+  const [lit, setLit] = useState(Math.max(0, ALL_TABLES.findIndex((t) => t.id === current?.id)));
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) list.current?.focus(); }, [open]);
+  const shown = open ? ALL_TABLES[lit] : current;
+  const pick = (i: number) => { const t = ALL_TABLES[i]; if (!t) return; setOpen(false); onPick(t.look); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setLit((l) => (l + (e.key === 'ArrowDown' ? 1 : -1) + ALL_TABLES.length) % ALL_TABLES.length); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(lit); }
+  };
   return (
-    <button type="button" onClick={onPress} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} aria-pressed={active} title={who || name} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
-      <div style={{ clipPath: chamferClip(6), background: active ? T.red : hover ? T.goldBright : 'rgba(218,162,73,0.3)', padding: 1.2 }}>
-        <div style={{ clipPath: chamferClip(5.5), background: active ? 'rgba(200,27,24,0.2)' : hover ? T.panelLit : T.panel, padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {map}
-          <span style={{ color: active || hover ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 13.5 }}>{name}</span>
-          {who ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, lineHeight: '16px' }}>{who}</span> : null}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => { playSfx(open ? 'floatMenuClose' : 'floatMenuOpen', { volume: 0.6 }); setOpen((o) => !o); }} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
+        <div style={{ clipPath: chamferClip(6), background: open ? T.goldBright : 'rgba(218,162,73,0.45)', padding: 1.2 }}>
+          <div style={{ clipPath: chamferClip(5.5), background: T.panel, height: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ flex: 1, color: current ? T.ivory : T.muted, fontFamily: T.bold, fontSize: 14.5 }}>{current ? current.name : 'Your own table'}</span>
+            <span style={{ display: 'flex', transform: `rotate(${open ? 180 : 0}deg)`, transition: `transform 200ms ${T.ease}` }}><Glyph d='<path d="M6 9l6 6 6-6"/>' size={16} /></span>
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      {open ? (
+        <div ref={list} role="listbox" aria-label="Ready-made tables" tabIndex={-1} onKeyDown={onKey} style={{ outline: 'none', border: `1px solid ${T.goldSoft}`, background: 'rgba(11,14,19,0.98)', maxHeight: 330, overflowY: 'auto' }} className="rk-scroll">
+          {ALL_TABLES.map((t, i) => (
+            <div key={t.id}>
+              {i === TABLE_PRESETS.length ? <div style={{ padding: '10px 12px 4px', color: T.muted, fontFamily: T.bold, fontSize: 11.5, letterSpacing: 1, textTransform: 'uppercase' }}>Drawn at random</div> : null}
+              <div role="option" aria-selected={current?.id === t.id} onPointerEnter={() => setLit(i)} onClick={() => pick(i)}
+                style={{ cursor: 'pointer', padding: '9px 12px', background: lit === i ? T.panelLit : 'transparent', borderLeft: `3px solid ${current?.id === t.id ? T.red : lit === i ? T.goldBright : 'transparent'}` }}>
+                <div style={{ color: lit === i ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 14 }}>{t.name}</div>
+                {t.who && !t.wild ? <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px', marginTop: 2 }}>{t.who}</div> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {shown ? (
+        <figure style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <img src={`/table/presets/${shown.id}.webp`} alt={`The ${shown.name} table laid out`} draggable={false} style={{ width: '100%', aspectRatio: '1182 / 900', objectFit: 'cover', display: 'block', border: `1px solid ${T.goldSoft}`, background: T.ink }} />
+          {!open && shown.who && !shown.wild ? <figcaption style={{ color: T.muted, fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px' }}>{shown.who}</figcaption> : null}
+        </figure>
+      ) : null}
+    </div>
   );
 }
 
-/** The little map: 120 x 80 units for the table. */
-function tableMap(l: DeckLook) {
-  const W = 120, H = 80;
-  const handTop = l.areaPos === 'top' ? 0 : l.areaPos === 'middle' ? 0.5 - l.areaSize / 200 : 1 - l.areaSize / 100;
-  const handH = l.areaSize / 100;
-  const cardW = Math.max(5, Math.min(16, l.size / 16));
-  const cardH = cardW * 1.4;
-  const cy = (handTop + handH * Math.min(0.75, Math.max(0.25, l.rowY))) * H;
-  const n = Math.min(9, l.side * 2 + 1);
-  const step = cardW * Math.max(0.22, 1 + l.spacing);
-  const cards = l.handMode === 'spread'
-    ? Array.from({ length: 10 }, (_, i) => ({ x: 14 + (i % 5) * 16, y: 26 + Math.floor(i / 5) * 22, r: 0 }))
-    : Array.from({ length: n }, (_, i) => { const k = i - (n - 1) / 2; return { x: W / 2 + k * step, y: cy + l.arc * 0.06 * (k / Math.max(1, (n - 1) / 2)) ** 2, r: k * l.tilt * 0.8 }; });
-  const dot = (x: number, y: number, c: string, s = 3.2) => <rect x={x - s} y={y - s} width={s * 2} height={s * 2} transform={`rotate(45 ${x} ${y})`} fill={c} />;
-  const row = (x: number, y: number, count: number, dir: 'row' | 'column', c: string, gap: number) => Array.from({ length: count }, (_, i) => { const o = (i - (count - 1) / 2) * gap; return <g key={`${c}${i}`}>{dot(dir === 'row' ? x * W + o : x * W, dir === 'row' ? y * H : y * H + o, c)}</g>; });
-  const wall = l.walls === 'brass' ? '#C8923A' : l.walls === 'stone' ? '#4a4f58' : l.walls === 'line' ? 'rgba(218,162,73,0.45)' : 'transparent';
+/** The hand looks: they change the row of cards and nothing else, so they head the Hand tab (owner, v0.47.10). */
+function HandLooks({ look, onChange }: { look: DeckLook; onChange: (l: DeckLook) => void }) {
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', aspectRatio: '3 / 2' }} aria-hidden="true">
-      <rect x="0" y="0" width={W} height={H} fill="#16301f" />
-      <rect x="1" y="1" width={W - 2} height={H - 2} fill="none" stroke={wall} strokeWidth={l.walls === 'stone' ? 3 : 1.4} />
-      {l.handMode === 'carousel' && l.areaMode === 'tray' ? <rect x="3" y={handTop * H + 1} width={W - 6} height={handH * H - 2} fill="rgba(0,0,0,0.22)" /> : null}
-      {cards.map((c, i) => <rect key={i} x={c.x - cardW / 2} y={c.y - cardH / 2} width={cardW} height={cardH} fill={i === Math.floor(cards.length / 2) && l.handMode === 'carousel' ? '#efe4c8' : '#b9ab8c'} stroke="#2a2216" strokeWidth="0.5" transform={`rotate(${c.r} ${c.x} ${c.y})`} />)}
-      {l.controls !== 'hidden' ? row(l.ctlX, l.ctlY, 3, l.ctlDir, l.controlDice === 'gilded' ? '#E0B563' : l.controlDice === 'ivory' ? '#EAE0C8' : '#0e1117', 7) : null}
-      {l.controls !== 'hidden' ? dot(l.catX * W, l.catY * H, '#C81B18', 4.4) : null}
-      {l.tokenTray ? row(l.supX, l.supY, 4, l.supDir, '#9A6B3C', 6) : null}
-    </svg>
+    <section style={{ borderBottom: '1px solid rgba(218,162,73,0.14)', padding: '14px 0 14px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <SectionTitle>Ready-made hands</SectionTitle>
+      <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>These change the row of cards and nothing else.</span>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+        {BUILTIN_LOOKS.map((b) => <LookRow key={b.name} name={b.name} active={wearsHand(look, b.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(withHand(look, b.look)); }} />)}
+      </div>
+    </section>
   );
 }
 
