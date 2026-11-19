@@ -42,7 +42,6 @@ const CW = 230;
 const CH = 322;
 const RAIL_W = 206;
 const NO_CARDS: CardItem[] = [];
-const HAND_SINK = 0.42; // how much of a hand card hangs below the window edge
 const MOVE_MS = 380;
 /** The token board's box: the phone's width, so its drawer lays out exactly as it does there. */
 const TOKEN_BOX_W = 412;
@@ -60,8 +59,11 @@ interface Target {
   x: number; // centre, table px
   y: number;
   w: number; // drawn width
-  r: number; // degrees
   z: number;
+  /** The share of the card's width that takes the pointer: the strip a neighbour does not cover. */
+  hit: number;
+  /** Under the pointer the face (never the hitbox) grows to this, in table px from the card's top-left. */
+  lift?: { zoom: number; dx: number; dy: number };
 }
 
 export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, editableIds, overlay: overlayProp, backRef, onManage, onExit }: { canInspect: boolean; sortFile?: CharacterFile; onSortOpen?: (open: boolean) => void; onEditCard: (id: string) => void; editableIds: Set<string>; overlay: boolean; backRef: React.MutableRefObject<(() => boolean) | null>; onManage: () => void; onExit: () => void }) {
@@ -95,44 +97,39 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
   const areaL = RAIL_W;
   const areaW = Math.max(200, tableW - RAIL_W);
   const cx = areaL + areaW / 2;
-  const handW = Math.round(Math.min(186, Math.max(136, areaW * 0.15)));
-  const handZone = handW * 1.4 * (1 - HAND_SINK) + 70;
-  const focusW = Math.round(Math.min(390, (tableH - handZone - 150) / 1.4));
   const railTop = port ? port.top + 200 * port.scale : 120;
-  // A narrow table fans the hand under the rail, so the rail's scroll area ends above the hand at its most lifted.
-  const liftedHandTop = tableH - handW * 1.4 * (1 - HAND_SINK) - 84;
-  const railMaxH = Math.max(120, (areaW < 700 ? liftedHandTop : tableH - 24) - railTop);
+  const railMaxH = Math.max(120, tableH - 24 - railTop);
+  // The demo's table (v0.45.0, owner): one straight row along the bottom, smaller while a card is in focus, and
+  // the focused card centred above it with its controls over it.
+  // A big deck keeps readable cards and overlaps them more, instead of shrinking them to fit side by side.
+  const handSize = Math.round(Math.min(270, tableH * 0.29, Math.max(Math.min(170, tableH * 0.2), (areaW - 32) / (1 + 0.82 * Math.max(0, deck.length - 1)))));
+  const handW = focusId ? Math.min(handSize * 0.75, tableH * 0.15, areaW * 0.22) : handSize;
+  const handTop = tableH - 30 - handSize * 0.7 - handW * 0.7;
+  const [ctrlH, setCtrlH] = useState(52);
+  const focusW = Math.round(Math.min(405, areaW * 0.74, tableH * 0.47, Math.max(100, (handTop - ctrlH - 60) / 1.4)));
+  const focusTop = Math.max(ctrlH + 36, (handTop - focusW * 1.4 + 64) / 2);
 
   const hand = useMemo(() => deck.filter((c) => c.id !== focusId), [deck, focusId]);
-  // Base targets only; hover is applied inside each card, so moving the pointer re-renders one card, not the hand.
-  // The fan's depth and tilt are capped so a big hand still keeps every card's top edge on screen to point at.
+  // Each card's hitbox is fixed: the strip of it its right-hand neighbour leaves showing (all of the last one).
+  // Hover only grows the face, from its bottom edge, so the pointer never chases a card that moved under it.
   const targets = useMemo(() => {
     const t: Record<string, Target> = {};
-    const n = hand.length, mid = (n - 1) / 2;
-    // A narrow table fans the hand across its whole width (under the rail, which ends well above it); a wide one
-    // keeps the hand centred under the focus slot.
-    const narrow = areaW < 700;
-    const fanCx = narrow ? tableW / 2 : cx;
-    const span = narrow ? tableW - 48 : areaW - 120;
-    const step = n > 1 ? Math.min(handW * 0.8, (span - handW) / (n - 1)) : 0;
+    const n = hand.length, w = handW;
+    const step = n > 1 ? Math.max(0, Math.min(w * (focusId ? 0.7 : 0.82), (areaW - w - 32) / (n - 1))) : 0;
+    const shown = Math.min(370, areaW - 20, (handTop + w * 1.4 - 12) / 1.4);
     hand.forEach((c, i) => {
-      const o = i - mid;
-      t[c.id] = {
-        x: fanCx + o * step,
-        y: tableH + handW * 1.4 * (HAND_SINK - 0.5) + Math.min(Math.abs(o) ** 1.6 * 3.6, 46),
-        w: handW,
-        r: Math.max(-12, Math.min(12, o * 3.4)),
-        z: 10 + i,
-      };
+      const left = areaL + (areaW - w) / 2 + (i - (n - 1) / 2) * step;
+      const zoomLeft = Math.max(areaL + 10, Math.min(areaL + areaW - shown - 10, left + (w - shown) / 2));
+      t[c.id] = { x: left + w / 2, y: handTop + w * 0.7, w, z: 10 + i, hit: i === n - 1 ? 1 : step / w, lift: { zoom: shown / w, dx: zoomLeft - left, dy: (w - shown) * 1.4 } };
     });
-    if (focusId) t[focusId] = { x: cx, y: 36 + (focusW * 1.4) / 2, w: focusW, r: 0, z: 300 };
+    if (focusId) t[focusId] = { x: cx, y: focusTop + (focusW * 1.4) / 2, w: focusW, z: 300, hit: 1 };
     return t;
-  }, [hand, focusId, cx, areaW, tableW, handW, tableH, focusW]);
+  }, [hand, focusId, cx, areaL, areaW, handW, handTop, focusTop, focusW]);
 
   const focus = useCallback((id: string) => {
     if (id === focusId) return;
-    // The phone's sounds: a card coming up into focus, or a tick as the next one takes its place.
-    playSfx(focusId ? 'carouselScroll' : 'cardFullscreenEnter');
+    // The same sound whether a card is picked from the hand or stepped to with the keys (owner).
+    playSfx('cardFullscreenEnter');
     if (focusId) ctx.endCardFocus(); // a different card takes the slot: the override streak ends, as on the phone
     setHoverId(null);
     setFocusId(id);
@@ -256,9 +253,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
   }, [focusId, reduced]);
   // Keyed by the card's REF, so every copy (Favorites included) shares one board, as on the phone.
   const tokenKey = focused ? focused.ref ?? focused.id : null;
-  // Under the WHOLE controls block: a paged card adds its page row (about 50 px) above the buttons.
-  const [ctrlH, setCtrlH] = useState(68);
-  const drawerTop = 36 + focusW * 1.4 + 18 + ctrlH + 10; // under the controls as they actually laid out (pages, wrap, position line)
+  const drawerTop = focusTop + focusW * 1.4 + 10; // under the focused card, between it and the hand
   const onPlaceToken = useCallback((t: PlacedToken) => { if (tokenKey) ctx.placeToken(tokenKey, t); }, [tokenKey, ctx]);
   const onRemoveToken = useCallback((id: string) => { if (tokenKey) ctx.removeToken(tokenKey, id); }, [tokenKey, ctx]);
   const onUpdateToken = useCallback((id: string, patch: Partial<PlacedToken>) => { if (tokenKey) ctx.updateToken(tokenKey, id, patch); }, [tokenKey, ctx]);
@@ -269,6 +264,8 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
     <DesktopPortal to="table">
       <View {...coachTarget('sheet-table')} style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, overflow: 'hidden' }}>
         <TableMotes />
+        {/* Empty table: a click there puts the focused card back in the hand. Cards, controls and the rail sit above it. */}
+        <Pressable onPress={release} accessible={false} style={{ position: 'absolute', left: 0, top: 0, width: tableW, height: tableH, cursor: 'default' } as never} />
         <DeckRail top={railTop} maxH={railMaxH} onManage={onManage} onSort={canReorder ? () => { playSfx('floatMenuOpen'); setSorting(true); } : undefined} onExit={onExit} />
         {sorting ? (
           <DesktopPortal to="side" priority="dialog" onDismiss={() => setSorting(false)}>
@@ -284,7 +281,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
           <Text style={{ position: 'absolute', left: areaL, width: areaW, top: tableH * 0.42, textAlign: 'center', color: Rune.muted, fontFamily: Body.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</Text>
         ) : null}
         {!focused && deck.length ? (
-          <Text style={{ position: 'absolute', left: areaL, width: areaW, top: tableH * 0.3, textAlign: 'center', color: Rune.muted, fontFamily: Body.medium, fontSize: 14 }}>Pick a card from your hand to bring it into focus.</Text>
+          <Text style={{ position: 'absolute', left: areaL, width: areaW, top: Math.max(38, handTop * 0.55), textAlign: 'center', color: Rune.muted, fontFamily: Body.medium, fontSize: 14 }}>Pick a card from your hand to bring it into focus.</Text>
         ) : null}
         {deck.map((item) => (
           <DeskCard
@@ -307,7 +304,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
         {focused ? (
           <FocusControls
             item={focused}
-            top={36 + focusW * 1.4 + 18}
+            bottom={tableH - focusTop + 12}
             maxW={areaW - 24}
             onHeight={setCtrlH}
             canInspect={canInspect}
@@ -324,7 +321,7 @@ export function DesktopTable({ canInspect, sortFile, onSortOpen, onEditCard, edi
           // The phone's token board over the focused card; its drawer sits under the focus controls, clear of the art.
           <Animated.View pointerEvents="box-none" entering={reduced ? undefined : FadeIn.duration(200)} style={{ position: 'absolute', left: cx - TOKEN_BOX_W / 2, top: 0, width: TOKEN_BOX_W, height: tableH, zIndex: 700 }}>
             <TokenBoard
-              cardRect={{ left: (TOKEN_BOX_W - focusW) / 2, top: 36, width: focusW, height: focusW * 1.4 }}
+              cardRect={{ left: (TOKEN_BOX_W - focusW) / 2, top: focusTop, width: focusW, height: focusW * 1.4 }}
               width={TOKEN_BOX_W}
               height={tableH}
               tokens={ctx.cardTokens[tokenKey] ?? ctx.cardTokens[focused.id] ?? []}
@@ -396,44 +393,58 @@ function MenuRow({ label, danger, onPress }: { label: string; danger?: boolean; 
 
 /** One card, one element. It never remounts while its deck is up; only its target moves. */
 const DeskCard = memo(function DeskCard({ item, target, hovered, focused, page, enabled, tone, tokens, crossTrait, reduced, onPress, onHover }: { item: CardItem; target: Target | undefined; hovered: boolean; focused: boolean; page: number; enabled: boolean; tone: CornerTone; tokens?: PlacedToken[]; crossTrait?: 1 | 2; reduced: boolean; onPress: (id: string, live: boolean) => void; onHover: (id: string, on: boolean) => void }) {
-  const base = target ?? { x: 0, y: 2000, w: 1, r: 0, z: 0 };
-  const lift = hovered && !focused;
-  const t = lift ? { x: base.x, y: base.y - 74, w: base.w * 1.16, r: 0, z: 200 } : base;
+  const t = target ?? { x: 0, y: 2000, w: 1, z: 0, hit: 1 };
   const x = useSharedValue(t.x);
   const y = useSharedValue(t.y + 260); // the first deal rises from below the table
   const s = useSharedValue(t.w / CW);
-  const r = useSharedValue(t.r);
   useEffect(() => {
     const cfg = { duration: reduced ? 0 : MOVE_MS, easing: EASE };
     x.value = withTiming(t.x, cfg);
     y.value = withTiming(t.y, cfg);
     s.value = withTiming(t.w / CW, cfg);
-    r.value = withTiming(t.r, cfg);
-  }, [t.x, t.y, t.w, t.r, reduced, x, y, s, r]);
+  }, [t.x, t.y, t.w, reduced, x, y, s]);
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateX: x.value - CW / 2 }, { translateY: y.value - CH / 2 }, { rotate: `${r.value}deg` }, { scale: s.value }],
+    transform: [{ translateX: x.value - CW / 2 }, { translateY: y.value - CH / 2 }, { scale: s.value }],
   }));
+  // The lift, in the card's own (unscaled, centre-origin) space: grow by `zoom` with the bottom edge held.
+  const lift = hovered && !focused ? t.lift : undefined;
+  const k = t.w / CW;
+  const lz = useSharedValue(1), lx = useSharedValue(0), ly = useSharedValue(0);
+  useEffect(() => {
+    const cfg = { duration: reduced ? 0 : 190, easing: EASE };
+    const z = lift?.zoom ?? 1;
+    lz.value = withTiming(z, cfg);
+    lx.value = withTiming(lift ? lift.dx / k - (CW / 2) * (1 - z) : 0, cfg);
+    ly.value = withTiming(lift ? lift.dy / k - (CH / 2) * (1 - z) : 0, cfg);
+  }, [lift, k, reduced, lz, lx, ly]);
+  const liftStyle = useAnimatedStyle(() => ({ transform: [{ translateX: lx.value }, { translateY: ly.value }, { scale: lz.value }] }));
   const face = item.faces?.[page];
+  // A hovered card shows its full art too, and keeps it once loaded so the next hover is sharp at once.
+  const [seen, setSeen] = useState(false);
+  useEffect(() => { if (lift) setSeen(true); }, [lift]);
+  const sharp = focused || !!lift || seen;
   return (
-    <Animated.View {...({ dataSet: { cardId: item.id } } as object)} style={[{ position: 'absolute', left: 0, top: 0, width: CW, height: CH, zIndex: t.z }, style]}>
+    <Animated.View {...({ dataSet: { cardId: item.id } } as object)} pointerEvents="box-none" style={[{ position: 'absolute', left: 0, top: 0, width: CW, height: CH, zIndex: lift ? 500 : t.z }, style]}>
       <Pressable
         onPress={() => onPress(item.id, !!(item.live && !face))}
         onHoverIn={() => onHover(item.id, true)}
         onHoverOut={() => onHover(item.id, false)}
         accessibilityRole="button"
         accessibilityLabel={!focused ? 'Bring this card into focus' : item.live && !face ? 'Focused card' : 'Focused card. Click to return it to your hand'}
-        style={{ width: CW, height: CH, cursor: 'pointer' } as never}>
+        style={{ width: CW * t.hit, height: CH, cursor: 'pointer' } as never}>
+        <Animated.View pointerEvents={focused ? 'box-none' : 'none'} style={[{ position: 'absolute', left: 0, top: 0, width: CW, height: CH }, liftStyle]}>
         {/* Faces win over a live body, as in the phone hand: a class card carries both on web. */}
         {face ? (
-          face.custom ?? <Layered item={{ id: `${item.id}#${page}`, source: face.source!, thumb: face.thumb! }} full={focused} />
+          face.custom ?? <Layered item={{ id: `${item.id}#${page}`, source: face.source!, thumb: face.thumb! }} full={sharp} />
         ) : item.live ? (
           <View style={{ width: CW, height: CH }} pointerEvents={focused && item.interactive ? 'auto' : 'none'}>{item.live}</View>
         ) : (
-          <Layered item={item} full={focused} />
+          <Layered item={item} full={sharp} />
         )}
         {tokens?.length ? <View style={StyleSheet.absoluteFill} pointerEvents="none"><BakedTokenLayer tokens={tokens} cardW={CW} cardH={CH} /></View> : null}
         {enabled ? <EnabledCorner width={CW} height={CH} tone={tone} /> : null}
         {crossTrait ? <TraitCrossOut width={CW} height={CH} catalogId={catalogIdOf(item.id)} crossedTrait={crossTrait} /> : null}
+        </Animated.View>
       </Pressable>
     </Animated.View>
   );
@@ -449,8 +460,8 @@ function Layered({ item, full }: { item: { id: string; source: CardItem['source'
   );
 }
 
-/** The controls under the focused card: the phone's focused-card row, plus what a hold or a page swipe does there. */
-function FocusControls({ item, top, cx, maxW, onHeight, canInspect, page, onPage, onEdit, onRelease, position, onMove }: { maxW: number; onHeight: (h: number) => void; canInspect: boolean; item: CardItem; top: number; cx: number; page: number; onPage: (p: number) => void; onEdit?: () => void; onRelease: () => void; position?: { at: number; of: number }; onMove?: (dir: -1 | 1) => void }) {
+/** The controls over the focused card: the phone's focused-card row, plus what a hold or a page swipe does there. */
+function FocusControls({ item, bottom, cx, maxW, onHeight, canInspect, page, onPage, onEdit, onRelease, position, onMove }: { maxW: number; onHeight: (h: number) => void; canInspect: boolean; item: CardItem; bottom: number; cx: number; page: number; onPage: (p: number) => void; onEdit?: () => void; onRelease: () => void; position?: { at: number; of: number }; onMove?: (dir: -1 | 1) => void }) {
   const ctx = useCarousel();
   const ref = item.ref ?? item.id;
   const on = ctx.enabledIds.has(ref);
@@ -467,7 +478,7 @@ function FocusControls({ item, top, cx, maxW, onHeight, canInspect, page, onPage
   ];
   const shown = buttons.filter((b) => !b.hidden);
   return (
-    <View onLayout={(e) => onHeight(Math.ceil(e.nativeEvent.layout.height))} style={{ position: 'absolute', top, left: cx - Math.min(720, maxW) / 2, width: Math.min(720, maxW), alignItems: 'center', gap: 10, zIndex: 400 }}>
+    <View onLayout={(e) => onHeight(Math.ceil(e.nativeEvent.layout.height))} style={{ position: 'absolute', bottom, left: cx - Math.min(720, maxW) / 2, width: Math.min(720, maxW), alignItems: 'center', gap: 10, zIndex: 400 }}>
       {faces > 1 ? (
         <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
           <DeskButton label="Previous page" glyph="‹" onPress={() => { playSfx('transitionStart'); onPage((page - 1 + faces) % faces); }} />
