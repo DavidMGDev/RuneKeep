@@ -36,10 +36,24 @@ export const loadDicePlaces = (): DicePlaces => read<DicePlaces>(DICE, {});
 export const saveDicePlaces = (p: DicePlaces): void => write(DICE, p);
 
 /** A card laid on the felt: which card, where its centre is (shares of the felt) and how wide it is (px). */
-export interface BoardCard { uid: string; id: string; fx: number; fy: number; w: number; face?: number; /** Degrees, clockwise. */ rot?: number }
+export interface BoardCard { uid: string; id: string; fx: number; fy: number; w: number; face?: number; /** Degrees, clockwise. */ rot?: number; /** Knocked about by dice like a piece (v0.47.3). */ phys?: boolean }
 export const loadBoard = (characterId: string): BoardCard[] =>
   read<unknown[]>(BOARD + characterId, []).flatMap((c) => {
     const b = c as BoardCard;
-    return b && typeof b.id === 'string' && Number.isFinite(b.fx) && Number.isFinite(b.fy) && Number.isFinite(b.w) ? [{ uid: String(b.uid ?? Math.random()), id: b.id, fx: b.fx, fy: b.fy, w: b.w, face: b.face, rot: Number.isFinite(b.rot) ? b.rot : 0 }] : [];
+    return b && typeof b.id === 'string' && Number.isFinite(b.fx) && Number.isFinite(b.fy) && Number.isFinite(b.w) ? [{ uid: String(b.uid ?? Math.random()), id: b.id, fx: b.fx, fy: b.fy, w: b.w, face: b.face, rot: Number.isFinite(b.rot) ? b.rot : 0, phys: b.phys === true }] : [];
   });
 export const saveBoard = (characterId: string, cards: BoardCard[]): void => write(BOARD + characterId, cards);
+
+/**
+ * The hand laid out on the table (v0.47.3, the Laid out hand): where each card of the decks lies, by card id. A card
+ * not in here yet is dealt into the next free place of a grid.
+ */
+export type SpreadPlace = { fx: number; fy: number; w: number; rot?: number; phys?: boolean; face?: number };
+const SPREAD = 'runekeep.table.spread.';
+export const loadSpread = (characterId: string): Record<string, SpreadPlace> => {
+  const raw = read<Record<string, SpreadPlace>>(SPREAD + characterId, {});
+  const out: Record<string, SpreadPlace> = {};
+  for (const [id, p] of Object.entries(raw ?? {})) if (p && Number.isFinite(p.fx) && Number.isFinite(p.fy) && Number.isFinite(p.w)) out[id] = { fx: p.fx, fy: p.fy, w: p.w, rot: Number.isFinite(p.rot) ? p.rot : 0, phys: p.phys === true, face: p.face };
+  return out;
+};
+export const saveSpread = (characterId: string, s: Record<string, SpreadPlace>): void => write(SPREAD + characterId, s);

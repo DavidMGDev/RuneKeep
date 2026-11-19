@@ -93,6 +93,8 @@ export const DIE_GLYPHS = {
   // A toothed cog (v0.47.1, owner: the old sun-like mark read as a light and dark switch).
   settings: '<path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/><path d="M19.4 13.4a7.6 7.6 0 0 0 0-2.8l2-1.5-2-3.5-2.4 1a7.4 7.4 0 0 0-2.4-1.4L14.2 2.6h-4.4l-.4 2.6A7.4 7.4 0 0 0 7 6.6l-2.4-1-2 3.5 2 1.5a7.6 7.6 0 0 0 0 2.8l-2 1.5 2 3.5 2.4-1a7.4 7.4 0 0 0 2.4 1.4l.4 2.6h4.4l.4-2.6a7.4 7.4 0 0 0 2.4-1.4l2.4 1 2-3.5Z"/>',
   reset: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.2 4.2v4.6h4.6"/>',
+  /** Everything loose gathered back in: four arrows to the middle. */
+  tidy: '<path d="M4 4l5.5 5.5M20 4l-5.5 5.5M4 20l5.5-5.5M20 20l-5.5-5.5"/><path d="M9.5 5.5v4h-4M14.5 5.5v4h4M9.5 18.5v-4h-4M14.5 18.5v-4h4"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
 } as const;
 export type GlyphKey = keyof typeof DIE_GLYPHS;

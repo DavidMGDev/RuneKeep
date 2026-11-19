@@ -54,6 +54,17 @@ export interface Body {
   settle?: { from: Quat; to: Quat; t: number; ms: number };
   /** Flying home (reset): an arc from where it was to where it lives. */
   home?: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number };
+  /**
+   * A card made physical (v0.47.3, owner): a w x h box turned by `a` (radians, clockwise on screen) that slides,
+   * spins (`va`, rad/s) and is knocked about, but never tumbles. `r` is its half diagonal, for the broad check.
+   */
+  box?: { w: number; h: number };
+  a?: number;
+  va?: number;
+  /** Heavier things are knocked less far (a die is 1). */
+  mass?: number;
+  /** Passes through everything (a piece riding a physical card: the card's box takes the knocks). */
+  ghost?: boolean;
 }
 
 export interface Bounds { left: number; top: number; right: number; bottom: number }
@@ -61,6 +72,14 @@ export interface Bounds { left: number; top: number; right: number; bottom: numb
 export type Obstacle = Bounds;
 
 export interface Impact { key: string; speed: number; kind: 'table' | 'rail' | 'die' }
+
+/**
+ * A force over part of the table for a while (the Deck of Many Things): a push out from a point (negative pulls
+ * in), or a whirl round it. `k` is px/s² at the centre, fading to nothing at `r`.
+ */
+export interface Field { kind: 'radial' | 'vortex'; x: number; y: number; r: number; k: number }
+/** What the whole table is like for a step: its fields, and how slippery the felt is (1 is normal). */
+export interface World { fields?: Field[]; friction?: number }
 
 const RAIL_BOUNCE = 0.5;
 const DIE_BOUNCE = 0.42;
@@ -179,24 +198,97 @@ export function launch(b: Body, vx: number, vy: number, vz: number, spin: Vec3):
  * more than 40% of the smallest radius at a time (v0.47.1, owner: a hard throw flew straight through other dice).
  * Returns the impacts that happened, for sound.
  */
-export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: () => number = Math.random, obstacles: Obstacle[] = []): Impact[] {
+export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: () => number = Math.random, obstacles: Obstacle[] = [], world: World = {}): Impact[] {
   let fast = 0;
   let small = Infinity;
   for (const b of bodies) {
-    small = Math.min(small, b.r);
+    if (b.ghost) continue;
+    small = Math.min(small, b.box ? Math.min(b.box.w, b.box.h) / 2 : b.r);
     if (!b.asleep && !b.held) fast = Math.max(fast, Math.hypot(b.vx, b.vy));
   }
-  const n = Math.min(16, Math.max(1, Math.ceil((fast * dt) / (Math.max(4, small) * 0.4))));
+  // A field wakes whatever it reaches.
+  for (const f of world.fields ?? []) for (const b of bodies) if (!b.fixed && !b.held && !b.home && Math.hypot(b.x - f.x, b.y - f.y) < f.r) { b.asleep = false; b.settle = undefined; }
+  const n = Math.min(24, Math.max(1, Math.ceil((fast * dt) / (Math.max(4, small) * 0.4))));
   const hits: Impact[] = [];
-  for (let i = 0; i < n; i++) hits.push(...subStep(bodies, bounds, dt / n, obstacles));
+  for (let i = 0; i < n; i++) hits.push(...subStep(bodies, bounds, dt / n, obstacles, world));
   void rand;
   return hits;
 }
 
-function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle[]): Impact[] {
+function applyFields(b: Body, fields: Field[], dt: number): void {
+  for (const f of fields) {
+    const dx = b.x - f.x, dy = b.y - f.y;
+    const d = Math.hypot(dx, dy);
+    if (d >= f.r || d < 1) continue;
+    const fall = 1 - d / f.r;
+    const a = f.k * fall * dt;
+    if (f.kind === 'radial') { b.vx += (dx / d) * a; b.vy += (dy / d) * a; }
+    else { b.vx += (-dy / d) * a - (dx / d) * a * 0.35; b.vy += (dx / d) * a - (dy / d) * a * 0.35; }
+  }
+}
+
+/** A card's corners on the table. */
+export function boxCorners(b: Body): [number, number][] {
+  const { w, h } = b.box!;
+  const c = Math.cos(b.a ?? 0), s = Math.sin(b.a ?? 0);
+  return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([lx, ly]) => [b.x + lx * c - ly * s, b.y + lx * s + ly * c]);
+}
+
+const BOX_FRICTION = 1250;
+const BOX_SPIN_DAMP = 3.2;
+
+/** A physical card: slides, spins, bounces off the rail by its corners. */
+function boxStep(b: Body, bounds: Bounds, dt: number, hits: Impact[], world: World, obstacles: Obstacle[] = []): void {
+  if (world.fields?.length) applyFields(b, world.fields, dt);
+  const fr = world.friction ?? 1;
+  const sp = Math.hypot(b.vx, b.vy);
+  if (sp > 0) {
+    const dec = Math.min(sp, (BOX_FRICTION * fr + DRAG * sp) * dt);
+    b.vx -= (b.vx / sp) * dec;
+    b.vy -= (b.vy / sp) * dec;
+  }
+  b.va = (b.va ?? 0) * Math.max(0, 1 - BOX_SPIN_DAMP * fr * dt);
+  b.x += b.vx * dt;
+  b.y += b.vy * dt;
+  b.a = (b.a ?? 0) + b.va * dt;
+  const m = b.mass ?? 3;
+  const I = (m * (b.box!.w ** 2 + b.box!.h ** 2)) / 12;
+  // The corner furthest past each rail is pushed back, and the knock turns the card.
+  for (const [cx, cy] of boxCorners(b)) {
+    const pen: [number, number, number][] = [];
+    if (cx < bounds.left) pen.push([bounds.left - cx, 1, 0]);
+    if (cx > bounds.right) pen.push([cx - bounds.right, -1, 0]);
+    if (cy < bounds.top) pen.push([bounds.top - cy, 0, 1]);
+    if (cy > bounds.bottom) pen.push([cy - bounds.bottom, 0, -1]);
+    // Inside an obstacle (the hand's own area): out by its nearest side.
+    for (const o of obstacles) {
+      if (cx <= o.left || cx >= o.right || cy <= o.top || cy >= o.bottom) continue;
+      const opts: [number, number, number][] = [[cx - o.left, -1, 0], [o.right - cx, 1, 0], [cy - o.top, 0, -1], [o.bottom - cy, 0, 1]];
+      pen.push(opts.reduce((m, q) => (q[0] < m[0] ? q : m)));
+    }
+    for (const [p, nx, ny] of pen) {
+      b.x += nx * p;
+      b.y += ny * p;
+      const rx = cx - b.x, ry = cy - b.y;
+      const vn: number = (b.vx - (b.va ?? 0) * ry) * nx + (b.vy + (b.va ?? 0) * rx) * ny;
+      if (vn >= 0) continue;
+      const rn = rx * ny - ry * nx;
+      const j: number = (-(1 + RAIL_BOUNCE) * vn) / (1 / m + (rn * rn) / I);
+      b.vx += (j * nx) / m;
+      b.vy += (j * ny) / m;
+      b.va = (b.va ?? 0) + (rn * j) / I;
+      if (-vn > 60) hits.push({ key: b.key, speed: -vn, kind: 'rail' });
+    }
+  }
+  if (Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.abs(b.va ?? 0) < 0.15) { b.vx = b.vy = 0; b.va = 0; b.asleep = true; }
+}
+
+function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle[], world: World = {}): Impact[] {
   const hits: Impact[] = [];
   for (const b of bodies) {
-    if (b.asleep || b.held || b.fixed) continue;
+    // A fixed piece (the supply, an anchored token) only ever turns over where it lies.
+    if (b.asleep || b.held || (b.fixed && !b.settle) || (b.ghost && !b.settle)) continue;
+    if (b.box) { boxStep(b, bounds, dt, hits, world, obstacles); continue; }
     if (b.home) {
       const h = b.home;
       h.t = Math.min(1, h.t + dt / h.dur);
@@ -228,11 +320,12 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
     // No height (v0.47.1, owner): a die never leaves the felt, so it can never pass over another one.
     b.z = 0;
     b.vz = 0;
+    if (world.fields?.length) applyFields(b, world.fields, dt);
     {
       // Sliding friction and the roll taking hold of the spin.
       const sp = Math.hypot(b.vx, b.vy);
       if (sp > 0) {
-        const dec = Math.min(sp, (FRICTION + DRAG * sp) * dt);
+        const dec = Math.min(sp, (FRICTION * (world.friction ?? 1) + DRAG * sp) * dt);
         b.vx -= (b.vx / sp) * dec;
         b.vy -= (b.vy / sp) * dec;
       }
@@ -257,10 +350,88 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
     if (b.y < bounds.top + b.r) { b.y = bounds.top + b.r; if (b.vy < 0) { hits.push({ key: b.key, speed: -b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] -= b.vx * 0.004; } }
     if (b.y > bounds.bottom - b.r) { b.y = bounds.bottom - b.r; if (b.vy > 0) { hits.push({ key: b.key, speed: b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] += b.vx * 0.004; } }
     for (const o of obstacles) pushOut(b, o, hits);
-    if (Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
+    // Inside a field nothing settles: the field decides when it is over.
+    const inField = world.fields?.some((f) => Math.hypot(b.x - f.x, b.y - f.y) < f.r);
+    if (!inField && Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
   }
   collide(bodies, hits);
   return hits;
+}
+
+/**
+ * A die (circle) against a physical card (box): pushed out of the card along the shortest way and both knocked,
+ * the card turning by where it was hit. Returns whether they touched.
+ */
+function circleBox(c: Body, b: Body, hits: Impact[]): void {
+  const a = b.a ?? 0;
+  const cs = Math.cos(a), sn = Math.sin(a);
+  const dx = c.x - b.x, dy = c.y - b.y;
+  const lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+  const hw = b.box!.w / 2, hh = b.box!.h / 2;
+  const px = Math.max(-hw, Math.min(hw, lx)), py = Math.max(-hh, Math.min(hh, ly));
+  let nlx = lx - px, nly = ly - py;
+  let d = Math.hypot(nlx, nly);
+  let pen: number;
+  if (d === 0) {
+    // The centre is inside the card: out by the nearest edge.
+    const opts = [[hw - lx, 1, 0], [lx + hw, -1, 0], [hh - ly, 0, 1], [ly + hh, 0, -1]] as const;
+    const best = opts.reduce((m, o) => (o[0] < m[0] ? o : m));
+    nlx = best[1]; nly = best[2]; pen = best[0] + c.r;
+  } else {
+    if (d >= c.r) return;
+    nlx /= d; nly /= d; pen = c.r - d;
+  }
+  // Back to the table's frame: n points from the card to the die.
+  const nx = nlx * cs - nly * sn, ny = nlx * sn + nly * cs;
+  const ic = c.held || c.fixed ? 0 : 1 / (c.mass ?? 1);
+  const ib = b.held || b.fixed ? 0 : 1 / (b.mass ?? 3);
+  if (ic + ib === 0) return;
+  c.x += nx * pen * (ic / (ic + ib));
+  c.y += ny * pen * (ic / (ic + ib));
+  b.x -= nx * pen * (ib / (ic + ib));
+  b.y -= ny * pen * (ib / (ic + ib));
+  const wx = b.x + (px * cs - py * sn), wy = b.y + (px * sn + py * cs); // the contact point
+  const rx = wx - b.x, ry = wy - b.y;
+  const va = b.va ?? 0;
+  const rel = (c.vx - (b.vx - va * ry)) * nx + (c.vy - (b.vy + va * rx)) * ny;
+  if (rel >= 0) return;
+  const I = ((b.mass ?? 3) * (b.box!.w ** 2 + b.box!.h ** 2)) / 12;
+  const rn = rx * ny - ry * nx;
+  const j = (-(1 + DIE_BOUNCE) * rel) / (ic + ib + (ib ? (rn * rn) / I : 0));
+  if (ic) { c.vx += j * nx * ic; c.vy += j * ny * ic; }
+  if (ib) { b.vx -= j * nx * ib; b.vy -= j * ny * ib; b.va = va - (rn * j) / I; }
+  for (const o of [c, b]) if (!o.held && !o.fixed) { o.asleep = false; o.settle = undefined; }
+  if (-rel > 60) hits.push({ key: c.key, speed: -rel, kind: 'die' });
+}
+
+/** Two physical cards: the deepest corner of either inside the other is pushed out and both are knocked. */
+function boxBox(a: Body, b: Body, hits: Impact[]): void {
+  for (const [p, q, sign] of [[a, b, 1], [b, a, -1]] as const) {
+    void sign;
+    const ang = q.a ?? 0;
+    const cs = Math.cos(ang), sn = Math.sin(ang);
+    const hw = q.box!.w / 2, hh = q.box!.h / 2;
+    for (const [cx, cy] of boxCorners(p)) {
+      const dx = cx - q.x, dy = cy - q.y;
+      const lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+      if (Math.abs(lx) >= hw || Math.abs(ly) >= hh) continue;
+      // A tiny circle at the corner, against the other card: the same maths as a die.
+      const ghost: Body = { ...p, x: cx, y: cy, r: 0.5, vx: p.vx - (p.va ?? 0) * (cy - p.y), vy: p.vy + (p.va ?? 0) * (cx - p.x), box: undefined };
+      const bx = ghost.x, by = ghost.y, bvx = ghost.vx, bvy = ghost.vy;
+      circleBox(ghost, q, hits);
+      // Carry the corner's push and knock back onto its card.
+      p.x += ghost.x - bx;
+      p.y += ghost.y - by;
+      const m = p.mass ?? 3;
+      const I = (m * (p.box!.w ** 2 + p.box!.h ** 2)) / 12;
+      const jx = (ghost.vx - bvx) * (ghost.mass ?? m), jy = (ghost.vy - bvy) * (ghost.mass ?? m);
+      p.vx += jx / m;
+      p.vy += jy / m;
+      p.va = (p.va ?? 0) + ((cx - p.x) * jy - (cy - p.y) * jx) / I;
+      p.asleep = false;
+      return;
+    }
+  }
 }
 
 /** Keep a die out of a rectangle: push it to the nearest edge and bounce it off, like the rail. */
@@ -306,7 +477,14 @@ function collide(bodies: Body[], hits: Impact[]): void {
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const a = bodies[i], b = bodies[j];
-      if (a.home || b.home) continue;
+      if (a.home || b.home || a.ghost || b.ghost) continue;
+      if (a.box || b.box) {
+        if (Math.hypot(b.x - a.x, b.y - a.y) >= a.r + b.r) continue;
+        if (a.box && b.box) boxBox(a, b, hits);
+        else if (a.box) circleBox(b, a, hits);
+        else circleBox(a, b, hits);
+        continue;
+      }
       const dx = b.x - a.x, dy = b.y - a.y;
       const min = a.r + b.r;
       const d2 = dx * dx + dy * dy;
@@ -354,7 +532,7 @@ export function moveHeld(bodies: Body[], held: Body, x: number, y: number, vx: n
     held.y += dy / n;
     collide(bodies, hits);
     for (const b of bodies) {
-      if (b === held || b.asleep) continue;
+      if (b === held || b.asleep || b.ghost || b.box) continue;
       b.x = Math.min(bounds.right - b.r, Math.max(bounds.left + b.r, b.x));
       b.y = Math.min(bounds.bottom - b.r, Math.max(bounds.top + b.r, b.y));
       for (const o of obstacles) pushOut(b, o, hits);
@@ -374,7 +552,7 @@ export function snapFace(b: Body, face: number, ms = 120): void {
 }
 
 /** Every body at rest (nothing moving, nothing turning, nothing flying home). */
-export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => (b.asleep || b.fixed) && !b.held);
+export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => (b.asleep || (b.fixed && !b.settle)) && !b.held);
 
 /** Send a body home in an arc, landing on `face` (or the one on top now). */
 export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5): void {

@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-import { allAsleep, type Body, type Bounds, type DieFace, type Impact, launch, makeBody, moveHeld, type Obstacle, qRandom, restOn, sendHome, snapFace, STEP, step } from './dice-physics';
+import { allAsleep, type Body, type Bounds, type DieFace, type Field, type Impact, launch, makeBody, moveHeld, type Obstacle, qRandom, restOn, sendHome, snapFace, STEP, step } from './dice-physics';
 
 export type Shape = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20';
 export const FACE_COUNT: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };
@@ -29,12 +29,12 @@ export type Walls = 'none' | 'line' | 'stone' | 'brass';
  * What one face shows: a number (or any short text) or a picture, optionally on a round plate of that colour (a
  * gold deck icon on a gilded die sits on a dark medallion). Fewer than the die has repeat round.
  */
-export type FaceArt = { text: string } | { image: CanvasImageSource; plate?: string };
+export type FaceArt = { text: string } | { image: CanvasImageSource; plate?: string; halo?: string };
 
 export interface DieSpec {
   key: string;
-  /** A polyhedron, or a token chip (a flat disc that slides and never tumbles). */
-  shape: Shape | 'chip';
+  /** A polyhedron, a token chip (a flat disc that slides and never tumbles) or a deck of cards (a flat block). */
+  shape: Shape | 'chip' | 'deck';
   /** Across the die, px. */
   size: number;
   body: string;
@@ -80,6 +80,32 @@ export interface DiceEngine {
   /** Shift these pieces by (dx, dy) where they lie (a laid card carrying what is on it). */
   nudge(keys: string[], dx: number, dy: number): void;
   hover(key: string | null): void;
+  /** Ring these pieces as selected (a marquee). */
+  select(keys: string[]): void;
+  /** The pieces whose centres lie in this rectangle. */
+  inside(r: Bounds): string[];
+  /** Shake a piece where it lies, 0 still to 1 violent (a right click charging up). */
+  jitter(key: string, amount: number): void;
+  /** Break a piece into flying shards and take it off the table. */
+  shatter(key: string): void;
+  /** A force over part of the table for `ms`. */
+  field(f: Field, ms: number): void;
+  /** The felt this slippery (1 normal, lower slides further) for `ms`. */
+  slippery(scale: number, ms: number): void;
+  /** A sudden push out from a point (negative pulls in), px/s at the centre fading to nothing at r. */
+  impulse(x: number, y: number, r: number, speed: number): void;
+  /**
+   * The cards laid on the table. A card that is `phys` is a body (knocked about by dice, sliding, spinning); the
+   * rest only carry what is anchored to them. Poses are the card's centre and its turn in degrees.
+   */
+  setCards(cards: { key: string; x: number; y: number; w: number; h: number; rot: number; phys: boolean }[]): void;
+  /** A card being dragged by hand (a physical one is knocked by nothing while held), and let go with its speed. */
+  holdCard(key: string, x: number, y: number, rot: number): void;
+  releaseCard(key: string): void;
+  /** Physical cards that moved this frame, and those that came to rest (to keep). */
+  onCards(cb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void): void;
+  /** Tie a piece to a card at an offset from its centre (px, in the card's own frame): it never moves by physics. */
+  anchor(key: string, card: string | null, lx?: number, ly?: number): void;
   /** A DOM label that rides under a die. */
   label(key: string, el: HTMLElement | null): void;
   onImpact(cb: (i: Impact) => void): void;
@@ -146,6 +172,22 @@ function chipModel(): ShapeModel {
   return { face: g, edge: null, faces: CHIP_FACES, inR: CHIP_H / 2, artR: 0.4 };
 }
 
+/** The deck: a block of cards lying flat, its top mapped whole onto the first atlas cell (the card back). */
+const DECK_ASPECT = 0.7;
+const DECK_H = 0.22;
+function deckModel(): ShapeModel {
+  const g = new THREE.BoxGeometry(2 * DECK_ASPECT, 2, DECK_H, 1, 1, 1);
+  const pos = g.getAttribute('position');
+  const uv = g.getAttribute('uv');
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i);
+    if (z > DECK_H / 2 - 1e-4) uv.setXY(i, (0.5 + (pos.getX(i) / (2 * DECK_ASPECT)) * 0.98) / COLS, (0.5 - (pos.getY(i) / 2) * 0.98) / ROWS);
+    else uv.setXY(i, 1.5 / COLS, 0.5 / ROWS); // the edges: the paper colour painted in cell 1
+  }
+  uv.needsUpdate = true;
+  return { face: g, edge: null, faces: CHIP_FACES, inR: DECK_H / 2, artR: 0.45 };
+}
+
 /** Paint a die's faces into its atlas: one square cell per face, the art centred in the face's inscribed circle. */
 function paintAtlas(canvas: HTMLCanvasElement, spec: DieSpec, model: ShapeModel, font: string): void {
   canvas.width = COLS * CELL;
@@ -179,10 +221,24 @@ function paintAtlas(canvas: HTMLCanvasElement, spec: DieSpec, model: ShapeModel,
         g.arc(cx, cy, r * 0.98, 0, Math.PI * 2);
         g.fill();
       }
+      if (art.halo) {
+        // A soft dark glow behind the icon, so its own colours read on a light die without a plate.
+        g.save();
+        g.shadowColor = art.halo;
+        g.shadowBlur = CELL * 0.09;
+        g.drawImage(art.image, cx - s / 2, cy - s / 2, s, s);
+        g.restore();
+      }
       g.drawImage(art.image, cx - s / 2, cy - s / 2, s, s);
     }
   }
   if (spec.shape === 'chip') paintButton(g, spec.body);
+  if (spec.shape === 'deck') {
+    const art = spec.faces[0];
+    g.fillStyle = spec.edge;
+    g.fillRect(CELL, 0, CELL, CELL);
+    if (art && 'image' in art) g.drawImage(art.image, 0, 0, CELL, CELL);
+  }
 }
 
 /** The phone's token, as the chip's top: a darker rim, a face lit from the upper left, four stitch holes. */
@@ -253,7 +309,8 @@ function materials(finish: Finish, body: string, edge: string, map: THREE.Textur
 export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelUrl: string; font: string }): Promise<DiceEngine> {
   const shapes = await loadModels(opts.modelUrl);
   const chip = chipModel();
-  const modelOf = (shape: DieSpec['shape']) => (shape === 'chip' ? chip : shapes[shape]);
+  const deck = deckModel();
+  const modelOf = (shape: DieSpec['shape']) => (shape === 'chip' ? chip : shape === 'deck' ? deck : shapes[shape]);
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -298,7 +355,16 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null }
+  /** The cards on the table: a physical one is a body, the rest are where they lie. */
+  const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
+  let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
+  const fields: { f: Field; until: number }[] = [];
+  let slip = { scale: 1, until: 0 };
+  /** Shards of a shattered piece: flying, falling, fading. */
+  const shards: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; spin: THREE.Vector3; born: number; z: number; x: number; y: number }[] = [];
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xe0b563, transparent: true, opacity: 0.85, depthWrite: false });
+  const ringGeo = new THREE.RingGeometry(1.08, 1.22, 48);
   const dice = new Map<string, Die>();
   const order: Die[] = [];
   let hovered: string | null = null;
@@ -337,8 +403,15 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     const target = d.body.held ? 1.05 : hovered === d.spec.key ? 1.03 : 1;
     d.scale += (target - d.scale) * 0.25;
     d.group.scale.setScalar(rad * d.scale);
-    d.group.position.set(b.x - W / 2, (H / 2 - b.y) / COS, model.inR * rad + b.z + (b.held ? 6 : 0));
+    const jx = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
+    const jy = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
+    d.group.position.set(b.x - W / 2 + jx, (H / 2 - b.y + jy) / COS, model.inR * rad + b.z + (b.held ? 6 : 0));
     d.group.quaternion.set(b.q[0], b.q[1], b.q[2], b.q[3]);
+    if (d.jitter > 0.02) d.group.rotateZ((Math.random() - 0.5) * d.jitter * 0.5);
+    if (d.ring) {
+      d.ring.position.set(b.x - W / 2, (H / 2 - b.y) / COS, 1);
+      d.ring.scale.set(rad * 1.05, (rad * 1.05) / COS, 1);
+    }
     if (d.label) {
       // Kept inside the table: a die against the edge still has its whole label, and goes over the die at the bottom.
       const half = (d.labelW || 60) / 2;
@@ -362,11 +435,44 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     raf = 0;
     acc += Math.min(0.05, (t - last) / 1000);
     last = t;
-    const bodies = order.map((d) => d.body);
+    const now = performance.now();
+    for (let i = fields.length - 1; i >= 0; i--) if (fields[i].until < now) fields.splice(i, 1);
+    const world = { fields: fields.map((f) => f.f), friction: slip.until > now ? slip.scale : 1 };
+    const cardBodies: Body[] = [];
+    for (const c of cards.values()) if (c.body) cardBodies.push(c.body);
+    const bodies = [...order.map((d) => d.body), ...cardBodies];
     let steps = 0;
     while (acc >= STEP && steps++ < 12) {
-      for (const hit of step(bodies, bounds, STEP, Math.random, obstacles)) impactCb(hit);
+      placeAnchored();
+      for (const hit of step(bodies, bounds, STEP, Math.random, obstacles, world)) impactCb(hit);
       acc -= STEP;
+    }
+    placeAnchored();
+    // Physical cards: report where they went, and which have stopped (to keep).
+    const movedCards: { key: string; x: number; y: number; rot: number }[] = [];
+    const restedCards: string[] = [];
+    for (const [k, c] of cards) {
+      const b = c.body;
+      if (!b) continue;
+      const moved = Math.abs(b.x - c.x) > 0.05 || Math.abs(b.y - c.y) > 0.05 || Math.abs((b.a ?? 0) - c.a) > 0.0005;
+      if (moved) { c.x = b.x; c.y = b.y; c.a = b.a ?? 0; movedCards.push({ key: k, x: b.x, y: b.y, rot: (c.a * 180) / Math.PI }); }
+      const asleep = b.asleep && !b.held;
+      if (asleep && !c.was) restedCards.push(k);
+      c.was = asleep;
+    }
+    if (movedCards.length || restedCards.length) cardsCb(movedCards, restedCards);
+    // Shards fly out, fall and fade.
+    for (let i = shards.length - 1; i >= 0; i--) {
+      const sh = shards[i];
+      const age = (now - sh.born) / 1000;
+      const sdt = 1 / 60;
+      sh.x += sh.vx * sdt; sh.y += sh.vy * sdt; sh.vz -= 2600 * sdt; sh.z = Math.max(0, sh.z + sh.vz * sdt);
+      if (sh.z === 0) { sh.vz *= -0.3; sh.vx *= 0.8; sh.vy *= 0.8; }
+      sh.mesh.position.set(sh.x - W / 2, (H / 2 - sh.y) / COS, sh.z + 3);
+      sh.mesh.rotation.x += sh.spin.x * sdt; sh.mesh.rotation.y += sh.spin.y * sdt; sh.mesh.rotation.z += sh.spin.z * sdt;
+      const m = sh.mesh.material as THREE.MeshStandardMaterial;
+      m.opacity = Math.max(0, 1 - Math.max(0, age - 0.5) / 0.7);
+      if (age > 1.2) { scene.remove(sh.mesh); sh.mesh.geometry.dispose(); m.dispose(); shards.splice(i, 1); }
     }
     let easing = false;
     const rested: string[] = [];
@@ -381,7 +487,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     }
     renderer.render(scene, camera);
     if (rested.length) restCb(rested);
-    if (!allAsleep(bodies) || easing || held) raf = requestAnimationFrame(frame);
+    const jittering = order.some((d) => d.jitter > 0);
+    if (!allAsleep(bodies) || easing || held || shards.length || fields.length || jittering || slip.until > now) raf = requestAnimationFrame(frame);
   }
 
   function visuals(spec: DieSpec): { group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[] } {
@@ -409,6 +516,34 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     scene.remove(d.group);
     d.tex.dispose();
     for (const m of d.mats) m.dispose();
+  }
+
+  /** Pieces tied to a card sit where the card says, before every step: physics never moves them. */
+  function placeAnchored() {
+    for (const d of order) {
+      const an = d.anchor;
+      if (!an || d.body.held) continue;
+      const c = cards.get(an.card);
+      if (!c) continue;
+      const a = c.body ? c.body.a ?? 0 : c.a;
+      const cx = c.body ? c.body.x : c.x, cy = c.body ? c.body.y : c.y;
+      d.body.x = cx + an.lx * Math.cos(a) - an.ly * Math.sin(a);
+      d.body.y = cy + an.lx * Math.sin(a) + an.ly * Math.cos(a);
+      d.body.ghost = !!c.body;
+      d.body.fixed = true;
+    }
+  }
+
+  function setRing(d: Die, on: boolean) {
+    if (on && !d.ring) {
+      d.ring = new THREE.Mesh(ringGeo, ringMat);
+      d.ring.renderOrder = -0.5;
+      scene.add(d.ring);
+      sync(d);
+    } else if (!on && d.ring) {
+      scene.remove(d.ring);
+      d.ring = null;
+    }
   }
 
   const engine: DiceEngine = {
@@ -468,9 +603,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
           const model = modelOf(spec.shape);
           prev.body = makeBody(spec.key, prev.body.x, prev.body.y, (spec.size / 2) * 0.86, model.faces, { upright: spec.upright });
         }
-        prev.body.r = (spec.size / 2) * (spec.shape === 'chip' ? 1 : 0.86);
+        prev.body.r = (spec.size / 2) * (spec.shape === 'chip' ? 1 : spec.shape === 'deck' ? 0.78 : 0.86);
         prev.body.upright = !!spec.upright;
-        prev.body.flat = spec.shape === 'chip';
+        prev.body.flat = spec.shape === 'chip' || spec.shape === 'deck';
         prev.body.restFaces = spec.restFaces;
         prev.body.fixed = spec.fixed;
         wake();
@@ -480,15 +615,15 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const v = visuals(spec);
       const face = o?.face;
       const q0 = o?.random ? qRandom() : undefined;
-      const body = makeBody(spec.key, x, y, (spec.size / 2) * (spec.shape === 'chip' ? 1 : 0.86), model.faces, { upright: spec.upright, q: q0 });
-      body.flat = spec.shape === 'chip';
+      const body = makeBody(spec.key, x, y, (spec.size / 2) * (spec.shape === 'chip' ? 1 : spec.shape === 'deck' ? 0.78 : 0.86), model.faces, { upright: spec.upright, q: q0 });
+      body.flat = spec.shape === 'chip' || spec.shape === 'deck';
       body.restFaces = spec.restFaces;
       body.fixed = spec.fixed;
       if (face !== undefined && model.faces[face]) {
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
       }
-      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true };
+      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null };
       dice.set(spec.key, d);
       order.push(d);
       wake();
@@ -497,6 +632,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const d = dice.get(key);
       if (!d) return;
       dropVisuals(d);
+      setRing(d, false);
       dice.delete(key);
       order.splice(order.indexOf(d), 1);
       if (held?.die === d) held = null;
@@ -525,6 +661,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       b.settle = undefined;
       b.home = undefined;
       b.vx = b.vy = b.vz = 0;
+      d.jitter = 0;
       held = { die: d, ox: b.x - x, oy: b.y - y, samples: [{ x, y, t: performance.now() }] };
       wake();
     },
@@ -564,6 +701,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const speed = Math.min(sp, cap);
       const b = die.body;
       b.held = false;
+      // Let go off its card, an anchored piece is loose until the table decides where it belongs.
+      if (die.anchor) { die.anchor = null; b.fixed = false; b.ghost = false; }
       const r = b.r;
       launch(b, vx, vy, 0, [vy / r + (Math.random() - 0.5) * speed * 0.01, vx / r + (Math.random() - 0.5) * speed * 0.01, (Math.random() - 0.5) * speed * 0.006]);
       wake();
@@ -606,6 +745,141 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       }
       wake();
     },
+    select(keys) {
+      const want = new Set(keys);
+      for (const d of order) setRing(d, want.has(d.spec.key));
+      wake();
+    },
+    inside(r) {
+      return order.filter((d) => d.body.x >= r.left && d.body.x <= r.right && d.body.y >= r.top && d.body.y <= r.bottom).map((d) => d.spec.key);
+    },
+    jitter(key, amount) {
+      const d = dice.get(key);
+      if (!d) return;
+      d.jitter = Math.max(0, Math.min(1, amount));
+      wake();
+    },
+    shatter(key) {
+      const d = dice.get(key);
+      if (!d) return;
+      const { x, y } = d.body;
+      const rad = d.spec.size / 2;
+      const n = d.spec.shape === 'chip' ? 9 : 12;
+      for (let i = 0; i < n; i++) {
+        const geo = new THREE.TetrahedronGeometry(rad * (0.18 + Math.random() * 0.22));
+        const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(i % 3 === 0 ? d.spec.edge : d.spec.body), roughness: 0.35, metalness: 0.2, transparent: true });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        scene.add(mesh);
+        const ang = Math.random() * Math.PI * 2;
+        const sp = 260 + Math.random() * 520;
+        shards.push({ mesh, x, y, z: rad * 0.6, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, vz: 500 + Math.random() * 600, spin: new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14), born: performance.now() });
+      }
+      engine.remove(key);
+    },
+    field(f, ms) {
+      fields.push({ f, until: performance.now() + ms });
+      wake();
+    },
+    slippery(scale, ms) {
+      slip = { scale, until: performance.now() + ms };
+      for (const d of order) if (!d.body.fixed) d.body.asleep = false;
+      wake();
+    },
+    impulse(x, y, r, speed) {
+      const all = [...order.map((d) => d.body), ...[...cards.values()].flatMap((c) => (c.body ? [c.body] : []))];
+      for (const b of all) {
+        if (b.fixed || b.held || b.ghost) continue;
+        const dx = b.x - x, dy = b.y - y;
+        const d = Math.hypot(dx, dy);
+        if (d >= r) continue;
+        const k = (speed * (1 - d / r)) / (b.box ? 1.6 : 1);
+        const ra = Math.random() * Math.PI * 2;
+        const nx = d > 1 ? dx / d : Math.cos(ra), ny = d > 1 ? dy / d : Math.sin(ra);
+        if (b.box) { b.asleep = false; b.vx += nx * k; b.vy += ny * k; b.va = (b.va ?? 0) + (Math.random() - 0.5) * k * 0.01; continue; }
+        const spin = 0.012 * Math.abs(k) + 8;
+        launch(b, b.vx + nx * k, b.vy + ny * k, 0, [(Math.random() - 0.5) * 2 * spin, (Math.random() - 0.5) * 2 * spin, (Math.random() - 0.5) * spin]);
+      }
+      wake();
+    },
+    setCards(list) {
+      const keep = new Set(list.map((c) => c.key));
+      for (const k of [...cards.keys()]) if (!keep.has(k)) cards.delete(k);
+      for (const c of list) {
+        const a = (c.rot * Math.PI) / 180;
+        const prev = cards.get(c.key);
+        if (c.phys) {
+          let body = prev?.body ?? null;
+          if (!body) {
+            body = makeBody(c.key, c.x, c.y, Math.hypot(c.w, c.h) / 2, CHIP_FACES);
+            body.a = a;
+            body.va = 0;
+            body.mass = 3;
+            body.asleep = true;
+          } else if (body.asleep && !body.held) {
+            body.x = c.x; body.y = c.y; body.a = a;
+          }
+          body.box = { w: c.w, h: c.h };
+          body.r = Math.hypot(c.w, c.h) / 2;
+          cards.set(c.key, { x: body.x, y: body.y, w: c.w, h: c.h, a: body.a ?? 0, body, was: prev?.was ?? true, samples: prev?.samples ?? [] });
+        } else {
+          cards.set(c.key, { x: c.x, y: c.y, w: c.w, h: c.h, a, body: null, was: true, samples: prev?.samples ?? [] });
+        }
+      }
+      placeAnchored();
+      wake();
+    },
+    holdCard(key, x, y, rot) {
+      const c = cards.get(key);
+      if (!c) return;
+      const a = (rot * Math.PI) / 180;
+      c.x = x; c.y = y; c.a = a;
+      const now = performance.now();
+      c.samples.push({ x, y, t: now });
+      while (c.samples.length > 2 && now - c.samples[0].t > 90) c.samples.shift();
+      if (c.body) {
+        const b = c.body;
+        const s0 = c.samples[0];
+        const dt = Math.max(0.008, (now - s0.t) / 1000);
+        b.held = true;
+        b.asleep = false;
+        b.a = a;
+        b.va = 0;
+        // Swept, like a die in the hand, so a fast swing still knocks what it passes.
+        for (const hit of moveHeld([...order.map((d) => d.body), b], b, x, y, (x - s0.x) / dt, (y - s0.y) / dt, bounds, obstacles)) impactCb(hit);
+      }
+      placeAnchored();
+      wake();
+    },
+    releaseCard(key) {
+      const c = cards.get(key);
+      if (!c) return;
+      const samples = c.samples;
+      c.samples = [];
+      if (!c.body) return;
+      const b = c.body;
+      b.held = false;
+      const a = samples[0], z = samples[samples.length - 1];
+      if (a && z && z.t > a.t) {
+        const dt = Math.max(0.016, (z.t - a.t) / 1000);
+        let vx = (z.x - a.x) / dt, vy = (z.y - a.y) / dt;
+        const sp = Math.hypot(vx, vy);
+        if (sp > 3600) { vx *= 3600 / sp; vy *= 3600 / sp; }
+        b.vx = vx; b.vy = vy;
+        b.va = (Math.random() - 0.5) * Math.min(6, sp / 500);
+      }
+      b.asleep = false;
+      wake();
+    },
+    onCards(cb) { cardsCb = cb; },
+    anchor(key, card, lx = 0, ly = 0) {
+      const d = dice.get(key);
+      if (!d) return;
+      if (card) { d.anchor = { card, lx, ly }; d.body.fixed = true; d.body.asleep = true; d.body.vx = d.body.vy = 0; }
+      else if (d.anchor) { d.anchor = null; d.body.fixed = false; d.body.ghost = false; }
+      placeAnchored();
+      wake();
+    },
     hover(key) {
       if (hovered === key) return;
       hovered = key;
@@ -623,8 +897,12 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     dispose() {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
-      for (const d of order) dropVisuals(d);
+      for (const d of order) { dropVisuals(d); setRing(d, false); }
       order.length = 0;
+      for (const sh of shards) { scene.remove(sh.mesh); sh.mesh.geometry.dispose(); (sh.mesh.material as THREE.Material).dispose(); }
+      shards.length = 0;
+      ringGeo.dispose();
+      ringMat.dispose();
       dice.clear();
       engine.setWalls('none', bounds, 0);
       env.dispose();

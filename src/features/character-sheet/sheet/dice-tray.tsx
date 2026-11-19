@@ -950,9 +950,10 @@ export function DiceTray({ up, onToggle, handleRef }: { up: boolean; onToggle: (
     fade.value = reduced ? (up ? 1 : 0) : withTiming(up ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) });
   }, [up, fade, reduced]);
   const fadeStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
-  // Desktop (v0.46.0, owner): the button is empty and opens the tray over the card table, not over the vitals.
+  // Desktop (v0.46.0, owner): the button is empty. v0.47.3: the table has no dice bar any more, so it throws the
+  // Hope and Fear pair on the table (presets are in the table's right-click menu).
   const desktop = !!useDesktop();
-  if (desktop) return <DiceTrayTrigger on={up} onPress={onToggle} empty />;
+  if (desktop) return <DiceTrayTrigger on={false} onPress={() => handleRef.current?.rollDuality('Hope and Fear', 0)} empty />;
   return (
     <>
       <DiceTrayTrigger on={up} onPress={onToggle} />

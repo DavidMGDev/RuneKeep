@@ -1,4 +1,4 @@
-import { BUILTIN_LOOKS, cardOffset, cleanLook, decodeLook, DEFAULT_LOOK, encodeLook, lookScale, lookX, LOOK_PAGES } from './deck-look';
+import { BUILTIN_LOOKS, cardOffset, cleanLook, decodeLook, DEFAULT_LOOK, encodeLook, lookScale, lookX, LOOK_PAGES, randomTables, TABLE_PRESETS, tableScore } from './deck-look';
 
 describe('deck look', () => {
   it('round-trips a look through a share code', () => {
@@ -52,5 +52,23 @@ describe('deck look', () => {
     expect(cardOffset(9, 0, 10, true)).toBe(-1);
     expect(cardOffset(1, 9, 10, true)).toBe(2);
     expect(cardOffset(9, 0, 10, false)).toBe(9);
+  });
+
+  it('ships six whole tables, all different, all inside the limits and laid out cleanly', () => {
+    expect(TABLE_PRESETS).toHaveLength(6);
+    const codes = new Set(TABLE_PRESETS.map((p) => encodeLook(p.look)));
+    expect(codes.size).toBe(6);
+    for (const p of TABLE_PRESETS) {
+      expect(cleanLook(p.look)).toEqual(p.look);
+      expect(tableScore(p.look)).toBeGreaterThanOrEqual(0.99);
+      expect(decodeLook(encodeLook(p.look))).toEqual(p.look);
+    }
+  });
+
+  it('draws random tables that score well, differ, and repeat for the same seed', () => {
+    const a = randomTables(4, 2026);
+    expect(a).toHaveLength(4);
+    for (const l of a) expect(tableScore(l)).toBeGreaterThanOrEqual(0.99);
+    expect(randomTables(4, 2026)).toEqual(a);
   });
 });

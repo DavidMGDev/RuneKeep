@@ -80,16 +80,36 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - `CardThumb` / `Card` — the two-LOD card image pair; reuse everywhere cards render.
 - New shared pieces should land in `src/components/` when used by 2+ screens.
 
-## The desktop play table (v0.47.0, reworked v0.47.1)
+## The desktop play table (v0.47.0, reworked v0.47.1 and v0.47.3)
 
 - Everything right of the desktop sheet is one table seen from above: ink felt (`public/table/felt.webp` plus
   `weave.png`, rendered in Blender by `scripts/blender/make_table.py`, graded by `grade_table.py`). The felt colour
   never changes. No drawer: the hand lies on the same felt, marked off by a faint hairline, a soft shade or nothing.
 - The table's edge is a setting: a gold hairline, a 3D stone wall, a 3D brass rail, or nothing drawn.
-- Dice are seen through an orthographic camera tipped 0.5 rad: no perspective skew anywhere, but tops and fronts
+- Dice are seen through an orthographic camera tipped 0.32 rad: no perspective skew anywhere, but tops and fronts
   both read. Sharp bevels (Blender, `make_dice.py`). Finishes: resin, stone, metal for rolled dice; obsidian,
   gilded, ivory for control dice. Control dice carry their glyph on two opposite faces and always rest on one.
-- Control dice: Roll, State, Cards, Sort and the deck die (a d6 at least). Characters, Rest and Level up live on the
+- Control dice: State, Cards, Sort and the deck die (a d6 at least; thrown or rolled, the face it lands on picks the deck). Characters, Rest and Level up live on the
   port under the traits. A roll's result is a pop-up on the port, accepted with OK, never under the dice.
 - Panels on the table are DOM: 45° chamfers by clip path, 1.2 px gold hairlines, red for the one primary action,
   Archivo Bold capitals for labels. No selection bars: a chosen item is filled red, a hovered one is lit whole.
+- v0.47.3 (round four): input priority is the table's buttons, then pieces, then cards. No dice bar and no Roll or
+  Tokens die: the control dice are Cards, State and Sort deck (top right by default); the supply (top left) is a
+  token (wheel: wood, bone, iron), a colour token (wheel: colour), a die (wheel: d4 to d20, Hope and Fear, d100)
+  and the Deck of Many Things. A click throws out a copy, a drag pulls one, a right click flings one (held, it
+  charges: the piece shakes harder and fires). Supply pieces can be knocked about; Reset sends them home, Tidy
+  (above Reset) puts every loose piece and rolled die back.
+- Pieces dropped on a card are anchored: physics never moves them, only the card or the hand. A card can be made
+  physical (its menu): a box body knocked by dice that carries its anchored pieces. The hand draws a card's tokens
+  flat, the table stands them up in 3D, from the same list; pressing one on a hand card pops it off.
+- Drag on the empty felt to select; the selection bar (top centre) rolls the dice in it, saves them as a preset or
+  puts them back. Presets live in the table menu under Roll dice, each with a delete that asks first.
+- The Deck of Many Things: 22 cards (names and SRD text from the booklet via `scripts/extract-domat.py`; the art is
+  gitignored and only shows in a local build). A drawn card waits on the table; let go after a drag it is consumed
+  and its effect plays from there (push, pull, whirl, shatter, ice, gems, rewind...). Effects are DOM light over
+  the felt plus engine fields and impulses; hard hits shake the table.
+- Layout is part of the look (`ctlX/ctlY/ctlDir`, `supX/supY/supDir`, `catX/catY`, `handMode`): while settings are
+  open every row goes home and can be dragged or stood on end. Six whole tables made for ways of playing
+  (Storyteller, Dice goblin, Tactician, Archivist, Showman, Duelist) and four drawn by `randomTables` and kept,
+  scored by `tableScore` (rows on the table, out of the hand, clear of each other). Share is a link (`#table=RK1:`)
+  or a code, first on the Presets tab.

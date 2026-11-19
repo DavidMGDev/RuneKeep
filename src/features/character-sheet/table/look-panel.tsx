@@ -1,23 +1,27 @@
 /**
- * Table settings (v0.47.0; v0.47.1 owner round two). Lies exactly over the sheet's port, so the whole table stays in
- * view while you change it and nothing on the sheet can be pressed behind it.
+ * Table settings (v0.47.0; v0.47.1 round two; v0.47.3 owner round four). Lies exactly over the sheet's port, so the
+ * whole table stays in view while you change it and nothing on the sheet can be pressed behind it.
  *
- * Four tabs: the Hand (how the row of cards looks), Motion (how it moves), the Table (where the hand lies, the
- * table's edge, the dice) and Looks (ready made, saved, shared). Each tab is a few labelled groups; the ones used
- * least start folded. Every control says what it does in a line.
+ * Four tabs. Presets comes first: share what you have (a link or a code) in one click, pick a whole table made for
+ * a way of playing, save your own, or let the table surprise you. Then the Hand (how the row of cards looks),
+ * Motion (how it moves) and the Table (where the hand lies, the edge, the dice). While settings are open the rows
+ * of pieces on the table can be dragged somewhere else.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { playSfx } from '@/lib/sfx';
-import { BUILTIN_LOOKS, type DeckLook, decodeLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, wearsHand, withHand } from './deck-look';
+import { BUILTIN_LOOKS, type DeckLook, decodeLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, TABLE_PRESETS, wearsHand, withHand } from './deck-look';
 import { loadSavedLooks, type SavedLook, saveSavedLooks } from './table-store';
 import { chamferClip, Glyph, T, TButton } from './table-ui';
 
-const PAGES = [...LOOK_PAGES.map((p) => ({ id: p.id, title: p.title })), { id: 'looks', title: 'Looks' }];
+const PAGES = [{ id: 'presets', title: 'Presets' }, ...LOOK_PAGES.map((p) => ({ id: p.id, title: p.title }))];
 
-export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, box }: { look: DeckLook; onChange: (l: DeckLook) => void; onClose: () => void; onClearTable: () => void; boardCount: number; box: { left: number; top: number; width: number; height: number } }) {
-  const [page, setPage] = useState('hand');
+/** The four tables drawn at random and kept (v0.47.3): seeded, so they are the same for everyone until tuned. */
+export const WILD_TABLES = randomTables(4, 47003).map((look, i) => ({ id: `wild${i + 1}`, name: ['Wild one', 'Wild two', 'Wild three', 'Wild four'][i], who: 'Drawn at random and kept because it worked. Not tuned by hand yet.', look }));
+
+export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, pieceCount, box }: { look: DeckLook; onChange: (l: DeckLook) => void; onClose: () => void; onClearTable: () => void; boardCount: number; pieceCount: number; box: { left: number; top: number; width: number; height: number } }) {
+  const [page, setPage] = useState('presets');
   const body = useRef<HTMLDivElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
   useEffect(() => { body.current?.scrollTo({ top: 0 }); }, [page]);
@@ -41,16 +45,15 @@ export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, b
       <div style={{ display: 'flex', alignItems: 'center', padding: '18px 16px 12px 22px', gap: 10 }}>
         <div style={{ flex: 1 }}>
           <div style={{ color: T.ivory, fontFamily: T.display, fontSize: 19, letterSpacing: 1.4, textTransform: 'uppercase' }}>Table settings</div>
-          <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 13.5, marginTop: 4 }}>Changes show on the table as you make them.</div>
+          <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 13.5, marginTop: 4, lineHeight: '19px' }}>Changes show on the table as you make them. Drag the framed rows on the table to move them.</div>
         </div>
-        <TButton title="Put every setting back" label="Reset" h={30} onPress={() => { playSfx('buttonTap'); onChange(DEFAULT_LOOK); }} />
-        <TButton title="Close settings" h={30} onPress={onClose} icon={<Glyph d='<path d="M6 6l12 12M18 6 6 18"/>' size={14} />} />
+        <TButton title="Close settings" h={32} onPress={onClose} icon={<Glyph d='<path d="M6 6l12 12M18 6 6 18"/>' size={14} />} />
       </div>
       <div role="tablist" ref={tabs} onKeyDown={onTabKey} style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid rgba(218,162,73,0.25)' }}>
         {PAGES.map((p) => <Tab key={p.id} label={p.title} active={page === p.id} onPress={() => { if (page !== p.id) { playSfx('floatMenuHighlight', { volume: 0.5 }); setPage(p.id); } }} />)}
       </div>
-      <div ref={body} className="rk-scroll" style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 22px' }}>
-        {current ? current.groups.map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />) : <LooksPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} />}
+      <div ref={body} className="rk-scroll" style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 28px' }}>
+        {current ? current.groups.filter((g) => !g.hidden).map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />) : <PresetsPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} pieceCount={pieceCount} />}
       </div>
     </div>,
     document.body,
@@ -136,12 +139,20 @@ function SectionTitle({ children }: { children: string }) {
   return <span style={{ color: T.goldText, fontFamily: T.bold, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase' }}>{children}</span>;
 }
 
-function LooksPage({ look, onChange, onClearTable, boardCount }: { look: DeckLook; onChange: (l: DeckLook) => void; onClearTable: () => void; boardCount: number }) {
+/** A link that opens RuneKeep with this table offered to whoever follows it. */
+function shareLink(look: DeckLook): string {
+  const here = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}${window.location.search}` : '';
+  return `${here}#table=${encodeURIComponent(encodeLook(look))}`;
+}
+
+const sameLook = (a: DeckLook, b: DeckLook) => JSON.stringify(a) === JSON.stringify(b);
+
+function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: { look: DeckLook; onChange: (l: DeckLook) => void; onClearTable: () => void; boardCount: number; pieceCount: number }) {
   const [saved, setSaved] = useState<SavedLook[]>(loadSavedLooks);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [note, setNote] = useState<{ text: string; bad?: boolean } | null>(null);
-  const same = (a: DeckLook) => JSON.stringify(a) === JSON.stringify(look);
+  const [surprise, setSurprise] = useState(0);
   const store = (list: SavedLook[]) => { setSaved(list); saveSavedLooks(list); };
   const save = () => {
     const n = name.trim();
@@ -150,62 +161,147 @@ function LooksPage({ look, onChange, onClearTable, boardCount }: { look: DeckLoo
     setName('');
     playSfx('cardSelect', { volume: 0.6 });
   };
-  const copy = () => {
-    const text = encodeLook(look);
+  const copy = (text: string, what: string) => {
     void navigator.clipboard?.writeText(text).then(
-      () => setNote({ text: 'Code copied. Paste it to whoever should have this table.' }),
-      () => setNote({ text: text }),
+      () => setNote({ text: `${what} copied. Send it to whoever should have this table.` }),
+      () => setNote({ text }),
     );
     playSfx('buttonTap');
   };
   const use = () => {
-    const l = decodeLook(code);
-    if (!l) { setNote({ text: 'That is not a table code. Codes start with RK1: and come from Copy code.', bad: true }); playSfx('cardDisable', { volume: 0.5 }); return; }
+    // A link or a bare code: both carry the same RK1 code.
+    const m = /table=([^&\s]+)/.exec(code);
+    const l = decodeLook(m ? decodeURIComponent(m[1]) : code);
+    if (!l) { setNote({ text: 'That is not a table. Paste a link or a code that came from Copy link or Copy code.', bad: true }); playSfx('cardDisable', { volume: 0.5 }); return; }
     onChange(l);
     setCode('');
     setNote({ text: 'Applied. Save it below to keep it.' });
     playSfx('cardSelect', { volume: 0.6 });
   };
-  const block = { display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 0 12px', borderBottom: '1px solid rgba(218,162,73,0.14)' } as const;
+  const block = { display: 'flex', flexDirection: 'column', gap: 9, padding: '16px 0 14px', borderBottom: '1px solid rgba(218,162,73,0.14)' } as const;
+  const shuffle = () => {
+    const seed = (Date.now() + surprise * 7919) >>> 0;
+    const l = randomTables(1, seed)[0];
+    if (l) { onChange(l); setSurprise((s) => s + 1); playSfx('carouselScroll', { volume: 0.8, cents: 300 }); }
+  };
   return (
     <>
       <div style={block}>
-        <SectionTitle>Ready-made hands</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>These change the hand only; your table, dice and motion stay as they are.</span>
+        <SectionTitle>Share this table</SectionTitle>
+        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Everything you have set, hand, motion, table and where the pieces live. A link opens it for them; a code fits in a chat.</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <TButton label="Copy link" primary wide h={34} onPress={() => copy(shareLink(look), 'Link')} />
+          <TButton label="Copy code" wide h={34} onPress={() => copy(encodeLook(look), 'Code')} />
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Field value={code} onChange={(v) => { setCode(v); setNote(null); }} placeholder="Paste a link or a code" onEnter={use} max={3000} />
+          <TButton label="Use" h={34} disabled={!code.trim()} onPress={use} />
+        </div>
+        {note ? <span role="status" style={{ color: note.bad ? '#E2705A' : T.goldText, fontFamily: T.medium, fontSize: 13, lineHeight: '18px', wordBreak: 'break-all' }}>{note.text}</span> : null}
+      </div>
+
+      <div style={block}>
+        <SectionTitle>Tables</SectionTitle>
+        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Each one is a way of playing: it sets the whole table, the hand and where every piece lives.</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {TABLE_PRESETS.map((p) => <TableTile key={p.id} name={p.name} who={p.who} look={p.look} active={sameLook(look, p.look)} onPress={() => { playSfx('cardSelect', { volume: 0.6 }); onChange(p.look); }} />)}
+        </div>
+      </div>
+
+      <div style={block}>
+        <SectionTitle>Wild tables</SectionTitle>
+        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Drawn at random until they came out right. Or roll a new one.</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {WILD_TABLES.map((p) => <TableTile key={p.id} name={p.name} who="" look={p.look} active={sameLook(look, p.look)} onPress={() => { playSfx('cardSelect', { volume: 0.6 }); onChange(p.look); }} />)}
+        </div>
+        <TButton label="Surprise me" h={34} onPress={shuffle} />
+      </div>
+
+      <div style={block}>
+        <SectionTitle>Your tables</SectionTitle>
+        {saved.length === 0 ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>Nothing saved yet. Name what you have now to keep it.</span> : null}
+        {saved.map((s) => (
+          <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+            <div style={{ flex: 1 }}><LookRow name={s.name} active={sameLook(look, s.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(s.look); }} /></div>
+            <TButton title={`Copy a link to ${s.name}`} h={34} onPress={() => copy(shareLink(s.look), 'Link')} icon={<Glyph d='<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>' size={14} color={T.muted} />} />
+            <TButton title={`Delete ${s.name}`} h={34} onPress={() => { playSfx('tokenRemove', { volume: 0.6 }); store(saved.filter((x) => x.name !== s.name)); }} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={13} color={T.muted} />} />
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Field value={name} onChange={setName} placeholder="Name this table" onEnter={save} max={40} />
+          <TButton label="Save" h={34} disabled={!name.trim()} onPress={save} />
+        </div>
+      </div>
+
+      <div style={block}>
+        <SectionTitle>Hands only</SectionTitle>
+        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>These change the row of cards and nothing else.</span>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
           {BUILTIN_LOOKS.map((b) => <LookRow key={b.name} name={b.name} active={wearsHand(look, b.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(withHand(look, b.look)); }} />)}
         </div>
       </div>
-      <div style={block}>
-        <SectionTitle>Your tables</SectionTitle>
-        {saved.length === 0 ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>Nothing saved yet. Name what you have now to keep it: hand, motion and table together.</span> : null}
-        {saved.map((s) => (
-          <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-            <div style={{ flex: 1 }}><LookRow name={s.name} active={same(s.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(s.look); }} /></div>
-            <TButton title={`Delete ${s.name}`} h={30} onPress={() => { playSfx('tokenRemove', { volume: 0.6 }); store(saved.filter((x) => x.name !== s.name)); }} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={13} color={T.muted} />} />
-          </div>
-        ))}
-        <div style={{ display: 'flex', gap: 5 }}>
-          <Field value={name} onChange={setName} placeholder="Name this table" onEnter={save} max={40} />
-          <TButton label="Save" h={32} disabled={!name.trim()} onPress={save} />
-        </div>
-      </div>
-      <div style={block}>
-        <SectionTitle>Share</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>Copy a code for everything you have set, or paste one someone sent you.</span>
-        <TButton label="Copy code" primary h={32} onPress={copy} />
-        <div style={{ display: 'flex', gap: 5 }}>
-          <Field value={code} onChange={(v) => { setCode(v); setNote(null); }} placeholder="Paste a code (RK1:...)" onEnter={use} max={2000} />
-          <TButton label="Use" h={32} disabled={!code.trim()} onPress={use} />
-        </div>
-        {note ? <span role="status" style={{ color: note.bad ? '#E2705A' : T.goldText, fontFamily: T.medium, fontSize: 13, lineHeight: '18px', wordBreak: 'break-all' }}>{note.text}</span> : null}
-      </div>
+
       <div style={{ ...block, borderBottom: 'none' }}>
-        <SectionTitle>Cards on the table</SectionTitle>
-        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>{boardCount ? `${boardCount} card${boardCount === 1 ? '' : 's'} laid out. Clearing puts the copies away; the cards stay in your decks.` : 'None laid out. Click the centre card of your hand to take a copy.'}</span>
-        <TButton label="Clear the table" h={32} disabled={!boardCount} onPress={() => { playSfx('tokenRemove'); onClearTable(); }} />
+        <SectionTitle>Start over</SectionTitle>
+        <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>
+          {boardCount || pieceCount ? `On the table: ${[boardCount ? `${boardCount} card${boardCount === 1 ? '' : 's'}` : '', pieceCount ? `${pieceCount} loose piece${pieceCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')}. Clearing puts it all away; your decks keep every card.` : 'The table is clear.'}
+        </span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <TButton label="Clear the table" h={34} disabled={!boardCount && !pieceCount} onPress={() => { playSfx('tokenRemove'); onClearTable(); }} />
+          <TButton label="Default layout" h={34} title="Put the rows of pieces back where they start" onPress={() => { playSfx('buttonTap'); const out = { ...look } as Record<string, unknown>; for (const k of PLACE_KEYS) out[k] = DEFAULT_LOOK[k]; onChange(out as unknown as DeckLook); }} />
+          <TButton label="Every setting" h={34} title="Put every setting back as it came" onPress={() => { playSfx('buttonTap'); onChange(DEFAULT_LOOK); }} />
+        </div>
       </div>
     </>
+  );
+}
+
+/**
+ * A whole table as a tile: a little map of it (the felt, where the hand lies, the rows of pieces) over its name and
+ * who it is for.
+ */
+function TableTile({ name, who, look, active, onPress }: { name: string; who: string; look: DeckLook; active: boolean; onPress: () => void }) {
+  const [hover, setHover] = useState(false);
+  const map = useMemo(() => tableMap(look), [look]);
+  return (
+    <button type="button" onClick={onPress} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} aria-pressed={active} title={who || name} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
+      <div style={{ clipPath: chamferClip(6), background: active ? T.red : hover ? T.goldBright : 'rgba(218,162,73,0.3)', padding: 1.2 }}>
+        <div style={{ clipPath: chamferClip(5.5), background: active ? 'rgba(200,27,24,0.2)' : hover ? T.panelLit : T.panel, padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {map}
+          <span style={{ color: active || hover ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 13.5 }}>{name}</span>
+          {who ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, lineHeight: '16px' }}>{who}</span> : null}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/** The little map: 120 x 80 units for the table. */
+function tableMap(l: DeckLook) {
+  const W = 120, H = 80;
+  const handTop = l.areaPos === 'top' ? 0 : l.areaPos === 'middle' ? 0.5 - l.areaSize / 200 : 1 - l.areaSize / 100;
+  const handH = l.areaSize / 100;
+  const cardW = Math.max(5, Math.min(16, l.size / 16));
+  const cardH = cardW * 1.4;
+  const cy = (handTop + handH * Math.min(0.75, Math.max(0.25, l.rowY))) * H;
+  const n = Math.min(9, l.side * 2 + 1);
+  const step = cardW * Math.max(0.22, 1 + l.spacing);
+  const cards = l.handMode === 'spread'
+    ? Array.from({ length: 10 }, (_, i) => ({ x: 14 + (i % 5) * 16, y: 26 + Math.floor(i / 5) * 22, r: 0 }))
+    : Array.from({ length: n }, (_, i) => { const k = i - (n - 1) / 2; return { x: W / 2 + k * step, y: cy + l.arc * 0.06 * (k / Math.max(1, (n - 1) / 2)) ** 2, r: k * l.tilt * 0.8 }; });
+  const dot = (x: number, y: number, c: string, s = 3.2) => <rect x={x - s} y={y - s} width={s * 2} height={s * 2} transform={`rotate(45 ${x} ${y})`} fill={c} />;
+  const row = (x: number, y: number, count: number, dir: 'row' | 'column', c: string, gap: number) => Array.from({ length: count }, (_, i) => { const o = (i - (count - 1) / 2) * gap; return <g key={`${c}${i}`}>{dot(dir === 'row' ? x * W + o : x * W, dir === 'row' ? y * H : y * H + o, c)}</g>; });
+  const wall = l.walls === 'brass' ? '#C8923A' : l.walls === 'stone' ? '#4a4f58' : l.walls === 'line' ? 'rgba(218,162,73,0.45)' : 'transparent';
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: 'block', aspectRatio: '3 / 2' }} aria-hidden="true">
+      <rect x="0" y="0" width={W} height={H} fill="#16301f" />
+      <rect x="1" y="1" width={W - 2} height={H - 2} fill="none" stroke={wall} strokeWidth={l.walls === 'stone' ? 3 : 1.4} />
+      {l.handMode === 'carousel' && l.areaMode === 'tray' ? <rect x="3" y={handTop * H + 1} width={W - 6} height={handH * H - 2} fill="rgba(0,0,0,0.22)" /> : null}
+      {cards.map((c, i) => <rect key={i} x={c.x - cardW / 2} y={c.y - cardH / 2} width={cardW} height={cardH} fill={i === Math.floor(cards.length / 2) && l.handMode === 'carousel' ? '#efe4c8' : '#b9ab8c'} stroke="#2a2216" strokeWidth="0.5" transform={`rotate(${c.r} ${c.x} ${c.y})`} />)}
+      {l.controls !== 'hidden' ? row(l.ctlX, l.ctlY, 3, l.ctlDir, l.controlDice === 'gilded' ? '#E0B563' : l.controlDice === 'ivory' ? '#EAE0C8' : '#0e1117', 7) : null}
+      {l.controls !== 'hidden' ? dot(l.catX * W, l.catY * H, '#C81B18', 4.4) : null}
+      {l.tokenTray ? row(l.supX, l.supY, 4, l.supDir, '#9A6B3C', 6) : null}
+    </svg>
   );
 }
 

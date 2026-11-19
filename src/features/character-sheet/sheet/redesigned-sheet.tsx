@@ -2885,11 +2885,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
    * before and is the path anybody already relies on.
    */
   const rollTrait = useCallback((label: string, value: number) => {
-    if (trayRef.current && diceUpRef.current) { trayRef.current.rollDuality(label, value); return; }
+    // Desktop rolls on the table itself, which is always there (v0.47.3: no dice bar to open first).
+    if (trayRef.current && (diceUpRef.current || desktop)) { trayRef.current.rollDuality(label, value); return; }
     setDiceUp(true);
     playSfx('panelOpen');
     setTimeout(() => trayRef.current?.rollDuality(label, value), 0);
-  }, []);
+  }, [desktop]);
   /** The tray's live state, so the tap above reads it without being rebuilt every time it changes. */
   const diceUpRef = useRef(false);
   diceUpRef.current = diceUp;

@@ -19,7 +19,7 @@ export const DEFAULT_W = 170;
 /** The biggest a card may grow: most of the felt's height, and never past 460 px wide. */
 export const maxW = (feltH: number) => Math.max(MIN_W, Math.min(460, (feltH * 0.94 * FORGED_W) / FORGED_H));
 
-export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, overTray, onMenu, onLift, onCarry, onSettle }: {
+export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, overTray, onMenu, onLift, onCarry, onSettle, onDragTo, hidden }: {
   cards: BoardCard[];
   lookup: (id: string) => TableCard | undefined;
   feltW: number;
@@ -34,6 +34,10 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   onLift: (card: BoardCard) => void;
   onCarry: (dx: number, dy: number) => void;
   onSettle: () => void;
+  /** Where a card being dragged is now (px), so its pieces and its physics follow; `end` when it is let go. */
+  onDragTo: (uid: string, x: number, y: number, rot: number, end?: boolean) => void;
+  /** Cards not drawn (breaking into shards right now). */
+  hidden?: Set<string>;
 }) {
   const [front, setFront] = useState<string[]>([]);
   const [returning, setReturning] = useState<string | null>(null);
@@ -43,7 +47,7 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
     <>
       {ordered.map((c) => {
         const card = lookup(c.id);
-        if (!card) return null;
+        if (!card || hidden?.has(c.uid)) return null;
         return (
           <Placed
             key={c.uid}
@@ -56,6 +60,7 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
             onLift={() => onLift(c)}
             onCarry={onCarry}
             onSettle={onSettle}
+            onDragTo={(x, y, end) => onDragTo(c.uid, x, y, c.rot ?? 0, end)}
             onMove={(fx, fy, over) => { setReturning(over ? c.uid : null); onChange(cards.map((x) => (x.uid === c.uid ? { ...x, fx, fy } : x))); }}
             onDrop={(over) => { setReturning(null); if (over) onReturn(c.uid); }}
             onResize={(w) => onChange(cards.map((x) => (x.uid === c.uid ? { ...x, w } : x)))}
@@ -70,9 +75,9 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   );
 }
 
-const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGrab, onLift, onCarry, onSettle, onMove, onDrop, onResize, onRotate, onTurn, overTray, onMenu }: {
+const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, overTray, onMenu }: {
   entry: BoardCard; card: TableCard; feltW: number; feltH: number; returning: boolean;
-  onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
+  onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onDragTo: (x: number, y: number, end?: boolean) => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
   onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
 }) {
   const [hover, setHover] = useState(false);
@@ -153,6 +158,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       const nextF = { fx: nx / feltW, fy: Math.min(1.4, Math.max(0.03, ny / feltH)) };
       onCarry((nextF.fx - last.fx) * feltW, (nextF.fy - last.fy) * feltH);
       last = nextF;
+      onDragTo(nextF.fx * feltW, nextF.fy * feltH);
       onMove(last.fx, last.fy, overTray(m.clientX, m.clientY));
     };
     const up = (u: PointerEvent) => {
@@ -162,7 +168,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, onGr
       setDrag(null);
       if (mode === 'size' && !moved) { playSfx('cardDragEnd', { volume: 0.5 }); onResize(DEFAULT_W); return; }
       if (mode === 'move') {
-        if (moved) onSettle();
+        if (moved) { onSettle(); onDragTo(last.fx * feltW, last.fy * feltH, true); }
         if (!moved) { if (pages > 1) { playSfx('gearScroll2', { volume: 0.5 }); onTurn(); } return; }
         const over = overTray(u.clientX, u.clientY);
         playSfx(over ? 'tokenRemove' : 'cardDragEnd', { volume: 0.7 });

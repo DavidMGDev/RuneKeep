@@ -109,3 +109,29 @@ export function bundledTrackerCards(file: CharacterFile) {
     imageUri: null, ...CLASS_TRACKERS['brawler|Combo Strike'],
   }] : [];
 }
+
+/**
+ * Every class card as its own cards, for any character (v0.47.3, owner: "There are no longer paginated cards").
+ *
+ * A character saved before its class expanded (an older file, an import) still drew its class as one paged
+ * card, and the desktop hand shows a paged card as its first page only, so the class looked like one card where
+ * the phone showed several. This does once what the sheet's Expand did by hand: the class (and every class card
+ * picked up from Add Gear) expands, each page keeping the deck the paged card was in. Nothing is written but the
+ * flags; returns the same file when there is nothing to expand.
+ */
+export function expandAllClassCards(f: CharacterFile): CharacterFile {
+  const pagesOf = (cls: string): number => {
+    try { return featurePages(cls as ClassName).length; } catch { return 0; }
+  };
+  let out = f;
+  if (!f.classExpanded && !f.classless && pagesOf(f.className) > 0) {
+    const cat = f.cardCategory?.[`features-${f.className}`];
+    const cardCategory = { ...(f.cardCategory ?? {}) };
+    if (cat) for (let i = 0; i < pagesOf(f.className); i++) cardCategory[classPageId(f.className, i)] = cat;
+    out = { ...out, classExpanded: true, cardCategory };
+  }
+  const done = new Set(f.expandedClassCards ?? []);
+  const more = [...new Set((f.acquiredCardIds ?? []).map((id) => id.split('#')[0]))].filter((id) => id.startsWith('class-') && !done.has(id) && pagesOf(id.slice(6)) > 1);
+  if (more.length) out = { ...out, expandedClassCards: [...done, ...more] };
+  return out;
+}

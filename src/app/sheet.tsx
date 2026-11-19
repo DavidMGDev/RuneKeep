@@ -11,6 +11,7 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { RedesignedSheet } from '@/features/character-sheet/sheet/redesigned-sheet';
 import { type CharacterFile } from '@/lib/character-file';
 import { getCharacter, saveCharacter } from '@/lib/character-store';
+import { expandAllClassCards } from '@/lib/class-cards';
 import { listExpansions } from '@/lib/library-store';
 import { withClassCards } from '@/lib/played-class';
 import { shouldShow } from '@/lib/onboarding-store';
@@ -44,7 +45,8 @@ export default function Sheet() {
       .then(async (file) => {
         if (!file) return file;
         const packs = await listExpansions().catch(() => []);
-        const whole = withClassCards(file, packs.flatMap((e) => e.cards));
+        // v0.47.3: and every class card stands as its own cards (no paged class card on any device).
+        const whole = expandAllClassCards(withClassCards(file, packs.flatMap((e) => e.cards)));
         if (whole !== file) await saveCharacter(whole);
         return whole;
       })

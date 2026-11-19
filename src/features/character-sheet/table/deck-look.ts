@@ -101,8 +101,23 @@ export interface DeckLook {
   controlDice: 'obsidian' | 'gilded' | 'ivory';
   /** The table's controls as dice you can throw, as plain buttons, or hidden (right click still has them). */
   controls: 'dice' | 'buttons' | 'hidden';
-  /** The tray of tokens to drag onto cards. */
+  /** The token supply lying ready on the table (tokens and a token die to throw out copies of). */
   tokenTray: boolean;
+  /** The hand as a carousel, or every card of the deck laid out on the table at once (v0.47.3). */
+  handMode: 'carousel' | 'spread';
+  // Where the table's pieces live (v0.47.3, owner: drag them while settings are open). Shares of the table, the
+  // centre of each row; a row runs across or down.
+  /** The control dice (Cards, State, Sort deck). */
+  ctlX: number;
+  ctlY: number;
+  ctlDir: 'row' | 'column';
+  /** The token supply and the Deck of Many Things. */
+  supX: number;
+  supY: number;
+  supDir: 'row' | 'column';
+  /** The deck die. */
+  catX: number;
+  catY: number;
 }
 
 export const DEFAULT_LOOK: DeckLook = {
@@ -111,6 +126,7 @@ export const DEFAULT_LOOK: DeckLook = {
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
   scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, hoverLift: 10, hoverZoom: 1.04, centreClick: 'take', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', tokenTray: true,
+  handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36,
 };
 
 type NumKey = { [K in keyof DeckLook]: DeckLook[K] extends number ? K : never }[keyof DeckLook];
@@ -122,8 +138,11 @@ export type LookControl =
   | { kind: 'choice'; key: ChoiceKey; label: string; help: string; options: { value: string; label: string }[] }
   | { kind: 'toggle'; key: BoolKey; label: string; help: string };
 
-/** A labelled group of controls. `more` groups start folded, so a page opens on the few that matter most. */
-export interface LookGroup { title: string; more?: boolean; controls: LookControl[] }
+/**
+ * A labelled group of controls. `more` groups start folded, so a page opens on the few that matter most; a
+ * `hidden` group is never drawn (set by dragging on the table instead) but still checked like the rest.
+ */
+export interface LookGroup { title: string; more?: boolean; hidden?: boolean; controls: LookControl[] }
 export interface LookPage { id: string; title: string; groups: LookGroup[] }
 
 const opts = (...pairs: [string, string][]) => pairs.map(([value, label]) => ({ value, label }));
@@ -216,6 +235,7 @@ export const LOOK_PAGES: LookPage[] = [
       {
         title: 'Where the hand lies',
         controls: [
+          { kind: 'choice', key: 'handMode', label: 'Hand', help: 'A carousel you scroll through, or every card of the deck laid out on the table to move about freely.', options: opts(['carousel', 'Carousel'], ['spread', 'Laid out']) },
           { kind: 'choice', key: 'areaMode', label: 'Hand area', help: 'Its own area that dice stay out of, or the open table, shared with dice and cards.', options: opts(['tray', 'Own area'], ['free', 'Open table']) },
           { kind: 'choice', key: 'areaPos', label: 'Position', help: 'Where on the table the hand sits.', options: opts(['bottom', 'Bottom'], ['middle', 'Middle'], ['top', 'Top']) },
           { kind: 'range', key: 'areaSize', label: 'Area size', help: 'How much of the table the hand takes.', min: 18, max: 80, step: 1, unit: '%' },
@@ -225,16 +245,33 @@ export const LOOK_PAGES: LookPage[] = [
       {
         title: 'Dice',
         controls: [
-          { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck, roll, tokens, cards, state and sort controls as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
+          { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck die and the Cards, State and Sort deck dice, as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
           { kind: 'choice', key: 'controlDice', label: 'Control dice', help: 'How the control dice are made.', options: opts(['obsidian', 'Obsidian'], ['gilded', 'Gilded'], ['ivory', 'Ivory']) },
           { kind: 'choice', key: 'numberDice', label: 'Rolling dice', help: 'How the dice you roll are made.', options: opts(['resin', 'Resin'], ['stone', 'Stone'], ['metal', 'Metal']) },
           { kind: 'choice', key: 'walls', label: 'Table edge', help: 'What the dice bounce off at the edge. Every choice stops them; Nothing just isn\'t drawn.', options: opts(['line', 'Hairline'], ['stone', 'Stone wall'], ['brass', 'Brass rail'], ['none', 'Nothing']) },
-          { kind: 'toggle', key: 'tokenTray', label: 'Token supply', help: 'Tokens and a token die lying ready on the table. Click one to throw out a copy; the Tokens die shows and hides them too.' },
+          { kind: 'toggle', key: 'tokenTray', label: 'Token supply', help: 'A token, a colour token, a die and the Deck of Many Things lying ready on the table. Click one to throw out a copy, scroll over it to change it.' },
+        ],
+      },
+      {
+        title: 'Where the pieces live',
+        hidden: true,
+        controls: [
+          { kind: 'range', key: 'ctlX', label: 'Control dice across', help: '', min: 0, max: 1, step: 0.001 },
+          { kind: 'range', key: 'ctlY', label: 'Control dice down', help: '', min: 0, max: 1, step: 0.001 },
+          { kind: 'choice', key: 'ctlDir', label: 'Control dice run', help: '', options: opts(['row', 'Across'], ['column', 'Down']) },
+          { kind: 'range', key: 'supX', label: 'Supply across', help: '', min: 0, max: 1, step: 0.001 },
+          { kind: 'range', key: 'supY', label: 'Supply down', help: '', min: 0, max: 1, step: 0.001 },
+          { kind: 'choice', key: 'supDir', label: 'Supply run', help: '', options: opts(['row', 'Across'], ['column', 'Down']) },
+          { kind: 'range', key: 'catX', label: 'Deck die across', help: '', min: 0, max: 1, step: 0.001 },
+          { kind: 'range', key: 'catY', label: 'Deck die down', help: '', min: 0, max: 1, step: 0.001 },
         ],
       },
     ],
   },
 ];
+
+/** The settings that say where the pieces live: a table preset sets them, Reset layout puts them back. */
+export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY'] as const;
 
 /** Settings that shape the hand; a ready-made look changes only these, never your table. */
 export const HAND_KEYS: (keyof DeckLook)[] = LOOK_PAGES.filter((p) => p.id === 'hand').flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
@@ -263,6 +300,117 @@ export const wearsHand = (current: DeckLook, look: DeckLook): boolean => HAND_KE
 const ALL_CONTROLS = LOOK_PAGES.flatMap((p) => p.groups.flatMap((g) => g.controls));
 
 /**
+ * A random table that still makes sense (v0.47.3): every choice drawn from its list and every number from a range
+ * that reads well, the rows kept out of the hand and away from each other. `tableScore` says how good it came out;
+ * `randomTables` keeps drawing until it has `n` good, different ones.
+ */
+export function randomTable(rand: () => number): DeckLook {
+  const pick = <V,>(xs: readonly V[]): V => xs[Math.floor(rand() * xs.length)];
+  const span = (a: number, b: number, step = 0.01) => Math.round((a + rand() * (b - a)) / step) * step;
+  const areaPos = pick(['bottom', 'middle', 'top'] as const);
+  const areaSize = Math.round(span(24, 48, 1));
+  const spread = rand() < 0.18;
+  const shape = pick(['row', 'stack', 'fan', 'shelf', 'spot'] as const);
+  const hand: Partial<DeckLook> =
+    shape === 'stack' ? { spacing: span(-0.88, -0.7), pack: span(0.1, 0.3), side: Math.round(span(6, 14, 1)), shrink: span(0, 0.04) }
+    : shape === 'fan' ? { spacing: span(-0.5, -0.3), arc: Math.round(span(30, 90, 2)), tilt: span(3, 9, 0.5), side: Math.round(span(3, 6, 1)), rowY: span(0.2, 0.4), stack: pick(['left', 'right'] as const) }
+    : shape === 'shelf' ? { spacing: span(-0.5, -0.3), turn: Math.round(span(35, 65, 1)), perspective: Math.round(span(900, 1600, 10)), side: Math.round(span(5, 9, 1)), shrink: span(0.02, 0.05) }
+    : shape === 'spot' ? { side: Math.round(span(1, 3, 1)), shrink: span(0.14, 0.24), glow: span(0.3, 0.7), dim: span(0.2, 0.4) }
+    : { spacing: span(0, 0.12), side: Math.round(span(3, 8, 1)), shrink: span(0, 0.09) };
+  // Rows go in the open band (outside the hand), each in its own corner.
+  const handTop = areaPos === 'top' ? 0 : areaPos === 'middle' ? 0.5 - areaSize / 200 : 1 - areaSize / 100;
+  const handBottom = handTop + areaSize / 100;
+  const bands = areaPos === 'top' ? [[handBottom + 0.06, 0.94]] : areaPos === 'bottom' ? [[0.06, handTop - 0.06]] : [[0.06, handTop - 0.05], [handBottom + 0.05, 0.94]];
+  const yIn = (band: number[]) => span(band[0], Math.max(band[0], band[1]), 0.001);
+  const corners = [0, 1, 2, 3].sort(() => rand() - 0.5);
+  if (spread) bands.splice(0, bands.length, [0.07, 0.1], [0.9, 0.93]);
+  const spot = (i: number) => {
+    const band = bands[Math.min(bands.length - 1, corners[i] >> 1)] ?? [0.06, 0.94];
+    return { x: corners[i] % 2 ? span(0.72, 0.92, 0.001) : span(0.08, 0.28, 0.001), y: yIn(band) };
+  };
+  const c = spot(0), u = spot(1), k = spot(2);
+  return cleanLook({
+    ...DEFAULT_LOOK,
+    ...hand,
+    size: Math.round(span(140, 260, 2)),
+    edge: pick(['fade', 'darken', 'blur', 'none'] as const),
+    dim: hand.dim ?? span(0, 0.2),
+    glow: hand.glow ?? (rand() < 0.3 ? span(0.2, 0.6) : 0),
+    hoverLift: Math.round(span(4, 30, 1)),
+    hoverZoom: span(1.02, 1.12),
+    switchFx: pick(['slide', 'deal', 'fade'] as const),
+    handMode: spread ? 'spread' : 'carousel',
+    areaMode: pick(['tray', 'free'] as const),
+    areaPos,
+    areaSize,
+    divider: pick(['line', 'shade', 'none'] as const),
+    walls: pick(['line', 'stone', 'brass', 'none'] as const),
+    numberDice: pick(['resin', 'stone', 'metal'] as const),
+    controlDice: pick(['obsidian', 'gilded', 'ivory'] as const),
+    controls: rand() < 0.75 ? 'dice' : 'buttons',
+    tokenTray: rand() < 0.85,
+    ctlX: c.x, ctlY: c.y, ctlDir: rand() < 0.7 ? 'row' : 'column',
+    supX: u.x, supY: u.y, supDir: rand() < 0.65 ? 'row' : 'column',
+    catX: k.x, catY: k.y,
+  });
+}
+
+/** How much room each row of pieces takes, labels included, as shares of a 1180 x 900 table (measured on screen). */
+const REF_W = 1180, REF_H = 900;
+function rowBox(x: number, y: number, kind: 'ctl' | 'sup' | 'cat' | 'buttons', dir: 'row' | 'column') {
+  const [w, h] = kind === 'cat' ? [130, 150]
+    : kind === 'buttons' ? (dir === 'row' ? [470, 44] : [160, 190])
+    : kind === 'ctl' ? (dir === 'row' ? [2 * 94 + 100, 104] : [100, 2 * 94 + 104])
+    : dir === 'row' ? [3 * 70 + 120, 124] : [124, 3 * 70 + 124];
+  return { l: x - w / 2 / REF_W, r: x + w / 2 / REF_W, t: y - h / 2 / REF_H, b: y + h / 2 / REF_H };
+}
+
+/**
+ * 0 (unusable) to 1 (clean): every row on the table, out of the hand (and, laid out, clear of the cards), clear of
+ * each other with room to breathe, and a centre card that fits its area.
+ */
+export function tableScore(l: DeckLook): number {
+  let score = 1;
+  const handTop = l.areaPos === 'top' ? 0 : l.areaPos === 'middle' ? 0.5 - l.areaSize / 200 : 1 - l.areaSize / 100;
+  const handBottom = handTop + l.areaSize / 100;
+  const boxes = [];
+  if (l.controls !== 'hidden') {
+    boxes.push(rowBox(l.ctlX, l.ctlY, l.controls === 'buttons' ? 'buttons' : 'ctl', l.ctlDir));
+    if (l.controls === 'dice') boxes.push(rowBox(l.catX, l.catY, 'cat', 'row'));
+  }
+  if (l.tokenTray) boxes.push(rowBox(l.supX, l.supY, 'sup', l.supDir));
+  for (const b of boxes) {
+    if (b.l < 0.01 || b.r > 0.99 || b.t < 0.01 || b.b > 0.99) score -= 0.3;
+    if (l.handMode === 'carousel' && b.b > handTop && b.t < handBottom) score -= 0.35;
+    // Laid out, the cards fill the middle of the table: the rows keep to its edges.
+    if (l.handMode === 'spread' && !(b.b < 0.15 || b.t > 0.84 || b.r < 0.13 || b.l > 0.87)) score -= 0.35;
+  }
+  const gx = 24 / REF_W, gy = 24 / REF_H;
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j];
+    if (a.l - gx < b.r && b.l - gx < a.r && a.t - gy < b.b && b.t - gy < a.b) score -= 0.4;
+  }
+  // The centre card should fit its area's height (as on a 900 px table).
+  const cardH = l.size * 1.4;
+  if (l.handMode === 'carousel' && cardH > (l.areaSize / 100) * REF_H * 0.95) score -= 0.3;
+  return Math.max(0, score);
+}
+
+/** `n` random tables that score well and differ from each other, from a seed (the same seed gives the same ones). */
+export function randomTables(n: number, seed: number): DeckLook[] {
+  let s = seed >>> 0;
+  const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const out: DeckLook[] = [];
+  for (let tries = 0; out.length < n && tries < 4000; tries++) {
+    const l = randomTable(rand);
+    if (tableScore(l) < 0.99) continue;
+    if (out.some((o) => o.areaPos === l.areaPos && o.handMode === l.handMode && o.walls === l.walls)) continue;
+    out.push(l);
+  }
+  return out;
+}
+
+/**
  * A look made safe to use: every field present, numbers inside the panel's limits, choices from the list.
  * Anything missing or wrong falls back to the default, so an old save or a hand-edited code still loads.
  */
@@ -281,6 +429,49 @@ export function cleanLook(raw: unknown): DeckLook {
   }
   return out;
 }
+
+/**
+ * Whole tables, ready made (v0.47.3, owner): each one a way somebody likes to play, built as a layout first. They
+ * set everything (hand, motion, table and where the pieces live); a hand look above changes only the hand.
+ */
+export interface TablePreset { id: string; name: string; who: string; look: DeckLook }
+const T = (look: Partial<DeckLook>): DeckLook => cleanLook({ ...DEFAULT_LOOK, ...look });
+export const TABLE_PRESETS: TablePreset[] = [
+  {
+    id: 'story', name: 'Storyteller', who: 'One card at a time and nothing in the way. Controls stay a right click off, the felt is open for the scene.',
+    look: T({ size: 260, side: 2, shrink: 0.2, dim: 0.3, blur: 1.4, glow: 0.55, edge: 'fade', edgeWidth: 26, lift: 10, hoverLift: 4, hoverZoom: 1.02, switchFx: 'fade',
+      areaMode: 'free', areaPos: 'bottom', areaSize: 46, divider: 'none', walls: 'none', controls: 'hidden', tokenTray: false, numberDice: 'stone', controlDice: 'ivory', catX: 0.06, catY: 0.26 }),
+  },
+  {
+    id: 'goblin', name: 'Dice goblin', who: 'Rolls all the time and plays with the dice between turns. A tight hand, a huge table, the supply down the left side.',
+    look: T({ size: 150, spacing: -0.82, pack: 0.2, shrink: 0.02, dim: 0.08, side: 10, shadow: 0.8, edgeWidth: 8, rowY: 0.55,
+      areaMode: 'tray', areaPos: 'bottom', areaSize: 26, divider: 'shade', walls: 'brass', numberDice: 'metal', controlDice: 'gilded', controls: 'dice', tokenTray: true,
+      supDir: 'column', supX: 0.07, supY: 0.36, ctlDir: 'row', ctlX: 0.84, ctlY: 0.07, catX: 0.93, catY: 0.62 }),
+  },
+  {
+    id: 'tactician', name: 'Tactician', who: 'Wants every card in view at once. No carousel: the whole deck lies on the table, the controls stand down the right edge.',
+    look: T({ handMode: 'spread', size: 150, walls: 'stone', numberDice: 'stone', controlDice: 'obsidian', controls: 'dice', tokenTray: true,
+      ctlDir: 'column', ctlX: 0.93, ctlY: 0.3, supDir: 'row', supX: 0.2, supY: 0.91, catX: 0.93, catY: 0.72 }),
+  },
+  {
+    id: 'archivist', name: 'Archivist', who: 'Curates big decks. The whole deck reads across the top, plain buttons, and the table below stays clear for sorting.',
+    look: T({ size: 116, side: 30, spacing: 0.04, pack: 0, shrink: 0, dim: 0, edge: 'none', shadow: 0.35, scroll: 'wheel', wheel: 3, switchFx: 'deal', hoverLift: 18, hoverZoom: 1.22,
+      areaMode: 'tray', areaPos: 'top', areaSize: 27, divider: 'line', walls: 'line', controls: 'buttons', numberDice: 'resin', controlDice: 'obsidian', tokenTray: true,
+      supDir: 'row', supX: 0.18, supY: 0.92, ctlDir: 'row', ctlX: 0.7, ctlY: 0.36, catX: 0.92, catY: 0.9 }),
+  },
+  {
+    id: 'showman', name: 'Showman', who: 'Plays for the table (or the stream). A fanned hand in the middle of the felt, gold dice, deals that land with a flourish.',
+    look: T({ size: 230, spacing: -0.4, pack: 0.08, shrink: 0.03, arc: 70, tilt: 7, side: 4, rowY: 0.3, dim: 0.06, glow: 0.6, hoverLift: 34, hoverZoom: 1.1, edge: 'none', stack: 'left', switchFx: 'deal',
+      areaMode: 'free', areaPos: 'middle', areaSize: 52, divider: 'none', walls: 'brass', numberDice: 'resin', controlDice: 'gilded', controls: 'dice', tokenTray: true,
+      supDir: 'row', supX: 0.17, supY: 0.08, ctlDir: 'row', ctlX: 0.83, ctlY: 0.08, catX: 0.5, catY: 0.9 }),
+  },
+  {
+    id: 'duelist', name: 'Duelist', who: 'In the thick of a fight: cards on a shelf across the middle, dice and tokens in reach above and below it, nothing to hunt for.',
+    look: T({ size: 200, spacing: -0.42, pack: 0.22, shrink: 0.03, turn: 58, perspective: 1200, side: 7, dim: 0.14, edge: 'darken', edgeWidth: 18, flick: 1.6, switchFx: 'slide',
+      areaMode: 'tray', areaPos: 'middle', areaSize: 34, divider: 'line', walls: 'stone', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', tokenTray: true,
+      supDir: 'row', supX: 0.2, supY: 0.9, ctlDir: 'row', ctlX: 0.82, ctlY: 0.9, catX: 0.07, catY: 0.12 }),
+  },
+];
 
 const CODE_PREFIX = 'RK1:';
 
