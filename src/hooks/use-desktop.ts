@@ -55,6 +55,9 @@ export interface Desktop {
   tableHost: HTMLElement | null;
   /** DOM node panels and dialogs portal into (a slot hugging the port's right edge). */
   sideHost: HTMLElement | null;
+  /** v0.46.0: the whole window, for a full-screen dialogue (level up) drawn over the port and the table. */
+  win: { left: number; top: number; width: number; height: number };
+  windowHost: HTMLElement | null;
 }
 
 export const DesktopContext = createContext<Desktop | null>(null);

@@ -1,6 +1,6 @@
 import { DesktopPortal } from '@/components/desktop-portal';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
 
@@ -15,8 +15,9 @@ import { advanceCardsOf, advOption, advRemaining, applyLevelUp, availableAdvance
 import type { CharacterFile } from '@/lib/character-file';
 import { type CompanionState, COMPANION_OPTIONS, companionOptionDef } from '@/lib/companion';
 import { playSfx } from '@/lib/sfx';
-import { StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
-import { ForgedCard } from '@/features/create/components/forged-card';
+import { fanHalfWidth, StraightCarousel, type StraightCarouselHandle, type StraightItem } from '@/features/create/components/straight-carousel';
+import { HeroColumn, type HeroRow, SectionDivider } from '@/features/create/create-ui';
+import { FORGED_W, ForgedCard } from '@/features/create/components/forged-card';
 import { useScreenDim } from '@/lib/screen-dim';
 
 import { TRAIT_ORDER } from '../character';
@@ -89,6 +90,33 @@ function StepTab({ step, label, active, done, onPress }: { step: StepKey; label:
     </Pressable>
   );
 }
+
+/** A step in the desktop layout's left column: creation's step row, with level up's own glyphs. */
+function LevelStepRow({ step, label, active, done, onPress }: { step: StepKey; label: string; active: boolean; done: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="tab" accessibilityState={{ selected: active }} accessibilityLabel={`${label}${done ? ', done' : ''}`}>
+      {({ hovered }: { hovered?: boolean }) => {
+        const color = active ? Rune.goldBright : done ? Rune.goldText : hovered ? Rune.ivory : Rune.sheet;
+        return (
+          <ChamferBox chamfer={7} fill={active ? 'rgba(224,181,99,0.12)' : hovered ? 'rgba(224,181,99,0.05)' : 'transparent'} stroke={active ? Rune.goldBright : done ? 'rgba(218,162,73,0.55)' : 'rgba(147,142,136,0.3)'} strokeWidth={active ? 1.6 : 1.1}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, height: 42, paddingHorizontal: 12 }}>
+            <StepGlyph step={step} color={color} />
+            <Text numberOfLines={1} style={{ flex: 1, color, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+            {done ? (
+              <Svg width={13} height={13} viewBox="0 0 11 11">
+                <Polygon points="5.5,0 11,5.5 5.5,11 0,5.5" fill={Rune.gold} />
+                <Polyline points="3,5.5 5,7.5 8.2,3.6" fill="none" stroke={Rune.ink} strokeWidth={1.5} />
+              </Svg>
+            ) : null}
+          </ChamferBox>
+        );
+      }}
+    </Pressable>
+  );
+}
+
+/** The domain deck's fan on desktop: how much of each outer card shows (creation's value). */
+const DECK_SHOW = 0.3;
 
 /** Small selectable chip. */
 function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; disabled?: boolean; onPress: () => void }) {
@@ -346,6 +374,84 @@ export function LevelUpPanel({
   // max-level branch: both branches paint the same near-opaque backdrop.
   useScreenDim(0.98);
 
+  // Desktop (v0.46.0, owner): the whole window, laid out as character creation is. A top bar with Back, the
+  // title and the confirm; the steps down the left; the step itself in the middle (the domain deck at
+  // creation's size); and what has been chosen so far down the right.
+  const { width: winW } = useWindowDimensions();
+  const sideW = Math.round(Math.min(300, Math.max(240, winW * 0.17)));
+  const choicesW = Math.round(Math.min(280, Math.max(220, winW * 0.15)));
+  const middleW = Math.max(400, winW - 80 - sideW - choicesW - 72);
+  const deckZoom = Math.max(0.8, Math.min(1.45, (middleW / 2 - 36) / fanHalfWidth(1, 4, DECK_SHOW)));
+  const domainTitle = (id?: string) => domainOptions.find((d) => d.id === id)?.title;
+  const choiceRows: HeroRow<StepKey>[] = steps.filter((x) => x.key !== 'summary').map((x) => {
+    const done = stepDone(x.key);
+    if (x.key === 'domain') return { key: x.key, label: 'Domain card', done, locked: false, thumbs: selectedDomains.map((id) => domainOptions.find((d) => d.id === id)?.thumb).filter((t): t is number => typeof t === 'number'), text: selectedDomains.map(domainTitle).filter(Boolean).join(', ') };
+    if (x.key === 'exp') return { key: x.key, label: 'New Experience', done, locked: false, thumbs: [], text: expTitle.trim() };
+    if (x.key === 'companion') return { key: x.key, label: 'Companion', done, locked: false, thumbs: [], text: companionTakes.length ? `${companionTakes.length} of ${companionPicks} chosen` : '' };
+    return { key: x.key, label: 'Advancements', done, locked: false, thumbs: [], text: takes.map((t) => advOption(t.key).label).join(', ') };
+  });
+  const desktopLayout = (content: React.ReactNode) => (
+    <DesktopPortal to="window" onDismiss={onClose}>
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: Rune.ink }, bgStyle]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 22, height: 92, paddingHorizontal: 40, borderBottomWidth: 1, borderBottomColor: 'rgba(218,162,73,0.35)' }}>
+          <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Back to the sheet">
+            {({ hovered }: { hovered?: boolean }) => (
+              <ChamferBox chamfer={7} fill={hovered ? '#1A1E26' : 'transparent'} stroke={Rune.goldEdge} strokeWidth={1.4} style={{ height: 38, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Body.bold }}>{'\u2039'}</Text>
+                <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>Back</Text>
+              </ChamferBox>
+            )}
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: Rune.ivory, fontSize: 30, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.6 }}>Level Up</Text>
+            <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.medium }}>{`Level ${file.level} to ${newLevel}, Tier ${tier}`}</Text>
+          </View>
+          {missing ? <Text style={{ color: Rune.bronze, fontSize: 12, fontFamily: Body.bold, letterSpacing: 0.3 }}>{missing.text}</Text> : null}
+          <View style={{ width: 240 }}>
+            {canConfirm ? (
+              <HoldToConfirm label="Hold to level up" height={46} chamfer={10} sfx={null} onConfirm={confirm} />
+            ) : (
+              <RuneButton label="Confirm level" kind="primary" height={46} onPress={() => { if (missing) { playSfx('buttonTap'); setStep(missing.step); } }} muteSfx />
+            )}
+          </View>
+        </View>
+        <Animated.View style={[{ flex: 1, flexDirection: 'row', paddingHorizontal: 40, paddingTop: 26, gap: 36 }, panelStyle]}>
+          <View style={{ width: sideW, gap: 10 }}>
+            <SectionDivider label="Steps" />
+            {steps.map((x) => (
+              <LevelStepRow key={x.key} step={x.key} label={x.key === 'summary' ? 'What you gain' : x.key === 'exp' ? 'Experience' : x.key === 'advance' ? 'Advancements' : x.label} active={step === x.key} done={stepDone(x.key)} onPress={() => setStep(x.key)} />
+            ))}
+          </View>
+          <Animated.View style={[{ flex: 1, paddingBottom: 28 }, contentStyle]}>
+            {step === 'domain' ? content : <View style={{ flex: 1, width: '100%', maxWidth: 640, alignSelf: 'center' }}>{content}</View>}
+          </Animated.View>
+          <HeroColumn width={choicesW} title="Your choices" rows={choiceRows} onJump={(k) => setStep(k)} />
+        </Animated.View>
+        {editingExp ? (
+          <CardEditor
+            kindLabel="Experience"
+            experienceMode
+            scrimless
+            modifier={2}
+            initial={expDraft.current ?? { title: expTitle, text: expText, imageUri: expImage, color: expColor, effects: [] }}
+            draftRef={expDraft}
+            unsaved={!!expDraft.current}
+            saveLabel="Set experience"
+            onSave={(d) => {
+              setExpTitle(d.title);
+              setExpColor(d.color);
+              setExpImage(d.imageUri);
+              setExpText(d.text);
+              setEditingExp(false);
+              expDraft.current = null;
+            }}
+            onCancel={() => { setEditingExp(false); expDraft.current = null; }}
+          />
+        ) : null}
+      </Animated.View>
+    </DesktopPortal>
+  );
+
   // v0.10.5: level 10 is the cap — never advance past it. (The float-menu entry stays; this is the
   // explanation if it's opened at max level.)
   if (file.level >= MAX_LEVEL) {
@@ -363,37 +469,8 @@ export function LevelUpPanel({
     );
   }
 
-  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
-  return (
-    <DesktopPortal to="side" onDismiss={onClose}>
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
-      {/* opaque catching backdrop (#258): NO pointerEvents="none" — it must absorb every tap so nothing
-          ever falls through to the character sheet / carousel underneath. Button-only close. */}
-      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} />
-      {/* Desktop: the demo's drawer, filling the side slot with its big title (the same shell as Rest and State). */}
-      <Animated.View style={[desktopSheet ? { flex: 1 } : { flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
-       {/* creation-style bordered panel (#242 item 6) — the level-up UI lives inside it */}
-       <ChamferBox chamfer={desktopSheet ? 14 : 18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={desktopSheet ? { flex: 1, padding: 24 } : { flex: 1, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
-        {/* header */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: desktopSheet ? 16 : 8 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={desktopSheet ? { color: Rune.ivory, fontSize: 30, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.3 } : { color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Level Up</Text>
-            <Text style={{ color: Rune.muted, fontSize: desktopSheet ? 14 : 12, fontFamily: Body.medium, marginTop: desktopSheet ? 4 : 0 }}>{`Level ${file.level} → ${newLevel} · Tier ${tier}`}</Text>
-          </View>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
-            <Text style={{ color: Rune.muted, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
-          </Pressable>
-        </View>
-
-        {/* step rail — the icon tabs that reveal each part (creation-style) */}
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          {steps.map((s) => (
-            <StepTab key={s.key} step={s.key} label={s.label} active={step === s.key} done={stepDone(s.key)} onPress={() => setStep(s.key)} />
-          ))}
-        </View>
-
-        {/* step content */}
-        <Animated.View style={[{ flex: 1, marginTop: 12 }, contentStyle]}>
+  const stepContent = (
+    <>
           {step === 'summary' ? (
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
               <SectionLabel>This level brings</SectionLabel>
@@ -414,7 +491,7 @@ export function LevelUpPanel({
                 {items.length === 0 ? (
                   <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.regular, marginTop: 8 }}>No new domain cards available at this level.</Text>
                 ) : (
-                  <StraightCarousel ref={carRef} items={items} selectedIds={selectedDomains} onIndexChange={setCenterIdx} pointer={desktopSheet} />
+                  <StraightCarousel ref={carRef} items={items} selectedIds={selectedDomains} onIndexChange={setCenterIdx} pointer={desktopSheet} {...(desktopSheet ? { zoom: deckZoom, spread: { spacing: FORGED_W * 0.7 * deckZoom, side: 4, show: DECK_SHOW } } : {})} />
                 )}
               </View>
               {items.length > 0 ? (
@@ -583,6 +660,43 @@ export function LevelUpPanel({
               })}
             </ScrollView>
           ) : null}
+    </>
+  );
+
+  if (desktopSheet) return desktopLayout(stepContent);
+
+  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
+  return (
+    <DesktopPortal to="side" onDismiss={onClose}>
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
+      {/* opaque catching backdrop (#258): NO pointerEvents="none" — it must absorb every tap so nothing
+          ever falls through to the character sheet / carousel underneath. Button-only close. */}
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} />
+      {/* Desktop: the demo's drawer, filling the side slot with its big title (the same shell as Rest and State). */}
+      <Animated.View style={[desktopSheet ? { flex: 1 } : { flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
+       {/* creation-style bordered panel (#242 item 6) — the level-up UI lives inside it */}
+       <ChamferBox chamfer={desktopSheet ? 14 : 18} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={desktopSheet ? { flex: 1, padding: 24 } : { flex: 1, paddingHorizontal: 14, paddingTop: 14, paddingBottom: 12 }}>
+        {/* header */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: desktopSheet ? 16 : 8 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={desktopSheet ? { color: Rune.ivory, fontSize: 30, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.3 } : { color: Rune.goldText, fontSize: 22, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Level Up</Text>
+            <Text style={{ color: Rune.muted, fontSize: desktopSheet ? 14 : 12, fontFamily: Body.medium, marginTop: desktopSheet ? 4 : 0 }}>{`Level ${file.level} → ${newLevel} · Tier ${tier}`}</Text>
+          </View>
+          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 4 }}>
+            <Text style={{ color: Rune.muted, fontSize: 18, fontFamily: Body.bold }}>✕</Text>
+          </Pressable>
+        </View>
+
+        {/* step rail — the icon tabs that reveal each part (creation-style) */}
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {steps.map((s) => (
+            <StepTab key={s.key} step={s.key} label={s.label} active={step === s.key} done={stepDone(s.key)} onPress={() => setStep(s.key)} />
+          ))}
+        </View>
+
+        {/* step content */}
+        <Animated.View style={[{ flex: 1, marginTop: 12 }, contentStyle]}>
+          {stepContent}
         </Animated.View>
 
         {/* footer */}

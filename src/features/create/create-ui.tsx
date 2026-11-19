@@ -143,16 +143,16 @@ export function DeckStepRow({ deck, label, active, done, locked, pulseToken, onP
 }
 
 /** One line of the hero column: what a step holds so far. */
-export interface HeroRow { key: DeckKey; label: string; done: boolean; locked: boolean; thumbs: number[]; text: string }
+export interface HeroRow<K extends string = DeckKey> { key: K; label: string; done: boolean; locked: boolean; thumbs: number[]; text: string }
 
 /**
  * "Your hero" (v0.45.0, desktop): every step and what it holds so far, the chosen cards as small thumbs, so a
  * wide screen shows the character coming together beside the deck being chosen from. A row jumps to its step.
  */
-export function HeroColumn({ rows, onJump, width }: { rows: HeroRow[]; onJump: (k: DeckKey) => void; width: number }) {
+export function HeroColumn<K extends string = DeckKey>({ rows, onJump, width, title = 'Your hero' }: { rows: HeroRow<K>[]; onJump: (k: K) => void; width: number; title?: string }) {
   return (
     <ScrollView style={{ width, flexGrow: 0 }} contentContainerStyle={{ gap: 10, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
-      <SectionDivider label="Your hero" />
+      <SectionDivider label={title} />
       {rows.map((r) => (
         <Pressable key={r.key} onPress={() => onJump(r.key)} disabled={r.locked} accessibilityRole="button" accessibilityLabel={`${r.label}: ${r.text || 'not chosen yet'}`}>
           {({ hovered }: { hovered?: boolean }) => (
