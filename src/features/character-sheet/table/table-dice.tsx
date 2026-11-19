@@ -188,6 +188,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   actions: TableAction[];
   controls: 'dice' | 'buttons' | 'hidden';
   controlFinish: 'obsidian' | 'gilded' | 'ivory';
+  /** Control dice roll like dice, or hop upright (owner, v0.47.7). */
+  ctlMotion: 'roll' | 'hop';
   numberFinish: 'resin' | 'stone' | 'metal';
   /** Tokens anchored to laid cards, and the laid cards themselves. */
   tokens: TokenPiece[];
@@ -425,11 +427,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
       // The icon on the top face and the one opposite it only (owner); the sides stay plain, and the die always
       // comes to rest on one of the two, so its icon is always showing.
       const icon = { image: tinted(img, style.ink) };
-      const spec: DieSpec = { key: k, shape: 'd6', size: ACTION_SIZE, body: style.body, edge: style.edge, ink: style.ink, faces: [icon, icon, { text: '' }, { text: '' }, { text: '' }, { text: '' }], finish: controlFinish, upright: true, restFaces: [0, 1] };
+      const spec: DieSpec = { key: k, shape: 'd6', size: ACTION_SIZE, body: style.body, edge: style.edge, ink: style.ink, faces: [icon, icon, { text: '' }, { text: '' }, { text: '' }, { text: '' }], finish: controlFinish, upright: true, restFaces: [0, 1], hopper: props.ctlMotion === 'hop' };
       const at = placeOf(k);
       engine.add(spec, at.x, at.y, { face: 0 });
     }
-  }, [engine, glyphs, showDice, controlFinish, width > 50]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, glyphs, showDice, controlFinish, props.ctlMotion, width > 50]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deckFace = useMemo(() => {
     const n = FACES_OF[catShape(decks.length)];
@@ -446,14 +448,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
     // The icons keep their own colours; on a light die a soft dark halo separates them (owner: no plate).
     const halo = controlFinish === 'obsidian' ? undefined : 'rgba(10,8,4,0.9)';
     const spec: DieSpec = {
-      key: CAT, shape, size: shape === 'd20' ? 112 : shape === 'd12' ? 100 : shape === 'd8' ? 94 : 84, body: style.body, edge: style.edge, ink: style.ink, finish: controlFinish, upright: true,
+      key: CAT, shape, size: shape === 'd20' ? 112 : shape === 'd12' ? 100 : shape === 'd8' ? 94 : 84, body: style.body, edge: style.edge, ink: style.ink, finish: controlFinish, upright: true, hopper: props.ctlMotion === 'hop',
       faces: deckFace.faces.map((d) => (d && deckArt.get(d.key) ? { image: deckArt.get(d.key)!, halo } : { text: '' })),
     };
     const fresh = !engine.has(CAT);
     const at = placeOf(CAT);
     engine.add(spec, at.x, at.y, { face: deckFace.indexOf(live.current.current) });
     if (!fresh) engine.setFace(CAT, deckFace.indexOf(live.current.current));
-  }, [engine, deckArt, deckFace, showDice, controlFinish, width > 50]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, deckArt, deckFace, showDice, controlFinish, props.ctlMotion, width > 50]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The deck changed (a pick, the wheel, a key): the die shows it at once, no roll first (owner).
   useEffect(() => {
@@ -649,8 +651,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
 
   /** What the table menu offers for a piece right-clicked: rolling it, when it is a die. */
   const pieceMenu = useCallback((key: string): { key: string; label: string } | undefined => {
-    if (key === CAT) return { key, label: 'Roll the deck die' };
-    if (ACTIONS.includes(key as ActionKey) || key.startsWith('roll:')) return { key, label: 'Roll this die' };
+    // Hopping control dice never roll: they turn only when the deck changes.
+    const hop = live.current.ctlMotion === 'hop';
+    if (key === CAT) return hop ? undefined : { key, label: 'Roll the deck die' };
+    if (ACTIONS.includes(key as ActionKey)) return hop ? undefined : { key, label: 'Roll this die' };
+    if (key.startsWith('roll:')) return { key, label: 'Roll this die' };
     const base = baseOf(key);
     if (key.startsWith('free:') && live.current.loose.find((l) => l.key === base)?.token.kind === 'die') return { key, label: 'Roll this die' };
     if (key.startsWith('tok:') && live.current.tokens.find((t) => t.key === base)?.kind === 'die') return { key, label: 'Roll this die' };
@@ -1098,7 +1103,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
   if (editing) {
     const sn = props.supply.length + (props.domat ? 1 : 0);
     const half = (n: number, gap: number) => ((n - 1) * gap) / 2 + 40;
-    if (controls !== 'hidden') {
+    if (controls === 'buttons') {
+      // Plain buttons: the frame goes round the buttons as they are drawn (the deck's button is among them).
+      const l = Math.min(bounds.right - btnBox.w - 6, Math.max(bounds.left + 6, places.ctl.x - btnBox.w / 2));
+      const t = Math.min(bounds.bottom - btnBox.h - 6, Math.max(bounds.top + 6, places.ctl.y - btnBox.h / 2));
+      groups.push({ g: 'ctl', box: { left: l - 8, right: l + btnBox.w + 8, top: t - 8, bottom: t + btnBox.h + 8 }, label: 'Controls' });
+    } else if (controls !== 'hidden') {
       const hw = places.ctl.dir === 'row' ? half(ACTIONS.length, CTL_GAP.row) : 44, hh = places.ctl.dir === 'row' ? 50 : half(ACTIONS.length, CTL_GAP.column);
       groups.push({ g: 'ctl', box: { left: places.ctl.x - hw, right: places.ctl.x + hw, top: places.ctl.y - hh, bottom: places.ctl.y + hh }, label: 'Control dice' });
       groups.push({ g: 'cat', box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });

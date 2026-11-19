@@ -14,7 +14,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
-import { cardOffset, type DeckLook, lookScale, lookX, pastSpot, visibleReach } from './deck-look';
+import { cardOffset, type DeckLook, fitSize, lookScale, lookX, pastSpot, visibleReach } from './deck-look';
 
 export interface TableCard {
   id: string;
@@ -113,7 +113,8 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     const { w: W, h: H } = size.current;
     if (!W || !n) return;
     const s = st.current;
-    const base = l.size / FORGED_W;
+    const fitW = fitSize(l, H);
+    const base = fitW / FORGED_W;
     const cardH = FORGED_H * base;
     const cy = cardH / 2 + 14 + l.rowY * Math.max(0, H - cardH - 28);
     const reach = visibleReach(l);
@@ -126,7 +127,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const k = pastSpot(ad, l);
       const out = Math.max(0, ad - reach); // past the last place: leaving
       let scale = lookScale(ad, l) * base;
-      let x = sg * lookX(ad, l, l.size);
+      let x = sg * lookX(ad, l, fitW);
       // The entrance: a slide in from the right, cards dealt out from the middle, or a fade.
       let enter = 1;
       if (l.switchFx !== 'none' && since < INTRO_MS + 600) {
@@ -384,9 +385,13 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     }
   }
   const hiReach = Math.max(1, Math.ceil((look.centre - 1) / 2) + 1);
-  const base = look.size / FORGED_W;
+  const fit = fitSize(look, box.h);
+  const base = fit / FORGED_W;
   const cardH = FORGED_H * base;
   const glowY = cardH / 2 + 14 + look.rowY * Math.max(0, box.h - cardH - 28);
+  // The glow stays inside the hand's area and fades out before its edges, so it never shows a cut (owner, v0.47.7).
+  const glowW = Math.min(fit * 2.2, box.w), glowH = Math.min(cardH * 1.6, box.h);
+  const glowTop = Math.min(box.h - glowH, Math.max(0, glowY - glowH / 2));
 
   useLayoutEffect(() => {
     const el = root.current;
@@ -406,7 +411,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   return (
     <div ref={root} style={{ position: 'absolute', inset: 0, overflow: 'hidden', perspective: look.turn > 0 ? look.perspective : undefined, touchAction: 'none', userSelect: 'none' }}>
       {look.glow > 0 ? (
-        <div style={{ position: 'absolute', pointerEvents: 'none', left: box.w / 2 - look.size * 1.1, top: glowY - cardH * 0.8, width: look.size * 2.2, height: cardH * 1.6, opacity: look.glow, background: 'radial-gradient(closest-side, rgba(224,181,99,0.55), rgba(200,146,58,0.18) 55%, transparent)' }} />
+        <div style={{ position: 'absolute', pointerEvents: 'none', left: box.w / 2 - glowW / 2, top: glowTop, width: glowW, height: glowH, opacity: look.glow, background: 'radial-gradient(closest-side, rgba(224,181,99,0.55), rgba(200,146,58,0.18) 55%, transparent 96%)' }} />
       ) : null}
       {mounted.map((i) => {
         const card = cards[i];

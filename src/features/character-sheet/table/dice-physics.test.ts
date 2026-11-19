@@ -227,3 +227,43 @@ describe('the supply stays put under a stream of copies (v0.47.6)', () => {
     expect(src2.x).toBeGreaterThan(300);
   });
 });
+
+describe('hopping control dice (v0.47.7)', () => {
+  it('a thrown hopper hops upright to where it would have slid and lands on the same face', () => {
+    const b = makeBody('h', 200, 250, 28, CUBE, { upright: true });
+    b.hopper = true;
+    const face = b.top;
+    launch(b, 1600, 0, 0, [30, -20, 10]);
+    let peak = 0;
+    let n = 0;
+    while (!allAsleep([b]) && n++ < 6000) { step([b], BOUNDS); peak = Math.max(peak, b.z); }
+    expect(b.top).toBe(face);
+    expect(peak).toBeGreaterThan(20);
+    expect(b.x).toBeGreaterThan(500);
+    expect(b.x).toBeLessThanOrEqual(800 - 28);
+  });
+
+  it('a hop sent somewhere else in mid-air carries on from its height instead of dropping', () => {
+    const b = makeBody('h', 200, 250, 28, CUBE);
+    sendHome(b, 600, 250, undefined, 0.6);
+    for (let i = 0; i < 30; i++) step([b], BOUNDS);
+    const z = b.z;
+    expect(z).toBeGreaterThan(10);
+    sendHome(b, 300, 100, undefined, 0.6);
+    step([b], BOUNDS);
+    expect(b.z).toBeGreaterThan(z * 0.8);
+  });
+});
+
+describe('a hop into the hand area (v0.47.7)', () => {
+  it('lands at the edge of an area that spans the table, never off it', () => {
+    const b = makeBody('h', 60, 200, 25, CUBE, { upright: true });
+    b.hopper = true;
+    launch(b, -300, 2400, 0, [0, 0, 0]);
+    const hand = { left: 4, top: 300, right: 796, bottom: 496 };
+    let n = 0;
+    while (!allAsleep([b]) && n++ < 6000) step([b], BOUNDS, undefined, Math.random, [hand]);
+    expect(b.x).toBeGreaterThanOrEqual(25);
+    expect(b.y).toBeLessThanOrEqual(300 - 25 + 0.5);
+  });
+});

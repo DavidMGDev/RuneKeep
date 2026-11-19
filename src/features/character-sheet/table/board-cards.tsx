@@ -87,6 +87,10 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
   const [drag, setDrag] = useState<'move' | 'size' | 'turn' | null>(null);
   // A physical card is drawn where physics has it, so a re-render never snaps it back to where it last stopped.
   const lp = live?.get(entry.uid);
+  const poseNow = () => {
+    const p = live?.get(entry.uid);
+    return p ? { cx: p.x, cy: p.y, rot: p.rot } : { cx: entry.fx * feltW, cy: entry.fy * feltH, rot: entry.rot ?? 0 };
+  };
   const rot = lp ? lp.rot : entry.rot ?? 0;
   const [born, setBorn] = useState(false);
   useEffect(() => { const id = requestAnimationFrame(() => setBorn(true)); return () => cancelAnimationFrame(id); }, []);
@@ -106,6 +110,9 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
     e.stopPropagation();
     e.preventDefault();
     onGrab();
+    // Where the card is right now: a physical card still sliding is wherever physics has it, not where the page
+    // last drew it (owner, v0.47.7: grabbing one mid-flight teleported it back).
+    const { cx, cy, rot } = poseNow();
     const el = ref.current?.parentElement;
     if (!el) return;
     const felt = el.getBoundingClientRect();
@@ -139,6 +146,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
     e.stopPropagation();
     e.preventDefault();
     onGrab();
+    const { cx, cy, rot } = poseNow();
     const el = ref.current?.parentElement;
     if (!el) return;
     const felt = el.getBoundingClientRect();
@@ -149,7 +157,11 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
     const startD = Math.hypot(e.clientX - (felt.left + cx), e.clientY - (felt.top + cy));
     let moved = false;
     let last = { fx: cx / feltW, fy: cy / feltH };
-    if (mode === 'move') playSfx('cardDragStart', { volume: 0.6 });
+    if (mode === 'move') {
+      playSfx('cardDragStart', { volume: 0.6 });
+      // Caught: a sliding physical card stops in the hand the moment it is pressed.
+      onDragTo(cx, cy, rot);
+    }
     const move = (m: PointerEvent) => {
       if (!moved && Math.hypot(m.clientX - sx, m.clientY - sy) < 4) return;
       if (!moved) { moved = true; setDrag(mode); if (mode === 'move') onLift(); }
@@ -173,7 +185,8 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
       setDrag(null);
       if (mode === 'size' && !moved) { playSfx('cardDragEnd', { volume: 0.5 }); onResize(DEFAULT_W); return; }
       if (mode === 'move') {
-        if (moved) { onSettle(); onDragTo(last.fx * feltW, last.fy * feltH, rot, true); }
+        if (moved) onSettle();
+        onDragTo(last.fx * feltW, last.fy * feltH, rot, true);
         if (!moved) { if (pages > 1) { playSfx('gearScroll2', { volume: 0.5 }); onTurn(); } return; }
         const over = overTray(u.clientX, u.clientY);
         playSfx(over ? 'tokenRemove' : 'cardDragEnd', { volume: 0.7 });

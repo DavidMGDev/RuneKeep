@@ -101,6 +101,8 @@ export interface DeckLook {
   controlDice: 'obsidian' | 'gilded' | 'ivory';
   /** The table's controls as dice you can throw, as plain buttons, or hidden (right click still has them). */
   controls: 'dice' | 'buttons' | 'hidden';
+  /** How the control dice move: rolling and tumbling like real dice, or hopping upright from place to place. */
+  ctlMotion: 'roll' | 'hop';
   /** The token supply lying ready on the table (tokens and a token die to throw out copies of). */
   tokenTray: boolean;
   /** The hand as a carousel, or every card of the deck laid out on the table at once (v0.47.3). */
@@ -118,6 +120,8 @@ export interface DeckLook {
   /** The deck die. */
   catX: number;
   catY: number;
+  /** The hand's centre, dragged there while settings are open (share of the table); below 0 it follows `areaPos`. */
+  areaY: number;
 }
 
 export const DEFAULT_LOOK: DeckLook = {
@@ -125,8 +129,8 @@ export const DEFAULT_LOOK: DeckLook = {
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
   scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, hoverLift: 10, hoverZoom: 1.04, centreClick: 'take', switchFx: 'slide',
-  areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', tokenTray: true,
-  handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36,
+  areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', tokenTray: true,
+  handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
 };
 
 type NumKey = { [K in keyof DeckLook]: DeckLook[K] extends number ? K : never }[keyof DeckLook];
@@ -246,6 +250,7 @@ export const LOOK_PAGES: LookPage[] = [
         title: 'Dice',
         controls: [
           { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck die and the Cards, State and Sort deck dice, as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
+          { kind: 'choice', key: 'ctlMotion', label: 'Control dice move', help: 'Roll and tumble like real dice, or hop upright from place to place: thrown or knocked they jump, always showing their icon, and the deck die only turns when you change deck.', options: opts(['roll', 'Roll'], ['hop', 'Hop']) },
           { kind: 'choice', key: 'controlDice', label: 'Control dice', help: 'How the control dice are made.', options: opts(['obsidian', 'Obsidian'], ['gilded', 'Gilded'], ['ivory', 'Ivory']) },
           { kind: 'choice', key: 'numberDice', label: 'Rolling dice', help: 'How the dice you roll are made.', options: opts(['resin', 'Resin'], ['stone', 'Stone'], ['metal', 'Metal']) },
           { kind: 'choice', key: 'walls', label: 'Table edge', help: 'What the dice bounce off at the edge. Every choice stops them; Nothing just isn\'t drawn.', options: opts(['line', 'Hairline'], ['stone', 'Stone wall'], ['brass', 'Brass rail'], ['none', 'Nothing']) },
@@ -264,6 +269,7 @@ export const LOOK_PAGES: LookPage[] = [
           { kind: 'choice', key: 'supDir', label: 'Supply run', help: '', options: opts(['row', 'Across'], ['column', 'Down']) },
           { kind: 'range', key: 'catX', label: 'Deck die across', help: '', min: 0, max: 1, step: 0.001 },
           { kind: 'range', key: 'catY', label: 'Deck die down', help: '', min: 0, max: 1, step: 0.001 },
+          { kind: 'range', key: 'areaY', label: 'Hand down', help: '', min: -1, max: 1, step: 0.001 },
         ],
       },
     ],
@@ -271,7 +277,7 @@ export const LOOK_PAGES: LookPage[] = [
 ];
 
 /** The settings that say where the pieces live: a table preset sets them, Reset layout puts them back. */
-export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY'] as const;
+export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY', 'areaY'] as const;
 
 /** Settings that shape the hand; a ready-made look changes only these, never your table. */
 export const HAND_KEYS: (keyof DeckLook)[] = LOOK_PAGES.filter((p) => p.id === 'hand').flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
@@ -450,7 +456,7 @@ export const TABLE_PRESETS: TablePreset[] = [
   },
   {
     id: 'tactician', name: 'Tactician', who: 'Wants every card in view at once. No carousel: the whole deck lies on the table, the controls stand down the right edge.',
-    look: T({ handMode: 'spread', size: 150, walls: 'stone', numberDice: 'stone', controlDice: 'obsidian', controls: 'dice', tokenTray: true,
+    look: T({ handMode: 'spread', size: 150, walls: 'stone', numberDice: 'stone', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'hop', tokenTray: true,
       ctlDir: 'column', ctlX: 0.93, ctlY: 0.3, supDir: 'row', supX: 0.2, supY: 0.91, catX: 0.93, catY: 0.72 }),
   },
   {
@@ -462,7 +468,7 @@ export const TABLE_PRESETS: TablePreset[] = [
   {
     id: 'showman', name: 'Showman', who: 'Plays for the table (or the stream). A fanned hand in the middle of the felt, gold dice, deals that land with a flourish.',
     look: T({ size: 230, spacing: -0.4, pack: 0.08, shrink: 0.03, arc: 70, tilt: 7, side: 4, rowY: 0.3, dim: 0.06, glow: 0.6, hoverLift: 34, hoverZoom: 1.1, edge: 'none', stack: 'left', switchFx: 'deal',
-      areaMode: 'free', areaPos: 'middle', areaSize: 52, divider: 'none', walls: 'brass', numberDice: 'resin', controlDice: 'gilded', controls: 'dice', tokenTray: true,
+      areaMode: 'free', areaPos: 'middle', areaSize: 52, divider: 'none', walls: 'brass', numberDice: 'resin', controlDice: 'gilded', controls: 'dice', ctlMotion: 'hop', tokenTray: true,
       supDir: 'row', supX: 0.17, supY: 0.08, ctlDir: 'row', ctlX: 0.83, ctlY: 0.08, catX: 0.5, catY: 0.9 }),
   },
   {
@@ -514,6 +520,16 @@ function fromBase64Url(code: string): string {
 }
 
 // ---------------------------------------------------------------- layout maths (read by the carousel each frame)
+
+/**
+ * The centre card's width for a hand area `areaH` px tall: the look's size, or less when the card (lifted and
+ * zoomed under the pointer) would not fit, so a big spotlight card is never cropped by its area (owner, v0.47.7).
+ */
+export function fitSize(l: DeckLook, areaH: number): number {
+  if (areaH <= 0) return l.size;
+  const room = areaH - 28 - Math.max(0, l.lift) - l.hoverLift;
+  return Math.max(60, Math.min(l.size, (room / l.hoverZoom) * (750 / 1050)));
+}
 
 /** Steps a card `k` places from the centre stands past the spotlight (0 inside it). */
 export function pastSpot(k: number, l: DeckLook): number {

@@ -50,6 +50,8 @@ export interface DieSpec {
   fixed?: boolean;
   /** A piece of the supply: fresh copies pass through it. */
   spawner?: boolean;
+  /** Moves only by hopping upright, never tumbling (the control dice, when the look says so). */
+  hopper?: boolean;
 }
 
 export interface DiceEngine {
@@ -634,6 +636,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.body.restFaces = spec.restFaces;
         prev.body.fixed = spec.fixed;
         prev.body.spawner = spec.spawner;
+        prev.body.hopper = spec.hopper;
         wake();
         return;
       }
@@ -646,6 +649,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       body.restFaces = spec.restFaces;
       body.fixed = spec.fixed;
       body.spawner = spec.spawner;
+      body.hopper = spec.hopper;
       body.fresh = o?.fresh;
       // A fresh copy clears room for the next one: a weak push that keeps the spot by the supply free (owner).
       if (o?.fresh) body.boost = { gen: 3, power: 1.6, soft: true };

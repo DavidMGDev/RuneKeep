@@ -53,7 +53,12 @@ export interface Body {
   /** The closing turn onto a face. */
   settle?: { from: Quat; to: Quat; t: number; ms: number };
   /** Flying home (reset): an arc from where it was to where it lives. */
-  home?: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number; spin?: Vec3 };
+  home?: { fx: number; fy: number; tx: number; ty: number; t: number; dur: number; spin?: Vec3; z0?: number; lift?: number };
+  /**
+   * Moves only by hopping (v0.47.7, owner: control dice that hop): thrown or knocked, it jumps upright to where it
+   * would have slid, never tumbles, and only turns when told to show another face.
+   */
+  hopper?: boolean;
   /** A piece of the supply: copies thrown out of it pass through it (and the rest of the supply) while fresh. */
   spawner?: boolean;
   /** A copy just out of the supply: it passes through every spawner until it is clear of them all. */
@@ -305,7 +310,8 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
       const e = 1 - Math.pow(1 - h.t, 3);
       b.x = h.fx + (h.tx - h.fx) * e;
       b.y = h.fy + (h.ty - h.fy) * e;
-      b.z = Math.sin(Math.PI * h.t) * b.r * (h.spin ? 3.2 : 1.6);
+      // An arc from the height it was at (a hop redirected in mid-air carries on from there, never drops to the felt).
+      b.z = (h.z0 ?? 0) * (1 - e) + Math.sin(Math.PI * h.t) * b.r * (h.lift ?? (h.spin ? 3.2 : 1.6));
       if (h.spin) {
         // Put away: it tumbles all the way in instead of landing on a face.
         const [sx, sy, sz] = h.spin;
@@ -330,6 +336,27 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
         b.vx = b.vy = 0;
         b.w = [0, 0, 0];
       }
+      continue;
+    }
+    if (b.hopper) {
+      // Whatever set it moving (a throw, a knock), it hops to where it would have slid, upright, and lands.
+      const sp = Math.hypot(b.vx, b.vy);
+      b.w = [0, 0, 0];
+      if (sp <= SETTLE_SPEED) { b.vx = b.vy = 0; beginSettle(b); continue; }
+      const dist = Math.min(700, (sp * sp) / (2 * FRICTION) + 24);
+      let tx = Math.min(bounds.right - b.r, Math.max(bounds.left + b.r, b.x + (b.vx / sp) * dist));
+      let ty = Math.min(bounds.bottom - b.r, Math.max(bounds.top + b.r, b.y + (b.vy / sp) * dist));
+      for (const o of obstacles) {
+        if (tx + b.r <= o.left || tx - b.r >= o.right || ty + b.r <= o.top || ty - b.r >= o.bottom) continue;
+        // It would land in the hand's own area: it lands at that area's nearest edge instead.
+        const opts: [number, number, number][] = [[tx - (o.left - b.r), o.left - b.r, ty], [o.right + b.r - tx, o.right + b.r, ty], [ty - (o.top - b.r), tx, o.top - b.r], [o.bottom + b.r - ty, tx, o.bottom + b.r]];
+        // Only a way out that stays on the table (the hand's area often spans it wall to wall).
+        const fits = opts.filter((q) => q[1] >= bounds.left + b.r && q[1] <= bounds.right - b.r && q[2] >= bounds.top + b.r && q[2] <= bounds.bottom - b.r);
+        const best = (fits.length ? fits : opts).reduce((m, q) => (q[0] < m[0] ? q : m));
+        tx = Math.min(bounds.right - b.r, Math.max(bounds.left + b.r, best[1]));
+        ty = Math.min(bounds.bottom - b.r, Math.max(bounds.top + b.r, best[2]));
+      }
+      sendHome(b, tx, ty, b.top, 0.3 + Math.hypot(tx - b.x, ty - b.y) / 1600, undefined, 1.4 + Math.hypot(tx - b.x, ty - b.y) / 220);
       continue;
     }
     // No height (v0.47.1, owner): a die never leaves the felt, so it can never pass over another one.
@@ -597,12 +624,12 @@ export function snapFace(b: Body, face: number, ms = 120): void {
 export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => (b.asleep || (b.fixed && !b.settle)) && !b.held);
 
 /** Send a body home in an arc, landing on `face` (or the one on top now). */
-export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5, spin?: Vec3): void {
+export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5, spin?: Vec3, lift?: number): void {
   b.asleep = false;
   b.held = false;
   b.settle = undefined;
   b.vx = b.vy = b.vz = 0;
   b.w = [0, 0, 0];
   if (face !== undefined) b.force = face;
-  b.home = { fx: b.x, fy: b.y, tx: x, ty: y, t: 0, dur, spin };
+  b.home = { fx: b.x, fy: b.y, tx: x, ty: y, t: 0, dur, spin, z0: b.z, lift };
 }

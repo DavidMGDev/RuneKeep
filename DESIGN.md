@@ -118,3 +118,9 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   (Storyteller, Dice goblin, Tactician, Archivist, Showman, Duelist) and four drawn by `randomTables` and kept,
   scored by `tableScore` (rows on the table, out of the hand, clear of each other). Share is a link (`#table=RK1:`)
   or a code, first on the Presets tab.
+- v0.47.7: control dice can hop instead of roll (`ctlMotion`, on in Tactician and Showman): thrown or knocked they
+  jump upright to where they would have slid and only turn when the deck changes; every hop carries on from its height
+  when redirected, so dragging rows in settings never stutters. While settings are open the hand has a grip to drag it
+  up or down (`areaY`) and its cards still scroll. The centre card shrinks to fit its area (`fitSize`) and the glow
+  stays inside it. With controls hidden a corner button shows them in a column on the left. A held arrow steps faster
+  and faster, its scroll sound climbing two octaves. A physical card is caught where it is the moment it is pressed.

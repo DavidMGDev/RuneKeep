@@ -93,7 +93,8 @@ function fmt(c: Extract<LookControl, { kind: 'range' }>, v: number) {
 }
 
 function Control({ c, look, onChange }: { c: LookControl; look: DeckLook; onChange: (l: DeckLook) => void }) {
-  const set = (v: unknown) => onChange({ ...look, [c.key]: v } as DeckLook);
+  // Picking a hand position puts back a hand that was dragged somewhere of its own.
+  const set = (v: unknown) => onChange({ ...look, [c.key]: v, ...(c.key === 'areaPos' ? { areaY: -1 } : {}) } as DeckLook);
   const changed = look[c.key] !== DEFAULT_LOOK[c.key];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

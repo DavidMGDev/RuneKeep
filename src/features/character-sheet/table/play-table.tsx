@@ -52,10 +52,12 @@ export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current
 export type TablePanel = 'modifiers' | 'cards';
 
 const NO_CARDS: CardItem[] = [];
-/** A held arrow steps a card every HOLD_STEP_MS, its pitch climbing then falling back (owner, v0.46.0). */
-const HOLD_STEP_MS = 160;
-const HOLD_CENTS = 100;
-const HOLD_PEAK = 8;
+/**
+ * A held arrow (owner, v0.47.7): the scroll's own sound, each step a little sooner than the last (150 ms down to
+ * 28 ms) and a little higher, climbing two octaves, so holding it feels like winding the deck up.
+ */
+const holdStep = (n: number) => Math.max(28, 150 * Math.pow(0.86, n));
+const holdCents = (n: number) => Math.min(2400, n * 150);
 const HAND_W = 170;
 /** How far in from the table's edge each kind of wall stops the dice. */
 const WALL: Record<DeckLook['walls'], number> = { none: 4, line: 8, stone: 20, brass: 10 };
@@ -118,12 +120,17 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const pad = WALL[look.walls];
   const spread = look.handMode === 'spread';
   const handH = Math.round((tableH - pad * 2) * (look.areaSize / 100));
-  const handTop = look.areaPos === 'top' ? pad : look.areaPos === 'middle' ? Math.round((tableH - handH) / 2) : tableH - pad - handH;
+  const handTop = look.areaY >= 0
+    ? Math.round(Math.min(tableH - pad - handH, Math.max(pad, look.areaY * tableH - handH / 2)))
+    : look.areaPos === 'top' ? pad : look.areaPos === 'middle' ? Math.round((tableH - handH) / 2) : tableH - pad - handH;
+  // Where the hand really is, for the open table and the area's edges: a dragged hand counts as top or bottom when it
+  // touches that wall.
+  const handPos: DeckLook['areaPos'] = look.areaY < 0 ? look.areaPos : handTop <= pad + 2 ? 'top' : handTop + handH >= tableH - pad - 2 ? 'bottom' : 'middle';
   const hand: Bounds = { left: pad, top: handTop, right: tableW - pad, bottom: handTop + handH };
   const play: Bounds = { left: pad, top: pad, right: tableW - pad, bottom: tableH - pad };
   const ownArea = look.areaMode === 'tray' && !spread;
-  const openTop = ownArea && look.areaPos === 'top' ? hand.bottom : pad;
-  const openBottom = ownArea && look.areaPos === 'bottom' ? hand.top : tableH - pad;
+  const openTop = ownArea && handPos === 'top' ? hand.bottom : pad;
+  const openBottom = ownArea && handPos === 'bottom' ? hand.top : tableH - pad;
 
   /** Where each row of pieces lives, in px: from the look, kept on the table and out of the hand's own area. */
   const places = useMemo<Places>(() => {
@@ -143,11 +150,22 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     return { ctl: { ...ctl, dir: look.ctlDir }, sup: { ...sup, dir: look.supDir }, cat };
   }, [look.ctlX, look.ctlY, look.ctlDir, look.supX, look.supY, look.supDir, look.catX, look.catY, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
 
+
   // ---------------------------------------------------------------- the hand
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string } | null>(null);
   const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: { key: string; label: string } } | null>(null);
   const [sorting, setSorting] = useState(false);
   const [settings, setSettings] = useState(false);
+  /**
+   * Controls hidden (the Storyteller): a corner button shows the control dice for a while in a column down the left,
+   * the deck die above them (owner, v0.47.7: right click no longer has them).
+   */
+  const [peek, setPeek] = useState(false);
+  const peeking = peek && look.controls === 'hidden' && !settings;
+  const peekPlaces = useMemo<Places>(() => {
+    const mid = (openTop + openBottom) / 2;
+    return { ...places, ctl: { x: pad + 52, y: mid + 60, dir: 'column' }, cat: { x: pad + 64, y: mid + 60 - 104 - 120 } };
+  }, [places, openTop, openBottom, pad]);
   const overlay = overlayProp || sorting;
   useEffect(() => { onSortOpen?.(sorting); }, [sorting, onSortOpen]);
   useEffect(() => { setMenu(null); }, [category]);
@@ -189,7 +207,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const onCentre = useCallback(() => {
     const cue = keyCue.current;
     keyCue.current = null;
-    if (cue && performance.now() - cue.at < 400) playSfx('cardFullscreenEnter', { cents: cue.cents });
+    if (cue && performance.now() - cue.at < 400) playSfx('carouselScroll', { cents: cue.cents });
     else playSfx('carouselScroll');
   }, []);
 
@@ -923,10 +941,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       if (dir && k.deck.length) {
         e.preventDefault();
         const h = held.current;
-        if (e.repeat && e.timeStamp - h.last < HOLD_STEP_MS) return;
+        if (e.repeat && e.timeStamp - h.last < holdStep(h.n)) return;
         h.last = e.timeStamp;
         h.n = e.repeat ? h.n + 1 : 0;
-        keyCue.current = { cents: HOLD_CENTS * (HOLD_PEAK - Math.abs(HOLD_PEAK - (h.n % (HOLD_PEAK * 2)))), at: performance.now() };
+        keyCue.current = { cents: holdCents(h.n), at: performance.now() };
         carRef.current?.stepBy(dir * (e.shiftKey ? 2 : 1));
         return;
       }
@@ -998,8 +1016,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         {ownArea && look.divider !== 'none' ? (
           look.divider === 'line' ? (
             <>
-              {look.areaPos !== 'top' ? <div style={{ position: 'absolute', left: hand.left + 24, right: tableW - hand.right + 24, top: hand.top, height: 1, background: 'linear-gradient(90deg, transparent, rgba(218,162,73,0.3) 12%, rgba(218,162,73,0.3) 88%, transparent)', pointerEvents: 'none' }} /> : null}
-              {look.areaPos !== 'bottom' ? <div style={{ position: 'absolute', left: hand.left + 24, right: tableW - hand.right + 24, top: hand.bottom, height: 1, background: 'linear-gradient(90deg, transparent, rgba(218,162,73,0.3) 12%, rgba(218,162,73,0.3) 88%, transparent)', pointerEvents: 'none' }} /> : null}
+              {handPos !== 'top' ? <div style={{ position: 'absolute', left: hand.left + 24, right: tableW - hand.right + 24, top: hand.top, height: 1, background: 'linear-gradient(90deg, transparent, rgba(218,162,73,0.3) 12%, rgba(218,162,73,0.3) 88%, transparent)', pointerEvents: 'none' }} /> : null}
+              {handPos !== 'bottom' ? <div style={{ position: 'absolute', left: hand.left + 24, right: tableW - hand.right + 24, top: hand.bottom, height: 1, background: 'linear-gradient(90deg, transparent, rgba(218,162,73,0.3) 12%, rgba(218,162,73,0.3) 88%, transparent)', pointerEvents: 'none' }} /> : null}
             </>
           ) : (
             <div style={{ position: 'absolute', left: hand.left, top: hand.top, width: hand.right - hand.left, height: handH, background: 'rgba(0,0,0,0.2)', maskImage: 'linear-gradient(transparent, #000 40px, #000 calc(100% - 40px), transparent)', WebkitMaskImage: 'linear-gradient(transparent, #000 40px, #000 calc(100% - 40px), transparent)', pointerEvents: 'none' }} />
@@ -1020,7 +1038,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               onReturn={(uid) => { if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
               onLift={(b) => {
                 const { w, h } = sizeOf(b);
-                diceRef.current?.carry({ cx: b.fx * tableW, cy: b.fy * tableH, w, h, rot: b.rot ?? 0 });
+                const p = livePoses.get(b.uid);
+                diceRef.current?.carry(p ? { cx: p.x, cy: p.y, w, h, rot: p.rot } : { cx: b.fx * tableW, cy: b.fy * tableH, w, h, rot: b.rot ?? 0 });
               }}
               onCarry={(dx, dy) => diceRef.current?.carryBy(dx, dy)}
               onSettle={() => diceRef.current?.carry(null)}
@@ -1078,13 +1097,14 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           bounds={play}
           obstacles={obstacles}
           walls={{ kind: look.walls, rect: { left: 0, top: 0, right: tableW, bottom: tableH }, thickness: pad }}
-          places={places}
+          places={peeking ? peekPlaces : places}
           decks={tableDecks}
           current={category}
           onPickDeck={pickDeck}
           actions={actions}
-          controls={look.controls}
+          controls={peeking ? 'dice' : look.controls}
           controlFinish={look.controlDice}
+          ctlMotion={look.ctlMotion}
           numberFinish={look.numberDice}
           tokens={pieces}
           cards={cardPoses}
@@ -1157,14 +1177,18 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {/* Reset, tidy and settings, in the lower left corner: buttons always win over the pieces under them. */}
         <div data-ui="" style={{ position: 'absolute', left: pad + 10, bottom: pad + 10, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 1260 }}>
-          <CornerButton glyph="tidy" label="Put loose pieces back" count={looseCount} onPress={tidyAll} disabled={!looseCount && !diceRef.current?.hasRoll()} />
-          <CornerButton glyph="reset" label="Send the dice and supply home" onPress={() => { diceRef.current?.resetHome(); setGone(new Set()); }} />
+          {look.controls === 'hidden' ? <CornerButton glyph="roll" label={peeking ? 'Hide the control dice' : 'Show the control dice'} active={peeking} onPress={() => { playSfx(peeking ? 'panelClose' : 'panelOpen'); setPeek((v) => !v); }} /> : null}
+          <CornerButton glyph="tidy" label="Put away loose tokens and dice" count={looseCount} onPress={tidyAll} disabled={!looseCount && !diceRef.current?.hasRoll()} />
+          <CornerButton glyph="reset" label="Return supply and control dice to place" onPress={() => { diceRef.current?.resetHome(); setGone(new Set()); }} />
           <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { playSfx(settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />
         </div>
         {settings ? (
-          <div style={{ position: 'absolute', left: '50%', top: pad + 14, transform: 'translateX(-50%)', zIndex: 1255, pointerEvents: 'none', padding: '7px 14px', background: 'rgba(11,14,19,0.92)', border: `1px solid ${T.goldSoft}`, color: T.goldText, fontFamily: T.bold, fontSize: 13, whiteSpace: 'nowrap' }}>
+          <div style={{ position: 'absolute', left: '50%', bottom: pad + 14, transform: 'translateX(-50%)', zIndex: 1255, pointerEvents: 'none', padding: '7px 14px', background: 'rgba(11,14,19,0.92)', border: `1px solid ${T.goldSoft}`, color: T.goldText, fontFamily: T.bold, fontSize: 13, whiteSpace: 'nowrap' }}>
             Drag a framed row to move it. The arrows beside its name stand it on end.
           </div>
+        ) : null}
+        {settings && !spread ? (
+          <HandGrip hand={hand} onMove={(cy) => setLook({ ...lookRef.current, areaY: Math.min(1, Math.max(0, cy / tableH)) })} />
         ) : null}
 
         {/* A table someone shared by link. */}
@@ -1203,11 +1227,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             rows={[
               ...(tableMenu.piece ? [{ label: tableMenu.piece.label, onPress: () => diceRef.current?.rollPiece(tableMenu.piece!.key) }] : []),
               { label: 'Choose a deck', gap: !!tableMenu.piece, onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
-              { label: 'State', onPress: () => onOpen('modifiers'), gap: true },
-              { label: 'Cards', onPress: () => onOpen('cards') },
-              { label: 'Sort this deck', onPress: openSort, hidden: !canReorder },
-              { label: 'Put loose pieces back', onPress: tidyAll, gap: true },
-              { label: 'Send the pieces home', onPress: () => { diceRef.current?.resetHome(); setGone(new Set()); } },
+              { label: 'Put away loose tokens and dice', onPress: tidyAll, gap: true },
+              { label: 'Return supply and control dice to place', onPress: () => { diceRef.current?.resetHome(); setGone(new Set()); } },
               { label: 'Clear the whole table', onPress: clearAll, danger: true },
               { label: 'Table settings', onPress: () => setSettings(true), gap: true },
             ]} />
@@ -1239,22 +1260,53 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   );
 }
 
+/**
+ * The hand's grip while settings are open (owner, v0.47.7): drag it to move the whole hand up or down the table. Only
+ * the grip takes the pointer, so the cards inside still scroll and drag, to feel the hand where it is going.
+ */
+function HandGrip({ hand, onMove }: { hand: Bounds; onMove: (centreY: number) => void }) {
+  const [hover, setHover] = useState(false);
+  const start = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const sy = e.clientY, cy = (hand.top + hand.bottom) / 2;
+    const move = (m: PointerEvent) => onMove(cy + m.clientY - sy);
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); playSfx('cardDragEnd', { volume: 0.5 }); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    playSfx('cardDragStart', { volume: 0.5 });
+  };
+  return (
+    <>
+      <div aria-hidden="true" style={{ position: 'absolute', left: hand.left + 2, top: hand.top, width: hand.right - hand.left - 4, height: hand.bottom - hand.top, border: `1.5px dashed ${hover ? T.goldBright : 'rgba(224,181,99,0.55)'}`, boxSizing: 'border-box', pointerEvents: 'none', zIndex: 1250 }} />
+      <div data-ui="" role="slider" aria-label="Move the hand up or down" aria-valuenow={Math.round((hand.top + hand.bottom) / 2)} tabIndex={0}
+        onPointerDown={start} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}
+        onKeyDown={(e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); onMove((hand.top + hand.bottom) / 2 + (e.key === 'ArrowUp' ? -24 : 24)); } }}
+        style={{ position: 'absolute', left: hand.left + 14, top: hand.top + (hand.top < 40 ? 6 : -30), zIndex: 1251, cursor: 'ns-resize', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: hover ? T.panelLit : 'rgba(11,14,19,0.94)', border: `1px solid ${hover ? T.goldBright : T.goldSoft}`, color: T.goldText, fontFamily: T.bold, fontSize: 11.5, letterSpacing: 1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+        <Glyph d='<path d="M12 4v16M8 8l4-4 4 4M8 16l4 4 4-4"/>' size={14} />
+        Hand
+      </div>
+    </>
+  );
+}
+
 /** A corner button: its name slides out beside it on hover (owner, v0.47.4: the icons alone were unclear). */
-function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
+function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy' | 'roll'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
   const [hover, setHover] = useState(false);
   const lit = hover && !disabled;
   return (
     <button type="button" aria-label={count ? `${label} (${count})` : label} aria-pressed={active} disabled={disabled} onClick={onPress} onPointerDown={(e) => e.stopPropagation()} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)} style={{ all: 'unset', cursor: disabled ? 'default' : 'pointer', position: 'relative', display: 'block' }}>
       <div style={{ opacity: disabled ? 0.45 : 1 }}>
         <Chamfer c={9} line={active ? T.red : lit ? T.goldBright : T.goldSoft} fill={active ? 'rgba(200,27,24,0.28)' : lit ? T.panelLit : 'rgba(11,14,19,0.9)'} style={{ width: 40, height: 40 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ display: 'flex', transform: lit ? (glyph === 'tidy' ? 'translateY(1.5px)' : `rotate(${glyph === 'settings' ? 60 : -40}deg)`) : 'none', transition: `transform 280ms ${T.ease}` }}>
+          <span style={{ display: 'flex', transform: lit ? (glyph === 'tidy' ? 'translateY(1.5px)' : `rotate(${glyph === 'settings' ? 60 : glyph === 'roll' ? 30 : -40}deg)`) : 'none', transition: `transform 280ms ${T.ease}` }}>
             <Glyph d={DIE_GLYPHS[glyph]} size={19} color={active || lit ? T.ivory : T.goldText} />
           </span>
         </Chamfer>
       </div>
       {count ? <span style={{ position: 'absolute', right: -6, top: -6, minWidth: 18, height: 18, padding: '0 4px', boxSizing: 'border-box', background: T.red, color: T.ivory, fontFamily: T.bold, fontSize: 11, lineHeight: '18px', textAlign: 'center', clipPath: 'polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px)', pointerEvents: 'none' }}>{count > 99 ? '99+' : count}</span> : null}
       <span style={{ position: 'absolute', left: 50, top: '50%', transform: `translate(${hover ? 0 : -6}px, -50%)`, opacity: hover ? 1 : 0, transition: `opacity 140ms, transform 200ms ${T.ease}`, pointerEvents: 'none', whiteSpace: 'nowrap', padding: '6px 10px', background: 'rgba(11,14,19,0.96)', border: `1px solid ${T.goldSoft}`, color: disabled ? T.muted : T.ivory, fontFamily: T.bold, fontSize: 12.5, letterSpacing: 0.4 }}>
-        {disabled && glyph === 'tidy' ? 'Nothing loose to put back' : label}
+        {disabled && glyph === 'tidy' ? 'Nothing loose to put away' : label}
       </span>
     </button>
   );
@@ -1300,7 +1352,7 @@ function summarise(types: DieType[]): string {
 type Row = { label: string; onPress: () => void; danger?: boolean; gap?: boolean; hidden?: boolean };
 
 function MenuShell({ x, y, tableW, tableH, rows, onClose, head, side }: { x: number; y: number; tableW: number; tableH: number; rows: Row[]; onClose: () => void; head?: React.ReactNode; side?: (at: { left: number; top: number; W: number }) => React.ReactNode }) {
-  const W = 260, H = rows.length * 38 + rows.filter((r) => r.gap).length * 9 + 16 + (head ? 40 : 0);
+  const W = 340, H = rows.length * 38 + rows.filter((r) => r.gap).length * 9 + 16 + (head ? 40 : 0);
   const left = Math.max(8, Math.min(x, tableW - W - 24)), top = Math.max(8, Math.min(y, tableH - H - 24));
   return (
     <>
