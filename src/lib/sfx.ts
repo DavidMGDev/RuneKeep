@@ -18,6 +18,7 @@
 import { Platform } from 'react-native';
 import type { AudioBuffer, AudioContext, GainNode } from 'react-native-audio-api';
 
+import { normalGain } from './loudness';
 import { DEFAULT_CENTS, DEFAULT_VOLUME, SFX_PITCH_CENTS, SFX_VOLUME } from './sfx-config';
 
 // ---------------------------------------------------------------------------
@@ -520,16 +521,20 @@ function fire(src: number | Promise<AudioBuffer | null>, baseVol: number, varyCe
 }
 
 /** Sounds the player brought themselves (web, v0.47.14), decoded on first use and kept. */
-const own = new Map<string, Promise<AudioBuffer | null>>();
+// Each one is levelled to the others once, when it is decoded (they come from anywhere, at any loudness).
+const own = new Map<string, Promise<{ buf: AudioBuffer; gain: number } | null>>();
 export function playOwn(name: string, bytes: () => Promise<ArrayBuffer>, opts?: PlayOpts) {
   const c = getCtx();
   if (!c || muted) return;
   let p = own.get(name);
   if (!p) {
-    p = bytes().then((b) => c.decodeAudioData(b as never)).catch(() => null);
+    p = bytes()
+      .then((b) => c.decodeAudioData(b as never))
+      .then((buf) => ({ buf, gain: normalGain(Array.from({ length: buf.numberOfChannels }, (_, i) => buf.getChannelData(i)), buf.sampleRate) }))
+      .catch(() => null);
     own.set(name, p);
   }
-  fire(p, 1, 60, opts);
+  void p.then((x) => { if (x) fire(Promise.resolve(x.buf), x.gain, 60, opts); });
 }
 
 // Loading-screen guard (#258): NEVER play an "enter" sound while a loading screen is up. The latest

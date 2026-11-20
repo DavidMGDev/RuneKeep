@@ -195,7 +195,7 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   (the app sounds, exactly as before) and ULTRAKILL, which gives about ninety cues files of their own, several per
   cue and never the same one twice running, knocks included. RuneKeep does not ship those files: the player picks
   their own folder once, the files it uses are kept in IndexedDB in that browser only, and a missing one falls back
-  to the RuneKeep sound. The reset's ticks vary in pitch instead of climbing. Leaving the playground resets the
+  to the RuneKeep sound. Each file is levelled when decoded (`normalGain`: its loudest 50 ms brought to one RMS, never clipping, boost capped at 6x), so none is much louder than the rest. The reset's ticks vary in pitch instead of climbing. Leaving the playground resets the
   whole table. Nothing still burning settles onto a card. The preset picker has arrows either side for the next or
   previous preset. In edit mode each row, and each piece split off one, has an eye: hidden, it leaves the table and
   shows (dimmed frame, red eye) only while editing (`DeckLook.hidden`).

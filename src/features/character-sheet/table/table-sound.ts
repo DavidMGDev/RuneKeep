@@ -31,7 +31,7 @@ const PACK = {
   'ui:dragStart': { files: ['hookArmThrowStart.wav', 'Mechanism - AssaultRifle_PickUp_004.wav'], vol: 0.4 },
   'ui:dragEnd': { files: ['hookArmCatch.wav', 'hookArmClink.wav'], vol: 0.4 },
   'preset:pick': { files: ['enemyShotgunReady.wav', 'shotgunpump1.wav', 'shotgunpump2.wav', '171624__pjkasinski3__rem870-pump3.wav'], vol: 0.5 },
-  'hand:scroll': { files: ['countingClick.wav', 'countingClickOrig.wav', 'RailcannonPipClick.wav'], vol: 0.4 },
+  'hand:scroll': { files: ['countingClick.wav', 'RailcannonPipClick.wav'], vol: 0.4 },
   'deck:step': { files: ['RailcannonPipClick.wav', 'fistReload.wav'], vol: 0.45 },
   'card:lift': { files: ['hookArmWhoosh.wav', 'Whoosh.wav', 'PunchSwoosh.wav'], vol: 0.45 },
   'card:place': { files: STEPS, vol: 0.5 },
