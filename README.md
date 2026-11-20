@@ -178,8 +178,14 @@ These are the ones that need attention, and they are called out here rather than
 - **Sound effects** (`assets/sounds/`) include a folder of joke sounds (`OnLoseHP-1in10chance/`) drawn
   from games, films and internet memes. Those are third-party copyrighted works owned by companies that
   do enforce, and they are unlicensed here.
+- **The table's Aggressive sound scheme** (`public/sounds/aggressive/`, built by
+  `scripts/sounds/build-aggressive.py`) is a mixed collection: effects from Freesound contributors (the
+  files whose names start with a Freesound id, such as `245372-quaker540-hq-explosion`), and effects and
+  voice lines taken from, or made to sound like, **ULTRAKILL** by New Blood Interactive, which inspired it.
+  The ULTRAKILL material is New Blood's and is unlicensed here; check each Freesound file's own licence
+  before reusing it.
 
-Neither category is covered by the MIT licence above, and neither should be assumed redistributable.
+None of these categories is covered by the MIT licence above, and none should be assumed redistributable.
 
 ## Distribution
 

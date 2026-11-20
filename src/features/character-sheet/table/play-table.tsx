@@ -44,8 +44,8 @@ import { type DomatCard, DOMAT, DOMAT_START, type DomatStock, domatStock, drawDo
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
 import { type CardPose, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
-import { CardBreak, type CardBreakMode, DomatCardView, type Fx, FX_CSS, FxLayer, shake } from './table-fx';
-import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SpreadPlace } from './table-store';
+import { breakPieces, CardBreak, type CardBreakMode, CardScrap, clipHalf, DomatCardView, type Fx, FX_CSS, FxLayer, localDir, type Pt, scrapShape, shake } from './table-fx';
+import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SavedPiece, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 import { cue } from './table-sound';
 
@@ -287,6 +287,15 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   spreadAtRef.current = spreadAt;
   const boardRef = useRef(board);
   boardRef.current = board;
+  /**
+   * Scraps of torn and cut cards (owner, v0.47.16): real pieces on the felt, knocked about like any other, torn again
+   * when hit hard, and fading once they are small. Kept for the session; Reset clears them. `w` is the whole card's.
+   */
+  const [scraps, setScrapsState] = useState<{ uid: string; id: string; poly: Pt[]; w: number; x: number; y: number; rot: number; fading?: boolean }[]>([]);
+  const scrapsRef = useRef(scraps);
+  scrapsRef.current = scraps;
+  const setScraps = useCallback((next: typeof scraps) => { scrapsRef.current = next; setScrapsState(next); }, []);
+  const scrapN = useRef(0);
   /** The cards with a physical copy on the table: their tokens are locked (the hand's copy shares them). */
   const physRefs = useRef(new Set<string>());
   physRefs.current = new Set(board.filter((b) => b.phys).map((b) => refOf(b.id)));
@@ -377,10 +386,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const w = Math.min(maxW(tableH), Math.max(MIN_W, b.w));
     return { w, h: (w * FORGED_H) / FORGED_W };
   };
-  const cardPoses = useMemo<CardPose[]>(() => board.map((b) => {
+  const cardPoses = useMemo<CardPose[]>(() => [...board.map((b) => {
     const { w, h } = sizeOf(b);
     return { key: `card:${b.uid}`, x: b.fx * tableW, y: b.fy * tableH, w, h, rot: b.rot ?? 0, phys: !!b.phys };
-  }), [board, tableW, tableH]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), ...scraps.filter((c) => !c.fading).map((c) => {
+    const sh = scrapShape(c.poly), h = (c.w * FORGED_H) / FORGED_W;
+    return { key: `card:${c.uid}`, x: c.x, y: c.y, w: ((sh.x1 - sh.x0) / 100) * c.w, h: ((sh.y1 - sh.y0) / 100) * h, rot: c.rot, phys: true };
+  })], [board, scraps, tableW, tableH]); // eslint-disable-line react-hooks/exhaustive-deps
   const pieces = useMemo<TokenPiece[]>(() => {
     const out: TokenPiece[] = [];
     for (const b of board) {
@@ -620,7 +632,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const [drawn, setDrawn] = useState<{ uid: string; card: DomatCard; x: number; y: number; from: { x: number; y: number }; snap: Map<string, { x: number; y: number }>; held?: boolean }[]>([]);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const [fx, setFx] = useState<Fx[]>([]);
-  const [shattering, setShattering] = useState<{ uid: string; card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number } }[]>([]);
+  const [shattering, setShattering] = useState<{ uid: string; card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; fxOnly?: boolean }[]>([]);
   const fxSeq = useRef(0);
   const addFx = useCallback((f: Omit<Fx, 'id'>) => {
     const id = ++fxSeq.current;
@@ -687,14 +699,59 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const breakCard = useCallback((b: BoardCard, mode: CardBreakMode, dir?: { x: number; y: number }) => {
     const card = lookup(b.id);
     if (!card) return;
-    const { w } = sizeOf(b);
+    const { w, h } = sizeOf(b);
     const p = livePoses.get(b.uid);
     livePoses.delete(b.uid);
-    setShattering((s) => [...s, { uid: b.uid, card, cx: p?.x ?? b.fx * tableW, cy: p?.y ?? b.fy * tableH, w, rot: p?.rot ?? b.rot ?? 0, mode, dir }]);
+    const cx = p?.x ?? b.fx * tableW, cy = p?.y ?? b.fy * tableH, rot = p?.rot ?? b.rot ?? 0;
+    // Torn or cut, a copy leaves its halves on the table as scraps; the hand's own laid-out card stays whole.
+    const torn = (mode === 'tear' || mode === 'split') && lookRef.current.handMode !== 'spread';
+    setShattering((s) => [...s, { uid: b.uid, card, cx, cy, w, rot, mode, dir, fxOnly: torn }]);
+    if (torn) addScraps(b.id, w, cx, cy, rot, breakPieces(mode, localDir(dir, rot), w, h).map((q) => q.poly), dir);
     if (b.uid.startsWith('pg:')) setPgCards((l) => l.filter((c) => c.uid !== b.uid));
     else if (lookRef.current.handMode !== 'spread') setCopies(copiesRef.current.filter((c) => c.uid !== b.uid));
     else setBoard(boardRef.current.map((c) => (c.uid === b.uid ? { ...c, phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : c)));
   }, [lookup, tableW, tableH, setCopies]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** New scraps of a card (centred at cx, cy, turned rot), flying apart from its middle and on the way it was hit. */
+  const addScraps = (id: string, w: number, cx: number, cy: number, rot: number, polys: Pt[][], dir?: { x: number; y: number }) => {
+    const h = (w * FORGED_H) / FORGED_W, a = (rot * Math.PI) / 180;
+    const dl = Math.hypot(dir?.x ?? 0, dir?.y ?? 0) || 1;
+    const made = polys.flatMap((poly) => {
+      const sh = scrapShape(poly);
+      if (sh.share < 0.02) return [];
+      const lx = ((sh.x0 + sh.x1) / 200 - 0.5) * w, ly = ((sh.y0 + sh.y1) / 200 - 0.5) * h;
+      const ox = lx * Math.cos(a) - ly * Math.sin(a), oy = lx * Math.sin(a) + ly * Math.cos(a);
+      const ol = Math.hypot(ox, oy) || 1;
+      return [{ s: { uid: `scrap:${++scrapN.current}`, id, poly, w, x: cx + ox, y: cy + oy, rot }, vx: (ox / ol) * 520 + ((dir?.x ?? 0) / dl) * 650, vy: (oy / ol) * 520 + ((dir?.y ?? 0) / dl) * 650 }];
+    });
+    setScraps([...scrapsRef.current, ...made.map((m) => m.s)]);
+    for (const m of made) {
+      let tries = 0;
+      const go = () => { if (!diceRef.current?.engine()?.throwCard(`card:${m.s.uid}`, m.vx, m.vy, (Math.random() - 0.5) * 7) && ++tries < 25) setTimeout(go, 30); };
+      setTimeout(go, 20);
+    }
+  };
+  /** A scrap hit hard: cut again along the hit, or, once small (or burnt, or blown up), it fades away. */
+  const breakScrap = (uid: string, mode: CardBreakMode, dir?: { x: number; y: number }) => {
+    const sc = scrapsRef.current.find((c) => c.uid === uid);
+    if (!sc || sc.fading) return;
+    const p = livePoses.get(uid);
+    livePoses.delete(uid);
+    const x = p?.x ?? sc.x, y = p?.y ?? sc.y, rot = p?.rot ?? sc.rot;
+    const sh = scrapShape(sc.poly);
+    if (sh.share < 0.13 || mode === 'burn' || mode === 'explode') {
+      setScraps(scrapsRef.current.map((c) => (c.uid === uid ? { ...c, x, y, rot, fading: true } : c)));
+      setTimeout(() => setScraps(scrapsRef.current.filter((c) => c.uid !== uid)), 470);
+      return;
+    }
+    // Back to where the whole card's middle would be, so the halves are cut from it as from a card.
+    const h = (sc.w * FORGED_H) / FORGED_W, a = (rot * Math.PI) / 180;
+    const lx = ((sh.x0 + sh.x1) / 200 - 0.5) * sc.w, ly = ((sh.y0 + sh.y1) / 200 - 0.5) * h;
+    const cx = x - (lx * Math.cos(a) - ly * Math.sin(a)), cy = y - (lx * Math.sin(a) + ly * Math.cos(a));
+    const ld = localDir(dir, rot);
+    const d: Pt = [(ld[0] * 100) / sc.w, (ld[1] * 100) / h];
+    setScraps(scrapsRef.current.filter((c) => c.uid !== uid));
+    addScraps(sc.id, sc.w, cx, cy, rot, [clipHalf(sc.poly, sh.mid, d, 1), clipHalf(sc.poly, sh.mid, d, -1)], dir);
+  };
 
   // ---------------------------------------------------------------- what the Deck of Many Things leaves behind
   /** Effects still in play, each with how to undo it (Reset undoes them all, owner v0.47.12). */
@@ -1213,6 +1270,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     // along the way the breaker went; otherwise torn in two.
     for (const h of hits) {
       if (!h.key.startsWith('card:')) continue;
+      if (h.key.startsWith('card:scrap:')) { breakScrap(h.key.slice(5), h.fire ? 'burn' : 'split', { x: h.vx ?? 0, y: h.vy ?? 1 }); continue; }
       const b = boardRef.current.find((c) => `card:${c.uid}` === h.key);
       if (b) breakCard(b, h.fire ? 'burn' : h.speed > 3200 ? 'split' : 'tear', { x: h.vx ?? 0, y: h.vy ?? 1 });
     }
@@ -1226,7 +1284,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       addFx({ kind: 'spark', x: at.x, y: at.y, r: fire ? 70 : 55, ms: 450, tint: fire ? '#ffb070' : '#fff1d0' });
       shake(tableRef.current, fire ? 0.3 : 0.2);
     }
-  }, [setLoose, addFx, breakCard]);
+  }, [setLoose, addFx, breakCard]); // eslint-disable-line react-hooks/exhaustive-deps -- breakScrap reads only refs
   /**
    * A burning throw's first hit held (owner, v0.47.12, "like a smash final hit"): a star of light pinned where it
    * landed at once; strong, the table darkens round it and leans in for the moment it hangs.
@@ -1267,6 +1325,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     }
     const done = rested.map((k) => k.slice(5)).filter((uid) => livePoses.has(uid));
     if (!done.length) return;
+    // Scraps keep where they came to rest, as cards do.
+    if (done.some((u) => u.startsWith('scrap:'))) setScraps(scrapsRef.current.map((c) => { const p = done.includes(c.uid) ? livePoses.get(c.uid) : undefined; return p ? { ...c, x: p.x, y: p.y, rot: Math.round(p.rot * 10) / 10 } : c; }));
     const next = boardRef.current.map((b) => {
       const p = livePoses.get(b.uid);
       if (!p || !done.includes(b.uid)) return b;
@@ -1276,7 +1336,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     });
     for (const uid of done) livePoses.delete(uid);
     setBoard(next);
-  }, [tableW, tableH, setBoard, livePoses]);
+  }, [tableW, tableH, setBoard, setScraps, livePoses]);
 
 
   // ---------------------------------------------------------------- panels, back, keys
@@ -1404,6 +1464,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     for (const k of eng?.keys() ?? []) if (k.startsWith('fx:')) eng?.remove(k);
     pockets.current.clear();
     setMimics(() => []);
+    setScraps([]);
     diceRef.current?.tidy();
     setGone(new Set());
     if (spread) {
@@ -1453,9 +1514,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setDrawn([]);
   };
   /**
-   * The playground (owner, v0.47.12): the hand lets go of every card as a physical card, flung up into the open
-   * table; the supply goes, letting out one of every die, every token and three colours; the control dice are only
-   * dice. The Deck of Many Things stays, stock and all. Pressed again, the cards go back into the hand.
+   * The playground (owner, v0.47.12; calm since v0.47.16): the hand sets every card out on the table as a physical
+   * card, in a neat grid, and nothing moves until something hits it. The supply goes; the control dice are only dice.
+   * The Deck of Many Things stays, stock and all. Pressed again, the whole table resets and the cards go home.
    */
   const togglePlayground = () => {
     if (playground) {
@@ -1473,15 +1534,16 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     // in the hand and resting there as a physical card (owner, v0.47.15: not flung about).
     const n = Math.max(1, deck.length);
     const gap = 14;
-    // The whole table is free (the hand has let go), less the corner buttons, the rows of tokens above, and any
-    // control die standing in the way: the grid gives way on that die's side.
-    let L = play.left + 70, R = play.right - 30;
-    const Tp = pad + 160, B = tableH - pad - 10;
+    // The whole table is free (the hand has let go), less the corner buttons and whatever still stands on it (the
+    // control dice, the Deck of Many Things): near the top the grid starts below it, lower down it gives way on its side.
+    let L = play.left + 70, R = play.right - 30, Tp = pad + 24;
+    const B = tableH - pad - 10;
     const eng = diceRef.current?.engine();
-    for (const k of eng?.keys() ?? []) {
-      if (/^(free|roll|tok|card|src|fx):/.test(k)) continue;
+    const standing = (eng?.keys() ?? []).filter((k) => !/^(free|roll|tok|card|fx):/.test(k) && (!k.startsWith('src:') || k === DOMAT_KEY));
+    for (const k of standing) { const st = eng?.state(k); if (st && st.y < Tp + 140) Tp = Math.max(Tp, st.y + 70); }
+    for (const k of standing) {
       const st = eng?.state(k);
-      if (!st || st.y < Tp - 50 || st.y > B + 50 || st.x < L - 60 || st.x > R + 60) continue;
+      if (!st || st.y < Tp || st.y > B + 50 || st.x < L - 60 || st.x > R + 60) continue;
       if (st.x < (L + R) / 2) L = Math.max(L, st.x + 70); else R = Math.min(R, st.x - 70);
     }
     let w = Math.min(maxW(tableH), 128), cols = 1, rows = 1;
@@ -1507,20 +1569,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setPgCards(cards);
     setPlayground(true);
     glide(slots, 0.7);
-    // One of everything, set out in two neat rows where the supply stood, above the cards (owner, v0.47.15).
-    const colours = [...TOKEN_COLORS].sort(() => Math.random() - 0.5).slice(0, 3);
-    const toks: TokenInfo[] = [
-      ...DIE_TYPES.map((t): TokenInfo => ({ kind: 'die', dieType: t, dieValue: 1, dieValue2: t === 'duality' ? 1 : undefined })),
-      { kind: 'wood' }, { kind: 'bone' }, { kind: 'iron' },
-      ...colours.map((c): TokenInfo => ({ kind: 'color', color: c })),
-    ];
-    const per = Math.ceil(toks.length / 2);
-    // The Deck of Many Things stays where it stood: the rows start past it.
-    const domat = eng?.state(DOMAT_KEY);
-    const x0 = Math.max(play.left + 70, domat && domat.y < pad + 140 ? domat.x + 70 : 0);
-    setLoose([...looseRef.current, ...toks.map((t, i) => ({ key: `free:${newTokenId()}${i}`, token: t, x: x0 + (i % per) * 62, y: pad + 44 + Math.floor(i / per) * 62 }))]);
   };
   const looseCount = loose.length + drawn.length + (spread ? 0 : copies.length);
+  /** The loose dice and tokens as a preset keeps them (owner, v0.47.16): where each lies now, as shares of the felt. */
+  const presetPieces = {
+    take: (): SavedPiece[] => {
+      const eng = diceRef.current?.engine();
+      return looseRef.current.map((l) => {
+        const st = eng?.state(eng.keys().find((k) => baseOf(k) === l.key) ?? l.key);
+        return { token: l.token as unknown as Record<string, unknown>, fx: (st?.x ?? l.x) / tableW, fy: (st?.y ?? l.y) / tableH };
+      });
+    },
+    put: (pieces: SavedPiece[]) => setLoose(pieces.map((p, i) => ({ key: `free:${newTokenId()}${i}`, token: p.token as unknown as TokenInfo, x: p.fx * tableW, y: p.fy * tableH }))),
+  };
 
   return (
     <DesktopPortal to="table">
@@ -1576,7 +1637,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               }}
             />
           </div>
-          {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
+          {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} fxOnly={s.fxOnly} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
+          {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} /> : null; })}
           {Object.keys(cardEls).length ? <style>{Object.entries(cardEls).map(([u, el]) => `[data-board-card="${u}"] { box-shadow: 0 0 0 2px ${ELEMENT_TINT[el]}, 0 0 22px ${ELEMENT_TINT[el]}; }`).join('\n')}</style> : null}
         </div>
 
@@ -1823,7 +1885,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         ) : null}
       </div>
       {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} top={plaqueTop} minWidth={barOn ? barBox.w : undefined} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { cue('ui:tap', 'buttonTap'); setResult(null); }} /> : null}
-      {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { cue('ui:close', 'panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={port} /> : null}
+      {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { cue('ui:close', 'panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={port} pieces={presetPieces} /> : null}
     </DesktopPortal>
   );
 }

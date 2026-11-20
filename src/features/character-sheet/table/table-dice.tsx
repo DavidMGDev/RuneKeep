@@ -29,7 +29,7 @@ import { createFireLayer, type FireLayer } from './piece-fire';
 import type { DiceEngine, DieSpec, Finish, Shape, Walls } from './dice-engine';
 import type { Bounds, Impact, Obstacle } from './dice-physics';
 import { loadDicePlaces, saveDicePlaces } from './table-store';
-import { Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from './table-ui';
+import { Chamfer, Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from './table-ui';
 import { cue, knockCue } from './table-sound';
 
 export type ActionKey = 'cards' | 'state' | 'sort';
@@ -739,7 +739,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     }
   }, [partsOf]);
   /** Fling a piece (and its partner) off in a random direction at this speed. */
-  const fling = useCallback((key: string, speed: number, boost?: { gen: number; power: number }, aim?: number, breaker?: { left: number; fire: boolean }) => {
+  const fling = useCallback((key: string, speed: number, boost?: { gen: number; power: number }, aim?: number, breaker?: { left: number; fire: boolean; strike?: boolean }) => {
     const e = engineRef.current;
     if (!e) return;
     const ang = aim ?? Math.random() * Math.PI * 2;
@@ -884,9 +884,17 @@ export const TableDice = forwardRef<TableDiceHandle, {
         live.current.onHardHit(6000);
         return;
       }
-      // Without fire a throw breaks two loose pieces at most.
-      fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power }, undefined, power > 0.3 ? { left: 2, fire: false } : undefined);
+      // Without fire it goes straight for a loose piece in reach, picked at random (owner, v0.47.16), and its first
+      // break is held as an impact frame; with nothing in reach it flies off any way. It breaks two pieces at most.
+      const at = engine.state(pr.key);
+      const mine = partsOf(pr.key);
+      const prey = at ? engine.keys().filter((k) => (k.startsWith('free:') || k.startsWith('roll:')) && !mine.includes(k)).filter((k) => { const s = engine.state(k); return s && Math.hypot(s.x - at.x, s.y - at.y) < 620; }) : [];
+      const target = prey.length ? engine.state(prey[Math.floor(Math.random() * prey.length)]) : null;
+      const aim = at && target ? Math.atan2(target.y - at.y, target.x - at.x) : undefined;
+      fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power }, aim, power > 0.15 ? { left: 2, fire: false, strike: aim !== undefined } : undefined);
     };
+    /** Held as one of a selection of several: it carries the rest with it and never catches fire. */
+    const bundled = (key: string) => selection.current.includes(key) && selection.current.filter((k) => engine.has(k)).length > 1;
     /** Swing speeds (px/s): below SLOW the swing runs down; the faster above it, the faster it builds. */
     const SWING_SLOW = 900, SWING_FULL = 2600, SWING_MS = 1100;
     /** The swing builds and decays; at 2 the piece catches fire in the hand. Called every frame while it is held. */
@@ -896,6 +904,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const rate = Math.min(1.6, Math.max(0, (pr.hand - SWING_SLOW) / (SWING_FULL - SWING_SLOW)));
       if (!pr.lit) pr.swing = rate > 0 ? Math.min(2, pr.swing + (dt / SWING_MS) * rate) : Math.max(0, pr.swing - dt / 900);
       shakeAll(pr.key, pr.lit ? 1 : Math.min(1, pr.swing));
+      // A swung group throws hard but never catches (owner, v0.47.16): only a piece swung alone burns.
+      if (bundled(pr.key)) return;
       // The fire shows as the swing builds, well before it is fully alight (owner, v0.47.11).
       if (!pr.lit) heat(pr.key, (pr.swing - 0.35) / 1.65);
       if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit };
@@ -925,13 +935,13 @@ export const TableDice = forwardRef<TableDiceHandle, {
         shakeAll(pr.key, Math.min(1, pr.charge));
         // It smoulders from early in the shake and is alight by 1.3; let go then and it goes burning. At 2 it goes off
         // by itself (owner, v0.47.11: the fire has to show well before the launch).
-        if (!pr.lit) heat(pr.key, (pr.charge - 0.3) / 1.0);
-        if (!pr.lit && pr.charge >= 1.3) {
+        if (!pr.lit && !bundled(pr.key)) heat(pr.key, (pr.charge - 0.3) / 1.0);
+        if (!pr.lit && !bundled(pr.key) && pr.charge >= 1.3) {
           pr.lit = true;
           setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
           cue('piece:ignite', 'gainGoldenHp', { volume: 0.5, cents: 900 });
         }
-        if (pr.charge >= 2) { press = null; host.style.cursor = 'grab'; fire(pr, 1, true); return; }
+        if (pr.charge >= 2) { press = null; host.style.cursor = 'grab'; fire(pr, 1, pr.lit); return; }
       }
       chargeRaf = requestAnimationFrame(tick);
     };
@@ -1145,7 +1155,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
         const boost = { gen: 5, power: pr.lit ? 7 : 1 + 2.5 * pr.swing };
         const breaker = pr.lit ? { left: 99, fire: true } : { left: 2, fire: false };
         if (speed < 250) fling(pr.key, Math.max(want, pr.lit ? 11500 : 1400), boost, undefined, breaker);
-        else for (const k of partsOf(pr.key)) engine.empower(k, want / speed, boost, breaker);
+        // A swung bundle all goes with the swing, as hard as the one in the hand.
+        else for (const k of group ?? partsOf(pr.key)) if (engine.has(k)) engine.empower(k, want / speed, boost, breaker);
         cue(pr.lit ? 'throw:fire' : 'throw:swing', pr.lit ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.5 + Math.min(1, pr.swing) * 0.3, cents: pr.lit ? 1100 : Math.round(pr.swing * 400) });
         if (pr.lit) live.current.onHardHit(7000);
         if (pr.key.startsWith('free:')) watchLoose(pr.key);
@@ -1587,6 +1598,26 @@ export const TableDice = forwardRef<TableDiceHandle, {
             props.onSplitGroup(g.g as 'ctl' | 'sup', at);
           } : g.chain === 'join' ? () => props.onJoinGroup(g.g as 'ctl' | 'sup') : undefined} />
       ))}
+      {/* Tuck the controls away (owner, v0.47.16): the control dice and the deck die fold into this one small arrow
+          above where they stand, for a bare table; pressed again they come back. Settings still show them. */}
+      {ready && showDice && !editing && !props.toys && props.onHide ? (() => {
+        const keys = [...ACTIONS, CAT];
+        const tucked = keys.every((k) => props.hidden?.includes(k));
+        const k = props.ctlSize;
+        const above = tucked ? 0 : places.ctl.dir === 'row' ? 50 * k + 16 : (((ACTIONS.length - 1) * CTL_GAP.column) / 2 + 40) * k + 16;
+        const x = Math.min(bounds.right - 14, Math.max(bounds.left + 14, places.ctl.x));
+        const y = Math.max(bounds.top + 14, places.ctl.y - above);
+        return (
+          <button type="button" data-ui="" aria-label={tucked ? 'Bring the controls back' : 'Tuck the controls away'} title={tucked ? 'Bring the controls back' : 'Tuck the controls away'} aria-pressed={tucked}
+            onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue(tucked ? 'ui:open' : 'ui:close', tucked ? 'panelOpen' : 'panelClose', { volume: 0.5 }); props.onHide?.(keys); }}
+            style={{ all: 'unset', cursor: 'pointer', position: 'absolute', left: x - 13, top: y - 9, zIndex: 21, opacity: tucked ? 0.85 : 0.55, transition: 'opacity 140ms' }}
+            onPointerEnter={(e) => { e.currentTarget.style.opacity = '1'; }} onPointerLeave={(e) => { e.currentTarget.style.opacity = tucked ? '0.85' : '0.55'; }}>
+            <Chamfer c={5} line={T.goldSoft} fill="rgba(11,14,19,0.9)" style={{ width: 26, height: 18 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Glyph d={tucked ? '<path d="M7 10l5 5 5-5"/>' : '<path d="M7 14l5-5 5 5"/>'} size={13} />
+            </Chamfer>
+          </button>
+        );
+      })() : null}
       {/* The decks' glyphs, drawn once off-screen to be read back as pictures for the die. */}
       <div ref={glyphHost} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 1, height: 1, overflow: 'hidden' }}>
         {decks.map((d) => <div key={d.key} data-deck={d.key} style={{ width: 48, height: 48 }}><CategoryGlyph category={d.key} meta={d.meta} /></div>)}

@@ -209,3 +209,15 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   grid, physical ones too. Entering the playground no longer flings the hand: the cards glide into a centred grid on
   the whole table (sized to fit, clear of the corner buttons and any control die) and rest there as physical cards,
   with one of every die and token set out in two rows above them, past the Deck of Many Things.
+- v0.47.16: the table's sounds ship with the site. Table > Sounds offers Aggressive (the default: ~190 heavy hits,
+  shots and crashes in `public/sounds/aggressive`, built by `scripts/sounds/build-aggressive.py`, credited in the
+  README) and Regular (RuneKeep's own). Each Aggressive cue caps how long it rings and fades out (the Deck of Many
+  Things may ring long); scrolling the hand, the colour and the deck keep only their short sounds; the Gems card is
+  pitched down. The playground is calm: the cards are set out in a grid that steps round whatever stands on the
+  table, nothing is spawned, and resting pieces never push one another (`collide` skips every sleeping pair). A held
+  piece let go goes straight for a loose piece in reach and its first break is an impact frame (`breaker.strike`),
+  and every new throw can earn one again (`brokeOnce` cleared). A carried selection bundles round the hand and
+  circles it, and a group never catches fire. A carried piece stops at a Donjon cage's bars. A small chamfered arrow
+  above the control dice tucks them and the deck die away (the `hidden` list). Saving a preset with dice and tokens
+  lying about asks whether to keep them with it (`SavedLook.pieces`). Torn and cut copies leave real scraps
+  (`CardScrap`): pushed like any piece, cut again when hit hard, fading once under an eighth of a card.

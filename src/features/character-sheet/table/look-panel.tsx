@@ -11,16 +11,16 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { BUILTIN_LOOKS, type DeckLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, readTableFile, TABLE_PRESETS, tableFile, wearsHand, WILD_TABLES as WILD_LOOKS, withHand } from './deck-look';
-import { loadSavedLooks, type SavedLook, saveSavedLooks } from './table-store';
+import { loadSavedLooks, type SavedLook, type SavedPiece, saveSavedLooks } from './table-store';
 import { chamferClip, Glyph, T, TButton } from './table-ui';
-import { cue, forgetUltrakill, keepUltrakillFolder, onSoundsChange, setSoundScheme, soundScheme, ULTRAKILL_FILES, ultrakillLoaded } from './table-sound';
+import { cue, onSoundsChange, setSoundScheme, soundScheme } from './table-sound';
 
 const PAGES = [{ id: 'presets', title: 'Presets' }, ...LOOK_PAGES.map((p) => ({ id: p.id, title: p.title }))];
 
 /** The four tables drawn at random and kept (v0.47.3): seeded, so they are the same for everyone until tuned. */
 export const WILD_TABLES = WILD_LOOKS.map((look, i) => ({ id: `wild${i + 1}`, name: ['Wild one', 'Wild two', 'Wild three', 'Wild four'][i], who: 'Drawn at random and kept because it worked; its pieces placed by hand.', look }));
 
-export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, pieceCount, box }: { look: DeckLook; onChange: (l: DeckLook) => void; onClose: () => void; onClearTable: () => void; boardCount: number; pieceCount: number; box: { left: number; top: number; width: number; height: number } }) {
+export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, pieceCount, box, pieces }: { look: DeckLook; onChange: (l: DeckLook) => void; onClose: () => void; onClearTable: () => void; boardCount: number; pieceCount: number; box: { left: number; top: number; width: number; height: number }; /** The loose dice and tokens: read to save with a preset, set to load one. */ pieces?: { take: () => SavedPiece[]; put: (p: SavedPiece[]) => void } }) {
   const [page, setPage] = useState('presets');
   const body = useRef<HTMLDivElement>(null);
   const tabs = useRef<HTMLDivElement>(null);
@@ -53,7 +53,7 @@ export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, p
         {PAGES.map((p) => <Tab key={p.id} label={p.title} active={page === p.id} onPress={() => { if (page !== p.id) { cue('ui:hover', 'floatMenuHighlight', { volume: 0.5 }); setPage(p.id); } }} />)}
       </div>
       <div ref={body} className="rk-scroll" style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 28px' }}>
-        {current ? <>{page === 'hand' ? <HandLooks look={look} onChange={onChange} /> : null}{page === 'table' ? <Sounds /> : null}{current.groups.filter((g) => !g.hidden).map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />)}</> : <PresetsPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} pieceCount={pieceCount} />}
+        {current ? <>{page === 'hand' ? <HandLooks look={look} onChange={onChange} /> : null}{page === 'table' ? <Sounds /> : null}{current.groups.filter((g) => !g.hidden).map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />)}</> : <PresetsPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} pieceCount={pieceCount} pieces={pieces} />}
       </div>
     </div>,
     document.body,
@@ -182,7 +182,7 @@ function uniqueName(name: string, list: SavedLook[]): string {
   for (let i = 2; ; i++) if (!list.some((s) => s.name === `${base} ${i}`)) return `${base} ${i}`;
 }
 
-function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: { look: DeckLook; onChange: (l: DeckLook) => void; onClearTable: () => void; boardCount: number; pieceCount: number }) {
+function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount, pieces }: { look: DeckLook; onChange: (l: DeckLook) => void; onClearTable: () => void; boardCount: number; pieceCount: number; pieces?: { take: () => SavedPiece[]; put: (p: SavedPiece[]) => void } }) {
   const [saved, setSaved] = useState<SavedLook[]>(loadSavedLooks);
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
@@ -190,13 +190,23 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
   const [shareNote, setShareNote] = useState<{ text: string; bad?: boolean } | null>(null);
   const [surprise, setSurprise] = useState(0);
   const store = (list: SavedLook[]) => { setSaved(list); saveSavedLooks(list); };
+  /** Saving with dice or tokens lying about asks first whether to keep them with it (owner, v0.47.16). */
+  const [asking, setAsking] = useState<{ name: string; pieces: SavedPiece[] } | null>(null);
+  const keep = (n: string, with_?: SavedPiece[]) => {
+    store([{ name: n, look, ...(with_?.length ? { pieces: with_ } : {}) }, ...saved.filter((s) => s.name !== n)].slice(0, 24));
+    setName('');
+    setAsking(null);
+    cue('ui:confirm', 'cardSelect', { volume: 0.6 });
+  };
   const save = () => {
     const n = name.trim();
     if (!n) return;
-    store([{ name: n, look }, ...saved.filter((s) => s.name !== n)].slice(0, 24));
-    setName('');
-    cue('ui:confirm', 'cardSelect', { volume: 0.6 });
+    const lying = pieces?.take() ?? [];
+    if (lying.length) { setAsking({ name: n, pieces: lying }); cue('ui:open', 'floatMenuOpen', { volume: 0.5 }); return; }
+    keep(n);
   };
+  /** Use a saved preset, and lay out the pieces it was saved with. */
+  const load = (s: { look: DeckLook; pieces?: SavedPiece[] }) => { onChange(s.look); if (s.pieces?.length) pieces?.put(s.pieces); };
   /** The code, shown to copy by hand when the browser would not let it be copied. */
   const [shown, setShown] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -251,7 +261,7 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
       <div style={block}>
         <SectionTitle>Load a preset</SectionTitle>
         <span style={sub}>A preset sets everything: the hand, how it moves, the table and where every piece lives.</span>
-        <PresetPicker look={look} saved={saved} onPick={(l) => { cue('preset:pick', 'cardSelect', { volume: 0.6 }); onChange(l); }} />
+        <PresetPicker look={look} saved={saved} onPick={(l, p) => { cue('preset:pick', 'cardSelect', { volume: 0.6 }); load({ look: l, pieces: p }); }} />
         <TButton label="Surprise me" h={34} title="A new preset drawn at random" onPress={shuffle} />
         <div style={{ height: 1, background: 'rgba(218,162,73,0.14)', margin: '6px 0 2px' }} />
         <span style={sub}>From someone else: paste their code, or open their .rune file.</span>
@@ -275,16 +285,28 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
           </div>
         ) : (
           <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-            <div style={{ flex: 1 }}><LookRow name={s.name} active={sameLook(look, s.look)} onPress={() => { cue('ui:tap', 'buttonTap', { volume: 0.6 }); onChange(s.look); }} /></div>
+            <div style={{ flex: 1 }}><LookRow name={s.name} active={sameLook(look, s.look)} onPress={() => { cue('ui:tap', 'buttonTap', { volume: 0.6 }); load(s); }} /></div>
             <TButton title={`Rename ${s.name}`} h={34} onPress={() => { cue('ui:tap', 'buttonTap', { volume: 0.5 }); setRenaming({ from: s.name, to: s.name }); }} icon={<Glyph d='<path d="M4 20h4L19 9l-4-4L4 16v4Z"/>' size={13} color={T.muted} />} />
             <TButton title={`Download ${s.name} as a file`} h={34} onPress={() => { cue('ui:tap', 'buttonTap'); downloadTable(s.look, s.name); }} icon={<Glyph d='<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/>' size={14} color={T.muted} />} />
             <TButton title={`Delete ${s.name}`} h={34} onPress={() => { cue('ui:delete', 'tokenRemove', { volume: 0.6 }); store(saved.filter((x) => x.name !== s.name)); }} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={13} color={T.muted} />} />
           </div>
         ))}
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Field value={name} onChange={setName} placeholder="Name what you have now" onEnter={save} max={40} />
-          <TButton label="Save" h={34} disabled={!name.trim()} onPress={save} />
-        </div>
+        {asking ? (
+          <div role="group" aria-label="Keep the pieces with it?" style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '10px 12px', border: `1px solid ${T.goldSoft}`, background: T.panel }}>
+            <span style={{ color: T.ivory, fontFamily: T.medium, fontSize: 13.5, lineHeight: '19px' }}>
+              {`Keep the ${asking.pieces.length} ${asking.pieces.length === 1 ? 'die or token' : 'dice and tokens'} on the table with ${asking.name}, where they lie?`}
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <TButton label="Keep them" wide h={32} onPress={() => keep(asking.name, asking.pieces)} />
+              <TButton label="Just the table" wide h={32} onPress={() => keep(asking.name)} />
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Field value={name} onChange={setName} placeholder="Name what you have now" onEnter={save} max={40} />
+            <TButton label="Save" h={34} disabled={!name.trim()} onPress={save} />
+          </div>
+        )}
       </div>
 
       <div style={block}>
@@ -316,17 +338,17 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
 /** Every ready-made preset: the six made for a way of playing, then the four drawn at random. */
 const ALL_TABLES = [...TABLE_PRESETS.map((t) => ({ ...t, wild: false })), ...WILD_TABLES.map((t) => ({ ...t, wild: true }))];
 
-type PresetEntry = { id: string; name: string; who: string; look: DeckLook; kind: 'made' | 'wild' | 'yours' };
+type PresetEntry = { id: string; name: string; who: string; look: DeckLook; kind: 'made' | 'wild' | 'yours'; pieces?: SavedPiece[] };
 
 /**
  * Every preset in one list (owner, v0.47.11): made for a way of playing, drawn at random, and your own. The preview
  * stays above the list and the list opens over what is below it, so both show at once: pointing at an entry shows it.
  * Ready-made presets show a real screenshot; your own show their name, as nothing has photographed them.
  */
-function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLook[]; onPick: (l: DeckLook) => void }) {
+function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLook[]; onPick: (l: DeckLook, pieces?: SavedPiece[]) => void }) {
   const entries: PresetEntry[] = [
     ...ALL_TABLES.map((t) => ({ id: t.id, name: t.name, who: t.wild ? 'Drawn at random and kept because it worked.' : t.who, look: t.look, kind: (t.wild ? 'wild' : 'made') as PresetEntry['kind'] })),
-    ...saved.map((s, i) => ({ id: `yours${i}`, name: s.name, who: 'Saved by you.', look: s.look, kind: 'yours' as const })),
+    ...saved.map((s, i) => ({ id: `yours${i}`, name: s.name, who: s.pieces?.length ? `Saved by you, with ${s.pieces.length} ${s.pieces.length === 1 ? 'piece' : 'pieces'} on the table.` : 'Saved by you.', look: s.look, kind: 'yours' as const, pieces: s.pieces })),
   ];
   const [open, setOpen] = useState(false);
   const current = entries.find((t) => sameLook(look, t.look));
@@ -341,7 +363,7 @@ function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLoo
     return () => window.removeEventListener('pointerdown', away, true);
   }, [open]);
   const shown = open ? entries[lit] : current;
-  const pick = (i: number) => { const t = entries[i]; if (!t) return; setOpen(false); onPick(t.look); };
+  const pick = (i: number) => { const t = entries[i]; if (!t) return; setOpen(false); onPick(t.look, t.pieces); };
   // The arrows step to the next or previous preset in the list (owner, v0.47.14), round the ends.
   const step = (d: 1 | -1) => {
     const at = current ? entries.indexOf(current) : d > 0 ? -1 : 0;
@@ -410,36 +432,20 @@ function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLoo
   );
 }
 
-/**
- * The sound schemes (owner, v0.47.14). The ULTRAKILL sounds are not part of RuneKeep: the player points it at their
- * own copy of the folder, and the files stay in this browser.
- */
+/** The sound schemes (owner, v0.47.16): Aggressive by default, or the softer Regular. */
 function Sounds() {
   const scheme = useSyncExternalStore(onSoundsChange, soundScheme, soundScheme);
-  const loaded = useSyncExternalStore(onSoundsChange, ultrakillLoaded, ultrakillLoaded);
-  const [busy, setBusy] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
-  const total = ULTRAKILL_FILES.length;
+  const choose = (v: 'aggressive' | 'regular') => { setSoundScheme(v); cue('ui:confirm', 'cardSelect', { volume: 0.6 }); };
   return (
     <section style={{ borderBottom: '1px solid rgba(218,162,73,0.14)', padding: '14px 0 14px', display: 'flex', flexDirection: 'column', gap: 9 }}>
       <SectionTitle>Sounds</SectionTitle>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-        <LookRow name="RuneKeep" active={scheme === 'runekeep'} onPress={() => { setSoundScheme('runekeep'); cue('ui:confirm', 'cardSelect', { volume: 0.6 }); }} />
-        <LookRow name="ULTRAKILL" active={scheme === 'ultrakill'} onPress={() => { setSoundScheme('ultrakill'); cue('ui:confirm', 'cardSelect', { volume: 0.6 }); }} />
+        <LookRow name="Aggressive" active={scheme === 'aggressive'} onPress={() => choose('aggressive')} />
+        <LookRow name="Regular" active={scheme === 'regular'} onPress={() => choose('regular')} />
       </div>
-      {scheme === 'ultrakill' ? (
-        <>
-          <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>
-            {busy ? 'Reading the folder...' : loaded ? `${loaded} of ${total} sounds ready. They are kept in this browser only; anything missing plays the RuneKeep sound.` : 'RuneKeep does not come with these sounds. Choose your own folder of ULTRAKILL sounds and it keeps the ones it uses, in this browser only.'}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <TButton label={loaded ? 'Choose the folder again' : 'Choose the sound folder'} h={34} disabled={busy} onPress={() => input.current?.click()} />
-            {loaded ? <TButton label="Forget them" h={34} disabled={busy} onPress={() => { cue('ui:delete', 'tokenRemove', { volume: 0.6 }); void forgetUltrakill(); }} /> : null}
-          </div>
-          <input ref={(el) => { input.current = el; el?.setAttribute('webkitdirectory', ''); }} type="file" multiple accept="audio/*" style={{ display: 'none' }}
-            onChange={(e) => { const files = e.target.files; if (!files?.length) return; setBusy(true); void keepUltrakillFolder(files).finally(() => { setBusy(false); e.target.value = ''; }); }} />
-        </>
-      ) : null}
+      <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>
+        {scheme === 'aggressive' ? 'Heavy hits, shots and crashes, a different one each time.' : 'The softer sounds the rest of RuneKeep uses.'}
+      </span>
     </section>
   );
 }

@@ -462,6 +462,8 @@ export interface PlayOpts {
   cents?: number;
   /** Disable per-play pitch variation (default true). */
   vary?: boolean;
+  /** Ring for at most this long (seconds), fading out over its last tenth of a second (table, v0.47.16). */
+  maxSec?: number;
 }
 
 // v0.24.3: `createBufferSource` takes an OPTIONS OBJECT on native but a BARE BOOLEAN on web
@@ -502,9 +504,17 @@ function fire(src: number | Promise<AudioBuffer | null>, baseVol: number, varyCe
       const cents = (opts?.cents ?? 0) + vary;
       if (cents) detuneBy(node, cents);
       const gain: GainNode = c.createGain();
-      gain.gain.value = (muted ? 0 : 1) * master * PLATFORM_GAIN * baseVol * (opts?.volume ?? 1);
+      const level = (muted ? 0 : 1) * master * PLATFORM_GAIN * baseVol * (opts?.volume ?? 1);
+      gain.gain.value = level;
       node.connect(gain);
       gain.connect(c.destination);
+      const max = opts?.maxSec;
+      if (max && buf.duration > max) {
+        const t = c.currentTime;
+        gain.gain.setValueAtTime(level, t + Math.max(0, max - 0.12));
+        gain.gain.linearRampToValueAtTime(0, t + max);
+        node.stop(t + max + 0.02);
+      }
       node.onEnded = () => {
         try {
           node.disconnect();

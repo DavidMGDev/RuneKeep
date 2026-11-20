@@ -1,220 +1,177 @@
 /**
- * The table's sound schemes (owner, v0.47.14): RuneKeep's own sounds, or the ULTRAKILL ones.
+ * The table's sound schemes (owner, v0.47.16): Aggressive, the default, and Regular.
  *
- * Every sound on the table is a named cue. The RuneKeep scheme plays the app sound each call site names (with the
- * pitch it asks for), so it sounds exactly as before. The ULTRAKILL scheme plays one of several files for each cue,
- * so far more of the table has a voice of its own. Those files are never shipped with the app: the player picks
- * their own copy of the folder once, and it is kept in this browser (IndexedDB) and nowhere else. A cue whose file
- * is missing falls back to the RuneKeep sound.
+ * Every sound on the table is a named cue. Regular plays the app sound each call site names (with the pitch it asks
+ * for), as the table always sounded. Aggressive plays one of several files for each cue, so far more of the table has
+ * a voice of its own; they live in public/sounds/aggressive (built by scripts/sounds/build-aggressive.py) and are
+ * fetched the first time each is needed. Credits are in the README.
  */
 import { playOwn, playSfx, type PlayOpts, type SfxId } from '@/lib/sfx';
 
-const UI_HOVER = ['G4F SFX11 - ExoInterface - Cursor Click 25.wav', 'click.wav', 'Click1.wav'];
-const UI_TAP = ['Key Press In.wav', 'Key Press Out.wav', 'RevolverClick.wav', 'countingClick.wav'];
-const UI_OPEN = ['Door 1 Open.wav', 'Door 2 Open.wav', 'dark-ui power on off dark 01.wav', 'G4F SFX11 - ExoInterface - Process - Short 06.wav'];
-const UI_CLOSE = ['Door 1 Close.wav', 'Door 2 Close.wav', 'G4F SFX11 - ExoInterface - Window Close - Short 16.wav', 'dark-ui power on off dark 02.wav'];
-const BREAKS = ['HeadBreak.wav', 'HeadBreak2.wav', 'LimbBreak.wav', 'GlassHit.wav', 'Glass_Break_Vase_D50_Fienup_003.wav', '443293__deathscyp__wood-break 2.wav', 'bigRockBreak.wav', 'bonusbreak2.wav', 'bonusbreak3.wav'];
-const STEPS = ['footstep_stone1.wav', 'footstep_stone2.wav', 'footstep_stone3.wav', 'WoodImpact.wav', 'CrateBounce.wav'];
-const GABRIEL = Array.from({ length: 12 }, (_, i) => `gab_Taunt${i + 1}.wav`);
+const UI_HOVER = ['g4f-sfx11-exointerface-cursor-click-25', 'click', 'click1'];
+const UI_TAP = ['key-press-in', 'key-press-out', 'countingclick'];
+const UI_OPEN = ['door-2-open', 'dark-ui-power-on-off-dark-01', 'g4f-sfx11-exointerface-process-short-06'];
+const UI_CLOSE = ['door-1-close', 'door-2-close', 'g4f-sfx11-exointerface-window-close-short-16', 'dark-ui-power-on-off-dark-02'];
+const BREAKS = ['headbreak', 'headbreak2', 'limbbreak', 'glasshit', 'glass-break-vase-d50-fienup-003', '443293-deathscyp-wood-break-2', 'bigrockbreak', 'bonusbreak2', 'bonusbreak3'];
+const STEPS = ['footstep-stone1', 'footstep-stone2', 'footstep-stone3', 'woodimpact', 'cratebounce'];
+const TAUNTS = Array.from({ length: 12 }, (_, i) => `gab-taunt${i + 1}`);
 
-/** Each cue's ULTRAKILL files (one is picked each time, never the same twice running) and its loudness. */
+/**
+ * Each cue's files (one is picked each time, never the same twice running), its loudness, how long it may ring before
+ * it fades (seconds; the Deck of Many Things rings as long as it likes) and a fixed pitch, in cents.
+ */
 const PACK = {
   'ui:hover': { files: UI_HOVER, vol: 0.25 },
   'ui:tap': { files: UI_TAP, vol: 0.4 },
   'ui:open': { files: UI_OPEN, vol: 0.45 },
   'ui:close': { files: UI_CLOSE, vol: 0.45 },
-  'ui:toggle': { files: ['Accent,Interface,UI,Alert,Clean,Metallic,Double,Fast.wav', 'Beep_high.wav', 'BeepBeep_high.wav', 'BeepBeep_high_0.wav'], vol: 0.4 },
-  'ui:confirm': { files: ['G4F SFX11 - ExoInterface - Action Confirm - Long 05.wav', 'BatteryCharged.wav', 'Message.wav'], vol: 0.5 },
-  'ui:error': { files: ['Error.wav', 'UI_Mechanical_Error_11_FX_01.wav', 'Negative_Notification_25.wav'], vol: 0.5 },
-  'ui:delete': { files: ['SandboxDelete.wav'], vol: 0.5 },
-  'ui:shuffle': { files: ['coinspin.wav', 'MachineGunSpin.wav'], vol: 0.5 },
-  'ui:dragStart': { files: ['hookArmThrowStart.wav', 'Mechanism - AssaultRifle_PickUp_004.wav'], vol: 0.4 },
-  'ui:dragEnd': { files: ['hookArmCatch.wav', 'hookArmClink.wav'], vol: 0.4 },
-  'preset:pick': { files: ['enemyShotgunReady.wav', 'shotgunpump1.wav', 'shotgunpump2.wav', '171624__pjkasinski3__rem870-pump3.wav'], vol: 0.5 },
-  'hand:scroll': { files: ['countingClick.wav', 'RailcannonPipClick.wav'], vol: 0.4 },
-  'deck:step': { files: ['RailcannonPipClick.wav', 'fistReload.wav'], vol: 0.45 },
-  'card:lift': { files: ['hookArmWhoosh.wav', 'Whoosh.wav', 'PunchSwoosh.wav'], vol: 0.45 },
-  'card:place': { files: STEPS, vol: 0.5 },
-  'card:cancel': { files: ['Dodge.wav', 'Dodge3.wav'], vol: 0.4 },
-  'card:fling': { files: ['WhooshLoud.wav', 'PunchSwooshHeavy.wav', 'Dodge2.wav'], vol: 0.55 },
-  'card:turn': { files: ['Mechanism -  Designed Mega Steam Lever-002.wav', 'CSFX-2_Mechanics_45.wav'], vol: 0.45 },
-  'card:physical': { files: ['Mechanism -  Designed Mega Steam Lever-004.wav', 'Mechanism -  Designed Mega Steam Lever-005b.wav'], vol: 0.5 },
-  'piece:grab': { files: ['hookPointGrab.wav', 'hookArmCatch.wav'], vol: 0.45 },
-  'piece:charge': { files: ['pumpCharge.wav', 'electricCharge.wav', 'PierceCharge.wav'], vol: 0.5 },
-  'piece:ignite': { files: ['FireStart.wav', 'enrage.wav'], vol: 0.6 },
-  'piece:reroll': { files: ['coinflip.wav', '319630__vehicle__coinflip-01.wav'], vol: 0.5 },
-  'piece:bump': { files: ['PlasticHit.wav', 'shellImpact.wav'], vol: 0.45 },
-  'piece:putAway': { files: ['SandboxDelete.wav', 'HpGet.wav'], vol: 0.45 },
-  'piece:onCard': { files: ['hookArmClink.wav', 'shellImpact.wav', 'JumpPadLight.wav'], vol: 0.5 },
-  'piece:offCard': { files: ['Landing.wav', 'stonestep.wav'], vol: 0.45 },
-  'piece:break': { files: BREAKS, vol: 0.6 },
-  'impact:stop': { files: ['IntroHit.wav', 'Impacts_PROCESSED_001.wav', 'Impacts_PROCESSED_002.wav', 'Bluezone_BC0251_heavy_metal_impact_steel_barrel_01.wav', 'Metal_Hit_Crash_199.wav'], vol: 0.8 },
-  'throw': { files: ['Whoosh.wav', 'PunchSwoosh.wav', 'Dodge.wav', 'Dodge3.wav'], vol: 0.45 },
-  'throw:swing': { files: ['PunchSwooshHeavy.wav', 'chainsawSwing2.wav', 'GabrielSwing2.wav', 'AnimeSlash.wav'], vol: 0.55 },
-  'throw:charged': { files: ['punch_projectile.wav', 'punch_heavy.wav', 'Shoot1.wav', 'Shoot2.wav', 'AltRevolverShoot1D.wav', 'AltRevolverShoot2D.wav'], vol: 0.55 },
-  'throw:fire': { files: ['RailcannonFire4.wav', 'RailcannonFire5.wav', 'PlasmaFire.wav', 'Steampunk Weapons - Shotgun 2 - Shot - 03.wav', 'Steampunk Weapons - Shotgun 2 - Shot - 05.wav'], vol: 0.7 },
-  'roll:throw': { files: ['Shoot1c3.wav', 'Shoot1c4.wav', 'Shoot2b3.wav', 'Future Weapons 2 - Energy Gun - shot_single_2.wav'], vol: 0.5 },
-  'roll:critical': { files: ['RailcannonFull.wav', 'BatteryCharged.wav', 'HarpoonCharged.wav'], vol: 0.6 },
-  'roll:hope': { files: ['HpGet.wav', 'Accent,Interface,UI,Alert,Resonant,Waver.wav', 'Bell_10_b.wav'], vol: 0.55 },
-  'roll:fear': { files: ['SomethingEvil3.wav', 'DroneSpot.wav', 'StalkerWarning.wav'], vol: 0.55 },
-  'roll:muted': { files: ['DroneCharge.wav', 'VirtueCharge.wav'], vol: 0.55 },
-  'roll:bad': { files: ['CrowdAww.wav', 'DroneLose.wav', 'Zombie Weak Death.wav', 'CrashProtectorLose.wav'], vol: 0.55 },
-  'roll:plain': { files: ['RailcannonPipClick.wav', 'Message.wav', 'ComputerSFX_alerts-004.wav'], vol: 0.5 },
-  'roll:crit': { files: ['gab_Behold.wav', 'mp_judgement.wav', 'mp_judgement2.wav', 'CrowdCheer.wav'], vol: 0.75 },
-  'charge:lit': { files: ['FireStart.wav', 'enrage.wav', 'RailcannonFullClickAndCharge.wav'], vol: 0.6 },
-  'select': { files: ['DroneScan.wav', 'RoboHUT.wav'], vol: 0.4 },
-  'spawner:toss': { files: ['jarmo_jump.wav', 'JumpPad.wav', 'JumpPadLight.wav'], vol: 0.45 },
-  'spawner:take': { files: ['hookPointGrab.wav', 'Mechanism - AssaultRifle_PickUp_004.wav'], vol: 0.45 },
-  'spawner:color': { files: ['coinspin.wav', 'coinflip.wav'], vol: 0.4 },
-  'spawner:die': { files: ['RevolverClick.wav', 'fistReload.wav', 'nailgunStop.wav'], vol: 0.45 },
-  'spawner:mat': { files: ['shotgunpump1.wav', 'shotgunpump2.wav'], vol: 0.45 },
-  'table:reset': { files: ['Portal3.wav', 'SandboxFreeze.wav'], vol: 0.55 },
-  'table:home': { files: ['Mechanism -  Designed Mega Steam Lever-004b.wav'], vol: 0.45 },
-  'table:tidy': { files: ['PortalHeavy.wav', 'Portal3.wav'], vol: 0.5 },
-  'table:tidyPiece': { files: ['HpGet.wav', 'RailcannonPipClick.wav', 'countingClick.wav'], vol: 0.3 },
-  'table:clear': { files: ['SandboxDelete.wav'], vol: 0.55 },
-  'playground:on': { files: ['UI Startup.wav', 'TV On.wav'], vol: 0.55 },
-  'playground:off': { files: ['Bluezone-Autobots-shutdown-003.wav'], vol: 0.55 },
-  'chest:open': { files: ['85678__tmkappelt__door-old-creaking-2.wav', 'MassRegurgitate.wav'], vol: 0.55 },
-  'chest:dissolve': { files: ['PortalStalker.wav', 'Portal3.wav'], vol: 0.5 },
-  'mimic:pop': { files: ['MassRegurgitate.wav'], vol: 0.65 },
-  'mimic:swallow': { files: ['MassDeath.wav', 'mp_crush.wav'], vol: 0.65 },
-  'thief:steal': { files: ['coinflip.wav', 'HpGet.wav'], vol: 0.45 },
-  'element:fire': { files: ['FireBig.wav', 'FireSmall.wav'], vol: 0.45 },
-  'element:ice': { files: ['IceUnfreeze.wav', 'SandboxFreeze.wav'], vol: 0.45 },
-  'element:water': { files: ['WaterSplash.wav', 'WaterSmallSplash.wav'], vol: 0.45 },
-  'domat:draw': { files: ['GabrielWeaponSpawn.wav', 'PortalMindflayer.wav', 'PortalInsurrectionist2.wav'], vol: 0.6 },
-  'domat:empty': { files: ['Error.wav', 'DroneHurt.wav'], vol: 0.5 },
-  'domat:play': { files: ['VirtueAttack.wav', 'GabrielWeaponBreak.wav'], vol: 0.6 },
-  'domat:calm': { files: ['IceUnfreeze.wav'], vol: 0.45 },
-  'domat:gust': { files: ['WhooshLoud.wav', 'Whoosh,Organic,Styrofoam,Plank,Airy,Smooth,Texture,1.wav'], vol: 0.65 },
-  'domat:wish': { files: ['gab_Behold.wav', 'HarpoonCharged.wav'], vol: 0.65 },
-  'domat:elements': { files: ['Electricity.wav', 'ElectricityBig.wav'], vol: 0.6 },
-  'domat:comet': { files: ['245372__quaker540__hq-explosion.wav', 'explosion_large_08.wav', 'StalkerExplosion.wav', '276968__hoffy1138__my-first-recorded-explosion.wav'], vol: 0.7 },
-  'domat:mimic': { files: ['MassWindup.wav', 'MassBigPain.wav'], vol: 0.65 },
-  'domat:blackhole': { files: ['BlackHoleLaunch.wav'], vol: 0.65 },
-  'blackhole:boom': { files: ['BlackHoleExplosion.wav', '256960__quaker540__supernatural-explosion.wav'], vol: 0.75 },
-  'domat:cage': { files: ['harpoonPierce.wav', 'harpoonStop.wav'], vol: 0.6 },
-  'domat:petrify': { files: ['SandboxFreeze.wav', 'boulder_impact_on_stones_14.wav', 'Statuedeath.wav'], vol: 0.6 },
-  'domat:lock': { files: ['RevolverClick.wav', 'Mechanism -  Designed Mega Steam Lever-002.wav'], vol: 0.55 },
-  'domat:tiny': { files: ['CrashProtectorGet.wav', '8bitAhh.wav'], vol: 0.55 },
-  'domat:contrary': { files: ['AnimeSlashReverse.wav', 'Zombie Weak Death Reverse.wav'], vol: 0.55 },
-  'domat:follow': { files: ['hookArmThrowStart.wav', 'hookArmPullStart.wav'], vol: 0.55 },
-  'domat:seesaw': { files: ['Twirling.wav'], vol: 0.55 },
-  'domat:moon': { files: ['WaterSurfacing.wav', 'VirtueCharge.wav'], vol: 0.55 },
-  'domat:knight': { files: ['mp_prepare.wav', 'mp_prepare2.wav'], vol: 0.7 },
-  'domat:thief': { files: ['StalkerWarning.wav', 'DroneSpot.wav'], vol: 0.55 },
-  'domat:rewind': { files: ['AnimeSlashReverse.wav', 'Zombie Weak Death Reverse.wav'], vol: 0.55 },
-  'domat:throne': { files: GABRIEL, vol: 0.7 },
-  'domat:gems': { files: ['coinflip.wav', '319630__vehicle__coinflip-01.wav', 'coinspin.wav'], vol: 0.55 },
-  'domat:talons': { files: ['saw.wav', 'chainsawThrown.wav', 'AnimeSlash.wav'], vol: 0.6 },
-  'domat:ruin': { files: ['mp_thyend.wav', 'mp_thyend2.wav', 'mp_weak.wav'], vol: 0.7 },
-  'hit:die': { files: ['PlasticHit.wav', 'shellImpact.wav', 'GlassHit.wav'], vol: 0.5 },
-  'hit:table': { files: ['WoodImpact.wav', 'CrateBounce.wav', 'footstep_stone1.wav', 'footstep_stone2.wav', 'footstep_stone3.wav', 'SandHit.wav'], vol: 0.5 },
-  'hit:rail': { files: ['Bluezone_BC0236_metal_debris_097.wav', 'Bluezone_BC0238_impact_002.wav', 'hookArmClink.wav', 'SkullImpact.wav'], vol: 0.5 },
+  'ui:toggle': { files: ['accent-interface-ui-alert-clean-metallic-double-fast', 'beep-high', 'beepbeep-high', 'beepbeep-high-0'], vol: 0.4 },
+  'ui:confirm': { max: 1, files: ['g4f-sfx11-exointerface-action-confirm-long-05', 'batterycharged', 'message'], vol: 0.5 },
+  'ui:error': { files: ['error', 'ui-mechanical-error-11-fx-01', 'negative-notification-25'], vol: 0.5 },
+  'ui:delete': { files: ['sandboxdelete'], vol: 0.5 },
+  'ui:shuffle': { max: 1, files: ['coinspin', 'machinegunspin'], vol: 0.5 },
+  'ui:dragStart': { files: ['hookarmthrowstart', 'mechanism-assaultrifle-pickup-004'], vol: 0.4 },
+  'ui:dragEnd': { files: ['hookarmcatch', 'hookarmclink'], vol: 0.4 },
+  'preset:pick': { files: ['enemyshotgunready', 'shotgunpump1', 'shotgunpump2', '171624-pjkasinski3-rem870-pump3'], vol: 0.5 },
+  'hand:scroll': { files: ['countingclick'], vol: 0.4 },
+  'deck:step': { files: ['fistreload'], vol: 0.45, max: 0.45 },
+  'card:lift': { files: ['punchswoosh', 'hookarmthrowstart'], vol: 0.3, max: 0.3 },
+  'card:place': { files: STEPS, vol: 0.4, max: 0.3 },
+  'card:cancel': { files: ['dodge', 'dodge3'], vol: 0.4 },
+  'card:fling': { files: ['punchswooshheavy', 'dodge2'], vol: 0.5, max: 0.6 },
+  'card:turn': { files: ['mechanism-designed-mega-steam-lever-002', 'csfx-2-mechanics-45'], vol: 0.45 },
+  'card:physical': { files: ['mechanism-designed-mega-steam-lever-004', 'mechanism-designed-mega-steam-lever-005b'], vol: 0.5 },
+  'piece:grab': { files: ['hookpointgrab', 'hookarmcatch'], vol: 0.45 },
+  'piece:charge': { files: ['pumpcharge', 'electriccharge', 'piercecharge'], vol: 0.5 },
+  'piece:ignite': { max: 1.5, files: ['firestart', 'enrage'], vol: 0.6 },
+  'piece:reroll': { files: ['coinflip', '319630-vehicle-coinflip-01'], vol: 0.5 },
+  'piece:bump': { files: ['plastichit', 'shellimpact'], vol: 0.45 },
+  'piece:putAway': { files: ['sandboxdelete', 'hpget'], vol: 0.45 },
+  'piece:onCard': { files: ['hookarmclink', 'shellimpact', 'jumppadlight'], vol: 0.5 },
+  'piece:offCard': { files: ['landing', 'stonestep'], vol: 0.45 },
+  'piece:break': { max: 1.6, files: BREAKS, vol: 0.6 },
+  'impact:stop': { max: 2.4, files: ['introhit', 'impacts-processed-001', 'impacts-processed-002', 'bluezone-bc0251-heavy-metal-impact-steel-barrel-01', 'metal-hit-crash-199'], vol: 0.8 },
+  'throw': { files: ['punchswoosh', 'dodge', 'dodge3'], vol: 0.45 },
+  'throw:swing': { files: ['punchswooshheavy', 'chainsawswing2', 'gabrielswing2', 'animeslash'], vol: 0.55 },
+  'throw:charged': { max: 1.4, files: ['punch-projectile', 'punch-heavy', 'shoot1', 'shoot2', 'altrevolvershoot1d', 'altrevolvershoot2d'], vol: 0.55 },
+  'throw:fire': { max: 1.8, files: ['railcannonfire4', 'railcannonfire5', 'plasmafire', 'steampunk-weapons-shotgun-2-shot-03', 'steampunk-weapons-shotgun-2-shot-05'], vol: 0.7 },
+  'roll:throw': { max: 1.4, files: ['shoot1c3', 'shoot1c4', 'shoot2b3', 'future-weapons-2-energy-gun-shot-single-2'], vol: 0.5 },
+  'roll:critical': { max: 1.8, files: ['railcannonfull', 'batterycharged', 'harpooncharged'], vol: 0.6 },
+  'roll:hope': { files: ['hpget', 'accent-interface-ui-alert-resonant-waver', 'bell-10-b'], vol: 0.55 },
+  'roll:fear': { max: 2, files: ['somethingevil3', 'dronespot', 'stalkerwarning'], vol: 0.55 },
+  'roll:muted': { files: ['dronecharge', 'virtuecharge'], vol: 0.55 },
+  'roll:bad': { files: ['crowdaww', 'dronelose', 'zombie-weak-death', 'crashprotectorlose'], vol: 0.55 },
+  'roll:plain': { files: ['railcannonpipclick', 'message', 'computersfx-alerts-004'], vol: 0.5 },
+  'roll:crit': { max: 3, files: ['gab-behold', 'mp-judgement', 'mp-judgement2', 'crowdcheer'], vol: 0.75 },
+  'charge:lit': { max: 1.5, files: ['firestart', 'enrage', 'railcannonfullclickandcharge'], vol: 0.6 },
+  'select': { files: ['dronescan', 'robohut'], vol: 0.4 },
+  'spawner:toss': { files: ['jarmo-jump', 'jumppad', 'jumppadlight'], vol: 0.45 },
+  'spawner:take': { files: ['hookpointgrab', 'mechanism-assaultrifle-pickup-004'], vol: 0.45 },
+  'spawner:color': { files: ['319630-vehicle-coinflip-01'], vol: 0.4, max: 0.35 },
+  'spawner:die': { files: ['nailgunstop', 'csfx-2-mechanics-45'], vol: 0.45, max: 0.4 },
+  'spawner:mat': { files: ['shotgunpump1', 'shotgunpump2'], vol: 0.45 },
+  'table:reset': { max: 1.6, files: ['portal3', 'sandboxfreeze'], vol: 0.55 },
+  'table:home': { files: ['mechanism-designed-mega-steam-lever-004b'], vol: 0.45 },
+  'table:tidy': { max: 1.6, files: ['portalheavy', 'portal3'], vol: 0.5 },
+  'table:tidyPiece': { files: ['hpget', 'railcannonpipclick', 'countingclick'], vol: 0.3 },
+  'table:clear': { files: ['sandboxdelete'], vol: 0.55 },
+  'playground:on': { max: 1.6, files: ['ui-startup', 'tv-on'], vol: 0.55 },
+  'playground:off': { max: 1.6, files: ['bluezone-autobots-shutdown-003'], vol: 0.55 },
+  'chest:open': { max: 1.6, files: ['85678-tmkappelt-door-old-creaking-2', 'massregurgitate'], vol: 0.55 },
+  'chest:dissolve': { max: 1.6, files: ['portalstalker', 'portal3'], vol: 0.5 },
+  'mimic:pop': { files: ['massregurgitate'], vol: 0.65 },
+  'mimic:swallow': { files: ['massdeath', 'mp-crush'], vol: 0.65 },
+  'thief:steal': { files: ['coinflip', 'hpget'], vol: 0.45 },
+  'element:fire': { max: 1, files: ['firebig', 'firesmall'], vol: 0.45 },
+  'element:ice': { files: ['iceunfreeze', 'sandboxfreeze'], vol: 0.45 },
+  'element:water': { files: ['watersplash', 'watersmallsplash'], vol: 0.45 },
+  'domat:draw': { files: ['gabrielweaponspawn', 'portalmindflayer', 'portalinsurrectionist2'], vol: 0.6 },
+  'domat:empty': { files: ['error', 'dronehurt'], vol: 0.5 },
+  'domat:play': { files: ['virtueattack', 'gabrielweaponbreak'], vol: 0.6 },
+  'domat:calm': { files: ['iceunfreeze'], vol: 0.45 },
+  'domat:gust': { files: ['whooshloud', 'whoosh-organic-styrofoam-plank-airy-smooth-texture-1'], vol: 0.65 },
+  'domat:wish': { files: ['gab-behold', 'harpooncharged'], vol: 0.65 },
+  'domat:elements': { files: ['electricity', 'electricitybig'], vol: 0.6 },
+  'domat:comet': { files: ['245372-quaker540-hq-explosion', 'explosion-large-08', 'stalkerexplosion', '276968-hoffy1138-my-first-recorded-explosion'], vol: 0.7 },
+  'domat:mimic': { files: ['masswindup', 'massbigpain'], vol: 0.65 },
+  'domat:blackhole': { files: ['blackholelaunch'], vol: 0.65 },
+  'blackhole:boom': { files: ['blackholeexplosion', '256960-quaker540-supernatural-explosion'], vol: 0.75 },
+  'domat:cage': { files: ['harpoonpierce', 'harpoonstop'], vol: 0.6 },
+  'domat:petrify': { files: ['sandboxfreeze', 'boulder-impact-on-stones-14', 'statuedeath'], vol: 0.6 },
+  'domat:lock': { files: ['shotgunpump1', 'mechanism-designed-mega-steam-lever-002'], vol: 0.55 },
+  'domat:tiny': { files: ['crashprotectorget', '8bitahh'], vol: 0.55 },
+  'domat:contrary': { files: ['animeslashreverse', 'zombie-weak-death-reverse'], vol: 0.55 },
+  'domat:follow': { files: ['hookarmthrowstart', 'hookarmpullstart'], vol: 0.55 },
+  'domat:seesaw': { files: ['twirling'], vol: 0.55 },
+  'domat:moon': { files: ['watersurfacing', 'virtuecharge'], vol: 0.55 },
+  'domat:knight': { files: ['mp-prepare', 'mp-prepare2'], vol: 0.7 },
+  'domat:thief': { files: ['stalkerwarning', 'dronespot'], vol: 0.55 },
+  'domat:rewind': { files: ['animeslashreverse', 'zombie-weak-death-reverse'], vol: 0.55 },
+  'domat:throne': { files: TAUNTS, vol: 0.7 },
+  'domat:gems': { files: ['coinspin', 'coinflip'], vol: 0.55, cents: -600 },
+  'domat:talons': { files: ['saw', 'chainsawthrown', 'animeslash'], vol: 0.6 },
+  'domat:ruin': { files: ['mp-thyend', 'mp-thyend2', 'mp-weak'], vol: 0.7 },
+  'hit:die': { files: ['plastichit', 'shellimpact', 'glasshit'], vol: 0.5 },
+  'hit:table': { files: ['woodimpact', 'cratebounce', 'footstep-stone1', 'footstep-stone2', 'footstep-stone3', 'sandhit'], vol: 0.5 },
+  'hit:rail': { files: ['bluezone-bc0236-metal-debris-097', 'bluezone-bc0238-impact-002', 'hookarmclink', 'skullimpact'], vol: 0.5 },
   'hit:break': { files: BREAKS, vol: 0.5 },
-} satisfies Record<string, { files: string[]; vol: number }>;
+} satisfies Record<string, { files: string[]; vol: number; max?: number; cents?: number }>;
 
 export type Cue = keyof typeof PACK;
-export type Scheme = 'runekeep' | 'ultrakill';
+/** Aggressive is the default; Regular is RuneKeep's own, softer sounds (owner, v0.47.16). */
+export type Scheme = 'aggressive' | 'regular';
 
-/** Every file the ULTRAKILL scheme can use: only these are kept from the folder. */
-export const ULTRAKILL_FILES = [...new Set(Object.values(PACK).flatMap((p) => p.files))];
-
-const SCHEME_KEY = 'runekeep.table.sounds';
-let scheme: Scheme = 'runekeep';
-try { if (typeof localStorage !== 'undefined' && localStorage.getItem(SCHEME_KEY) === 'ultrakill') scheme = 'ultrakill'; } catch { /* private window */ }
-/** The files this browser has, by name. */
-let have = new Set<string>();
+const SCHEME_KEY = 'runekeep.table.soundScheme';
+let scheme: Scheme = 'aggressive';
+try { if (typeof localStorage !== 'undefined' && localStorage.getItem(SCHEME_KEY) === 'regular') scheme = 'regular'; } catch { /* private window */ }
 const listeners = new Set<() => void>();
-const changed = () => { for (const l of listeners) l(); };
 
 export function soundScheme(): Scheme { return scheme; }
 export function setSoundScheme(s: Scheme): void {
   scheme = s;
   try { localStorage.setItem(SCHEME_KEY, s); } catch { /* private window */ }
-  changed();
+  for (const l of listeners) l();
 }
-/** How many of the ULTRAKILL files this browser holds. */
-export function ultrakillLoaded(): number { return have.size; }
 export function onSoundsChange(f: () => void): () => void { listeners.add(f); return () => { listeners.delete(f); }; }
-
-// ------------------------------------------------------------------ the files, kept in this browser only
-const DB = 'runekeep-sounds';
-const STORE = 'files';
-function db(): Promise<IDBDatabase> {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open(DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-function ask<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return db().then((d) => new Promise<T>((res, rej) => {
-    const req = run(d.transaction(STORE, mode).objectStore(STORE));
-    req.onsuccess = () => res(req.result);
-    req.onerror = () => rej(req.error);
-  }));
-}
-function refresh(): Promise<void> {
-  return ask('readonly', (s) => s.getAllKeys()).then((keys) => { have = new Set(keys.map(String)); changed(); }).catch(() => undefined);
-}
-if (typeof indexedDB !== 'undefined') void refresh();
-
-/** Keep the ULTRAKILL files from a folder the player picked; the rest of it is ignored. */
-export async function keepUltrakillFolder(files: FileList | File[]): Promise<number> {
-  const want = new Set(ULTRAKILL_FILES);
-  let kept = 0;
-  for (const f of Array.from(files)) {
-    if (!want.has(f.name)) continue;
-    await ask('readwrite', (s) => s.put(f.slice(0, f.size, f.type || 'audio/wav'), f.name));
-    kept++;
-  }
-  await refresh();
-  return kept;
-}
-export async function forgetUltrakill(): Promise<void> {
-  await ask('readwrite', (s) => s.clear());
-  await refresh();
-}
 
 // ------------------------------------------------------------------ playing
 const last = new Map<string, string>();
-function pick(c: Cue): string | null {
-  const files = PACK[c].files.filter((f) => have.has(f));
-  if (!files.length) return null;
+function pick(c: Cue): string {
+  const files: string[] = PACK[c].files;
   const prev = last.get(c);
   const pool = files.length > 1 ? files.filter((f) => f !== prev) : files;
   const f = pool[Math.floor(Math.random() * pool.length)];
   last.set(c, f);
   return f;
 }
-const bytes = (name: string) => () => ask<Blob>('readonly', (s) => s.get(name) as IDBRequest<Blob>).then((b) => b.arrayBuffer());
+const bytes = (name: string) => () => fetch(`/sounds/aggressive/${name}.mp3`).then((r) => { if (!r.ok) throw new Error(r.statusText); return r.arrayBuffer(); });
+/** How long a cue may ring: its own cap, else long for the Deck of Many Things and short for everything else. */
+const capOf = (c: Cue): number => {
+  const p = PACK[c] as { max?: number };
+  return p.max ?? (/^(domat|blackhole|mimic|thief|element):/.test(c) ? 6 : 1.1);
+};
 
-/**
- * Play a cue: under ULTRAKILL one of its files (a little pitch variation, no fixed offset), otherwise the RuneKeep
- * sound `id` exactly as asked. Returns nothing; a missing file falls back to `id`.
- */
+/** Play a cue: under Aggressive one of its files, otherwise the Regular sound `id` exactly as asked. */
 export function cue(c: Cue, id: SfxId, opts?: PlayOpts): void {
-  const f = scheme === 'ultrakill' ? pick(c) : null;
-  if (!f) { playSfx(id, opts); return; }
-  playOwn(f, bytes(f), { volume: PACK[c].vol * Math.min(1, (opts?.volume ?? 1) * 1.4) });
+  if (scheme !== 'aggressive') { playSfx(id, opts); return; }
+  const f = pick(c);
+  const p = PACK[c] as { vol: number; cents?: number };
+  playOwn(f, bytes(f), { volume: p.vol * Math.min(1, (opts?.volume ?? 1) * 1.4), cents: p.cents, maxSec: capOf(c) });
 }
 
-/** A piece knocking into something, under ULTRAKILL (true when it played): as loud as the hit was hard. */
+/** A piece knocking into something, under Aggressive (true when it was handled): as loud as the hit was hard. */
 let lastKnock = 0;
 let knocks = 0;
 export function knockCue(kind: 'die' | 'table' | 'rail' | 'break', speed: number): boolean {
-  if (scheme !== 'ultrakill') return false;
-  const f = pick(`hit:${kind}`);
-  if (!f) return false;
+  if (scheme !== 'aggressive') return false;
   const now = performance.now();
   if (now - lastKnock > 70) knocks = 0;
   const level = Math.min(1, speed / 1600);
   if (knocks >= 2 || level < 0.05) return true;
   knocks++;
   lastKnock = now;
-  playOwn(f, bytes(f), { volume: PACK[`hit:${kind}`].vol * level });
+  const c = `hit:${kind}` as const;
+  const f = pick(c);
+  playOwn(f, bytes(f), { volume: PACK[c].vol * level, maxSec: kind === 'break' ? 1.2 : 0.6 });
   return true;
 }

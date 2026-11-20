@@ -120,12 +120,12 @@ function FxOne({ f }: { f: Fx }) {
  */
 export type CardBreakMode = 'tear' | 'split' | 'burn' | 'explode';
 
-type Pt = [number, number];
+export type Pt = [number, number];
 /** One piece of a broken card: its outline (% of the card) and where it goes (px, degrees). */
 interface Piece { poly: Pt[]; dx: number; dy: number; spin: number; delay: number }
 
 /** The half of a polygon on the positive side of the line through `p` along `d` (Sutherland-Hodgman, one edge). */
-function clipHalf(poly: Pt[], p: Pt, d: Pt, keep: 1 | -1): Pt[] {
+export function clipHalf(poly: Pt[], p: Pt, d: Pt, keep: 1 | -1): Pt[] {
   const side = (q: Pt) => keep * ((q[0] - p[0]) * d[1] - (q[1] - p[1]) * d[0]);
   const out: Pt[] = [];
   for (let i = 0; i < poly.length; i++) {
@@ -140,7 +140,7 @@ function clipHalf(poly: Pt[], p: Pt, d: Pt, keep: 1 | -1): Pt[] {
 const RECT: Pt[] = [[0, 0], [100, 0], [100, 100], [0, 100]];
 
 /** The pieces for a mode. `dir` is the breaker's way across the card, in the card's own frame (unit). */
-function breakPieces(mode: CardBreakMode, dir: Pt, w: number, h: number): Piece[] {
+export function breakPieces(mode: CardBreakMode, dir: Pt, w: number, h: number): Piece[] {
   if (mode === 'split') {
     // One clean cut through the middle along the breaker's path; the halves part across it and carry on with it.
     const n: Pt = [-dir[1], dir[0]];
@@ -197,7 +197,7 @@ function registerBurn() {
 }
 
 /** A laid card breaking, by `mode`: `dir` is the way the breaker went (table frame), `at` where it struck (table px). */
-export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone }: { card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; at?: { x: number; y: number }; onDone: () => void }) {
+export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly }: { card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; at?: { x: number; y: number }; onDone: () => void; /** Only the slash or the torn flecks: the halves are real scraps on the table (v0.47.16). */ fxOnly?: boolean }) {
   const h = (w * FORGED_H) / FORGED_W;
   const box = useRef<HTMLDivElement>(null);
   // The breaker's way and the struck point, in the card's own (turned) frame.
@@ -252,7 +252,7 @@ export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone }: { car
         </>
       ) : (
         <>
-          {pieces.map((p, i) => (
+          {(fxOnly ? [] : pieces).map((p, i) => (
             <div key={i} data-piece="" style={{ position: 'absolute', inset: 0, clipPath: `polygon(${p.poly.map(([x, y]) => `${x.toFixed(1)}% ${y.toFixed(1)}%`).join(', ')})`, transformOrigin: `${(p.poly.reduce((s, q) => s + q[0], 0) / p.poly.length).toFixed(1)}% ${(p.poly.reduce((s, q) => s + q[1], 0) / p.poly.length).toFixed(1)}%`, willChange: 'transform, opacity' }}>{face}</div>
           ))}
           {mode === 'split' ? <div data-slash="" style={{ position: 'absolute', left: '50%', top: '50%', width: Math.hypot(w, h) * 1.3, height: 3, marginLeft: (-Math.hypot(w, h) * 1.3) / 2, marginTop: -1.5, background: 'linear-gradient(90deg, transparent, #fff 20%, #fff 80%, transparent)', boxShadow: '0 0 12px #fff, 0 0 26px #ffd27a', transform: `rotate(${slashAng.toFixed(1)}deg)` }} /> : null}
@@ -261,6 +261,46 @@ export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone }: { car
           )) : null}
         </>
       )}
+    </div>
+  );
+}
+
+/** The way a breaker went, turned into a card's own frame (unit). */
+export function localDir(dir: { x: number; y: number } | undefined, rot: number): Pt {
+  if (!dir) return [0, 1];
+  const a = (-rot * Math.PI) / 180;
+  const l = Math.hypot(dir.x, dir.y) || 1;
+  return [(dir.x * Math.cos(a) - dir.y * Math.sin(a)) / l, (dir.x * Math.sin(a) + dir.y * Math.cos(a)) / l];
+}
+
+/** A piece of a torn card's outline (% of the whole card): its box (%), its middle, and how much of the card it is. */
+export function scrapShape(poly: Pt[]) {
+  const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]);
+  let area = 0, cx = 0, cy = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [x0, y0] = poly[i], [x1, y1] = poly[(i + 1) % poly.length];
+    const c = x0 * y1 - x1 * y0;
+    area += c; cx += (x0 + x1) * c; cy += (y0 + y1) * c;
+  }
+  area /= 2;
+  const mid: Pt = area ? [cx / (6 * area), cy / (6 * area)] : [50, 50];
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), mid, share: Math.abs(area) / 10000 };
+}
+
+/**
+ * A scrap of a torn or cut card (owner, v0.47.16): a real piece on the table, knocked about like any other, drawn as
+ * its part of the card. `w` is the whole card's width; the element is the scrap's own box, centred on (x, y).
+ */
+export function CardScrap({ uid, card, poly, w, x, y, rot, fading }: { uid: string; card: TableCard; poly: Pt[]; w: number; x: number; y: number; rot: number; fading?: boolean }) {
+  const h = (w * FORGED_H) / FORGED_W;
+  const b = scrapShape(poly);
+  const bx = (b.x0 / 100) * w, by = (b.y0 / 100) * h, bw = ((b.x1 - b.x0) / 100) * w, bh = ((b.y1 - b.y0) / 100) * h;
+  return (
+    <div data-board-card={uid} aria-hidden="true"
+      style={{ position: 'absolute', left: x - bw / 2, top: y - bh / 2, width: bw, height: bh, transform: `rotate(${rot}deg)`, pointerEvents: 'none', zIndex: 13, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.5))', transition: 'opacity 450ms', opacity: fading ? 0 : 1 }}>
+      <div style={{ position: 'absolute', inset: 0, clipPath: `polygon(${poly.map(([px, py]) => `${((px / 100) * w - bx).toFixed(1)}px ${((py / 100) * h - by).toFixed(1)}px`).join(', ')})` }}>
+        <div style={{ position: 'absolute', left: -bx, top: -by, width: FORGED_W, height: FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0' }}><CardFace card={card} hiRes={false} /></div>
+      </div>
     </div>
   );
 }

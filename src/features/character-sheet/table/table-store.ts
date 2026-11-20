@@ -35,9 +35,17 @@ export const saveLook = (l: DeckLook, characterId?: string): void => {
   write(LOOK, l);
 };
 
-export interface SavedLook { name: string; look: DeckLook }
+/** A die or token kept with a preset (owner, v0.47.16), where it lay as shares of the felt. */
+export interface SavedPiece { token: Record<string, unknown>; fx: number; fy: number }
+export interface SavedLook { name: string; look: DeckLook; /** The loose pieces it was saved with, if the player kept them. */ pieces?: SavedPiece[] }
+const cleanPieces = (v: unknown): SavedPiece[] | undefined => {
+  if (!Array.isArray(v)) return undefined;
+  const ok = v.filter((p): p is SavedPiece => !!p && typeof p === 'object' && !!(p as SavedPiece).token && typeof (p as SavedPiece).token === 'object'
+    && Number.isFinite((p as SavedPiece).fx) && Number.isFinite((p as SavedPiece).fy));
+  return ok.length ? ok.slice(0, 200).map((p) => ({ token: p.token, fx: Math.min(1, Math.max(0, p.fx)), fy: Math.min(1, Math.max(0, p.fy)) })) : undefined;
+};
 export const loadSavedLooks = (): SavedLook[] =>
-  read<unknown[]>(SAVED, []).flatMap((s) => (s && typeof s === 'object' && typeof (s as SavedLook).name === 'string' ? [{ name: (s as SavedLook).name.slice(0, 40), look: cleanLook((s as SavedLook).look) }] : []));
+  read<unknown[]>(SAVED, []).flatMap((s) => (s && typeof s === 'object' && typeof (s as SavedLook).name === 'string' ? [{ name: (s as SavedLook).name.slice(0, 40), look: cleanLook((s as SavedLook).look), pieces: cleanPieces((s as SavedLook).pieces) }] : []));
 export const saveSavedLooks = (list: SavedLook[]): void => write(SAVED, list);
 
 /** Dice positions as shares of the felt, so a resized window keeps the layout. */
