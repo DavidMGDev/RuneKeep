@@ -5,60 +5,7 @@
  * Each piece burns at a level from 0 (out) to 1 (ablaze), so a charge can be seen catching before it goes off.
  * One WebGL context and one draw per burning piece; the loop sleeps when nothing burns.
  */
-
-const VERT = `
-attribute vec2 a;
-uniform vec4 uRect;
-uniform vec2 uRes;
-varying vec2 vUv;
-void main() {
-  vUv = a;
-  vec2 px = uRect.xy + a * uRect.zw;
-  gl_Position = vec4(px / uRes * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
-const FRAG = `
-precision mediump float;
-varying vec2 vUv;
-uniform float uTime;
-uniform float uSeed;
-uniform float uI;
-uniform float uAspect;
-float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-float fbm(vec2 p) {
-  float v = 0.0, a = 0.5;
-  for (int i = 0; i < 4; i++) { v += a * vnoise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
-  return v;
-}
-void main() {
-  // In quad widths, the piece's centre at the origin, up the screen positive.
-  vec2 p = vec2(vUv.x - 0.5, (vUv.y - 0.3) * uAspect);
-  float r = 0.215;
-  float t = uTime + uSeed * 17.0;
-  vec2 q = vec2(p.x * 6.5, p.y * 4.2 - t * 3.0);
-  float n = fbm(q + vec2(fbm(q * 0.6 + vec2(0.0, t * 0.7)) * 1.4 - 0.7, 0.0));
-  // The envelope: round the piece, drawn up into tongues the higher it burns.
-  float up = max(p.y, 0.0);
-  float reach = mix(0.25, 1.15, uI);
-  float halfW = r * 1.4 * (1.0 - 0.8 * smoothstep(0.0, reach, up));
-  float ex = abs(p.x) / max(halfW, 0.02);
-  float ey = p.y < 0.0 ? -p.y / (r * 1.25) : up / (reach + r);
-  float d = length(vec2(ex, ey));
-  float heat = (1.0 - d) * mix(0.75, 1.15, uI) + (n - 0.47) * 1.15;
-  float a = smoothstep(0.03, 0.24, heat);
-  // The piece shows through the heart of its fire.
-  a *= 1.0 - 0.5 * (1.0 - smoothstep(r * 0.4, r * 1.05, length(p)));
-  a *= smoothstep(0.0, 0.18, uI) * smoothstep(1.0, 0.82, vUv.y) * smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
-  vec3 col = mix(vec3(0.86, 0.2, 0.04), vec3(1.0, 0.45, 0.07), smoothstep(0.04, 0.32, heat));
-  col = mix(col, vec3(1.0, 0.8, 0.36), smoothstep(0.32, 0.66, heat));
-  col = mix(col, vec3(1.0, 0.97, 0.86), smoothstep(0.66, 1.0, heat));
-  gl_FragColor = vec4(col * a, a);
-}`;
+import { FIRE_FRAG, FIRE_VERT } from '@/lib/flames';
 
 export interface FireLayer {
   /** Burn a piece at this level (0 puts it out, gently). */
@@ -79,8 +26,8 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   if (!gl) { canvas.remove(); return null; }
   const sh = (type: number, src: string) => { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const prog = gl.createProgram()!;
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG));
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, FIRE_VERT));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FIRE_FRAG));
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return null; }
   gl.useProgram(prog);
@@ -93,6 +40,7 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   const u = (n: string) => gl.getUniformLocation(prog, n);
   const uRect = u('uRect'), uRes = u('uRes'), uTime = u('uTime'), uSeed = u('uSeed'), uI = u('uI'), uAspect = u('uAspect');
+  gl.uniform1f(u('uHeart'), 1);
 
   /** Each fire: the level it is at and the one it is heading for (it eases, so it never pops). */
   const fires = new Map<string, { level: number; target: number; seed: number }>();

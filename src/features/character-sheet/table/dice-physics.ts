@@ -95,7 +95,12 @@ export interface Bounds { left: number; top: number; right: number; bottom: numb
 /** Something on the table dice cannot pass through (a panel lying on the felt). */
 export type Obstacle = Bounds;
 
-export interface Impact { key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break'; /** For a break: what broke it, and whether it was burning. */ by?: string; fire?: boolean }
+export interface Impact {
+  key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break';
+  /** For a break: what broke it, and whether it was burning. */ by?: string; fire?: boolean;
+  /** The other piece in a knock between two (the elements of the Deck of Many Things read who met whom). */ other?: string;
+  /** For a break: how the breaker was moving (px/s), which way a card is torn or cut. */ vx?: number; vy?: number;
+}
 
 /** How fast (px/s, against the piece) a charged throw must hit a loose piece to break it. */
 export const BREAK_SPEED = 1700;
@@ -104,9 +109,14 @@ export const BREAK_SPEED = 1700;
  * A force over part of the table for a while (the Deck of Many Things): a push out from a point (negative pulls
  * in), or a whirl round it. `k` is px/s² at the centre, fading to nothing at `r`.
  */
-export interface Field { kind: 'radial' | 'vortex'; x: number; y: number; r: number; k: number }
+export interface Field { kind: 'radial' | 'vortex' | 'wind'; x: number; y: number; r: number; k: number }
+/**
+ * A ring on the felt (the Donjon's cage, v0.47.12): what was inside when it closed stays inside, everything else
+ * bounces off its outside. Cards pass over it.
+ */
+export interface Cage { x: number; y: number; r: number; inside: Set<string> }
 /** What the whole table is like for a step: its fields, and how slippery the felt is (1 is normal). */
-export interface World { fields?: Field[]; friction?: number }
+export interface World { fields?: Field[]; friction?: number; cages?: Cage[] }
 
 const RAIL_BOUNCE = 0.5;
 const DIE_BOUNCE = 0.42;
@@ -227,15 +237,19 @@ export function launch(b: Body, vx: number, vy: number, vz: number, spin: Vec3):
  */
 export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: () => number = Math.random, obstacles: Obstacle[] = [], world: World = {}): Impact[] {
   let fast = 0;
+  let fastR = 0;
   let small = Infinity;
   for (const b of bodies) {
     if (b.ghost) continue;
     small = Math.min(small, b.box ? Math.min(b.box.w, b.box.h) / 2 : b.r);
-    if (!b.asleep && !b.held) fast = Math.max(fast, Math.hypot(b.vx, b.vy));
+    const sp = !b.asleep && !b.held ? Math.hypot(b.vx, b.vy) : 0;
+    if (sp > fast) { fast = sp; fastR = b.box ? Math.min(b.box.w, b.box.h) / 2 : b.r; }
   }
   // A field wakes whatever it reaches.
-  for (const f of world.fields ?? []) for (const b of bodies) if (!b.fixed && !b.held && !b.home && Math.hypot(b.x - f.x, b.y - f.y) < f.r) { b.asleep = false; b.settle = undefined; }
-  const n = Math.min(24, Math.max(1, Math.ceil((fast * dt) / (Math.max(4, small) * 0.4))));
+  for (const f of world.fields ?? []) for (const b of bodies) if (!b.fixed && !b.held && !b.home && (f.kind === 'wind' || Math.hypot(b.x - f.x, b.y - f.y) < f.r)) { b.asleep = false; b.settle = undefined; }
+  // Small enough steps that the fastest piece never jumps clean past the smallest one (both radii count: v0.47.12,
+  // owner: a burning throw took 20 substeps a step against the smallest radius alone, and the table lagged).
+  const n = Math.min(24, Math.max(1, Math.ceil((fast * dt) / ((Math.max(4, small) + fastR) * 0.45))));
   const hits: Impact[] = [];
   for (let i = 0; i < n; i++) hits.push(...subStep(bodies, bounds, dt / n, obstacles, world));
   void rand;
@@ -244,6 +258,8 @@ export function step(bodies: Body[], bounds: Bounds, dt: number = STEP, rand: ()
 
 function applyFields(b: Body, fields: Field[], dt: number): void {
   for (const f of fields) {
+    // A wind blows the same everywhere: (x, y) is its push, px/s².
+    if (f.kind === 'wind') { b.vx += f.x * dt; b.vy += f.y * dt; continue; }
     const dx = b.x - f.x, dy = b.y - f.y;
     const d = Math.hypot(dx, dy);
     if (d >= f.r || d < 1) continue;
@@ -318,7 +334,7 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
     if (b.asleep || b.held || b.broken || (b.fixed && !b.settle) || (b.ghost && !b.settle && !b.home)) continue;
     // Slowed down, a charged throw is an ordinary piece again (and a burning one stops passing through things).
     if (b.breaker && Math.hypot(b.vx, b.vy) < (b.breaker.fire ? 650 : 900)) b.breaker = undefined;
-    if (b.box) { boxStep(b, bounds, dt, hits, world, obstacles); continue; }
+    if (b.box && !b.home) { boxStep(b, bounds, dt, hits, world, obstacles); continue; }
     if (b.home) {
       const h = b.home;
       h.t = Math.min(1, h.t + dt / h.dur);
@@ -327,6 +343,11 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
       b.y = h.fy + (h.ty - h.fy) * e;
       // An arc from the height it was at (a hop redirected in mid-air carries on from there, never drops to the felt).
       b.z = (h.z0 ?? 0) * (1 - e) + Math.sin(Math.PI * h.t) * b.r * (h.lift ?? (h.spin ? 3.2 : 1.6));
+      if (b.box) {
+        // A card flying somewhere (the Deck of Many Things moving it): it glides there flat and lies still.
+        if (h.t >= 1) { b.home = undefined; b.z = 0; b.vx = b.vy = 0; b.va = 0; b.asleep = true; }
+        continue;
+      }
       if (h.spin) {
         // Put away: it tumbles all the way in instead of landing on a face.
         const [sx, sy, sz] = h.spin;
@@ -407,8 +428,9 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
     if (b.y < bounds.top + b.r) { b.y = bounds.top + b.r; if (b.vy < 0) { hits.push({ key: b.key, speed: -b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] -= b.vx * 0.004; } }
     if (b.y > bounds.bottom - b.r) { b.y = bounds.bottom - b.r; if (b.vy > 0) { hits.push({ key: b.key, speed: b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] += b.vx * 0.004; } }
     for (const o of obstacles) pushOut(b, o, hits);
+    for (const c of world.cages ?? []) cageStep(b, c, hits);
     // Inside a field nothing settles: the field decides when it is over.
-    const inField = world.fields?.some((f) => Math.hypot(b.x - f.x, b.y - f.y) < f.r);
+    const inField = world.fields?.some((f) => f.kind === 'wind' || Math.hypot(b.x - f.x, b.y - f.y) < f.r);
     if (!inField && Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
   }
   collide(bodies, hits);
@@ -459,7 +481,7 @@ function circleBox(c: Body, b: Body, hits: Impact[]): void {
   const amp = c.boost ? 1 + c.boost.power * (c.boost.gen / 5) : 1;
   if (ib) { b.vx -= j * nx * ib * amp; b.vy -= j * ny * ib * amp; b.va = va - (rn * j * amp) / I; }
   for (const o of [c, b]) if (!o.held && !o.fixed) { o.asleep = false; o.settle = undefined; }
-  if (-rel > 60) hits.push({ key: c.key, speed: -rel, kind: 'die' });
+  if (-rel > 60) hits.push({ key: c.key, other: b.key, speed: -rel, kind: 'die' });
 }
 
 /** Two physical cards: the deepest corner of either inside the other is pushed out and both are knocked. */
@@ -520,6 +542,34 @@ function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
   b.asleep = false;
 }
 
+/** Keep a die on its side of a cage's ring, bouncing off it like the rail. */
+function cageStep(b: Body, c: Cage, hits: Impact[]): void {
+  const dx = b.x - c.x, dy = b.y - c.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const nx = dx / d, ny = dy / d;
+  const inside = c.inside.has(b.key);
+  const edge = inside ? c.r - b.r : c.r + b.r;
+  if (inside ? d <= edge : d >= edge) return;
+  b.x = c.x + nx * edge;
+  b.y = c.y + ny * edge;
+  const vn = b.vx * nx + b.vy * ny;
+  if (inside ? vn > 0 : vn < 0) {
+    if (Math.abs(vn) > 60) hits.push({ key: b.key, speed: Math.abs(vn), kind: 'rail' });
+    b.vx -= (1 + RAIL_BOUNCE) * vn * nx;
+    b.vy -= (1 + RAIL_BOUNCE) * vn * ny;
+  }
+}
+
+/** Whether a breaker touches a piece: circles by their radii, a card by its true outline. */
+function touches(s: Body, o: Body): boolean {
+  if (!o.box) return Math.hypot(o.x - s.x, o.y - s.y) < s.r + o.r;
+  const a = o.a ?? 0, cs = Math.cos(a), sn = Math.sin(a);
+  const dx = s.x - o.x, dy = s.y - o.y;
+  const lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+  const px = Math.max(-o.box.w / 2, Math.min(o.box.w / 2, lx)), py = Math.max(-o.box.h / 2, Math.min(o.box.h / 2, ly));
+  return Math.hypot(lx - px, ly - py) < s.r;
+}
+
 /** The extra push one body passes to the one it hit (`n` points from src to tgt), and the generation after it. */
 function passBoost(src: Body, tgt: Body, nx: number, ny: number, jimp: number, pre: number): void {
   const bo = src.boost;
@@ -556,17 +606,20 @@ function collide(bodies: Body[], hits: Impact[]): void {
     for (let j = i + 1; j < bodies.length; j++) {
       const a = bodies[i], b = bodies[j];
       if (a.home || b.home || a.ghost || b.ghost || a.broken || b.broken) continue;
+      // Two dice lying still have nothing to settle between them (most of a busy table, every step). Cards still push
+      // apart: a stack of them let go together spreads out (the playground).
+      if (a.asleep && b.asleep && !a.box && !b.box) continue;
       // A charged throw breaks the loose piece it hits hard enough (burning, whatever it touches), and goes on.
       // Pieces thrown together (a charged roll of the selection) never break one another.
       const brk = (s: Body, o: Body) => !!s.breaker && s.breaker.left > 0 && !!o.breakable && !o.held && !o.breaker;
       if (brk(a, b) || brk(b, a)) {
         const s = brk(a, b) ? a : b, o = s === a ? b : a;
-        if (Math.hypot(b.x - a.x, b.y - a.y) < a.r + b.r) {
+        if (touches(s, o)) {
           const rel = Math.hypot(s.vx - o.vx, s.vy - o.vy);
           if (s.breaker!.fire || rel > BREAK_SPEED) {
             o.broken = true;
             s.breaker!.left--;
-            hits.push({ key: o.key, speed: rel, kind: 'break', by: s.key, fire: s.breaker!.fire });
+            hits.push({ key: o.key, speed: rel, kind: 'break', by: s.key, fire: s.breaker!.fire, vx: s.vx, vy: s.vy });
             // Breaking costs a little speed: more for a plain throw than for a burning one.
             const keep = s.breaker!.fire ? 0.93 : 0.78;
             s.vx *= keep;
@@ -613,7 +666,7 @@ function collide(bodies: Body[], hits: Impact[]): void {
         // The stronger of the two pushes the other the harder.
         if ((a.boost?.gen ?? 0) >= (b.boost?.gen ?? 0)) passBoost(a, b, nx, ny, jimp, pre);
         else passBoost(b, a, -nx, -ny, jimp, pre);
-        if (-rel > 60) hits.push({ key: a.held ? b.key : a.key, speed: -rel, kind: 'die' });
+        if (-rel > 60) hits.push({ key: a.held ? b.key : a.key, other: a.held ? a.key : b.key, speed: -rel, kind: 'die' });
       }
       for (const [body, other] of [[a, b], [b, a]] as const) {
         if (body.held || body.fixed || !(body.asleep || body.settle)) continue;

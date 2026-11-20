@@ -307,3 +307,48 @@ describe('charged throws break loose pieces (v0.47.11)', () => {
     expect(allAsleep([shot, ...crowd])).toBe(true);
   });
 });
+
+describe('cards break, cages hold, the wind blows (v0.47.12)', () => {
+  const card = (key: string, x: number, y: number, a = 0) => { const b = makeBody(key, x, y, Math.hypot(60, 90) / 2, CUBE); b.box = { w: 60, h: 90 }; b.a = a; b.va = 0; b.mass = 3; b.breakable = true; return b; };
+  const run = (bodies: Body[], world = {}) => { const hits: string[] = []; let n = 0; while (n++ < 3000 && !allAsleep(bodies)) for (const h of step(bodies, { left: 0, top: 0, right: 3000, bottom: 500 }, undefined, undefined, [], world)) if (h.kind === 'break') hits.push(h.key); return hits; };
+
+  it('a hard charged throw breaks a physical card by its true outline, and reports which way it went', () => {
+    const c = card('card:a', 400, 250);
+    const shot = makeBody('shot', 100, 250, 20, CUBE);
+    launch(shot, 6000, 0, 0, [0, 0, 0]);
+    shot.breaker = { left: 2, fire: false };
+    const seen: { vx?: number }[] = [];
+    let n = 0;
+    while (n++ < 3000 && !allAsleep([shot, c])) for (const h of step([shot, c], { left: 0, top: 0, right: 3000, bottom: 500 })) if (h.kind === 'break') seen.push(h);
+    expect(seen.length).toBe(1);
+    expect(seen[0].vx).toBeGreaterThan(3000);
+  });
+
+  it('a throw passing the card corner it misses breaks nothing', () => {
+    // Turned 45 degrees, a card's bounding circle reaches far past its edges: only the outline counts.
+    const c = card('card:b', 400, 250);
+    const shot = makeBody('shot', 100, 250 - 50 - 22, 20, CUBE);
+    launch(shot, 6000, 0, 0, [0, 0, 0]);
+    shot.breaker = { left: 99, fire: true };
+    expect(run([shot, c])).toEqual([]);
+  });
+
+  it('a cage keeps what was in it inside, and bounces what was outside off it', () => {
+    const inner = makeBody('in', 400, 250, 20, CUBE);
+    const outer = makeBody('out', 100, 250, 20, CUBE);
+    launch(inner, 3000, 0, 0, [0, 0, 0]);
+    launch(outer, 3000, 0, 0, [0, 0, 0]);
+    const cage = { x: 400, y: 250, r: 150, inside: new Set(['in']) };
+    run([inner, outer], { cages: [cage] });
+    expect(Math.hypot(inner.x - 400, inner.y - 250)).toBeLessThanOrEqual(150 - 20 + 0.5);
+    expect(Math.hypot(outer.x - 400, outer.y - 250)).toBeGreaterThanOrEqual(150 + 20 - 0.5);
+  });
+
+  it('a wind pushes everything the same way', () => {
+    const a = makeBody('a', 400, 100, 20, CUBE), b = makeBody('b', 400, 400, 20, CUBE);
+    const wind: Field = { kind: 'wind', x: 3000, y: 0, r: 1e9, k: 0 };
+    for (let i = 0; i < 60; i++) step([a, b], { left: 0, top: 0, right: 3000, bottom: 500 }, undefined, undefined, [], { fields: [wind] });
+    expect(a.x).toBeGreaterThan(450);
+    expect(Math.abs(a.x - b.x)).toBeLessThan(1);
+  });
+});

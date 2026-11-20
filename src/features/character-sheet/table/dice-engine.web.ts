@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-import { allAsleep, type Body, type Bounds, type DieFace, type Field, type Impact, launch, makeBody, moveHeld, type Obstacle, qRandom, restOn, sendHome, snapFace, STEP, step } from './dice-physics';
+import { allAsleep, type Body, type Bounds, type Cage, type DieFace, type Field, type Impact, launch, makeBody, moveHeld, type Obstacle, qRandom, restOn, sendHome, snapFace, STEP, step } from './dice-physics';
 
 export type Shape = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20';
 export const FACE_COUNT: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };
@@ -34,7 +34,8 @@ export type FaceArt = { text: string } | { image: CanvasImageSource; plate?: str
 export interface DieSpec {
   key: string;
   /** A polyhedron, a token chip (a flat disc that slides and never tumbles) or a deck of cards (a flat block). */
-  shape: Shape | 'chip' | 'deck';
+  /** ... or a chest with a lid that opens: the toothy mimic or the cute chest (scripts/blender/make_mimic.py). */
+  shape: Shape | 'chip' | 'deck' | 'mimic' | 'chest';
   /** Across the die, px. */
   size: number;
   body: string;
@@ -83,10 +84,32 @@ export interface DiceEngine {
   toss(key: string, vx: number, vy: number, boost?: { gen: number; power: number }, breaker?: { left: number; fire: boolean }): void;
   /** A piece just let go flies on this many times faster, pushing harder and breaking what it hits (a swung throw). */
   empower(key: string, mult: number, boost?: { gen: number; power: number }, breaker?: { left: number; fire: boolean }): void;
-  /** While `key` is held, `partner` follows right beside it (the Hope and Fear pair); null lets it go. */
-  tether(key: string, partner: string | null): void;
-  /** Loose pieces broken by a charged throw: which, where the first was, and whether it was burning. */
-  onBreak(cb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => void): void;
+  /**
+   * While `key` is held, `partner` follows right beside it (the Hope and Fear pair), or a list of pieces follow it
+   * where they lie now (a selection carried together, v0.47.12); null lets them go. Let go, they all fly together.
+   */
+  tether(key: string, partner: string | string[] | null): void;
+  /**
+   * Loose pieces (and physical cards) broken by a charged throw: which, where the first was, whether it was burning,
+   * and each break as it happened (how fast and which way the breaker went: a card tears, splits or burns by it).
+   */
+  onBreak(cb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => void): void;
+  /**
+   * A burning throw's first hit (owner, v0.47.12, "like a smash final hit"): the thrower and what it hit hang where
+   * they met for `ms`, the whole table with them when the hit is strong; then what it hit breaks, a gust throws
+   * everything near away and the thrower goes on faster. Called as the hit lands, for its light.
+   */
+  onHitStop(cb: (at: { x: number; y: number }, ms: number, strong: boolean) => void): void;
+  /** A force over the table that stays until it is taken off (null): the Deck of Many Things' lasting cards. */
+  aura(id: string, f: Field | null): void;
+  /** A ring that keeps what is inside it in and the rest out, until taken off (null). */
+  cage(id: string, c: { x: number; y: number; r: number } | null): void;
+  /** Every throw goes the opposite way to the hand (the Idiot), until turned off. */
+  contrary(on: boolean): void;
+  /** Open a mimic's lid (0 shut, 1 wide). */
+  mimic(key: string, open: number): void;
+  /** The physical cards on the table (they answer `state`, `toss` and `home` like any piece). */
+  cardKeys(): string[];
   /** Spin where it lies and land on whatever face comes up (right click). */
   rollInPlace(key: string): void;
   /** Show `face` on top straight away, without moving (the category die following the deck). */
@@ -119,6 +142,8 @@ export interface DiceEngine {
   freeze(ms: number): void;
   /** Hold these pieces where they lie for a while: nothing that hits them moves them (a blast that spares them). */
   pin(keys: string[], ms: number): void;
+  /** Let pinned pieces go again now (Reset undoing the Key and Euryale). */
+  unpin(keys: string[]): void;
   /**
    * The cards laid on the table. A card that is `phys` is a body (knocked about by dice, sliding, spinning); the
    * rest only carry what is anchored to them. Poses are the card's centre and its turn in degrees.
@@ -344,7 +369,12 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   const shapes = await loadModels(opts.modelUrl);
   const chip = chipModel();
   const deck = deckModel();
-  const modelOf = (shape: DieSpec['shape']) => (shape === 'chip' ? chip : shape === 'deck' ? deck : shapes[shape]);
+  // The Void's mimic (v0.47.12): modelled in Blender (scripts/blender/make_mimic.py), its own materials, a lid that opens.
+  const mimicModel: ShapeModel = { face: new THREE.BufferGeometry(), edge: null, faces: CHIP_FACES, inR: 0.5, artR: 0.4 };
+  const chests: Record<'mimic' | 'chest', THREE.Object3D | null> = { mimic: null, chest: null };
+  // Loaded before the engine is ready (small files), so a chest in the supply is never drawn as the plain stand-in.
+  await Promise.all((['mimic', 'chest'] as const).map((k) => new GLTFLoader().loadAsync(`/models/${k}.glb`).then((g) => { chests[k] = g.scene; }).catch(() => { /* drawn as a plain chest */ })));
+  const modelOf = (shape: DieSpec['shape']) => (shape === 'chip' ? chip : shape === 'deck' ? deck : shape === 'mimic' || shape === 'chest' ? mimicModel : shapes[shape]);
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -390,14 +420,30 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { d: Die; dx: number; dy: number } | null; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { d: Die; dx: number; dy: number }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
   const fields: { f: Field; until: number }[] = [];
   let slip = { scale: 1, until: 0 };
   /** Shards of a shattered piece: flying, falling, fading. */
-  const shards: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; spin: THREE.Vector3; born: number; z: number; x: number; y: number }[] = [];
+  const shards: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; spin: THREE.Vector3; born: number; z: number; x: number; y: number; size: number }[] = [];
+  // One shard shape and one material per colour, compiled before the first break (owner, v0.47.12: a burning throw
+  // hung in mid-air while a dozen new materials were built and compiled on its first hit).
+  const shardGeo = new THREE.TetrahedronGeometry(1);
+  const shardMats = new Map<string, THREE.MeshStandardMaterial>();
+  const shardMat = (c: string) => {
+    let m = shardMats.get(c);
+    if (!m) { m = new THREE.MeshStandardMaterial({ color: new THREE.Color(c), roughness: 0.35, metalness: 0.2 }); shardMats.set(c, m); }
+    return m;
+  };
+  {
+    // Compile the shard program now, while nothing is moving.
+    const warm = new THREE.Mesh(shardGeo, shardMat('#808080'));
+    scene.add(warm);
+    renderer.compile(scene, camera);
+    scene.remove(warm);
+  }
   const ringMat = new THREE.MeshBasicMaterial({ color: 0xe0b563, transparent: true, opacity: 0.85, depthWrite: false });
   const ringGeo = new THREE.RingGeometry(1.08, 1.22, 48);
   const dice = new Map<string, Die>();
@@ -405,7 +451,14 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let hovered: string | null = null;
   let held: { die: Die; ox: number; oy: number; samples: { x: number; y: number; t: number }[] } | null = null;
   let impactCb: (i: Impact) => void = () => {};
-  let breakCb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => void = () => {};
+  let breakCb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => void = () => {};
+  let hitStopCb: (at: { x: number; y: number }, ms: number, strong: boolean) => void = () => {};
+  /** A burning throw's first hit, held (see onHitStop). */
+  let hitstop: { by: string; target: string; until: number; at: { x: number; y: number }; vx: number; vy: number; speed: number; strong: boolean; byFixed: boolean } | null = null;
+  const HITSTOP_MS = 1500;
+  const auras = new Map<string, Field>();
+  const cages = new Map<string, Cage>();
+  let contrary = false;
   const broke: Impact[] = [];
   /** Burning throws that have had their impact frame already. */
   const brokeOnce = new Set<string>();
@@ -495,6 +548,12 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         m.emissiveIntensity = (m.userData.ei ?? 1) + d.glint * 0.9;
       }
     }
+    if (d.lid) {
+      // The mimic breathes (owner, v0.47.12): its lid lifts a crack and settles, slowly, unless it is opened wide.
+      const breath = 0.04 + 0.1 * (0.5 + 0.5 * Math.sin(performance.now() / 1000 * 1.25 + b.x * 0.01));
+      d.mouthNow += (d.mouth - d.mouthNow) * 0.14;
+      d.lid.rotation.x = -Math.max(d.mouthNow, breath) * 1.15;
+    }
     if (d.ring) {
       d.ring.position.set(b.x - W / 2, (H / 2 - b.y) / COS, 1);
       d.ring.scale.set(rad * 1.05, (rad * 1.05) / COS, 1);
@@ -513,21 +572,32 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let frameNo = 0;
   let last = 0;
   let acc = 0;
+  /** Inside a frame: anything asking for the next one waits for the frame's own request at its end. */
+  let inFrame = false;
+  let woke = false;
   function wake() {
+    // v0.47.12: a wake from inside a frame (the Hope and Fear tether following every frame) used to queue a second
+    // callback beside the frame's own, doubling them every frame: the lag when a pair was picked up, and a freeze when
+    // a whole selection was carried.
+    if (inFrame) { woke = true; return; }
     if (raf) return;
     last = performance.now();
     raf = requestAnimationFrame(frame);
   }
   function frame(t: number) {
     raf = 0;
+    inFrame = true;
+    woke = false;
+    try { frameBody(t); } finally { inFrame = false; }
+  }
+  function frameBody(t: number) {
     acc += Math.min(0.05, (t - last) / 1000);
     last = t;
     const now = performance.now();
     for (let i = fields.length - 1; i >= 0; i--) if (fields[i].until < now) fields.splice(i, 1);
-    const world = { fields: fields.map((f) => f.f), friction: slip.until > now ? slip.scale : 1 };
-    const cardBodies: Body[] = [];
-    for (const c of cards.values()) if (c.body) cardBodies.push(c.body);
-    const bodies = [...order.map((d) => d.body), ...cardBodies];
+    if (hitstop && now >= hitstop.until) endHitStop();
+    const world = { fields: [...fields.map((f) => f.f), ...auras.values()], friction: slip.until > now ? slip.scale : 1, cages: [...cages.values()] };
+    const bodies = [...order.map((d) => d.body), ...cardBodies()];
     let steps = 0;
     while (acc >= STEP && steps++ < 12) {
       placeAnchored();
@@ -540,16 +610,27 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     }
     if (broke.length) {
       const first = broke[0];
-      const at = dice.get(first.key)?.body ?? { x: 0, y: 0 };
-      const point = { x: at.x, y: at.y };
       const burning = broke.some((h) => h.fire);
-      // The first piece a burning throw breaks stops the whole table for a beat: an impact frame.
-      const opening = burning && !brokeOnce.has(first.by ?? '');
-      if (opening) { brokeOnce.add(first.by ?? ''); freezeUntil = now + 110; }
-      const keys = broke.map((h) => h.key);
-      broke.length = 0;
-      for (const k of keys) engine.shatter(k);
-      breakCb(keys, point, burning, opening);
+      const sb = bodyOf(first.by ?? ''), tb = bodyOf(first.key);
+      // A burning throw's first hit holds the thrower and its target where they met (an impact frame).
+      if (first.fire && !brokeOnce.has(first.by ?? '') && !hitstop && sb && tb) {
+        brokeOnce.add(first.by!);
+        broke.shift();
+        tb.broken = false;
+        const strong = first.speed > 4500;
+        hitstop = { by: first.by!, target: first.key, until: now + HITSTOP_MS, at: { x: tb.x, y: tb.y }, vx: sb.vx, vy: sb.vy, speed: first.speed, strong, byFixed: !!sb.fixed };
+        for (const b of [sb, tb]) { b.vx = b.vy = 0; b.fixed = true; }
+        for (const k of [first.by!, first.key]) { const d = dice.get(k); if (d) d.jitter = 0.55; }
+        if (strong) freezeUntil = hitstop.until;
+        hitStopCb(hitstop.at, HITSTOP_MS, strong);
+      }
+      if (broke.length) {
+        const at = bodyOf(broke[0].key) ?? { x: 0, y: 0 };
+        const hits = broke.splice(0);
+        const keys = hits.map((h) => h.key);
+        for (const k of keys) engine.shatter(k);
+        breakCb(keys, { x: at.x, y: at.y }, burning, false, hits);
+      }
     }
     placeAnchored();
     followTether();
@@ -558,7 +639,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     const restedCards: string[] = [];
     for (const [k, c] of cards) {
       const b = c.body;
-      if (!b) continue;
+      if (!b || b.broken) continue;
       const moved = Math.abs(b.x - c.x) > 0.05 || Math.abs(b.y - c.y) > 0.05 || Math.abs((b.a ?? 0) - c.a) > 0.0005;
       if (moved) { c.x = b.x; c.y = b.y; c.a = b.a ?? 0; movedCards.push({ key: k, x: b.x, y: b.y, rot: (c.a * 180) / Math.PI }); }
       const asleep = b.asleep && !b.held;
@@ -575,9 +656,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       if (sh.z === 0) { sh.vz *= -0.3; sh.vx *= 0.8; sh.vy *= 0.8; }
       sh.mesh.position.set(sh.x - W / 2, (H / 2 - sh.y) / COS, sh.z + 3);
       sh.mesh.rotation.x += sh.spin.x * sdt; sh.mesh.rotation.y += sh.spin.y * sdt; sh.mesh.rotation.z += sh.spin.z * sdt;
-      const m = sh.mesh.material as THREE.MeshStandardMaterial;
-      m.opacity = Math.max(0, 1 - Math.max(0, age - 0.5) / 0.7);
-      if (age > 1.2) { scene.remove(sh.mesh); sh.mesh.geometry.dispose(); m.dispose(); shards.splice(i, 1); }
+      // Shrinking away rather than fading: every shard shares one geometry and one opaque material per colour.
+      sh.mesh.scale.setScalar(sh.size * Math.max(0.001, 1 - Math.max(0, age - 0.5) / 0.7));
+      if (age > 1.2) { scene.remove(sh.mesh); shards.splice(i, 1); }
     }
     let easing = false;
     const rested: string[] = [];
@@ -586,7 +667,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     if (++frameNo % 30 === 1) for (const d of order) d.labelW = d.label?.offsetWidth ?? 0;
     for (const d of order) {
       sync(d);
-      if (Math.abs(d.scale - scaleOf(d)) > 0.002 || d.glint > 0 || d.wash) easing = true;
+      if (Math.abs(d.scale - scaleOf(d)) > 0.002 || d.glint > 0 || d.wash || d.lid) easing = true;
       if (d.vanish === 'flying' && !d.body.home) gone.push(d.spec.key);
       const asleep = d.body.asleep && !d.body.held;
       if (asleep && !d.wasAsleep) rested.push(d.spec.key);
@@ -596,7 +677,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     renderer.render(scene, camera);
     if (rested.length) restCb(rested.filter((k) => dice.has(k)));
     const jittering = order.some((d) => d.jitter > 0);
-    if (!allAsleep(bodies) || easing || held || shards.length || fields.length || jittering || slip.until > now) raf = requestAnimationFrame(frame);
+    if (!allAsleep(bodies) || easing || held || shards.length || fields.length || auras.size || hitstop || jittering || slip.until > now || woke) raf = requestAnimationFrame(frame);
   }
 
   /**
@@ -608,7 +689,31 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   const imageIds = new WeakMap<object, number>();
   let nextImage = 0;
   const lookKey = (spec: DieSpec) => JSON.stringify([spec.shape, spec.body, spec.edge, spec.ink, spec.finish, spec.faces.map((f) => ('text' in f ? f.text : `img${imageIds.get(f.image as object) ?? (imageIds.set(f.image as object, ++nextImage), nextImage)}:${f.plate ?? ''}:${f.halo ?? ''}`))]);
-  function visuals(spec: DieSpec): { group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; look: string } {
+  const noTex = new THREE.CanvasTexture(document.createElement('canvas'));
+  /** A plain chest, for when the mimic's model could not be loaded. */
+  function plainChest(): THREE.Object3D {
+    const root = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: 0x6b3f1f, roughness: 0.7 });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.1, 0.6), wood);
+    base.position.z = -0.2;
+    const lid = new THREE.Group();
+    lid.name = 'Lid';
+    lid.position.set(0, 0.55, 0.1);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.64, 1.14, 0.4), wood);
+    top.position.set(0, -0.55, 0.2);
+    lid.add(top);
+    root.add(base, lid);
+    return root;
+  }
+  function visuals(spec: DieSpec): { group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; look: string; lid: THREE.Object3D | null } {
+    if (spec.shape === 'mimic' || spec.shape === 'chest') {
+      const group = new THREE.Group();
+      const m = (chests[spec.shape] ?? plainChest()).clone(true);
+      m.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+      group.add(m);
+      scene.add(group);
+      return { group, tex: noTex, mats: [], look: '', lid: m.getObjectByName('Lid') ?? null };
+    }
     const model = modelOf(spec.shape);
     const look = lookKey(spec);
     let shared = looks.get(look);
@@ -636,7 +741,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       group.add(mesh);
     }
     scene.add(group);
-    return { group, tex, mats: [m.face, m.edge], look };
+    return { group, tex, mats: [m.face, m.edge], look, lid: null };
   }
 
   function dropVisuals(d: Die) {
@@ -648,14 +753,41 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     for (const m of shared.mats) m.dispose();
   }
 
-  /** The held piece's partner glides to its side (Hope and Fear are pulled and rolled together, owner v0.47.11). */
+  /** A piece or a physical card by key. */
+  function bodyOf(key: string): Body | null {
+    return dice.get(key)?.body ?? cards.get(key)?.body ?? null;
+  }
+
+  function cardBodies(): Body[] {
+    return [...cards.values()].flatMap((c) => (c.body && !c.body.broken ? [c.body] : []));
+  }
+
+  /** The held burning hit lets go: its target breaks, a gust throws what is near, the thrower goes on faster. */
+  function endHitStop() {
+    const h = hitstop;
+    if (!h) return;
+    hitstop = null;
+    const sb = bodyOf(h.by), tb = bodyOf(h.target);
+    for (const k of [h.by, h.target]) { const d = dice.get(k); if (d) d.jitter = 0; }
+    if (sb) { sb.fixed = h.byFixed; sb.asleep = false; sb.vx = h.vx * 1.6; sb.vy = h.vy * 1.6; }
+    if (tb) { tb.fixed = false; tb.broken = true; }
+    const hit: Impact = { key: h.target, speed: h.speed, kind: 'break', by: h.by, fire: true, vx: h.vx, vy: h.vy };
+    engine.shatter(h.target);
+    breakCb([h.target], h.at, true, true, [hit]);
+    engine.impulse(h.at.x, h.at.y, 460, 4600, { gen: 2, power: 2 }, [h.by]);
+  }
+
+  /** The held piece's partners glide along with it (Hope and Fear, owner v0.47.11; a carried selection, v0.47.12). */
   function followTether() {
-    const t = held?.die.tether;
-    if (!held || !t) return;
-    const hb = held.die.body, pb = t.d.body;
-    const tx = Math.min(bounds.right - pb.r, Math.max(bounds.left + pb.r, hb.x + t.dx)), ty = Math.min(bounds.bottom - pb.r, Math.max(bounds.top + pb.r, hb.y + t.dy));
-    pb.x += (tx - pb.x) * 0.35;
-    pb.y += (ty - pb.y) * 0.35;
+    const list = held?.die.tether;
+    if (!held || !list) return;
+    const hb = held.die.body;
+    for (const t of list) {
+      const pb = t.d.body;
+      const tx = Math.min(bounds.right - pb.r, Math.max(bounds.left + pb.r, hb.x + t.dx)), ty = Math.min(bounds.bottom - pb.r, Math.max(bounds.top + pb.r, hb.y + t.dy));
+      pb.x += (tx - pb.x) * 0.35;
+      pb.y += (ty - pb.y) * 0.35;
+    }
     wake();
   }
 
@@ -753,6 +885,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.tex = v.tex;
         prev.mats = v.mats;
         prev.look = v.look;
+        prev.lid = v.lid;
         prev.spec = spec;
         if (!sameShape) {
           const model = modelOf(spec.shape);
@@ -760,7 +893,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         }
         prev.body.r = (spec.size / 2) * (spec.shape === 'chip' ? 1 : spec.shape === 'deck' ? 0.78 : 0.86);
         prev.body.upright = !!spec.upright;
-        prev.body.flat = spec.shape === 'chip' || spec.shape === 'deck';
+        prev.body.flat = spec.shape === 'chip' || spec.shape === 'deck' || spec.shape === 'mimic' || spec.shape === 'chest';
         prev.body.restFaces = spec.restFaces;
         prev.body.fixed = spec.fixed;
         prev.body.spawner = spec.spawner;
@@ -774,7 +907,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const face = o?.face;
       const q0 = o?.random ? qRandom() : undefined;
       const body = makeBody(spec.key, x, y, (spec.size / 2) * (spec.shape === 'chip' ? 1 : spec.shape === 'deck' ? 0.78 : 0.86), model.faces, { upright: spec.upright, q: q0 });
-      body.flat = spec.shape === 'chip' || spec.shape === 'deck';
+      body.flat = spec.shape === 'chip' || spec.shape === 'deck' || spec.shape === 'mimic' || spec.shape === 'chest';
       body.restFaces = spec.restFaces;
       body.fixed = spec.fixed;
       body.spawner = spec.spawner;
@@ -783,11 +916,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       body.fresh = o?.fresh;
       // A fresh copy clears room for the next one: a weak push that keeps the spot by the supply free (owner).
       if (o?.fresh) body.boost = { gen: 3, power: 1.6, soft: true };
+      // Awake for a moment, so it is pushed clear of anything it was put down on (two sleeping pieces never touch).
+      if (!spec.fixed) body.asleep = false;
       if (face !== undefined && model.faces[face]) {
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
       }
-      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0, tether: null, wash: null };
+      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0, tether: null, wash: null, lid: v.lid, mouth: 0, mouthNow: 0 };
       dice.set(spec.key, d);
       order.push(d);
       wake();
@@ -807,7 +942,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     keys: () => order.map((d) => d.spec.key),
     state(key) {
       const d = dice.get(key);
-      return d ? { x: d.body.x, y: d.body.y, top: d.body.top, asleep: d.body.asleep } : null;
+      if (d) return { x: d.body.x, y: d.body.y, top: d.body.top, asleep: d.body.asleep };
+      const c = cards.get(key);
+      return c ? { x: c.body?.x ?? c.x, y: c.body?.y ?? c.y, top: 0, asleep: c.body ? c.body.asleep : true } : null;
     },
     screen(key) {
       const d = dice.get(key);
@@ -865,6 +1002,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const a = samples[0], z = samples[samples.length - 1];
       const dt = Math.max(0.016, (z.t - a.t) / 1000);
       let vx = (z.x - a.x) / dt, vy = (z.y - a.y) / dt;
+      // The Idiot: every throw goes back the way the hand came.
+      if (contrary) { vx = -vx; vy = -vy; }
       const sp = Math.hypot(vx, vy);
       const cap = 4200;
       if (sp > cap) { vx *= cap / sp; vy *= cap / sp; }
@@ -873,9 +1012,11 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       b.held = false;
       // The partner goes with it, thrown the same way, then each rolls on its own.
       if (die.tether) {
-        const pb = die.tether.d.body;
-        pb.held = false;
-        launch(pb, vx * (0.92 + Math.random() * 0.12), vy * (0.92 + Math.random() * 0.12), 0, [(Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * 8]);
+        for (const t of die.tether) {
+          const pb = t.d.body;
+          pb.held = false;
+          launch(pb, vx * (0.92 + Math.random() * 0.12), vy * (0.92 + Math.random() * 0.12), 0, [(Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * 8]);
+        }
         die.tether = null;
       }
       // Let go off its card, an anchored piece is loose until the table decides where it belongs.
@@ -887,8 +1028,14 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     },
     toss(key, vx, vy, boost, breaker) {
       const d = dice.get(key);
+      const cb = cards.get(key)?.body;
+      if (!d && cb && !cb.held && !cb.broken) {
+        cb.asleep = false; cb.home = undefined; cb.vx = vx; cb.vy = vy; cb.va = (cb.va ?? 0) + (Math.random() - 0.5) * Math.min(8, Math.hypot(vx, vy) / 300);
+        wake();
+        return;
+      }
       if (!d) return;
-      if (d.tether) { d.tether.d.body.held = false; d.tether = null; }
+      if (d.tether) { for (const t of d.tether) t.d.body.held = false; d.tether = null; }
       d.jitter = 0;
       const sp = Math.hypot(vx, vy);
       const k = 0.012 * sp + 8;
@@ -911,16 +1058,16 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     tether(key, partner) {
       const d = dice.get(key);
       if (!d) return;
-      if (d.tether) d.tether.d.body.held = false;
-      const p = partner ? dice.get(partner) : undefined;
-      if (!p) { d.tether = null; return; }
-      // Beside it on the side it already was, close enough to touch.
-      const side = p.body.x >= d.body.x ? 1 : -1;
-      d.tether = { d: p, dx: side * (d.body.r + p.body.r + 4), dy: 0 };
-      p.body.held = true;
-      p.body.asleep = false;
-      p.body.settle = undefined;
-      p.body.home = undefined;
+      if (d.tether) for (const t of d.tether) t.d.body.held = false;
+      d.tether = null;
+      const list = (Array.isArray(partner) ? partner : partner ? [partner] : []).map((k) => dice.get(k)).filter((p): p is Die => !!p && p !== d);
+      if (!list.length) return;
+      d.tether = list.map((p) => {
+        // One partner stands beside it, close enough to touch; a carried group keeps the shape it lay in.
+        if (!Array.isArray(partner)) { const side = p.body.x >= d.body.x ? 1 : -1; return { d: p, dx: side * (d.body.r + p.body.r + 4), dy: 0 }; }
+        return { d: p, dx: p.body.x - d.body.x, dy: p.body.y - d.body.y };
+      });
+      for (const p of list) { p.body.held = true; p.body.asleep = false; p.body.settle = undefined; p.body.home = undefined; }
       wake();
     },
     rollInPlace(key) {
@@ -939,6 +1086,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     },
     home(key, x, y, face) {
       const d = dice.get(key);
+      const cb = cards.get(key)?.body;
+      if (!d && cb && !cb.held) { sendHome(cb, x, y, undefined, 0.42 + Math.min(0.4, Math.hypot(cb.x - x, cb.y - y) / 2400)); wake(); return; }
       if (!d) return;
       sendHome(d.body, x, y, face, 0.42 + Math.min(0.4, Math.hypot(d.body.x - x, d.body.y - y) / 2400));
       wake();
@@ -989,14 +1138,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const rad = d.spec.size / 2;
       const n = d.spec.shape === 'chip' ? 9 : 12;
       for (let i = 0; i < n; i++) {
-        const geo = new THREE.TetrahedronGeometry(rad * (0.18 + Math.random() * 0.22));
-        const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(i % 3 === 0 ? d.spec.edge : d.spec.body), roughness: 0.35, metalness: 0.2, transparent: true });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.castShadow = true;
+        const size = rad * (0.18 + Math.random() * 0.22);
+        const mesh = new THREE.Mesh(shardGeo, shardMat(i % 3 === 0 ? d.spec.edge : d.spec.body));
+        mesh.scale.setScalar(size);
         scene.add(mesh);
         const ang = Math.random() * Math.PI * 2;
         const sp = 260 + Math.random() * 520;
-        shards.push({ mesh, x, y, z: rad * 0.6, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, vz: 500 + Math.random() * 600, spin: new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14), born: performance.now() });
+        shards.push({ mesh, x, y, z: rad * 0.6, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, vz: 500 + Math.random() * 600, spin: new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14), born: performance.now(), size });
       }
       engine.remove(key);
     },
@@ -1013,7 +1161,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const all = [...order.map((d) => d.body), ...[...cards.values()].flatMap((c) => (c.body ? [c.body] : []))];
       const spare = new Set(except ?? []);
       for (const b of all) {
-        if (b.fixed || b.held || b.ghost || spare.has(b.key)) continue;
+        if (b.fixed || b.held || b.ghost || b.broken || spare.has(b.key)) continue;
         const dx = b.x - x, dy = b.y - y;
         const d = Math.hypot(dx, dy);
         if (d >= r) continue;
@@ -1047,6 +1195,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
           if (body.box && (body.box.w !== c.w || body.box.h !== c.h)) body.asleep = false;
           body.box = { w: c.w, h: c.h };
           body.r = Math.hypot(c.w, c.h) / 2;
+          // A physical card breaks like any loose piece (owner, v0.47.12): torn, cut, burnt or blown apart.
+          body.breakable = true;
           cards.set(c.key, { x: body.x, y: body.y, w: c.w, h: c.h, a: body.a ?? 0, body, was: prev?.was ?? true, samples: prev?.samples ?? [] });
         } else {
           cards.set(c.key, { x: c.x, y: c.y, w: c.w, h: c.h, a, body: null, was: true, samples: prev?.samples ?? [] });
@@ -1173,6 +1323,30 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       for (const b of pinned) b.fixed = true;
       setTimeout(() => { for (const b of pinned) b.fixed = false; wake(); }, ms);
     },
+    aura(id, f) {
+      if (f) auras.set(id, f); else auras.delete(id);
+      if (f) for (const b of [...order.map((d) => d.body), ...cardBodies()]) if (!b.fixed && !b.held) { b.asleep = false; b.settle = undefined; }
+      wake();
+    },
+    cage(id, c) {
+      if (!c) { cages.delete(id); return; }
+      const inside = new Set(order.filter((d) => !d.body.fixed && Math.hypot(d.body.x - c.x, d.body.y - c.y) < c.r).map((d) => d.spec.key));
+      cages.set(id, { ...c, inside });
+      wake();
+    },
+    contrary(on) { contrary = on; },
+    mimic(key, open) {
+      const d = dice.get(key);
+      if (!d?.lid) return;
+      d.mouth = Math.max(0, Math.min(1, open));
+      wake();
+    },
+    cardKeys: () => [...cards.entries()].filter(([, c]) => c.body && !c.body.broken).map(([k]) => k),
+    onHitStop(cb) { hitStopCb = cb; },
+    unpin(keys) {
+      for (const k of keys) { const d = dice.get(k); if (d && !d.anchor && !d.spec.fixed) { d.body.fixed = false; d.body.asleep = false; } }
+      wake();
+    },
     onImpact(cb) { impactCb = cb; },
     onBreak(cb) { breakCb = cb; },
     onRest(cb) { restCb = cb; },
@@ -1181,8 +1355,10 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       raf = 0;
       for (const d of order) { dropVisuals(d); setRing(d, false); }
       order.length = 0;
-      for (const sh of shards) { scene.remove(sh.mesh); sh.mesh.geometry.dispose(); (sh.mesh.material as THREE.Material).dispose(); }
+      for (const sh of shards) scene.remove(sh.mesh);
       shards.length = 0;
+      shardGeo.dispose();
+      for (const m of shardMats.values()) m.dispose();
       ringGeo.dispose();
       ringMat.dispose();
       dice.clear();

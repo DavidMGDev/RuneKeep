@@ -14,7 +14,7 @@
  * flat, the table stands them up in 3D, from the same list.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { startFire } from '@/lib/fire-shader';
+import { burn, type Flames } from '@/lib/flames';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { DesktopPortal } from '@/components/desktop-portal';
@@ -31,6 +31,7 @@ import type { CardCategory, CardItem } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { BakedTokenLayer, type PlacedToken } from '../components/card-tokens';
 import { DIE_TYPES, type DieType, kindScale, nextDieType, placedKindScale, TOKEN_COLORS, TOKEN_FRAC, tokenFill } from '../components/card-tokens-data';
+import type { DieSpec } from './dice-engine';
 import { type CornerTone, EnabledCorner } from '../components/enabled-corner';
 import { TraitCrossOut } from '../components/trait-cross-out';
 import type { DiceTrayHandle } from '../sheet/dice-tray';
@@ -39,12 +40,12 @@ import { SortPanel } from '../sheet/sort-panel';
 import { BoardCards, maxW, MIN_W } from './board-cards';
 import { type DeckLook } from './deck-look';
 import { CardFace, DeskCarousel, type DeskCarouselHandle, type TableCard } from './desk-carousel';
-import type { Bounds } from './dice-physics';
-import { type DomatCard, DOMAT, DOMAT_START, type DomatStock, domatStock, drawDomat, takeDomat } from './domat';
+import type { Bounds, Impact } from './dice-physics';
+import { type DomatCard, DOMAT, DOMAT_START, type DomatStock, domatStock, drawDomat, type Element, ELEMENTS, elementWinner, takeDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
 import { type CardPose, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
-import { DomatCardView, type Fx, FX_CSS, FxLayer, shake, Shards } from './table-fx';
+import { CardBreak, type CardBreakMode, DomatCardView, type Fx, FX_CSS, FxLayer, shake } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 
@@ -63,6 +64,13 @@ const HAND_W = 170;
 /** How far in from the table's edge each kind of wall stops the dice. */
 const WALL: Record<DeckLook['walls'], number> = { none: 4, line: 8, stone: 20, brass: 10 };
 const MATERIALS = ['wood', 'bone', 'iron'] as const;
+/** The Flames card's elements on a die, and their light. */
+const ELEMENT_DRESS: Record<Element, Partial<DieSpec>> = {
+  fire: { body: '#c8371c', edge: '#ff9a4a', ink: '#fff2d8' },
+  water: { body: '#1f5fbf', edge: '#5fb4ff', ink: '#e8f4ff' },
+  ice: { body: '#cfeeff', edge: '#ffffff', ink: '#2a5a7a' },
+};
+const ELEMENT_TINT: Record<Element, string> = { fire: '#ff7a3c', water: '#4aa8ff', ice: '#d8f2ff' };
 
 function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<string> }): CornerTone {
   if (states.modsOff.has(ref)) return 'muted';
@@ -259,9 +267,18 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       return { uid: `s:${c.id}`, id: c.id, fx: x / tableW, fy: y / tableH, w, rot: 0 };
     });
   }, [spread, deck, spreadAt, look.size, tableW, tableH, pad]);
-  const board = spread ? spreadCards : copies;
+  /** The playground (owner, v0.47.12): the whole hand let loose on the table as physical cards, not kept. */
+  const [playground, setPlayground] = useState(false);
+  const playRef = useRef(playground);
+  playRef.current = playground;
+  const [pgCards, setPgCards] = useState<BoardCard[]>([]);
+  const board = useMemo(() => (spread ? spreadCards : playground ? [...copies, ...pgCards] : copies), [spread, spreadCards, playground, copies, pgCards]);
   const setBoard = useCallback((next: BoardCard[]) => {
-    if (!lookRef.current || lookRef.current.handMode !== 'spread') { setCopies(next); return; }
+    if (!lookRef.current || lookRef.current.handMode !== 'spread') {
+      if (playRef.current) setPgCards(next.filter((b) => b.uid.startsWith('pg:')));
+      setCopies(next.filter((b) => !b.uid.startsWith('pg:')));
+      return;
+    }
     const out = { ...spreadAtRef.current };
     for (const b of next) out[b.id] = { fx: b.fx, fy: b.fy, w: b.w, rot: b.rot, phys: b.phys, face: b.face };
     setSpread(out);
@@ -427,11 +444,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const [supColor, setSupColor] = useState(() => ctx.tokenColor || TOKEN_COLORS[0]);
   useEffect(() => { if (ctx.tokenColor) setSupColor(ctx.tokenColor); }, [ctx.tokenColor]);
   const colorSave = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const supply = useMemo<SupplyPiece[]>(() => (look.tokenTray || peeking ? [
+  const supply = useMemo<SupplyPiece[]>(() => (!playground && (look.tokenTray || peeking) ? [
     { key: 'src:mat', token: { kind: material }, label: material },
     { key: 'src:color', token: { kind: 'color', color: supColor }, label: 'Colour' },
     { key: 'src:die', token: { kind: 'die', dieType: supplyDie, dieValue: 1, dieValue2: supplyDie === 'duality' ? 1 : undefined }, label: supplyDie === 'duality' ? 'Hope & Fear' : supplyDie },
-  ] : []), [look.tokenTray, peeking, supColor, supplyDie, material]);
+  ] : []), [look.tokenTray, peeking, playground, supColor, supplyDie, material]);
   const looseKey = `runekeep.table.loose.${characterId}`;
   const [loose, setLooseState] = useState<LoosePiece[]>(() => { try { return JSON.parse(localStorage.getItem(looseKey) ?? '[]') as LoosePiece[]; } catch { return []; } });
   const looseRef = useRef(loose);
@@ -584,13 +601,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const [drawn, setDrawn] = useState<{ uid: string; card: DomatCard; x: number; y: number; from: { x: number; y: number }; snap: Map<string, { x: number; y: number }>; held?: boolean }[]>([]);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const [fx, setFx] = useState<Fx[]>([]);
-  const [shattering, setShattering] = useState<{ uid: string; card: TableCard; cx: number; cy: number; w: number; rot: number }[]>([]);
-  const [scorched, setScorched] = useState<Set<string>>(new Set());
+  const [shattering, setShattering] = useState<{ uid: string; card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number } }[]>([]);
   const fxSeq = useRef(0);
   const addFx = useCallback((f: Omit<Fx, 'id'>) => {
     const id = ++fxSeq.current;
     setFx((l) => [...l, { ...f, id }]);
     setTimeout(() => setFx((l) => l.filter((x) => x.id !== id)), f.ms + 60);
+    return id;
   }, []);
   /**
    * The deck's stock (owner, v0.47.11): a card grows every 200 seconds, up to ten, and each draw takes one. Kept per
@@ -636,7 +653,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     // Where everything lay when it was drawn: the Fates card puts it all back.
     const eng = diceRef.current?.engine();
     const snap = new Map<string, { x: number; y: number }>();
-    for (const k of eng?.keys() ?? []) { const s = eng!.state(k); if (s && !k.startsWith('tok:')) snap.set(k, { x: s.x, y: s.y }); }
+    for (const k of [...(eng?.keys() ?? []), ...(eng?.cardKeys() ?? [])]) { const s = eng!.state(k); if (s && !k.startsWith('tok:') && !k.startsWith('src:')) snap.set(k, { x: s.x, y: s.y }); }
     if (opts?.held) { setDrawn((d) => [...d, { uid: uidOf(), card, x: opts.held!.x, y: opts.held!.y, from: opts.held!, snap, held: true }]); return; }
     const ang = Math.random() * Math.PI * 2;
     const x = Math.min(tableW - pad - 70, Math.max(pad + 70, from.x + Math.cos(ang) * 130));
@@ -644,19 +661,169 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setDrawn((d) => [...d, { uid: uidOf(), card, x, y, from, snap }]);
   }, [gone, tableW, tableH, pad, stockSaved, domatKey, addFx]);
 
-  /** A card breaking into shards (a copy goes; a laid-out hand card comes back a moment later). */
-  const breakCard = useCallback((b: BoardCard) => {
+  /**
+   * A card breaking (owner, v0.47.12): torn, cut clean, burnt or blown apart (see CardBreak). A copy goes; a laid-out
+   * hand card comes back a moment later as an ordinary card where it was.
+   */
+  const breakCard = useCallback((b: BoardCard, mode: CardBreakMode, dir?: { x: number; y: number }) => {
     const card = lookup(b.id);
     if (!card) return;
     const { w } = sizeOf(b);
-    setShattering((s) => [...s, { uid: b.uid, card, cx: b.fx * tableW, cy: b.fy * tableH, w, rot: b.rot ?? 0 }]);
-    if (lookRef.current.handMode !== 'spread') setCopies(copiesRef.current.filter((c) => c.uid !== b.uid));
+    const p = livePoses.get(b.uid);
+    livePoses.delete(b.uid);
+    setShattering((s) => [...s, { uid: b.uid, card, cx: p?.x ?? b.fx * tableW, cy: p?.y ?? b.fy * tableH, w, rot: p?.rot ?? b.rot ?? 0, mode, dir }]);
+    if (b.uid.startsWith('pg:')) setPgCards((l) => l.filter((c) => c.uid !== b.uid));
+    else if (lookRef.current.handMode !== 'spread') setCopies(copiesRef.current.filter((c) => c.uid !== b.uid));
+    else setBoard(boardRef.current.map((c) => (c.uid === b.uid ? { ...c, phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : c)));
   }, [lookup, tableW, tableH, setCopies]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---------------------------------------------------------------- what the Deck of Many Things leaves behind
+  /** Effects still in play, each with how to undo it (Reset undoes them all, owner v0.47.12). */
+  const [lasting, setLasting] = useState<{ id: string; name: string; tint: string; until: number | null }[]>([]);
+  const undo = useRef(new Map<string, () => void>());
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const later = (fn: () => void, ms: number) => { timers.current.push(setTimeout(fn, ms)); };
+  /** When each timed effect runs out (so drawing the card again restarts its clock instead of being cut short). */
+  const lastTimer = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const endLasting = useCallback((id: string) => {
+    clearTimeout(lastTimer.current.get(id));
+    lastTimer.current.delete(id);
+    const f = undo.current.get(id);
+    undo.current.delete(id);
+    f?.();
+    setLasting((l) => l.filter((x) => x.id !== id));
+  }, []);
+  /** Record an effect now in play (the card has already ended any earlier one of the same kind, see runEffect). */
+  const addLasting = (id: string, name: string, tint: string, ms: number | null, off: () => void) => {
+    undo.current.set(id, off);
+    setLasting((l) => [...l.filter((x) => x.id !== id), { id, name, tint, until: ms ? Date.now() + ms : null }]);
+    if (ms) lastTimer.current.set(id, setTimeout(() => endLasting(id), ms));
+  };
+  const [cages, setCages] = useState<{ id: string; x: number; y: number; r: number }[]>([]);
+  const [craters, setCraters] = useState<{ id: string; x: number; y: number }[]>([]);
+  /** The low side of a tipping table darkens (the Balance): drawn straight onto this layer, no re-render. */
+  const tiltRef = useRef<HTMLDivElement>(null);
+  /** How lasting cards dress pieces: stone, gilded (locked), small, an element. Dressed again from scratch each time. */
+  const stone = useRef(new Set<string>());
+  const gilt = useRef(new Set<string>());
+  const tiny = useRef(new Set<string>());
+  const elements = useRef(new Map<string, Element>());
+  const [cardEls, setCardEls] = useState<Record<string, Element>>({});
+  const redress = useCallback((keys: string[]) => {
+    const h = diceRef.current;
+    if (!h) return;
+    for (const k of keys) {
+      if (k.startsWith('card:')) continue;
+      const el = elements.current.get(baseOf(k));
+      const parts: ((s: DieSpec) => Partial<DieSpec>)[] = [];
+      if (el) parts.push(() => ELEMENT_DRESS[el]);
+      if (stone.current.has(k)) parts.push(() => ({ body: '#5d625e', edge: '#7c827c', ink: '#2c302d', finish: 'stone' }));
+      if (gilt.current.has(k)) parts.push(() => ({ body: '#B98734', edge: '#E0B563', ink: '#1a1206', finish: 'metal' }));
+      if (tiny.current.has(k)) parts.push((s) => ({ size: s.size * 0.55 }));
+      h.restyle([k], parts.length ? (s) => parts.reduce<Partial<DieSpec>>((acc, f) => ({ ...acc, ...f({ ...s, ...acc }) }), {}) : null);
+    }
+  }, []);
+  /** Give a piece (by its base key) or a physical card an element, and dress it so. */
+  const setElement = useCallback((key: string, el: Element) => {
+    elements.current.set(key, el);
+    if (key.startsWith('card:')) { setCardEls((c) => ({ ...c, [key.slice(5)]: el })); return; }
+    redress(diceRef.current?.engine()?.keys().filter((k) => baseOf(k) === key) ?? []);
+  }, [redress]);
+  /** Fire, water and ice meeting (Card-Jitsu, owner v0.47.12): the loser is thrown off and takes the winner's element. */
+  const lastClash = useRef(new Map<string, number>());
+  const onKnock = useCallback((a: string, b: string) => {
+    const eng = diceRef.current?.engine();
+    if (!eng) return;
+    // The Rogue pockets whatever loose piece it touches.
+    const rogue = a.startsWith('fx:rogue') ? a : b.startsWith('fx:rogue') ? b : null;
+    if (rogue) {
+      const prey = rogue === a ? b : a;
+      const base = baseOf(prey);
+      const bag = pockets.current.get(rogue);
+      const t = bag && (base.startsWith('free:') || base.startsWith('roll:')) ? tokenOfBase(base) : null;
+      if (!bag || !t) return;
+      bag.push({ key: base, token: t, x: 0, y: 0 });
+      const s = eng.state(prey);
+      for (const k of eng.keys()) if (baseOf(k) === base) eng.remove(k);
+      setLoose(looseRef.current.filter((l) => l.key !== base));
+      if (s) addFx({ kind: 'smoke', x: s.x, y: s.y, r: 60, ms: 500 });
+      playSfx('tokenRemove', { volume: 0.5, cents: 400 });
+      return;
+    }
+    if (!elements.current.size) return;
+    const ka = a.startsWith('card:') ? a : baseOf(a), kb = b.startsWith('card:') ? b : baseOf(b);
+    const ea = elements.current.get(ka), eb = elements.current.get(kb);
+    if (!ea || !eb) return;
+    const win = elementWinner(ea, eb);
+    if (!win) return;
+    const [loser, winner] = win === ea ? [b, a] : [a, b];
+    const lk = win === ea ? kb : ka;
+    const now = performance.now();
+    if (now - (lastClash.current.get(lk) ?? 0) < 400) return;
+    lastClash.current.set(lk, now);
+    const ls = eng.state(loser), ws = eng.state(winner);
+    if (!ls || !ws) return;
+    const d = Math.hypot(ls.x - ws.x, ls.y - ws.y) || 1;
+    const parts = loser.startsWith('card:') ? [loser] : eng.keys().filter((k) => baseOf(k) === lk);
+    for (const k of parts) eng.toss(k, ((ls.x - ws.x) / d) * 1900, ((ls.y - ws.y) / d) * 1900, { gen: 2, power: 1.5 });
+    setElement(lk, win);
+    addFx({ kind: 'spark', x: ls.x, y: ls.y, r: 70, ms: 500, tint: ELEMENT_TINT[win] });
+    playSfx(win === 'fire' ? 'loseHope' : win === 'water' ? 'cardDragEnd' : 'cardDisable', { volume: 0.45, cents: 300 });
+  }, [setElement, setLoose, addFx]);  
+  /** What a loose piece or a rolled die is, as a token (to keep it in a mimic or a thief's pocket). */
+  const tokenOfBase = (base: string): TokenInfo | null => {
+    if (base.startsWith('free:')) return looseRef.current.find((t) => t.key === base)?.token ?? null;
+    const d = base.startsWith('roll:') ? rolledDice.current.get(base.slice(5)) : undefined;
+    return d ? (d.side ? { kind: 'die', dieType: 'duality', dieValue: d.value ?? 1, dieValue2: 1 } : { kind: 'die', dieType: d.type, dieValue: d.value ?? 1 }) : null;
+  };
+  /** Pieces let out at a point, flung away from it. */
+  const spill = (pieces: LoosePiece[], x: number, y: number) => {
+    if (!pieces.length) return;
+    const add = pieces.map((p, i) => ({ ...p, key: `free:${newTokenId()}${i}`, x, y }));
+    setLoose([...looseRef.current, ...add]);
+    setTimeout(() => {
+      const eng = diceRef.current?.engine();
+      for (const p of add) {
+        const a = Math.random() * Math.PI * 2, s = 900 + Math.random() * 900;
+        for (const k of eng?.keys().filter((kk) => baseOf(kk) === p.key) ?? []) eng?.toss(k, Math.cos(a) * s, Math.sin(a) * s, { gen: 2, power: 1.2 });
+      }
+    }, 60);
+  };
+  /** What the Rogue has pocketed, by thief. */
+  const pockets = useRef(new Map<string, LoosePiece[]>());
+  /** The Void's mimics: where each sits and what it swallowed. Kept, so a reload never loses what is inside. */
+  const mimicKey = `runekeep.table.mimics.${characterId}`;
+  const [mimics, setMimicsState] = useState<{ key: string; x: number; y: number; pieces: LoosePiece[] }[]>(() => { try { return JSON.parse(localStorage.getItem(mimicKey) ?? '[]'); } catch { return []; } });
+  const mimicsRef = useRef(mimics);
+  mimicsRef.current = mimics;
+  const setMimics = useCallback((f: (m: typeof mimics) => typeof mimics) => {
+    const next = f(mimicsRef.current);
+    mimicsRef.current = next;
+    setMimicsState(next);
+    try { localStorage.setItem(mimicKey, JSON.stringify(next)); } catch { /* private window */ }
+  }, [mimicKey]);
+  const chestSpec = (key: string): DieSpec => ({ key, shape: lookRef.current.chest === 'cute' ? 'chest' : 'mimic', size: 92, body: '#8a5a2b', edge: '#E0B563', ink: '#000', faces: [], finish: 'stone' });
+  /** A mimic right-clicked: it opens wide, spits out everything it swallowed and is gone. */
+  const popMimic = useCallback((key: string) => {
+    const eng = diceRef.current?.engine();
+    const m = mimicsRef.current.find((q) => q.key === key);
+    const s = eng?.state(key);
+    if (!eng || !s) return;
+    eng.mimic(key, 1);
+    playSfx('cardFullscreenEnter', { volume: 0.8, cents: -400 });
+    addFx({ kind: 'spark', x: s.x, y: s.y, r: 160, ms: 700, tint: '#c9a6f0' });
+    setTimeout(() => {
+      spill(m?.pieces ?? [], s.x, s.y);
+      setMimics((l) => l.filter((q) => q.key !== key));
+    }, 260);
+    setTimeout(() => { if (eng.has(key)) { eng.shatter(key); addFx({ kind: 'smoke', x: s.x, y: s.y, r: 120, ms: 700 }); } }, 1100);
+  }, [addFx, setMimics]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /**
-   * A Deck of Many Things card plays out (v0.47.6, owner: "much more globally impactful", one draw a minute). Every
-   * card reaches the whole table, and its pushes carry on through what they hit, five generations deep, the way a
-   * launched piece's do.
+   * A Deck of Many Things card plays out (v0.47.12, owner: "interesting more lasting effects", "things that can be
+   * undone when i press the reset button"). Most cards now leave something behind for a while or until Reset: stone,
+   * locks, a cage, elements, a mimic, a thief, ice, a tipping table. Pushes still carry on through what they hit, five
+   * generations deep, the way a launched piece's do.
    */
   const runEffect = useCallback((d: { card: DomatCard; snap: Map<string, { x: number; y: number }> }, x: number, y: number) => {
     const eng = diceRef.current?.engine();
@@ -665,9 +832,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const { card } = d;
     const tint = card.tint;
     const diag = Math.hypot(tableW, tableH);
-    const mx = (play.left + play.right) / 2, my = (play.top + play.bottom) / 2;
     const CHAIN = { gen: 5, power: 2.5 };
-    const movable = () => eng.keys().filter((k) => !k.startsWith('tok:'));
+    const uid = uidOf();
     const looseKeys = () => eng.keys().filter((k) => k.startsWith('free:') || k.startsWith('roll:'));
     const near = (keys: string[], r: number) => keys.filter((k) => { const s = eng.state(k); return s && Math.hypot(s.x - x, s.y - y) < r; });
     const clampX = (v: number) => Math.min(play.right - 30, Math.max(play.left + 30, v));
@@ -677,11 +843,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       setLoose(looseRef.current.filter((t) => !bases.has(t.key)));
     };
     const shatterKeys = (keys: string[]) => { for (const k of keys) eng.shatter(k); dropLoose(keys); };
-    const cardsNear = (r: number) => boardRef.current.filter((b) => Math.hypot(b.fx * tableW - x, b.fy * tableH - y) < r);
-    const jolt = (p: number) => shake(tableRef.current, p);
-    const fling = (keys: string[], lo: number, hi: number) => {
-      for (const k of keys) { const a = Math.random() * Math.PI * 2, s = lo + Math.random() * (hi - lo); eng.toss(k, Math.cos(a) * s, Math.sin(a) * s, CHAIN); }
+    const cardsNear = (r: number) => boardRef.current.filter((b) => { const p = livePoses.get(b.uid); return Math.hypot((p?.x ?? b.fx * tableW) - x, (p?.y ?? b.fy * tableH) - y) < r; });
+    /** Break the cards near the card, each blown away from it. */
+    const breakNear = (r: number, mode: CardBreakMode) => {
+      for (const b of cardsNear(r)) {
+        const p = livePoses.get(b.uid);
+        const cx = p?.x ?? b.fx * tableW, cy = p?.y ?? b.fy * tableH;
+        breakCard(b, mode, { x: cx - x || 1, y: cy - y });
+      }
     };
+    const jolt = (p: number) => shake(tableRef.current, p);
+    // The same lasting card drawn again: the one in play ends first, then this one starts afresh.
+    const again = ({ elements: 'elements', petrify: 'petrify', lock: 'lock', tiny: 'tiny', contrary: 'contrary', follow: 'follow', seesaw: 'seesaw', moon: 'moon' } as Partial<Record<DomatCard['effect'], string>>)[card.effect];
+    if (again && undo.current.has(again)) endLasting(again);
     switch (card.effect) {
       case 'gust':
         addFx({ kind: 'flash', x, y, r: 0, ms: 1100, tint });
@@ -691,24 +865,31 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         jolt(1.6);
         playSfx('gainGoldenHp', { volume: 0.9, cents: -300 });
         break;
-      case 'star':
+      case 'wish': {
+        // Every die shows its best, and it counts.
         addFx({ kind: 'spark', x, y, r: 520, ms: 1100, tint });
-        addFx({ kind: 'ring', x, y, r: diag * 0.8, ms: 1000, tint });
-        eng.impulse(x, y, diag, 5200, CHAIN);
-        jolt(1);
+        addFx({ kind: 'rune', x, y, r: 220, ms: 1300, tint });
+        const dice = looseKeys().filter((k) => k.startsWith('roll:') || looseRef.current.find((l) => l.key === baseOf(k))?.token.kind === 'die');
+        for (const k of dice) { const s = eng.state(k); if (s) addFx({ kind: 'consume', x: s.x, y: s.y, r: 60, ms: 700, tint }); }
+        h.wish(dice);
         playSfx('gainHope', { volume: 0.9 });
         break;
-      case 'flames': {
-        addFx({ kind: 'fire', x, y, r: 520, ms: 1300 });
-        addFx({ kind: 'flash', x, y, r: 0, ms: 700, tint: '#ff7a3c' });
-        addFx({ kind: 'ring', x, y, r: diag * 0.8, ms: 1000, tint: '#ff7a3c' });
-        eng.impulse(x, y, diag, 5600, CHAIN);
-        // Every card on the table is scorched for a while.
-        const burnt = boardRef.current.map((b) => b.uid);
-        setScorched((s) => new Set([...s, ...burnt]));
-        setTimeout(() => setScorched((s) => { const n = new Set(s); for (const u of burnt) n.delete(u); return n; }), 15000);
-        jolt(1.2);
-        playSfx('loseHope', { volume: 0.9, cents: -400 });
+      }
+      case 'elements': {
+        // Fire, water or ice for every loose piece and physical card; Card-Jitsu settles who meets whom (onKnock).
+        addFx({ kind: 'flash', x, y, r: 0, ms: 800, tint });
+        addFx({ kind: 'ring', x, y, r: diag * 0.8, ms: 1000, tint });
+        const bases = [...new Set(looseKeys().map(baseOf))];
+        const cardKeys = eng.cardKeys();
+        [...bases, ...cardKeys].forEach((k, i) => setElement(k, ELEMENTS[(i + Math.floor(Math.random() * 3)) % 3]));
+        addLasting('elements', 'Flames: fire, water and ice', tint, null, () => {
+          const was = [...elements.current.keys()];
+          elements.current.clear();
+          setCardEls({});
+          redress(was);
+        });
+        jolt(0.8);
+        playSfx('loseHope', { volume: 0.8, cents: -200 });
         break;
       }
       case 'comet':
@@ -716,29 +897,43 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         addFx({ kind: 'fire', x, y, r: 360, ms: 1000 });
         addFx({ kind: 'ring', x, y, r: diag, ms: 1200, tint });
         shatterKeys(near(looseKeys(), 300));
-        for (const b of cardsNear(340)) breakCard(b);
+        breakNear(360, 'explode');
         eng.impulse(x, y, diag * 1.2, 8000, CHAIN);
+        setCraters((c) => [...c, { id: uid, x, y }]);
+        addLasting(`crater:${uid}`, 'Comet: a crater', tint, null, () => setCraters((c) => c.filter((q) => q.id !== uid)));
         jolt(2);
         playSfx('cardDisable', { volume: 1, cents: -700 });
         break;
-      case 'void':
-        addFx({ kind: 'vortex', x, y, r: Math.min(700, diag * 0.45), ms: 5000, tint });
-        eng.field({ kind: 'vortex', x, y, r: diag, k: 11000 }, 4800);
+      case 'mimic': {
+        // A whirlpool, then a mimic where it was: it swallows what the water brought and stays, breathing.
+        addFx({ kind: 'vortex', x, y, r: 520, ms: 2800, tint });
+        eng.field({ kind: 'vortex', x, y, r: diag * 0.8, k: 9000 }, 2600);
         playSfx('floatMenuOpen', { volume: 0.9, cents: -900 });
-        setTimeout(() => {
-          // Everything loose that reached the middle is gone.
-          const swallowed = near(looseKeys(), 200);
-          for (const k of swallowed) eng.remove(k);
-          dropLoose(swallowed);
+        later(() => {
+          const key = `fx:mimic:${uid}`;
+          eng.add(chestSpec(key), x, y, { pop: true });
+          eng.mimic(key, 1);
+          const swallowed = near(looseKeys(), 300);
+          const pieces: LoosePiece[] = [];
+          for (const base of new Set(swallowed.map(baseOf))) {
+            const t = tokenOfBase(base);
+            if (t) pieces.push({ key: base, token: t, x, y });
+          }
+          swallowed.forEach((k, i) => eng.vanish(k, x, y, i * 40));
+          later(() => { for (const k of swallowed) eng.remove(k); dropLoose(swallowed); eng.mimic(key, 0); }, swallowed.length * 40 + 650);
+          setMimics((m) => [...m, { key, x, y, pieces }]);
           addFx({ kind: 'implode', x, y, r: 200, ms: 700, tint });
           jolt(0.8);
-        }, 4800);
+          playSfx('cardDragEnd', { volume: 1, cents: -900 });
+        }, 2600);
         break;
+      }
       case 'blackhole':
         addFx({ kind: 'implode', x, y, r: 700, ms: 1900, tint: '#5b4a7a' });
         eng.field({ kind: 'radial', x, y, r: diag * 1.2, k: -16000 }, 1800);
         playSfx('floatMenuOpen', { volume: 0.9, cents: -1200 });
-        setTimeout(() => {
+        later(() => {
+          breakNear(300, 'explode');
           eng.impulse(x, y, diag * 1.2, 8000, CHAIN);
           addFx({ kind: 'flash', x, y, r: 0, ms: 800, tint: '#ffffff' });
           addFx({ kind: 'ring', x, y, r: diag, ms: 1100, tint: '#ffffff' });
@@ -746,90 +941,153 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           playSfx('gainGoldenHp', { volume: 0.9, cents: -900 });
         }, 1850);
         break;
-      case 'cage':
-        addFx({ kind: 'implode', x, y, r: 520, ms: 2600, tint });
-        eng.field({ kind: 'radial', x, y, r: diag * 1.2, k: -11000 }, 2500);
+      case 'cage': {
+        // Bars rise in a ring: what is in stays in, what is out bounces off, until Reset.
+        const id = `cage:${uid}`, r = 230;
+        eng.cage(id, { x, y, r });
+        setCages((c) => [...c, { id, x, y, r }]);
+        addLasting(id, 'Donjon: a cage', tint, null, () => { eng.cage(id, null); setCages((c) => c.filter((q) => q.id !== id)); });
+        addFx({ kind: 'ring', x, y, r, ms: 700, tint });
         jolt(0.6);
         playSfx('cardDragEnd', { volume: 0.9, cents: -600 });
         break;
-      case 'scatter':
-        fling(movable(), 2600, 5200);
-        addFx({ kind: 'spark', x, y, r: 360, ms: 900, tint });
-        addFx({ kind: 'ring', x, y, r: diag * 0.7, ms: 900, tint });
-        jolt(1.2);
-        playSfx('carouselScroll', { volume: 0.9, cents: 500 });
-        break;
-      case 'dance':
-        for (let i = 0; i < 12; i++) setTimeout(() => {
-          for (const k of movable()) { const a = Math.random() * Math.PI * 2, s = 500 + Math.random() * 600; eng.toss(k, Math.cos(a) * s, Math.sin(a) * s); }
-          addFx({ kind: 'spark', x: mx + (Math.random() - 0.5) * tableW * 0.8, y: my + (Math.random() - 0.5) * tableH * 0.8, r: 160, ms: 600, tint });
-          if (i % 3 === 0) jolt(0.4);
-          playSfx('placeToken', { volume: 0.5, cents: 200 + i * 100 });
-        }, i * 300);
-        break;
-      case 'moon':
-        addFx({ kind: 'ring', x, y, r: diag, ms: 2200, tint });
-        addFx({ kind: 'flash', x, y, r: 0, ms: 1600, tint: '#a8b8f0' });
-        eng.slippery(0.02, 14000);
-        eng.impulse(x, y, diag * 1.2, 1800);
-        playSfx('gainHope', { volume: 0.8, cents: -500 });
-        break;
-      case 'mirror':
-        // Everything that can move swaps to its mirror image across the card.
-        for (const k of movable()) { const s = eng.state(k); if (s) eng.home(k, clampX(2 * x - s.x), clampY(2 * y - s.y)); }
-        addFx({ kind: 'ring', x, y, r: diag * 0.6, ms: 900, tint });
-        addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
-        playSfx('cardFullscreenEnter', { volume: 0.8 });
-        break;
-      case 'scramble': {
-        const keys = movable().filter((k) => !k.endsWith(':f') && !k.endsWith(':u'));
-        const spots = keys.map((k) => eng.state(k)!).sort(() => Math.random() - 0.5);
-        keys.forEach((k, i) => { const s = spots[i]; if (s) eng.home(k, s.x, s.y); });
-        addFx({ kind: 'smoke', x, y, r: 420, ms: 1000 });
-        playSfx('carouselScroll', { volume: 0.8 });
+      }
+      case 'petrify': {
+        const keys = looseKeys();
+        for (const k of keys) stone.current.add(k);
+        redress(keys);
+        eng.pin(keys, 3_600_000);
+        addFx({ kind: 'stone', x, y, r: diag, ms: 1400 });
+        addLasting('petrify', 'Euryale: stone', tint, null, () => { const was = [...stone.current]; stone.current.clear(); redress(was); eng.unpin(was); });
+        jolt(0.5);
+        playSfx('cardDisable', { volume: 0.8, cents: -500 });
         break;
       }
+      case 'lock': {
+        const keys = looseKeys();
+        // Gilded where they lie: locked, and the rest bounce off them.
+        for (const k of keys) gilt.current.add(k);
+        redress(keys);
+        eng.pin(keys, 3_600_000);
+        addFx({ kind: 'rune', x, y, r: 260, ms: 1200, tint });
+        addLasting('lock', 'Key: locked in place', tint, null, () => { const was = [...gilt.current]; gilt.current.clear(); redress(was); eng.unpin(was); });
+        playSfx('cardSelect', { volume: 0.8, cents: -300 });
+        break;
+      }
+      case 'tiny': {
+        const keys = looseKeys();
+        for (const k of keys) tiny.current.add(k);
+        redress(keys);
+        addFx({ kind: 'implode', x, y, r: 360, ms: 700, tint });
+        addLasting('tiny', 'Fool: everything small', tint, null, () => { const was = [...tiny.current]; tiny.current.clear(); redress(was); });
+        playSfx('carouselScroll', { volume: 0.9, cents: 900 });
+        break;
+      }
+      case 'contrary':
+        eng.contrary(true);
+        addFx({ kind: 'smoke', x, y, r: 420, ms: 1000 });
+        addLasting('contrary', 'Idiot: throws fly backwards', tint, 30000, () => eng.contrary(false));
+        playSfx('carouselScroll', { volume: 0.8, cents: -400 });
+        break;
+      case 'follow': {
+        // Everything loose chases the pointer.
+        const pull = (e: PointerEvent) => {
+          const r = tableRef.current?.getBoundingClientRect();
+          if (r) eng.aura('jester', { kind: 'radial', x: e.clientX - r.left, y: e.clientY - r.top, r: 2400, k: -2600 });
+        };
+        window.addEventListener('pointermove', pull);
+        eng.aura('jester', { kind: 'radial', x, y, r: 2400, k: -2600 });
+        addFx({ kind: 'spark', x, y, r: 360, ms: 900, tint });
+        addLasting('follow', 'Jester: follow the pointer', tint, 20000, () => { window.removeEventListener('pointermove', pull); eng.aura('jester', null); });
+        playSfx('placeToken', { volume: 0.7, cents: 700 });
+        break;
+      }
+      case 'seesaw': {
+        // The table tips one way and the other; the low side darkens.
+        const t0 = performance.now();
+        const tip = setInterval(() => {
+          const s = Math.sin(((performance.now() - t0) / 4500) * Math.PI * 2);
+          eng.aura('seesaw', { kind: 'wind', x: s * 1500, y: 0, r: 1e9, k: 0 });
+          const el = tiltRef.current;
+          if (el) el.style.background = `linear-gradient(90deg, rgba(0,0,0,${Math.max(0, -s) * 0.38}), transparent 45%, transparent 55%, rgba(0,0,0,${Math.max(0, s) * 0.38}))`;
+        }, 120);
+        timers.current.push(tip);
+        addLasting('seesaw', 'Balance: the table tips', tint, 20000, () => { clearInterval(tip); eng.aura('seesaw', null); if (tiltRef.current) tiltRef.current.style.background = 'none'; });
+        playSfx('gearScroll2', { volume: 0.8, cents: -500 });
+        break;
+      }
+      case 'moon': {
+        const frost = addFx({ kind: 'frost', x, y, r: 0, ms: 30000 });
+        addFx({ kind: 'ring', x, y, r: diag, ms: 2200, tint });
+        eng.slippery(0.02, 30000);
+        eng.impulse(x, y, diag * 1.2, 1800);
+        addLasting('moon', 'Moon: the felt is ice', tint, 30000, () => { eng.slippery(1, 0); setFx((l) => l.filter((f) => f.id !== frost)); });
+        playSfx('gainHope', { volume: 0.8, cents: -500 });
+        break;
+      }
+      case 'knight': {
+        // A knight gallops from the card to the far wall, knocking everything in its path aside.
+        const key = `fx:knight:${uid}`;
+        const dir = x < (play.left + play.right) / 2 ? 1 : -1;
+        eng.add({ key, shape: 'chip', size: 96, body: '#aeb6bf', edge: '#e6ebef', ink: '#141920', faces: [{ text: '♞' }], finish: 'metal', upright: true }, clampX(x), clampY(y), { pop: true });
+        // Its run ends at the far wall, or once it has had time to get there (it never stands hammering the rail).
+        const ends = performance.now() + ((dir > 0 ? play.right - x : x - play.left) / 2900) * 1000 + 200;
+        const run = setInterval(() => {
+          const s = eng.state(key);
+          if (!s) { clearInterval(run); return; }
+          if (performance.now() > ends || (dir > 0 && s.x > play.right - 110) || (dir < 0 && s.x < play.left + 110)) {
+            clearInterval(run);
+            addFx({ kind: 'smoke', x: s.x, y: s.y, r: 140, ms: 800 });
+            eng.shatter(key);
+            jolt(0.8);
+            return;
+          }
+          eng.toss(key, dir * 2900, (y - s.y) * 3, { gen: 4, power: 3 });
+          addFx({ kind: 'ring', x: s.x, y: s.y, r: 90, ms: 380, tint });
+        }, 90);
+        timers.current.push(run);
+        later(() => { clearInterval(run); if (eng.has(key)) eng.shatter(key); }, 4000);
+        playSfx('cardDragEnd', { volume: 1, cents: -200 });
+        break;
+      }
+      case 'thief': {
+        // A thief darts about pocketing what it touches (onKnock), then drops the lot where it ends.
+        const key = `fx:rogue:${uid}`;
+        eng.add({ key, shape: 'chip', size: 54, body: '#23281f', edge: '#5a6a50', ink: '#c9d6b0', faces: [{ text: '✦' }], finish: 'stone', upright: true }, clampX(x), clampY(y), { pop: true });
+        pockets.current.set(key, []);
+        const dart = setInterval(() => {
+          const s = eng.state(key);
+          if (!s) { clearInterval(dart); return; }
+          const prey = looseKeys().map((k) => ({ k, s: eng.state(k) })).filter((p) => p.s).sort((a, b) => Math.hypot(a.s!.x - s.x, a.s!.y - s.y) - Math.hypot(b.s!.x - s.x, b.s!.y - s.y))[0];
+          const a = prey ? Math.atan2(prey.s!.y - s.y, prey.s!.x - s.x) + (Math.random() - 0.5) * 0.6 : Math.random() * Math.PI * 2;
+          eng.toss(key, Math.cos(a) * 1700, Math.sin(a) * 1700);
+        }, 420);
+        timers.current.push(dart);
+        later(() => {
+          clearInterval(dart);
+          const s = eng.state(key) ?? { x, y };
+          const got = pockets.current.get(key) ?? [];
+          pockets.current.delete(key);
+          if (eng.has(key)) eng.shatter(key);
+          addFx({ kind: 'smoke', x: s.x, y: s.y, r: 160, ms: 900 });
+          spill(got, s.x, s.y);
+        }, 12000);
+        addFx({ kind: 'smoke', x, y, r: 220, ms: 900 });
+        playSfx('cardDeselect', { volume: 0.8 });
+        break;
+      }
+      case 'rewind':
+        addFx({ kind: 'vortex', x, y, r: 420, ms: 1300, tint });
+        for (const [k, p] of d.snap) if (eng.has(k) || eng.cardKeys().includes(k)) eng.home(k, p.x, p.y);
+        playSfx('gearScroll2', { volume: 0.8, cents: -300 });
+        break;
       case 'throne': {
-        const keys = movable();
+        const keys = looseKeys();
         const R = 90 + keys.length * 6;
         keys.forEach((k, i) => { const a = (i / Math.max(1, keys.length)) * Math.PI * 2 - Math.PI / 2; eng.home(k, clampX(x + Math.cos(a) * R), clampY(y + Math.sin(a) * R)); });
         addFx({ kind: 'ring', x, y, r: R + 60, ms: 1100, tint });
         addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
         playSfx('gainGoldenHp', { volume: 0.7 });
-        break;
-      }
-      case 'tidy':
-        addFx({ kind: 'ring', x, y, r: diag * 0.6, ms: 900, tint });
-        h.tidy();
-        h.resetHome();
-        break;
-      case 'rewind':
-        addFx({ kind: 'vortex', x, y, r: 420, ms: 1300, tint });
-        for (const [k, p] of d.snap) if (eng.has(k)) eng.home(k, p.x, p.y);
-        playSfx('gearScroll2', { volume: 0.8, cents: -300 });
-        break;
-      case 'steal': {
-        const keys = movable().filter((k) => !k.endsWith(':f') && !k.endsWith(':u')).sort(() => Math.random() - 0.5).slice(0, 10);
-        for (const k of keys) {
-          const s = eng.state(k);
-          if (s) addFx({ kind: 'smoke', x: s.x, y: s.y, r: 90, ms: 800 });
-          eng.home(k, clampX(play.left + Math.random() * (play.right - play.left)), clampY(play.top + Math.random() * (play.bottom - play.top)));
-        }
-        addFx({ kind: 'smoke', x, y, r: 220, ms: 900 });
-        playSfx('cardDeselect', { volume: 0.8 });
-        break;
-      }
-      case 'charge': {
-        // A charge across the whole table, through the card's row.
-        const dir = x < tableW / 2 ? 1 : -1;
-        const steps = Math.ceil(tableW / 110);
-        for (let i = 0; i < steps; i++) setTimeout(() => {
-          const cx = x + dir * i * 110;
-          eng.impulse(cx, y, 320, 4600, CHAIN);
-          addFx({ kind: 'ring', x: cx, y, r: 180, ms: 480, tint });
-          if (i % 3 === 0) jolt(0.5);
-        }, i * 55);
-        playSfx('cardDragEnd', { volume: 1, cents: -200 });
         break;
       }
       case 'gems': {
@@ -842,15 +1100,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         playSfx('gainGoldenHp', { volume: 0.8, cents: 500 });
         break;
       }
-      case 'petrify':
-        for (const k of eng.keys().filter((kk) => kk.startsWith('free:'))) h.petrify(k);
-        addFx({ kind: 'stone', x, y, r: diag, ms: 1400 });
-        jolt(0.5);
-        playSfx('cardDisable', { volume: 0.8, cents: -500 });
-        break;
       case 'talons':
         addFx({ kind: 'claw', x, y, r: 320, ms: 1100, tint });
         shatterKeys(near(looseKeys(), 560));
+        breakNear(380, 'tear');
         eng.impulse(x, y, diag, 3200, CHAIN);
         jolt(1);
         playSfx('tokenRemove', { volume: 1, cents: -300 });
@@ -858,7 +1111,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       case 'ruin':
         addFx({ kind: 'ring', x, y, r: diag, ms: 1200, tint });
         addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
-        for (const b of cardsNear(Math.max(700, diag * 0.5))) breakCard(b);
+        breakNear(Math.max(700, diag * 0.5), 'tear');
         eng.impulse(x, y, diag, 4200, CHAIN);
         jolt(1.4);
         playSfx('cardDisable', { volume: 1, cents: -600 });
@@ -875,7 +1128,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         break;
       }
     }
-  }, [tableW, tableH, play.left, play.right, play.top, play.bottom, addFx, breakCard, setLoose]);
+  }, [tableW, tableH, play.left, play.right, play.top, play.bottom, addFx, breakCard, setLoose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const drawnRef = useRef(drawn);
   drawnRef.current = drawn;
@@ -905,7 +1158,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (c === FAVORITES_CATEGORY) ctx.openFavorites();
     else ctx.setCategory(c);
   }, [ctx]);
-  const obstacles = useMemo(() => (ownArea ? [hand] : []), [ownArea, hand.top, hand.bottom, hand.left, hand.right]); // eslint-disable-line react-hooks/exhaustive-deps
+  const obstacles = useMemo(() => (ownArea && !playground ? [hand] : []), [ownArea, playground, hand.top, hand.bottom, hand.left, hand.right]); // eslint-disable-line react-hooks/exhaustive-deps
   const lastHit = useRef(0);
   const onHardHit = useCallback((speed: number) => {
     const now = performance.now();
@@ -934,19 +1187,48 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     shake(tableRef.current, 1.6);
     playSfx('levelUpComplete', { volume: 0.8 });
   }, [addFx, tableW, tableH]);
-  const onBreak = useCallback((keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean) => {
+  const onBreak = useCallback((keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => {
     const bases = new Set(keys.map(baseOf));
     setLoose(looseRef.current.filter((t) => !bases.has(t.key)));
+    // Physical cards break by how they were hit (owner, v0.47.12): burning, they burn; very fast, they are cut clean
+    // along the way the breaker went; otherwise torn in two.
+    for (const h of hits) {
+      if (!h.key.startsWith('card:')) continue;
+      const b = boardRef.current.find((c) => `card:${c.uid}` === h.key);
+      if (b) breakCard(b, h.fire ? 'burn' : h.speed > 3200 ? 'split' : 'tear', { x: h.vx ?? 0, y: h.vy ?? 1 });
+    }
     // A burning throw's first break bursts for a second where it happened; every other break is a small spark.
     if (first) {
-      addFx({ kind: 'fire', x: at.x, y: at.y, r: 95, ms: 1000 });
-      addFx({ kind: 'spark', x: at.x, y: at.y, r: 140, ms: 1000, tint: '#ffd27a' });
-      shake(tableRef.current, 0.9);
+      addFx({ kind: 'fire', x: at.x, y: at.y, r: 130, ms: 1000 });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 180, ms: 1000, tint: '#ffd27a' });
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: 460, ms: 700, tint: '#ffb070' });
+      shake(tableRef.current, 1.4);
     } else {
       addFx({ kind: 'spark', x: at.x, y: at.y, r: fire ? 70 : 55, ms: 450, tint: fire ? '#ffb070' : '#fff1d0' });
       shake(tableRef.current, fire ? 0.3 : 0.2);
     }
-  }, [setLoose, addFx]);
+  }, [setLoose, addFx, breakCard]);
+  /**
+   * A burning throw's first hit held (owner, v0.47.12, "like a smash final hit"): a star of light pinned where it
+   * landed at once; strong, the table darkens round it and leans in for the moment it hangs.
+   */
+  const onHitStop = useCallback((at: { x: number; y: number }, ms: number, strong: boolean) => {
+    addFx({ kind: 'impact', x: at.x, y: at.y, r: strong ? 130 : 90, ms, tint: '#ff9a3c' });
+    addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 260, tint: '#ffe2b0' });
+    const el = tableRef.current;
+    if (strong && el) {
+      addFx({ kind: 'veil', x: at.x, y: at.y, r: 150, ms });
+      if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        el.style.transformOrigin = `${at.x}px ${at.y}px`;
+        el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.07)', offset: 0.1 }, { transform: 'scale(1.09)', offset: 0.92 }, { transform: 'scale(1)' }], { duration: ms + 80, easing: 'cubic-bezier(0.2,0.8,0.2,1)' });
+      }
+    }
+  }, [addFx]);
+  /** Selected dice carried and thrown together landed: the result, as a roll's. */
+  const onGroupRolled = useCallback((landed: PoolDie[]) => {
+    rollSound(landed);
+    setResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: null, mod: 0 });
+  }, []);
   /**
    * A physical card moved: drawn there straight away, and kept (from where physics says it is, never read back from
    * the page) once it stops. Until then `livePoses` is where it is drawn from, so nothing re-renders it back to where
@@ -1065,19 +1347,109 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     return () => host.removeEventListener('contextmenu', onMenu);
   });
 
+  // Mimics come back after a reload, where they were left.
+  const [engineReady, setEngineReady] = useState(false);
+  useEffect(() => {
+    const eng = diceRef.current?.engine();
+    if (!engineReady || !eng) return;
+    for (const m of mimicsRef.current) if (!eng.has(m.key)) eng.add(chestSpec(m.key), m.x, m.y);
+  }, [engineReady]);  
+  // The effects still in play count down once a second.
+  const [, tickLasting] = useState(0);
+  useEffect(() => {
+    if (!lasting.some((l) => l.until)) return;
+    const t = setInterval(() => tickLasting((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [lasting]);
   if (!desktop || !port) return null;
   const middle = Math.floor((deck.length - 1) / 2);
   // The first-time hint, only while the sheet's tips are still being shown (owner: not whenever the table is empty).
   const showHint = shouldShow('sheet') && board.length === 0 && !copy && !spread;
   const presets = dice.presets.presets;
-  const tidyAll = () => { clearSelection(); diceRef.current?.tidy(); };
-  const clearAll = () => {
+  /**
+   * Reset (owner, v0.47.12: one button instead of three): every loose piece and rolled die back into the supply, the
+   * supply and control dice home, the cards on the table back into the hand, and everything the Deck of Many Things
+   * left (stone, locks, cages, elements, ice, mimics, thieves) undone.
+   */
+  const resetAll = () => {
     clearSelection();
-    if (!spread) setCopies([]);
+    for (const t of timers.current) clearTimeout(t);
+    timers.current = [];
+    for (const id of [...undo.current.keys()]) endLasting(id);
+    elements.current.clear();
+    setCardEls({});
+    const eng = diceRef.current?.engine();
+    for (const k of eng?.keys() ?? []) if (k.startsWith('fx:')) eng?.remove(k);
+    pockets.current.clear();
+    setMimics(() => []);
     diceRef.current?.tidy();
+    setGone(new Set());
+    if (spread) setSpread({});
+    else if (copiesRef.current.length) flyBack(copiesRef.current.map((b) => b.uid), () => setCopies([]));
+  };
+  /** Cards fly back into the hand, shrinking as they go; `done` once they are there. */
+  const flyBack = (uids: string[], done: () => void) => {
+    const tx = (hand.left + hand.right) / 2, ty = (hand.top + hand.bottom) / 2;
+    uids.forEach((u, i) => {
+      const el = tableRef.current?.querySelector(`[data-board-card="${CSS.escape(u)}"]`) as HTMLElement | null;
+      if (!el) return;
+      const dx = tx - (el.offsetLeft + el.offsetWidth / 2), dy = ty - (el.offsetTop + el.offsetHeight / 2);
+      el.animate([{ transform: el.style.transform || 'none', opacity: 1 }, { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(0.3)`, opacity: 0 }], { duration: 420, delay: i * 28, easing: 'cubic-bezier(0.5,0,0.75,0)', fill: 'forwards' });
+    });
+    setTimeout(done, 440 + uids.length * 28);
+  };
+  const clearAll = () => {
+    resetAll();
+    if (!spread) setCopies([]);
     setDrawn([]);
   };
-  const looseCount = loose.length + drawn.length;
+  /**
+   * The playground (owner, v0.47.12): the hand lets go of every card as a physical card, flung up into the open
+   * table; the supply goes, letting out one of every die, every token and three colours; the control dice are only
+   * dice. The Deck of Many Things stays, stock and all. Pressed again, the cards go back into the hand.
+   */
+  const togglePlayground = () => {
+    const eng = diceRef.current?.engine();
+    if (playground) {
+      playSfx('panelClose');
+      flyBack(pgCards.map((b) => b.uid), () => { setPgCards([]); setPlayground(false); setTimeout(() => diceRef.current?.resetHome(), 80); });
+      return;
+    }
+    playSfx('levelUpComplete', { volume: 0.5 });
+    clearSelection();
+    setSettings(false);
+    setPeek(false);
+    const w = Math.min(maxW(tableH), 128), h = (w * FORGED_H) / FORGED_W;
+    const cx = (v: number) => Math.min(tableW - pad - w / 2, Math.max(pad + w / 2, v)), cy = (v: number) => Math.min(tableH - pad - h / 2, Math.max(pad + h / 2, v));
+    const n = Math.max(1, deck.length);
+    // Evenly along the hand, a little up and down, so they leave as a spread, not a pile.
+    const cards: BoardCard[] = deck.map((c, i) => {
+      const x = hand.left + ((i + 0.5) / n) * (hand.right - hand.left);
+      const y = (hand.top + hand.bottom) / 2 + (i % 2 ? -0.12 : 0.12) * (hand.bottom - hand.top);
+      return { uid: `pg:${c.id}`, id: c.id, fx: cx(x) / tableW, fy: cy(y) / tableH, w, rot: Math.round((Math.random() - 0.5) * 16), phys: true };
+    });
+    setPgCards(cards);
+    setPlayground(true);
+    // Up into the open table, spreading as they knock into one another.
+    const up = handPos === 'top' ? 1 : -1;
+    cards.forEach((b, i) => {
+      let tries = 0;
+      // Fanned out by where each sat in the hand: the left ones fly left, the right ones right, all of them up.
+      const side = (n > 1 ? i / (n - 1) - 0.5 : 0) * 2200 + (Math.random() - 0.5) * 400;
+      const go = () => { if (!diceRef.current?.engine()?.throwCard(`card:${b.uid}`, side, up * (900 + Math.random() * 1300), (Math.random() - 0.5) * 6) && ++tries < 25) setTimeout(go, 30); };
+      setTimeout(go, 40 + i * 14);
+    });
+    // The supply lets go of one of everything as it goes.
+    const from = eng?.state('src:die') ?? eng?.state('src:mat') ?? { x: tableW / 2, y: (openTop + openBottom) / 2 };
+    const colours = [...TOKEN_COLORS].sort(() => Math.random() - 0.5).slice(0, 3);
+    const toks: TokenInfo[] = [
+      ...DIE_TYPES.map((t): TokenInfo => ({ kind: 'die', dieType: t, dieValue: 1, dieValue2: t === 'duality' ? 1 : undefined })),
+      { kind: 'wood' }, { kind: 'bone' }, { kind: 'iron' },
+      ...colours.map((c): TokenInfo => ({ kind: 'color', color: c })),
+    ];
+    spill(toks.map((t) => ({ key: '', token: t, x: from.x, y: from.y })), from.x, from.y);
+  };
+  const looseCount = loose.length + drawn.length + (spread ? 0 : copies.length);
 
   return (
     <DesktopPortal to="table">
@@ -1109,7 +1481,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               hidden={new Set(shattering.map((s) => s.uid))}
               live={livePoses}
               onChange={(next) => setBoard(next.map((b) => { const p = livePoses.get(b.uid); return p ? { ...b, rot: Math.round(p.rot * 10) / 10 } : b; }))}
-              onReturn={(uid) => { if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
+              onReturn={(uid) => { if (uid.startsWith('pg:')) setPgCards((l) => l.filter((b) => b.uid !== uid)); else if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
               onLift={(b) => {
                 const { w, h } = sizeOf(b);
                 const p = livePoses.get(b.uid);
@@ -1133,12 +1505,22 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               }}
             />
           </div>
-          {scorched.size ? <style>{[...scorched].map((u) => `[data-board-card="${u}"] { filter: sepia(0.9) brightness(0.6) contrast(1.2); transition: filter 600ms; }`).join('\n')}</style> : null}
-          {shattering.map((s) => <Shards key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
+          {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
+          {Object.keys(cardEls).length ? <style>{Object.entries(cardEls).map(([u, el]) => `[data-board-card="${u}"] { box-shadow: 0 0 0 2px ${ELEMENT_TINT[el]}, 0 0 22px ${ELEMENT_TINT[el]}; }`).join('\n')}</style> : null}
         </div>
 
+        {/* What the Deck of Many Things left: craters, cages, the tipping table's shade. */}
+        <div ref={tiltRef} aria-hidden="true" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 4 }} />
+        {craters.map((c) => <div key={c.id} aria-hidden="true" style={{ position: 'absolute', left: c.x - 150, top: c.y - 150, width: 300, height: 300, borderRadius: '50%', pointerEvents: 'none', zIndex: 3, background: 'radial-gradient(circle, rgba(10,6,4,0.85) 0%, rgba(40,16,8,0.7) 28%, rgba(120,40,12,0.35) 42%, rgba(0,0,0,0.25) 55%, transparent 70%)' }} />)}
+        {cages.map((c) => (
+          <svg key={c.id} aria-hidden="true" width={c.r * 2 + 20} height={c.r * 2 + 20} style={{ position: 'absolute', left: c.x - c.r - 10, top: c.y - c.r - 10, pointerEvents: 'none', zIndex: 19, overflow: 'visible' }}>
+            <circle cx={c.r + 10} cy={c.r + 10} r={c.r} fill="none" stroke="#6E7A8A" strokeWidth="9" strokeDasharray="5 13" />
+            <circle cx={c.r + 10} cy={c.r + 10} r={c.r} fill="none" stroke="rgba(200,210,220,0.45)" strokeWidth="1.5" />
+          </svg>
+        ))}
+
         {/* The hand. */}
-        {spread ? null : (
+        {spread || playground ? null : (
           <div ref={handRef} style={{ position: 'absolute', left: hand.left, top: hand.top, width: hand.right - hand.left, height: handH, zIndex: 10 }}>
             {deck.length === 0 ? (
               <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</div>
@@ -1177,7 +1559,16 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           current={category}
           onPickDeck={pickDeck}
           actions={actions}
-          controls={peeking ? 'dice' : look.controls}
+          controls={playground || peeking ? 'dice' : look.controls}
+          toys={playground}
+          autoReturn={look.autoReturn}
+          onHitStop={onHitStop}
+          onKnock={onKnock}
+          onGroupRolled={onGroupRolled}
+          onMimic={popMimic}
+          diceChest={look.diceChest ? (look.chest === 'cute' ? 'chest' : 'mimic') : null}
+          onDiscard={(bases) => { const gone = new Set(bases); setLoose(looseRef.current.filter((t) => !gone.has(t.key))); }}
+          onMist={(mx, my) => addFx({ kind: 'mist', x: mx, y: my, r: 46, ms: 750, tint: '#d9c8ff' })}
           controlFinish={look.controlDice}
           ctlMotion={look.ctlMotion}
           ctlSize={look.ctlSize}
@@ -1188,7 +1579,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           cards={cardPoses}
           onCardsMoved={onCardsMoved}
           supply={supply}
-          domat={look.tokenTray || peeking ? { stock: stockNow.stock, wait: domatWait } : null}
+          domat={look.tokenTray || peeking || playground ? { stock: stockNow.stock, wait: domatWait } : null}
           onDomatDraw={(from, held) => drawCard(from, held ? { held } : undefined)}
           loose={loose}
           onSpawn={(key, token, x, y) => setLoose([...looseRef.current, { key, token, x, y }])}
@@ -1214,7 +1605,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onDropPiece={dropToken}
           onPopToken={popToken}
           onTableMenu={(x, y, piece) => { const p = local(x, y); playSfx('floatMenuOpen'); setTableMenu({ ...p, piece }); }}
-          onReady={onReady}
+          onReady={() => { setEngineReady(true); onReady?.(); }}
           onSelect={setSelection}
           onHardHit={onHardHit}
           onBreak={onBreak}
@@ -1269,13 +1660,27 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {/* Reset, tidy and settings, in the lower left corner: buttons always win over the pieces under them. */}
         <div data-ui="" style={{ position: 'absolute', left: pad + 10, bottom: pad + 10, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 1260 }}>
-          {look.controls === 'hidden' ? <CornerButton glyph="roll" label={peeking ? 'Hide the control dice' : 'Show the control dice'} active={peeking} onPress={() => { playSfx(peeking ? 'panelClose' : 'panelOpen'); setPeek((v) => !v); }} /> : null}
-          <CornerButton glyph="tidy" label="Put away loose tokens and dice" count={looseCount} onPress={tidyAll} disabled={!looseCount && !diceRef.current?.hasRoll()} />
-          <CornerButton glyph="reset" label="Return supply and control dice to place" onPress={() => { diceRef.current?.resetHome(); setGone(new Set()); }} />
-          <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { playSfx(settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />
+          {look.controls === 'hidden' && !playground ? <CornerButton glyph="roll" label={peeking ? 'Hide the control dice' : 'Show the control dice'} active={peeking} onPress={() => { playSfx(peeking ? 'panelClose' : 'panelOpen'); setPeek((v) => !v); }} /> : null}
+          {playground ? null : <CornerButton glyph="reset" label="Reset the table" count={looseCount} onPress={() => { playSfx('gearScroll2', { volume: 0.5 }); resetAll(); }} />}
+          <CornerButton glyph="play" label={playground ? 'Leave the playground' : 'Playground'} active={playground} onPress={togglePlayground} />
+          {playground ? null : <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { playSfx(settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />}
           {/* Testing only for now (owner, v0.47.11): draw any card of the Deck of Many Things, stock or not. */}
-          <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { playSfx(picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />
+          {playground ? null : <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { playSfx(picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />}
         </div>
+        {/* What the Deck of Many Things has in play, and how long each has left. */}
+        {lasting.length ? (
+          <div data-ui="" aria-label="Many Things effects in play" style={{ position: 'absolute', left: (play.left + play.right) / 2, top: openTop + (selection.length ? 58 : 12), transform: 'translateX(-50%)', zIndex: 1230, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 6, maxWidth: (play.right - play.left) * 0.7, pointerEvents: 'none' }}>
+            {lasting.map((l) => {
+              const left = l.until ? Math.max(0, Math.ceil((l.until - Date.now()) / 1000)) : null;
+              return (
+                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '5px 10px 5px 8px', background: 'rgba(11,14,19,0.9)', borderLeft: `3px solid ${l.tint}`, color: T.ivory, fontFamily: T.bold, fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                  {l.name}
+                  {left !== null ? <span style={{ color: T.muted, fontFamily: T.medium, fontVariantNumeric: 'tabular-nums' }}>{`${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`}</span> : <span style={{ color: T.muted, fontFamily: T.medium }}>until reset</span>}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         {picking ? (
           <DomatPicker left={pad + 62} bottom={pad + 10} onClose={() => setPicking(false)} onPick={(c) => {
             setPicking(false);
@@ -1317,8 +1722,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
                 if (a && !a.disabled) a.onPress();
               } }] : []),
               { label: 'Choose a deck', gap: !!tableMenu.piece, hidden: tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
-              { label: 'Put away loose tokens and dice', onPress: tidyAll, gap: true },
-              { label: 'Return supply and control dice to place', onPress: () => { diceRef.current?.resetHome(); setGone(new Set()); } },
+              { label: 'Reset the table', onPress: resetAll, gap: true },
               { label: 'Clear the whole table', onPress: clearAll, danger: true },
               { label: 'Table settings', onPress: () => setSettings(true), gap: true },
             ]} />
@@ -1335,7 +1739,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               setBoard(boardRef.current.map((b) => (b.uid !== uid ? b : b.phys ? { ...b, phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : { ...b, phys: true })));
               playSfx('cardSelect', { volume: 0.6 });
             } : undefined}
-            board={menu.board && !spread ? () => setCopies(copiesRef.current.filter((b) => b.uid !== menu.board)) : undefined}
+            board={menu.board && !spread ? () => { const u = menu.board!; if (u.startsWith('pg:')) setPgCards((l) => l.filter((b) => b.uid !== u)); else setCopies(copiesRef.current.filter((b) => b.uid !== u)); } : undefined}
             place={menu.board || spread ? undefined : () => {
               const el = handRef.current?.querySelector(`[data-card-id="${CSS.escape(menu.id)}"]`) as HTMLElement | null;
               const r = tableRef.current?.getBoundingClientRect();
@@ -1383,7 +1787,7 @@ function HandGrip({ hand, onMove }: { hand: Bounds; onMove: (centreY: number) =>
 }
 
 /** A corner button: its name slides out beside it on hover (owner, v0.47.4: the icons alone were unclear). */
-function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy' | 'roll'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
+function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy' | 'roll' | 'play'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
   const [hover, setHover] = useState(false);
   const lit = hover && !disabled;
   return (
@@ -1434,13 +1838,17 @@ function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, 
 }
 
 /**
- * The selection's Roll (owner, v0.47.11): a click rolls the dice where they lie; held, the button shakes harder and
- * harder and the dice fly that much harder; held on through it, it catches fire and the dice go out burning, breaking
- * every loose piece in their way.
+ * The selection's Roll (owner, v0.47.11): a click rolls the dice where they lie; held, it charges and the dice fly
+ * that much harder; held on through it, it catches fire and the dice go out burning, breaking every loose piece in
+ * their way. v0.47.12 (owner: "give it some feedback when held"): a bar fills under the word as it charges, the word
+ * says what is building, and the table's own flame (lib/flames, ready before the press) smoulders up round the button
+ * from halfway and is ablaze when it catches.
  */
 function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: number, burning: boolean) => void }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const st = useRef<{ t: number; raf: number; power: number; lit: boolean; fire: HTMLDivElement | null; stop: (() => void) | null } | null>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState<0 | 1 | 2 | 3>(0);
+  const st = useRef<{ t: number; raf: number; power: number; lit: boolean; host: HTMLDivElement | null; flames: Flames | null; stage: number } | null>(null);
   /** A pointer press already rolled: the click that follows it does nothing (a key press still rolls). */
   const rolledByPointer = useRef(false);
   const end = () => {
@@ -1448,31 +1856,39 @@ function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: n
     if (!s) return null;
     st.current = null;
     cancelAnimationFrame(s.raf);
-    s.stop?.();
-    s.fire?.remove();
+    s.flames?.stop();
+    s.host?.remove();
     if (wrap.current) wrap.current.style.transform = '';
+    if (bar.current) { bar.current.style.transform = 'scaleX(0)'; bar.current.style.opacity = '0'; }
+    setStage(0);
     return s;
   };
-  useEffect(() => () => { end(); }, []);
+  useEffect(() => () => { end(); }, []);  
   const down = (e: React.PointerEvent) => {
-    if (disabled || e.button !== 0) return;
+    if (disabled || e.button !== 0 || !wrap.current) return;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* gone */ }
-    const s = { t: performance.now(), raf: 0, power: 0, lit: false, fire: null as HTMLDivElement | null, stop: null as (() => void) | null };
+    // The bar clips what is inside it, so the flames sit over the page where the button is.
+    const r = wrap.current.getBoundingClientRect();
+    const host = document.createElement('div');
+    Object.assign(host.style, { position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, pointerEvents: 'none', zIndex: '1241' });
+    document.body.appendChild(host);
+    const s = { t: performance.now(), raf: 0, power: 0, lit: false, host, flames: burn(host, { width: r.width, height: r.height, rise: 1.7, spill: 22, foot: 8, chamfer: 7, level: 0 }), stage: 0 };
     st.current = s;
     const tick = () => {
-      // Still for a moment, then it builds: full at 1, and at 2 it catches fire.
-      s.power = Math.max(0, Math.min(2, (performance.now() - s.t - 220) / 1100));
+      // A beat, then it builds: full at 1, and at 2 it catches fire.
+      s.power = Math.max(0, Math.min(2, (performance.now() - s.t - 120) / 1100));
       const j = Math.min(1, s.power) * 2.4 + (s.lit ? 1.4 : 0);
       if (wrap.current) wrap.current.style.transform = j > 0 ? `translate(${((Math.random() - 0.5) * j).toFixed(2)}px, ${((Math.random() - 0.5) * j).toFixed(2)}px)` : '';
-      if (!s.lit && s.power >= 2 && wrap.current) {
+      if (bar.current) {
+        bar.current.style.opacity = s.power > 0 ? '1' : '0';
+        bar.current.style.transform = `scaleX(${Math.min(1, s.power).toFixed(3)})`;
+        bar.current.style.background = s.power < 1 ? T.goldBright : `linear-gradient(90deg, #ff9a3c, #ffe2a0 ${Math.round((s.power - 1) * 100)}%, #ff9a3c)`;
+      }
+      s.flames?.level(s.power < 0.5 ? 0 : (s.power - 0.5) / 1.5);
+      const next = s.lit ? 3 : s.power >= 1 ? 2 : s.power > 0 ? 1 : 0;
+      if (next !== s.stage) { s.stage = next; setStage(next as 0 | 1 | 2 | 3); }
+      if (!s.lit && s.power >= 2) {
         s.lit = true;
-        // The bar clips what is inside it, so the flames sit over the page where the button is.
-        const r = wrap.current.getBoundingClientRect();
-        const host = document.createElement('div');
-        Object.assign(host.style, { position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, pointerEvents: 'none', zIndex: '1241' });
-        document.body.appendChild(host);
-        s.fire = host;
-        s.stop = startFire(host, { width: r.width, height: r.height, rise: 1.8, spill: 20, foot: 8, chamfer: 7, body: false });
         playSfx('gainGoldenHp', { volume: 0.6, cents: 900 });
       }
       s.raf = requestAnimationFrame(tick);
@@ -1486,8 +1902,9 @@ function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: n
     onRoll(Math.min(1, s.power), s.lit);
   };
   return (
-    <div ref={wrap} onPointerDown={down} onPointerUp={up} onPointerCancel={() => { end(); }} title="Roll. Hold to roll harder; hold on and it catches fire">
-      <TButton label="Roll" primary h={32} disabled={disabled} onPress={() => { if (rolledByPointer.current) { rolledByPointer.current = false; return; } onRoll(0, false); }} />
+    <div ref={wrap} onPointerDown={down} onPointerUp={up} onPointerCancel={() => { end(); }} title="Roll. Hold to roll harder; hold on and it catches fire" style={{ position: 'relative' }}>
+      <TButton label={['Roll', 'Charging', 'Hotter', 'Ablaze'][stage]} primary h={32} disabled={disabled} onPress={() => { if (rolledByPointer.current) { rolledByPointer.current = false; return; } onRoll(0, false); }} />
+      <div ref={bar} aria-hidden="true" style={{ position: 'absolute', left: 6, right: 6, bottom: 3, height: 3, transformOrigin: '0 50%', transform: 'scaleX(0)', opacity: 0, background: T.goldBright, boxShadow: '0 0 8px rgba(255,200,120,0.8)', pointerEvents: 'none', transition: 'opacity 120ms' }} />
     </div>
   );
 }

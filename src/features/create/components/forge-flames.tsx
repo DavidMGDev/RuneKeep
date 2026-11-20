@@ -6,7 +6,7 @@ import Svg, { Defs, LinearGradient, Path, RadialGradient, Stop } from 'react-nat
 import { Body, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
-import { startFire } from '@/lib/fire-shader';
+import { burn } from '@/lib/flames';
 
 /** One tongue of flame, drawn in a 20 x 32 box, point up. */
 const TONGUE = 'M10 0 C12 6 17 11 17 19 C17 26 14 31 10 31 C6 31 3 26 3 19 C3 14 6 11 7 7 C8 10 9 11 10 13 C10 9 9 5 10 0 Z';
@@ -147,10 +147,10 @@ function FireButton({ height, label, onPress, accessibilityLabel, minWidth = 0, 
   useEffect(() => {
     const host = hostRef.current as unknown as HTMLElement | null;
     if (!host || !w) return;
-    // The shared fire (lib/fire-shader), whose flames now rise from the chamfered outline, not over its corners.
-    const stop = startFire(host, { width: w, height, rise: RISE, spill: SPILL, foot: FOOT, chamfer: 10, still: reduced });
-    if (!stop) { setFailed(true); return; }
-    return stop;
+    // The table's own flame (lib/flames, owner v0.47.12): one shared context, so the button is alight at once.
+    const f = burn(host, { width: w, height, rise: RISE, spill: SPILL, foot: FOOT, chamfer: 10, body: true, still: reduced });
+    if (!f) { setFailed(true); return; }
+    return f.stop;
   }, [w, height, reduced]);
 
   if (failed) return <>{fallback}</>;

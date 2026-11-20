@@ -1,4 +1,4 @@
-import { DOMAT, DOMAT_MAX, DOMAT_REFILL_MS, domatStock, drawDomat, takeDomat } from './domat';
+import { DOMAT, DOMAT_MAX, DOMAT_REFILL_MS, domatStock, drawDomat, elementWinner, takeDomat } from './domat';
 
 describe('Deck of Many Things', () => {
   it('has all 22 cards of the booklet, each with a table effect and a line saying what it does', () => {
@@ -34,5 +34,12 @@ describe('Deck of Many Things', () => {
     expect(takeDomat({ stock: 0, since: t0 }, t0 + 10)).toBeNull();
     // Broken saved values never make a broken stock.
     expect(domatStock({ stock: Number.NaN, since: Number.NaN }, t0).stock).toBe(1);
+  });
+  it('settles elements by Card-Jitsu: fire melts ice, ice freezes water, water puts out fire', () => {
+    expect(elementWinner('fire', 'ice')).toBe('fire');
+    expect(elementWinner('ice', 'fire')).toBe('fire');
+    expect(elementWinner('ice', 'water')).toBe('ice');
+    expect(elementWinner('water', 'fire')).toBe('water');
+    expect(elementWinner('water', 'water')).toBeNull();
   });
 });

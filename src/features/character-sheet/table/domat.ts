@@ -13,8 +13,8 @@
 import CARDS from './domat-cards.json';
 
 export type DomatEffect =
-  | 'mirror' | 'comet' | 'cage' | 'petrify' | 'rewind' | 'flames' | 'scatter' | 'gems' | 'scramble' | 'dance' | 'tidy'
-  | 'charge' | 'moon' | 'steal' | 'ruin' | 'blackhole' | 'star' | 'gust' | 'talons' | 'throne' | 'vizier' | 'void';
+  | 'seesaw' | 'comet' | 'cage' | 'petrify' | 'rewind' | 'elements' | 'tiny' | 'gems' | 'contrary' | 'follow' | 'lock'
+  | 'knight' | 'moon' | 'thief' | 'ruin' | 'blackhole' | 'wish' | 'gust' | 'talons' | 'throne' | 'vizier' | 'mimic';
 
 export interface DomatCard {
   id: string;
@@ -30,29 +30,33 @@ export interface DomatCard {
   once?: boolean;
 }
 
+/**
+ * What each card does to the table (v0.47.12, owner: "interesting more lasting effects", fewer pushes). Most last a
+ * while or until the table is reset, and Reset undoes every one of them.
+ */
 const EFFECTS: Record<string, { effect: DomatEffect; table: string; tint: string; once?: boolean }> = {
-  balance: { effect: 'mirror', table: 'Everything loose swaps to its mirror image across the card.', tint: '#8FB8D8' },
-  comet: { effect: 'comet', table: 'A comet strikes: what is near breaks, the rest is thrown to the walls.', tint: '#F08A3C' },
-  donjon: { effect: 'cage', table: 'Drags everything nearby into a heap where the card fell.', tint: '#6E7A8A' },
-  euryale: { effect: 'petrify', table: 'Turns the pieces around it to stone.', tint: '#9AA59A' },
+  balance: { effect: 'seesaw', table: 'The table tips one way, then the other, like a scale, for 20 seconds: everything slides with it.', tint: '#8FB8D8' },
+  comet: { effect: 'comet', table: 'A comet strikes: cards near it are blown apart, pieces broken, the rest thrown to the walls.', tint: '#F08A3C' },
+  donjon: { effect: 'cage', table: 'Bars rise round the pieces near it: what is inside stays in, what is outside bounces off, until reset.', tint: '#6E7A8A' },
+  euryale: { effect: 'petrify', table: 'Every loose piece turns to stone and stays where it lies until reset.', tint: '#9AA59A' },
   fates: { effect: 'rewind', table: 'Undoes what happened since it was drawn: every piece goes back.', tint: '#C9A6F0' },
-  flames: { effect: 'flames', table: 'Bursts into flame, scorching cards and throwing pieces back.', tint: '#E2452C' },
-  fool: { effect: 'scatter', table: 'Everything on the table jumps off somewhere at random.', tint: '#D8C060', once: true },
+  flames: { effect: 'elements', table: 'Every loose piece takes an element. Fire melts ice, ice freezes water, water puts out fire: the loser is thrown off and turns.', tint: '#E2452C' },
+  fool: { effect: 'tiny', table: 'Everything loose shrinks to half its size until reset.', tint: '#D8C060', once: true },
   gem: { effect: 'gems', table: 'Spills a handful of gem tokens across the felt.', tint: '#3CC8B4' },
-  idiot: { effect: 'scramble', table: 'Shuffles where every loose piece lies.', tint: '#B07A50' },
-  jester: { effect: 'dance', table: 'Sets every piece dancing for a moment.', tint: '#E070B0', once: true },
-  key: { effect: 'tidy', table: 'Everything loose flies back to where it belongs.', tint: '#E0B563' },
-  knight: { effect: 'charge', table: 'Charges across the table, knocking aside what stands in the way.', tint: '#C0C8D0' },
-  moon: { effect: 'moon', table: 'The felt turns to ice: everything drifts and slides for a while.', tint: '#A8B8F0' },
-  rogue: { effect: 'steal', table: 'Snatches a few loose pieces and drops them somewhere else.', tint: '#5A6A50' },
-  ruin: { effect: 'ruin', table: 'Shatters the cards laid around it (the copies; your decks are untouched).', tint: '#8A5A3A' },
-  skull: { effect: 'blackhole', table: 'Pulls everything in, then bursts.', tint: '#D8D8D8' },
-  star: { effect: 'star', table: 'A starburst throws everything near it outwards.', tint: '#F0E08A' },
+  idiot: { effect: 'contrary', table: 'For 30 seconds every throw flies back the way your hand came.', tint: '#B07A50' },
+  jester: { effect: 'follow', table: 'For 20 seconds everything loose chases your pointer round the table.', tint: '#E070B0', once: true },
+  key: { effect: 'lock', table: 'Locks every loose piece where it lies until reset; the rest bounce off them.', tint: '#E0B563' },
+  knight: { effect: 'knight', table: 'A knight charges across the table, knocking aside everything in its path.', tint: '#C0C8D0' },
+  moon: { effect: 'moon', table: 'The felt freezes for 30 seconds: everything drifts and slides.', tint: '#A8B8F0' },
+  rogue: { effect: 'thief', table: 'A thief darts about for 12 seconds pocketing every loose piece it touches, then drops the lot.', tint: '#5A6A50' },
+  ruin: { effect: 'ruin', table: 'Tears apart the cards laid around it (the copies; your decks are untouched).', tint: '#8A5A3A' },
+  skull: { effect: 'blackhole', table: 'Pulls everything in, then bursts, blowing apart the cards at its heart.', tint: '#D8D8D8' },
+  star: { effect: 'wish', table: 'Every die on the table turns to its highest face.', tint: '#F0E08A' },
   sun: { effect: 'gust', table: 'A blinding flash and a gale that hurls everything into the walls.', tint: '#FFD24A' },
-  talons: { effect: 'talons', table: 'Claws through the loose tokens and dice nearby, breaking them.', tint: '#B03030' },
+  talons: { effect: 'talons', table: 'Claws rake the table, breaking loose pieces and tearing cards near it.', tint: '#B03030' },
   throne: { effect: 'throne', table: 'Gathers every loose piece into a ring around the card.', tint: '#D4A73A' },
   vizier: { effect: 'vizier', table: 'Every die on the table rolls again.', tint: '#5AA0E0' },
-  void: { effect: 'void', table: 'A whirlpool: pieces circle in, and the ones that reach the middle are gone.', tint: '#7A3AA8' },
+  void: { effect: 'mimic', table: 'A whirlpool pulls pieces into a mimic that stays on the table. Right click it and it spits them all out.', tint: '#7A3AA8' },
 };
 
 export const DOMAT: DomatCard[] = (CARDS as { id: string; name: string; text: string }[]).map((c) => ({ ...c, ...(EFFECTS[c.id] ?? EFFECTS.star) }));
@@ -96,3 +100,13 @@ export function drawDomat(gone: Set<string>, rand: () => number = Math.random): 
 
 /** Where the art is served from (public/domat, made by scripts/extract-domat.py). */
 export const domatArt = (id: string) => `/domat/${id}.webp`;
+
+/** The Flames card's elements (v0.47.12, owner: Card-Jitsu's rules). */
+export type Element = 'fire' | 'water' | 'ice';
+export const ELEMENTS: Element[] = ['fire', 'water', 'ice'];
+const BEATS: Record<Element, Element> = { fire: 'ice', ice: 'water', water: 'fire' };
+/** Fire melts ice, ice freezes water, water puts out fire: the winner when two meet, or null when they match. */
+export function elementWinner(a: Element, b: Element): Element | null {
+  if (a === b) return null;
+  return BEATS[a] === b ? a : b;
+}

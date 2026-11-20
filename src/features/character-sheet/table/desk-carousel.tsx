@@ -204,7 +204,8 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const hidden = out >= 1 || opacity <= 0.01 || scale <= 0.005;
       const rotZ = sg * l.tilt * ad;
       const rotY = -sg * l.turn * Math.min(1, k);
-      const z = l.stack === 'centre' ? 1000 - Math.round(ad * 10) : l.stack === 'left' ? 1000 - Math.round(d * 10) : 1000 + Math.round(d * 10);
+      // Never below 1: the end marks sit at 0, behind every card (owner, v0.47.12: on a curved hand one showed over the cards).
+      const z = Math.max(1, l.stack === 'centre' ? 1000 - Math.round(ad * 10) : l.stack === 'left' ? 1000 - Math.round(d * 10) : 1000 + Math.round(d * 10));
       // The edge effect, by where the card's centre is across the tray.
       const ex = W / 2 + x;
       const e = band > 0 ? 1 - Math.min(1, Math.max(0, Math.min(ex, W - ex) / band)) : 0;
@@ -488,7 +489,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       ) : null}
       {[0, 1].map((k) => (
         <div key={`end${k}`} ref={(el) => { dots.current[k] = el; }} aria-hidden="true"
-          style={{ position: 'absolute', left: 0, top: 0, width: 7, height: 7, borderRadius: '50%', background: '#E0B563', boxShadow: '0 0 8px rgba(224,181,99,0.65)', pointerEvents: 'none', visibility: 'hidden', zIndex: 2000 }} />
+          style={{ position: 'absolute', left: 0, top: 0, width: 7, height: 7, borderRadius: '50%', background: '#E0B563', boxShadow: '0 0 8px rgba(224,181,99,0.65)', pointerEvents: 'none', visibility: 'hidden', zIndex: 0 }} />
       ))}
       {mounted.map((i) => {
         const card = cards[i];

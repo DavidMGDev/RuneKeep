@@ -13,7 +13,7 @@ import { CardFace, type TableCard } from './desk-carousel';
 import { type DomatCard, domatArt, DOMAT_H, DOMAT_W } from './domat';
 import { T } from './table-ui';
 
-export type FxKind = 'ring' | 'flash' | 'vortex' | 'implode' | 'fire' | 'spark' | 'smoke' | 'stone' | 'claw' | 'consume' | 'rune' | 'word';
+export type FxKind = 'ring' | 'flash' | 'vortex' | 'implode' | 'fire' | 'spark' | 'smoke' | 'stone' | 'claw' | 'consume' | 'rune' | 'word' | 'impact' | 'veil' | 'frost' | 'mist';
 export interface Fx { id: number; kind: FxKind; x: number; y: number; r: number; ms: number; tint?: string; /** What a 'word' says. */ label?: string }
 
 const reduced = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -88,57 +88,181 @@ function FxOne({ f }: { f: Fx }) {
           <div style={{ color: '#FFF1C8', fontFamily: T.display, fontSize: f.r, letterSpacing: f.r * 0.08, whiteSpace: 'nowrap', textShadow: `0 0 18px ${tint}, 0 0 46px ${tint}, 0 4px 0 #6b4410`, animation: `rk-word ${f.ms}ms cubic-bezier(0.22,1,0.36,1) forwards` }}>{f.label}</div>
         </div>
       );
+    case 'impact': {
+      // A burning hit held (v0.47.12, owner: "like a smash final hit"): a jagged star of light pinned where it landed.
+      const pts = Array.from({ length: 28 }, (_, i) => { const a = (i / 28) * Math.PI * 2, rr = i % 2 ? 18 + (i * 37 % 11) : 48 + (i * 53 % 9); return `${(50 + Math.cos(a) * rr).toFixed(1)},${(50 + Math.sin(a) * rr).toFixed(1)}`; }).join(' ');
+      return (
+        <svg width={d} height={d} viewBox="0 0 100 100" style={{ ...box, overflow: 'visible', animation: `rk-impact ${f.ms}ms cubic-bezier(0.16,1,0.3,1) forwards`, filter: `drop-shadow(0 0 10px ${tint}) drop-shadow(0 0 28px ${tint})` }}>
+          <polygon points={pts} fill={tint} />
+          <polygon points={pts} fill="#fffaf0" transform="translate(50 50) scale(0.62) translate(-50 -50)" />
+          <circle cx="50" cy="50" r="9" fill="#ffffff" />
+        </svg>
+      );
+    }
+    case 'veil':
+      // The rest of the table goes dark round the held hit, so the eye goes straight to it.
+      return <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(circle at ${f.x}px ${f.y}px, transparent ${f.r * 0.5}px, rgba(4,5,9,0.78) ${f.r * 2.4}px)`, animation: `rk-veil ${f.ms}ms ease-out forwards` }} />;
+    case 'frost':
+      // The Moon's ice: a pale sheen over the felt, frost creeping in from the edges.
+      return <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 50%, rgba(190,225,255,0.06), rgba(190,225,255,0.16) 60%, rgba(220,240,255,0.32))', boxShadow: 'inset 0 0 90px rgba(200,232,255,0.45)', animation: `rk-frost ${f.ms}ms linear forwards` }} />;
+    case 'mist':
+      // A die the chest offered and nobody took, dissolving: a soft glow that swells and thins (no blur filter, so it is cheap).
+      return <div style={{ ...box, borderRadius: '50%', background: `radial-gradient(circle, ${tint}aa 0%, ${tint}55 30%, ${tint}1a 52%, transparent 70%)`, animation: `rk-smoke ${f.ms}ms ease-out forwards` }} />;
     case 'consume':
       return <div style={{ ...box, borderRadius: '50%', background: `radial-gradient(circle, #fff 0%, ${tint} 25%, ${tint}55 45%, transparent 70%)`, animation: `rk-burst ${f.ms}ms ease-out forwards`, mixBlendMode: 'screen' }} />;
   }
 }
 
-/** A laid card breaking: its picture cut into triangles that fly apart, turn and fade. */
-export function Shards({ card, cx, cy, w, rot, onDone }: { card: TableCard; cx: number; cy: number; w: number; rot: number; onDone: () => void }) {
-  const h = (w * FORGED_H) / FORGED_W;
-  const [go, setGo] = useState(false);
-  const pieces = useRef(makeShards()).current;
-  useEffect(() => {
-    const id = requestAnimationFrame(() => requestAnimationFrame(() => setGo(true)));
-    const t = setTimeout(onDone, 1100);
-    return () => { cancelAnimationFrame(id); clearTimeout(t); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return (
-    <div aria-hidden="true" style={{ position: 'absolute', left: cx - w / 2, top: cy - h / 2, width: w, height: h, transform: `rotate(${rot}deg)`, pointerEvents: 'none', zIndex: 14 }}>
-      {pieces.map((p, i) => (
-        <div key={i} style={{
-          position: 'absolute', inset: 0, clipPath: p.clip,
-          transform: go ? `translate(${p.dx * w}px, ${p.dy * h}px) rotate(${p.spin}deg) scale(0.9)` : 'none',
-          opacity: go ? 0 : 1,
-          transition: `transform 950ms cubic-bezier(0.2,0.7,0.3,1), opacity 950ms ease-in`,
-          transformOrigin: `${p.ox * 100}% ${p.oy * 100}%`,
-        }}>
-          <div style={{ width: FORGED_W, height: FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0' }}><CardFace card={card} hiRes={false} /></div>
-        </div>
-      ))}
-    </div>
-  );
+/**
+ * How a card breaks (owner, v0.47.12: "torn into pieces, broken, burnt, split by speed, exploded"). A plain hard hit
+ * tears it in two along a ragged line; a very fast one cuts it clean along the way the breaker went; a burning one
+ * sets it alight from where it was struck until it is ash; a blast blows it into a spray of shards.
+ */
+export type CardBreakMode = 'tear' | 'split' | 'burn' | 'explode';
+
+type Pt = [number, number];
+/** One piece of a broken card: its outline (% of the card) and where it goes (px, degrees). */
+interface Piece { poly: Pt[]; dx: number; dy: number; spin: number; delay: number }
+
+/** The half of a polygon on the positive side of the line through `p` along `d` (Sutherland-Hodgman, one edge). */
+function clipHalf(poly: Pt[], p: Pt, d: Pt, keep: 1 | -1): Pt[] {
+  const side = (q: Pt) => keep * ((q[0] - p[0]) * d[1] - (q[1] - p[1]) * d[0]);
+  const out: Pt[] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const sa = side(a), sb = side(b);
+    if (sa >= 0) out.push(a);
+    if ((sa >= 0) !== (sb >= 0)) { const t = sa / (sa - sb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+  }
+  return out;
 }
 
-/** A 3 x 4 grid, each cell cut corner to corner: 24 triangles, each flying out from where it was. */
-function makeShards() {
-  const out: { clip: string; dx: number; dy: number; spin: number; ox: number; oy: number }[] = [];
-  const cols = 3, rows = 4;
+const RECT: Pt[] = [[0, 0], [100, 0], [100, 100], [0, 100]];
+
+/** The pieces for a mode. `dir` is the breaker's way across the card, in the card's own frame (unit). */
+function breakPieces(mode: CardBreakMode, dir: Pt, w: number, h: number): Piece[] {
+  if (mode === 'split') {
+    // One clean cut through the middle along the breaker's path; the halves part across it and carry on with it.
+    const n: Pt = [-dir[1], dir[0]];
+    const toPct: Pt = [(dir[0] * 100) / w, (dir[1] * 100) / h];
+    return ([1, -1] as const).map((k) => ({
+      poly: clipHalf(RECT, [50, 50], toPct, k),
+      dx: dir[0] * w * 0.5 - n[0] * k * w * 0.35, dy: dir[1] * w * 0.5 - n[1] * k * w * 0.35,
+      spin: -k * (12 + Math.random() * 14), delay: 0,
+    }));
+  }
+  if (mode === 'tear') {
+    // A ragged line across the card, square to the hit: torn paper, not a cut.
+    const across = Math.abs(dir[0]) * w > Math.abs(dir[1]) * h; // the hit runs left-right: the tear runs top to bottom
+    const line: Pt[] = [];
+    const steps = 9;
+    let off = 50 + (Math.random() - 0.5) * 16;
+    for (let i = 0; i <= steps; i++) {
+      off += (Math.random() - 0.5) * 9;
+      const t = (i / steps) * 100;
+      line.push(across ? [Math.min(80, Math.max(20, off)), t] : [t, Math.min(80, Math.max(20, off))]);
+    }
+    const a: Pt[] = across ? [[0, 0], ...line, [0, 100]] : [[0, 0], [100, 0], ...[...line].reverse()];
+    const b: Pt[] = across ? [[100, 0], [100, 100], ...[...line].reverse()] : [...line, [100, 100], [0, 100]];
+    const sgn = across ? Math.sign(dir[0]) || 1 : Math.sign(dir[1]) || 1;
+    return [a, b].map((poly, i) => {
+      const k = i === 0 ? -1 : 1;
+      return { poly, dx: across ? k * w * 0.42 + sgn * w * 0.15 : sgn * w * 0.15, dy: across ? sgn * 0 + (Math.random() - 0.5) * h * 0.15 : k * h * 0.32, spin: k * (10 + Math.random() * 18), delay: 0 };
+    });
+  }
+  // Explode: a spray of shards from a jittered grid, flung out from the middle and on the way of the blast.
+  const out: Piece[] = [];
+  const cols = 4, rows = 5;
+  const jx = (c: number, r: number) => (c === 0 || c === cols ? 0 : ((c * 7 + r * 13) % 5 - 2) * 3.2);
+  const jy = (c: number, r: number) => (r === 0 || r === rows ? 0 : ((c * 11 + r * 3) % 5 - 2) * 3.2);
+  const at = (c: number, r: number): Pt => [(c / cols) * 100 + jx(c, r), (r / rows) * 100 + jy(c, r)];
   for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) {
-    const x0 = (c / cols) * 100, x1 = ((c + 1) / cols) * 100, y0 = (r / rows) * 100, y1 = ((r + 1) / rows) * 100;
-    const tris = (c + r) % 2 ? [[[x0, y0], [x1, y0], [x1, y1]], [[x0, y0], [x1, y1], [x0, y1]]] : [[[x0, y0], [x1, y0], [x0, y1]], [[x1, y0], [x1, y1], [x0, y1]]];
+    const q = [at(c, r), at(c + 1, r), at(c + 1, r + 1), at(c, r + 1)];
+    const tris: Pt[][] = (c + r) % 2 ? [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] : [[q[0], q[1], q[3]], [q[1], q[2], q[3]]];
     for (const t of tris) {
-      const ox = (t[0][0] + t[1][0] + t[2][0]) / 300, oy = (t[0][1] + t[1][1] + t[2][1]) / 300;
-      out.push({
-        clip: `polygon(${t.map(([x, y]) => `${x.toFixed(1)}% ${y.toFixed(1)}%`).join(', ')})`,
-        dx: (ox - 0.5) * (1.6 + Math.random() * 1.6) + (Math.random() - 0.5) * 0.4,
-        dy: (oy - 0.5) * (1.6 + Math.random() * 1.6) + (Math.random() - 0.5) * 0.4 + 0.25,
-        spin: (Math.random() - 0.5) * 220,
-        ox, oy,
-      });
+      const ox = (t[0][0] + t[1][0] + t[2][0]) / 3 / 100 - 0.5, oy = (t[0][1] + t[1][1] + t[2][1]) / 3 / 100 - 0.5;
+      const f = 1.6 + Math.random() * 2.4;
+      out.push({ poly: t, dx: ox * w * f + dir[0] * w * 0.6, dy: oy * h * f + dir[1] * w * 0.6, spin: (Math.random() - 0.5) * 540, delay: Math.random() * 40 });
     }
   }
   return out;
+}
+
+let burnProp = false;
+/** `--rk-b`, the burn front's reach, registered once so it can be animated. */
+function registerBurn() {
+  if (burnProp || typeof CSS === 'undefined' || !('registerProperty' in CSS)) return;
+  burnProp = true;
+  try { CSS.registerProperty({ name: '--rk-b', syntax: '<percentage>', inherits: false, initialValue: '0%' }); } catch { /* already */ }
+}
+
+/** A laid card breaking, by `mode`: `dir` is the way the breaker went (table frame), `at` where it struck (table px). */
+export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone }: { card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; at?: { x: number; y: number }; onDone: () => void }) {
+  const h = (w * FORGED_H) / FORGED_W;
+  const box = useRef<HTMLDivElement>(null);
+  // The breaker's way and the struck point, in the card's own (turned) frame.
+  const a = (-rot * Math.PI) / 180;
+  const dl = Math.hypot(dir?.x ?? 0, dir?.y ?? 0) || 1;
+  const ldir: Pt = dir ? [((dir.x * Math.cos(a) - dir.y * Math.sin(a)) / dl), ((dir.x * Math.sin(a) + dir.y * Math.cos(a)) / dl)] : [0, 1];
+  const hx = at ? 50 + (((at.x - cx) * Math.cos(a) - (at.y - cy) * Math.sin(a)) / w) * 100 : 50;
+  const hy = at ? 50 + (((at.x - cx) * Math.sin(a) + (at.y - cy) * Math.cos(a)) / h) * 100 : 50;
+  const pieces = useRef(mode === 'burn' ? [] : breakPieces(mode, ldir, w, h)).current;
+  const ms = mode === 'burn' ? 1700 : mode === 'explode' ? 950 : 1150;
+  useEffect(() => {
+    const root = box.current;
+    if (!root) return;
+    const anims: Animation[] = [];
+    if (mode === 'burn') {
+      registerBurn();
+      for (const el of root.querySelectorAll<HTMLElement>('[data-burn]')) {
+        anims.push(el.animate([{ '--rk-b': '0%' } as Keyframe, { '--rk-b': '140%' } as Keyframe], { duration: ms, easing: 'cubic-bezier(0.4,0.1,0.6,1)', fill: 'forwards' }));
+      }
+    } else {
+      root.querySelectorAll<HTMLElement>('[data-piece]').forEach((el, i) => {
+        const p = pieces[i];
+        // A cut or a tear hangs a beat and then parts; shards go at once. Every piece lands a little lower and fades.
+        const hang = mode === 'explode' ? 0 : mode === 'split' ? 70 : 120;
+        anims.push(el.animate([
+          { transform: 'translate(0, 0) rotate(0deg)', opacity: 1, offset: 0 },
+          { transform: `translate(${(p.dx * 0.06).toFixed(1)}px, ${(p.dy * 0.06).toFixed(1)}px) rotate(${(p.spin * 0.04).toFixed(1)}deg)`, opacity: 1, offset: hang / ms },
+          { transform: `translate(${p.dx.toFixed(1)}px, ${(p.dy + h * 0.12).toFixed(1)}px) rotate(${p.spin.toFixed(1)}deg)`, opacity: 1, offset: 0.62 },
+          { transform: `translate(${(p.dx * 1.15).toFixed(1)}px, ${(p.dy * 1.15 + h * 0.2).toFixed(1)}px) rotate(${(p.spin * 1.2).toFixed(1)}deg)`, opacity: 0, offset: 1 },
+        ], { duration: ms, delay: p.delay, easing: mode === 'explode' ? 'cubic-bezier(0.1,0.8,0.3,1)' : 'cubic-bezier(0.3,0.7,0.4,1)', fill: 'forwards' }));
+      });
+      for (const el of root.querySelectorAll<HTMLElement>('[data-slash]')) anims.push(el.animate([{ opacity: 1, transform: `${el.style.transform} scaleX(0.2)` }, { opacity: 1, transform: `${el.style.transform} scaleX(1.15)`, offset: 0.25 }, { opacity: 0, transform: `${el.style.transform} scaleX(1.3)` }], { duration: 420, easing: 'ease-out', fill: 'forwards' }));
+    }
+    const t = setTimeout(onDone, ms + 80);
+    return () => { clearTimeout(t); for (const x of anims) x.cancel(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const face = <div style={{ width: FORGED_W, height: FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0' }}><CardFace card={card} hiRes={false} /></div>;
+  const slashAng = (Math.atan2(ldir[1] * h, ldir[0] * w) * 180) / Math.PI;
+  return (
+    <div ref={box} aria-hidden="true" style={{ position: 'absolute', left: cx - w / 2, top: cy - h / 2, width: w, height: h, transform: `rotate(${rot}deg)`, pointerEvents: 'none', zIndex: 14 }}>
+      {mode === 'burn' ? (
+        <>
+          {/* The card, eaten away from where it was struck, darkening ahead of the flame. */}
+          <div data-burn="" style={{ position: 'absolute', inset: 0, filter: 'sepia(0.6) brightness(0.8)', maskImage: `radial-gradient(circle at ${hx}% ${hy}%, transparent var(--rk-b), #000 calc(var(--rk-b) + 4%))`, WebkitMaskImage: `radial-gradient(circle at ${hx}% ${hy}%, transparent var(--rk-b), #000 calc(var(--rk-b) + 4%))` }}>{face}</div>
+          {/* The burning edge: a glowing rim and the char just behind it, riding the same front. */}
+          <div data-burn="" style={{ position: 'absolute', inset: -2, mixBlendMode: 'screen', background: `radial-gradient(circle at ${hx}% ${hy}%, transparent calc(var(--rk-b) - 3%), #ffe9a8 calc(var(--rk-b) - 1%), #ff8a2a var(--rk-b), #c7301a calc(var(--rk-b) + 3%), transparent calc(var(--rk-b) + 7%))` }} />
+          <div data-burn="" style={{ position: 'absolute', inset: 0, background: `radial-gradient(circle at ${hx}% ${hy}%, transparent var(--rk-b), rgba(30,12,6,0.85) calc(var(--rk-b) + 5%), transparent calc(var(--rk-b) + 22%))` }} />
+          {Array.from({ length: 14 }, (_, i) => {
+            const ex = Math.random() * 100, ey = 20 + Math.random() * 80;
+            return <div key={i} style={{ position: 'absolute', left: `${ex}%`, top: `${ey}%`, width: 3, height: 3, borderRadius: '50%', background: i % 3 ? '#ffb347' : '#fff1c2', boxShadow: '0 0 6px #ff7a2a', opacity: 0, animation: `rk-ember ${700 + Math.random() * 700}ms ${200 + i * 70}ms ease-out forwards` }} />;
+          })}
+        </>
+      ) : (
+        <>
+          {pieces.map((p, i) => (
+            <div key={i} data-piece="" style={{ position: 'absolute', inset: 0, clipPath: `polygon(${p.poly.map(([x, y]) => `${x.toFixed(1)}% ${y.toFixed(1)}%`).join(', ')})`, transformOrigin: `${(p.poly.reduce((s, q) => s + q[0], 0) / p.poly.length).toFixed(1)}% ${(p.poly.reduce((s, q) => s + q[1], 0) / p.poly.length).toFixed(1)}%`, willChange: 'transform, opacity' }}>{face}</div>
+          ))}
+          {mode === 'split' ? <div data-slash="" style={{ position: 'absolute', left: '50%', top: '50%', width: Math.hypot(w, h) * 1.3, height: 3, marginLeft: (-Math.hypot(w, h) * 1.3) / 2, marginTop: -1.5, background: 'linear-gradient(90deg, transparent, #fff 20%, #fff 80%, transparent)', boxShadow: '0 0 12px #fff, 0 0 26px #ffd27a', transform: `rotate(${slashAng.toFixed(1)}deg)` }} /> : null}
+          {mode === 'tear' ? Array.from({ length: 9 }, (_, i) => (
+            <div key={i} style={{ position: 'absolute', left: `${30 + Math.random() * 40}%`, top: `${10 + Math.random() * 80}%`, width: 4 + Math.random() * 5, height: 3 + Math.random() * 4, background: '#efe6d2', opacity: 0, animation: `rk-bit ${600 + Math.random() * 500}ms ${60 + i * 30}ms ease-out forwards`, ['--bx' as string]: `${(Math.random() - 0.5) * w}px`, ['--by' as string]: `${(Math.random() - 0.2) * h * 0.6}px` }} />
+          )) : null}
+        </>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -256,6 +380,11 @@ export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace,
 
 /** The keyframes the effects use; added once with the table's own CSS. */
 export const FX_CSS = `
+@keyframes rk-ember { 0% { opacity: 0; transform: translate(0, 0) scale(1); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -46px) scale(0.4); } }
+@keyframes rk-bit { 0% { opacity: 1; transform: translate(0, 0) rotate(0deg); } 100% { opacity: 0; transform: translate(var(--bx), var(--by)) rotate(260deg); } }
+@keyframes rk-impact { 0% { transform: scale(0.2) rotate(0deg); opacity: 1; } 12% { transform: scale(1.05) rotate(6deg); opacity: 1; } 80% { transform: scale(1.12) rotate(14deg); opacity: 1; } 100% { transform: scale(1.6) rotate(20deg); opacity: 0; } }
+@keyframes rk-veil { 0% { opacity: 0; } 8% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes rk-frost { 0% { opacity: 0; } 6% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes rk-flash { 0% { opacity: 0.95; } 100% { opacity: 0; } }
 @keyframes rk-word { 0% { transform: scale(2.6); opacity: 0; } 14% { transform: scale(0.94); opacity: 1; } 22% { transform: scale(1.06) rotate(-1.5deg); } 30% { transform: scale(1) rotate(1deg); } 70% { transform: scale(1.02); opacity: 1; } 100% { transform: translateY(-40px) scale(1.12); opacity: 0; } }
 @keyframes rk-rune { 0% { transform: scale(0.25) rotate(-80deg); opacity: 0; } 18% { opacity: 1; } 70% { opacity: 0.9; } 100% { transform: scale(1) rotate(110deg); opacity: 0; } }

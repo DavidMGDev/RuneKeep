@@ -112,6 +112,12 @@ export interface DeckLook {
   catSize: number;
   /** The token supply lying ready on the table (tokens and a token die to throw out copies of). */
   tokenTray: boolean;
+  /** The supply and the control dice go back to their places a moment after they are knocked or thrown away (v0.47.12). */
+  autoReturn: boolean;
+  /** The supply's die is a chest (v0.47.12, owner): a click and it spits out one of every die, to keep one or more. */
+  diceChest: boolean;
+  /** How the table's chests look (the dice chest, the Void's mimic): toothy or cute. */
+  chest: 'fang' | 'cute';
   /** The hand as a carousel, or every card of the deck laid out on the table at once (v0.47.3). */
   handMode: 'carousel' | 'spread';
   // Where the table's pieces live (v0.47.3, owner: drag them while settings are open). Shares of the table, the
@@ -143,7 +149,7 @@ export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
-  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, hoverLift: 10, hoverZoom: 1.04, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
+  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: false, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
   apart: {},
@@ -274,6 +280,9 @@ export const LOOK_PAGES: LookPage[] = [
           { kind: 'choice', key: 'controlDice', label: 'Control dice', help: 'How the control dice are made.', options: opts(['obsidian', 'Obsidian'], ['gilded', 'Gilded'], ['ivory', 'Ivory']) },
           { kind: 'choice', key: 'numberDice', label: 'Rolling dice', help: 'How the dice you roll are made.', options: opts(['resin', 'Resin'], ['stone', 'Stone'], ['metal', 'Metal']) },
           { kind: 'choice', key: 'walls', label: 'Table edge', help: 'What the dice bounce off at the edge. Every choice stops them; Nothing just isn\'t drawn.', options: opts(['line', 'Hairline'], ['stone', 'Stone wall'], ['brass', 'Brass rail'], ['none', 'Nothing']) },
+          { kind: 'toggle', key: 'autoReturn', label: 'Pieces go back', help: 'The supply and the control dice find their way back to their places a moment after they are rolled, thrown or knocked away.' },
+          { kind: 'toggle', key: 'diceChest', label: 'Dice chest', help: 'The supply keeps its dice in a chest. Click it and it spits out one of every die; click the one you want (or select several and grab them) and the rest fade away.' },
+          { kind: 'choice', key: 'chest', label: 'Chests', help: 'How the dice chest and the mimic look.', options: opts(['cute', 'Cute'], ['fang', 'Toothy']) },
           { kind: 'toggle', key: 'tokenTray', label: 'Token supply', help: 'A token, a colour token, a die and the Deck of Many Things lying ready on the table. Click one to throw out a copy, scroll over it to change it.' },
         ],
       },
@@ -491,7 +500,7 @@ export const TABLE_PRESETS: TablePreset[] = [
   },
   {
     id: 'goblin', name: 'Dice goblin', who: 'Rolls all the time and plays with the dice between turns. A tight hand, a huge table, the supply down the left side.',
-    look: T({ size: 150, spacing: -0.82, pack: 0.2, shrink: 0.02, dim: 0.08, side: 10, shadow: 0.8, edgeWidth: 8, rowY: 0.55,
+    look: T({ autoReturn: false, size: 150, spacing: -0.82, pack: 0.2, shrink: 0.02, dim: 0.08, side: 10, shadow: 0.8, edgeWidth: 8, rowY: 0.55,
       areaMode: 'tray', areaPos: 'bottom', areaSize: 26, divider: 'shade', walls: 'brass', numberDice: 'metal', controlDice: 'gilded', controls: 'dice', tokenTray: true,
       supDir: 'column', supX: 0.07, supY: 0.36, ctlDir: 'row', ctlX: 0.84, ctlY: 0.07, catX: 0.93, catY: 0.62 }),
   },

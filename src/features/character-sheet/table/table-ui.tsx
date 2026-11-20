@@ -96,6 +96,8 @@ export const DIE_GLYPHS = {
   /** Put the loose pieces back: a token dropping into a tray. */
   tidy: '<path d="M3.5 13.5v5.2c0 .5.4.8.8.8h15.4c.4 0 .8-.3.8-.8v-5.2"/><path d="M3.5 13.5h4.6l1.4 2.2h5l1.4-2.2h4.6"/><circle cx="12" cy="4.6" r="2.4"/><path d="M12 8.2v4.6M9.6 10.6 12 13l2.4-2.4"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  /** The playground (v0.47.12): a spinning top, everything let loose to play with. */
+  play: '<path d="M12 3v3"/><path d="M6.5 9.5h11L12 20.5Z"/><path d="M9 9.5 12 6l3 3.5"/>',
 } as const;
 export type GlyphKey = keyof typeof DIE_GLYPHS;
 

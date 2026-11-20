@@ -164,3 +164,26 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   a list that opens over what is below, ready-made and your own together, then a code or a file), then your
   presets, then sharing, then start over. A physical card keeps its angle as it comes to rest (it used to be
   wrapped into 0 to 360, and its transition spun it round).
+- v0.47.13: physical cards break like any loose piece, by how they are hit (`CardBreak`): a hard throw tears one in
+  two along a ragged line, a very fast one cuts it clean along its path with a slash of light, a burning one burns
+  it away from the struck point (a glowing front, char and embers), a blast (the Comet, the Skull) blows it into
+  shards; they answer `state`, `toss` and `home` like dice, so every Many Things card moves them too. A burning
+  throw's first hit holds the thrower and its target where they met for 1.5 s (the whole table with them when it is
+  strong, darkened round a star of light and leaning in), then the target breaks, a gust throws what is near and the
+  thrower goes on 1.6 times faster; shards share one geometry and one material per colour, compiled at start (the
+  first hit used to hang while a dozen materials were built). The supply and control dice go back to their places a
+  moment after they are knocked away (a setting, on in most presets). One Reset button puts everything loose back,
+  the table's cards back into the hand, and undoes every lasting Many Things effect. The Playground (a corner
+  button) lets the hand go as physical cards fanned across the table, lets the supply out as one of every die and
+  token plus three colours, leaves the control dice as plain dice without words, and keeps only its own button and
+  the Deck of Many Things. The Deck's cards now mostly last: a tipping table, a cage, stone, locks, Card-Jitsu
+  elements (fire beats ice beats water beats fire; the loser is thrown off and turns), small pieces, backwards
+  throws, pieces chasing the pointer, ice for 30 s, a galloping knight, a thief that pockets what it touches, every
+  die on its best face, and the Void's mimic: a chest (modelled in Blender, `scripts/blender/make_mimic.py`) that
+  swallows what the whirlpool brings, breathes, and spits it all out on a right click. A second, cuter chest is a
+  setting, and the supply's die can be a dice chest: a click and it fans out one of every die, held still; grab one
+  (or a selection) to keep it and the rest dissolve. Selected dice carried and thrown together count as a roll. The
+  engine no longer queues a second frame from inside a frame (picking up Hope and Fear doubled the frames every
+  frame: the duality lag). Roll and Forge burn with the pieces' own flame from one shared context, ready before the
+  first press; Roll fills a bar and says Charging, Hotter, Ablaze as it is held. The hand's end dots sit behind the
+  cards.
