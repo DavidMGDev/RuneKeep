@@ -8,8 +8,8 @@
 import { FIRE_FRAG, FIRE_VERT } from '@/lib/flames';
 
 export interface FireLayer {
-  /** Burn a piece at this level (0 puts it out, gently); `cold`, it freezes instead (frost fumes, v0.47.18). */
-  set(key: string, level: number, cold?: boolean): void;
+  /** Burn a piece at this level (0 puts it out, gently); `true`, it freezes instead (frost fumes), 'spark' it crackles with lightning (v0.47.18). */
+  set(key: string, level: number, cold?: boolean | 'spark'): void;
   /** Put every fire out at once (the table was cleared). */
   clear(): void;
   dispose(): void;
@@ -39,11 +39,11 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   const u = (n: string) => gl.getUniformLocation(prog, n);
-  const uRect = u('uRect'), uRes = u('uRes'), uTime = u('uTime'), uSeed = u('uSeed'), uI = u('uI'), uAspect = u('uAspect'), uCold = u('uCold');
+  const uRect = u('uRect'), uRes = u('uRes'), uTime = u('uTime'), uSeed = u('uSeed'), uI = u('uI'), uAspect = u('uAspect'), uCold = u('uCold'), uSpark = u('uSpark');
   gl.uniform1f(u('uHeart'), 1);
 
   /** Each fire: the level it is at and the one it is heading for (it eases, so it never pops). */
-  const fires = new Map<string, { level: number; target: number; seed: number; cold: boolean }>();
+  const fires = new Map<string, { level: number; target: number; seed: number; cold: boolean | 'spark' }>();
   let raf = 0;
   let last = 0;
   const t0 = performance.now();
@@ -72,7 +72,8 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
       gl.uniform4f(uRect, at.x * dpr - w / 2, ch - (at.y * dpr + 0.3 * h), w, h);
       gl.uniform1f(uSeed, f.seed);
       gl.uniform1f(uI, f.level);
-      gl.uniform1f(uCold, f.cold ? 1 : 0);
+      gl.uniform1f(uCold, f.cold === true ? 1 : 0);
+      gl.uniform1f(uSpark, f.cold === 'spark' ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     if (fires.size) raf = requestAnimationFrame(frame);

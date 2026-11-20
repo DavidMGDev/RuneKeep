@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { type PoolDie, rollVoice } from '@/lib/dice-pool';
+import { dualityVerdict, type PoolDie, rollVoice } from '@/lib/dice-pool';
 import { DIE_COLOR, DIE_INK, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK } from '../components/card-tokens-data';
 import { Chamfer, T } from './table-ui';
 import { cue } from './table-sound';
@@ -16,6 +16,8 @@ export interface RollResult { total: number; verdict: 'hope' | 'fear' | 'critica
 /** The sound a landed throw makes, as the phone's tray plays it. */
 export function rollSound(landed: PoolDie[]): void {
   const voice = rollVoice(landed);
+  // Hope and Fear matched: its sound comes with its blast a beat later (play-table onCrit); twice was a muddle (v0.47.18).
+  if (dualityVerdict(landed) === 'critical') return;
   cue(`roll:${voice}`, 
     voice === 'critical' || voice === 'muted' ? 'gainGoldenHp' : voice === 'hope' ? 'gainHope' : voice === 'fear' ? 'loseHope' : voice === 'bad' ? 'cardDisable' : 'transitionIconFilled',
     voice === 'muted' ? { cents: -520 } : voice === 'fear' ? { cents: -200 } : voice === 'bad' ? { cents: -260 } : undefined,

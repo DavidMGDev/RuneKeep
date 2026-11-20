@@ -30,6 +30,8 @@ uniform float uAspect;
 uniform float uHeart;
 // 1: frost (v0.47.18, owner: a piece held still freezes): cold fumes, slower and sinking, ice blue to white.
 uniform float uCold;
+// 1: lightning (v0.47.18, owner: a swung bundle charges): fast crackling yellow, flickering.
+uniform float uSpark;
 float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -45,9 +47,11 @@ void main() {
   // In quad widths, the piece's centre at the origin, up the screen positive.
   vec2 p = vec2(vUv.x - 0.5, (vUv.y - 0.3) * uAspect);
   float r = 0.215;
-  float t = uTime + uSeed * 17.0;
+  float t = (uTime + uSeed * 17.0) * mix(1.0, 2.6, uSpark);
   vec2 q = vec2(p.x * 6.5, p.y * 4.2 - t * mix(3.0, -1.2, uCold));
   float n = fbm(q + vec2(fbm(q * 0.6 + vec2(0.0, t * 0.7)) * 1.4 - 0.7, 0.0));
+  // Lightning: the noise folded into thin bright ridges, crackling.
+  n = mix(n, 1.0 - abs(n - 0.5) * 2.2, uSpark);
   // The envelope: round the piece, drawn up into tongues the higher it burns.
   float up = max(p.y, 0.0);
   float reach = mix(0.25, 1.15, uI) * mix(1.0, 0.5, uCold);
@@ -67,7 +71,11 @@ void main() {
   ice = mix(ice, vec3(0.78, 0.94, 1.0), smoothstep(0.32, 0.66, heat));
   ice = mix(ice, vec3(0.97, 1.0, 1.0), smoothstep(0.66, 1.0, heat));
   col = mix(col, ice, uCold);
+  vec3 bolt = mix(vec3(0.95, 0.62, 0.05), vec3(1.0, 0.92, 0.25), smoothstep(0.04, 0.4, heat));
+  bolt = mix(bolt, vec3(1.0, 1.0, 0.85), smoothstep(0.5, 1.0, heat));
+  col = mix(col, bolt, uSpark);
   a *= mix(1.0, 0.82, uCold);
+  a *= mix(1.0, 0.7 + 0.3 * step(0.45, fract(t * 7.3 + uSeed * 5.0)), uSpark);
   gl_FragColor = vec4(col * a, a);
 }`;
 

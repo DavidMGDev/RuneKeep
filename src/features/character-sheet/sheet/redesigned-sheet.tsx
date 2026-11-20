@@ -789,6 +789,27 @@ function SheetBackGuard(props: BackGuardState) {
 /** Leave-to-character-selection confirmation (#297): reuses the centred chamfer dialog so the device
  *  back button never drops the player out of the sheet by accident. */
 function LeaveConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  // On desktop it holds the whole window (owner, v0.47.18): everything dimmed, a larger dialog in the middle, not a
+  // card in the sidebar. The phone keeps its dialog.
+  const desktop = !!useDesktop();
+  if (desktop) {
+    return (
+      <DesktopPortal to="window" priority="dialog" onDismiss={onCancel}>
+        <Pressable onPress={onCancel} accessibilityLabel="Stay on this character" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.74)', alignItems: 'center', justifyContent: 'center', cursor: 'auto' as never }}>
+          <Pressable onPress={() => {}} accessibilityRole="none" style={{ cursor: 'auto' as never }}>
+            <ChamferBox chamfer={18} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.8} style={{ width: 460, paddingHorizontal: 30, paddingVertical: 28 }}>
+              <Text style={{ color: Rune.ivory, fontSize: 24, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>Leave character?</Text>
+              <Text style={{ color: Rune.muted, fontSize: 15, fontFamily: Body.regular, lineHeight: 22, marginTop: 10 }}>Return to character selection. Your character is saved.</Text>
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+                <RuneButton label="Cancel" kind="ghost" height={48} style={{ flex: 1 }} onPress={onCancel} />
+                <RuneButton label="Leave" kind="primary" height={48} style={{ flex: 1 }} onPress={onConfirm} />
+              </View>
+            </ChamferBox>
+          </Pressable>
+        </Pressable>
+      </DesktopPortal>
+    );
+  }
   return (
     <CenterDialog onClose={onCancel} zIndex={10006}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>

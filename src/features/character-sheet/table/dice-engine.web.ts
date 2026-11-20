@@ -101,6 +101,10 @@ export interface DiceEngine {
    * everything near away and the thrower goes on faster. Called as the hit lands, for its light.
    */
   onHitStop(cb: (at: { x: number; y: number }, ms: number, strong: boolean, cold?: boolean) => void): void;
+  /** Charge a die with lightning (v0.47.18): thrown at `angle`, it keeps `speed` for `seconds`, breaking what it meets, then pounds down. */
+  zap(key: string, angle: number, speed: number, seconds: number, spare?: string[]): void;
+  /** A charged die's time ran out and it pounded down here. */
+  onPound(cb: (key: string, at: { x: number; y: number }) => void): void;
   /** A force over the table that stays until it is taken off (null): the Deck of Many Things' lasting cards. */
   aura(id: string, f: Field | null): void;
   /** A ring that keeps what is inside it in and the rest out, until taken off (null). */
@@ -456,6 +460,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let impactCb: (i: Impact) => void = () => {};
   let breakCb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => void = () => {};
   let hitStopCb: (at: { x: number; y: number }, ms: number, strong: boolean, cold?: boolean) => void = () => {};
+  let poundCb: (key: string, at: { x: number; y: number }) => void = () => {};
   /** A burning throw's first hit, held (see onHitStop). */
   let hitstop: { by: string; target: string; until: number; at: { x: number; y: number }; vx: number; vy: number; speed: number; strong: boolean; byFixed: boolean; cold?: boolean; strike?: boolean; fire?: boolean } | null = null;
   const HITSTOP_MS = 1500;
@@ -609,6 +614,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       if (now < freezeUntil) { acc = 0; break; }
       for (const hit of step(bodies, bounds, STEP, Math.random, obstacles, world)) {
         if (hit.kind === 'break') { broke.push(hit); continue; }
+        if (hit.kind === 'pound') { const b = bodyOf(hit.key); if (b) poundCb(hit.key, { x: b.x, y: b.y }); continue; }
         impactCb(hit);
       }
       acc -= STEP;
@@ -1426,6 +1432,20 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     },
     cardKeys: () => [...cards.entries()].filter(([, c]) => c.body && !c.body.broken).map(([k]) => k),
     onHitStop(cb) { hitStopCb = cb; },
+    onPound(cb) { poundCb = cb; },
+    zap(key, angle, speed, seconds, spare) {
+      const d = dice.get(key);
+      if (!d) return;
+      if (d.tether) { for (const t of d.tether) t.b.held = false; d.tether = null; }
+      const b = d.body;
+      b.held = false; b.asleep = false; b.settle = undefined; b.home = undefined;
+      b.vx = Math.cos(angle) * speed; b.vy = Math.sin(angle) * speed;
+      b.w = [(Math.random() - 0.5) * 60, (Math.random() - 0.5) * 60, (Math.random() - 0.5) * 20];
+      b.zap = { speed, left: seconds };
+      b.breaker = { left: 99, fire: true, spare: new Set(spare ?? []) };
+      brokeOnce.add(key);
+      wake();
+    },
     unpin(keys) {
       for (const k of keys) { const d = dice.get(k); if (d && !d.anchor && !d.spec.fixed) { d.body.fixed = false; d.body.asleep = false; } }
       wake();

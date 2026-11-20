@@ -258,6 +258,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onCrit?: (at: { x: number; y: number }) => void;
   /** Good news on a die (Hope winning, a highest face): a glow of light round it, never a shake (owner, v0.47.18). */
   onGood?: (at: { x: number; y: number }, tint: string, big: boolean) => void;
+  /** A charged die slammed down here (v0.47.18). */
+  onPound?: (at: { x: number; y: number }) => void;
   /** A charged throw broke these loose pieces or physical cards (the first where `at` is); they are gone from the table. */
   onBreak?: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => void;
   /** A burning throw's first hit is held for `ms` (the whole table with it when `strong`): its light. */
@@ -362,9 +364,18 @@ export const TableDice = forwardRef<TableDiceHandle, {
         eng = e;
         if (__DEV__) (globalThis as { __rkEngine?: DiceEngine }).__rkEngine = e;
         e.onImpact((hit: Impact) => {
+          if (hit.kind === 'pound') return;
           if (!knockCue(hit.kind, hit.speed)) void import('./dice-engine').then((m) => m.knock(playSynth, hit));
           if (hit.kind === 'rail' && hit.speed > 2400) live.current.onHardHit(hit.speed);
           if (hit.other) live.current.onKnock?.(hit.key, hit.other);
+        });
+        // A charged die's time is up: it slams down where it is, the lightning goes out of it (v0.47.18).
+        e.onPound((key, at) => {
+          sparked.current.delete(key);
+          setBurning((b) => b.filter((k) => k !== key));
+          cue('impact:stop', 'loseArmor', { volume: 0.55 });
+          e.impulse(at.x, at.y, 170, 1500, undefined, [key, CAT, ...ACTIONS, ...e.keys().filter((k) => !/^(free|roll):/.test(k))]);
+          live.current.onPound?.(at);
         });
         e.onHitStop((at, ms, strong, cold) => {
           cue('impact:stop', 'loseArmor', { volume: 0.9, cents: cold ? 300 : -900 });
@@ -395,13 +406,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
     return () => { f?.dispose(); fireRef.current = null; };
   }, [engine, host]);
   const lit = useRef(new Set<string>());
-  /** Of the pieces ablaze, those frozen instead (v0.47.18): they show frost, not fire. */
+  /** Of the pieces ablaze, those frozen instead (v0.47.18): they show frost, not fire; and those charged with lightning. */
   const frozen = useRef(new Set<string>());
+  const sparked = useRef(new Set<string>());
   useEffect(() => {
     const f = fireRef.current;
     if (!f) return;
-    for (const k of burning) f.set(k, 1, frozen.current.has(k));
-    for (const k of lit.current) if (!burning.includes(k)) { f.set(k, 0); frozen.current.delete(k); }
+    for (const k of burning) f.set(k, 1, frozen.current.has(k) ? true : sparked.current.has(k) ? 'spark' : false);
+    for (const k of lit.current) if (!burning.includes(k)) { f.set(k, 0); frozen.current.delete(k); sparked.current.delete(k); }
     lit.current = new Set(burning);
   }, [burning]);
   const boundsKey = JSON.stringify(bounds);
@@ -851,6 +863,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       /** Swung round fast while held (owner, v0.47.11): it shakes, then catches fire, and throws far harder. */ swing: number;
       /** How fast the hand moves (px/s, smoothed), and when it last moved. */ hand: number; last: { x: number; y: number; t: number }; lit: boolean;
       /** Caught by holding it still: frozen, not burning (owner, v0.47.18). */ cold?: boolean;
+      /** A swung bundle, charged with lightning (owner, v0.47.18). */ zap?: boolean;
     } | null = null;
     /** The right button held on a spawner: copies come out faster and faster until it is let go. */
     let spawning: { id: number; timer?: ReturnType<typeof setTimeout> } | null = null;
@@ -983,6 +996,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power }, aim, power > 0.15 ? { left: 2, fire: false, strike: aim !== undefined } : undefined);
     };
+    /** The dice of the selection (never its tokens or cards): what a swung bundle charges with lightning. */
+    const zapKeys = () => selection.current.filter((k) => engine.has(k) && (k.startsWith('roll:') || (k.startsWith('free:') && live.current.loose.find((l) => l.key === baseOf(k))?.token.kind === 'die')));
     /** Held as one of a selection of several: it carries the rest with it and never catches fire. */
     const bundled = (key: string) => selection.current.includes(key) && selection.current.filter(present).length > 1;
     /** Swing speeds (px/s): below SLOW the swing runs down; the faster above it, the faster it builds. */
@@ -994,8 +1009,21 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const rate = Math.min(1.6, Math.max(0, (pr.hand - SWING_SLOW) / (SWING_FULL - SWING_SLOW)));
       if (!pr.lit) pr.swing = rate > 0 ? Math.min(2, pr.swing + (dt / SWING_MS) * rate) : Math.max(0, pr.swing - dt / 900);
       shakeAll(pr.key, pr.lit ? 1 : Math.min(1, pr.swing));
-      // A swung group throws hard but never catches (owner, v0.47.16): only a piece swung alone burns.
-      if (bundled(pr.key)) return;
+      // A swung group never catches fire (owner, v0.47.16); its dice gather lightning instead (owner, v0.47.18), the
+      // tokens and cards in it none.
+      if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit, zap: !!pr.zap };
+      if (bundled(pr.key)) {
+        const zs = zapKeys();
+        if (!pr.lit) for (const k of zs) fireRef.current?.set(k, (pr.swing - 0.35) / 1.65, 'spark');
+        if (!pr.lit && pr.swing >= 2 && zs.length) {
+          pr.lit = true;
+          pr.zap = true;
+          for (const k of zs) sparked.current.add(k);
+          setBurning((b) => [...new Set([...b, ...zs])]);
+          cue('piece:charge', 'gainGoldenHp', { volume: 0.6, cents: 700 });
+        }
+        return;
+      }
       // The fire shows as the swing builds, well before it is fully alight (owner, v0.47.11).
       if (!pr.lit) heat(pr.key, (pr.swing - 0.35) / 1.65);
       if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit };
@@ -1071,10 +1099,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
         offered.current.push(baseOf(k));
         return partsOf(k).sort();
       });
-      // Kinds well apart (owner, v0.47.18: still too close together), a pair's two halves almost touching so they read
-      // as one (Hope and Fear, the d100's two dice).
+      // Kinds well apart (owner, v0.47.18: still too close together); a pair's two halves nearer than that, with a little
+      // room, so they read as one and never land on each other and push apart (owner: they split on landing).
       const GAP = 66;
-      const slots = made.flatMap((parts) => parts.map((part, j) => { const s = engine.screen(part)?.size ?? 56; return { part, s, step: j < parts.length - 1 ? s * 0.9 : s + GAP }; }));
+      const slots = made.flatMap((parts) => parts.map((part, j) => { const s = engine.screen(part)?.size ?? 56; return { part, s, step: j < parts.length - 1 ? s + 16 : s + GAP }; }));
       const offs: number[] = [];
       slots.reduce((run, q) => { offs.push(run); return run + q.step; }, 0);
       const L = offs[offs.length - 1] ?? 0;
@@ -1314,6 +1342,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       // Let go while shaking: it launches with what it has built up (burning, once it caught).
       if (pr.charge > 0 && !pr.moved) { if (!pr.lit) heat(pr.key, 0); fire(pr, Math.min(1, pr.charge), pr.lit, pr.cold); return; }
       if (!pr.lit) heat(pr.key, 0);
+      // A bundle let go before it charged: its dice's crackle goes out.
+      if (!pr.lit && pr.moved) for (const k of zapKeys()) fireRef.current?.set(k, 0);
       if (pr.swing > 0 || pr.lit) shakeAll(pr.key, 0);
       // Nothing still on fire settles onto a card (owner, v0.47.14): it flies on instead.
       const afire = pr.lit || partsOf(pr.key).some((k) => lit.current.has(k));
@@ -1324,8 +1354,21 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return;
       }
       const group = pr.moved && selection.current.includes(pr.key) ? [...selection.current] : null;
+      const zs = pr.zap ? zapKeys() : [];
       const speed = pr.deferred ? 0 : engine.release();
-      if (group && speed > 300) settle.current(group);
+      if (group && (speed > 300 || zs.length)) settle.current(group);
+      // Charged with lightning: every die goes off hard its own way, bouncing round the table breaking what it meets,
+      // and two to five seconds later each slams down where it is and lands on its face (owner, v0.47.18).
+      if (zs.length) {
+        const dir = Math.atan2(pr.last.y - pr.y, pr.last.x - pr.x);
+        // Each breaks what it meets, but never the other dice of the same throw (once one has landed it is its result).
+        const own = zs.flatMap((k) => partsOf(k));
+        for (const k of zs) engine.zap(k, dir + (Math.random() - 0.5) * 2.4, 2300 + Math.random() * 900, 2 + Math.random() * 3, own);
+        for (const k of group ?? []) if (!zs.includes(k) && engine.has(k)) engine.empower(k, Math.max(1, 3000 / Math.max(1, speed)), { gen: 3, power: 2 }, { left: 2, fire: false });
+        cue('throw:fire', 'gainGoldenHp', { volume: 0.8, cents: 300 });
+        live.current.onHardHit(7000);
+        return;
+      }
       // Let go mid-swing: it flies on the way it was swung, far harder than a throw from still.
       if (pr.moved && (pr.lit || pr.swing > 0.25)) {
         const want = pr.lit ? Math.max(11500, speed * 2.8) : speed * (1 + pr.swing * 0.75);
@@ -1486,7 +1529,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const k = keyOf(d);
       if (!k || d.value == null) continue;
       // Good news swells and shines; only bad news shakes (owner, v0.47.18).
-      if (d.value >= (MAX[d.type] ?? 99)) later(() => { e.wash(k, '#ffffff', 0.86, 900, 0.48); const s = e.state(k); if (s) live.current.onGood?.(s, '#fff6dc', false); });
+      if (d.value >= (MAX[d.type] ?? 99)) later(() => { e.wash(k, '#ffffff', 0.86, 700, 0.32); const s = e.state(k); if (s) live.current.onGood?.(s, '#fff6dc', false); });
       else if (d.value <= 1) later(() => { e.wash(k, '#ff2a14', 0.75, 260, 0.15); shake(k, 1, 405); });
     }
     for (const { hope, fear } of pairs.values()) {
@@ -1512,7 +1555,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           }, 260);
         });
       } else if (hope.value > fear.value) {
-        later(() => { e.wash(hk, '#ffc24a', 0.95, 1300, 0.55); const s = e.state(hk); if (s) live.current.onGood?.(s, '#ffd56a', true); });
+        later(() => { e.wash(hk, '#ffc24a', 0.8, 900, 0.3); const s = e.state(hk); if (s) live.current.onGood?.(s, '#ffd56a', true); });
       } else {
         later(() => { e.wash(fk, '#a35cff', 0.9, 500, 0.15); shake(fk, 1, 405); });
       }

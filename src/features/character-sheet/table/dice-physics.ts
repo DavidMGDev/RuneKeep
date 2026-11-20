@@ -74,7 +74,7 @@ export interface Body {
    * it breaks whatever loose piece it passes through and touches nothing else, until it slows down.
    */
   /** `strike`: an aimed shot (a held piece let go, v0.47.16) whose first break is held as an impact frame, unlit. */
-  breaker?: { left: number; fire: boolean; strike?: boolean; /** Frozen (v0.47.18): breaks as fire does, cold. */ cold?: boolean };
+  breaker?: { left: number; fire: boolean; strike?: boolean; /** Frozen (v0.47.18): breaks as fire does, cold. */ cold?: boolean; /** Never these (the dice of the same charged throw, v0.47.18). */ spare?: Set<string> };
   /** A loose token or die: a charged throw can break it. */
   breakable?: boolean;
   /** Broken this step: gone from the table as soon as the step ends. */
@@ -90,6 +90,11 @@ export interface Body {
   mass?: number;
   /** Passes through everything (a piece riding a physical card: the card's box takes the knocks). */
   ghost?: boolean;
+  /**
+   * Charged with lightning (owner, v0.47.18, a swung bundle): it keeps `speed` and bounces off the walls with none
+   * lost for `left` seconds, then stops dead where it is, spinning, and lands on whatever face comes up (a 'pound').
+   */
+  zap?: { speed: number; left: number };
 }
 
 export interface Bounds { left: number; top: number; right: number; bottom: number }
@@ -97,7 +102,7 @@ export interface Bounds { left: number; top: number; right: number; bottom: numb
 export type Obstacle = Bounds;
 
 export interface Impact {
-  key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break';
+  key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break' | 'pound';
   /** For a break: what broke it, and whether it was burning (or an aimed strike, or frozen). */ by?: string; fire?: boolean; strike?: boolean; cold?: boolean;
   /** The other piece in a knock between two (the elements of the Deck of Many Things read who met whom). */ other?: string;
   /** For a break: how the breaker was moving (px/s), which way a card is torn or cut. */ vx?: number; vy?: number;
@@ -334,8 +339,24 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
   for (const b of bodies) {
     // A fixed piece (the supply, an anchored token) only ever turns over where it lies.
     if (b.asleep || b.held || b.broken || (b.fixed && !b.settle) || (b.ghost && !b.settle && !b.home)) continue;
+    // Charged with lightning: it never slows; its time up, it pounds down where it is and lands on a random face.
+    if (b.zap) {
+      b.zap.left -= dt;
+      if (b.zap.left <= 0) {
+        b.zap = undefined;
+        b.breaker = undefined;
+        b.vx = b.vy = 0;
+        b.w = [(Math.random() - 0.5) * 90, (Math.random() - 0.5) * 90, (Math.random() - 0.5) * 20];
+        hits.push({ key: b.key, speed: 0, kind: 'pound' });
+      } else {
+        const sp = Math.hypot(b.vx, b.vy);
+        const a = sp > 1 ? Math.atan2(b.vy, b.vx) : Math.random() * Math.PI * 2;
+        b.vx = Math.cos(a) * b.zap.speed;
+        b.vy = Math.sin(a) * b.zap.speed;
+      }
+    }
     // Slowed down, a charged throw is an ordinary piece again (and a burning one stops passing through things).
-    if (b.breaker && Math.hypot(b.vx, b.vy) < (b.breaker.fire ? 650 : 900)) b.breaker = undefined;
+    if (b.breaker && !b.zap && Math.hypot(b.vx, b.vy) < (b.breaker.fire ? 650 : 900)) b.breaker = undefined;
     if (b.box && !b.home) { boxStep(b, bounds, dt, hits, world, obstacles); continue; }
     if (b.home) {
       const h = b.home;
@@ -404,7 +425,7 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
     {
       // Sliding friction and the roll taking hold of the spin.
       const sp = Math.hypot(b.vx, b.vy);
-      if (sp > 0) {
+      if (sp > 0 && !b.zap) {
         // On ice (the Moon) the air drag thins with the friction too, or nothing would keep sliding (v0.47.17).
         const fr = world.friction ?? 1;
         const dec = Math.min(sp, (FRICTION * fr + DRAG * sp * Math.min(1, fr * 4)) * dt);
@@ -427,15 +448,16 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
       b.q = qNorm(qMul([wx * s, wy * s, wz * s, Math.cos(half)], b.q));
     }
     // The rail.
-    if (b.x < bounds.left + b.r) { b.x = bounds.left + b.r; if (b.vx < 0) { hits.push({ key: b.key, speed: -b.vx, kind: 'rail' }); b.vx = -b.vx * RAIL_BOUNCE; b.w[2] += b.vy * 0.004; } }
-    if (b.x > bounds.right - b.r) { b.x = bounds.right - b.r; if (b.vx > 0) { hits.push({ key: b.key, speed: b.vx, kind: 'rail' }); b.vx = -b.vx * RAIL_BOUNCE; b.w[2] -= b.vy * 0.004; } }
-    if (b.y < bounds.top + b.r) { b.y = bounds.top + b.r; if (b.vy < 0) { hits.push({ key: b.key, speed: -b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] -= b.vx * 0.004; } }
-    if (b.y > bounds.bottom - b.r) { b.y = bounds.bottom - b.r; if (b.vy > 0) { hits.push({ key: b.key, speed: b.vy, kind: 'rail' }); b.vy = -b.vy * RAIL_BOUNCE; b.w[2] += b.vx * 0.004; } }
+    const rb = b.zap ? 1 : RAIL_BOUNCE;
+    if (b.x < bounds.left + b.r) { b.x = bounds.left + b.r; if (b.vx < 0) { hits.push({ key: b.key, speed: -b.vx, kind: 'rail' }); b.vx = -b.vx * rb; b.w[2] += b.vy * 0.004; } }
+    if (b.x > bounds.right - b.r) { b.x = bounds.right - b.r; if (b.vx > 0) { hits.push({ key: b.key, speed: b.vx, kind: 'rail' }); b.vx = -b.vx * rb; b.w[2] -= b.vy * 0.004; } }
+    if (b.y < bounds.top + b.r) { b.y = bounds.top + b.r; if (b.vy < 0) { hits.push({ key: b.key, speed: -b.vy, kind: 'rail' }); b.vy = -b.vy * rb; b.w[2] -= b.vx * 0.004; } }
+    if (b.y > bounds.bottom - b.r) { b.y = bounds.bottom - b.r; if (b.vy > 0) { hits.push({ key: b.key, speed: b.vy, kind: 'rail' }); b.vy = -b.vy * rb; b.w[2] += b.vx * 0.004; } }
     for (const o of obstacles) pushOut(b, o, hits);
     for (const c of world.cages ?? []) cageStep(b, c, hits);
     // Inside a field nothing settles: the field decides when it is over.
     const inField = world.fields?.some((f) => f.kind === 'wind' || Math.hypot(b.x - f.x, b.y - f.y) < f.r);
-    if (!inField && Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
+    if (!inField && !b.zap && Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
   }
   collide(bodies, hits);
   return hits;
@@ -585,7 +607,7 @@ function collide(bodies: Body[], hits: Impact[]): void {
       if (a.asleep && b.asleep) continue;
       // A charged throw breaks the loose piece it hits hard enough (burning, whatever it touches), and goes on.
       // Pieces thrown together (a charged roll of the selection) never break one another.
-      const brk = (s: Body, o: Body) => !!s.breaker && s.breaker.left > 0 && !!o.breakable && !o.held && !o.breaker;
+      const brk = (s: Body, o: Body) => !!s.breaker && s.breaker.left > 0 && !!o.breakable && !o.held && !o.breaker && !s.breaker.spare?.has(o.key);
       if (brk(a, b) || brk(b, a)) {
         const s = brk(a, b) ? a : b, o = s === a ? b : a;
         if (touches(s, o)) {

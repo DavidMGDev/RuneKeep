@@ -1525,6 +1525,17 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (!desktop || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
       const k = keyRef.current;
+      // Ctrl+A takes every loose die and token and every physical card, never a control die (owner, v0.47.18).
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !k.overlay && !/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '') && !(e.target as HTMLElement)?.isContentEditable) {
+        const eng = diceRef.current?.engine();
+        if (!eng) return;
+        e.preventDefault();
+        const all = [...eng.keys(), ...eng.cardKeys()].filter((x) => x.startsWith('free:') || x.startsWith('roll:') || x.startsWith('card:'));
+        diceRef.current?.select(all);
+        setSelection(all);
+        if (all.length) cue('select', 'cardSelect', { volume: 0.5 });
+        return;
+      }
       if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
       const key = e.key.toLowerCase();
       if (key === 'escape') { if (escRef.current()) e.preventDefault(); return; }
@@ -1914,12 +1925,17 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onHardHit={onHardHit}
           onBreak={onBreak}
           onCrit={onCrit}
+          onPound={(at) => {
+            addFx({ kind: 'impact', x: at.x, y: at.y, r: 70, ms: 260, tint: '#ffe45a' });
+            addFx({ kind: 'ring', x: at.x, y: at.y, r: 150, ms: 520, tint: '#ffd23a' });
+            addFx({ kind: 'spark', x: at.x, y: at.y, r: 90, ms: 500, tint: '#fff3a0' });
+            shake(tableRef.current, 0.35);
+          }}
           onGood={(at, tint, big) => {
             // A warm bloom: a soft halo opening, a ring going out slowly, light rising off it (owner, v0.47.18).
-            addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: big ? 520 : 360, tint });
-            addFx({ kind: 'ring', x: at.x, y: at.y, r: big ? 230 : 140, ms: big ? 1300 : 900, tint });
-            addFx({ kind: 'spark', x: at.x, y: at.y, r: big ? 150 : 90, ms: big ? 1400 : 900, tint });
-            if (big) addFx({ kind: 'rune', x: at.x, y: at.y, r: 120, ms: 1500, tint });
+            // Hopeful, not triumphant (owner, v0.47.18): well under a critical's blast.
+            addFx({ kind: 'ring', x: at.x, y: at.y, r: big ? 130 : 100, ms: 1000, tint });
+            addFx({ kind: 'spark', x: at.x, y: at.y, r: big ? 85 : 65, ms: 900, tint });
           }}
           onDragPiece={(x, y) => carRef.current?.hoverAt(x, y)}
           onTidied={() => setLoose([])}

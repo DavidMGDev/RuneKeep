@@ -120,10 +120,12 @@ const DECK_SHOW = 0.3;
 
 /** Small selectable chip. */
 function Chip({ label, on, disabled, onPress }: { label: string; on: boolean; disabled?: boolean; onPress: () => void }) {
+  // Larger on desktop (owner, v0.47.18: the advancements were too small); the phone keeps its size.
+  const big = !!useDesktop();
   return (
     <Pressable onPress={disabled ? undefined : onPress} disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: on, disabled }}>
-      <ChamferBox chamfer={6} fill={on ? Rune.red : 'rgba(20,24,31,0.7)'} stroke={on ? 'transparent' : 'rgba(218,162,73,0.4)'} strokeWidth={1} style={{ paddingHorizontal: 11, paddingVertical: 7, opacity: disabled ? 0.4 : 1 }}>
-        <Text style={{ color: on ? Rune.ivory : Rune.muted, fontSize: 11.5, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
+      <ChamferBox chamfer={6} fill={on ? Rune.red : 'rgba(20,24,31,0.7)'} stroke={on ? 'transparent' : 'rgba(218,162,73,0.4)'} strokeWidth={1} style={{ paddingHorizontal: big ? 14 : 11, paddingVertical: big ? 9 : 7, opacity: disabled ? 0.4 : 1 }}>
+        <Text style={{ color: on ? Rune.ivory : Rune.muted, fontSize: big ? 13 : 11.5, fontFamily: Body.bold, letterSpacing: 0.3, textTransform: 'uppercase' }}>{label}</Text>
       </ChamferBox>
     </Pressable>
   );
@@ -525,7 +527,7 @@ export function LevelUpPanel({
           ) : null}
 
           {step === 'advance' ? (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 9, paddingBottom: 6 }} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: desktopSheet ? 12 : 9, paddingBottom: 6 }} keyboardShouldPersistTaps="handled">
               <SectionLabel>{`Choose 2 advancements · ${picks}/2`}</SectionLabel>
               {!expReady ? (
                 <ChamferBox chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ paddingVertical: 11, paddingHorizontal: 12, gap: 8 }}>
@@ -536,9 +538,9 @@ export function LevelUpPanel({
               {takes.map((t, i) => {
                 const opt = advOption(t.key);
                 return (
-                  <ChamferBox key={`${t.key}-${i}`} chamfer={8} fill="rgba(200,27,24,0.12)" stroke={Rune.red} strokeWidth={1.2} style={{ paddingVertical: 10, paddingHorizontal: 12, gap: 8 }}>
+                  <ChamferBox key={`${t.key}-${i}`} chamfer={desktopSheet ? 10 : 8} fill="rgba(200,27,24,0.12)" stroke={Rune.red} strokeWidth={1.2} style={desktopSheet ? { paddingVertical: 15, paddingHorizontal: 18, gap: 11 } : { paddingVertical: 10, paddingHorizontal: 12, gap: 8 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold, flex: 1 }}>{opt.label}{opt.picks === 2 ? ' (×2)' : ''}</Text>
+                      <Text style={{ color: Rune.sheet, fontSize: desktopSheet ? 16.5 : 13.5, fontFamily: Body.bold, flex: 1 }}>{opt.label}{opt.picks === 2 ? ' (×2)' : ''}</Text>
                       <Pressable onPress={() => removeTake(i)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Remove ${opt.label}`} style={{ padding: 3 }}>
                         <Text style={{ color: '#E2705A', fontSize: 16, fontFamily: Body.bold }}>✕</Text>
                       </Pressable>
@@ -622,12 +624,12 @@ export function LevelUpPanel({
                   {addable.length === 0 ? <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular }}>No more advancements available.</Text> : null}
                   {addable.map((o) => (
                     <Pressable key={o.key} onPress={() => addTake(o.key)} accessibilityRole="button" accessibilityLabel={o.label}>
-                      <ChamferBox chamfer={8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12 }}>
+                      <ChamferBox chamfer={desktopSheet ? 10 : 8} fill="rgba(20,24,31,0.6)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.2} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: desktopSheet ? 15 : 10, paddingHorizontal: desktopSheet ? 18 : 12 }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={{ color: Rune.sheet, fontSize: 13.5, fontFamily: Body.bold }}>{o.label}{o.picks === 2 ? ' (uses both)' : ''}</Text>
-                          <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, marginTop: 1 }}>{o.desc}</Text>
+                          <Text style={{ color: Rune.sheet, fontSize: desktopSheet ? 16.5 : 13.5, fontFamily: Body.bold }}>{o.label}{o.picks === 2 ? ' (uses both)' : ''}</Text>
+                          <Text style={{ color: Rune.muted, fontSize: desktopSheet ? 13 : 10.5, lineHeight: desktopSheet ? 18 : undefined, fontFamily: Body.regular, marginTop: desktopSheet ? 3 : 1 }}>{o.desc}</Text>
                         </View>
-                        <Text style={{ color: Rune.goldBright, fontSize: 22, fontFamily: Body.bold, marginLeft: 8 }}>+</Text>
+                        <Text style={{ color: Rune.goldBright, fontSize: desktopSheet ? 28 : 22, fontFamily: Body.bold, marginLeft: desktopSheet ? 12 : 8 }}>+</Text>
                       </ChamferBox>
                     </Pressable>
                   ))}

@@ -262,3 +262,12 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   then the roll). The Roll button keeps one width, no bar, never pressed in. View grows the card out of where it was and
   back (its veil had reused a keyframe that faded out at its end: the flicker). Board changes are patches applied to
   the board as last set, so two in a row never put a card back where it was.
+- v0.47.18, third batch: Ctrl+A selects every loose die, token and physical card (never a control die). A selected
+  bundle swung hard gathers lightning on its dice (the flame's `uSpark`: fast crackling yellow); let go charged, each
+  die is thrown its own way and keeps its speed (`Body.zap`), bouncing off the walls with none lost and breaking what
+  it meets (never the other dice of its throw), until after two to five seconds it stops dead where it is, spinning,
+  slams down (a 'pound': a yellow shock and a small gust) and lands on whatever face comes up; the group's result shows
+  once all are down. The chest's pairs stand a little apart (a die's width and 16 px) so they never land on each other.
+  Sounds: a held hit and a critical use only the long heavy impacts (a critical's sound once, with its blast); Hope and
+  Fear always their short sound, Fear quieter. Hope's bloom is smaller, well under a critical. Desktop: the level up
+  advancements are larger; leaving the character asks over the whole window, dimmed, in a larger dialog.
