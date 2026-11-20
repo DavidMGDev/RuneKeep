@@ -49,6 +49,8 @@ export interface DieSpec {
   restFaces?: number[];
   /** Never moves: the token supply. */
   fixed?: boolean;
+  /** An element token (v0.47.19): how it moves and what it does to what it meets. */
+  element?: 'fire' | 'ice' | 'water' | 'spark';
   /** A loose token or die: a charged throw can break it. */
   breakable?: boolean;
   /** A piece of the supply: fresh copies pass through it. */
@@ -624,7 +626,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const burning = broke.some((h) => h.fire);
       const sb = bodyOf(first.by ?? ''), tb = bodyOf(first.key);
       // A burning throw's (or an aimed strike's) first hit holds the thrower and its target where they met (an impact frame).
-      if ((first.fire || first.strike) && !brokeOnce.has(first.by ?? '') && !hitstop && sb && tb) {
+      if ((first.fire || first.strike) && !first.scorch && !brokeOnce.has(first.by ?? '') && !hitstop && sb && tb) {
         brokeOnce.add(first.by!);
         broke.shift();
         tb.broken = false;
@@ -955,6 +957,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.body.spawner = spec.spawner;
         prev.body.breakable = spec.breakable;
         prev.body.hopper = spec.hopper;
+        prev.body.element = spec.element;
         wake();
         return;
       }
@@ -969,6 +972,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       body.spawner = spec.spawner;
       body.breakable = spec.breakable;
       body.hopper = spec.hopper;
+      body.element = spec.element;
       body.fresh = o?.fresh;
       // A fresh copy clears room for the next one: a weak push that keeps the spot by the supply free (owner).
       if (o?.fresh) body.boost = { gen: 3, power: 1.6, soft: true };
@@ -1043,8 +1047,12 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         const ang = (dist / b.r) * 0.6;
         const ax = (ny - b.y) / dist, ay = (nx - b.x) / dist;
         const s = Math.sin(ang / 2);
-        const q = new THREE.Quaternion(ax * s, ay * s, 0, Math.cos(ang / 2)).multiply(new THREE.Quaternion(b.q[0], b.q[1], b.q[2], b.q[3])).normalize();
-        b.q = [q.x, q.y, q.z, q.w];
+        const turn = new THREE.Quaternion(ax * s, ay * s, 0, Math.cos(ang / 2));
+        // Its partner (Hope and Fear, a d100's two) rolls the same way at the same time (owner, v0.47.19).
+        for (const o of [b, ...(held.die.tether ?? []).filter((t) => t.pair && !t.b.flat).map((t) => t.b)]) {
+          const q = turn.clone().multiply(new THREE.Quaternion(o.q[0], o.q[1], o.q[2], o.q[3])).normalize();
+          o.q = [q.x, q.y, q.z, q.w];
+        }
       }
       for (const hit of moveHeld(order.map((d) => d.body), b, nx, ny, vx, vy, bounds, obstacles)) impactCb(hit);
       followTether();

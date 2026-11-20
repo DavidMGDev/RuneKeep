@@ -20,7 +20,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
 import { Display } from '@/constants/theme';
-import { DIE_COLOR, DIE_INK, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK, kindScale, tokenFill, type TokenKind } from '../components/card-tokens-data';
+import { DIE_COLOR, DIE_INK, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK, kindScale, tokenElement, tokenFill, type TokenKind } from '../components/card-tokens-data';
 import type { PoolDie } from '@/lib/dice-pool';
 import type { PresetModifier } from '@/lib/dice-presets';
 import { playSynth } from '@/lib/sfx';
@@ -56,6 +56,8 @@ export interface TokenPiece {
   value2?: number;
   color?: string;
   scale: number;
+  /** An element token (v0.47.19). */
+  element?: 'fire' | 'ice' | 'water' | 'spark';
 }
 
 /** A card laid on the table, as the engine sees it. */
@@ -153,7 +155,7 @@ export function supHome(p: Places, i: number, keys: string[]): { x: number; y: n
 
 /** A token as the piece description the engine specs are built from. */
 function pieceOf(key: string, t: TokenInfo): TokenPiece {
-  return { key, card: '', lx: 0, ly: 0, kind: t.kind === 'die' ? 'die' : 'chip', dieType: t.dieType, value: t.dieValue, value2: t.dieValue2, color: tokenFill(t), scale: kindScale(t.kind) };
+  return { key, card: '', lx: 0, ly: 0, kind: t.kind === 'die' ? 'die' : 'chip', dieType: t.dieType, value: t.dieValue, value2: t.dieValue2, color: tokenFill(t), scale: kindScale(t.kind), element: tokenElement(t.kind) };
 }
 
 /** The card back of the Deck of Many Things, painted once: deep plum, a gold frame, an eye in a star. */
@@ -260,6 +262,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onGood?: (at: { x: number; y: number }, tint: string, big: boolean) => void;
   /** A charged die slammed down here (v0.47.18). */
   onPound?: (at: { x: number; y: number }) => void;
+  /** A water token hit a wall hard and sent a wave across the table from here (v0.47.19). */
+  onSplash?: (at: { x: number; y: number }) => void;
   /** A charged throw broke these loose pieces or physical cards (the first where `at` is); they are gone from the table. */
   onBreak?: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => void;
   /** A burning throw's first hit is held for `ms` (the whole table with it when `strong`): its light. */
@@ -337,6 +341,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const [deckArt, setDeckArt] = useState<Map<string, HTMLImageElement> | null>(null);
   const live = useRef(props);
   live.current = props;
+  /** What an element token does when it hits something (set further down, once the helpers it uses exist). */
+  const elemRef = useRef<(hit: Impact) => void>(() => {});
   const pending = useRef<{ keys: Set<string>; done: () => void } | null>(null);
   /** Pieces rolling (a right click, a fling, a throw of the deck die), and what to do when each lands. */
   const rolling = useRef(new Map<string, () => void>());
@@ -365,7 +371,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (__DEV__) (globalThis as { __rkEngine?: DiceEngine }).__rkEngine = e;
         e.onImpact((hit: Impact) => {
           if (hit.kind === 'pound') return;
-          if (!knockCue(hit.kind, hit.speed)) void import('./dice-engine').then((m) => m.knock(playSynth, hit));
+          elemRef.current(hit);
+          // A die charged with lightning hits walls all the time: softly, or its knocks drown everything (v0.47.19).
+          if (!knockCue(hit.kind, sparked.current.has(hit.key) ? hit.speed * 0.3 : hit.speed)) void import('./dice-engine').then((m) => m.knock(playSynth, hit));
           if (hit.kind === 'rail' && hit.speed > 2400) live.current.onHardHit(hit.speed);
           if (hit.other) live.current.onKnock?.(hit.key, hit.other);
         });
@@ -413,9 +421,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const f = fireRef.current;
     if (!f) return;
     for (const k of burning) f.set(k, 1, frozen.current.has(k) ? true : sparked.current.has(k) ? 'spark' : false);
-    for (const k of lit.current) if (!burning.includes(k)) { f.set(k, 0); frozen.current.delete(k); sparked.current.delete(k); }
+    for (const k of lit.current) if (!burning.includes(k)) { const a = auraOf(k); f.set(k, a?.[0] ?? 0, a?.[1]); frozen.current.delete(k); sparked.current.delete(k); }
     lit.current = new Set(burning);
   }, [burning]);
+  /** An element token's own glow while it lies loose (v0.47.19): fire smoulders, ice smokes cold, lightning crackles. */
+  const auraOf = (k: string): [number, boolean | 'spark'] | null => {
+    if (!k.startsWith('free:')) return null;
+    const el = tokenElement(live.current.loose.find((l) => l.key === baseOf(k))?.token.kind ?? 'wood');
+    return el === 'fire' ? [0.34, false] : el === 'ice' ? [0.32, true] : el === 'spark' ? [0.3, 'spark'] : null;
+  };
   const boundsKey = JSON.stringify(bounds);
   useEffect(() => { engine?.setBounds(bounds); }, [engine, boundsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const obstacleKey = JSON.stringify(obstacles);
@@ -700,6 +714,13 @@ export const TableDice = forwardRef<TableDiceHandle, {
     }
     for (const k of engine.keys()) if (k.startsWith('free:') && !want.has(k)) engine.remove(k);
   }, [engine, looseKey, numberFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  const looseSig = props.loose.map((t) => `${t.key}:${t.token.kind}`).join('|');
+  useEffect(() => {
+    const f = fireRef.current;
+    if (!f || !engine) return;
+    // After the loose pieces are on the table (a glow on a piece not there yet is dropped at once). Set once each comes onto the table (and again whenever the set changes); a burning one keeps its fire.
+    for (const k of engine.keys()) { const a = auraOf(k); if (a && !lit.current.has(k)) f.set(k, a[0], a[1]); }
+  }, [engine, looseSig, burning]);
   /** Pieces a lifted card is carrying. */
   const carried = useRef<string[]>([]);
   /** The dice the chest is offering (their base keys), held still until one is chosen. */
@@ -791,6 +812,48 @@ export const TableDice = forwardRef<TableDiceHandle, {
     for (const k of partsOf(key)) e.toss(k, Math.cos(ang + (Math.random() - 0.5) * 0.2) * speed, Math.sin(ang + (Math.random() - 0.5) * 0.2) * speed, boost, breaker);
     if (key.startsWith('free:')) watchLoose(key);
   }, [partsOf, watchLoose]);
+
+  /** When each element token may act again (ms): one wave or one arc at a time, never a storm of them. */
+  const elemCool = useRef(new Map<string, number>());
+  elemRef.current = (hit) => {
+    const e = engineRef.current;
+    if (!e || (hit.kind !== 'rail' && hit.kind !== 'die')) return;
+    const elOf = (k?: string) => (k?.startsWith('free:') ? tokenElement(live.current.loose.find((l) => l.key === baseOf(k))?.token.kind ?? 'wood') : undefined);
+    const now = performance.now();
+    const ready = (k: string) => { if ((elemCool.current.get(k) ?? 0) > now) return false; elemCool.current.set(k, now + 650); return true; };
+    // Never the control dice, the supply or the deck: only what is loose on the felt.
+    const fixed = e.keys().filter((k) => !/^(free|roll):/.test(k));
+    // Water off a wall (owner, v0.47.19): a wave washes everything loose near that wall away from it.
+    if (hit.kind === 'rail' && hit.speed > 420 && elOf(hit.key) === 'water' && ready(hit.key)) {
+      const at = e.state(hit.key);
+      if (!at) return;
+      e.impulse(at.x, at.y, 380, Math.min(1500, 650 + hit.speed * 0.3), undefined, [hit.key, ...fixed]);
+      cue('element:water', 'gearScroll1', { volume: 0.75 });
+      live.current.onSplash?.({ x: at.x, y: at.y });
+      return;
+    }
+    // Lightning knocking into something: it arcs to the nearest few loose pieces, and they jump (a die lands anew).
+    if (hit.kind === 'die' && hit.speed > 300) {
+      const src = elOf(hit.key) === 'spark' ? hit.key : elOf(hit.other) === 'spark' ? hit.other! : null;
+      if (!src || !ready(src)) return;
+      const at = e.state(src);
+      if (!at) return;
+      const seen = new Set<string>([baseOf(src)]);
+      const near = e.keys().filter((k) => k.startsWith('free:'))
+        .map((k) => ({ k, s: e.state(k) }))
+        .filter((q): q is { k: string; s: NonNullable<typeof q.s> } => !!q.s && Math.hypot(q.s.x - at.x, q.s.y - at.y) < 300)
+        .sort((p, q) => Math.hypot(p.s.x - at.x, p.s.y - at.y) - Math.hypot(q.s.x - at.x, q.s.y - at.y))
+        .filter((q) => { if (seen.has(baseOf(q.k))) return false; seen.add(baseOf(q.k)); return true; })
+        .slice(0, 3);
+      for (const q of near) {
+        fireRef.current?.arc(at.x, at.y, q.s.x, q.s.y, 280);
+        const a = Math.random() * Math.PI * 2, sp = 320 + Math.random() * 320;
+        for (const k of partsOf(q.k)) e.toss(k, Math.cos(a) * sp, Math.sin(a) * sp);
+        watchLoose(q.k);
+      }
+      if (near.length) cue('domat:elements', 'gearScroll1', { volume: 0.55 });
+    }
+  };
 
   // ---------------------------------------------------------------- right click: roll it where it lies
   const rollInPlace = useCallback((key: string) => {
@@ -996,8 +1059,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power }, aim, power > 0.15 ? { left: 2, fire: false, strike: aim !== undefined } : undefined);
     };
-    /** The dice of the selection (never its tokens or cards): what a swung bundle charges with lightning. */
-    const zapKeys = () => selection.current.filter((k) => engine.has(k) && (k.startsWith('roll:') || (k.startsWith('free:') && live.current.loose.find((l) => l.key === baseOf(k))?.token.kind === 'die')));
+    const isDie = (k: string) => engine.has(k) && (k.startsWith('roll:') || (k.startsWith('free:') && live.current.loose.find((l) => l.key === baseOf(k))?.token.kind === 'die'));
+    /**
+     * What a swing charges with lightning: the dice of a swung selection (never its tokens or cards), or a die swung on
+     * its own, both halves of a pair (owner, v0.47.19: a die grabbed alone is as good as selected; only tokens burn).
+     */
+    const zapKeys = (key: string) => (bundled(key) ? selection.current.filter(isDie) : isDie(key) ? partsOf(key).filter((k) => engine.has(k)) : []);
     /** Held as one of a selection of several: it carries the rest with it and never catches fire. */
     const bundled = (key: string) => selection.current.includes(key) && selection.current.filter(present).length > 1;
     /** Swing speeds (px/s): below SLOW the swing runs down; the faster above it, the faster it builds. */
@@ -1012,8 +1079,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       // A swung group never catches fire (owner, v0.47.16); its dice gather lightning instead (owner, v0.47.18), the
       // tokens and cards in it none.
       if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit, zap: !!pr.zap };
-      if (bundled(pr.key)) {
-        const zs = zapKeys();
+      const zs = zapKeys(pr.key);
+      if (bundled(pr.key) || zs.length) {
         if (!pr.lit) for (const k of zs) fireRef.current?.set(k, (pr.swing - 0.35) / 1.65, 'spark');
         if (!pr.lit && pr.swing >= 2 && zs.length) {
           pr.lit = true;
@@ -1072,10 +1139,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const now = performance.now();
       if (now - lastOffer < 700) return;
       lastOffer = now;
-      dissolve(offered.current);
-      offered.current = [];
+      // Its dice still out and none taken: it eats them back instead (owner, v0.47.19).
+      if (offered.current.length) { eat(at); return; }
+      // Its mouth stays open while its dice are out (owner, v0.47.19), and shuts once they are taken or eaten.
       engine.mimic('src:die', 1);
-      setTimeout(() => engine.mimic('src:die', 0), 1200);
       const b = boundsRef.current;
       const a0 = Math.atan2((b.top + b.bottom) / 2 - at.y, (b.left + b.right) / 2 - at.x);
       // First it clears the ground (owner, v0.47.17): every loose die and token near it is pushed outward, out of the
@@ -1101,8 +1168,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
       });
       // Kinds well apart (owner, v0.47.18: still too close together); a pair's two halves nearer than that, with a little
       // room, so they read as one and never land on each other and push apart (owner: they split on landing).
-      const GAP = 66;
-      const slots = made.flatMap((parts) => parts.map((part, j) => { const s = engine.screen(part)?.size ?? 56; return { part, s, step: j < parts.length - 1 ? s + 16 : s + GAP }; }));
+      // v0.47.19: the size was read while they were still popping in at a third of it, so a pair stood far too close and
+      // pushed apart on landing. Now by their real size: a pair's centres just clear of touching, kinds well apart.
+      const s = TOKEN_DIE_SIZE, PAIR = Math.round(s * 0.86 + 14), KIND = s + 40;
+      const slots = made.flatMap((parts) => parts.map((part, j) => ({ part, s, step: j < parts.length - 1 ? PAIR : KIND })));
       const offs: number[] = [];
       slots.reduce((run, q) => { offs.push(run); return run + q.step; }, 0);
       const L = offs[offs.length - 1] ?? 0;
@@ -1136,6 +1205,28 @@ export const TableDice = forwardRef<TableDiceHandle, {
       setTimeout(() => engine.pin(pinned.filter((k) => engine.has(k) && offered.current.includes(baseOf(k)) && !selection.current.includes(k)), 3_600_000), 950);
       cue('chest:open', 'cardFullscreenEnter', { volume: 0.6, cents: 300 });
     };
+    /**
+     * Clicked again with its dice still out: one after another they fly back to it, shrinking into its mouth, and it
+     * shuts on them (owner, v0.47.19). Any of them selected is kept and stays where it is.
+     */
+    const eat = (at: { x: number; y: number }) => {
+      const sel = new Set(selection.current.map(baseOf));
+      const back = offered.current.filter((o) => !sel.has(o));
+      const keep = offered.current.filter((o) => sel.has(o));
+      engine.unpin(keep.flatMap((k) => partsOf(k)));
+      offered.current = [];
+      const STEP = 85;
+      back.forEach((base, i) => {
+        for (const k of partsOf(base)) {
+          engine.unpin([k]);
+          engine.vanish(k, at.x + (Math.random() - 0.5) * 10, at.y + 4, i * STEP);
+        }
+      });
+      cue('chest:open', 'cardFullscreenEnter', { volume: 0.45, cents: -200 });
+      const done = back.length * STEP + 650;
+      setTimeout(() => { engine.mimic('src:die', 0); cue('mimic:swallow', 'floatMenuClose', { volume: 0.55 }); }, done - 120);
+      setTimeout(() => live.current.onDiscard?.(back), done);
+    };
     /** Grabbed from the offer: this one (or every offered piece in the selection) is kept, the rest dissolve. */
     const choose = (base: string) => {
       const sel = new Set(selection.current.map(baseOf));
@@ -1143,6 +1234,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       engine.unpin(keep.flatMap((k) => partsOf(k)));
       dissolve(offered.current.filter((o) => !keep.includes(o)));
       offered.current = [];
+      engine.mimic('src:die', 0);
     };
     const spawnOne = (key: string) => {
       const at = engine.state(key);
@@ -1343,7 +1435,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (pr.charge > 0 && !pr.moved) { if (!pr.lit) heat(pr.key, 0); fire(pr, Math.min(1, pr.charge), pr.lit, pr.cold); return; }
       if (!pr.lit) heat(pr.key, 0);
       // A bundle let go before it charged: its dice's crackle goes out.
-      if (!pr.lit && pr.moved) for (const k of zapKeys()) fireRef.current?.set(k, 0);
+      if (!pr.lit && pr.moved) for (const k of zapKeys(pr.key)) fireRef.current?.set(k, 0);
       if (pr.swing > 0 || pr.lit) shakeAll(pr.key, 0);
       // Nothing still on fire settles onto a card (owner, v0.47.14): it flies on instead.
       const afire = pr.lit || partsOf(pr.key).some((k) => lit.current.has(k));
@@ -1354,9 +1446,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return;
       }
       const group = pr.moved && selection.current.includes(pr.key) ? [...selection.current] : null;
-      const zs = pr.zap ? zapKeys() : [];
+      const zs = pr.zap ? zapKeys(pr.key) : [];
       const speed = pr.deferred ? 0 : engine.release();
-      if (group && (speed > 300 || zs.length)) settle.current(group);
+      // A die charged on its own counts as a roll of it, as a charged selection does.
+      const counted = group ?? (zs.length ? zs : null);
+      if (counted && (speed > 300 || zs.length)) settle.current(counted);
       // Charged with lightning: every die goes off hard its own way, bouncing round the table breaking what it meets,
       // and two to five seconds later each slams down where it is and lands on its face (owner, v0.47.18).
       if (zs.length) {
@@ -1670,6 +1764,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       // Nothing goes back into the supply still burning (owner, v0.47.11).
       setBurning([]);
       offered.current = [];
+      engine.mimic('src:die', 0);
       fireRef.current?.clear();
       const sup = live.current.supply;
       const toKey = (base: string): string => {
@@ -1963,7 +2058,8 @@ export function rolledToken(d: PoolDie): TokenInfo {
 function tokenSpecs(t: TokenPiece, finish: Finish): { spec: DieSpec; face?: number; dx: number }[] {
   const specs = pieceSpecs(t, finish);
   // A loose piece can be broken by a charged throw; a spawner or a card's token never.
-  return t.key.startsWith('free:') ? specs.map((s) => ({ ...s, spec: { ...s.spec, breakable: true } })) : specs;
+  // Only a loose element token acts as one (a supply piece or a card's token never burns or slides).
+  return t.key.startsWith('free:') ? specs.map((s) => ({ ...s, spec: { ...s.spec, breakable: true, element: t.element } })) : specs;
 }
 function pieceSpecs(t: TokenPiece, finish: Finish): { spec: DieSpec; face?: number; dx: number }[] {
   if (t.kind === 'chip') {

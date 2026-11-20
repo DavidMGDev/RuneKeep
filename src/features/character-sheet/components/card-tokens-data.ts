@@ -5,7 +5,11 @@
  */
 
 /** Token kinds: three "default" buttons, the custom-COLOUR button (#244), and the DIE (#293). */
-export type TokenKind = 'wood' | 'bone' | 'iron' | 'color' | 'die';
+export type TokenKind = 'wood' | 'bone' | 'iron' | 'color' | 'die'
+  // v0.47.19 (owner): more materials and sizes, and the elements. Only the desktop table makes them; the phone shows
+  // them like any other token.
+  | 'wood-s' | 'wood-l' | 'bone-s' | 'bone-l' | 'iron-s' | 'iron-l' | 'copper' | 'gold'
+  | 'fire' | 'ice' | 'water' | 'spark';
 
 /**
  * Die sizes (#293).
@@ -197,7 +201,33 @@ export const TOKEN_BASE: Record<Exclude<TokenKind, 'color' | 'die'>, string> = {
   wood: '#9A6B3C',
   bone: '#E7DCC3',
   iron: '#6E747E',
+  'wood-s': '#B4844F',
+  'wood-l': '#74482A',
+  'bone-s': '#F2EBDA',
+  'bone-l': '#D3C29C',
+  'iron-s': '#8A9099',
+  'iron-l': '#50555D',
+  copper: '#B8683A',
+  gold: '#D9A93E',
+  fire: '#E0532B',
+  ice: '#A9DCF0',
+  water: '#2F72C2',
+  spark: '#F2D23A',
 };
+
+/** What each material is called on the desktop table's supply (v0.47.19). */
+export const TOKEN_LABEL: Record<Exclude<TokenKind, 'color' | 'die'>, string> = {
+  'wood-s': 'Small wood', wood: 'Wood', 'wood-l': 'Large wood',
+  'bone-s': 'Small bone', bone: 'Bone', 'bone-l': 'Large bone',
+  'iron-s': 'Small iron', iron: 'Iron', 'iron-l': 'Large iron',
+  copper: 'Copper', gold: 'Gold', fire: 'Fire', ice: 'Ice', water: 'Water', spark: 'Lightning',
+};
+/** Every material, in the order the desktop supply walks them. */
+export const ALL_TOKEN_KINDS = Object.keys(TOKEN_LABEL) as Exclude<TokenKind, 'color' | 'die'>[];
+/** The element a token carries, if any: on the desktop table each one does something of its own. */
+export function tokenElement(kind: TokenKind): 'fire' | 'ice' | 'water' | 'spark' | undefined {
+  return kind === 'fire' || kind === 'ice' || kind === 'water' || kind === 'spark' ? kind : undefined;
+}
 
 /** The draggable defaults shown in the drawer, in order (the colour button is appended separately). */
 export const DEFAULT_TOKEN_KINDS: Exclude<TokenKind, 'color' | 'die'>[] = ['wood', 'bone', 'iron'];
@@ -217,6 +247,13 @@ export function kindScale(kind: TokenKind): number {
   switch (kind) {
     case 'wood': return 0.8;
     case 'iron': return 1.2;
+    case 'wood-s': return 0.6;
+    case 'wood-l': return 1.05;
+    case 'bone-s': return 0.75;
+    case 'bone-l': return 1.3;
+    case 'iron-s': return 0.9;
+    case 'iron-l': return 1.55;
+    case 'gold': return 0.9;
     default: return 1; // bone + color + die
   }
 }

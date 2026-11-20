@@ -271,3 +271,15 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   Sounds: a held hit and a critical use only the long heavy impacts (a critical's sound once, with its blast); Hope and
   Fear always their short sound, Fear quieter. Hope's bloom is smaller, well under a critical. Desktop: the level up
   advancements are larger; leaving the character asks over the whole window, dimmed, in a larger dialog.
+- v0.47.19: the chest lays its dice out by their real size (it read them while they were still popping in at a third
+  of it): a pair's centres just clear of touching (0.86 of a die and 14 px), kinds a die and 40 px apart. Its mouth
+  stays open while its dice are out; clicked again before one is taken, it eats them back, one after another, each
+  arcing to its mouth and shrinking in, then shuts (a selected one is kept). Dragging a pair, both halves roll with the
+  hand. A die grabbed alone is as good as selected: swung, it charges with lightning (never fire, which is for tokens
+  and the control dice) and its zap counts as a roll. Charged dice show bolts (a 2D layer over the flames: jagged paths
+  round each and between charged dice near each other). Sounds: a sound longer than its cap was stopped before it was
+  started, which the browser refuses, so it never played; now started first (whole pools had seemed to hold empty
+  files). Zapped dice knock the walls softly. Tokens: small and large wood, bone and iron, copper and gold, and four
+  elements (desktop supply only, the phone shows them): ice slides as on the Moon, fire burns a physical card it comes
+  near (no impact frame), water off a wall sends a wave across the table, lightning arcs to the three nearest loose
+  pieces when it knocks into something and they jump. Each element glows while it lies loose.

@@ -31,7 +31,7 @@ import { shouldShow } from '@/lib/onboarding-store';
 import type { CardCategory, CardItem } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { BakedTokenLayer, type PlacedToken } from '../components/card-tokens';
-import { DIE_TYPES, type DieType, kindScale, nextDieType, placedKindScale, TOKEN_COLORS, TOKEN_FRAC, tokenFill } from '../components/card-tokens-data';
+import { ALL_TOKEN_KINDS, DIE_TYPES, type DieType, kindScale, nextDieType, placedKindScale, TOKEN_COLORS, TOKEN_FRAC, TOKEN_LABEL, tokenFill } from '../components/card-tokens-data';
 import type { DieSpec } from './dice-engine';
 import { type CornerTone, EnabledCorner } from '../components/enabled-corner';
 import { TraitCrossOut } from '../components/trait-cross-out';
@@ -65,7 +65,8 @@ const holdCents = (n: number) => Math.min(2400, n * 150);
 const HAND_W = 170;
 /** How far in from the table's edge each kind of wall stops the dice. */
 const WALL: Record<DeckLook['walls'], number> = { none: 4, line: 8, stone: 20, brass: 10 };
-const MATERIALS = ['wood', 'bone', 'iron'] as const;
+/** Every material the supply walks through (v0.47.19: sizes, copper and gold, and the elements). */
+const MATERIALS = ALL_TOKEN_KINDS;
 /** The Flames card's elements on a die, and their light. */
 const ELEMENT_DRESS: Record<Element, Partial<DieSpec>> = {
   fire: { body: '#c8371c', edge: '#ff9a4a', ink: '#fff2d8' },
@@ -462,7 +463,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   useEffect(() => { if (ctx.tokenColor) setSupColor(ctx.tokenColor); }, [ctx.tokenColor]);
   const colorSave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supply = useMemo<SupplyPiece[]>(() => (!playground && (look.tokenTray || peeking) ? [
-    { key: 'src:mat', token: { kind: material }, label: material },
+    { key: 'src:mat', token: { kind: material }, label: TOKEN_LABEL[material] },
     { key: 'src:color', token: { kind: 'color', color: supColor }, label: 'Colour' },
     { key: 'src:die', token: { kind: 'die', dieType: supplyDie, dieValue: 1, dieValue2: supplyDie === 'duality' ? 1 : undefined }, label: supplyDie === 'duality' ? 'Hope & Fear' : supplyDie },
   ] : []), [look.tokenTray, peeking, playground, supColor, supplyDie, material]);
@@ -1925,6 +1926,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onHardHit={onHardHit}
           onBreak={onBreak}
           onCrit={onCrit}
+          onSplash={(at) => {
+            addFx({ kind: 'ring', x: at.x, y: at.y, r: 300, ms: 1000, tint: '#5aa8ff' });
+            addFx({ kind: 'ring', x: at.x, y: at.y, r: 190, ms: 760, tint: '#bfe6ff' });
+            addFx({ kind: 'mist', x: at.x, y: at.y, r: 80, ms: 850, tint: '#9fd4ff' });
+          }}
           onPound={(at) => {
             addFx({ kind: 'impact', x: at.x, y: at.y, r: 70, ms: 260, tint: '#ffe45a' });
             addFx({ kind: 'ring', x: at.x, y: at.y, r: 150, ms: 520, tint: '#ffd23a' });

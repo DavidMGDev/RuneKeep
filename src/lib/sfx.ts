@@ -508,6 +508,9 @@ function fire(src: number | Promise<AudioBuffer | null>, baseVol: number, varyCe
       gain.gain.value = level;
       node.connect(gain);
       gain.connect(c.destination);
+      // Started first: a stop scheduled before start() throws in the browser (v0.47.19: every sound longer than its cap
+      // was silently dropped, so whole pools seemed to have empty files in them).
+      node.start();
       const max = opts?.maxSec;
       if (max && buf.duration > max) {
         const t = c.currentTime;
@@ -523,7 +526,6 @@ function fire(src: number | Promise<AudioBuffer | null>, baseVol: number, varyCe
           /* already torn down */
         }
       };
-      node.start();
     } catch {
       /* play failed — stay silent */
     }

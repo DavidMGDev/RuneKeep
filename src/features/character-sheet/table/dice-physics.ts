@@ -77,6 +77,11 @@ export interface Body {
   breaker?: { left: number; fire: boolean; strike?: boolean; /** Frozen (v0.47.18): breaks as fire does, cold. */ cold?: boolean; /** Never these (the dice of the same charged throw, v0.47.18). */ spare?: Set<string> };
   /** A loose token or die: a charged throw can break it. */
   breakable?: boolean;
+  /**
+   * An element token (owner, v0.47.19): ice slides as on the Moon, fire burns the physical cards it touches; water
+   * and lightning act through the table (a wave off a wall, arcs to what it hits).
+   */
+  element?: 'fire' | 'ice' | 'water' | 'spark';
   /** Broken this step: gone from the table as soon as the step ends. */
   broken?: boolean;
   /**
@@ -104,6 +109,7 @@ export type Obstacle = Bounds;
 export interface Impact {
   key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break' | 'pound';
   /** For a break: what broke it, and whether it was burning (or an aimed strike, or frozen). */ by?: string; fire?: boolean; strike?: boolean; cold?: boolean;
+  /** A card set alight by a fire token's touch (v0.47.19): it burns, with no impact frame. */ scorch?: boolean;
   /** The other piece in a knock between two (the elements of the Deck of Many Things read who met whom). */ other?: string;
   /** For a break: how the breaker was moving (px/s), which way a card is torn or cut. */ vx?: number; vy?: number;
 }
@@ -427,7 +433,8 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
       const sp = Math.hypot(b.vx, b.vy);
       if (sp > 0 && !b.zap) {
         // On ice (the Moon) the air drag thins with the friction too, or nothing would keep sliding (v0.47.17).
-        const fr = world.friction ?? 1;
+        // An ice token is always on the Moon's ice (owner, v0.47.19).
+        const fr = (world.friction ?? 1) * (b.element === 'ice' ? 0.03 : 1);
         const dec = Math.min(sp, (FRICTION * fr + DRAG * sp * Math.min(1, fr * 4)) * dt);
         b.vx -= (b.vx / sp) * dec;
         b.vy -= (b.vy / sp) * dec;
@@ -637,7 +644,15 @@ function collide(bodies: Body[], hits: Impact[]): void {
         if (a.box && b.box) continue;
         // Nor do they knock the control dice about (v0.47.18: a shattered card's pieces sent them hopping).
         if ((a.box && b.upright) || (b.box && a.upright)) continue;
-        if (Math.hypot(b.x - a.x, b.y - a.y) >= a.r + b.r) continue;
+        // A fire token sets a physical card it comes near alight (owner, v0.47.19): it burns away, no impact frame.
+        const fe = a.element === 'fire' ? a : b.element === 'fire' ? b : null;
+        const cb = fe === a ? b : a;
+        if (fe && cb.box && cb.breakable && !cb.held && !fe.broken && touches({ ...fe, r: fe.r + 14 }, cb)) {
+          cb.broken = true;
+          hits.push({ key: cb.key, speed: 0, kind: 'break', by: fe.key, fire: true, scorch: true, vx: fe.vx, vy: fe.vy });
+          continue;
+        }
+        if (Math.hypot(b.x - a.x, b.y - a.y) >= a.r + b.r + (fe ? 14 : 0)) continue;
         if (a.box) circleBox(b, a, hits);
         else circleBox(a, b, hits);
         continue;
