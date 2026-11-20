@@ -998,23 +998,22 @@ export const TableDice = forwardRef<TableDiceHandle, {
         offered.current.push(baseOf(k));
         return partsOf(k).sort();
       });
-      // Well apart (owner, v0.47.18: still too close together).
+      // Kinds well apart (owner, v0.47.18: still too close together), a pair's two halves almost touching so they read
+      // as one (Hope and Fear, the d100's two dice).
       const GAP = 66;
-      const slots = made.flatMap((parts) => parts.map((part, j) => ({ part, w: (engine.screen(part)?.size ?? 56) + (j === parts.length - 1 ? GAP : 16) })));
-      const L = slots.reduce((sum, q) => sum + q.w, 0);
+      const slots = made.flatMap((parts) => parts.map((part, j) => { const s = engine.screen(part)?.size ?? 56; return { part, s, step: j < parts.length - 1 ? s * 0.9 : s + GAP }; }));
+      const offs: number[] = [];
+      slots.reduce((run, q) => { offs.push(run); return run + q.step; }, 0);
+      const L = offs[offs.length - 1] ?? 0;
       // The arc is turned and widened until every die lands on the felt, clear of what stands there; squeezing it into
       // the walls is what bunched them up when it opened towards an edge (v0.47.18).
       const made0 = new Set(made.flat());
       const standing = engine.keys().filter((k) => !made0.has(k)).map((k) => engine.screen(k)).filter((q): q is NonNullable<typeof q> => !!q);
       const M = 44;
-      const fan = (turn: number, R: number) => {
-        let run = 0;
-        return slots.map((q) => {
-          const ang = a0 + turn + (run + q.w / 2 - L / 2) / R;
-          run += q.w;
-          return { part: q.part, x: at.x + Math.cos(ang) * R, y: at.y + Math.sin(ang) * R, r: q.w / 2 };
-        });
-      };
+      const fan = (turn: number, R: number) => slots.map((q, i) => {
+        const ang = a0 + turn + (offs[i] - L / 2) / R;
+        return { part: q.part, x: at.x + Math.cos(ang) * R, y: at.y + Math.sin(ang) * R, r: q.s / 2 };
+      });
       const misses = (pts: ReturnType<typeof fan>) => pts.reduce((n, q) => n
         + (q.x < b.left + M || q.x > b.right - M || q.y < b.top + M || q.y > b.bottom - M ? 3 : 0)
         + (live.current.obstacles.some((o) => q.x > o.left - q.r && q.x < o.right + q.r && q.y > o.top - q.r && q.y < o.bottom + q.r) ? 3 : 0)
