@@ -851,7 +851,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
         for (const k of partsOf(q.k)) e.toss(k, Math.cos(a) * sp, Math.sin(a) * sp);
         watchLoose(q.k);
       }
-      if (near.length) cue('domat:elements', 'gearScroll1', { volume: 0.55 });
+      if (near.length) {
+        cue('domat:elements', 'gearScroll1', { volume: 0.55 });
+        fireRef.current?.spike(src, 'spark');
+        // Back down to its idle crackle once the flare has passed.
+        setTimeout(() => { if (!lit.current.has(src)) fireRef.current?.set(src, 0.3, 'spark'); }, 60);
+      }
     }
   };
 
@@ -1002,6 +1007,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const shakeAll = (key: string, v: number) => { for (const k of partsOf(key)) engine.jitter(k, v); };
     /** How far a held piece has caught (0 none, 1 ablaze), for it and its partner. */
     const heat = (key: string, v: number) => { for (const k of partsOf(key)) fireRef.current?.set(k, v); };
+    /** While a charge builds it only glows a little (owner, v0.47.20): the full effect waits for the moment it catches. */
+    const TINY = 0.16;
+    const tiny = (v: number) => Math.min(TINY, Math.max(0, v) * TINY);
+    /** It caught: the effect cranked to the max at once, with its sound. */
+    const spike = (keys: string[], cold: boolean | 'spark') => { for (const k of keys) fireRef.current?.spike(k, cold); };
     /** How far a held piece has frozen, frost fumes rising off it (v0.47.18). */
     const chill = (key: string, v: number) => { for (const k of partsOf(key)) fireRef.current?.set(k, v, true); };
     /** Still on the table: a die or token, or a physical card (the engine's `has` knows only the dice). */
@@ -1081,21 +1091,23 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit, zap: !!pr.zap };
       const zs = zapKeys(pr.key);
       if (bundled(pr.key) || zs.length) {
-        if (!pr.lit) for (const k of zs) fireRef.current?.set(k, (pr.swing - 0.35) / 1.65, 'spark');
+        if (!pr.lit) for (const k of zs) fireRef.current?.set(k, tiny((pr.swing - 0.35) / 1.65) * 0.65, 'spark');
         if (!pr.lit && pr.swing >= 2 && zs.length) {
           pr.lit = true;
           pr.zap = true;
           for (const k of zs) sparked.current.add(k);
+          spike(zs, 'spark');
           setBurning((b) => [...new Set([...b, ...zs])]);
           cue('piece:charge', 'gainGoldenHp', { volume: 0.6, cents: 700 });
         }
         return;
       }
       // The fire shows as the swing builds, well before it is fully alight (owner, v0.47.11).
-      if (!pr.lit) heat(pr.key, (pr.swing - 0.35) / 1.65);
+      if (!pr.lit) heat(pr.key, tiny((pr.swing - 0.35) / 1.65));
       if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit };
       if (!pr.lit && pr.swing >= 2) {
         pr.lit = true;
+        spike(partsOf(pr.key), false);
         setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
         cue('piece:ignite', 'gainGoldenHp', { volume: 0.6, cents: 900 });
       }
@@ -1120,11 +1132,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
         shakeAll(pr.key, Math.min(1, pr.charge));
         // It smoulders from early in the shake and is alight by 1.3; let go then and it goes burning. At 2 it goes off
         // by itself (owner, v0.47.11: the fire has to show well before the launch).
-        if (!pr.lit && !bundled(pr.key)) chill(pr.key, (pr.charge - 0.3) / 1.0);
+        if (!pr.lit && !bundled(pr.key)) chill(pr.key, tiny((pr.charge - 0.3) / 1.0));
         if (!pr.lit && !bundled(pr.key) && pr.charge >= 1.3) {
           pr.lit = true;
           pr.cold = true;
           for (const k of partsOf(pr.key)) frozen.current.add(k);
+          spike(partsOf(pr.key), true);
           setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
           cue('piece:charge', 'gainGoldenHp', { volume: 0.5, cents: 1500 });
         }
@@ -1222,9 +1235,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
           engine.vanish(k, at.x + (Math.random() - 0.5) * 10, at.y + 4, i * STEP);
         }
       });
-      cue('chest:open', 'cardFullscreenEnter', { volume: 0.45, cents: -200 });
+      // Each die a short pip as it goes in, rising as they go (owner, v0.47.20); the mouth shuts without a sound of its own.
+      back.forEach((_, i) => setTimeout(() => cue('chest:stow', 'gearScroll1', { volume: 0.4, cents: Math.min(1400, -200 + i * 140) }), i * STEP + 520));
       const done = back.length * STEP + 650;
-      setTimeout(() => { engine.mimic('src:die', 0); cue('mimic:swallow', 'floatMenuClose', { volume: 0.55 }); }, done - 120);
+      setTimeout(() => engine.mimic('src:die', 0), done - 120);
       setTimeout(() => live.current.onDiscard?.(back), done);
     };
     /** Grabbed from the offer: this one (or every offered piece in the selection) is kept, the rest dissolve. */
@@ -1329,8 +1343,32 @@ export const TableDice = forwardRef<TableDiceHandle, {
       cue('piece:grab', 'placeToken', { volume: 0.35, cents: 300 });
       if (chargeable(grabbed) && !chargeRaf) chargeRaf = requestAnimationFrame(tick);
     };
+    /** A token pulled off a hand card, shown flat under the cursor until its 3D piece is made. */
+    let ghost: { el: HTMLDivElement; info: TokenInfo; x: number; y: number; pid: number; tx: number; ty: number; t: number; last: { x: number; y: number; t: number }; raf: number; timer: number } | null = null;
+    const placeGhost = () => { if (ghost) Object.assign(ghost.el.style, { left: `${ghost.x}px`, top: `${ghost.y}px` }); };
+    /** The 3D piece takes over from the stand-in where the cursor is now, already in the hand. */
+    const landGhost = () => {
+      const g = ghost;
+      if (!g) return;
+      ghost = null;
+      cancelAnimationFrame(g.raf);
+      clearTimeout(g.timer);
+      const k = spawn(g.info, g.x, g.y);
+      press = { key: k, x: g.tx, y: g.ty, t: g.t, moved: true, id: g.pid, spawned: true, charge: 0, swing: 0, hand: 0, last: g.last, lit: false };
+      lift(k, g.x, g.y);
+      lastTick = 0;
+      chargeRaf = requestAnimationFrame(tick);
+      // Gone the frame the piece is first drawn, so the two are never seen apart.
+      requestAnimationFrame(() => g.el.remove());
+    };
     const onMove = (e: PointerEvent) => {
       const p = local(e);
+      if (ghost && e.pointerId === ghost.pid) {
+        ghost.x = p.x;
+        ghost.y = p.y;
+        placeGhost();
+        return;
+      }
       if (box && e.pointerId === box.id) {
         const r = { left: Math.min(box.x, p.x), top: Math.min(box.y, p.y), right: Math.max(box.x, p.x), bottom: Math.max(box.y, p.y) };
         if (r.right - r.left > 4 || r.bottom - r.top > 4) setMarquee(r);
@@ -1348,14 +1386,23 @@ export const TableDice = forwardRef<TableDiceHandle, {
           lift(tp.key, tp.px, tp.py);
           engine.drag(p.x, p.y);
         } else {
-          // In the hand: it pops off the card, already in the hand.
+          // In the hand: it pops off the card, already in the hand. Making its 3D piece stalls a frame or more, so a
+          // flat stand-in leaves the card under the cursor at once and the piece takes over from it a frame later,
+          // wherever the cursor has got to (owner, v0.47.20: the drag felt stuck while the model was made).
           const info = live.current.onPopToken(tp.ref!, tp.id!);
           if (!info) return;
-          const k = spawn(info, p.x, p.y);
-          press = { key: k, x: tp.x, y: tp.y, t: tp.t, moved: true, id: e.pointerId, spawned: true, charge: 0, swing: 0, hand: 0, last, lit: false };
-          lift(k, p.x, p.y);
-          lastTick = 0;
-          chargeRaf = requestAnimationFrame(tick);
+          const el = document.createElement('div');
+          Object.assign(el.style, { position: 'absolute', left: '0', top: '0', pointerEvents: 'none', zIndex: '30', display: 'flex', gap: '2px', transform: 'translate(-50%, -50%)' });
+          for (const { spec } of tokenSpecs(pieceOf('free:ghost', info), live.current.numberFinish)) {
+            const s = spec.size * (spec.shape === 'chip' ? 1 : 0.8);
+            const part = document.createElement('div');
+            Object.assign(part.style, { width: `${s}px`, height: `${s}px`, borderRadius: spec.shape === 'chip' ? '50%' : '22%', background: spec.body, border: `2px solid ${spec.edge}`, boxShadow: '0 6px 14px rgba(0,0,0,0.45)', boxSizing: 'border-box' });
+            el.appendChild(part);
+          }
+          host.appendChild(el);
+          ghost = { el, info, x: p.x, y: p.y, pid: e.pointerId, tx: tp.x, ty: tp.y, t: tp.t, last, raf: 0, timer: 0 };
+          placeGhost();
+          ghost.raf = requestAnimationFrame(() => { if (ghost) ghost.timer = window.setTimeout(landGhost, 0); });
         }
         host.style.cursor = 'grabbing';
         cue('spawner:take', 'placeToken', { volume: 0.6, cents: 300 });
@@ -1398,6 +1445,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       host.style.cursor = key ? 'grab' : '';
     };
     const onUp = (e: PointerEvent) => {
+      // Let go before its piece was made: it is made now, and dropped like any other.
+      if (ghost && e.pointerId === ghost.pid) landGhost();
       if (tokPress && e.pointerId === tokPress.pid) {
         const tp = tokPress;
         endTok();
@@ -1592,6 +1641,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (chargeRaf) cancelAnimationFrame(chargeRaf);
       if (holdRaf) cancelAnimationFrame(holdRaf);
       if (spawning) clearTimeout(spawning.timer);
+      if (ghost) { cancelAnimationFrame(ghost.raf); clearTimeout(ghost.timer); ghost.el.remove(); }
     };
   }, [host, engine, spawn, fling, partsOf, watchLoose, pieceMenu, outward, dissolve]);
 

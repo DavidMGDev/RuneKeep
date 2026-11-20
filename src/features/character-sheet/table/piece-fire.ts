@@ -10,6 +10,11 @@ import { FIRE_FRAG, FIRE_VERT } from '@/lib/flames';
 export interface FireLayer {
   /** Burn a piece at this level (0 puts it out, gently); `true`, it freezes instead (frost fumes), 'spark' it crackles with lightning (v0.47.18). */
   set(key: string, level: number, cold?: boolean | 'spark'): void;
+  /**
+   * It catches all at once (v0.47.20, owner: a tiny glow while it builds, then cranked to the max with the sound): the
+   * fire, frost or lightning jumps to full, flares past it and settles back.
+   */
+  spike(key: string, cold?: boolean | 'spark'): void;
   /** A bolt of lightning from one point to another for `ms` (table px): a lightning token's arc (v0.47.19). */
   arc(ax: number, ay: number, bx: number, by: number, ms?: number): void;
   /** Put every fire out at once (the table was cleared). */
@@ -52,7 +57,7 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   gl.uniform1f(u('uHeart'), 1);
 
   /** Each fire: the level it is at and the one it is heading for (it eases, so it never pops). */
-  const fires = new Map<string, { level: number; target: number; seed: number; cold: boolean | 'spark' }>();
+  const fires = new Map<string, { level: number; target: number; seed: number; cold: boolean | 'spark'; boost: number }>();
   let raf = 0;
   let last = 0;
   const t0 = performance.now();
@@ -91,7 +96,7 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   /** Bolts round each charged piece, between charged pieces near each other, and the arcs; true while any is left. */
   const drawBolts = (now: number, dpr: number): boolean => {
     if (!g2) return false;
-    const live = [...fires].filter(([, f]) => f.cold === 'spark' && f.level > 0.08);
+    const live = [...fires].filter(([, f]) => f.cold === 'spark' && f.level > 0.08).map(([k, f]) => [k, { level: f.level + f.boost * 1.2 }] as const);
     for (let i = arcs.length - 1; i >= 0; i--) if (arcs[i].until < now) arcs.splice(i, 1);
     // Lightning flickers: a fresh shape every ~55 ms, not every frame.
     if (now - boltAt < 55 && (live.length || arcs.length)) return true;
@@ -148,11 +153,13 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
       // Rising fast, dying a little slower.
       f.level += (f.target - f.level) * (1 - Math.exp(-dt * (f.target > f.level ? 9 : 4)));
       if (!at || (f.target === 0 && f.level < 0.02)) { fires.delete(key); continue; }
-      const w = at.size * W * dpr, h = at.size * Hk * dpr;
+      f.boost = Math.max(0, f.boost - dt * 1.8);
+      const k = 1 + f.boost * 0.8;
+      const w = at.size * W * k * dpr, h = at.size * Hk * k * dpr;
       // The piece's centre sits 30% up the quad; GL counts up from the bottom.
       gl.uniform4f(uRect, at.x * dpr - w / 2, ch - (at.y * dpr + 0.3 * h), w, h);
       gl.uniform1f(uSeed, f.seed);
-      gl.uniform1f(uI, f.level);
+      gl.uniform1f(uI, Math.min(1.3, f.level + f.boost * 0.3));
       gl.uniform1f(uCold, f.cold === true ? 1 : 0);
       gl.uniform1f(uSpark, f.cold === 'spark' ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -168,7 +175,14 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
       const v = Math.max(0, Math.min(1, level));
       const f = fires.get(key);
       if (f) { f.target = v; if (v > 0) f.cold = cold; }
-      else if (v > 0) fires.set(key, { level: 0, target: v, seed: Math.random(), cold });
+      else if (v > 0) fires.set(key, { level: 0, target: v, seed: Math.random(), cold, boost: 0 });
+      wake();
+    },
+    spike(key, cold = false) {
+      const f = fires.get(key);
+      if (f) Object.assign(f, { level: 1, target: 1, cold, boost: 1 });
+      else fires.set(key, { level: 1, target: 1, seed: Math.random(), cold, boost: 1 });
+      boltAt = 0;
       wake();
     },
     arc(ax, ay, bx, by, ms = 260) {

@@ -85,6 +85,8 @@ const PACK = {
   'chest:dissolve': { max: 1.6, files: ['portalstalker', 'portal3'], vol: 0.5 },
   'mimic:pop': { files: ['massregurgitate'], vol: 0.65 },
   'mimic:swallow': { files: ['massdeath', 'mp-crush'], vol: 0.65 },
+  // One short pip per die the chest eats back, each a little higher (owner, v0.47.20).
+  'chest:stow': { files: ['railcannonpipclick'], vol: 0.4, max: 0.4 },
   'thief:steal': { files: ['coinflip', 'hpget'], vol: 0.45 },
   'element:fire': { max: 1, files: ['firebig', 'firesmall'], vol: 0.45 },
   'element:ice': { files: ['iceunfreeze', 'sandboxfreeze'], vol: 0.45 },

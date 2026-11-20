@@ -283,3 +283,9 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   elements (desktop supply only, the phone shows them): ice slides as on the Moon, fire burns a physical card it comes
   near (no impact frame), water off a wall sends a wave across the table, lightning arcs to the three nearest loose
   pieces when it knocks into something and they jump. Each element glows while it lies loose.
+- v0.47.20: fire, frost and lightning only glow a little while a charge builds (at most 0.16, lightning 0.1) and are
+  cranked to the max the moment they catch, with their sound: `FireLayer.spike` jumps the level to full and flares the
+  quad 1.8x and the bolts past it, settling back in about half a second. A lightning token flares the same way as it
+  arcs. The chest eats its dice back with one short pip per die, each higher, and shuts without a sound of its own. A
+  token pulled off a hand card leaves the card at once as a flat stand-in under the cursor; its 3D piece is made a
+  frame later where the cursor is and takes over (making it stalled the first frames of the drag).
