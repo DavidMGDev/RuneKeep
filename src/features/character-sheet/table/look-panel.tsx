@@ -335,8 +335,9 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount, pie
   );
 }
 
-/** Every ready-made preset: the six made for a way of playing, then the four drawn at random. */
-const ALL_TABLES = [...TABLE_PRESETS.map((t) => ({ ...t, wild: false })), ...WILD_TABLES.map((t) => ({ ...t, wild: true }))];
+/** Every ready-made preset: the default first (owner, v0.47.18), the six made for a way of playing, then the four drawn at random. */
+const ALL_TABLES = [{ id: 'default', name: 'Default', who: 'The table every new character starts at: a fanned hand in the middle, gold dice in the corner, the dice chest beside the supply.', look: STARTING_LOOK, wild: false },
+  ...TABLE_PRESETS.map((t) => ({ ...t, wild: false })), ...WILD_TABLES.map((t) => ({ ...t, wild: true }))];
 
 type PresetEntry = { id: string; name: string; who: string; look: DeckLook; kind: 'made' | 'wild' | 'yours'; pieces?: SavedPiece[] };
 
@@ -416,7 +417,7 @@ function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLoo
             style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, zIndex: 20, outline: 'none', border: `1px solid ${T.goldSoft}`, background: 'rgba(11,14,19,0.99)', maxHeight: 340, overflowY: 'auto', boxShadow: '0 18px 36px rgba(0,0,0,0.6)' }}>
             {entries.map((t, i) => (
               <div key={t.id}>
-                {i === 0 ? heading('Made for a way of playing') : t.kind !== entries[i - 1].kind ? heading(t.kind === 'wild' ? 'Drawn at random' : 'Your presets') : null}
+                {i === 0 ? null : i === 1 ? heading('Made for a way of playing') : t.kind !== entries[i - 1].kind ? heading(t.kind === 'wild' ? 'Drawn at random' : 'Your presets') : null}
                 <div role="option" aria-selected={current?.id === t.id} onPointerEnter={() => setLit(i)} onClick={() => pick(i)}
                   style={{ cursor: 'pointer', padding: '9px 12px', background: lit === i ? T.panelLit : 'transparent', borderLeft: `3px solid ${current?.id === t.id ? T.red : lit === i ? T.goldBright : 'transparent'}` }}>
                   <div style={{ color: lit === i ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 14 }}>{t.name}</div>

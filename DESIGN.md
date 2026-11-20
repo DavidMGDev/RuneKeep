@@ -242,3 +242,10 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   carried by hand and burn. Many Things: the Knight gallops round the walls for 12 s; the Sun holds the loose pieces in
   orbit for 14 s and flings them; the Void pulls only loose pieces in and its mimic swallows them; on the Moon's ice
   the drag thins with the friction so things keep sliding.
+- v0.47.18: the preset list starts with Default (`STARTING_LOOK`), above the ones made for a way of playing. The dice
+  chest's fan spaces its dice well apart and is turned and widened until every die lands on the felt, out of the
+  hand's own area and clear of what stands there (it no longer squeezes them against a wall); the control dice are
+  held still while it opens, so a hopping one is never knocked into a jump. The Knight charges in straight lines,
+  each at a point well across the table, so it never skims an edge. The Modifiers panel groups the sheet's variables:
+  Traits, Rolls, Character, Vitals. The lit card in the hand comes to the front, so a token let go on what shows lands
+  on that card, never on one behind it.

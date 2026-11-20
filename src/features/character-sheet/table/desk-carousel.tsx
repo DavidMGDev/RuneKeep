@@ -207,7 +207,9 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const rotZ = sg * l.tilt * ad;
       const rotY = -sg * l.turn * Math.min(1, k);
       // Never below 1: the end marks sit at 0, behind every card (owner, v0.47.12: on a curved hand one showed over the cards).
-      const z = Math.max(1, l.stack === 'centre' ? 1000 - Math.round(ad * 10) : l.stack === 'left' ? 1000 - Math.round(d * 10) : 1000 + Math.round(d * 10));
+      // The lit card comes to the front (v0.47.18): lifted but left behind a neighbour, a token let go on what showed went
+      // to the card underneath.
+      const z = Math.max(1, l.stack === 'centre' ? 1000 - Math.round(ad * 10) : l.stack === 'left' ? 1000 - Math.round(d * 10) : 1000 + Math.round(d * 10)) + (i === hoverRef.current && !takenRef.current ? 5000 : 0);
       // The edge effect, by where the card's centre is across the tray.
       const ex = W / 2 + x;
       const e = band > 0 ? 1 - Math.min(1, Math.max(0, Math.min(ex, W - ex) / band)) : 0;
@@ -277,6 +279,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   useEffect(() => () => cancelAnimationFrame(raf.current), []);
   // A new look re-draws every card (the per-card cache keys on the output, so nothing else is needed).
   useEffect(() => { kick(); }, [look, kick]);
+  useEffect(() => { kick(); }, [hover, kick]);
 
   const clampTarget = (v: number) => (lookRef.current.loop ? v : Math.min(countRef.current - 1, Math.max(0, v)));
   const goTo = useCallback((t: number) => {

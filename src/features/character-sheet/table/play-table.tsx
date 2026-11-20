@@ -515,6 +515,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     // A physical card takes no tokens and gives none up until it is ordinary again (owner, v0.47.5).
     const hit = cardAt(clientX, clientY);
     const target = hit && !physRefs.current.has(hit.ref) ? hit : null;
+    if (__DEV__) (globalThis as { __rkDrop?: unknown }).__rkDrop = target;
     if (target) {
       if (from && target.uid === from.uid) { ctx.updateToken(from.ref, from.id, { x: target.x, y: target.y }); return true; }
       if (from) ctx.removeToken(from.ref, from.id);
@@ -1152,24 +1153,34 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         break;
       }
       case 'knight': {
-        // A knight gallops round the table for twelve seconds (owner, v0.47.17): it bounces off every wall at a wild new
-        // angle, pulsing, clanging, knocking aside whatever is in its way.
+        // A knight gallops round the table for twelve seconds (owner, v0.47.17): it charges straight across, turns at
+        // every wall, pulsing, clanging, knocking aside whatever is in its way.
         const key = `fx:knight:${uid}`;
         eng.add({ key, shape: 'chip', size: 96, body: '#aeb6bf', edge: '#e6ebef', ink: '#141920', faces: [{ text: '\u265e' }], finish: 'metal', upright: true }, clampX(x), clampY(y), { pop: true });
-        let ang = Math.random() * Math.PI * 2;
         const SPEED = 2300;
+        // Every charge is a straight line at a point well across the table (v0.47.18: bounced off a wall at a random
+        // angle it could skim along the edge), so it always crosses the felt.
+        const across = (fx: number, fy: number) => {
+          const w = play.right - play.left, h = play.bottom - play.top;
+          let tx = 0, ty = 0;
+          for (let i = 0; i < 8; i++) {
+            tx = play.left + w * (0.15 + 0.7 * Math.random());
+            ty = play.top + h * (0.15 + 0.7 * Math.random());
+            if (Math.hypot(tx - fx, ty - fy) > 0.5 * Math.min(w, h)) break;
+          }
+          return Math.atan2(ty - fy, tx - fx);
+        };
+        let ang = across(clampX(x), clampY(y));
         let lastPulse = 0;
         const run = setInterval(() => {
           const s = eng.state(key);
           if (!s) { clearInterval(run); return; }
-          let vx = Math.cos(ang), vy = Math.sin(ang);
-          const m = 70;
+          const vx = Math.cos(ang), vy = Math.sin(ang);
+          const m = 90;
           const hitX = (s.x < play.left + m && vx < 0) || (s.x > play.right - m && vx > 0);
           const hitY = (s.y < play.top + m && vy < 0) || (s.y > play.bottom - m && vy > 0);
           if (hitX || hitY) {
-            if (hitX) vx = -vx;
-            if (hitY) vy = -vy;
-            ang = Math.atan2(vy, vx) + (Math.random() - 0.5) * 1.1;
+            ang = across(s.x, s.y);
             addFx({ kind: 'impact', x: s.x, y: s.y, r: 120, ms: 420, tint });
             jolt(0.45);
             cue('knight:bounce', 'cardDragEnd', { volume: 0.9, cents: -300 });
@@ -1177,7 +1188,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           eng.toss(key, Math.cos(ang) * SPEED, Math.sin(ang) * SPEED, { gen: 3, power: 2.4 });
           const now = performance.now();
           if (now - lastPulse > 380) { lastPulse = now; addFx({ kind: 'ring', x: s.x, y: s.y, r: 110, ms: 420, tint }); }
-        }, 60);
+        }, 30);
         timers.current.push(run);
         const stop = () => { clearInterval(run); const s = eng.state(key); if (s) addFx({ kind: 'smoke', x: s.x, y: s.y, r: 140, ms: 800 }); if (eng.has(key)) eng.shatter(key); };
         addLasting(`knight:${uid}`, 'Knight: on the charge', tint, 12000, stop);
@@ -2082,6 +2093,14 @@ function modName(m: PresetModifier, cardVars: FunctionVar[]): string | null {
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
+/** The sheet's variables in the Modifiers panel, by kind (owner, v0.47.18): traits first, then the rest. */
+const SHEET_GROUPS: { name: string; keys: string[] }[] = [
+  { name: 'Traits', keys: ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'] },
+  { name: 'Rolls', keys: ['attackRoll', 'damageRoll', 'spellcastRoll', 'spellcast'] },
+  { name: 'Character', keys: ['proficiency', 'level', 'tier'] },
+  { name: 'Vitals', keys: ['currentHp', 'missingHp', 'currentHope', 'missingHope', 'currentArmor', 'missingArmor', 'stress'] },
+];
+
 /**
  * The Modifiers panel (owner, v0.47.17), under the selection bar: what is added to this roll, built the way a phone
  * preset's modifier is (a flat number from -20 to 20, sheet variables, numbers kept on the character's cards), so a
@@ -2118,12 +2137,18 @@ function ModifierPanel({ mod, onMod, total, resolve, cardVars }: { mod: PresetMo
         <div style={{ height: 1, background: 'rgba(218,162,73,0.22)' }} />
         <div className="rk-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
           {label('From your sheet')}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
-            {PRESET_VARS.map((v) => (
-              <ModChip key={v.key} name={v.label} value={worth.get(v.key) ?? 0} on={vars.includes(v.key)}
-                onPress={() => { cue('ui:toggle', 'cardSelect', { volume: 0.4 }); set(vars.includes(v.key) ? removeVariable(m, v.key) : addVariable(m, v.key)); }} />
-            ))}
-          </div>
+          {[...SHEET_GROUPS, { name: 'Other', keys: PRESET_VARS.map((v) => v.key).filter((k) => !SHEET_GROUPS.some((g) => g.keys.includes(k))) }].filter((g) => g.keys.length).map((g) => (
+            <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div style={{ color: T.muted, fontFamily: T.bold, fontSize: 12 }}>{g.name}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
+                {g.keys.map((k) => PRESET_VARS.find((v) => v.key === k)).filter((v): v is (typeof PRESET_VARS)[number] => !!v).map((v) => (
+                  <ModChip key={v.key} name={v.label} value={worth.get(v.key) ?? 0} on={vars.includes(v.key)}
+                    onPress={() => { cue('ui:toggle', 'cardSelect', { volume: 0.4 }); set(vars.includes(v.key) ? removeVariable(m, v.key) : addVariable(m, v.key)); }} />
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ height: 2 }} />
           {cardVars.length ? (
             <>
               {label('From your cards')}

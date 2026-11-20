@@ -979,7 +979,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const b = boundsRef.current;
       const a0 = Math.atan2((b.top + b.bottom) / 2 - at.y, (b.left + b.right) / 2 - at.x);
       // First it clears the ground (owner, v0.47.17): every loose die and token near it is pushed outward, out of the
-      // fan's way. The control dice stay where they are.
+      // fan's way. The control dice stay where they are, held still while it all flies (v0.47.18: a hopping control
+      // die knocked by a pushed or landing die jumped).
+      engine.pin([CAT, ...ACTIONS].filter((k) => engine.has(k)), 1800);
       for (const k of engine.keys()) {
         if (!k.startsWith('free:') && !k.startsWith('roll:')) continue;
         const st = engine.state(k);
@@ -996,16 +998,38 @@ export const TableDice = forwardRef<TableDiceHandle, {
         offered.current.push(baseOf(k));
         return partsOf(k).sort();
       });
-      const GAP = 18;
-      const slots = made.flatMap((parts) => parts.map((part, j) => ({ part, w: (engine.screen(part)?.size ?? 56) + (j === parts.length - 1 ? GAP : 4) })));
+      // Well apart (owner, v0.47.18: still too close together).
+      const GAP = 66;
+      const slots = made.flatMap((parts) => parts.map((part, j) => ({ part, w: (engine.screen(part)?.size ?? 56) + (j === parts.length - 1 ? GAP : 16) })));
       const L = slots.reduce((sum, q) => sum + q.w, 0);
-      const R = Math.max(210, L / 2.2);
-      let run = 0;
+      // The arc is turned and widened until every die lands on the felt, clear of what stands there; squeezing it into
+      // the walls is what bunched them up when it opened towards an edge (v0.47.18).
+      const made0 = new Set(made.flat());
+      const standing = engine.keys().filter((k) => !made0.has(k)).map((k) => engine.screen(k)).filter((q): q is NonNullable<typeof q> => !!q);
+      const M = 44;
+      const fan = (turn: number, R: number) => {
+        let run = 0;
+        return slots.map((q) => {
+          const ang = a0 + turn + (run + q.w / 2 - L / 2) / R;
+          run += q.w;
+          return { part: q.part, x: at.x + Math.cos(ang) * R, y: at.y + Math.sin(ang) * R, r: q.w / 2 };
+        });
+      };
+      const misses = (pts: ReturnType<typeof fan>) => pts.reduce((n, q) => n
+        + (q.x < b.left + M || q.x > b.right - M || q.y < b.top + M || q.y > b.bottom - M ? 3 : 0)
+        + (live.current.obstacles.some((o) => q.x > o.left - q.r && q.x < o.right + q.r && q.y > o.top - q.r && q.y < o.bottom + q.r) ? 3 : 0)
+        + standing.filter((o) => Math.hypot(o.x - q.x, o.y - q.y) < o.size / 2 + q.r + 6).length, 0);
+      let best = fan(0, Math.max(240, L / 2.2)), worst = misses(best);
+      for (const R of [Math.max(240, L / 2.2), L / 1.8, L / 1.5, L / 1.25, L, L * 1.5]) {
+        for (const turn of [0, 0.2, -0.2, 0.4, -0.4, 0.65, -0.65, 0.9, -0.9, 1.2, -1.2, 1.6, -1.6]) {
+          if (!worst) break;
+          const pts = fan(turn, R), n = misses(pts);
+          if (n < worst) { best = pts; worst = n; }
+        }
+      }
       const pinned: string[] = [];
-      for (const q of slots) {
-        const ang = a0 + (run + q.w / 2 - L / 2) / R;
-        run += q.w;
-        engine.home(q.part, Math.min(b.right - 40, Math.max(b.left + 40, at.x + Math.cos(ang) * R)), Math.min(b.bottom - 40, Math.max(b.top + 40, at.y + Math.sin(ang) * R)));
+      for (const q of best) {
+        engine.home(q.part, Math.min(b.right - M, Math.max(b.left + M, q.x)), Math.min(b.bottom - M, Math.max(b.top + M, q.y)));
         pinned.push(q.part);
       }
       // Landed, they stay put until chosen; one already taken is never pinned (that froze it in mid-flight).
