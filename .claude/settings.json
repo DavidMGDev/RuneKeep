@@ -1,5 +1,12 @@
 {
   "enabledPlugins": {
     "expo@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh pr merge:*)",
+      "Bash(gh release create:*)",
+      "Bash(gh release delete:*)"
+    ]
   }
 }
