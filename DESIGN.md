@@ -186,6 +186,7 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   engine no longer queues a second frame from inside a frame (picking up Hope and Fear doubled the frames every
   frame: the duality lag). Roll and Forge burn with one continuous sheet of the pieces' flame round the whole
   button, from behind it (the Forge's plate is drawn over the fire, Roll's face is cut out of it), from one shared
-  context ready before the first press; Roll fills a bar and says Charging, Hotter, Ablaze as it is held. While a
-  roll's plaque shows, the selection bar and the Many Things row stack under it. The hand's end dots sit behind the
+  context ready before the first press; Roll fills a bar and says Charging, Hotter, Ablaze as it is held. With a
+  selection, its bar stays at the top and a roll's plaque sits under it at the same width, the Many Things row
+  under both. The hand's end dots sit behind the
   cards.

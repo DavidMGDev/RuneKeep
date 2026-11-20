@@ -595,9 +595,16 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   };
   const [selection, setSelection] = useState<string[]>([]);
   /**
-   * The roll's plaque sits at the top of the table: while it shows, the selection bar and the Many Things row stack
-   * under it instead of under each other's feet (owner, v0.47.13: the two covered each other).
+   * The selection bar sits at the top of the open table and the roll's plaque under it, as wide as it (owner,
+   * v0.47.13: they covered each other; the longer bar on top, the result below with room between), and the Many
+   * Things row under whichever is lowest.
    */
+  const [barBox, setBarBox] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = tableRef.current?.querySelector('[data-sel-bar]') as HTMLElement | null;
+    const w = el?.offsetWidth ?? 0, h = el?.offsetHeight ?? 0;
+    if (w !== barBox.w || h !== barBox.h) setBarBox({ w, h });
+  });
   const [plaqueH, setPlaqueH] = useState(0);
   useLayoutEffect(() => {
     if (!result) { setPlaqueH(0); return; }
@@ -1371,8 +1378,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const t = setInterval(() => tickLasting((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [lasting]);
-  /** The top of the open table, or just under the roll's plaque while it shows. */
-  const underPlaque = Math.max(openTop + 12, plaqueH ? 12 + plaqueH + 8 : 0);
+  const barOn = selection.length > 0 && barBox.h > 0;
+  const plaqueTop = barOn ? openTop + 12 + barBox.h + 14 : 12;
+  const lastingTop = result && plaqueH ? Math.max(openTop + 12, plaqueTop + plaqueH + 12) : barOn ? openTop + 12 + barBox.h + 12 : openTop + 12;
   if (!desktop || !port) return null;
   const middle = Math.floor((deck.length - 1) / 2);
   // The first-time hint, only while the sheet's tips are still being shown (owner: not whenever the table is empty).
@@ -1644,7 +1652,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {/* What can be done with the pieces selected. */}
         {selection.length ? (
-          <SelectionBar x={(play.left + play.right) / 2} y={underPlaque} count={new Set(selection.map(baseOf)).size} types={selTypes}
+          <SelectionBar x={(play.left + play.right) / 2} y={openTop + 12} count={new Set(selection.map(baseOf)).size} types={selTypes}
             onRoll={(power, burning) => {
               void diceRef.current?.rollPieces(selection, power, burning).then((landed) => {
                 if (!landed.length) return;
@@ -1681,7 +1689,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         </div>
         {/* What the Deck of Many Things has in play, and how long each has left. */}
         {lasting.length ? (
-          <div data-ui="" aria-label="Many Things effects in play" style={{ position: 'absolute', left: (play.left + play.right) / 2, top: underPlaque + (selection.length ? 50 : 0), transform: 'translateX(-50%)', transition: 'top 240ms cubic-bezier(0.22,1,0.36,1)', zIndex: 1230, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 6, maxWidth: (play.right - play.left) * 0.7, pointerEvents: 'none' }}>
+          <div data-ui="" aria-label="Many Things effects in play" style={{ position: 'absolute', left: (play.left + play.right) / 2, top: lastingTop, transform: 'translateX(-50%)', transition: 'top 240ms cubic-bezier(0.22,1,0.36,1)', zIndex: 1230, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 6, maxWidth: (play.right - play.left) * 0.7, pointerEvents: 'none' }}>
             {lasting.map((l) => {
               const left = l.until ? Math.max(0, Math.ceil((l.until - Date.now()) / 1000)) : null;
               return (
@@ -1761,7 +1769,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             throwIt={menu.board || spread ? undefined : () => throwCopy(menu.id)} />
         ) : null}
       </div>
-      {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { playSfx('buttonTap'); setResult(null); }} /> : null}
+      {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} top={plaqueTop} minWidth={barOn ? barBox.w : undefined} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { playSfx('buttonTap'); setResult(null); }} /> : null}
       {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { playSfx('panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={port} /> : null}
     </DesktopPortal>
   );
@@ -1826,7 +1834,7 @@ function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, 
   const save = () => { const n = name.trim(); if (!n) return; onSave(n); setNaming(false); setName(''); };
   const summary = summarise(types);
   return (
-    <div data-ui="" role="toolbar" aria-label="Selected pieces" onPointerDown={(e) => e.stopPropagation()} style={{ position: 'absolute', left: x, top: y, transform: 'translateX(-50%)', transition: 'top 240ms cubic-bezier(0.22,1,0.36,1)', zIndex: 1240 }}>
+    <div data-ui="" data-sel-bar="" role="toolbar" aria-label="Selected pieces" onPointerDown={(e) => e.stopPropagation()} style={{ position: 'absolute', left: x, top: y, transform: 'translateX(-50%)', transition: 'top 240ms cubic-bezier(0.22,1,0.36,1)', zIndex: 1240 }}>
       <Chamfer c={10} fill="rgba(11,14,19,0.96)" line={T.gold} inner={{ padding: '6px 8px 6px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 13.5, whiteSpace: 'nowrap' }}>{count} selected</span>
         {summary ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, whiteSpace: 'nowrap' }}>{summary}</span> : null}
