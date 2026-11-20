@@ -600,11 +600,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * Things row under whichever is lowest.
    */
   const [barBox, setBarBox] = useState({ w: 0, h: 0 });
+  // Measured after every render (the bar's width follows what it holds); the check inside ends it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const el = tableRef.current?.querySelector('[data-sel-bar]') as HTMLElement | null;
     const w = el?.offsetWidth ?? 0, h = el?.offsetHeight ?? 0;
     if (w !== barBox.w || h !== barBox.h) setBarBox({ w, h });
-  }); // eslint-disable-line react-hooks/exhaustive-deps -- measured after every render (the bar's width follows what it holds); the check above ends it
+  });
   const [plaqueH, setPlaqueH] = useState(0);
   useLayoutEffect(() => {
     if (!result) { setPlaqueH(0); return; }
