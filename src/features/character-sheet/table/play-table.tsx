@@ -1406,8 +1406,35 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setMimics(() => []);
     diceRef.current?.tidy();
     setGone(new Set());
-    if (spread) setSpread({});
-    else if (copiesRef.current.length) flyBack(copiesRef.current.map((b) => b.uid), () => setCopies([]));
+    if (spread) {
+      // The laid-out deck goes back into its grid, every card of it, gliding from wherever it was (owner, v0.47.15).
+      const from = posesOf(boardRef.current.map((b) => b.uid));
+      livePoses.clear();
+      setSpread({});
+      glide(from);
+    } else if (copiesRef.current.length) flyBack(copiesRef.current.map((b) => b.uid), () => setCopies([]));
+  };
+  /** Where each card is drawn now (table px), to glide it from there once it has moved. */
+  const posesOf = (uids: string[]) => {
+    const at = new Map<string, { x: number; y: number }>();
+    for (const u of uids) {
+      const el = tableRef.current?.querySelector(`[data-board-card="${CSS.escape(u)}"]`) as HTMLElement | null;
+      if (el) at.set(u, { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 });
+    }
+    return at;
+  };
+  /** Once the cards are drawn where they now belong, slide each one there from where it was (`from`, table px). */
+  const glide = (from: Map<string, { x: number; y: number }>, scale = 1) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      let i = 0;
+      for (const [u, p] of from) {
+        const el = tableRef.current?.querySelector(`[data-board-card="${CSS.escape(u)}"]`) as HTMLElement | null;
+        if (!el) continue;
+        const dx = p.x - (el.offsetLeft + el.offsetWidth / 2), dy = p.y - (el.offsetTop + el.offsetHeight / 2);
+        if (Math.abs(dx) + Math.abs(dy) < 2 && scale === 1) continue;
+        el.animate([{ translate: `${dx.toFixed(1)}px ${dy.toFixed(1)}px`, scale: String(scale) }, { translate: '0px 0px', scale: '1' }], { duration: 560, delay: i++ * 16, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'backwards' });
+      }
+    }));
   };
   /** Cards fly back into the hand, shrinking as they go; `done` once they are there. */
   const flyBack = (uids: string[], done: () => void) => {
@@ -1431,7 +1458,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * dice. The Deck of Many Things stays, stock and all. Pressed again, the cards go back into the hand.
    */
   const togglePlayground = () => {
-    const eng = diceRef.current?.engine();
     if (playground) {
       cue('playground:off', 'panelClose');
       // Leaving resets the whole table, not just the cards (owner, v0.47.14).
@@ -1443,35 +1469,56 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     clearSelection();
     setSettings(false);
     setPeek(false);
-    const w = Math.min(maxW(tableH), 128), h = (w * FORGED_H) / FORGED_W;
-    const cx = (v: number) => Math.min(tableW - pad - w / 2, Math.max(pad + w / 2, v)), cy = (v: number) => Math.min(tableH - pad - h / 2, Math.max(pad + h / 2, v));
+    // Laid out in a grid on the open table, as large as the whole deck allows, each card gliding there from its place
+    // in the hand and resting there as a physical card (owner, v0.47.15: not flung about).
     const n = Math.max(1, deck.length);
-    // Evenly along the hand, a little up and down, so they leave as a spread, not a pile.
+    const gap = 14;
+    // The whole table is free (the hand has let go), less the corner buttons, the rows of tokens above, and any
+    // control die standing in the way: the grid gives way on that die's side.
+    let L = play.left + 70, R = play.right - 30;
+    const Tp = pad + 160, B = tableH - pad - 10;
+    const eng = diceRef.current?.engine();
+    for (const k of eng?.keys() ?? []) {
+      if (/^(free|roll|tok|card|src|fx):/.test(k)) continue;
+      const st = eng?.state(k);
+      if (!st || st.y < Tp - 50 || st.y > B + 50 || st.x < L - 60 || st.x > R + 60) continue;
+      if (st.x < (L + R) / 2) L = Math.max(L, st.x + 70); else R = Math.min(R, st.x - 70);
+    }
+    let w = Math.min(maxW(tableH), 128), cols = 1, rows = 1;
+    for (; w > MIN_W; w -= 4) {
+      cols = Math.max(1, Math.floor((R - L + gap) / (w + gap)));
+      rows = Math.ceil(n / cols);
+      if (rows * ((w * FORGED_H) / FORGED_W + gap) - gap <= B - Tp) break;
+    }
+    cols = Math.max(1, Math.floor((R - L + gap) / (w + gap)));
+    rows = Math.ceil(n / cols);
+    const h = (w * FORGED_H) / FORGED_W;
+    // Too many to fit even small: the rows overlap evenly, like a spread hand.
+    const stepY = rows > 1 ? Math.min(h + gap, (B - Tp - h) / (rows - 1)) : 0;
+    const top = Tp + h / 2 + Math.max(0, (B - Tp - h - stepY * (rows - 1)) / 2);
+    const slots = new Map<string, { x: number; y: number }>();
     const cards: BoardCard[] = deck.map((c, i) => {
-      const x = hand.left + ((i + 0.5) / n) * (hand.right - hand.left);
-      const y = (hand.top + hand.bottom) / 2 + (i % 2 ? -0.12 : 0.12) * (hand.bottom - hand.top);
-      return { uid: `pg:${c.id}`, id: c.id, fx: cx(x) / tableW, fy: cy(y) / tableH, w, rot: Math.round((Math.random() - 0.5) * 16), phys: true };
+      const r = Math.floor(i / cols), inRow = r === rows - 1 ? n - r * cols : cols;
+      const x = (L + R) / 2 + ((i % cols) - (inRow - 1) / 2) * (w + gap);
+      const y = top + r * stepY;
+      slots.set(`pg:${c.id}`, { x: hand.left + ((i + 0.5) / n) * (hand.right - hand.left), y: (hand.top + hand.bottom) / 2 });
+      return { uid: `pg:${c.id}`, id: c.id, fx: x / tableW, fy: y / tableH, w, rot: 0, phys: true };
     });
     setPgCards(cards);
     setPlayground(true);
-    // Up into the open table, spreading as they knock into one another.
-    const up = handPos === 'top' ? 1 : -1;
-    cards.forEach((b, i) => {
-      let tries = 0;
-      // Fanned out by where each sat in the hand: the left ones fly left, the right ones right, all of them up.
-      const side = (n > 1 ? i / (n - 1) - 0.5 : 0) * 2200 + (Math.random() - 0.5) * 400;
-      const go = () => { if (!diceRef.current?.engine()?.throwCard(`card:${b.uid}`, side, up * (900 + Math.random() * 1300), (Math.random() - 0.5) * 6) && ++tries < 25) setTimeout(go, 30); };
-      setTimeout(go, 40 + i * 14);
-    });
-    // The supply lets go of one of everything as it goes.
-    const from = eng?.state('src:die') ?? eng?.state('src:mat') ?? { x: tableW / 2, y: (openTop + openBottom) / 2 };
+    glide(slots, 0.7);
+    // One of everything, set out in two neat rows where the supply stood, above the cards (owner, v0.47.15).
     const colours = [...TOKEN_COLORS].sort(() => Math.random() - 0.5).slice(0, 3);
     const toks: TokenInfo[] = [
       ...DIE_TYPES.map((t): TokenInfo => ({ kind: 'die', dieType: t, dieValue: 1, dieValue2: t === 'duality' ? 1 : undefined })),
       { kind: 'wood' }, { kind: 'bone' }, { kind: 'iron' },
       ...colours.map((c): TokenInfo => ({ kind: 'color', color: c })),
     ];
-    spill(toks.map((t) => ({ key: '', token: t, x: from.x, y: from.y })), from.x, from.y);
+    const per = Math.ceil(toks.length / 2);
+    // The Deck of Many Things stays where it stood: the rows start past it.
+    const domat = eng?.state(DOMAT_KEY);
+    const x0 = Math.max(play.left + 70, domat && domat.y < pad + 140 ? domat.x + 70 : 0);
+    setLoose([...looseRef.current, ...toks.map((t, i) => ({ key: `free:${newTokenId()}${i}`, token: t, x: x0 + (i % per) * 62, y: pad + 44 + Math.floor(i / per) * 62 }))]);
   };
   const looseCount = loose.length + drawn.length + (spread ? 0 : copies.length);
 

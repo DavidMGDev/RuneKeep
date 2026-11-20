@@ -199,3 +199,13 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   whole table. Nothing still burning settles onto a card. The preset picker has arrows either side for the next or
   previous preset. In edit mode each row, and each piece split off one, has an eye: hidden, it leaves the table and
   shows (dimmed frame, red eye) only while editing (`DeckLook.hidden`).
+- v0.47.15: ULTRAKILL files are levelled when decoded (`normalGain`). The edit frames' arrows, link and eye always
+  show, so nothing moves under the pointer. The presets were laid out again: every row of pieces sits on a band
+  along the top or bottom edge (left, centre, right, clear of the corner buttons), every hand is whole on screen,
+  the middle of the felt stays open. Storyteller is one card centre stage; Dice goblin has everything along the top
+  and a mimic for a dice box; Tactician and Archivist keep their pieces along the bottom; Duelist has the deck die
+  above the shelf and the rest below. The four wild tables keep their drawn looks with hand-placed pieces
+  (`WILD_LAYOUT`). Every preset picture was retaken. Reset with the deck laid out (Tactician) glides every card of it back into its
+  grid, physical ones too. Entering the playground no longer flings the hand: the cards glide into a centred grid on
+  the whole table (sized to fit, clear of the corner buttons and any control die) and rest there as physical cards,
+  with one of every die and token set out in two rows above them, past the Deck of Many Things.

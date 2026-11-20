@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
-import { BUILTIN_LOOKS, type DeckLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, readTableFile, TABLE_PRESETS, tableFile, wearsHand, withHand } from './deck-look';
+import { BUILTIN_LOOKS, type DeckLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, readTableFile, TABLE_PRESETS, tableFile, wearsHand, WILD_TABLES as WILD_LOOKS, withHand } from './deck-look';
 import { loadSavedLooks, type SavedLook, saveSavedLooks } from './table-store';
 import { chamferClip, Glyph, T, TButton } from './table-ui';
 import { cue, forgetUltrakill, keepUltrakillFolder, onSoundsChange, setSoundScheme, soundScheme, ULTRAKILL_FILES, ultrakillLoaded } from './table-sound';
@@ -18,7 +18,7 @@ import { cue, forgetUltrakill, keepUltrakillFolder, onSoundsChange, setSoundSche
 const PAGES = [{ id: 'presets', title: 'Presets' }, ...LOOK_PAGES.map((p) => ({ id: p.id, title: p.title }))];
 
 /** The four tables drawn at random and kept (v0.47.3): seeded, so they are the same for everyone until tuned. */
-export const WILD_TABLES = randomTables(4, 47003).map((look, i) => ({ id: `wild${i + 1}`, name: ['Wild one', 'Wild two', 'Wild three', 'Wild four'][i], who: 'Drawn at random and kept because it worked. Not tuned by hand yet.', look }));
+export const WILD_TABLES = WILD_LOOKS.map((look, i) => ({ id: `wild${i + 1}`, name: ['Wild one', 'Wild two', 'Wild three', 'Wild four'][i], who: 'Drawn at random and kept because it worked; its pieces placed by hand.', look }));
 
 export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, pieceCount, box }: { look: DeckLook; onChange: (l: DeckLook) => void; onClose: () => void; onClearTable: () => void; boardCount: number; pieceCount: number; box: { left: number; top: number; width: number; height: number } }) {
   const [page, setPage] = useState('presets');

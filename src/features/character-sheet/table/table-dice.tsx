@@ -1627,7 +1627,7 @@ function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain, hidden, 
           </button>
         ) : null}
         {/* Split a row into pieces placed one by one, or join a piece back into its row (owner, v0.47.11). */}
-        {chain && onChain && (hover || chain === 'join') ? (
+        {chain && onChain ? (
           <button type="button" title={chain === 'split' ? 'Split the row: place each piece on its own' : 'Join these back into their row'} aria-label={chain === 'split' ? `Split the ${label}` : `Join ${label} back into its row`}
             onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue('ui:confirm', 'cardSelect', { volume: 0.5 }); onChain(); }}
             style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 2, background: T.panel, border: `1px solid ${T.goldSoft}` }}>
@@ -1637,7 +1637,7 @@ function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain, hidden, 
           </button>
         ) : null}
         {/* Hidden from play, seen only here while editing (owner, v0.47.14). */}
-        {onHide && (hover || hidden) ? (
+        {onHide ? (
           <button type="button" title={hidden ? 'Show on the table' : 'Hide from the table (still shown while editing)'} aria-label={hidden ? `Show the ${label}` : `Hide the ${label}`} aria-pressed={hidden}
             onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue('ui:toggle', hidden ? 'panelOpen' : 'panelClose', { volume: 0.5 }); onHide(); }}
             style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 2, background: hidden ? 'rgba(200,27,24,0.35)' : T.panel, border: `1px solid ${hidden ? T.red : T.goldSoft}` }}>

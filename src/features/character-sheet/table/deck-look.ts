@@ -497,28 +497,32 @@ export function cleanLook(raw: unknown): DeckLook {
  */
 export interface TablePreset { id: string; name: string; who: string; look: DeckLook }
 const T = (look: Partial<DeckLook>): DeckLook => cleanLook({ ...DEFAULT_LOOK, ...look });
+/*
+ * Laid out by hand (owner, v0.47.15: "pretty ugly"): every row of pieces sits on a band along the top or the bottom
+ * edge, lined up left, centre and right, the hand is whole on screen, and the middle of the felt stays open.
+ */
 export const TABLE_PRESETS: TablePreset[] = [
   {
-    id: 'story', name: 'Storyteller', who: 'One card at a time and nothing in the way. Controls stay a right click off, the felt is open for the scene.',
-    look: T({ size: 260, side: 2, shrink: 0.2, dim: 0.3, blur: 1.4, glow: 0.55, edge: 'fade', edgeWidth: 26, lift: 10, hoverLift: 4, hoverZoom: 1.02, switchFx: 'fade', endDots: false,
-      areaMode: 'free', areaPos: 'bottom', areaSize: 46, divider: 'none', walls: 'none', controls: 'hidden', tokenTray: false, numberDice: 'stone', controlDice: 'ivory', catX: 0.06, catY: 0.26 }),
+    id: 'story', name: 'Storyteller', who: 'One card at a time, centre stage, and nothing in the way. Controls stay a right click off, the felt is open for the scene.',
+    look: T({ size: 290, side: 2, shrink: 0.22, dim: 0.34, blur: 1.6, glow: 0.5, edge: 'fade', edgeWidth: 30, rowY: 0.5, hoverLift: 4, hoverZoom: 1.02, switchFx: 'fade', endDots: false,
+      areaMode: 'free', areaPos: 'middle', areaSize: 64, divider: 'none', walls: 'none', controls: 'hidden', tokenTray: false, numberDice: 'stone', controlDice: 'ivory' }),
   },
   {
-    id: 'goblin', name: 'Dice goblin', who: 'Rolls all the time and plays with the dice between turns. A tight hand, a huge table, the supply down the left side.',
-    look: T({ autoReturn: false, size: 150, spacing: -0.82, pack: 0.2, shrink: 0.02, dim: 0.08, side: 10, shadow: 0.8, edgeWidth: 8, rowY: 0.55,
-      areaMode: 'tray', areaPos: 'bottom', areaSize: 26, divider: 'shade', walls: 'brass', numberDice: 'metal', controlDice: 'gilded', controls: 'dice', tokenTray: true,
-      supDir: 'column', supX: 0.07, supY: 0.36, ctlDir: 'row', ctlX: 0.84, ctlY: 0.07, catX: 0.93, catY: 0.62 }),
+    id: 'goblin', name: 'Dice goblin', who: 'Rolls all the time and plays with the dice between turns. Everything in one row along the top, a mimic for a dice box, the whole felt to throw on.',
+    look: T({ autoReturn: false, diceChest: true, chest: 'fang', size: 170, spacing: -0.55, pack: 0.12, shrink: 0.03, arc: 30, tilt: 4, side: 6, dim: 0.06, shadow: 0.8, edge: 'none', rowY: 0.55, hoverLift: 26, hoverZoom: 1.08,
+      areaMode: 'tray', areaPos: 'bottom', areaSize: 30, divider: 'shade', walls: 'brass', numberDice: 'metal', controlDice: 'gilded', controls: 'dice', ctlMotion: 'hop', tokenTray: true,
+      supDir: 'row', supX: 0.2, supY: 0.1, catX: 0.5, catY: 0.1, ctlDir: 'row', ctlX: 0.82, ctlY: 0.09 }),
   },
   {
-    id: 'tactician', name: 'Tactician', who: 'Wants every card in view at once. No carousel: the whole deck lies on the table, the controls stand down the right edge.',
+    id: 'tactician', name: 'Tactician', who: 'Wants every card in view at once. No carousel: the whole deck lies on the table, every piece in one band along the bottom.',
     look: T({ handMode: 'spread', size: 150, walls: 'stone', numberDice: 'stone', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'hop', tokenTray: true,
-      ctlDir: 'column', ctlX: 0.93, ctlY: 0.3, supDir: 'row', supX: 0.2, supY: 0.91, catX: 0.93, catY: 0.72 }),
+      supDir: 'row', supX: 0.25, supY: 0.92, ctlDir: 'row', ctlX: 0.72, ctlY: 0.92, catX: 0.93, catY: 0.86 }),
   },
   {
-    id: 'archivist', name: 'Archivist', who: 'Curates big decks. The whole deck reads across the top, plain buttons, and the table below stays clear for sorting.',
-    look: T({ size: 116, side: 30, spacing: 0.04, pack: 0, shrink: 0, dim: 0, edge: 'none', shadow: 0.35, scroll: 'wheel', wheel: 3, switchFx: 'deal', hoverLift: 18, hoverZoom: 1.22,
-      areaMode: 'tray', areaPos: 'top', areaSize: 27, divider: 'line', walls: 'line', controls: 'buttons', numberDice: 'resin', controlDice: 'obsidian', tokenTray: true,
-      supDir: 'row', supX: 0.18, supY: 0.92, ctlDir: 'row', ctlX: 0.7, ctlY: 0.36, catX: 0.92, catY: 0.9 }),
+    id: 'archivist', name: 'Archivist', who: 'Curates big decks. The whole deck reads across the top, plain buttons and the supply along the bottom, the table between them clear for sorting.',
+    look: T({ size: 124, side: 30, spacing: 0.05, pack: 0, shrink: 0, dim: 0, edge: 'fade', edgeWidth: 10, shadow: 0.35, scroll: 'wheel', wheel: 3, switchFx: 'deal', hoverLift: 18, hoverZoom: 1.22, rowY: 0.52,
+      areaMode: 'tray', areaPos: 'top', areaSize: 30, divider: 'line', walls: 'line', controls: 'buttons', numberDice: 'resin', controlDice: 'obsidian', tokenTray: true,
+      supDir: 'row', supX: 0.25, supY: 0.91, ctlDir: 'row', ctlX: 0.76, ctlY: 0.93 }),
   },
   {
     id: 'showman', name: 'Showman', who: 'Plays for the table (or the stream). A fanned hand in the middle of the felt, gold dice, deals that land with a flourish.',
@@ -527,12 +531,24 @@ export const TABLE_PRESETS: TablePreset[] = [
       supDir: 'row', supX: 0.17, supY: 0.08, ctlDir: 'row', ctlX: 0.83, ctlY: 0.08, catX: 0.5, catY: 0.9 }),
   },
   {
-    id: 'duelist', name: 'Duelist', who: 'In the thick of a fight: cards on a shelf across the middle, dice and tokens in reach above and below it, nothing to hunt for.',
+    id: 'duelist', name: 'Duelist', who: 'In the thick of a fight: cards on a shelf across the middle, the deck die above it, dice and tokens in reach below it.',
     look: T({ size: 200, spacing: -0.42, pack: 0.22, shrink: 0.03, turn: 58, perspective: 1200, side: 7, dim: 0.14, edge: 'darken', edgeWidth: 18, flick: 1.6, switchFx: 'slide',
-      areaMode: 'tray', areaPos: 'middle', areaSize: 34, divider: 'line', walls: 'stone', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', tokenTray: true,
-      supDir: 'row', supX: 0.2, supY: 0.9, ctlDir: 'row', ctlX: 0.82, ctlY: 0.9, catX: 0.07, catY: 0.12 }),
+      areaMode: 'tray', areaPos: 'middle', areaSize: 36, divider: 'line', walls: 'stone', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', tokenTray: true,
+      supDir: 'row', supX: 0.25, supY: 0.88, ctlDir: 'row', ctlX: 0.82, ctlY: 0.88, catX: 0.5, catY: 0.13 }),
   },
 ];
+
+/**
+ * The four tables drawn at random and kept (v0.47.11). Their hands, colours and motion are the draw's own; where the
+ * pieces lie was set by hand (v0.47.15), on the same bands as the made tables.
+ */
+const WILD_LAYOUT: Partial<DeckLook>[] = [
+  { supDir: 'row', supX: 0.2, supY: 0.1, catX: 0.5, catY: 0.11, ctlDir: 'row', ctlX: 0.82, ctlY: 0.09 },
+  { tokenTray: true, supDir: 'row', supX: 0.25, supY: 0.88, catX: 0.5, catY: 0.87, ctlDir: 'row', ctlX: 0.82, ctlY: 0.88 },
+  { ctlDir: 'row', ctlX: 0.5, ctlY: 0.92 },
+  { supDir: 'row', supX: 0.2, supY: 0.1, ctlDir: 'row', ctlX: 0.5, ctlY: 0.1, catX: 0.5, catY: 0.88 },
+];
+export const WILD_TABLES = randomTables(4, 47003).map((look, i) => cleanLook({ ...look, ...WILD_LAYOUT[i] }));
 
 const CODE_PREFIX = 'RK1:';
 
