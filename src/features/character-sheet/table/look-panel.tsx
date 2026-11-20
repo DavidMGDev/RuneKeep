@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
-import { BUILTIN_LOOKS, type DeckLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, readTableFile, TABLE_PRESETS, tableFile, wearsHand, WILD_TABLES as WILD_LOOKS, withHand } from './deck-look';
+import { BUILTIN_LOOKS, type DeckLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, readTableFile, STARTING_LOOK, TABLE_PRESETS, tableFile, wearsHand, WILD_TABLES as WILD_LOOKS, withHand } from './deck-look';
 import { loadSavedLooks, type SavedLook, type SavedPiece, saveSavedLooks } from './table-store';
 import { chamferClip, Glyph, T, TButton } from './table-ui';
 import { cue, onSoundsChange, setSoundScheme, soundScheme } from './table-sound';
@@ -327,8 +327,8 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount, pie
         </span>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <TButton label="Clear the table" h={34} disabled={!boardCount && !pieceCount} onPress={() => { cue('table:clear', 'tokenRemove'); onClearTable(); }} />
-          <TButton label="Default layout" h={34} title="Put the rows of pieces back where they start" onPress={() => { cue('ui:tap', 'buttonTap'); const out = { ...look } as Record<string, unknown>; for (const k of PLACE_KEYS) out[k] = DEFAULT_LOOK[k]; onChange(out as unknown as DeckLook); }} />
-          <TButton label="Every setting" h={34} title="Put every setting back as it came" onPress={() => { cue('ui:tap', 'buttonTap'); onChange(DEFAULT_LOOK); }} />
+          <TButton label="Default layout" h={34} title="Put the rows of pieces back where they start" onPress={() => { cue('ui:tap', 'buttonTap'); const out = { ...look } as Record<string, unknown>; for (const k of PLACE_KEYS) out[k] = STARTING_LOOK[k]; onChange(out as unknown as DeckLook); }} />
+          <TButton label="Every setting" h={34} title="Put every setting back as it came" onPress={() => { cue('ui:tap', 'buttonTap'); onChange(STARTING_LOOK); }} />
         </div>
       </div>
     </>

@@ -1,4 +1,4 @@
-import { BUILTIN_LOOKS, readTableFile, tableFile, cardOffset, cleanLook, decodeLook, DEFAULT_LOOK, encodeLook, lookScale, lookX, LOOK_PAGES, randomTables, TABLE_PRESETS, tableScore } from './deck-look';
+import { BUILTIN_LOOKS, readTableFile, tableFile, cardOffset, cleanLook, decodeLook, DEFAULT_LOOK, encodeLook, lookScale, lookX, LOOK_PAGES, randomTables, STARTING_LOOK, TABLE_PRESETS, tableScore } from './deck-look';
 
 describe('deck look', () => {
   it('round-trips a look through a share code', () => {
@@ -44,6 +44,7 @@ describe('deck look', () => {
     expect(cleanLook({}).apart).toEqual({});
     expect(cleanLook({ hidden: ['sort', 'nope', 'cat', 3] }).hidden).toEqual(['sort', 'cat']);
     expect(cleanLook({}).hidden).toEqual([]);
+    expect(cleanLook({ locked: ['cards', 'src:die', 'x'] }).locked).toEqual(['cards', 'src:die']);
   });
 
   it('keeps every built-in look inside the limits', () => {
@@ -54,7 +55,7 @@ describe('deck look', () => {
     const keys = LOOK_PAGES.flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
     expect(new Set(keys).size).toBe(keys.length);
     // `apart` and `hidden` are set on the table itself; `apart` (pieces split off their rows) is placed on the table itself, never a control in the panel.
-    expect(keys.sort()).toEqual(Object.keys(DEFAULT_LOOK).filter((k) => k !== 'apart' && k !== 'hidden').sort());
+    expect(keys.sort()).toEqual(Object.keys(DEFAULT_LOOK).filter((k) => k !== 'apart' && k !== 'hidden' && k !== 'locked').sort());
   });
 
   it('places cards further out monotonically and interpolates between detents', () => {
@@ -83,6 +84,12 @@ describe('deck look', () => {
       expect(tableScore(p.look)).toBeGreaterThanOrEqual(0.99);
       expect(decodeLook(encodeLook(p.look))).toEqual(p.look);
     }
+  });
+
+  it('starts new characters at the Spin Default, with the dice chest', () => {
+    expect(cleanLook(STARTING_LOOK)).toEqual(STARTING_LOOK);
+    expect(STARTING_LOOK).toMatchObject({ arc: 50, loop: true, areaPos: 'middle', diceChest: true, controlDice: 'gilded' });
+    expect(decodeLook(encodeLook(STARTING_LOOK))).toEqual(STARTING_LOOK);
   });
 
   it('draws random tables that score well, differ, and repeat for the same seed', () => {

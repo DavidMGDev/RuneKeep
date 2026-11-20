@@ -56,7 +56,9 @@ const Slot = memo(function Slot({ card, index, hiRes, hovered, taken, look, regi
     return () => register(index, null, null);
   }, [index, register]);
   return (
-    <div ref={outer} data-card-id={card.id} data-slot={index} style={{ position: 'absolute', left: 0, top: 0, width: FORGED_W, height: FORGED_H, cursor: 'pointer', visibility: 'hidden', willChange: 'transform' }}>
+    // A card kept as a layer is drawn once at the size it was and only stretched after: under the pointer, or when every
+    // card is to stay sharp, it is let go of so it is drawn again at the size it is shown (v0.47.17).
+    <div ref={outer} data-card-id={card.id} data-slot={index} style={{ position: 'absolute', left: 0, top: 0, width: FORGED_W, height: FORGED_H, cursor: 'pointer', visibility: 'hidden', willChange: hovered || look.sharp ? 'auto' : 'transform', pointerEvents: 'auto' }}>
       <div
         style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -416,7 +418,8 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       setHover(-1);
       if (lookRef.current.scroll === 'follow' && !lookRef.current.loop) goTo(Math.round(st.current.target));
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
+    const wheelEl = el.parentElement ?? el;
+    wheelEl.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
@@ -424,7 +427,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     el.addEventListener('pointerover', onOver);
     el.addEventListener('pointerleave', onLeave);
     return () => {
-      el.removeEventListener('wheel', onWheel);
+      wheelEl.removeEventListener('wheel', onWheel);
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
@@ -483,7 +486,9 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   }, [kick]);
 
   return (
-    <div ref={root} style={{ position: 'absolute', inset: 0, overflow: 'hidden', perspective: look.turn > 0 ? look.perspective : undefined, touchAction: 'none', userSelect: 'none' }}>
+    // Only the cards themselves take the pointer (owner, v0.47.17: a press beside them scrolled the hand); between them
+    // it is the felt, where a die can be picked up or a box drawn. The wheel still turns the hand anywhere over it.
+    <div ref={root} style={{ position: 'absolute', inset: 0, overflowX: 'clip', overflowY: 'visible', perspective: look.turn > 0 ? look.perspective : undefined, touchAction: 'none', userSelect: 'none', pointerEvents: 'none' }}>
       {look.glow > 0 ? (
         <div style={{ position: 'absolute', pointerEvents: 'none', left: box.w / 2 - glowW / 2, top: glowTop, width: glowW, height: glowH, opacity: look.glow, background: 'radial-gradient(closest-side, rgba(224,181,99,0.55), rgba(200,146,58,0.18) 55%, transparent 96%)' }} />
       ) : null}
@@ -495,7 +500,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
         const card = cards[i];
         if (!card) return null;
         const off = Math.abs(cardOffset(i, center, count, look.loop));
-        return <Slot key={card.id} card={card} index={i} hiRes={off <= hiReach || hover === i} hovered={!takenId && hover === i} taken={card.id === takenId} look={look} register={register} />;
+        return <Slot key={card.id} card={card} index={i} hiRes={look.sharp || off <= hiReach || hover === i} hovered={!takenId && hover === i} taken={card.id === takenId} look={look} register={register} />;
       })}
     </div>
   );

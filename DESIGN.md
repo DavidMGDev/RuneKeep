@@ -221,3 +221,24 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   above the control dice tucks them and the deck die away (the `hidden` list). Saving a preset with dice and tokens
   lying about asks whether to keep them with it (`SavedLook.pieces`). Torn and cut copies leave real scraps
   (`CardScrap`): pushed like any piece, cut again when hit hard, fading once under an eighth of a card.
+- v0.47.17: a new character on this computer (made here, or brought from the phone) and one still at the untouched
+  built-in table sits down at `STARTING_LOOK`, the owner's "Spin Default" (a fanned, looping hand in the middle, gold
+  hopping dice) with the dice chest; a table someone set up is kept. The dice chest is the default and stands apart
+  from the supply row (material, colour, the Many Things deck), placed past its end and moved, hidden or locked on its
+  own. Clicked, it first pushes the loose pieces near it outward, then fans one of every die along an arc laid out by
+  each die's width (a pair side by side); clicking it again within 0.7 s does nothing, it never moves, a taken die is
+  never pinned; scrolled over, it throws out a random die. Shift-click adds a piece to the selection without lifting
+  it. Edit frames have a lock (`DeckLook.locked`): never lifted, never moved, a control die still answers a click. The
+  corner buttons fold into a small chamfered arrow at the top of their column. Cards pass over one another (no card to
+  card collisions). A throw that ends over a card keeps going; only a still hand sets a piece on a card. The hand
+  takes the pointer only on its cards; between them is felt. A box selection takes physical cards too, and they ride
+  along with the die carried (or carry the rest when one of them is). A carried bundle moves rigidly with the hand,
+  its ring slows as the hand speeds up, and every die is thrown with a real tumble. The Selection bar has Modifiers: a
+  panel under it with a flat bonus (-20 to 20), the sheet's variables and the cards' numbers, each showing what it
+  comes to now, the total on the right; it is added to the roll and saved with the preset exactly as a phone preset's
+  modifier (`PRESET_VARS` now lives in lib/dice-presets). Right click a card: Throw on the table, Take a copy, View (a
+  large, sharp read over the dimmed table). Hover zoom never shrinks the hand (it no longer counts in `fitSize`) and a
+  hovered card is drawn again at its size; up to 2.5x; "Sharp cards" keeps every card at full quality. Scraps can be
+  carried by hand and burn. Many Things: the Knight gallops round the walls for 12 s; the Sun holds the loose pieces in
+  orbit for 14 s and flings them; the Void pulls only loose pieces in and its mimic swallows them; on the Moon's ice
+  the drag thins with the friction so things keep sliding.

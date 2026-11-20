@@ -17,6 +17,32 @@ import type { DieType } from '@/features/character-sheet/components/card-tokens-
 import { addDie, type PoolDie } from '@/lib/dice-pool';
 import type { EffectFormula } from '@/lib/modifiers';
 
+/** The variables a preset may carry (shared by the phone's preset editor and the table's Modifiers panel, v0.47.17). `input` is missing on purpose: it belongs to a card, not a roll. */
+export const PRESET_VARS: { key: EffectFormula['variable']; label: string }[] = [
+  { key: 'attackRoll', label: 'Attack Rolls' },
+  { key: 'damageRoll', label: 'Damage Rolls' },
+  { key: 'spellcastRoll', label: 'Spellcast Rolls' },
+  { key: 'proficiency', label: 'Proficiency' },
+  { key: 'level', label: 'Level' },
+  { key: 'tier', label: 'Tier' },
+  { key: 'spellcast', label: 'Spellcast Trait' },
+  { key: 'stress', label: 'Current Stress' },
+  // v0.42.5 (owner): the live vitals, each against the character's OWN maximum rather than a global
+  // one. "Missing" is the headroom, which is what a card that pays off for being hurt wants.
+  { key: 'currentHp', label: 'Current Hit Points' },
+  { key: 'missingHp', label: 'Missing Hit Points' },
+  { key: 'currentHope', label: 'Current Hope' },
+  { key: 'missingHope', label: 'Missing Hope' },
+  { key: 'currentArmor', label: 'Current Armor' },
+  { key: 'missingArmor', label: 'Missing Armor' },
+  { key: 'agility', label: 'Agility' },
+  { key: 'strength', label: 'Strength' },
+  { key: 'finesse', label: 'Finesse' },
+  { key: 'instinct', label: 'Instinct' },
+  { key: 'presence', label: 'Presence' },
+  { key: 'knowledge', label: 'Knowledge' },
+];
+
 /** How many slots the sheet offers. Three, because that is what fits the panel they live in. */
 export const PRESET_SLOTS = 3;
 /** As many dice as one preset may hold. The pool's own layout stops being readable past this. */

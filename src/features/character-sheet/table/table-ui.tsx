@@ -52,7 +52,7 @@ export function TButton({ label, onPress, primary, disabled, icon, title, h = 34
     <button
       type="button"
       title={title ?? label}
-      aria-label={title ?? label}
+      aria-label={label ?? title}
       disabled={disabled}
       onClick={onPress}
       onPointerEnter={() => setHover(true)}

@@ -82,6 +82,8 @@ export interface DeckLook {
   hoverLift: number;
   /** How much a card grows under the pointer. */
   hoverZoom: number;
+  /** Every card drawn at full quality, always (owner, v0.47.17); heavy, so off unless asked for. */
+  sharp: boolean;
   /** A plain click on any card in the hand takes a copy of it out to lay on the table (owner, v0.47.8). */
   clickPull: boolean;
   /** What a click on the centre card does, when clicking does not take cards out. */
@@ -142,6 +144,8 @@ export interface DeckLook {
   apart: Record<string, [number, number]>;
   /** Pieces hidden from play (owner, v0.47.14), by the same keys and 'cat' for the deck die: seen only while editing. */
   hidden: string[];
+  /** Pieces locked where they stand (owner, v0.47.17), by the same keys: never lifted, never moved. */
+  locked: string[];
 }
 
 /** What can be split off a row: the control dice and the supply. */
@@ -151,11 +155,12 @@ export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
-  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: false, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
+  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
   apart: {},
   hidden: [],
+  locked: [],
 };
 
 type NumKey = { [K in keyof DeckLook]: DeckLook[K] extends number ? K : never }[keyof DeckLook];
@@ -254,7 +259,8 @@ export const LOOK_PAGES: LookPage[] = [
           { kind: 'toggle', key: 'clickPull', label: 'Click a card to take it', help: 'On: click any card in the hand to pull a copy out and lay it on the table. Off: a click brings a card to the middle, and right click, Lay a copy on the table, takes one out.' },
           { kind: 'choice', key: 'centreClick', label: 'Click the centre card', help: 'When clicking does not take cards out: what a click on the middle card does. Any other card slides to the middle first.', options: opts(['nothing', 'Nothing'], ['equip', 'Equip']) },
           { kind: 'range', key: 'hoverLift', label: 'Hover lift', help: 'How far a card rises under the pointer.', min: 0, max: 60, step: 1, unit: 'px' },
-          { kind: 'range', key: 'hoverZoom', label: 'Hover zoom', help: 'How much a card grows under the pointer.', min: 1, max: 1.5, step: 0.01 },
+          { kind: 'range', key: 'hoverZoom', label: 'Hover zoom', help: 'How much a card grows under the pointer.', min: 1, max: 2.5, step: 0.01 },
+          { kind: 'toggle', key: 'sharp', label: 'Sharp cards', help: 'Every card at full quality all the time, so it reads well at any size. Heavy on slower computers: the hand can stutter.' },
         ],
       },
     ],
@@ -309,7 +315,7 @@ export const LOOK_PAGES: LookPage[] = [
 ];
 
 /** The settings that say where the pieces live: a table preset sets them, Reset layout puts them back. */
-export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY', 'areaY', 'apart', 'hidden'] as const;
+export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY', 'areaY', 'apart', 'hidden', 'locked'] as const;
 
 /** Settings that shape the hand; a ready-made look changes only these, never your table. */
 export const HAND_KEYS: (keyof DeckLook)[] = LOOK_PAGES.filter((p) => p.id === 'hand').flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
@@ -488,6 +494,8 @@ export function cleanLook(raw: unknown): DeckLook {
   out.apart = apart;
   const hid = Array.isArray(src.hidden) ? src.hidden : [];
   out.hidden = [...APART_KEYS, 'cat'].filter((k) => hid.includes(k));
+  const lk = Array.isArray(src.locked) ? src.locked : [];
+  out.locked = [...APART_KEYS, 'cat'].filter((k) => lk.includes(k));
   return out;
 }
 
@@ -549,6 +557,19 @@ const WILD_LAYOUT: Partial<DeckLook>[] = [
   { supDir: 'row', supX: 0.2, supY: 0.1, ctlDir: 'row', ctlX: 0.5, ctlY: 0.1, catX: 0.5, catY: 0.88 },
 ];
 export const WILD_TABLES = randomTables(4, 47003).map((look, i) => cleanLook({ ...look, ...WILD_LAYOUT[i] }));
+
+/**
+ * The table a character sits down at the first time on this computer (owner, v0.47.17: "Spin Default", from their own
+ * .rune file, with the dice chest the owner made the default since): a fanned hand looping in the middle of the felt,
+ * gold dice that hop, the supply top left and the controls top right. Codes and files still count from DEFAULT_LOOK.
+ */
+export const STARTING_LOOK: DeckLook = cleanLook({
+  ...DEFAULT_LOOK,
+  size: 216, centre: 4, side: 9, spacing: -0.4, pack: 0.16, arc: 50, rowY: 0.57, shrink: 0.055, edge: 'none', dim: 0.06,
+  loop: true, diceChest: true, hoverLift: 34, hoverZoom: 1.1, switchFx: 'deal',
+  areaMode: 'free', areaPos: 'middle', areaSize: 52, divider: 'none', walls: 'brass', controlDice: 'gilded', ctlMotion: 'hop',
+  ctlX: 0.897, ctlY: 0.073, ctlDir: 'row', supX: 0.13, supY: 0.081, supDir: 'row', catX: 0.935, catY: 0.568, areaY: 0.75,
+});
 
 const CODE_PREFIX = 'RK1:';
 
@@ -619,13 +640,14 @@ function fromBase64Url(code: string): string {
 // ---------------------------------------------------------------- layout maths (read by the carousel each frame)
 
 /**
- * The centre card's width for a hand area `areaH` px tall: the look's size, or less when the card (lifted and
- * zoomed under the pointer) would not fit, so a big spotlight card is never cropped by its area (owner, v0.47.7).
+ * The centre card's width for a hand area `areaH` px tall: the look's size, or less when the card would not fit its
+ * area (owner, v0.47.7). The hover zoom no longer counts (v0.47.17: a bigger zoom shrank every card, so the zoom seemed
+ * to make cards smaller): a card under the pointer may grow out over the top of its area.
  */
 export function fitSize(l: DeckLook, areaH: number): number {
   if (areaH <= 0) return l.size;
-  const room = areaH - 28 - Math.max(0, l.lift) - l.hoverLift;
-  return Math.max(60, Math.min(l.size, (room / l.hoverZoom) * (750 / 1050)));
+  const room = areaH - 28 - Math.max(0, l.lift);
+  return Math.max(60, Math.min(l.size, room * (750 / 1050)));
 }
 
 /** Steps a card `k` places from the centre stands past the spotlight (0 inside it). */

@@ -25,7 +25,7 @@ import { showToast } from '@/components/toast';
 import { Body, Display, Rune } from '@/constants/theme';
 import { box } from '@/lib/design';
 import { fitText } from '@/lib/fit-text';
-import { addFunctionKey, addVariable, type DicePreset, diceSummary, hasModifier, modifierFunctionKeys, modifierVariables, type PresetModifier, PRESET_SLOTS, presetInitial, removeFunctionKey, removeVariable } from '@/lib/dice-presets';
+import { addFunctionKey, addVariable, type DicePreset, diceSummary, hasModifier, modifierFunctionKeys, modifierVariables, PRESET_SLOTS, PRESET_VARS, presetInitial, type PresetModifier, removeFunctionKey, removeVariable } from '@/lib/dice-presets';
 import type { FunctionVar } from '@/lib/function-vars';
 import type { EffectFormula } from '@/lib/modifiers';
 import { DimScreen } from '@/lib/screen-dim';
@@ -51,31 +51,6 @@ const NAME_H = 27;
 const NAME_CHAR_RATIO = 0.68;
 const GOLD = Rune.goldEdge;
 
-/** The variables a preset may carry. `input` is missing on purpose: it belongs to a card, not a roll. */
-const PRESET_VARS: { key: EffectFormula['variable']; label: string }[] = [
-  { key: 'attackRoll', label: 'Attack Rolls' },
-  { key: 'damageRoll', label: 'Damage Rolls' },
-  { key: 'spellcastRoll', label: 'Spellcast Rolls' },
-  { key: 'proficiency', label: 'Proficiency' },
-  { key: 'level', label: 'Level' },
-  { key: 'tier', label: 'Tier' },
-  { key: 'spellcast', label: 'Spellcast Trait' },
-  { key: 'stress', label: 'Current Stress' },
-  // v0.42.5 (owner): the live vitals, each against the character's OWN maximum rather than a global
-  // one. "Missing" is the headroom, which is what a card that pays off for being hurt wants.
-  { key: 'currentHp', label: 'Current Hit Points' },
-  { key: 'missingHp', label: 'Missing Hit Points' },
-  { key: 'currentHope', label: 'Current Hope' },
-  { key: 'missingHope', label: 'Missing Hope' },
-  { key: 'currentArmor', label: 'Current Armor' },
-  { key: 'missingArmor', label: 'Missing Armor' },
-  { key: 'agility', label: 'Agility' },
-  { key: 'strength', label: 'Strength' },
-  { key: 'finesse', label: 'Finesse' },
-  { key: 'instinct', label: 'Instinct' },
-  { key: 'presence', label: 'Presence' },
-  { key: 'knowledge', label: 'Knowledge' },
-];
 const varLabel = (v: EffectFormula['variable'] | undefined) => PRESET_VARS.find((p) => p.key === v)?.label;
 
 /**

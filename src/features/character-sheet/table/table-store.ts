@@ -3,7 +3,7 @@
  * dice were left, and the cards laid out on the felt for each character. Device furniture, not character data,
  * so none of it goes in the .rune file. Every read survives a missing or broken value.
  */
-import { cleanLook, type DeckLook } from './deck-look';
+import { cleanLook, type DeckLook, DEFAULT_LOOK, encodeLook, STARTING_LOOK } from './deck-look';
 
 const LOOK = 'runekeep.table.look';
 const SAVED = 'runekeep.table.looks';
@@ -23,12 +23,15 @@ function write(key: string, value: unknown): void {
 }
 
 /**
- * Each character keeps the table they last played at (owner, v0.47.11). One with none yet starts from the table last
- * used by anyone, which is also kept, so a new character sits down at a familiar table.
+ * Each character keeps the table they last played at (owner, v0.47.11). One with none yet on this computer (new here, or
+ * brought over from the phone) starts at STARTING_LOOK, and so does one still at the untouched built-in table, which no
+ * one chose (owner, v0.47.17). A table someone set up is never replaced.
  */
 export const loadLook = (characterId?: string): DeckLook => {
-  const own = characterId ? read<unknown>(LOOK + '.' + characterId, null) : null;
-  return cleanLook(own ?? read(LOOK, {}));
+  const own = characterId ? read<unknown>(LOOK + '.' + characterId, null) : read<unknown>(LOOK, null);
+  if (!own) return STARTING_LOOK;
+  const l = cleanLook(own);
+  return encodeLook(l) === encodeLook(DEFAULT_LOOK) ? STARTING_LOOK : l;
 };
 export const saveLook = (l: DeckLook, characterId?: string): void => {
   if (characterId) write(LOOK + '.' + characterId, l);

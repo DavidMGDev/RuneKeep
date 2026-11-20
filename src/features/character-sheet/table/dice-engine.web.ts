@@ -152,6 +152,8 @@ export interface DiceEngine {
   /** A card being dragged by hand (a physical one is knocked by nothing while held), and let go with its speed. */
   holdCard(key: string, x: number, y: number, rot: number): void;
   releaseCard(key: string): void;
+  /** A card carried by hand takes these pieces with it, where they lie against it, until it is let go (v0.47.17). */
+  carryWith(key: string, others: string[]): void;
   /** Throw a physical card (one just thrown onto the table): false while its body does not exist yet. */
   throwCard(key: string, vx: number, vy: number, va: number): boolean;
   /** Physical cards that moved this frame, and those that came to rest (to keep). */
@@ -420,7 +422,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { d: Die; dx: number; dy: number; orbit?: number }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -462,6 +464,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   const broke: Impact[] = [];
   /** Burning throws that have had their impact frame already. */
   const brokeOnce = new Set<string>();
+  /** The selection a card carried by hand takes with it. */
+  let cardCarry: { lead: string; others: { b: Body; dx: number; dy: number }[] } | null = null;
   let freezeUntil = 0;
   let restCb: (keys: string[]) => void = () => {};
 
@@ -792,18 +796,35 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     return [x, y];
   }
 
+  /** Where the hand's piece was last frame, the ring's turn, and when it last turned (for the carried bundle). */
+  let tetherPrev: { body: Body; x: number; y: number; t: number } | null = null;
+  let orbitA = 0;
   /** The held piece's partners glide along with it (Hope and Fear, owner v0.47.11; a carried selection, v0.47.12). */
   function followTether() {
     const list = held?.die.tether;
-    if (!held || !list) return;
+    if (!held || !list) { tetherPrev = null; return; }
     const hb = held.die.body;
+    // First the whole bundle moves with the hand, rigidly, so a fast swing never leaves it behind in a pile (owner,
+    // v0.47.17); then each eases onto its place on the ring.
+    const now = performance.now();
+    const prev = tetherPrev?.body === hb ? tetherPrev : null;
+    const mx = prev ? hb.x - prev.x : 0, my = prev ? hb.y - prev.y : 0;
+    const dt = prev ? Math.min(0.05, (now - prev.t) / 1000) : 0;
+    tetherPrev = { body: hb, x: hb.x, y: hb.y, t: now };
+    // The ring turns while the hand is slow and stops as it speeds up to throw.
+    const hand = dt > 0 ? Math.hypot(mx, my) / dt : 0;
+    orbitA += dt * 3 * (1 - Math.min(1, hand / 1200));
+    // Dice circle the hand; cards carried along keep where they lay against it.
+    const circling = list.filter((t) => t.orbit !== undefined);
     // The ring: wide enough for the bundle to sit shoulder to shoulder, turning about one and a half times a second.
-    const n = list.length;
-    const big = Math.max(...list.map((t) => t.d.body.r));
+    const n = Math.max(1, circling.length);
+    const big = Math.max(0, ...circling.map((t) => t.b.r));
     const ring = Math.max(hb.r + big + 6, (n * (2 * big + 4)) / (2 * Math.PI));
-    const spin = (performance.now() / 1000) * 3;
+    const spin = orbitA;
     for (const t of list) {
-      const pb = t.d.body;
+      const pb = t.b;
+      pb.x += mx;
+      pb.y += my;
       const ox = t.orbit === undefined ? t.dx : Math.cos(spin + (t.orbit / n) * Math.PI * 2) * ring;
       const oy = t.orbit === undefined ? t.dy : Math.sin(spin + (t.orbit / n) * Math.PI * 2) * ring;
       const [tx, ty] = caged(pb, Math.min(bounds.right - pb.r, Math.max(bounds.left + pb.r, hb.x + ox)), Math.min(bounds.bottom - pb.r, Math.max(bounds.top + pb.r, hb.y + oy)));
@@ -1034,9 +1055,12 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       // The partner goes with it, thrown the same way, then each rolls on its own.
       if (die.tether) {
         for (const t of die.tether) {
-          const pb = t.d.body;
+          const pb = t.b;
           pb.held = false;
-          launch(pb, vx * (0.92 + Math.random() * 0.12), vy * (0.92 + Math.random() * 0.12), 0, [(Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * speed * 0.02, (Math.random() - 0.5) * 8]);
+          const pvx = vx * (0.92 + Math.random() * 0.12), pvy = vy * (0.92 + Math.random() * 0.12);
+          if (pb.box) { pb.vx = pvx; pb.vy = pvy; pb.va = (Math.random() - 0.5) * 4; pb.asleep = false; continue; }
+          // Each rolls as the hand's own die does (owner, v0.47.17: they slid out unturned, so their faces were not fair).
+          launch(pb, pvx, pvy, 0, [pvy / pb.r + (Math.random() - 0.5) * speed * 0.01, pvx / pb.r + (Math.random() - 0.5) * speed * 0.01, (Math.random() - 0.5) * speed * 0.006]);
         }
         die.tether = null;
       }
@@ -1056,7 +1080,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         return;
       }
       if (!d) return;
-      if (d.tether) { for (const t of d.tether) t.d.body.held = false; d.tether = null; }
+      if (d.tether) { for (const t of d.tether) t.b.held = false; d.tether = null; }
       d.jitter = 0;
       const sp = Math.hypot(vx, vy);
       const k = 0.012 * sp + 8;
@@ -1079,17 +1103,20 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     tether(key, partner) {
       const d = dice.get(key);
       if (!d) return;
-      if (d.tether) for (const t of d.tether) t.d.body.held = false;
+      if (d.tether) for (const t of d.tether) t.b.held = false;
       d.tether = null;
-      const list = (Array.isArray(partner) ? partner : partner ? [partner] : []).map((k) => dice.get(k)).filter((p): p is Die => !!p && p !== d);
+      // Dice, and physical cards in a carried selection (owner, v0.47.17).
+      const list = (Array.isArray(partner) ? partner : partner ? [partner] : []).map((k) => dice.get(k)?.body ?? cards.get(k)?.body ?? null).filter((p): p is Body => !!p && p !== d.body && !p.broken);
       if (!list.length) return;
+      let n = 0;
       d.tether = list.map((p) => {
-        // One partner stands beside it, close enough to touch; a carried group keeps the shape it lay in.
-        if (!Array.isArray(partner)) { const side = p.body.x >= d.body.x ? 1 : -1; return { d: p, dx: side * (d.body.r + p.body.r + 4), dy: 0 }; }
-        // A carried selection bundles up round the hand and circles it (owner, v0.47.16): each its own place on the ring.
-        return { d: p, dx: 0, dy: 0, orbit: list.indexOf(p) };
+        // One partner stands beside it, close enough to touch.
+        if (!Array.isArray(partner)) { const side = p.x >= d.body.x ? 1 : -1; return { b: p, dx: side * (d.body.r + p.r + 4), dy: 0 }; }
+        // A carried card keeps where it lay against the hand; carried dice bundle round it and circle it (v0.47.16).
+        if (p.box) return { b: p, dx: p.x - d.body.x, dy: p.y - d.body.y };
+        return { b: p, dx: 0, dy: 0, orbit: n++ };
       });
-      for (const p of list) { p.body.held = true; p.body.asleep = false; p.body.settle = undefined; p.body.home = undefined; }
+      for (const p of list) { p.held = true; p.asleep = false; p.settle = undefined; p.home = undefined; }
       wake();
     },
     rollInPlace(key) {
@@ -1145,7 +1172,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       wake();
     },
     inside(r) {
-      return order.filter((d) => d.body.x >= r.left && d.body.x <= r.right && d.body.y >= r.top && d.body.y <= r.bottom).map((d) => d.spec.key);
+      const inR = (b: Body) => b.x >= r.left && b.x <= r.right && b.y >= r.top && b.y <= r.bottom;
+      return [...order.filter((d) => inR(d.body)).map((d) => d.spec.key), ...[...cards].filter(([, c]) => c.body && !c.body.broken && inR(c.body)).map(([k]) => k)];
     },
     jitter(key, amount) {
       const d = dice.get(key);
@@ -1235,6 +1263,12 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const now = performance.now();
       c.samples.push({ x, y, t: now });
       while (c.samples.length > 2 && now - c.samples[0].t > 90) c.samples.shift();
+      if (cardCarry?.lead === key) {
+        for (const o of cardCarry.others) {
+          o.b.x = Math.min(bounds.right - o.b.r * 0.5, Math.max(bounds.left + o.b.r * 0.5, x + o.dx));
+          o.b.y = Math.min(bounds.bottom - o.b.r * 0.5, Math.max(bounds.top + o.b.r * 0.5, y + o.dy));
+        }
+      }
       if (c.body) {
         const b = c.body;
         const s0 = c.samples[0];
@@ -1249,9 +1283,27 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       placeAnchored();
       wake();
     },
+    carryWith(key, others) {
+      if (cardCarry?.lead === key) return;
+      const c = cards.get(key);
+      if (!c) return;
+      const list = others.map((k) => dice.get(k)?.body ?? cards.get(k)?.body ?? null).filter((b): b is Body => !!b && b !== c.body && !b.broken);
+      for (const b of list) { b.held = true; b.asleep = false; b.settle = undefined; b.home = undefined; }
+      cardCarry = { lead: key, others: list.map((b) => ({ b, dx: b.x - c.x, dy: b.y - c.y })) };
+    },
     releaseCard(key) {
       const c = cards.get(key);
       if (!c) return;
+      // What it carried goes the way it was let go.
+      const carried = cardCarry?.lead === key ? cardCarry.others : [];
+      cardCarry = null;
+      const sa = c.samples[0], sz = c.samples[c.samples.length - 1];
+      const cdt = sa && sz && sz.t > sa.t ? Math.max(0.016, (sz.t - sa.t) / 1000) : 0;
+      for (const o of carried) {
+        o.b.held = false;
+        o.b.asleep = false;
+        if (cdt) { o.b.vx = Math.max(-3600, Math.min(3600, (sz.x - sa.x) / cdt)); o.b.vy = Math.max(-3600, Math.min(3600, (sz.y - sa.y) / cdt)); }
+      }
       const samples = c.samples;
       c.samples = [];
       if (!c.body) return;

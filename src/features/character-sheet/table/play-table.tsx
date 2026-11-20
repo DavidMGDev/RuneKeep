@@ -14,6 +14,7 @@
  * flat, the table stands them up in 3D, from the same list.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { burn, type Flames } from '@/lib/flames';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
@@ -23,7 +24,8 @@ import { catalogIdOf } from '@/features/cards/card-effects';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
 import type { CharacterFile } from '@/lib/character-file';
 import { addDie, dualityVerdict, type PoolDie, poolTotal } from '@/lib/dice-pool';
-import type { DicePreset } from '@/lib/dice-presets';
+import { addFunctionKey, addVariable, type DicePreset, hasModifier, modifierFunctionKeys, modifierVariables, PRESET_VARS, type PresetModifier, removeFunctionKey, removeVariable } from '@/lib/dice-presets';
+import type { FunctionVar } from '@/lib/function-vars';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
 import { shouldShow } from '@/lib/onboarding-store';
 import type { CardCategory, CardItem } from '../card-data';
@@ -50,7 +52,7 @@ import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 import { cue } from './table-sound';
 
 /** The sheet's dice state and its handle to the table (the traits and the presets roll through it). */
-export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> };
+export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> & { /** What a modifier comes to for this character now (v0.47.17). */ resolve?: (mod?: PresetModifier) => number } };
 export type TablePanel = 'modifiers' | 'cards' | 'newCategory';
 
 const NO_CARDS: CardItem[] = [];
@@ -607,6 +609,17 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   };
   const [selection, setSelection] = useState<string[]>([]);
   /**
+   * The selection's modifier (owner, v0.47.17): the same flat number, sheet variables and card elements a phone preset
+   * carries, set in the Modifiers panel under the bar. It is added to the selection's roll and saved with its preset.
+   */
+  const [selMod, setSelMod] = useState<PresetModifier | null>(null);
+  const selModRef = useRef(selMod);
+  selModRef.current = selMod;
+  /** A card being read large (owner, v0.47.17). */
+  const [viewing, setViewing] = useState<string | null>(null);
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  /**
    * The selection bar sits at the top of the open table and the roll's plaque under it, as wide as it (owner,
    * v0.47.13: they covered each other; the longer bar on top, the result below with room between), and the Many
    * Things row under whichever is lowest.
@@ -632,7 +645,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const [drawn, setDrawn] = useState<{ uid: string; card: DomatCard; x: number; y: number; from: { x: number; y: number }; snap: Map<string, { x: number; y: number }>; held?: boolean }[]>([]);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const [fx, setFx] = useState<Fx[]>([]);
-  const [shattering, setShattering] = useState<{ uid: string; card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; fxOnly?: boolean }[]>([]);
+  const [shattering, setShattering] = useState<{ uid: string; card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; fxOnly?: boolean; clip?: Pt[] }[]>([]);
   const fxSeq = useRef(0);
   const addFx = useCallback((f: Omit<Fx, 'id'>) => {
     const id = ++fxSeq.current;
@@ -738,15 +751,22 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     livePoses.delete(uid);
     const x = p?.x ?? sc.x, y = p?.y ?? sc.y, rot = p?.rot ?? sc.rot;
     const sh = scrapShape(sc.poly);
-    if (sh.share < 0.13 || mode === 'burn' || mode === 'explode') {
+    const h = (sc.w * FORGED_H) / FORGED_W, a = (rot * Math.PI) / 180;
+    const lx = ((sh.x0 + sh.x1) / 200 - 0.5) * sc.w, ly = ((sh.y0 + sh.y1) / 200 - 0.5) * h;
+    // Where the whole card's middle would be, so it is burnt or cut as a part of the card it was.
+    const cx = x - (lx * Math.cos(a) - ly * Math.sin(a)), cy = y - (lx * Math.sin(a) + ly * Math.cos(a));
+    // Fire burns it away, from where it was struck, as it burns a card (owner, v0.47.17).
+    if (mode === 'burn') {
+      const card = lookup(sc.id);
+      setScraps(scrapsRef.current.filter((c) => c.uid !== uid));
+      if (card) setShattering((l) => [...l, { uid, card, cx, cy, w: sc.w, rot, mode: 'burn', dir, clip: sc.poly }]);
+      return;
+    }
+    if (sh.share < 0.13 || mode === 'explode') {
       setScraps(scrapsRef.current.map((c) => (c.uid === uid ? { ...c, x, y, rot, fading: true } : c)));
       setTimeout(() => setScraps(scrapsRef.current.filter((c) => c.uid !== uid)), 470);
       return;
     }
-    // Back to where the whole card's middle would be, so the halves are cut from it as from a card.
-    const h = (sc.w * FORGED_H) / FORGED_W, a = (rot * Math.PI) / 180;
-    const lx = ((sh.x0 + sh.x1) / 200 - 0.5) * sc.w, ly = ((sh.y0 + sh.y1) / 200 - 0.5) * h;
-    const cx = x - (lx * Math.cos(a) - ly * Math.sin(a)), cy = y - (lx * Math.sin(a) + ly * Math.cos(a));
     const ld = localDir(dir, rot);
     const d: Pt = [(ld[0] * 100) / sc.w, (ld[1] * 100) / h];
     setScraps(scrapsRef.current.filter((c) => c.uid !== uid));
@@ -933,14 +953,40 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const again = ({ elements: 'elements', petrify: 'petrify', lock: 'lock', tiny: 'tiny', contrary: 'contrary', follow: 'follow', seesaw: 'seesaw', moon: 'moon' } as Partial<Record<DomatCard['effect'], string>>)[card.effect];
     if (again && undo.current.has(again)) endLasting(again);
     switch (card.effect) {
-      case 'gust':
-        addFx({ kind: 'flash', x, y, r: 0, ms: 1100, tint });
-        addFx({ kind: 'ring', x, y, r: diag, ms: 1100, tint: '#fff6d0' });
-        addFx({ kind: 'ring', x, y, r: diag * 0.6, ms: 800, tint });
-        eng.impulse(x, y, diag * 1.2, 7000, CHAIN);
-        jolt(1.6);
-        cue('domat:gust', 'gainGoldenHp', { volume: 0.9, cents: -300 });
+      case 'gust': {
+        // A sun rises where the card fell (owner, v0.47.17: "incredibly dumb" as a plain gust): for fourteen seconds every
+        // loose piece is caught in orbit round it, near ones fast and far ones slow, then the sun flares and flings them all.
+        const sun = { x: clampX(x), y: clampY(y) };
+        addFx({ kind: 'flash', x: sun.x, y: sun.y, r: 0, ms: 900, tint });
+        cue('domat:wish', 'gainHope', { volume: 0.9 });
+        const glow = setInterval(() => { addFx({ kind: 'fire', x: sun.x, y: sun.y, r: 110, ms: 1100 }); addFx({ kind: 'ring', x: sun.x, y: sun.y, r: 150, ms: 1000, tint }); }, 900);
+        // Each piece keeps a lane: its own radius, kept between 110 and 420 px.
+        const lane = new Map<string, number>();
+        const orbit = setInterval(() => {
+          for (const k of looseKeys()) {
+            const s = eng.state(k);
+            if (!s) continue;
+            const dx = s.x - sun.x, dy = s.y - sun.y, d = Math.hypot(dx, dy) || 1;
+            if (!lane.has(k)) lane.set(k, Math.min(420, Math.max(110, d * 0.6)));
+            const want = lane.get(k)!;
+            const tangential = 260 + 140000 / Math.max(want, 110);
+            const radial = (want - d) * 4;
+            eng.toss(k, (-dy / d) * tangential + (dx / d) * radial, (dx / d) * tangential + (dy / d) * radial);
+          }
+        }, 70);
+        timers.current.push(glow, orbit);
+        const flare = () => {
+          clearInterval(glow);
+          clearInterval(orbit);
+          addFx({ kind: 'flash', x: sun.x, y: sun.y, r: 0, ms: 1100, tint });
+          addFx({ kind: 'ring', x: sun.x, y: sun.y, r: diag, ms: 1100, tint: '#fff6d0' });
+          eng.impulse(sun.x, sun.y, diag, 5200, CHAIN);
+          jolt(1.2);
+          cue('domat:gust', 'gainGoldenHp', { volume: 0.9, cents: -300 });
+        };
+        addLasting(`sun:${uid}`, 'Sun: everything in orbit', tint, 14000, flare);
         break;
+      }
       case 'wish': {
         // Every die shows its best, and it counts.
         addFx({ kind: 'spark', x, y, r: 520, ms: 1100, tint });
@@ -981,15 +1027,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         cue('domat:comet', 'cardDisable', { volume: 1, cents: -700 });
         break;
       case 'mimic': {
-        // A whirlpool, then a mimic where it was: it swallows what the water brought and stays, breathing.
+        // A whirlpool that really pulls (owner, v0.47.17: nothing reached it): everything loose on the table is dragged
+        // in, spinning, and what reaches the middle is swallowed by a mimic that stays, breathing, until right clicked.
         addFx({ kind: 'vortex', x, y, r: 520, ms: 2800, tint });
-        eng.field({ kind: 'vortex', x, y, r: diag * 0.8, k: 9000 }, 2600);
+        // Only the loose pieces are drawn in: the controls, the supply and the cards stay where they are.
+        const prey = new Set(looseKeys());
+        eng.field({ kind: 'radial', x, y, r: diag, k: -9500, only: prey }, 2400);
+        eng.field({ kind: 'vortex', x, y, r: diag * 0.6, k: 5200, only: prey }, 2400);
         cue('domat:mimic', 'floatMenuOpen', { volume: 0.9, cents: -900 });
         later(() => {
           const key = `fx:mimic:${uid}`;
           eng.add(chestSpec(key), x, y, { pop: true });
           eng.mimic(key, 1);
-          const swallowed = near(looseKeys(), 300);
+          const swallowed = near(looseKeys(), 460);
           const pieces: LoosePiece[] = [];
           for (const base of new Set(swallowed.map(baseOf))) {
             const t = tokenOfBase(base);
@@ -998,10 +1048,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           swallowed.forEach((k, i) => eng.vanish(k, x, y, i * 40));
           later(() => { for (const k of swallowed) eng.remove(k); dropLoose(swallowed); eng.mimic(key, 0); }, swallowed.length * 40 + 650);
           setMimics((m) => [...m, { key, x, y, pieces }]);
-          addFx({ kind: 'implode', x, y, r: 200, ms: 700, tint });
+          addFx({ kind: 'implode', x, y, r: 260, ms: 700, tint });
           jolt(0.8);
           cue('mimic:swallow', 'cardDragEnd', { volume: 1, cents: -900 });
-        }, 2600);
+        }, 2500);
         break;
       }
       case 'blackhole':
@@ -1102,27 +1152,35 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         break;
       }
       case 'knight': {
-        // A knight gallops from the card to the far wall, knocking everything in its path aside.
+        // A knight gallops round the table for twelve seconds (owner, v0.47.17): it bounces off every wall at a wild new
+        // angle, pulsing, clanging, knocking aside whatever is in its way.
         const key = `fx:knight:${uid}`;
-        const dir = x < (play.left + play.right) / 2 ? 1 : -1;
-        eng.add({ key, shape: 'chip', size: 96, body: '#aeb6bf', edge: '#e6ebef', ink: '#141920', faces: [{ text: '♞' }], finish: 'metal', upright: true }, clampX(x), clampY(y), { pop: true });
-        // Its run ends at the far wall, or once it has had time to get there (it never stands hammering the rail).
-        const ends = performance.now() + ((dir > 0 ? play.right - x : x - play.left) / 2900) * 1000 + 200;
+        eng.add({ key, shape: 'chip', size: 96, body: '#aeb6bf', edge: '#e6ebef', ink: '#141920', faces: [{ text: '\u265e' }], finish: 'metal', upright: true }, clampX(x), clampY(y), { pop: true });
+        let ang = Math.random() * Math.PI * 2;
+        const SPEED = 2300;
+        let lastPulse = 0;
         const run = setInterval(() => {
           const s = eng.state(key);
           if (!s) { clearInterval(run); return; }
-          if (performance.now() > ends || (dir > 0 && s.x > play.right - 110) || (dir < 0 && s.x < play.left + 110)) {
-            clearInterval(run);
-            addFx({ kind: 'smoke', x: s.x, y: s.y, r: 140, ms: 800 });
-            eng.shatter(key);
-            jolt(0.8);
-            return;
+          let vx = Math.cos(ang), vy = Math.sin(ang);
+          const m = 70;
+          const hitX = (s.x < play.left + m && vx < 0) || (s.x > play.right - m && vx > 0);
+          const hitY = (s.y < play.top + m && vy < 0) || (s.y > play.bottom - m && vy > 0);
+          if (hitX || hitY) {
+            if (hitX) vx = -vx;
+            if (hitY) vy = -vy;
+            ang = Math.atan2(vy, vx) + (Math.random() - 0.5) * 1.1;
+            addFx({ kind: 'impact', x: s.x, y: s.y, r: 120, ms: 420, tint });
+            jolt(0.45);
+            cue('knight:bounce', 'cardDragEnd', { volume: 0.9, cents: -300 });
           }
-          eng.toss(key, dir * 2900, (y - s.y) * 3, { gen: 4, power: 3 });
-          addFx({ kind: 'ring', x: s.x, y: s.y, r: 90, ms: 380, tint });
-        }, 90);
+          eng.toss(key, Math.cos(ang) * SPEED, Math.sin(ang) * SPEED, { gen: 3, power: 2.4 });
+          const now = performance.now();
+          if (now - lastPulse > 380) { lastPulse = now; addFx({ kind: 'ring', x: s.x, y: s.y, r: 110, ms: 420, tint }); }
+        }, 60);
         timers.current.push(run);
-        later(() => { clearInterval(run); if (eng.has(key)) eng.shatter(key); }, 4000);
+        const stop = () => { clearInterval(run); const s = eng.state(key); if (s) addFx({ kind: 'smoke', x: s.x, y: s.y, r: 140, ms: 800 }); if (eng.has(key)) eng.shatter(key); };
+        addLasting(`knight:${uid}`, 'Knight: on the charge', tint, 12000, stop);
         cue('domat:knight', 'cardDragEnd', { volume: 1, cents: -200 });
         break;
       }
@@ -1304,8 +1362,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   /** Selected dice carried and thrown together landed: the result, as a roll's. */
   const onGroupRolled = useCallback((landed: PoolDie[]) => {
     rollSound(landed);
-    setResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: null, mod: 0 });
-  }, []);
+    const { mod, label } = modNow();
+    setResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- modNow reads refs and the stable resolver
   /**
    * A physical card moved: drawn there straight away, and kept (from where physics says it is, never read back from
    * the page) once it stops. Until then `livePoses` is where it is drawn from, so nothing re-renders it back to where
@@ -1347,10 +1406,17 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (overlay) host.setAttribute('inert', ''); else host.removeAttribute('inert');
     return () => host.removeAttribute('inert');
   }, [overlay, desktop?.tableHost]);
-  const clearSelection = useCallback(() => { diceRef.current?.select([]); setSelection([]); }, []);
+  const clearSelection = useCallback(() => { diceRef.current?.select([]); setSelection([]); setSelMod(null); }, []);
+  /** What the selection's modifier comes to now, and its name on the result. */
+  const modNow = () => {
+    const m = selModRef.current;
+    if (!m || !hasModifier(m)) return { mod: 0, label: null };
+    return { mod: dice.presets.resolve?.(m) ?? m.value, label: modName(m, dice.presets.cardVars ?? []) };
+  };
   const escRef = useRef<() => boolean>(() => false);
   escRef.current = () => {
     if (result) { setResult(null); return true; }
+    if (viewing) { cue('ui:close', 'cardFullscreenLeave'); setViewing(null); return true; }
     if (menu) { cue('ui:close', 'floatMenuClose'); setMenu(null); return true; }
     if (tableMenu) { cue('ui:close', 'floatMenuClose'); setTableMenu(null); return true; }
     if (copy) { cue('card:cancel', 'cardDeselect', { volume: 0.6 }); setCopy(null); return true; }
@@ -1443,6 +1509,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const barOn = selection.length > 0 && barBox.h > 0;
   const plaqueTop = barOn ? openTop + 12 + barBox.h + 14 : 12;
   const lastingTop = result && plaqueH ? Math.max(openTop + 12, plaqueTop + plaqueH + 12) : barOn ? openTop + 12 + barBox.h + 12 : openTop + 12;
+  /** The corner buttons folded away (owner, v0.47.17), remembered in this browser. */
+  const [tucked, setTuckedState] = useState(() => { try { return localStorage.getItem('runekeep.table.cornerTucked') === '1'; } catch { return false; } });
+  const setTucked = (v: boolean) => { setTuckedState(v); try { localStorage.setItem('runekeep.table.cornerTucked', v ? '1' : '0'); } catch { /* private window */ } };
   if (!desktop || !port) return null;
   const middle = Math.floor((deck.length - 1) / 2);
   // The first-time hint, only while the sheet's tips are still being shown (owner: not whenever the table is empty).
@@ -1624,8 +1693,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               onDragTo={(uid, x, y, rot, end) => {
                 const eng = diceRef.current?.engine();
                 if (!eng) return;
-                if (end) eng.releaseCard(`card:${uid}`);
-                else eng.holdCard(`card:${uid}`, x, y, rot);
+                if (end) { eng.releaseCard(`card:${uid}`); return; }
+                // A selected card carries the rest of the selection with it (owner, v0.47.17).
+                const key = `card:${uid}`;
+                if (selectionRef.current.includes(key)) eng.carryWith(key, selectionRef.current.filter((k) => k !== key));
+                eng.holdCard(key, x, y, rot);
               }}
               overTray={spread ? () => false : overHand}
               onMenu={(uid, x, y) => {
@@ -1637,8 +1709,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               }}
             />
           </div>
-          {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} fxOnly={s.fxOnly} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
-          {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} /> : null; })}
+          {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} fxOnly={s.fxOnly} clip={s.clip} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
+          {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} onDrag={(u, px, py, r, end) => { const eng = diceRef.current?.engine(); if (!eng) return; if (end) eng.releaseCard(`card:${u}`); else eng.holdCard(`card:${u}`, px, py, r); }} /> : null; })}
+          {/* Cards in the selection (owner, v0.47.17): ringed in gold, like the dice. */}
+          {selection.some((k) => k.startsWith('card:')) ? <style>{selection.filter((k) => k.startsWith('card:')).map((k) => `[data-board-card="${k.slice(5)}"] { outline: 2px solid #E0B563; outline-offset: 3px; }`).join(' ')}</style> : null}
           {Object.keys(cardEls).length ? <style>{Object.entries(cardEls).map(([u, el]) => `[data-board-card="${u}"] { box-shadow: 0 0 0 2px ${ELEMENT_TINT[el]}, 0 0 22px ${ELEMENT_TINT[el]}; }`).join('\n')}</style> : null}
         </div>
 
@@ -1654,7 +1728,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {/* The hand. */}
         {spread || playground ? null : (
-          <div ref={handRef} style={{ position: 'absolute', left: hand.left, top: hand.top, width: hand.right - hand.left, height: handH, zIndex: 10 }}>
+          <div ref={handRef} data-felt="" style={{ position: 'absolute', left: hand.left, top: hand.top, width: hand.right - hand.left, height: handH, zIndex: 10 }}>
             {deck.length === 0 ? (
               <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</div>
             ) : (
@@ -1759,6 +1833,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             setLook({ ...lookRef.current, apart });
           }}
           hidden={playground ? undefined : look.hidden}
+          locked={playground ? undefined : look.locked}
+          onLock={(keys) => { const h = lookRef.current.locked; setLook({ ...lookRef.current, locked: keys.every((k) => h.includes(k)) ? h.filter((k) => !keys.includes(k)) : [...new Set([...h, ...keys])] }); }}
           onHide={(keys) => { const h = lookRef.current.hidden; setLook({ ...lookRef.current, hidden: keys.every((k) => h.includes(k)) ? h.filter((k) => !keys.includes(k)) : [...new Set([...h, ...keys])] }); }}
           onMovePiece={(k, x, y) => setLook({ ...lookRef.current, apart: { ...lookRef.current.apart, [k]: [Math.min(1, Math.max(0, x / tableW)), Math.min(1, Math.max(0, y / tableH))] } })}
           inert={overlay || settings}
@@ -1772,14 +1848,22 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               void diceRef.current?.rollPieces(selection, power, burning).then((landed) => {
                 if (!landed.length) return;
                 rollSound(landed);
-                setResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: null, mod: 0 });
+                const { mod, label } = modNow();
+                setResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
               });
             }}
+            mod={selMod}
+            onMod={setSelMod}
+            resolve={dice.presets.resolve}
+            cardVars={dice.presets.cardVars ?? []}
             canSave={presets.some((p) => !p)}
             onSave={(name) => {
               const slot = presets.findIndex((p) => !p);
               if (slot < 0 || !selTypes.length) return;
-              dice.presets.onWrite(slot, { id: `p${Date.now().toString(36)}`, name, dice: selTypes });
+              // The modifier goes with it as the phone writes one, so the preset is the same on both (v0.47.17).
+              const m = selModRef.current;
+              const modifier = m && hasModifier(m) ? { value: m.value, variables: modifierVariables(m), ...(modifierFunctionKeys(m).length ? { functionKeys: modifierFunctionKeys(m) } : {}) } : undefined;
+              dice.presets.onWrite(slot, { id: `p${Date.now().toString(36)}`, name, dice: selTypes, ...(modifier ? { modifier } : {}) });
               cue('ui:confirm', 'cardSelect', { volume: 0.6 });
             }}
             onPutBack={() => {
@@ -1795,12 +1879,22 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {/* Reset, tidy and settings, in the lower left corner: buttons always win over the pieces under them. */}
         <div data-ui="" style={{ position: 'absolute', left: pad + 10, bottom: pad + 10, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 1260 }}>
+          {/* The column folds into this little arrow for a bare table, and unfolds again (owner, v0.47.17). */}
+          <button type="button" aria-label={tucked ? 'Show the table buttons' : 'Tuck the table buttons away'} title={tucked ? 'Show the table buttons' : 'Tuck the table buttons away'} aria-expanded={!tucked}
+            onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue(tucked ? 'ui:open' : 'ui:close', tucked ? 'panelOpen' : 'panelClose', { volume: 0.5 }); setTucked(!tucked); }}
+            style={{ all: 'unset', cursor: 'pointer', alignSelf: 'center', opacity: tucked ? 0.9 : 0.6 }}>
+            <Chamfer c={5} line={T.goldSoft} fill="rgba(11,14,19,0.9)" style={{ width: 26, height: 16 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Glyph d={tucked ? '<path d="M7 14l5-5 5 5"/>' : '<path d="M7 10l5 5 5-5"/>'} size={12} />
+            </Chamfer>
+          </button>
+          {tucked ? null : <>
           {look.controls === 'hidden' && !playground ? <CornerButton glyph="roll" label={peeking ? 'Hide the control dice' : 'Show the control dice'} active={peeking} onPress={() => { cue('ui:toggle', peeking ? 'panelClose' : 'panelOpen'); setPeek((v) => !v); }} /> : null}
           {playground ? null : <CornerButton glyph="reset" label="Reset the table" count={looseCount} onPress={() => { cue('table:reset', 'gearScroll2', { volume: 0.5 }); resetAll(); }} />}
           <CornerButton glyph="play" label={playground ? 'Leave the playground' : 'Playground'} active={playground} onPress={togglePlayground} />
           {playground ? null : <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { cue('ui:toggle', settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />}
           {/* Testing only for now (owner, v0.47.11): draw any card of the Deck of Many Things, stock or not. */}
           {playground ? null : <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { cue('ui:toggle', picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />}
+          </>}
         </div>
         {/* What the Deck of Many Things has in play, and how long each has left. */}
         {lasting.length ? (
@@ -1849,22 +1943,25 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             onRollPair={() => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.handleRef.current?.rollDuality('Hope and Fear', 0); }}
             onDeletePreset={(slot) => { dice.presets.onWrite(slot, null); cue('ui:delete', 'tokenRemove', { volume: 0.6 }); }}
             rows={[
-              ...(tableMenu.piece ? [{ label: tableMenu.piece.label, onPress: () => {
+              // In the playground the controls are only dice and decks do nothing (owner, v0.47.17): neither is offered.
+              ...(tableMenu.piece && !(playground && tableMenu.piece.own) ? [{ label: tableMenu.piece.label, onPress: () => {
                 const k = tableMenu.piece!.key;
                 if (!tableMenu.piece!.own) { diceRef.current?.rollPiece(k); return; }
                 if (k === 'cat') { diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }); return; }
                 const a = actions.find((x) => x.key === k);
                 if (a && !a.disabled) a.onPress();
               } }] : []),
-              { label: 'Choose a deck', gap: !!tableMenu.piece, hidden: tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
+              { label: 'Choose a deck', gap: !!tableMenu.piece, hidden: playground || tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
               { label: 'Reset the table', onPress: resetAll, gap: true },
               { label: 'Clear the whole table', onPress: clearAll, danger: true },
-              { label: 'Table settings', onPress: () => setSettings(true), gap: true },
+              { label: 'Table settings', onPress: () => setSettings(true), gap: true, hidden: playground },
             ]} />
         ) : null}
+        {viewing ? <CardViewer card={lookup(viewing)} onClose={() => { cue('ui:close', 'cardFullscreenLeave'); setViewing(null); }} /> : null}
         {menu && !overlay ? (
           <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
             spread={spread}
+            view={() => { cue('ui:open', 'cardFullscreenEnter', { volume: 0.6 }); setViewing(menu.id); }}
             physical={menu.board ? !!board.find((b) => b.uid === menu.board)?.phys : undefined}
             onPhysical={menu.board ? () => {
               const uid = menu.board!;
@@ -1943,7 +2040,9 @@ function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyp
 }
 
 /** What can be done with selected pieces: roll the dice among them, keep them as a preset, put them back. */
-function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, onClear }: { x: number; y: number; count: number; types: DieType[]; onRoll: (power: number, burning: boolean) => void; canSave: boolean; onSave: (name: string) => void; onPutBack: () => void; onClear: () => void }) {
+function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, onClear, mod, onMod, resolve, cardVars }: { x: number; y: number; count: number; types: DieType[]; onRoll: (power: number, burning: boolean) => void; canSave: boolean; onSave: (name: string) => void; onPutBack: () => void; onClear: () => void; mod: PresetModifier | null; onMod: (m: PresetModifier | null) => void; resolve?: (m?: PresetModifier) => number; cardVars: FunctionVar[] }) {
+  const [modsOpen, setModsOpen] = useState(false);
+  const total = mod && hasModifier(mod) ? resolve?.(mod) ?? mod.value : 0;
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   const save = () => { const n = name.trim(); if (!n) return; onSave(n); setNaming(false); setName(''); };
@@ -1963,12 +2062,99 @@ function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, 
           <>
             <ChargeRoll disabled={!types.length} onRoll={onRoll} />
             <TButton label="Save as preset" h={32} disabled={!types.length || !canSave} title={canSave ? 'Keep these dice as a preset in the table menu' : 'Every preset slot is full: delete one from the table menu'} onPress={() => setNaming(true)} />
+            <TButton label={total ? `Modifiers ${total > 0 ? '+' : ''}${total}` : 'Modifiers'} h={32} active={modsOpen} title="What is added to this roll: a number, your sheet, your cards" onPress={() => { cue(modsOpen ? 'ui:close' : 'ui:open', modsOpen ? 'panelClose' : 'panelOpen', { volume: 0.5 }); setModsOpen((o) => !o); }} />
             <TButton label="Put back" h={32} onPress={onPutBack} />
           </>
         )}
         <TButton title="Clear the selection" h={32} onPress={onClear} icon={<Glyph d={DIE_GLYPHS.close} size={14} />} />
       </Chamfer>
+      {modsOpen && !naming ? <ModifierPanel mod={mod} onMod={onMod} total={total} resolve={resolve} cardVars={cardVars} /> : null}
     </div>
+  );
+}
+
+/** A modifier's name on a result: its parts, the first two and how many more. */
+function modName(m: PresetModifier, cardVars: FunctionVar[]): string | null {
+  const names = [...modifierVariables(m).map((v) => PRESET_VARS.find((p) => p.key === v)?.label ?? ''), ...modifierFunctionKeys(m).map((k) => cardVars.find((c) => c.key === k)?.title ?? '')].filter(Boolean);
+  if (!names.length) return null;
+  return names.length > 2 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ');
+}
+
+const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
+/**
+ * The Modifiers panel (owner, v0.47.17), under the selection bar: what is added to this roll, built the way a phone
+ * preset's modifier is (a flat number from -20 to 20, sheet variables, numbers kept on the character's cards), so a
+ * preset saved from here reads the same on the phone. The total on the right is what it comes to right now.
+ */
+function ModifierPanel({ mod, onMod, total, resolve, cardVars }: { mod: PresetModifier | null; onMod: (m: PresetModifier | null) => void; total: number; resolve?: (m?: PresetModifier) => number; cardVars: FunctionVar[] }) {
+  const m: PresetModifier = mod ?? { value: 0, variables: [] };
+  const vars = modifierVariables(m);
+  const keys = modifierFunctionKeys(m);
+  // What each variable comes to alone, for the chips; worked out once while the panel is open.
+  const worth = useMemo(() => new Map(PRESET_VARS.map((v) => [v.key, resolve ? resolve({ value: 0, variables: [v.key] }) : 0])), [resolve]);
+  const set = (next: PresetModifier) => onMod(hasModifier(next) ? next : null);
+  const step = (d: number) => { cue('ui:tap', 'buttonTap', { volume: 0.4 }); set({ ...m, variables: vars, value: Math.max(-20, Math.min(20, m.value + d)) }); };
+  const label = (t: string) => <div style={{ color: T.goldText, fontFamily: T.bold, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase' }}>{t}</div>;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <Chamfer c={10} fill="rgba(11,14,19,0.97)" line={T.goldSoft} inner={{ padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', gap: 12, width: '100%', minWidth: 560, boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {label('Flat bonus')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <TButton title="One less" h={32} disabled={m.value <= -20} onPress={() => step(-1)} icon={<Glyph d='<path d="M6 12h12"/>' size={14} />} />
+              <span aria-live="polite" style={{ minWidth: 44, textAlign: 'center', color: m.value ? T.ivory : T.muted, fontFamily: T.display, fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>{signed(m.value)}</span>
+              <TButton title="One more" h={32} disabled={m.value >= 20} onPress={() => step(1)} icon={<Glyph d='<path d="M6 12h12M12 6v12"/>' size={14} />} />
+            </div>
+          </div>
+          <div style={{ flex: 1 }} />
+          {mod ? <TButton label="Clear" h={30} title="Nothing added to the roll" onPress={() => { cue('ui:delete', 'tokenRemove', { volume: 0.5 }); onMod(null); }} /> : null}
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: total ? T.ivory : T.muted, fontFamily: T.display, fontSize: 34, lineHeight: '36px', fontVariantNumeric: 'tabular-nums' }}>{signed(total)}</div>
+            <div style={{ color: T.muted, fontFamily: T.medium, fontSize: 12 }}>added to the roll</div>
+          </div>
+        </div>
+        <div style={{ height: 1, background: 'rgba(218,162,73,0.22)' }} />
+        <div className="rk-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
+          {label('From your sheet')}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
+            {PRESET_VARS.map((v) => (
+              <ModChip key={v.key} name={v.label} value={worth.get(v.key) ?? 0} on={vars.includes(v.key)}
+                onPress={() => { cue('ui:toggle', 'cardSelect', { volume: 0.4 }); set(vars.includes(v.key) ? removeVariable(m, v.key) : addVariable(m, v.key)); }} />
+            ))}
+          </div>
+          {cardVars.length ? (
+            <>
+              {label('From your cards')}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
+                {cardVars.map((c) => (
+                  <ModChip key={c.key} name={c.title} sub={c.cardTitle} value={c.value} on={keys.includes(c.key)}
+                    onPress={() => { cue('ui:toggle', 'cardSelect', { volume: 0.4 }); set(keys.includes(c.key) ? removeFunctionKey(m, c.key) : addFunctionKey(m, c.key)); }} />
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
+      </Chamfer>
+    </div>
+  );
+}
+
+/** One thing a modifier can add: its name and what it comes to now; red when it is in. */
+function ModChip({ name, sub, value, on, onPress }: { name: string; sub?: string; value: number; on: boolean; onPress: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button type="button" aria-pressed={on} title={sub ? `${name} on ${sub}` : name} onClick={onPress} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)} style={{ all: 'unset', cursor: 'pointer', display: 'block', minWidth: 0 }}>
+      <Chamfer c={5} line={on ? T.red : hover ? T.goldBright : 'rgba(218,162,73,0.3)'} fill={on ? 'rgba(200,27,24,0.32)' : hover ? T.panelLit : T.panel} style={{ height: sub ? 40 : 30 }}
+        inner={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 9px', boxSizing: 'border-box' }}>
+        <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <span style={{ color: on || hover ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+          {sub ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</span> : null}
+        </span>
+        <span style={{ color: on ? T.ivory : T.muted, fontFamily: T.bold, fontSize: 12.5, fontVariantNumeric: 'tabular-nums' }}>{signed(value)}</span>
+      </Chamfer>
+    </button>
   );
 }
 
@@ -2185,18 +2371,47 @@ function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, no
  * on the table is a copy, so its menu is short: make it physical (knocked about by dice) or take it off the table.
  * In the laid-out hand a card is the card itself, so it gets the whole menu and the physics switch.
  */
-function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, spread, physical, onPhysical }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void }) {
+/**
+ * A card read large (owner, v0.47.17): over the whole window, with room round it, at full quality, the rest dimmed
+ * behind. A click anywhere or Escape puts it away.
+ */
+function CardViewer({ card, onClose }: { card: TableCard | undefined; onClose: () => void }) {
+  const [win, setWin] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  useEffect(() => {
+    const on = () => setWin({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  if (!card || typeof document === 'undefined') return null;
+  const k = Math.min((win.h - 64) / FORGED_H, (win.w - 64) / FORGED_W);
+  return createPortal(
+    <div data-ui="" role="dialog" aria-label="The card, read large" onPointerDown={(e) => { e.stopPropagation(); onClose(); }} onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+      style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(6,8,13,0.72)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', animation: 'rk-veil 180ms ease-out' }}>
+      <div style={{ width: FORGED_W * k, height: FORGED_H * k, position: 'relative', boxShadow: '0 30px 80px rgba(0,0,0,0.7)' }}>
+        <div style={{ position: 'absolute', left: 0, top: 0, width: FORGED_W, height: FORGED_H, transform: `scale(${k})`, transformOrigin: '0 0' }}>
+          <CardFace card={card} hiRes />
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, spread, physical, onPhysical, view }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; /** Read it large, the table dimmed behind it (v0.47.17). */ view?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void }) {
   const ctx = useCarousel();
   const item = Object.values(ctx.decks).flat().find((c) => c?.id === id);
   if (!item) return null;
   const phys: Row[] = onPhysical ? [{ label: physical ? 'Stop its physics' : 'Make it physical', onPress: onPhysical }] : [];
-  if (board) return <MenuShell x={x} y={y} tableW={tableW} tableH={tableH} onClose={onClose} rows={[...phys, { label: 'Take off the table', onPress: board }]} />;
+  const read: Row[] = view ? [{ label: 'View', onPress: view }] : [];
+  if (board) return <MenuShell x={x} y={y} tableW={tableW} tableH={tableH} onClose={onClose} rows={[...read, ...phys, { label: 'Take off the table', onPress: board }]} />;
   const ref = item.ref ?? item.id;
   const fav = ctx.isFavorited(id);
   const mirror = ctx.category === FAVORITES_CATEGORY;
   const rows: Row[] = [
-    ...(place ? [{ label: 'Lay a copy on the table', onPress: place }] : []),
+    // Throw, take a copy in the hand, read it (owner, v0.47.17), then the rest.
     ...(throwIt ? [{ label: 'Throw on the table', onPress: throwIt }] : []),
+    ...(place ? [{ label: 'Take a copy', onPress: place }] : []),
+    ...read,
     ...(spread ? phys : []),
     ...(mirror
       ? [{ label: 'Remove from Favorites', onPress: () => ctx.cardAction('unfavorite', [id]) }]

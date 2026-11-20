@@ -29,7 +29,7 @@ import { createFireLayer, type FireLayer } from './piece-fire';
 import type { DiceEngine, DieSpec, Finish, Shape, Walls } from './dice-engine';
 import type { Bounds, Impact, Obstacle } from './dice-physics';
 import { loadDicePlaces, saveDicePlaces } from './table-store';
-import { Chamfer, Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from './table-ui';
+import { Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from './table-ui';
 import { cue, knockCue } from './table-sound';
 
 export type ActionKey = 'cards' | 'state' | 'sort';
@@ -279,6 +279,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
   editing: boolean;
   /** Pieces hidden from play (owner, v0.47.14): gone from the table except while editing. */
   hidden?: string[];
+  /** Pieces locked where they stand (owner, v0.47.17): never lifted, never moved; a control die still answers a click. */
+  locked?: string[];
+  onLock?: (keys: string[]) => void;
   /** Hide these pieces, or show them again when they are all hidden already. */
   onHide?: (keys: string[]) => void;
   onMoveGroup: (g: PlaceGroup, x: number, y: number) => void;
@@ -298,6 +301,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const { host, width, height, bounds, obstacles, walls, decks, current, onPickDeck, actions, controls, controlFinish, numberFinish, tokens, inert, places, editing } = props;
   const hid = editing ? [] : props.hidden ?? [];
   const hidKey = hid.join('|');
+  // While editing they go home and follow their frames like the rest, so the lock holds only at play.
+  const nailedKeys = editing ? [] : props.locked ?? [];
+  const lockKey = nailedKeys.join('|');
   const canvas = useRef<HTMLCanvasElement>(null);
   const [engine, setEngine] = useState<DiceEngine | null>(null);
   const [failed, setFailed] = useState(false);
@@ -392,6 +398,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   useEffect(() => { engine?.onCards((m, r) => live.current.onCardsMoved(m, r)); }, [engine]);
 
   // ---------------------------------------------------------------- homes
+  /** The supply's row, in order: material, colour, the Deck of Many Things; the die spawner too unless it is the chest. */
+  const supRow = () => [...live.current.supply.map((s) => s.key).filter((k) => !(k === 'src:die' && live.current.diceChest)), ...(live.current.domat ? [DOMAT_KEY] : [])];
   const homeOf = useCallback((key: string): { x: number; y: number } | null => {
     const p = live.current.places;
     const b = boundsRef.current;
@@ -400,7 +408,13 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const ai = ACTIONS.indexOf(key as ActionKey);
     if (ai >= 0) return clamp(p.apart?.[key] ?? ctlHome(p, ai));
     const base = baseOf(key);
-    const sup = [...live.current.supply.map((s) => s.key), ...(live.current.domat ? [DOMAT_KEY] : [])];
+    const sup = supRow();
+    // The dice chest stands on its own (owner, v0.47.17): just past the end of the row unless it was put elsewhere.
+    if (base === 'src:die' && live.current.diceChest) {
+      if (p.apart?.['src:die']) return clamp(p.apart['src:die']);
+      const half = sup.reduce((a, k) => a + slotOf(k, p.sup.dir), 0) / 2 + 80;
+      return clamp(p.sup.dir === 'row' ? { x: p.sup.x + half, y: p.sup.y } : { x: p.sup.x, y: p.sup.y + half });
+    }
     const si = sup.indexOf(base);
     if (si >= 0) {
       const h = p.apart?.[base] ?? supHome(p, si, sup);
@@ -544,11 +558,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
       // The icon on the top face and the one opposite it only (owner); the sides stay plain, and the die always
       // comes to rest on one of the two, so its icon is always showing.
       const icon = { image: tinted(img, style.ink) };
-      const spec: DieSpec = { key: k, shape: 'd6', size: ACTION_SIZE * props.ctlSize, body: style.body, edge: style.edge, ink: style.ink, faces: [icon, icon, { text: '' }, { text: '' }, { text: '' }, { text: '' }], finish: controlFinish, upright: true, restFaces: [0, 1], hopper: props.ctlMotion === 'hop' };
+      const spec: DieSpec = { key: k, shape: 'd6', size: ACTION_SIZE * props.ctlSize, body: style.body, edge: style.edge, ink: style.ink, faces: [icon, icon, { text: '' }, { text: '' }, { text: '' }, { text: '' }], finish: controlFinish, upright: true, restFaces: [0, 1], hopper: props.ctlMotion === 'hop', fixed: nailedKeys.includes(k) };
       const at = placeOf(k);
       engine.add(spec, at.x, at.y, { face: 0 });
     }
-  }, [engine, glyphs, showDice, controlFinish, props.ctlMotion, props.ctlSize, width > 50, hidKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, glyphs, showDice, controlFinish, props.ctlMotion, props.ctlSize, width > 50, hidKey, lockKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deckFace = useMemo(() => {
     const n = FACES_OF[catShape(decks.length)];
@@ -565,14 +579,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
     // The icons keep their own colours; on a light die a soft dark halo separates them (owner: no plate).
     const halo = controlFinish === 'obsidian' ? undefined : 'rgba(10,8,4,0.9)';
     const spec: DieSpec = {
-      key: CAT, shape, size: (shape === 'd20' ? 112 : shape === 'd12' ? 100 : shape === 'd8' ? 94 : 84) * props.catSize, body: style.body, edge: style.edge, ink: style.ink, finish: controlFinish, upright: true, hopper: props.ctlMotion === 'hop',
+      key: CAT, shape, size: (shape === 'd20' ? 112 : shape === 'd12' ? 100 : shape === 'd8' ? 94 : 84) * props.catSize, body: style.body, edge: style.edge, ink: style.ink, finish: controlFinish, upright: true, hopper: props.ctlMotion === 'hop', fixed: nailedKeys.includes(CAT),
       faces: deckFace.faces.map((d) => (d && deckArt.get(d.key) ? { image: deckArt.get(d.key)!, halo } : { text: '' })),
     };
     const fresh = !engine.has(CAT);
     const at = placeOf(CAT);
     engine.add(spec, at.x, at.y, { face: deckFace.indexOf(live.current.current) });
     if (!fresh) engine.setFace(CAT, deckFace.indexOf(live.current.current));
-  }, [engine, deckArt, deckFace, showDice, controlFinish, props.ctlMotion, props.catSize, width > 50, hidKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, deckArt, deckFace, showDice, controlFinish, props.ctlMotion, props.catSize, width > 50, hidKey, lockKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The deck changed (a pick, the wheel, a key): the die shows it at once, no roll first (owner).
   useEffect(() => {
@@ -621,28 +635,29 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (!fresh && built.current.get('src:die') === sig) return;
         built.current.set('src:die', sig);
         const at = fresh ? placeOf('src:die') : { x: 0, y: 0 };
-        engine.add({ key: 'src:die', shape: props.diceChest, size: 78, body: '#8a5a2b', edge: '#E0B563', ink: '#000', faces: [], finish: 'stone', spawner: true }, at.x, at.y);
+        engine.add({ key: 'src:die', shape: props.diceChest, size: 78, body: '#8a5a2b', edge: '#E0B563', ink: '#000', faces: [], finish: 'stone', spawner: true, fixed: true }, at.x, at.y);
         return;
       }
       for (const sp of tokenSpecs(pieceOf(t.key, t.token), numberFinish)) {
         want.add(sp.spec.key);
-        const sig = `${t.token.kind}:${t.token.color ?? ''}:${t.token.dieType ?? ''}:${numberFinish}`;
+        const sig = `${t.token.kind}:${t.token.color ?? ''}:${t.token.dieType ?? ''}:${numberFinish}:${nailedKeys.includes(t.key)}`;
         const fresh = !engine.has(sp.spec.key);
         if (!fresh && built.current.get(sp.spec.key) === sig) continue;
         built.current.set(sp.spec.key, sig);
         const at = fresh ? placeOf(sp.spec.key) : { x: 0, y: 0 };
-        engine.add({ ...sp.spec, spawner: true }, at.x, at.y, { face: sp.face });
+        engine.add({ ...sp.spec, spawner: true, fixed: nailedKeys.includes(t.key) }, at.x, at.y, { face: sp.face });
       }
     });
     if (props.domat && backArt && !hid.includes(DOMAT_KEY)) {
       want.add(DOMAT_KEY);
-      if (!engine.has(DOMAT_KEY)) {
-        const at = placeOf(DOMAT_KEY);
-        engine.add({ key: DOMAT_KEY, shape: 'deck', size: 50, body: '#1c1026', edge: '#d9c9a3', ink: '#000', faces: [{ image: backArt }], finish: 'stone', spawner: true }, at.x, at.y);
+      if (!engine.has(DOMAT_KEY) || built.current.get(DOMAT_KEY) !== `lock:${nailedKeys.includes(DOMAT_KEY)}`) {
+        built.current.set(DOMAT_KEY, `lock:${nailedKeys.includes(DOMAT_KEY)}`);
+        const at = engine.has(DOMAT_KEY) ? { x: 0, y: 0 } : placeOf(DOMAT_KEY);
+        engine.add({ key: DOMAT_KEY, shape: 'deck', size: 50, body: '#1c1026', edge: '#d9c9a3', ink: '#000', faces: [{ image: backArt }], finish: 'stone', spawner: true, fixed: nailedKeys.includes(DOMAT_KEY) }, at.x, at.y);
       }
     }
     for (const k of engine.keys()) if (k.startsWith('src:') && !want.has(k)) { engine.remove(k); built.current.delete(k); }
-  }, [engine, supplyKey, numberFinish, backArt, props.diceChest, hidKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, supplyKey, numberFinish, backArt, props.diceChest, hidKey, lockKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Loose tokens: added where they were left, removed when they go onto a card or back to the supply.
   const looseKey = props.loose.map((t) => `${t.key}:${t.token.kind}:${t.token.dieType ?? ''}:${t.token.color ?? ''}`).join('|');
   useEffect(() => {
@@ -694,8 +709,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
   };
   useEffect(() => {
     if (!engine) return;
+    // Also once a hidden piece comes back (v0.47.17: its label was left in the corner, tied to the die that went).
     for (const [k, el] of labels.current) engine.label(k, el);
-  }, [engine, glyphs, deckArt, showDice, controlFinish, supplyKey]);
+  }, [engine, glyphs, deckArt, showDice, controlFinish, supplyKey, hidKey]);
 
   // ---------------------------------------------------------------- spawning and flinging
   /** A new loose copy of a supply piece at (x, y); returns the key to hold (the Hope die of a pair). */
@@ -833,7 +849,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
     /** Held still this long, a piece starts shaking; this much longer and it launches itself (owner, v0.47.5). */
     const CHARGE_DELAY = 380, CHARGE_MS = 1300;
     // Tokens, dice and the control dice (owner, v0.47.10); never a spawner, whose hold only spawns faster.
-    const chargeable = (k: string) => k.startsWith('free:') || k.startsWith('roll:') || k === CAT || ACTIONS.includes(k as ActionKey);
+    /** Locked where it stands (owner, v0.47.17): it is clicked, never lifted. */
+    const nailed = (k: string) => !live.current.editing && (live.current.locked ?? []).includes(baseOf(k));
+    const chargeable = (k: string) => (k.startsWith('free:') || k.startsWith('roll:') || k === CAT || ACTIONS.includes(k as ActionKey)) && !nailed(k);
     /** The spawner under a point, with a few px to spare round each one (a right click there spawns, never a menu). */
     const spawnerAt = (x: number, y: number): string | null => {
       let best: string | null = null, bd = Infinity;
@@ -856,11 +874,13 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const shakeAll = (key: string, v: number) => { for (const k of partsOf(key)) engine.jitter(k, v); };
     /** How far a held piece has caught (0 none, 1 ablaze), for it and its partner. */
     const heat = (key: string, v: number) => { for (const k of partsOf(key)) fireRef.current?.set(k, v); };
+    /** Still on the table: a die or token, or a physical card (the engine's `has` knows only the dice). */
+    const present = (k: string) => engine.has(k) || (k.startsWith('card:') && !!engine.state(k));
     /** Lift a piece; the other of a pair comes along beside it (owner, v0.47.11: Hope and Fear are pulled together). */
     const lift = (key: string, x: number, y: number) => {
       engine.grab(key, x, y);
       // A selected piece carries the whole selection with it (owner, v0.47.12: thrown together, it counts as a roll).
-      const sel = selection.current.filter((k) => k !== key && engine.has(k));
+      const sel = selection.current.filter((k) => k !== key && present(k));
       if (selection.current.includes(key) && sel.length) { engine.tether(key, sel); return; }
       const mate = partsOf(key).find((k) => k !== key) ?? (key.startsWith('roll:') ? pairOf(key) : undefined);
       if (mate) engine.tether(key, mate);
@@ -894,7 +914,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       fling(pr.key, 1100 + Math.pow(power, 1.3) * 7900, { gen: 5, power: 1 + 2.5 * power }, aim, power > 0.15 ? { left: 2, fire: false, strike: aim !== undefined } : undefined);
     };
     /** Held as one of a selection of several: it carries the rest with it and never catches fire. */
-    const bundled = (key: string) => selection.current.includes(key) && selection.current.filter((k) => engine.has(k)).length > 1;
+    const bundled = (key: string) => selection.current.includes(key) && selection.current.filter(present).length > 1;
     /** Swing speeds (px/s): below SLOW the swing runs down; the faster above it, the faster it builds. */
     const SWING_SLOW = 900, SWING_FULL = 2600, SWING_MS = 1100;
     /** The swing builds and decays; at 2 the piece catches fire in the hand. Called every frame while it is held. */
@@ -946,29 +966,50 @@ export const TableDice = forwardRef<TableDiceHandle, {
       chargeRaf = requestAnimationFrame(tick);
     };
     /** The dice chest opens and spits out one of every die, in a fan towards the open table, held still. */
+    let lastOffer = 0;
     const offer = (at: { x: number; y: number }) => {
+      // Clicked over and over, it opens once (v0.47.17: spamming it froze dice mid-flight and shoved the chest away).
+      const now = performance.now();
+      if (now - lastOffer < 700) return;
+      lastOffer = now;
       dissolve(offered.current);
       offered.current = [];
       engine.mimic('src:die', 1);
       setTimeout(() => engine.mimic('src:die', 0), 1200);
       const b = boundsRef.current;
       const a0 = Math.atan2((b.top + b.bottom) / 2 - at.y, (b.left + b.right) / 2 - at.x);
-      // A wide, shallow fan: every die clear of the next and of the chest, none curling back over the supply.
-      const R = 205, STEP = 0.33;
-      const pinned: string[] = [];
-      DIE_KINDS.forEach((type, i) => {
-        const a = a0 + (i - (DIE_KINDS.length - 1) / 2) * STEP;
-        const tx = Math.min(b.right - 60, Math.max(b.left + 60, at.x + Math.cos(a) * R)), ty = Math.min(b.bottom - 40, Math.max(b.top + 40, at.y + Math.sin(a) * R));
+      // First it clears the ground (owner, v0.47.17): every loose die and token near it is pushed outward, out of the
+      // fan's way. The control dice stay where they are.
+      for (const k of engine.keys()) {
+        if (!k.startsWith('free:') && !k.startsWith('roll:')) continue;
+        const st = engine.state(k);
+        if (!st) continue;
+        const dx = st.x - at.x, dy = st.y - at.y, d = Math.hypot(dx, dy) || 1;
+        if (d > 440) continue;
+        const sp = 600 + 1300 * (1 - d / 440);
+        engine.toss(k, (dx / d) * sp, (dy / d) * sp);
+      }
+      // Then the fan: laid out by each die's own width along the arc, a pair's two halves side by side, with room
+      // between kinds, so nothing touches when they land (owner, v0.47.17: the pairs bumped their neighbours).
+      const made = DIE_KINDS.map((type) => {
         const k = spawn({ kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }, at.x, at.y);
         offered.current.push(baseOf(k));
-        for (const part of partsOf(k)) {
-          const s = engine.state(part);
-          engine.home(part, tx + (s ? s.x - at.x : 0), ty);
-          pinned.push(part);
-        }
+        return partsOf(k).sort();
       });
-      // Landed, they stay put until one is chosen.
-      setTimeout(() => engine.pin(pinned.filter((k) => engine.has(k)), 3_600_000), 950);
+      const GAP = 18;
+      const slots = made.flatMap((parts) => parts.map((part, j) => ({ part, w: (engine.screen(part)?.size ?? 56) + (j === parts.length - 1 ? GAP : 4) })));
+      const L = slots.reduce((sum, q) => sum + q.w, 0);
+      const R = Math.max(210, L / 2.2);
+      let run = 0;
+      const pinned: string[] = [];
+      for (const q of slots) {
+        const ang = a0 + (run + q.w / 2 - L / 2) / R;
+        run += q.w;
+        engine.home(q.part, Math.min(b.right - 40, Math.max(b.left + 40, at.x + Math.cos(ang) * R)), Math.min(b.bottom - 40, Math.max(b.top + 40, at.y + Math.sin(ang) * R)));
+        pinned.push(q.part);
+      }
+      // Landed, they stay put until chosen; one already taken is never pinned (that froze it in mid-flight).
+      setTimeout(() => engine.pin(pinned.filter((k) => engine.has(k) && offered.current.includes(baseOf(k)) && !selection.current.includes(k)), 3_600_000), 950);
       cue('chest:open', 'cardFullscreenEnter', { volume: 0.6, cents: 300 });
     };
     /** Grabbed from the offer: this one (or every offered piece in the selection) is kept, the rest dissolve. */
@@ -1042,6 +1083,18 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (e.button !== 0) return;
       e.stopPropagation();
       e.preventDefault();
+      // Shift-click adds a piece to the selection, or takes it out, without picking it up (owner, v0.47.17): so several
+      // of a chest's dice can be chosen before the rest go.
+      if (e.shiftKey && (key.startsWith('free:') || key.startsWith('roll:'))) {
+        const parts = partsOf(key);
+        const has = parts.every((k) => selection.current.includes(k));
+        const next = has ? selection.current.filter((k) => !parts.includes(k)) : [...new Set([...selection.current, ...parts])];
+        selection.current = next;
+        engine.select(next);
+        live.current.onSelect(next);
+        cue('select', 'cardSelect', { volume: 0.5 });
+        return;
+      }
       if (key === 'src:die' && live.current.diceChest) { const at = engine.state(key); if (at) offer(at); return; }
       if (offered.current.includes(baseOf(key))) choose(baseOf(key));
       try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
@@ -1087,7 +1140,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           // Moved: an ordinary drag after all, and any shaking stops.
           press.moved = true;
           if (press.charge > 0) { press.charge = 0; shakeAll(press.key, 0); }
-          if (press.deferred) { engine.grab(press.key, press.deferred.x, press.deferred.y); press.deferred = undefined; }
+          if (press.deferred && !nailed(press.key)) { engine.grab(press.key, press.deferred.x, press.deferred.y); press.deferred = undefined; }
         }
         if (!press.deferred) engine.drag(p.x, p.y);
         if (press.moved) {
@@ -1122,8 +1175,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
         box = null;
         setMarquee(null);
         const big = r.right - r.left > 6 || r.bottom - r.top > 6;
-        // Only what can be rolled or moved together: loose tokens and dice, and the dice of the last roll.
-        const keys = big ? [...new Set(engine.inside(r).filter((k) => k.startsWith('free:') || k.startsWith('roll:')).flatMap((k) => partsOf(k)))] : [];
+        // What can be moved together: loose tokens and dice, the dice of the last roll, and physical cards (v0.47.17).
+        const keys = big ? [...new Set(engine.inside(r).filter((k) => k.startsWith('free:') || k.startsWith('roll:') || k.startsWith('card:')).flatMap((k) => (k.startsWith('card:') ? [k] : partsOf(k))))] : [];
         selection.current = keys;
         engine.select(keys);
         live.current.onSelect(keys);
@@ -1142,7 +1195,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (pr.swing > 0 || pr.lit) shakeAll(pr.key, 0);
       // Nothing still on fire settles onto a card (owner, v0.47.14): it flies on instead.
       const afire = pr.lit || partsOf(pr.key).some((k) => lit.current.has(k));
-      if (pr.moved && !afire && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) {
+      // Nor does a throw that happens to end over one (owner, v0.47.17): set down means the hand was still at the end.
+      const flung = pr.hand > 350 && performance.now() - pr.last.t < 90;
+      if (pr.moved && !afire && !flung && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) {
         engine.release();
         return;
       }
@@ -1226,13 +1281,23 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (inertRef.current) return;
       const p = local(e);
       const key = engine.hit(p.x, p.y);
-      if (live.current.toys || (key !== CAT && !(key?.startsWith('src:') && key !== DOMAT_KEY)) || (key === 'src:die' && live.current.diceChest)) return;
+      const chest = key === 'src:die' && live.current.diceChest;
+      if (live.current.toys || (key !== CAT && !(key?.startsWith('src:') && key !== DOMAT_KEY))) return;
       e.preventDefault();
       e.stopPropagation();
       wheelAcc += e.deltaY * (e.deltaMode === 1 ? 40 : 1);
       if (Math.abs(wheelAcc) < 50) return;
       const dir = wheelAcc > 0 ? 1 : -1;
       wheelAcc = 0;
+      // Scrolled over, the chest throws out one die of any kind (owner, v0.47.17).
+      if (chest) {
+        const at = engine.state('src:die');
+        if (!at) return;
+        const type = DIE_KINDS[Math.floor(Math.random() * DIE_KINDS.length)];
+        fling(spawn({ kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }, at.x, at.y), 900 + Math.random() * 500, undefined, outward(at.x, at.y));
+        cue('spawner:toss', 'placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
+        return;
+      }
       if (key === CAT) {
         const list = live.current.decks;
         const i = list.findIndex((d) => d.key === live.current.current);
@@ -1518,7 +1583,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   // The row handles while settings are open: drag one to move its row, flip it to stand it on end.
   const groups: { g: PlaceGroup; box: Bounds; label: string; piece?: string; chain?: 'split' | 'join'; /** What its eye hides. */ keys?: string[] }[] = [];
   const ctlApart = ACTIONS.some((k) => places.apart?.[k]);
-  const supKeys = [...props.supply.map((t) => t.key), ...(props.domat ? [DOMAT_KEY] : [])];
+  const supKeys = [...props.supply.map((t) => t.key).filter((k) => !(k === 'src:die' && props.diceChest)), ...(props.domat ? [DOMAT_KEY] : [])];
+  const chestOut = !!props.diceChest && props.supply.some((t) => t.key === 'src:die');
   const supApart = supKeys.some((k) => places.apart?.[k]);
   /** A frame round one piece split off its row. */
   const pieceBox = (key: string, r: number, label: string, g: PlaceGroup) => {
@@ -1526,7 +1592,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
     if (h) groups.push({ g, piece: key, chain: 'join', keys: [key], box: { left: h.x - r, right: h.x + r, top: h.y - r, bottom: h.y + r + 8 }, label });
   };
   if (editing) {
-    const sn = props.supply.length + (props.domat ? 1 : 0);
+    const sn = supKeys.length;
+    // The chest has its own frame: moved on its own, hidden or locked on its own.
+    if (chestOut) { const h = homeOf('src:die'); if (h) groups.push({ g: 'sup', piece: 'src:die', keys: ['src:die'], box: { left: h.x - 56, right: h.x + 56, top: h.y - 56, bottom: h.y + 60 }, label: 'Dice chest' }); }
     const half = (n: number, gap: number) => ((n - 1) * gap) / 2 + 40;
     if (controls === 'buttons') {
       // Plain buttons: the frame goes round the buttons as they are drawn (the deck's button is among them).
@@ -1591,6 +1659,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
           chain={g.chain}
           hidden={g.keys ? g.keys.every((k) => props.hidden?.includes(k)) : undefined}
           onHide={g.keys && props.onHide ? () => props.onHide?.(g.keys!) : undefined}
+          locked={g.keys ? g.keys.every((k) => props.locked?.includes(k)) : undefined}
+          onLock={g.keys && props.onLock ? () => props.onLock?.(g.keys!) : undefined}
           onChain={g.chain === 'split' ? () => {
             // Split where they lie now, so nothing moves until it is dragged.
             const at: Record<string, { x: number; y: number }> = {};
@@ -1598,26 +1668,6 @@ export const TableDice = forwardRef<TableDiceHandle, {
             props.onSplitGroup(g.g as 'ctl' | 'sup', at);
           } : g.chain === 'join' ? () => props.onJoinGroup(g.g as 'ctl' | 'sup') : undefined} />
       ))}
-      {/* Tuck the controls away (owner, v0.47.16): the control dice and the deck die fold into this one small arrow
-          above where they stand, for a bare table; pressed again they come back. Settings still show them. */}
-      {ready && showDice && !editing && !props.toys && props.onHide ? (() => {
-        const keys = [...ACTIONS, CAT];
-        const tucked = keys.every((k) => props.hidden?.includes(k));
-        const k = props.ctlSize;
-        const above = tucked ? 0 : places.ctl.dir === 'row' ? 50 * k + 16 : (((ACTIONS.length - 1) * CTL_GAP.column) / 2 + 40) * k + 16;
-        const x = Math.min(bounds.right - 14, Math.max(bounds.left + 14, places.ctl.x));
-        const y = Math.max(bounds.top + 14, places.ctl.y - above);
-        return (
-          <button type="button" data-ui="" aria-label={tucked ? 'Bring the controls back' : 'Tuck the controls away'} title={tucked ? 'Bring the controls back' : 'Tuck the controls away'} aria-pressed={tucked}
-            onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue(tucked ? 'ui:open' : 'ui:close', tucked ? 'panelOpen' : 'panelClose', { volume: 0.5 }); props.onHide?.(keys); }}
-            style={{ all: 'unset', cursor: 'pointer', position: 'absolute', left: x - 13, top: y - 9, zIndex: 21, opacity: tucked ? 0.85 : 0.55, transition: 'opacity 140ms' }}
-            onPointerEnter={(e) => { e.currentTarget.style.opacity = '1'; }} onPointerLeave={(e) => { e.currentTarget.style.opacity = tucked ? '0.85' : '0.55'; }}>
-            <Chamfer c={5} line={T.goldSoft} fill="rgba(11,14,19,0.9)" style={{ width: 26, height: 18 }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Glyph d={tucked ? '<path d="M7 10l5 5 5-5"/>' : '<path d="M7 14l5-5 5 5"/>'} size={13} />
-            </Chamfer>
-          </button>
-        );
-      })() : null}
       {/* The decks' glyphs, drawn once off-screen to be read back as pictures for the die. */}
       <div ref={glyphHost} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 1, height: 1, overflow: 'hidden' }}>
         {decks.map((d) => <div key={d.key} data-deck={d.key} style={{ width: 48, height: 48 }}><CategoryGlyph category={d.key} meta={d.meta} /></div>)}
@@ -1632,7 +1682,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
 });
 
 /** A dashed frame round a row while settings are open: drag it to move the row, the arrows stand it on end. */
-function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain, hidden, onHide }: { box: Bounds; label: string; dir?: 'row' | 'column'; onMove: (x: number, y: number) => void; onFlip?: () => void; /** Split the row into pieces, or join a piece's row back up. */ chain?: 'split' | 'join'; onChain?: () => void; hidden?: boolean; onHide?: () => void }) {
+function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain, hidden, onHide, locked, onLock }: { box: Bounds; label: string; dir?: 'row' | 'column'; onMove: (x: number, y: number) => void; onFlip?: () => void; /** Split the row into pieces, or join a piece's row back up. */ chain?: 'split' | 'join'; onChain?: () => void; hidden?: boolean; onHide?: () => void; locked?: boolean; onLock?: () => void }) {
   const [hover, setHover] = useState(false);
   const start = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -1675,6 +1725,16 @@ function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain, hidden, 
             <Glyph d={hidden
               ? '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><path d="M4 4l16 16"/>'
               : '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.5"/>'} size={14} />
+          </button>
+        ) : null}
+        {/* Locked where it stands at play: never lifted, never moved (owner, v0.47.17). */}
+        {onLock ? (
+          <button type="button" title={locked ? 'Unlock: it can be moved again' : 'Lock it where it stands'} aria-label={locked ? `Unlock the ${label}` : `Lock the ${label}`} aria-pressed={locked}
+            onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue('domat:lock', 'cardSelect', { volume: 0.4 }); onLock(); }}
+            style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 2, background: locked ? 'rgba(224,181,99,0.3)' : T.panel, border: `1px solid ${locked ? T.goldBright : T.goldSoft}` }}>
+            <Glyph d={locked
+              ? '<rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'
+              : '<rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V8a4 4 0 0 1 7.5-1.9"/>'} size={14} />
           </button>
         ) : null}
       </div>

@@ -98,7 +98,7 @@ import { SheetFrame } from '../components/sheet-frame';
 import { TraitBanners } from '../components/trait-banners';
 import { DiceTray, type DiceTrayHandle } from './dice-tray';
 import { DicePresetSlots } from './dice-preset-slots';
-import { DESK_PRESET_SLOTS, type DicePreset, modifierValue, slotsOf, writeSlot } from '@/lib/dice-presets';
+import { DESK_PRESET_SLOTS, type DicePreset, modifierValue, type PresetModifier, slotsOf, writeSlot } from '@/lib/dice-presets';
 import { ChamferFrame, GoldRule, GoldRuleV } from './chamfer';
 import { FrameSvg, ProvidedFrame } from './frame-svgs';
 import * as ImagePicker from 'expo-image-picker';
@@ -2941,8 +2941,8 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     () => functionVars([...(file ? bundledTrackerCards(file) : []), ...(file?.libraryCards ?? []), ...(file?.customCards ?? [])], file?.cardFunctions, file?.cardAdvances),
     [file?.className, file?.classless, file?.multiclassName, file?.libraryCards, file?.customCards, file?.cardFunctions, file?.cardAdvances],
   );
-  const playPreset = useCallback((preset: DicePreset) => {
-    const ctx = {
+  /** What a modifier comes to right now (the table's Modifiers panel shows it live, v0.47.17). */
+  const presetCtx = useCallback(() => ({
       level: character.level,
       tier: tierForLevel(character.level),
       proficiency: character.proficiency,
@@ -2963,9 +2963,11 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       },
       // v0.42.3: the character's own card elements, so a preset can carry "+ Combo Die".
       functions: functionVarValues(functionVars([...(fileRef.current ? bundledTrackerCards(fileRef.current) : []), ...(fileRef.current?.libraryCards ?? []), ...(fileRef.current?.customCards ?? [])], fileRef.current?.cardFunctions, fileRef.current?.cardAdvances)),
-    };
-    trayRef.current?.playPreset(preset.dice, preset.name, modifierValue(preset.modifier, ctx));
-  }, [character]);
+  }), [character]);
+  const resolvePreset = useCallback((mod?: PresetModifier) => modifierValue(mod, presetCtx()), [presetCtx]);
+  const playPreset = useCallback((preset: DicePreset) => {
+    trayRef.current?.playPreset(preset.dice, preset.name, modifierValue(preset.modifier, presetCtx()));
+  }, [presetCtx]);
   /**
    * Coming back from the board (v0.34.1).
    *
@@ -3212,7 +3214,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <PlayTable onReady={onTableReady} characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={openFromTable} />
+                <PlayTable onReady={onTableReady} characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal, resolve: resolvePreset } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={openFromTable} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />

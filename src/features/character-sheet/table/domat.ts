@@ -46,17 +46,17 @@ const EFFECTS: Record<string, { effect: DomatEffect; table: string; tint: string
   idiot: { effect: 'contrary', table: 'For 30 seconds every throw flies back the way your hand came.', tint: '#B07A50' },
   jester: { effect: 'follow', table: 'For 20 seconds everything loose chases your pointer round the table.', tint: '#E070B0', once: true },
   key: { effect: 'lock', table: 'Locks every loose piece where it lies until reset; the rest bounce off them.', tint: '#E0B563' },
-  knight: { effect: 'knight', table: 'A knight charges across the table, knocking aside everything in its path.', tint: '#C0C8D0' },
+  knight: { effect: 'knight', table: 'A knight gallops round the table for 12 seconds, bouncing off the walls and knocking aside everything in its path.', tint: '#C0C8D0' },
   moon: { effect: 'moon', table: 'The felt freezes for 30 seconds: everything drifts and slides.', tint: '#A8B8F0' },
   rogue: { effect: 'thief', table: 'A thief darts about for 12 seconds pocketing every loose piece it touches, then drops the lot.', tint: '#5A6A50' },
   ruin: { effect: 'ruin', table: 'Tears apart the cards laid around it (the copies; your decks are untouched).', tint: '#8A5A3A' },
   skull: { effect: 'blackhole', table: 'Pulls everything in, then bursts, blowing apart the cards at its heart.', tint: '#D8D8D8' },
   star: { effect: 'wish', table: 'Every die on the table turns to its highest face.', tint: '#F0E08A' },
-  sun: { effect: 'gust', table: 'A blinding flash and a gale that hurls everything into the walls.', tint: '#FFD24A' },
+  sun: { effect: 'gust', table: 'A sun rises: for 14 seconds every loose piece orbits it, then it flares and flings them all away.', tint: '#FFD24A' },
   talons: { effect: 'talons', table: 'Claws rake the table, breaking loose pieces and tearing cards near it.', tint: '#B03030' },
   throne: { effect: 'throne', table: 'Gathers every loose piece into a ring around the card.', tint: '#D4A73A' },
   vizier: { effect: 'vizier', table: 'Every die on the table rolls again.', tint: '#5AA0E0' },
-  void: { effect: 'mimic', table: 'A whirlpool pulls pieces into a mimic that stays on the table. Right click it and it spits them all out.', tint: '#7A3AA8' },
+  void: { effect: 'mimic', table: 'A whirlpool drags every loose piece in and a mimic swallows them; it stays on the table. Right click it and it spits them all out.', tint: '#7A3AA8' },
 };
 
 export const DOMAT: DomatCard[] = (CARDS as { id: string; name: string; text: string }[]).map((c) => ({ ...c, ...(EFFECTS[c.id] ?? EFFECTS.star) }));

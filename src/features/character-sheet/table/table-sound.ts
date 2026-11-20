@@ -13,7 +13,8 @@ const UI_TAP = ['key-press-in', 'key-press-out', 'countingclick'];
 const UI_OPEN = ['door-2-open', 'dark-ui-power-on-off-dark-01', 'g4f-sfx11-exointerface-process-short-06'];
 const UI_CLOSE = ['door-1-close', 'door-2-close', 'g4f-sfx11-exointerface-window-close-short-16', 'dark-ui-power-on-off-dark-02'];
 const BREAKS = ['headbreak', 'headbreak2', 'limbbreak', 'glasshit', 'glass-break-vase-d50-fienup-003', '443293-deathscyp-wood-break-2', 'bigrockbreak', 'bonusbreak2', 'bonusbreak3'];
-const STEPS = ['footstep-stone1', 'footstep-stone2', 'footstep-stone3', 'woodimpact', 'cratebounce'];
+// Only the steps loud enough to hear (owner, v0.47.17: two of the five played nothing).
+const STEPS = ['footstep-stone1', 'woodimpact', 'cratebounce'];
 const TAUNTS = Array.from({ length: 12 }, (_, i) => `gab-taunt${i + 1}`);
 
 /**
@@ -104,7 +105,8 @@ const PACK = {
   'domat:follow': { files: ['hookarmthrowstart', 'hookarmpullstart'], vol: 0.55 },
   'domat:seesaw': { files: ['twirling'], vol: 0.55 },
   'domat:moon': { files: ['watersurfacing', 'virtuecharge'], vol: 0.55 },
-  'domat:knight': { files: ['mp-prepare', 'mp-prepare2'], vol: 0.7 },
+  'domat:knight': { files: ['heavyhuskstep1', 'streetcleanerwalk'], vol: 0.7 },
+  'knight:bounce': { files: ['bluezone-bc0251-heavy-metal-impact-steel-barrel-01', 'metal-hit-crash-199', 'bluezone-bc0238-impact-002', 'skullimpact'], vol: 0.55, max: 0.7 },
   'domat:thief': { files: ['stalkerwarning', 'dronespot'], vol: 0.55 },
   'domat:rewind': { files: ['animeslashreverse', 'zombie-weak-death-reverse'], vol: 0.55 },
   'domat:throne': { files: TAUNTS, vol: 0.7 },
@@ -112,7 +114,7 @@ const PACK = {
   'domat:talons': { files: ['saw', 'chainsawthrown', 'animeslash'], vol: 0.6 },
   'domat:ruin': { files: ['mp-thyend', 'mp-thyend2', 'mp-weak'], vol: 0.7 },
   'hit:die': { files: ['plastichit', 'shellimpact', 'glasshit'], vol: 0.5 },
-  'hit:table': { files: ['woodimpact', 'cratebounce', 'footstep-stone1', 'footstep-stone2', 'footstep-stone3', 'sandhit'], vol: 0.5 },
+  'hit:table': { files: ['woodimpact', 'cratebounce', 'footstep-stone1', 'sandhit'], vol: 0.5 },
   'hit:rail': { files: ['bluezone-bc0236-metal-debris-097', 'bluezone-bc0238-impact-002', 'hookarmclink', 'skullimpact'], vol: 0.5 },
   'hit:break': { files: BREAKS, vol: 0.5 },
 } satisfies Record<string, { files: string[]; vol: number; max?: number; cents?: number }>;

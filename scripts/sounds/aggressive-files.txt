@@ -192,3 +192,5 @@ shellImpact.wav
 shotgunpump1.wav
 shotgunpump2.wav
 stonestep.wav
+heavyHuskStep1.wav
+StreetcleanerWalk.wav

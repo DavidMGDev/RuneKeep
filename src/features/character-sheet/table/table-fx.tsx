@@ -197,7 +197,7 @@ function registerBurn() {
 }
 
 /** A laid card breaking, by `mode`: `dir` is the way the breaker went (table frame), `at` where it struck (table px). */
-export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly }: { card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; at?: { x: number; y: number }; onDone: () => void; /** Only the slash or the torn flecks: the halves are real scraps on the table (v0.47.16). */ fxOnly?: boolean }) {
+export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly, clip }: { card: TableCard; cx: number; cy: number; w: number; rot: number; mode: CardBreakMode; dir?: { x: number; y: number }; at?: { x: number; y: number }; onDone: () => void; /** Only the slash or the torn flecks: the halves are real scraps on the table (v0.47.16). */ fxOnly?: boolean; /** Only this part of the card (% of it): a scrap burning (v0.47.17). */ clip?: Pt[] }) {
   const h = (w * FORGED_H) / FORGED_W;
   const box = useRef<HTMLDivElement>(null);
   // The breaker's way and the struck point, in the card's own (turned) frame.
@@ -237,7 +237,7 @@ export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly 
   const face = <div style={{ width: FORGED_W, height: FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0' }}><CardFace card={card} hiRes={false} /></div>;
   const slashAng = (Math.atan2(ldir[1] * h, ldir[0] * w) * 180) / Math.PI;
   return (
-    <div ref={box} aria-hidden="true" style={{ position: 'absolute', left: cx - w / 2, top: cy - h / 2, width: w, height: h, transform: `rotate(${rot}deg)`, pointerEvents: 'none', zIndex: 14 }}>
+    <div ref={box} aria-hidden="true" style={{ position: 'absolute', left: cx - w / 2, top: cy - h / 2, width: w, height: h, transform: `rotate(${rot}deg)`, pointerEvents: 'none', zIndex: 14, clipPath: clip ? `polygon(${clip.map(([px, py]) => `${px.toFixed(1)}% ${py.toFixed(1)}%`).join(', ')})` : undefined }}>
       {mode === 'burn' ? (
         <>
           {/* The card, eaten away from where it was struck, darkening ahead of the flame. */}
@@ -291,13 +291,31 @@ export function scrapShape(poly: Pt[]) {
  * A scrap of a torn or cut card (owner, v0.47.16): a real piece on the table, knocked about like any other, drawn as
  * its part of the card. `w` is the whole card's width; the element is the scrap's own box, centred on (x, y).
  */
-export function CardScrap({ uid, card, poly, w, x, y, rot, fading }: { uid: string; card: TableCard; poly: Pt[]; w: number; x: number; y: number; rot: number; fading?: boolean }) {
+export function CardScrap({ uid, card, poly, w, x, y, rot, fading, onDrag }: { uid: string; card: TableCard; poly: Pt[]; w: number; x: number; y: number; rot: number; fading?: boolean; /** Carried by hand (table px), and let go (`end`). */ onDrag?: (uid: string, x: number, y: number, rot: number, end: boolean) => void }) {
   const h = (w * FORGED_H) / FORGED_W;
   const b = scrapShape(poly);
   const bx = (b.x0 / 100) * w, by = (b.y0 / 100) * h, bw = ((b.x1 - b.x0) / 100) * w, bh = ((b.y1 - b.y0) / 100) * h;
+  // Picked up and carried like any physical card (owner, v0.47.17: they could only be pushed).
+  const down = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !onDrag || fading) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const el = e.currentTarget;
+    const host = el.offsetParent?.getBoundingClientRect();
+    if (!host) return;
+    const cx = el.offsetLeft + el.offsetWidth / 2, cy = el.offsetTop + el.offsetHeight / 2;
+    const ox = cx - (e.clientX - host.left), oy = cy - (e.clientY - host.top);
+    const r = Number(el.dataset.rot ?? rot) || 0;
+    try { el.setPointerCapture(e.pointerId); } catch { /* gone */ }
+    const move = (m: PointerEvent) => onDrag(uid, m.clientX - host.left + ox, m.clientY - host.top + oy, r, false);
+    const up = (m: PointerEvent) => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); onDrag(uid, m.clientX - host.left + ox, m.clientY - host.top + oy, r, true); };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
   return (
-    <div data-board-card={uid} aria-hidden="true"
-      style={{ position: 'absolute', left: x - bw / 2, top: y - bh / 2, width: bw, height: bh, transform: `rotate(${rot}deg)`, pointerEvents: 'none', zIndex: 13, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.5))', transition: 'opacity 450ms', opacity: fading ? 0 : 1 }}>
+    <div data-board-card={uid} aria-hidden="true" onPointerDown={down}
+      style={{ position: 'absolute', left: x - bw / 2, top: y - bh / 2, width: bw, height: bh, transform: `rotate(${rot}deg)`, pointerEvents: fading ? 'none' : 'auto', cursor: 'grab', zIndex: 13, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.5))', transition: 'opacity 450ms', opacity: fading ? 0 : 1 }}>
       <div style={{ position: 'absolute', inset: 0, clipPath: `polygon(${poly.map(([px, py]) => `${((px / 100) * w - bx).toFixed(1)}px ${((py / 100) * h - by).toFixed(1)}px`).join(', ')})` }}>
         <div style={{ position: 'absolute', left: -bx, top: -by, width: FORGED_W, height: FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0' }}><CardFace card={card} hiRes={false} /></div>
       </div>
