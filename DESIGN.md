@@ -184,6 +184,8 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   setting, and the supply's die can be a dice chest: a click and it fans out one of every die, held still; grab one
   (or a selection) to keep it and the rest dissolve. Selected dice carried and thrown together count as a roll. The
   engine no longer queues a second frame from inside a frame (picking up Hope and Fear doubled the frames every
-  frame: the duality lag). Roll and Forge burn with the pieces' own flame from one shared context, ready before the
-  first press; Roll fills a bar and says Charging, Hotter, Ablaze as it is held. The hand's end dots sit behind the
+  frame: the duality lag). Roll and Forge burn with one continuous sheet of the pieces' flame round the whole
+  button, from behind it (the Forge's plate is drawn over the fire, Roll's face is cut out of it), from one shared
+  context ready before the first press; Roll fills a bar and says Charging, Hotter, Ablaze as it is held. While a
+  roll's plaque shows, the selection bar and the Many Things row stack under it. The hand's end dots sit behind the
   cards.

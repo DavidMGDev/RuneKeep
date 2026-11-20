@@ -102,6 +102,7 @@ export function RollPopup({ result, box, onAccept }: { result: RollResult; box: 
     <div role="status" aria-live="polite" aria-label={`Rolled ${result.total}${word ? `, ${word}` : ''}`}
       onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
       onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onAccept(); } }}
+      data-roll-plaque=""
       style={{ position: 'fixed', left: box.left + box.width / 2, top: box.top + 12, zIndex: 1150, transform: 'translateX(-50%)', animation: `${crit ? 'rk-plaque-crit 700ms' : 'rk-plaque-in 320ms'} cubic-bezier(0.22,1,0.36,1) both`, filter: `drop-shadow(0 14px 26px rgba(0,0,0,0.6))${crit ? ' drop-shadow(0 0 22px rgba(249,214,141,0.55))' : ''}` }}>
       <Chamfer c={12} fill={`radial-gradient(ellipse at 50% 0%, ${glow}, rgba(11,14,19,0.97) 70%)`} line={line} width={crit ? 2 : 1.3}
         inner={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 16, padding: '10px 40px 12px 18px', overflow: 'hidden', background: `radial-gradient(ellipse at 50% 0%, ${glow}, rgba(11,14,19,0.97) 70%)` }}>

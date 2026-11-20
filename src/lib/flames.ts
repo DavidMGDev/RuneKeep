@@ -1,7 +1,8 @@
 /**
- * The app's flame (v0.47.12, owner: use the fire of the burning tokens and dice for the Roll and Forge buttons too,
- * and have it come up faster). One teardrop of layered value noise rising through an envelope: the burning pieces on
- * the table draw one round each piece (table/piece-fire), and a button draws a row of them along its box.
+ * The app's flame (v0.47.12, owner: the Roll and Forge buttons burn with the same fire as the burning tokens and dice,
+ * and come up faster). Layered value noise rising through an envelope: the burning pieces on the table draw a
+ * teardrop of it round each piece (table/piece-fire, with FIRE_VERT and FIRE_FRAG below), and a button one
+ * continuous sheet of it round its whole box (`burn`).
  *
  * Every button shares one WebGL context, built and compiled once while the page is idle, so lighting a button costs
  * only a 2D canvas: each frame the flames are drawn in the shared context and copied into the button's canvas.
@@ -63,6 +64,67 @@ void main() {
   gl_FragColor = vec4(col * a, a);
 }`;
 
+/**
+ * A button on fire (owner, v0.47.13: "one single continuous flame onto the whole button", "flaming from behind"): one
+ * sheet of fire round the box's whole outline, licking off its top edge in tongues and hugging its sides, the same
+ * noise and colours as a burning piece. The box itself is never covered: its plate is drawn over the fire, or, on a
+ * button with its own face, cut out of it.
+ */
+const BOX_VERT = 'attribute vec2 a; void main() { gl_Position = vec4(a * 2.0 - 1.0, 0.0, 1.0); }';
+const BOX_FRAG = `
+precision mediump float;
+uniform vec4 uBox;
+uniform float uTime;
+uniform float uI;
+uniform float uRise;
+uniform float uSpill;
+uniform float uSeed;
+uniform float uFoot;
+uniform vec2 uView;
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { v += a * vnoise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+  return v;
+}
+void main() {
+  vec2 p = gl_FragCoord.xy;
+  vec2 c = (uBox.xy + uBox.zw) * 0.5, h = (uBox.zw - uBox.xy) * 0.5;
+  float t = uTime + uSeed * 31.0;
+  // In box heights, so the grain of the fire is the same on any button.
+  vec2 s = p / max(2.0 * h.y, 1.0);
+  // The air bends as it rises: the whole sheet sways sideways, flowing upwards.
+  float sway = fbm(vec2(s.x * 1.4, s.y * 1.1 - t * 1.3));
+  vec2 q = vec2(p.x + (sway - 0.5) * h.y * 1.3, p.y);
+  vec2 d2 = abs(q - c) - h;
+  float outside = length(max(d2, 0.0)) + min(max(d2.x, d2.y), 0.0);
+  // Straight above the top edge it climbs in tongues; at the sides and below it only hugs the outline.
+  float above = max(0.0, q.y - uBox.w);
+  float up = outside > 0.0 ? clamp(above / outside, 0.0, 1.0) : 1.0;
+  float tongue = fbm(vec2(s.x * 2.3 + uSeed * 7.0, t * 0.8));
+  // Each part of the fire stays inside the room the canvas gives it: tongues up to most of the rise, a hug at the
+  // sides within the spill, barely anything under the box (owner: never sliced off flat at an edge).
+  float side = q.y < uBox.y ? uFoot * 0.5 : uSpill * 0.48;
+  float reach = mix(side, uRise * (0.4 + 0.85 * tongue * tongue), up * up) * mix(0.35, 1.0, uI);
+  float n = fbm(vec2(s.x * 3.1, s.y * 2.2 - t * 2.7));
+  float heat = (1.0 - max(outside, 0.0) / max(reach, 1.0)) * mix(0.8, 1.1, uI) + (n - 0.5) * 0.75;
+  heat = clamp(heat, 0.0, 1.0);
+  float a = smoothstep(0.06, 0.26, heat) * smoothstep(0.0, 0.12, uI);
+  // And whatever still reaches the canvas's edge thins out before it, never ends in a straight line.
+  vec2 e = min(p, uView - p);
+  a *= smoothstep(0.0, 14.0, e.x) * smoothstep(0.0, 10.0, e.y);
+  vec3 col = mix(vec3(0.62, 0.08, 0.03), vec3(0.86, 0.2, 0.04), smoothstep(0.06, 0.25, heat));
+  col = mix(col, vec3(1.0, 0.45, 0.07), smoothstep(0.25, 0.48, heat));
+  col = mix(col, vec3(1.0, 0.8, 0.36), smoothstep(0.48, 0.72, heat));
+  col = mix(col, vec3(1.0, 0.97, 0.86), smoothstep(0.78, 1.0, heat));
+  gl_FragColor = vec4(col * a, a);
+}`;
+
 export interface FlameOpts {
   /** The box that burns, css px. */
   width: number;
@@ -71,9 +133,10 @@ export interface FlameOpts {
   rise: number;
   spill: number;
   foot: number;
-  /** The box's chamfer, css px (for its body). */
+  /** The box's chamfer, css px. */
   chamfer: number;
-  /** Draw the box's own body (an ember-dark plate with a gold edge: the Forge button), or only the flames. */
+  /** Draw the box's own body over the fire (an ember-dark plate with a gold edge: the Forge button). Without it the
+   * box is cut out of the fire, so a button with its own face shows through untouched. */
   body?: boolean;
   /** How high it burns to start with, 0 to 1. */
   level?: number;
@@ -98,8 +161,8 @@ function context(): Shared | null {
   if (!gl) return null;
   const sh = (type: number, src: string) => { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); return s; };
   const prog = gl.createProgram()!;
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, FIRE_VERT));
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FIRE_FRAG));
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, BOX_VERT));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, BOX_FRAG));
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
   gl.useProgram(prog);
@@ -108,53 +171,53 @@ function context(): Shared | null {
   const loc = gl.getAttribLocation(prog, 'a');
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   const u: Shared['u'] = {};
-  for (const n of ['uRect', 'uRes', 'uTime', 'uSeed', 'uI', 'uAspect', 'uHeart']) u[n] = gl.getUniformLocation(prog, n);
+  for (const n of ['uBox', 'uTime', 'uI', 'uRise', 'uSpill', 'uSeed', 'uFoot', 'uView']) u[n] = gl.getUniformLocation(prog, n);
   // Drawn once, so the driver has finished compiling before anything is lit.
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   shared = { gl, canvas, u };
   return shared;
 }
 
-interface User { o: FlameOpts; ctx: CanvasRenderingContext2D; cw: number; ch: number; dpr: number; level: number; target: number; seeds: number[]; size: number; cy: number }
+interface User { o: FlameOpts; ctx: CanvasRenderingContext2D; cw: number; ch: number; dpr: number; level: number; target: number; seed: number }
 const users = new Set<User>();
 let raf = 0;
 let last = -1;
 const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
-const QW = 2.3, QH = 3.2;
+
+/** The box's outline (corners cut), in the 2D canvas's px. */
+function boxPath(c: CanvasRenderingContext2D, u: User) {
+  const { o, dpr } = u;
+  const x0 = o.spill * dpr, y0 = u.ch - (o.foot + o.height) * dpr, w = o.width * dpr, h = o.height * dpr, k = o.chamfer * dpr;
+  c.beginPath();
+  c.moveTo(x0 + k, y0); c.lineTo(x0 + w - k, y0); c.lineTo(x0 + w, y0 + k); c.lineTo(x0 + w, y0 + h - k); c.lineTo(x0 + w - k, y0 + h); c.lineTo(x0 + k, y0 + h); c.lineTo(x0, y0 + h - k); c.lineTo(x0, y0 + k); c.closePath();
+  return { y0, h };
+}
 
 function drawUser(s: Shared, u: User, ms: number) {
   const { gl } = s;
   const { o, dpr } = u;
   if (s.canvas.width < u.cw || s.canvas.height < u.ch) { s.canvas.width = Math.max(s.canvas.width, u.cw); s.canvas.height = Math.max(s.canvas.height, u.ch); }
+  // The viewport is the user's own corner of the shared canvas: its bottom-left, where GL counts from.
   gl.viewport(0, 0, u.cw, u.ch);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.uniform2f(s.u.uRes, u.cw, u.ch);
+  const bx = o.spill * dpr, by = o.foot * dpr;
+  gl.uniform4f(s.u.uBox, bx, by, bx + o.width * dpr, by + o.height * dpr);
   gl.uniform1f(s.u.uTime, (ms - t0) / 1000);
-  gl.uniform1f(s.u.uAspect, QH / QW);
   gl.uniform1f(s.u.uI, u.level);
-  gl.uniform1f(s.u.uHeart, 0);
-  // A row of flames along the box, overlapping.
-  const size = u.size * dpr;
-  const n = u.seeds.length;
-  const qw = size * QW, qh = size * QH;
-  for (let i = 0; i < n; i++) {
-    const cx = (o.spill + ((i + 0.5) / n) * o.width) * dpr;
-    const cy = u.cy * dpr; // GL counts up from the bottom
-    gl.uniform4f(s.u.uRect, cx - qw / 2, cy - 0.3 * qh, qw, qh);
-    gl.uniform1f(s.u.uSeed, u.seeds[i]);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  }
+  gl.uniform1f(s.u.uRise, o.height * o.rise * dpr);
+  gl.uniform1f(s.u.uSpill, o.spill * dpr);
+  gl.uniform1f(s.u.uSeed, u.seed);
+  gl.uniform1f(s.u.uFoot, o.foot * dpr);
+  gl.uniform2f(s.u.uView, u.cw, u.ch);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   const c = u.ctx;
   c.clearRect(0, 0, u.cw, u.ch);
+  c.drawImage(s.canvas, 0, s.canvas.height - u.ch, u.cw, u.ch, 0, 0, u.cw, u.ch);
   if (o.body) {
-    // The box itself: dark embers inside a gold edge, its corners cut.
-    const x0 = o.spill * dpr, y0 = u.ch - (o.foot + o.height) * dpr, w = o.width * dpr, h = o.height * dpr, k = o.chamfer * dpr;
-    c.beginPath();
-    c.moveTo(x0 + k, y0); c.lineTo(x0 + w - k, y0); c.lineTo(x0 + w, y0 + k); c.lineTo(x0 + w, y0 + h - k); c.lineTo(x0 + w - k, y0 + h); c.lineTo(x0 + k, y0 + h); c.lineTo(x0, y0 + h - k); c.lineTo(x0, y0 + k); c.closePath();
+    // The plate over the fire: dark embers inside a gold edge, so the flames burn from behind it.
+    const { y0, h } = boxPath(c, u);
     const g = c.createLinearGradient(0, y0, 0, y0 + h);
     g.addColorStop(0, '#6e1a0e');
     g.addColorStop(1, '#2a0704');
@@ -163,8 +226,13 @@ function drawUser(s: Shared, u: User, ms: number) {
     c.lineWidth = 1.5 * dpr;
     c.strokeStyle = 'rgba(224,181,99,0.85)';
     c.stroke();
+  } else {
+    // A button with its own face: the fire is cut away where the button is, so it burns from behind it.
+    c.globalCompositeOperation = 'destination-out';
+    boxPath(c, u);
+    c.fill();
+    c.globalCompositeOperation = 'source-over';
   }
-  c.drawImage(s.canvas, 0, s.canvas.height - u.ch, u.cw, u.ch, 0, 0, u.cw, u.ch);
 }
 
 function frame(ms: number) {
@@ -197,13 +265,8 @@ export function burn(host: HTMLElement, o: FlameOpts): Flames | null {
   host.prepend(canvas);
   const ctx = canvas.getContext('2d');
   if (!ctx) { canvas.remove(); return null; }
-  // On its own plate the fire fills the box; round a button with its own face it rises from above the top edge, so the
-  // word on it stays readable. Each flame is as big as the canvas has room for above it (never cut off flat).
-  const cy = o.foot + o.height * (o.body ? 0.45 : 1.12);
-  const size = Math.min(o.height * (o.body ? 0.95 : 0.8), (cssH - cy) / 2.3);
-  const n = Math.max(1, Math.round(o.width / (size * 1.1)));
   const start = o.level ?? 1;
-  const u: User = { o, ctx, cw: canvas.width, ch: canvas.height, dpr, level: o.still ? start : 0, target: start, seeds: Array.from({ length: n }, () => Math.random()), size, cy };
+  const u: User = { o, ctx, cw: canvas.width, ch: canvas.height, dpr, level: o.still ? start : 0, target: start, seed: Math.random() };
   if (o.still) { drawUser(s, u, t0 + 4000); return { level() {}, stop: () => canvas.remove() }; }
   users.add(u);
   if (!raf) raf = requestAnimationFrame(frame);
