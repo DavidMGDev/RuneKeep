@@ -8,8 +8,8 @@
 import { FIRE_FRAG, FIRE_VERT } from '@/lib/flames';
 
 export interface FireLayer {
-  /** Burn a piece at this level (0 puts it out, gently). */
-  set(key: string, level: number): void;
+  /** Burn a piece at this level (0 puts it out, gently); `cold`, it freezes instead (frost fumes, v0.47.18). */
+  set(key: string, level: number, cold?: boolean): void;
   /** Put every fire out at once (the table was cleared). */
   clear(): void;
   dispose(): void;
@@ -39,11 +39,11 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   const u = (n: string) => gl.getUniformLocation(prog, n);
-  const uRect = u('uRect'), uRes = u('uRes'), uTime = u('uTime'), uSeed = u('uSeed'), uI = u('uI'), uAspect = u('uAspect');
+  const uRect = u('uRect'), uRes = u('uRes'), uTime = u('uTime'), uSeed = u('uSeed'), uI = u('uI'), uAspect = u('uAspect'), uCold = u('uCold');
   gl.uniform1f(u('uHeart'), 1);
 
   /** Each fire: the level it is at and the one it is heading for (it eases, so it never pops). */
-  const fires = new Map<string, { level: number; target: number; seed: number }>();
+  const fires = new Map<string, { level: number; target: number; seed: number; cold: boolean }>();
   let raf = 0;
   let last = 0;
   const t0 = performance.now();
@@ -72,6 +72,7 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
       gl.uniform4f(uRect, at.x * dpr - w / 2, ch - (at.y * dpr + 0.3 * h), w, h);
       gl.uniform1f(uSeed, f.seed);
       gl.uniform1f(uI, f.level);
+      gl.uniform1f(uCold, f.cold ? 1 : 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     if (fires.size) raf = requestAnimationFrame(frame);
@@ -80,11 +81,11 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   const wake = () => { if (!raf) raf = requestAnimationFrame(frame); };
 
   return {
-    set(key, level) {
+    set(key, level, cold = false) {
       const v = Math.max(0, Math.min(1, level));
       const f = fires.get(key);
-      if (f) f.target = v;
-      else if (v > 0) fires.set(key, { level: 0, target: v, seed: Math.random() });
+      if (f) { f.target = v; if (v > 0) f.cold = cold; }
+      else if (v > 0) fires.set(key, { level: 0, target: v, seed: Math.random(), cold });
       wake();
     },
     clear() {

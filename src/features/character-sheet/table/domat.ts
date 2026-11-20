@@ -55,7 +55,7 @@ const EFFECTS: Record<string, { effect: DomatEffect; table: string; tint: string
   sun: { effect: 'gust', table: 'A sun rises: for 14 seconds every loose piece orbits it, then it flares and flings them all away.', tint: '#FFD24A' },
   talons: { effect: 'talons', table: 'Claws rake the table, breaking loose pieces and tearing cards near it.', tint: '#B03030' },
   throne: { effect: 'throne', table: 'Gathers every loose piece into a ring around the card.', tint: '#D4A73A' },
-  vizier: { effect: 'vizier', table: 'Every die on the table rolls again.', tint: '#5AA0E0' },
+  vizier: { effect: 'vizier', table: 'A storm of rolls: three more dice appear, everything loose is flung about, then every die rolls.', tint: '#5AA0E0' },
   void: { effect: 'mimic', table: 'A whirlpool drags every loose piece in and a mimic swallows them; it stays on the table. Right click it and it spits them all out.', tint: '#7A3AA8' },
 };
 

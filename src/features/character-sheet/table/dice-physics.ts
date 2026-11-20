@@ -74,7 +74,7 @@ export interface Body {
    * it breaks whatever loose piece it passes through and touches nothing else, until it slows down.
    */
   /** `strike`: an aimed shot (a held piece let go, v0.47.16) whose first break is held as an impact frame, unlit. */
-  breaker?: { left: number; fire: boolean; strike?: boolean };
+  breaker?: { left: number; fire: boolean; strike?: boolean; /** Frozen (v0.47.18): breaks as fire does, cold. */ cold?: boolean };
   /** A loose token or die: a charged throw can break it. */
   breakable?: boolean;
   /** Broken this step: gone from the table as soon as the step ends. */
@@ -98,7 +98,7 @@ export type Obstacle = Bounds;
 
 export interface Impact {
   key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break';
-  /** For a break: what broke it, and whether it was burning (or an aimed strike). */ by?: string; fire?: boolean; strike?: boolean;
+  /** For a break: what broke it, and whether it was burning (or an aimed strike, or frozen). */ by?: string; fire?: boolean; strike?: boolean; cold?: boolean;
   /** The other piece in a knock between two (the elements of the Deck of Many Things read who met whom). */ other?: string;
   /** For a break: how the breaker was moving (px/s), which way a card is torn or cut. */ vx?: number; vy?: number;
 }
@@ -593,7 +593,7 @@ function collide(bodies: Body[], hits: Impact[]): void {
           if (s.breaker!.fire || rel > BREAK_SPEED) {
             o.broken = true;
             s.breaker!.left--;
-            hits.push({ key: o.key, speed: rel, kind: 'break', by: s.key, fire: s.breaker!.fire, strike: s.breaker!.strike, vx: s.vx, vy: s.vy });
+            hits.push({ key: o.key, speed: rel, kind: 'break', by: s.key, fire: s.breaker!.fire, strike: s.breaker!.strike, cold: s.breaker!.cold, vx: s.vx, vy: s.vy });
             // Breaking costs a little speed: more for a plain throw than for a burning one.
             const keep = s.breaker!.fire ? 0.93 : 0.78;
             s.vx *= keep;
@@ -613,6 +613,8 @@ function collide(bodies: Body[], hits: Impact[]): void {
         // Cards pass over one another (owner, v0.47.17: they bounced like tokens); only how they are drawn says which
         // lies on top. Dice and tokens still knock them about.
         if (a.box && b.box) continue;
+        // Nor do they knock the control dice about (v0.47.18: a shattered card's pieces sent them hopping).
+        if ((a.box && b.upright) || (b.box && a.upright)) continue;
         if (Math.hypot(b.x - a.x, b.y - a.y) >= a.r + b.r) continue;
         if (a.box) circleBox(b, a, hits);
         else circleBox(a, b, hits);

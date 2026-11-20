@@ -37,6 +37,12 @@ export interface PlacedToken {
   dieValue2?: number;
   x: number;
   y: number;
+  /**
+   * What is added when this die is clicked on the desktop table (v0.47.18, owner): the same flat number, sheet
+   * variables and card elements a dice preset carries, so a die left on a card is a small preset of its own. A type
+   * import only, so this file stays free of the preset module.
+   */
+  mod?: import('@/lib/dice-presets').PresetModifier;
 }
 
 /** The dice (#293), in cycle order. Each has a fixed colour + max so it reads at a glance. */

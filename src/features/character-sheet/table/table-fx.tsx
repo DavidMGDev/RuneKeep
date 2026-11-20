@@ -118,7 +118,7 @@ function FxOne({ f }: { f: Fx }) {
  * tears it in two along a ragged line; a very fast one cuts it clean along the way the breaker went; a burning one
  * sets it alight from where it was struck until it is ash; a blast blows it into a spray of shards.
  */
-export type CardBreakMode = 'tear' | 'split' | 'burn' | 'explode';
+export type CardBreakMode = 'tear' | 'split' | 'burn' | 'explode' | 'shards' | 'frost';
 
 export type Pt = [number, number];
 /** One piece of a broken card: its outline (% of the card) and where it goes (px, degrees). */
@@ -139,8 +139,35 @@ export function clipHalf(poly: Pt[], p: Pt, d: Pt, keep: 1 | -1): Pt[] {
 
 const RECT: Pt[] = [[0, 0], [100, 0], [100, 100], [0, 100]];
 
+/**
+ * A card (or a piece of one) cut into `n` pieces (owner, v0.47.18: a critical hit splits a whole card into four or
+ * more, frost into smaller ones): the biggest piece is cut through its middle again and again, across the hit, then
+ * along it, each cut a little off square, so the pieces are uneven like broken card.
+ */
+export function shardPolys(poly: Pt[], dir: Pt, n: number, w: number, h: number): Pt[][] {
+  let out: Pt[][] = [poly];
+  for (let i = 0; out.length < n && i < n * 3; i++) {
+    out.sort((p1, p2) => scrapShape(p2).share - scrapShape(p1).share);
+    const big = out[0];
+    const ang = Math.atan2(dir[1], dir[0]) + (i % 2 ? 0 : Math.PI / 2) + (Math.random() - 0.5) * 0.7;
+    const d: Pt = [(Math.cos(ang) * 100) / w, (Math.sin(ang) * 100) / h];
+    const mid = scrapShape(big).mid;
+    const a = clipHalf(big, mid, d, 1), b = clipHalf(big, mid, d, -1);
+    if (a.length < 3 || b.length < 3) continue;
+    out = [a, b, ...out.slice(1)];
+  }
+  return out;
+}
+
 /** The pieces for a mode. `dir` is the breaker's way across the card, in the card's own frame (unit). */
 export function breakPieces(mode: CardBreakMode, dir: Pt, w: number, h: number): Piece[] {
+  if (mode === 'shards' || mode === 'frost') {
+    return shardPolys(RECT, dir, mode === 'frost' ? 8 : 5, w, h).map((poly) => {
+      const m = scrapShape(poly).mid;
+      const ox = m[0] / 100 - 0.5, oy = m[1] / 100 - 0.5;
+      return { poly, dx: ox * w * 1.6 + dir[0] * w * 0.4, dy: oy * h * 1.6 + dir[1] * w * 0.4, spin: (Math.random() - 0.5) * 60, delay: 0 };
+    });
+  }
   if (mode === 'split') {
     // One clean cut through the middle along the breaker's path; the halves part across it and carry on with it.
     const n: Pt = [-dir[1], dir[0]];
@@ -207,6 +234,16 @@ export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly,
   const hx = at ? 50 + (((at.x - cx) * Math.cos(a) - (at.y - cy) * Math.sin(a)) / w) * 100 : 50;
   const hy = at ? 50 + (((at.x - cx) * Math.sin(a) + (at.y - cy) * Math.cos(a)) / h) * 100 : 50;
   const pieces = useRef(mode === 'burn' ? [] : breakPieces(mode, ldir, w, h)).current;
+  // A scrap burns in from its own edges (owner, v0.47.18): the front starts at its farthest corner from its middle and
+  // closes on it. In a gradient's own measure (to the card box's farthest corner from that middle).
+  const edge = useRef((() => {
+    if (!clip) return null;
+    const m = scrapShape(clip).mid;
+    const mx = (m[0] / 100) * w, my = (m[1] / 100) * h;
+    const far = Math.max(...clip.map(([px, py]) => Math.hypot((px / 100) * w - mx, (py / 100) * h - my)));
+    const box = Math.max(...RECT.map(([px, py]) => Math.hypot((px / 100) * w - mx, (py / 100) * h - my)));
+    return { x: m[0], y: m[1], f: Math.min(100, (far / box) * 100 + 2) };
+  })()).current;
   const ms = mode === 'burn' ? 1700 : mode === 'explode' ? 950 : 1150;
   useEffect(() => {
     const root = box.current;
@@ -215,7 +252,7 @@ export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly,
     if (mode === 'burn') {
       registerBurn();
       for (const el of root.querySelectorAll<HTMLElement>('[data-burn]')) {
-        anims.push(el.animate([{ '--rk-b': '0%' } as Keyframe, { '--rk-b': '140%' } as Keyframe], { duration: ms, easing: 'cubic-bezier(0.4,0.1,0.6,1)', fill: 'forwards' }));
+        anims.push(el.animate([{ '--rk-b': '0%' } as Keyframe, { '--rk-b': edge ? `${(edge.f + 12).toFixed(1)}%` : '140%' } as Keyframe], { duration: ms, easing: 'cubic-bezier(0.4,0.1,0.6,1)', fill: 'forwards' }));
       }
     } else {
       root.querySelectorAll<HTMLElement>('[data-piece]').forEach((el, i) => {
@@ -238,7 +275,18 @@ export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly,
   const slashAng = (Math.atan2(ldir[1] * h, ldir[0] * w) * 180) / Math.PI;
   return (
     <div ref={box} aria-hidden="true" style={{ position: 'absolute', left: cx - w / 2, top: cy - h / 2, width: w, height: h, transform: `rotate(${rot}deg)`, pointerEvents: 'none', zIndex: 14, clipPath: clip ? `polygon(${clip.map(([px, py]) => `${px.toFixed(1)}% ${py.toFixed(1)}%`).join(', ')})` : undefined }}>
-      {mode === 'burn' ? (
+      {mode === 'burn' && edge ? (
+        <>
+          {/* Eaten in from its edges, darkening ahead of the flame, the glowing rim and the char riding the same front. */}
+          <div data-burn="" style={{ position: 'absolute', inset: 0, filter: 'sepia(0.6) brightness(0.8)', maskImage: `radial-gradient(circle at ${edge.x}% ${edge.y}%, #000 calc(${edge.f}% - var(--rk-b)), transparent calc(${edge.f}% - var(--rk-b) + 3%))`, WebkitMaskImage: `radial-gradient(circle at ${edge.x}% ${edge.y}%, #000 calc(${edge.f}% - var(--rk-b)), transparent calc(${edge.f}% - var(--rk-b) + 3%))` }}>{face}</div>
+          <div data-burn="" style={{ position: 'absolute', inset: -2, mixBlendMode: 'screen', background: `radial-gradient(circle at ${edge.x}% ${edge.y}%, transparent calc(${edge.f}% - var(--rk-b) - 7%), #c7301a calc(${edge.f}% - var(--rk-b) - 3%), #ff8a2a calc(${edge.f}% - var(--rk-b)), #ffe9a8 calc(${edge.f}% - var(--rk-b) + 1%), transparent calc(${edge.f}% - var(--rk-b) + 3%))` }} />
+          <div data-burn="" style={{ position: 'absolute', inset: 0, background: `radial-gradient(circle at ${edge.x}% ${edge.y}%, transparent calc(${edge.f}% - var(--rk-b) - 22%), rgba(30,12,6,0.85) calc(${edge.f}% - var(--rk-b) - 5%), transparent calc(${edge.f}% - var(--rk-b)))` }} />
+          {Array.from({ length: 10 }, (_, i) => {
+            const v = clip![i % clip!.length];
+            return <div key={i} style={{ position: 'absolute', left: `${v[0] + (edge.x - v[0]) * Math.random() * 0.5}%`, top: `${v[1] + (edge.y - v[1]) * Math.random() * 0.5}%`, width: 3, height: 3, borderRadius: '50%', background: i % 3 ? '#ffb347' : '#fff1c2', boxShadow: '0 0 6px #ff7a2a', opacity: 0, animation: `rk-ember ${700 + Math.random() * 700}ms ${100 + i * 80}ms ease-out forwards` }} />;
+          })}
+        </>
+      ) : mode === 'burn' ? (
         <>
           {/* The card, eaten away from where it was struck, darkening ahead of the flame. */}
           <div data-burn="" style={{ position: 'absolute', inset: 0, filter: 'sepia(0.6) brightness(0.8)', maskImage: `radial-gradient(circle at ${hx}% ${hy}%, transparent var(--rk-b), #000 calc(var(--rk-b) + 4%))`, WebkitMaskImage: `radial-gradient(circle at ${hx}% ${hy}%, transparent var(--rk-b), #000 calc(var(--rk-b) + 4%))` }}>{face}</div>
@@ -255,9 +303,10 @@ export function CardBreak({ card, cx, cy, w, rot, mode, dir, at, onDone, fxOnly,
           {(fxOnly ? [] : pieces).map((p, i) => (
             <div key={i} data-piece="" style={{ position: 'absolute', inset: 0, clipPath: `polygon(${p.poly.map(([x, y]) => `${x.toFixed(1)}% ${y.toFixed(1)}%`).join(', ')})`, transformOrigin: `${(p.poly.reduce((s, q) => s + q[0], 0) / p.poly.length).toFixed(1)}% ${(p.poly.reduce((s, q) => s + q[1], 0) / p.poly.length).toFixed(1)}%`, willChange: 'transform, opacity' }}>{face}</div>
           ))}
+          {mode === 'frost' ? <div style={{ position: 'absolute', inset: -6, background: 'radial-gradient(circle, rgba(200,236,255,0.55), rgba(120,190,255,0.15) 55%, transparent 75%)', opacity: 0, animation: 'rk-ember 520ms ease-out forwards', mixBlendMode: 'screen' }} /> : null}
           {mode === 'split' ? <div data-slash="" style={{ position: 'absolute', left: '50%', top: '50%', width: Math.hypot(w, h) * 1.3, height: 3, marginLeft: (-Math.hypot(w, h) * 1.3) / 2, marginTop: -1.5, background: 'linear-gradient(90deg, transparent, #fff 20%, #fff 80%, transparent)', boxShadow: '0 0 12px #fff, 0 0 26px #ffd27a', transform: `rotate(${slashAng.toFixed(1)}deg)` }} /> : null}
-          {mode === 'tear' ? Array.from({ length: 9 }, (_, i) => (
-            <div key={i} style={{ position: 'absolute', left: `${30 + Math.random() * 40}%`, top: `${10 + Math.random() * 80}%`, width: 4 + Math.random() * 5, height: 3 + Math.random() * 4, background: '#efe6d2', opacity: 0, animation: `rk-bit ${600 + Math.random() * 500}ms ${60 + i * 30}ms ease-out forwards`, ['--bx' as string]: `${(Math.random() - 0.5) * w}px`, ['--by' as string]: `${(Math.random() - 0.2) * h * 0.6}px` }} />
+          {mode === 'tear' || mode === 'shards' || mode === 'frost' ? Array.from({ length: mode === 'tear' ? 9 : 16 }, (_, i) => (
+            <div key={i} style={{ position: 'absolute', left: `${(mode === 'tear' ? 30 : 10) + Math.random() * (mode === 'tear' ? 40 : 80)}%`, top: `${10 + Math.random() * 80}%`, width: 4 + Math.random() * 5, height: 3 + Math.random() * 4, background: mode === 'frost' ? (i % 3 ? '#cdeeff' : '#ffffff') : '#efe6d2', boxShadow: mode === 'frost' ? '0 0 6px rgba(140,210,255,0.9)' : undefined, opacity: 0, animation: `rk-bit ${600 + Math.random() * 500}ms ${60 + i * 30}ms ease-out forwards`, ['--bx' as string]: `${(Math.random() - 0.5) * w}px`, ['--by' as string]: `${(Math.random() - 0.2) * h * 0.6}px` }} />
           )) : null}
         </>
       )}

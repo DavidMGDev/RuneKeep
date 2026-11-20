@@ -88,7 +88,8 @@ export interface DiceEngine {
    * While `key` is held, `partner` follows right beside it (the Hope and Fear pair), or a list of pieces follow it
    * where they lie now (a selection carried together, v0.47.12); null lets them go. Let go, they all fly together.
    */
-  tether(key: string, partner: string | string[] | null): void;
+  /** `mate`: the other half of a held pair (Hope and Fear, a d100), which stands beside it while the rest circle both. */
+  tether(key: string, partner: string | string[] | null, mate?: string): void;
   /**
    * Loose pieces (and physical cards) broken by a charged throw: which, where the first was, whether it was burning,
    * and each break as it happened (how fast and which way the breaker went: a card tears, splits or burns by it).
@@ -99,7 +100,7 @@ export interface DiceEngine {
    * they met for `ms`, the whole table with them when the hit is strong; then what it hit breaks, a gust throws
    * everything near away and the thrower goes on faster. Called as the hit lands, for its light.
    */
-  onHitStop(cb: (at: { x: number; y: number }, ms: number, strong: boolean) => void): void;
+  onHitStop(cb: (at: { x: number; y: number }, ms: number, strong: boolean, cold?: boolean) => void): void;
   /** A force over the table that stays until it is taken off (null): the Deck of Many Things' lasting cards. */
   aura(id: string, f: Field | null): void;
   /** A ring that keeps what is inside it in and the rest out, until taken off (null). */
@@ -422,7 +423,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let obstacles: Obstacle[] = [];
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -454,9 +455,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let held: { die: Die; ox: number; oy: number; samples: { x: number; y: number; t: number }[] } | null = null;
   let impactCb: (i: Impact) => void = () => {};
   let breakCb: (keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => void = () => {};
-  let hitStopCb: (at: { x: number; y: number }, ms: number, strong: boolean) => void = () => {};
+  let hitStopCb: (at: { x: number; y: number }, ms: number, strong: boolean, cold?: boolean) => void = () => {};
   /** A burning throw's first hit, held (see onHitStop). */
-  let hitstop: { by: string; target: string; until: number; at: { x: number; y: number }; vx: number; vy: number; speed: number; strong: boolean; byFixed: boolean } | null = null;
+  let hitstop: { by: string; target: string; until: number; at: { x: number; y: number }; vx: number; vy: number; speed: number; strong: boolean; byFixed: boolean; cold?: boolean; strike?: boolean; fire?: boolean } | null = null;
   const HITSTOP_MS = 1500;
   const auras = new Map<string, Field>();
   const cages = new Map<string, Cage>();
@@ -622,11 +623,11 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         broke.shift();
         tb.broken = false;
         const strong = first.speed > 4500;
-        hitstop = { by: first.by!, target: first.key, until: now + HITSTOP_MS, at: { x: tb.x, y: tb.y }, vx: sb.vx, vy: sb.vy, speed: first.speed, strong, byFixed: !!sb.fixed };
+        hitstop = { by: first.by!, target: first.key, until: now + HITSTOP_MS, at: { x: tb.x, y: tb.y }, vx: sb.vx, vy: sb.vy, speed: first.speed, strong, byFixed: !!sb.fixed, cold: !!first.cold, strike: !!first.strike, fire: !!first.fire };
         for (const b of [sb, tb]) { b.vx = b.vy = 0; b.fixed = true; }
         for (const k of [first.by!, first.key]) { const d = dice.get(k); if (d) d.jitter = 0.55; }
         if (strong) freezeUntil = hitstop.until;
-        hitStopCb(hitstop.at, HITSTOP_MS, strong);
+        hitStopCb(hitstop.at, HITSTOP_MS, strong, !!first.cold);
       }
       if (broke.length) {
         const at = bodyOf(broke[0].key) ?? { x: 0, y: 0 };
@@ -775,10 +776,12 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     for (const k of [h.by, h.target]) { const d = dice.get(k); if (d) d.jitter = 0; }
     if (sb) { sb.fixed = h.byFixed; sb.asleep = false; sb.vx = h.vx * 1.6; sb.vy = h.vy * 1.6; }
     if (tb) { tb.fixed = false; tb.broken = true; }
-    const hit: Impact = { key: h.target, speed: h.speed, kind: 'break', by: h.by, fire: true, vx: h.vx, vy: h.vy };
+    // A held hit is a critical one (v0.47.18): a card it breaks is split into pieces, never burnt whole.
+    const hit: Impact = { key: h.target, speed: h.speed, kind: 'break', by: h.by, fire: !!h.fire, strike: true, cold: h.cold, vx: h.vx, vy: h.vy };
     engine.shatter(h.target);
-    breakCb([h.target], h.at, true, true, [hit]);
-    engine.impulse(h.at.x, h.at.y, 460, 4600, { gen: 2, power: 2 }, [h.by]);
+    breakCb([h.target], h.at, !!h.fire, true, [hit]);
+    // Only what lies loose is thrown (v0.47.18: the gust sent the control dice and the supply flying).
+    engine.impulse(h.at.x, h.at.y, 460, 4600, { gen: 2, power: 2 }, [h.by, ...order.map((d) => d.spec.key).filter((k) => !/^(free|roll):/.test(k))]);
   }
 
   /**
@@ -816,17 +819,21 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     orbitA += dt * 3 * (1 - Math.min(1, hand / 1200));
     // Dice circle the hand; cards carried along keep where they lay against it.
     const circling = list.filter((t) => t.orbit !== undefined);
+    // A held pair is the middle (owner, v0.47.18): the ring goes round both halves, wider.
+    const pair = list.find((t) => t.pair);
+    const cx = pair ? pair.dx / 2 : 0, cy = pair ? pair.dy / 2 : 0;
+    const core = pair ? Math.hypot(cx, cy) + Math.max(hb.r, pair.b.r) : hb.r;
     // The ring: wide enough for the bundle to sit shoulder to shoulder, turning about one and a half times a second.
     const n = Math.max(1, circling.length);
     const big = Math.max(0, ...circling.map((t) => t.b.r));
-    const ring = Math.max(hb.r + big + 6, (n * (2 * big + 4)) / (2 * Math.PI));
+    const ring = Math.max(core + big + (pair ? 12 : 6), (n * (2 * big + 4)) / (2 * Math.PI));
     const spin = orbitA;
     for (const t of list) {
       const pb = t.b;
       pb.x += mx;
       pb.y += my;
-      const ox = t.orbit === undefined ? t.dx : Math.cos(spin + (t.orbit / n) * Math.PI * 2) * ring;
-      const oy = t.orbit === undefined ? t.dy : Math.sin(spin + (t.orbit / n) * Math.PI * 2) * ring;
+      const ox = t.orbit === undefined ? t.dx : cx + Math.cos(spin + (t.orbit / n) * Math.PI * 2) * ring;
+      const oy = t.orbit === undefined ? t.dy : cy + Math.sin(spin + (t.orbit / n) * Math.PI * 2) * ring;
       const [tx, ty] = caged(pb, Math.min(bounds.right - pb.r, Math.max(bounds.left + pb.r, hb.x + ox)), Math.min(bounds.bottom - pb.r, Math.max(bounds.top + pb.r, hb.y + oy)));
       pb.x += (tx - pb.x) * 0.3;
       pb.y += (ty - pb.y) * 0.3;
@@ -1100,7 +1107,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       d.body.asleep = false;
       wake();
     },
-    tether(key, partner) {
+    tether(key, partner, mate) {
       const d = dice.get(key);
       if (!d) return;
       if (d.tether) for (const t of d.tether) t.b.held = false;
@@ -1109,9 +1116,11 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const list = (Array.isArray(partner) ? partner : partner ? [partner] : []).map((k) => dice.get(k)?.body ?? cards.get(k)?.body ?? null).filter((p): p is Body => !!p && p !== d.body && !p.broken);
       if (!list.length) return;
       let n = 0;
+      const mb = mate ? dice.get(mate)?.body : undefined;
       d.tether = list.map((p) => {
-        // One partner stands beside it, close enough to touch.
-        if (!Array.isArray(partner)) { const side = p.x >= d.body.x ? 1 : -1; return { b: p, dx: side * (d.body.r + p.r + 4), dy: 0 }; }
+        // One partner stands beside it, close enough to touch; so does the other half of a held pair in a bundle
+        // (owner, v0.47.18), and the rest circle the two of them.
+        if (!Array.isArray(partner) || p === mb) { const side = p.x >= d.body.x ? 1 : -1; return { b: p, dx: side * (d.body.r + p.r + 4), dy: 0, pair: true }; }
         // A carried card keeps where it lay against the hand; carried dice bundle round it and circle it (v0.47.16).
         if (p.box) return { b: p, dx: p.x - d.body.x, dy: p.y - d.body.y };
         return { b: p, dx: 0, dy: 0, orbit: n++ };

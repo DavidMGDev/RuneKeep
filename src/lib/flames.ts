@@ -28,6 +28,8 @@ uniform float uI;
 uniform float uAspect;
 // 1: the piece shows through the heart of its fire (a burning die); 0: solid flame (a button).
 uniform float uHeart;
+// 1: frost (v0.47.18, owner: a piece held still freezes): cold fumes, slower and sinking, ice blue to white.
+uniform float uCold;
 float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
@@ -44,12 +46,12 @@ void main() {
   vec2 p = vec2(vUv.x - 0.5, (vUv.y - 0.3) * uAspect);
   float r = 0.215;
   float t = uTime + uSeed * 17.0;
-  vec2 q = vec2(p.x * 6.5, p.y * 4.2 - t * 3.0);
+  vec2 q = vec2(p.x * 6.5, p.y * 4.2 - t * mix(3.0, -1.2, uCold));
   float n = fbm(q + vec2(fbm(q * 0.6 + vec2(0.0, t * 0.7)) * 1.4 - 0.7, 0.0));
   // The envelope: round the piece, drawn up into tongues the higher it burns.
   float up = max(p.y, 0.0);
-  float reach = mix(0.25, 1.15, uI);
-  float halfW = r * 1.4 * (1.0 - 0.8 * smoothstep(0.0, reach, up));
+  float reach = mix(0.25, 1.15, uI) * mix(1.0, 0.5, uCold);
+  float halfW = r * 1.4 * (1.0 + 0.4 * uCold) * (1.0 - 0.8 * smoothstep(0.0, reach, up));
   float ex = abs(p.x) / max(halfW, 0.02);
   float ey = p.y < 0.0 ? -p.y / (r * 1.25) : up / (reach + r);
   float d = length(vec2(ex, ey));
@@ -61,6 +63,11 @@ void main() {
   vec3 col = mix(vec3(0.86, 0.2, 0.04), vec3(1.0, 0.45, 0.07), smoothstep(0.04, 0.32, heat));
   col = mix(col, vec3(1.0, 0.8, 0.36), smoothstep(0.32, 0.66, heat));
   col = mix(col, vec3(1.0, 0.97, 0.86), smoothstep(0.66, 1.0, heat));
+  vec3 ice = mix(vec3(0.16, 0.36, 0.78), vec3(0.42, 0.78, 1.0), smoothstep(0.04, 0.32, heat));
+  ice = mix(ice, vec3(0.78, 0.94, 1.0), smoothstep(0.32, 0.66, heat));
+  ice = mix(ice, vec3(0.97, 1.0, 1.0), smoothstep(0.66, 1.0, heat));
+  col = mix(col, ice, uCold);
+  a *= mix(1.0, 0.82, uCold);
   gl_FragColor = vec4(col * a, a);
 }`;
 

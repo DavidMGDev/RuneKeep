@@ -42,7 +42,7 @@ export function Chamfer({ c = 10, line = T.goldSoft, fill = T.panel, width = 1.2
  * The table's button: chamfered, a label in Archivo Bold capitals. `primary` is the one red action of a group;
  * the rest are gold hairlines on ink, lit on hover.
  */
-export function TButton({ label, onPress, primary, disabled, icon, title, h = 34, wide, active }: { label?: string; onPress: () => void; primary?: boolean; disabled?: boolean; icon?: ReactNode; title?: string; h?: number; wide?: boolean; active?: boolean }) {
+export function TButton({ label, onPress, primary, disabled, icon, title, h = 34, wide, active, still }: { label?: string; onPress: () => void; primary?: boolean; disabled?: boolean; icon?: ReactNode; title?: string; h?: number; wide?: boolean; active?: boolean; /** Never pressed in (a button held to charge, v0.47.18). */ still?: boolean }) {
   const [hover, setHover] = useState(false);
   const [down, setDown] = useState(false);
   const lit = hover && !disabled;
@@ -59,7 +59,7 @@ export function TButton({ label, onPress, primary, disabled, icon, title, h = 34
       onPointerLeave={() => { setHover(false); setDown(false); }}
       onPointerDown={() => setDown(true)}
       onPointerUp={() => setDown(false)}
-      style={{ all: 'unset', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1, transform: down && !disabled ? 'scale(0.96)' : 'none', transition: `transform 120ms ${T.ease}`, flex: wide ? 1 : undefined, display: 'block' }}>
+      style={{ all: 'unset', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1, transform: down && !disabled && !still ? 'scale(0.96)' : 'none', transition: `transform 120ms ${T.ease}`, flex: wide ? 1 : undefined, display: 'block' }}>
       <Chamfer c={7} line={line} fill={fill} style={{ height: h }} inner={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: label ? '0 14px' : 0, minWidth: label ? undefined : h - 2.4 }}>
         {icon}
         {label ? <span style={{ color: primary || lit || active ? T.ivory : T.goldText, fontFamily: T.bold, fontSize: 12, letterSpacing: 1.1, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{label}</span> : null}

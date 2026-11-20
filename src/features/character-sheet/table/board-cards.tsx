@@ -24,7 +24,11 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   lookup: (id: string) => TableCard | undefined;
   feltW: number;
   feltH: number;
-  onChange: (next: BoardCard[]) => void;
+  /**
+   * One card changed: the patch is applied to the board as it stands when it lands (v0.47.18: a whole list built from
+   * an older render put back cards that had moved since, so one that had just come to rest jumped back).
+   */
+  onChange: (uid: string, patch: (b: BoardCard) => Partial<BoardCard>) => void;
   /** Dropped over the card tray: take it off the table. */
   onReturn: (uid: string) => void;
   /** Whether a client point is over the card tray (to light it while a card is dragged there). */
@@ -64,11 +68,11 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
             onSettle={onSettle}
             live={live}
             onDragTo={(x, y, rot, end) => onDragTo(c.uid, x, y, rot, end)}
-            onMove={(fx, fy, over) => { setReturning(over ? c.uid : null); onChange(cards.map((x) => (x.uid === c.uid ? { ...x, fx, fy } : x))); }}
+            onMove={(fx, fy, over) => { setReturning(over ? c.uid : null); onChange(c.uid, () => ({ fx, fy })); }}
             onDrop={(over) => { setReturning(null); if (over) onReturn(c.uid); }}
-            onResize={(w) => onChange(cards.map((x) => (x.uid === c.uid ? { ...x, w } : x)))}
-            onRotate={(rot) => onChange(cards.map((x) => (x.uid === c.uid ? { ...x, rot } : x)))}
-            onTurn={() => onChange(cards.map((x) => (x.uid === c.uid ? { ...x, face: ((x.face ?? 0) + 1) % (card.faces?.length || 1) } : x)))}
+            onResize={(w) => onChange(c.uid, () => ({ w }))}
+            onRotate={(rot) => onChange(c.uid, () => ({ rot }))}
+            onTurn={() => onChange(c.uid, (x) => ({ face: ((x.face ?? 0) + 1) % (card.faces?.length || 1) }))}
             overTray={overTray}
             onMenu={(x, y) => onMenu(c.uid, x, y)}
           />

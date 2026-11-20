@@ -45,8 +45,8 @@ import type { Bounds, Impact } from './dice-physics';
 import { type DomatCard, DOMAT, DOMAT_START, type DomatStock, domatStock, drawDomat, type Element, ELEMENTS, elementWinner, takeDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
-import { type CardPose, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
-import { breakPieces, CardBreak, type CardBreakMode, CardScrap, clipHalf, DomatCardView, type Fx, FX_CSS, FxLayer, localDir, type Pt, scrapShape, shake } from './table-fx';
+import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
+import { breakPieces, CardBreak, type CardBreakMode, CardScrap, clipHalf, shardPolys, DomatCardView, type Fx, FX_CSS, FxLayer, localDir, type Pt, scrapShape, shake } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SavedPiece, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 import { cue } from './table-sound';
@@ -176,6 +176,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   // ---------------------------------------------------------------- the hand
   const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string } | null>(null);
   const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: { key: string; label: string; own?: boolean } } | null>(null);
+  /** A token or die on a card right clicked (v0.47.18): its menu, then perhaps its modifiers. */
+  const [tokMenu, setTokMenu] = useState<{ ref: string; id: string; x: number; y: number; mods?: boolean } | null>(null);
   const [sorting, setSorting] = useState(false);
   const [settings, setSettings] = useState(false);
   /**
@@ -276,6 +278,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const [pgCards, setPgCards] = useState<BoardCard[]>([]);
   const board = useMemo(() => (spread ? spreadCards : playground ? [...copies, ...pgCards] : copies), [spread, spreadCards, playground, copies, pgCards]);
   const setBoard = useCallback((next: BoardCard[]) => {
+    boardRef.current = next;
     if (!lookRef.current || lookRef.current.handMode !== 'spread') {
       if (playRef.current) setPgCards(next.filter((b) => b.uid.startsWith('pg:')));
       setCopies(next.filter((b) => !b.uid.startsWith('pg:')));
@@ -498,7 +501,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       const ref = refOf(b.id);
       const t = (ctx.cardTokens[ref] ?? []).find((x) => x.id === id);
       if (!t) return false;
-      info = { kind: t.kind, color: t.color, dieType: t.dieType, dieValue: t.dieValue, dieValue2: t.dieValue2 };
+      info = { kind: t.kind, color: t.color, dieType: t.dieType, dieValue: t.dieValue, dieValue2: t.dieValue2, mod: t.mod };
       from = { ref, id, uid };
     }
     if (!info) return false;
@@ -535,13 +538,44 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     return false;
   }, [cardAt, ctx, refOf, setLoose, supply]);  
 
+  // A physical card gives its tokens up like any other (owner, v0.47.18); it still takes none.
   const popToken = useCallback((ref: string, id: string): TokenInfo | null => {
-    if (physRefs.current.has(ref)) return null;
     const t = (ctx.cardTokens[ref] ?? []).find((x) => x.id === id);
     if (!t) return null;
     ctx.removeToken(ref, id);
-    return { kind: t.kind, color: t.color, dieType: t.dieType, dieValue: t.dieValue, dieValue2: t.dieValue2 };
+    return { kind: t.kind, color: t.color, dieType: t.dieType, dieValue: t.dieValue, dieValue2: t.dieValue2, mod: t.mod };
   }, [ctx]);
+
+  /** The token a card token names: one in the hand by its card and id, one on the table by its piece. */
+  const cardTok = (t: CardTok) => {
+    const at = 'key' in t ? tokenOf(t.key) : t;
+    const tok = at ? (ctx.cardTokens[at.ref] ?? []).find((x) => x.id === at.id) : undefined;
+    return at && tok ? { ref: at.ref, id: at.id, tok } : null;
+  };
+  /** A die on a card clicked (owner, v0.47.18): a copy rolls out onto the table from it, with its modifier; it stays. */
+  const rollTok = (t: CardTok, clientX: number, clientY: number) => {
+    const c = cardTok(t);
+    if (!c) return;
+    if (c.tok.kind !== 'die') { cue('piece:bump', 'placeToken', { volume: 0.4 }); return; }
+    const m = c.tok.mod && hasModifier(c.tok.mod) ? c.tok.mod : null;
+    const type = c.tok.dieType ?? 'd6';
+    const pairId = poolId();
+    const list: PoolDie[] = type === 'duality'
+      ? [{ id: poolId(), type: 'd12', value: null, side: 'hope', pairId }, { id: poolId(), type: 'd12', value: null, side: 'fear', pairId }]
+      : addDie([], type, poolId);
+    rollFrom.current = local(clientX, clientY);
+    void throwPool(list, { label: m ? modName(m, dice.presets.cardVars ?? []) : null, value: m ? dice.presets.resolve?.(m) ?? m.value : 0 });
+  };
+  /** Held till it broke (owner, v0.47.18): gone from the card, in a burst. */
+  const breakTok = (t: CardTok, clientX: number, clientY: number) => {
+    const c = cardTok(t);
+    if (!c) return;
+    ctx.removeToken(c.ref, c.id);
+    const p = local(clientX, clientY);
+    addFx({ kind: 'spark', x: p.x, y: p.y, r: 70, ms: 500, tint: '#ffd9a0' });
+    addFx({ kind: 'smoke', x: p.x, y: p.y, r: 60, ms: 600 });
+    cue('piece:break', 'tokenRemove', { volume: 0.6 });
+  };
 
   // ---------------------------------------------------------------- rolling: presets, traits, selections
   const [result, setResult] = useState<RollResult | null>(null);
@@ -617,7 +651,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const selModRef = useRef(selMod);
   selModRef.current = selMod;
   /** A card being read large (owner, v0.47.17). */
-  const [viewing, setViewing] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<{ id: string; from?: { left: number; top: number; width: number; height: number }; closing?: boolean } | null>(null);
+  const closeView = () => { cue('ui:close', 'cardFullscreenLeave'); setViewing((v) => (v && !v.closing ? { ...v, closing: true } : v)); };
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   /**
@@ -718,7 +753,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     livePoses.delete(b.uid);
     const cx = p?.x ?? b.fx * tableW, cy = p?.y ?? b.fy * tableH, rot = p?.rot ?? b.rot ?? 0;
     // Torn or cut, a copy leaves its halves on the table as scraps; the hand's own laid-out card stays whole.
-    const torn = (mode === 'tear' || mode === 'split') && lookRef.current.handMode !== 'spread';
+    const torn = (mode === 'tear' || mode === 'split' || mode === 'shards' || mode === 'frost') && lookRef.current.handMode !== 'spread';
     setShattering((s) => [...s, { uid: b.uid, card, cx, cy, w, rot, mode, dir, fxOnly: torn }]);
     if (torn) addScraps(b.id, w, cx, cy, rot, breakPieces(mode, localDir(dir, rot), w, h).map((q) => q.poly), dir);
     if (b.uid.startsWith('pg:')) setPgCards((l) => l.filter((c) => c.uid !== b.uid));
@@ -763,7 +798,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       if (card) setShattering((l) => [...l, { uid, card, cx, cy, w: sc.w, rot, mode: 'burn', dir, clip: sc.poly }]);
       return;
     }
-    if (sh.share < 0.13 || mode === 'explode') {
+    // Frost breaks it smaller still (owner, v0.47.18), till the bits are too small to keep.
+    if (mode === 'frost' && sh.share >= 0.05) {
+      setScraps(scrapsRef.current.filter((c) => c.uid !== uid));
+      addScraps(sc.id, sc.w, cx, cy, rot, shardPolys(sc.poly, localDir(dir, rot), 3, sc.w, h), dir);
+      return;
+    }
+    if (sh.share < 0.13 || mode === 'explode' || mode === 'frost') {
       setScraps(scrapsRef.current.map((c) => (c.uid === uid ? { ...c, x, y, rot, fading: true } : c)));
       setTimeout(() => setScraps(scrapsRef.current.filter((c) => c.uid !== uid)), 470);
       return;
@@ -1262,14 +1303,41 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         cue('domat:ruin', 'cardDisable', { volume: 1, cents: -600 });
         break;
       case 'vizier': {
+        // A storm of rolls (owner, v0.47.18: far more chaotic): three more dice are conjured, the table whirls, and every
+        // loose die and token is flung about again and again for a few seconds; then the dice all come down and are read.
         addFx({ kind: 'spark', x, y, r: 420, ms: 1000, tint });
         addFx({ kind: 'ring', x, y, r: diag * 0.7, ms: 1000, tint });
-        const keys = eng.keys().filter((k) => k.startsWith('roll:') || (k.startsWith('free:') && looseRef.current.find((l) => l.key === baseOf(k))?.token.kind === 'die'));
-        void h.rollPieces(keys).then((landed) => {
-          if (!landed.length) return;
-          rollSound(landed);
-          setResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: 'Vizier', mod: 0 });
-        });
+        addFx({ kind: 'vortex', x: (play.left + play.right) / 2, y: (play.top + play.bottom) / 2, r: diag * 0.45, ms: 3600, tint });
+        const kinds: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20'];
+        setLoose([...looseRef.current, ...[0, 1, 2].map((i) => ({ key: `free:${newTokenId()}${i}`, token: { kind: 'die' as const, dieType: kinds[Math.floor(Math.random() * kinds.length)], dieValue: 1 }, x: clampX(x + (i - 1) * 60), y: clampY(y) }))]);
+        // Only what lies loose whirls (the controls and the supply stay where they are).
+        const whirl = (only: string[]) => eng.aura('vizier', { kind: 'vortex', x: (play.left + play.right) / 2, y: (play.top + play.bottom) / 2, r: diag, k: 2400, only: new Set(only) });
+        whirl(eng.keys().filter((k) => k.startsWith('roll:') || k.startsWith('free:')));
+        // The control dice and the deck stand fast through it, and for the last roll to land.
+        eng.pin(['cat', 'cards', 'state', 'sort', DOMAT_KEY].filter((k) => eng.has(k)), 7000);
+        let n = 0;
+        const storm = setInterval(() => {
+          const loose = eng.keys().filter((k) => k.startsWith('roll:') || k.startsWith('free:'));
+          whirl(loose);
+          for (const k of loose) {
+            if (Math.random() > 0.6) continue;
+            const a = Math.random() * Math.PI * 2, sp = 900 + Math.random() * 2000;
+            eng.toss(k, Math.cos(a) * sp, Math.sin(a) * sp);
+          }
+          for (const k of loose.slice(0, 3)) { const s = eng.state(k); if (s) addFx({ kind: 'spark', x: s.x, y: s.y, r: 60, ms: 380, tint }); }
+          jolt(0.2);
+          cue('piece:reroll', 'gearScroll1', { volume: 0.45, cents: Math.round(Math.random() * 900 - 300) });
+          if (++n < 9) return;
+          clearInterval(storm);
+          eng.aura('vizier', null);
+          const keys = eng.keys().filter((k) => k.startsWith('roll:') || (k.startsWith('free:') && looseRef.current.find((l) => l.key === baseOf(k))?.token.kind === 'die'));
+          void h.rollPieces(keys).then((landed) => {
+            if (!landed.length) return;
+            rollSound(landed);
+            setResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: 'Vizier', mod: 0 });
+          });
+        }, 380);
+        timers.current.push(storm);
         break;
       }
     }
@@ -1339,18 +1407,26 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     // along the way the breaker went; otherwise torn in two.
     for (const h of hits) {
       if (!h.key.startsWith('card:')) continue;
-      if (h.key.startsWith('card:scrap:')) { breakScrap(h.key.slice(5), h.fire ? 'burn' : 'split', { x: h.vx ?? 0, y: h.vy ?? 1 }); continue; }
+      // Only a scrap burns, and frost breaks it smaller (owner, v0.47.18).
+      if (h.key.startsWith('card:scrap:')) { breakScrap(h.key.slice(5), h.cold ? 'frost' : h.fire ? 'burn' : 'split', { x: h.vx ?? 0, y: h.vy ?? 1 }); continue; }
+      // A whole card never burns: a critical hit (fire, or a held strike) breaks it in five, frost in eight.
       const b = boardRef.current.find((c) => `card:${c.uid}` === h.key);
-      if (b) breakCard(b, h.fire ? 'burn' : h.speed > 3200 ? 'split' : 'tear', { x: h.vx ?? 0, y: h.vy ?? 1 });
+      if (b) breakCard(b, h.cold ? 'frost' : h.fire || h.strike ? 'shards' : h.speed > 3200 ? 'split' : 'tear', { x: h.vx ?? 0, y: h.vy ?? 1 });
     }
-    // A burning throw's first break bursts for a second where it happened; every other break is a small spark.
-    if (first) {
-      addFx({ kind: 'fire', x: at.x, y: at.y, r: 130, ms: 1000 });
-      addFx({ kind: 'spark', x: at.x, y: at.y, r: 180, ms: 1000, tint: '#ffd27a' });
-      addFx({ kind: 'ring', x: at.x, y: at.y, r: 460, ms: 700, tint: '#ffb070' });
+    // A critical throw's first break bursts for a second where it happened (fire hot, frost cold); every other break is a small spark.
+    const cold = hits.some((h) => h.cold);
+    if (first && cold) {
+      addFx({ kind: 'frost', x: at.x, y: at.y, r: 150, ms: 1000 });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 190, ms: 900, tint: '#cdeeff' });
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: 460, ms: 700, tint: '#8fd3ff' });
+      shake(tableRef.current, 1.4);
+    } else if (first) {
+      if (fire) addFx({ kind: 'fire', x: at.x, y: at.y, r: 130, ms: 1000 });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 180, ms: 1000, tint: fire ? '#ffd27a' : '#fff1d0' });
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: 460, ms: 700, tint: fire ? '#ffb070' : '#f3e6c8' });
       shake(tableRef.current, 1.4);
     } else {
-      addFx({ kind: 'spark', x: at.x, y: at.y, r: fire ? 70 : 55, ms: 450, tint: fire ? '#ffb070' : '#fff1d0' });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: fire ? 70 : 55, ms: 450, tint: cold ? '#cdeeff' : fire ? '#ffb070' : '#fff1d0' });
       shake(tableRef.current, fire ? 0.3 : 0.2);
     }
   }, [setLoose, addFx, breakCard]); // eslint-disable-line react-hooks/exhaustive-deps -- breakScrap reads only refs
@@ -1358,9 +1434,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * A burning throw's first hit held (owner, v0.47.12, "like a smash final hit"): a star of light pinned where it
    * landed at once; strong, the table darkens round it and leans in for the moment it hangs.
    */
-  const onHitStop = useCallback((at: { x: number; y: number }, ms: number, strong: boolean) => {
-    addFx({ kind: 'impact', x: at.x, y: at.y, r: strong ? 130 : 90, ms, tint: '#ff9a3c' });
-    addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 260, tint: '#ffe2b0' });
+  const onHitStop = useCallback((at: { x: number; y: number }, ms: number, strong: boolean, cold?: boolean) => {
+    // Frozen, the held hit is ice light (owner, v0.47.18: colder, not so warm).
+    addFx({ kind: 'impact', x: at.x, y: at.y, r: strong ? 130 : 90, ms, tint: cold ? '#7fd0ff' : '#ff9a3c' });
+    addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 260, tint: cold ? '#e8f8ff' : '#ffe2b0' });
     const el = tableRef.current;
     if (strong && el) {
       addFx({ kind: 'veil', x: at.x, y: at.y, r: 150, ms });
@@ -1426,10 +1503,12 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   };
   const escRef = useRef<() => boolean>(() => false);
   escRef.current = () => {
-    if (result) { setResult(null); return true; }
-    if (viewing) { cue('ui:close', 'cardFullscreenLeave'); setViewing(null); return true; }
+    // What is on top goes first: the card read large, then a menu, then the roll's result (v0.47.18).
+    if (viewing) { if (!viewing.closing) closeView(); return true; }
+    if (tokMenu) { cue('ui:close', 'floatMenuClose'); setTokMenu(null); return true; }
     if (menu) { cue('ui:close', 'floatMenuClose'); setMenu(null); return true; }
     if (tableMenu) { cue('ui:close', 'floatMenuClose'); setTableMenu(null); return true; }
+    if (result) { setResult(null); return true; }
     if (copy) { cue('card:cancel', 'cardDeselect', { volume: 0.6 }); setCopy(null); return true; }
     if (settings) { cue('ui:close', 'panelClose'); setSettings(false); return true; }
     if (selRef.current.length) { clearSelection(); return true; }
@@ -1692,7 +1771,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               feltH={tableH}
               hidden={new Set(shattering.map((s) => s.uid))}
               live={livePoses}
-              onChange={(next) => setBoard(next.map((b) => { const p = livePoses.get(b.uid); return p ? { ...b, rot: Math.round(p.rot * 10) / 10 } : b; }))}
+              onChange={(uid, patch) => setBoard(boardRef.current.map((b) => {
+                if (b.uid !== uid) return b;
+                const p = livePoses.get(b.uid);
+                return { ...b, ...(p ? { rot: Math.round(p.rot * 10) / 10 } : {}), ...patch(b) };
+              }))}
               onReturn={(uid) => { if (uid.startsWith('pg:')) setPgCards((l) => l.filter((b) => b.uid !== uid)); else if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
               onLift={(b) => {
                 const { w, h } = sizeOf(b);
@@ -1822,12 +1905,22 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onRerolled={reroll}
           onDropPiece={dropToken}
           onPopToken={popToken}
+          onTokenClick={rollTok}
+          onTokenRemove={breakTok}
+          onTokenMenu={(t, x, y) => { const c = cardTok(t); if (!c) return; cue('ui:open', 'floatMenuOpen'); setTokMenu({ ref: c.ref, id: c.id, ...local(x, y) }); }}
           onTableMenu={(x, y, piece) => { const p = local(x, y); cue('ui:open', 'floatMenuOpen'); setTableMenu({ ...p, piece }); }}
           onReady={() => { setEngineReady(true); onReady?.(); }}
           onSelect={setSelection}
           onHardHit={onHardHit}
           onBreak={onBreak}
           onCrit={onCrit}
+          onGood={(at, tint, big) => {
+            // A warm bloom: a soft halo opening, a ring going out slowly, light rising off it (owner, v0.47.18).
+            addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: big ? 520 : 360, tint });
+            addFx({ kind: 'ring', x: at.x, y: at.y, r: big ? 230 : 140, ms: big ? 1300 : 900, tint });
+            addFx({ kind: 'spark', x: at.x, y: at.y, r: big ? 150 : 90, ms: big ? 1400 : 900, tint });
+            if (big) addFx({ kind: 'rune', x: at.x, y: at.y, r: 120, ms: 1500, tint });
+          }}
           onDragPiece={(x, y) => carRef.current?.hoverAt(x, y)}
           onTidied={() => setLoose([])}
           editing={settings}
@@ -1968,11 +2061,55 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               { label: 'Table settings', onPress: () => setSettings(true), gap: true, hidden: playground },
             ]} />
         ) : null}
-        {viewing ? <CardViewer card={lookup(viewing)} onClose={() => { cue('ui:close', 'cardFullscreenLeave'); setViewing(null); }} /> : null}
+        {tokMenu && !overlay ? (() => {
+          const tok = (ctx.cardTokens[tokMenu.ref] ?? []).find((x) => x.id === tokMenu.id);
+          if (!tok) return null;
+          const r = tableRef.current?.getBoundingClientRect();
+          const at = { x: (r?.left ?? 0) + tokMenu.x, y: (r?.top ?? 0) + tokMenu.y };
+          const t = { ref: tokMenu.ref, id: tokMenu.id };
+          const close = () => setTokMenu(null);
+          if (tokMenu.mods && tok.kind === 'die') {
+            const m = tok.mod && hasModifier(tok.mod) ? tok.mod : null;
+            const W = 600, left = Math.max(8, Math.min(tokMenu.x, tableW - W - 16)), top = Math.max(8, Math.min(tokMenu.y, tableH - 470));
+            return (
+              <>
+                <div data-ui="" aria-label="Close the modifiers" onPointerDown={(e) => { e.stopPropagation(); cue('ui:close', 'panelClose', { volume: 0.5 }); close(); }} onContextMenu={(e) => { e.preventDefault(); close(); }} style={{ position: 'absolute', inset: 0, zIndex: 900 }} />
+                <div data-ui="" role="dialog" aria-label="This die's modifiers" onPointerDown={(e) => e.stopPropagation()} style={{ position: 'absolute', zIndex: 901, left, top, width: W }}>
+                  <ModifierPanel mod={m} onMod={(next) => ctx.updateToken(t.ref, t.id, { mod: next ?? undefined })} total={m ? dice.presets.resolve?.(m) ?? m.value : 0} resolve={dice.presets.resolve} cardVars={dice.presets.cardVars ?? []} />
+                </div>
+              </>
+            );
+          }
+          const die = tok.kind === 'die';
+          return (
+            <MenuShell x={tokMenu.x} y={tokMenu.y} tableW={tableW} tableH={tableH} onClose={close}
+              rows={[
+                ...(die ? [
+                  { label: 'Roll it', onPress: () => rollTok(t, at.x, at.y) },
+                  { label: tok.mod && hasModifier(tok.mod) ? `Modifiers (${signed(dice.presets.resolve?.(tok.mod) ?? tok.mod.value)})` : 'Modifiers', onPress: () => { cue('ui:open', 'panelOpen', { volume: 0.5 }); setTimeout(() => setTokMenu({ ...tokMenu, mods: true })); } },
+                ] : []),
+                { label: 'Take it off', gap: die, onPress: () => {
+                  const info = popToken(t.ref, t.id);
+                  if (!info) return;
+                  setLoose([...looseRef.current, { key: `free:${newTokenId()}`, token: info, x: tokMenu.x, y: tokMenu.y }]);
+                  cue('piece:offCard', 'cardDragEnd', { volume: 0.5 });
+                } },
+                { label: 'Break it', danger: true, onPress: () => breakTok(t, at.x, at.y) },
+              ]} />
+          );
+        })() : null}
+        {viewing ? <CardViewer key={viewing.id} card={lookup(viewing.id)} from={viewing.from} closing={viewing.closing} onClose={closeView} onGone={() => setViewing(null)} /> : null}
         {menu && !overlay ? (
           <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
             spread={spread}
-            view={() => { cue('ui:open', 'cardFullscreenEnter', { volume: 0.6 }); setViewing(menu.id); }}
+            view={() => {
+              cue('ui:open', 'cardFullscreenEnter', { volume: 0.6 });
+              // Where the card is drawn now: on the table, or in the hand.
+              const el = (menu.board ? tableRef.current?.querySelector(`[data-board-card="${CSS.escape(menu.board)}"]`) : handRef.current?.querySelector(`[data-card-id="${CSS.escape(menu.id)}"]`)) as HTMLElement | null;
+              const face = (menu.board ? el : el?.firstElementChild as HTMLElement | null) ?? el;
+              const r = face?.getBoundingClientRect();
+              setViewing({ id: menu.id, from: r && r.width > 0 ? { left: r.left, top: r.top, width: r.width, height: r.height } : undefined });
+            }}
             physical={menu.board ? !!board.find((b) => b.uid === menu.board)?.phys : undefined}
             onPhysical={menu.board ? () => {
               const uid = menu.board!;
@@ -2192,7 +2329,6 @@ function ModChip({ name, sub, value, on, onPress }: { name: string; sub?: string
  */
 function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: number, burning: boolean) => void }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const bar = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState<0 | 1 | 2 | 3>(0);
   const st = useRef<{ t: number; raf: number; power: number; lit: boolean; host: HTMLDivElement | null; flames: Flames | null; stage: number } | null>(null);
   /** A pointer press already rolled: the click that follows it does nothing (a key press still rolls). */
@@ -2205,7 +2341,6 @@ function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: n
     s.flames?.stop();
     s.host?.remove();
     if (wrap.current) wrap.current.style.transform = '';
-    if (bar.current) { bar.current.style.transform = 'scaleX(0)'; bar.current.style.opacity = '0'; }
     setStage(0);
     return s;
   };
@@ -2223,13 +2358,11 @@ function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: n
     const tick = () => {
       // A beat, then it builds: full at 1, and at 2 it catches fire.
       s.power = Math.max(0, Math.min(2, (performance.now() - s.t - 120) / 1100));
+      // It shakes, and its flames shake with it (owner, v0.47.18: the button stays one size; no bar).
       const j = Math.min(1, s.power) * 2.4 + (s.lit ? 1.4 : 0);
-      if (wrap.current) wrap.current.style.transform = j > 0 ? `translate(${((Math.random() - 0.5) * j).toFixed(2)}px, ${((Math.random() - 0.5) * j).toFixed(2)}px)` : '';
-      if (bar.current) {
-        bar.current.style.opacity = s.power > 0 ? '1' : '0';
-        bar.current.style.transform = `scaleX(${Math.min(1, s.power).toFixed(3)})`;
-        bar.current.style.background = s.power < 1 ? T.goldBright : `linear-gradient(90deg, #ff9a3c, #ffe2a0 ${Math.round((s.power - 1) * 100)}%, #ff9a3c)`;
-      }
+      const tf = j > 0 ? `translate(${((Math.random() - 0.5) * j).toFixed(2)}px, ${((Math.random() - 0.5) * j).toFixed(2)}px)` : '';
+      if (wrap.current) wrap.current.style.transform = tf;
+      host.style.transform = tf;
       s.flames?.level(s.power < 0.5 ? 0 : (s.power - 0.5) / 1.5);
       const next = s.lit ? 3 : s.power >= 1 ? 2 : s.power > 0 ? 1 : 0;
       if (next !== s.stage) { s.stage = next; setStage(next as 0 | 1 | 2 | 3); }
@@ -2248,9 +2381,8 @@ function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: n
     onRoll(Math.min(1, s.power), s.lit);
   };
   return (
-    <div ref={wrap} onPointerDown={down} onPointerUp={up} onPointerCancel={() => { end(); }} title="Roll. Hold to roll harder; hold on and it catches fire" style={{ position: 'relative' }}>
-      <TButton label={['Roll', 'Charging', 'Hotter', 'Ablaze'][stage]} primary h={32} disabled={disabled} onPress={() => { if (rolledByPointer.current) { rolledByPointer.current = false; return; } onRoll(0, false); }} />
-      <div ref={bar} aria-hidden="true" style={{ position: 'absolute', left: 6, right: 6, bottom: 3, height: 3, transformOrigin: '0 50%', transform: 'scaleX(0)', opacity: 0, background: T.goldBright, boxShadow: '0 0 8px rgba(255,200,120,0.8)', pointerEvents: 'none', transition: 'opacity 120ms' }} />
+    <div ref={wrap} onPointerDown={down} onPointerUp={up} onPointerCancel={() => { end(); }} title="Roll. Hold to roll harder; hold on and it catches fire" style={{ position: 'relative', width: 112, display: 'flex' }}>
+      <TButton label={['Roll', 'Charging', 'Hotter', 'Ablaze'][stage]} primary h={32} wide still disabled={disabled} onPress={() => { if (rolledByPointer.current) { rolledByPointer.current = false; return; } onRoll(0, false); }} />
     </div>
   );
 }
@@ -2400,19 +2532,45 @@ function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, no
  * A card read large (owner, v0.47.17): over the whole window, with room round it, at full quality, the rest dimmed
  * behind. A click anywhere or Escape puts it away.
  */
-function CardViewer({ card, onClose }: { card: TableCard | undefined; onClose: () => void }) {
+function CardViewer({ card, from, closing, onClose, onGone }: { card: TableCard | undefined; /** Where the card was on screen: it grows out of there and goes back to it. */ from?: { left: number; top: number; width: number; height: number }; closing?: boolean; onClose: () => void; onGone: () => void }) {
   const [win, setWin] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  const veil = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const on = () => setWin({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
   }, []);
+  /** From the card's own place to the middle (and back): the transform that puts the large card where the small one is. */
+  const back = () => {
+    const el = box.current;
+    if (!el || !from) return { transform: 'scale(0.6)', opacity: 0 };
+    const r = el.getBoundingClientRect();
+    const dx = from.left + from.width / 2 - (r.left + r.width / 2), dy = from.top + from.height / 2 - (r.top + r.height / 2);
+    return { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${(from.width / r.width).toFixed(4)})`, opacity: 1 };
+  };
+  // In (owner, v0.47.18: it popped in, and the whole screen flickered as the veil faded out again at its end): the
+  // veil fades up and stays; the card grows out of where it was.
+  useLayoutEffect(() => {
+    veil.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 240, easing: 'ease-out', fill: 'both' });
+    box.current?.animate([back(), { transform: 'none', opacity: 1 }], { duration: 360, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'both' });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Out: the card goes back to its place and the veil lifts, then it is gone.
+  useEffect(() => {
+    if (!closing) return;
+    veil.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-in', fill: 'forwards' });
+    const a = box.current?.animate([{ transform: 'none', opacity: 1 }, back()], { duration: 240, easing: 'cubic-bezier(0.5,0,0.75,0)', fill: 'forwards' });
+    const t = setTimeout(onGone, 250);
+    if (a) a.onfinish = () => { clearTimeout(t); onGone(); };
+    return () => clearTimeout(t);
+  }, [closing]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!card || typeof document === 'undefined') return null;
   const k = Math.min((win.h - 64) / FORGED_H, (win.w - 64) / FORGED_W);
   return createPortal(
     <div data-ui="" role="dialog" aria-label="The card, read large" onPointerDown={(e) => { e.stopPropagation(); onClose(); }} onContextMenu={(e) => { e.preventDefault(); onClose(); }}
-      style={{ position: 'fixed', inset: 0, zIndex: 5000, background: 'rgba(6,8,13,0.72)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', animation: 'rk-veil 180ms ease-out' }}>
-      <div style={{ width: FORGED_W * k, height: FORGED_H * k, position: 'relative', boxShadow: '0 30px 80px rgba(0,0,0,0.7)' }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', pointerEvents: closing ? 'none' : 'auto' }}>
+      <div ref={veil} style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,13,0.78)', opacity: 0 }} />
+      <div ref={box} style={{ width: FORGED_W * k, height: FORGED_H * k, position: 'relative', boxShadow: '0 30px 80px rgba(0,0,0,0.7)', willChange: 'transform' }}>
         <div style={{ position: 'absolute', left: 0, top: 0, width: FORGED_W, height: FORGED_H, transform: `scale(${k})`, transformOrigin: '0 0' }}>
           <CardFace card={card} hiRes />
         </div>

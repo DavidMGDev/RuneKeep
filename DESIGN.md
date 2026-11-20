@@ -249,3 +249,16 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   each at a point well across the table, so it never skims an edge. The Modifiers panel groups the sheet's variables:
   Traits, Rolls, Character, Vitals. The lit card in the hand comes to the front, so a token let go on what shows lands
   on that card, never on one behind it.
+- v0.47.18, second batch: a token or die on a card (in the hand, laid, physical or in the playground) comes before the
+  card: a click rolls a copy of a die out from it (with the die's own modifier, `PlacedToken.mod`, set from its right
+  click menu, the same shape as a preset's); held, a ring fills and it breaks; dragged, it comes off into the hand.
+  Held still, a piece now freezes instead of catching fire (frost fumes, `uCold` in the flame), sooner, and goes for one
+  of the three nearest pieces with an ice-blue impact frame; swung fast it still burns. A whole card never burns: fire
+  or a held strike breaks it into five pieces, frost into eight; only scraps burn, in from their edges, and frost breaks
+  them smaller. The gust after a held hit, and cards' pieces, leave the control dice alone. Hope winning (and a highest
+  face) swells and blooms in light instead of shaking. A carried bundle holding Hope and Fear (or a d100) keeps the
+  pair side by side in the middle with the rest circling both. The dice chest and the Vizier pin the control dice and
+  the Many Things deck; the Vizier is a storm (three more dice, a whirl of only the loose pieces, nine rounds of throws,
+  then the roll). The Roll button keeps one width, no bar, never pressed in. View grows the card out of where it was and
+  back (its veil had reused a keyframe that faded out at its end: the flicker). Board changes are patches applied to
+  the board as last set, so two in a row never put a card back where it was.
